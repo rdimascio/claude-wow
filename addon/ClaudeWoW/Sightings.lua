@@ -52,9 +52,14 @@ function S.NpcId(guid)
 	return tonumber(id)
 end
 
+function S.Hostile(unit)
+	return Try(UnitCanAttack, "player", unit) and true or false
+end
+
 function S.Record(unit, role)
 	local id = S.NpcId(Try(UnitGUID, unit))
 	if not id then return nil end
+	if role == nil and S.Hostile(unit) then return nil end
 	local name = Try(UnitName, unit)
 	if type(name) ~= "string" or name == "" then return nil end
 	local mapId, x, y = S.PlayerSpot()
@@ -95,7 +100,10 @@ function S.Nearby(mapId, px, py, limit)
 			table.insert(out, { name = npc.name, x = spot.x, y = spot.y, exact = spot.exact, d = d })
 		end
 	end
-	table.sort(out, function(a, b) return a.d < b.d end)
+	table.sort(out, function(a, b)
+		if (a.exact and true or false) ~= (b.exact and true or false) then return a.exact and true or false end
+		return a.d < b.d
+	end)
 	for i = (limit or #out) + 1, #out do out[i] = nil end
 	return out
 end
@@ -108,7 +116,7 @@ function S.ContextLine(mapId, px, py)
 	for _, n in ipairs(near) do
 		table.insert(parts, string.format("%s %.1f,%.1f%s", n.name:sub(1, S.CONTEXT_NAME_MAX), n.x, n.y, n.exact and "" or "~"))
 	end
-	return "NPCs seen on this map (closest first, ~ = approximate): " .. table.concat(parts, "; ")
+	return "NPCs seen on this map (talked-to first, then closest; ~ = approximate): " .. table.concat(parts, "; ")
 end
 
 local events = CreateFrame("Frame")

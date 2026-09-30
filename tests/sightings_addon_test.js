@@ -11,6 +11,7 @@ const UNITS = `
 STUB.units = {}
 function UnitGUID(unit) return STUB.units[unit] and STUB.units[unit].guid end
 function UnitName(unit) return STUB.units[unit] and STUB.units[unit].name end
+function UnitCanAttack(a, unit) return STUB.units[unit] and STUB.units[unit].hostile or false end
 function strsplit(sep, s)
   local out = {}
   for part in (s .. sep):gmatch("(.-)%" .. sep) do out[#out + 1] = part end
@@ -88,5 +89,14 @@ test('the situation block names the closest NPCs seen on the current map', () =>
   const ctx = vm.evaluate('ClaudeWoW.GameContext()');
   const line = ctx.split('\n').find(l => l.startsWith('NPCs seen on this map'));
   assert.ok(line, ctx);
-  assert.ok(line.indexOf('Wolf 52.0,52.0~') < line.indexOf('Near Trainer 50.0,50.0') && line.indexOf('Near Trainer') < line.indexOf('Far Vendor'), line);
+  assert.ok(line.indexOf('Near Trainer 50.0,50.0') < line.indexOf('Far Vendor') && line.indexOf('Far Vendor') < line.indexOf('Wolf 52.0,52.0~'), 'NPCs the player talked to come first, closest first, then approximate ones: ' + line);
+});
+
+test('hostile mobs and critters seen on nameplates or under the mouse are not recorded; talking to one still is', () => {
+  const vm = newVM();
+  vm.run('STUB.units["nameplate1"] = { name = "Mottled Boar", guid = "Creature-0-1-0-0-3098-0000000001", hostile = true }; STUB.FireEvent("NAME_PLATE_UNIT_ADDED", "nameplate1")');
+  vm.run('STUB.units["mouseover"] = { name = "Rabbit", guid = "Creature-0-1-0-0-721-0000000002", hostile = true }; STUB.FireEvent("UPDATE_MOUSEOVER_UNIT")');
+  assert.equal(vm.evaluate('next(ClaudeWoWNpcDB.npcs)'), null);
+  vm.run('STUB.units["npc"] = { name = "Neutral Vendor", guid = "Creature-0-1-0-0-9999-0000000003", hostile = true }; STUB.FireEvent("MERCHANT_SHOW")');
+  assert.equal(vm.evaluate('ClaudeWoWNpcDB.npcs[9999].name'), 'Neutral Vendor');
 });
