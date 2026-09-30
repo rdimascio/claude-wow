@@ -215,6 +215,7 @@ function parseFlags(flags) {
     else if (tok === 'h') out.hello = true;
     else if (tok === 'd') out.forget = true;
     else if (tok === 'c') out.context = true;
+    else if (tok === 'cli') out.cli = true;
     else if (tok === 'v') out.vision = true; // attach the screenshot's game view to the run (screenshot transport only)
     else if (tok.startsWith('allow=')) out.allow.push(...tok.slice(6).split(',').map(s => s.trim()).filter(Boolean));
     else if (tok.startsWith('once=')) (out.allowOnce = out.allowOnce || []).push(...tok.slice(5).split(',').map(s => s.trim()).filter(Boolean));

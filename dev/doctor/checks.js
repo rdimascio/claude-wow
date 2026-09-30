@@ -4,6 +4,7 @@ const Service = require('../../bridge/service');
 const Screens = require('../../bridge/screenshots');
 const { slotNumber, pad3 } = require('../../bridge/protocol');
 const GameFs = require('../../bridge/gamefs');
+const Router = require('../../bridge/router');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const QUIET_LIMIT_MS = 10 * 60 * 1000;
@@ -558,7 +559,52 @@ function checkCi(ctx) {
   return finish('ci', 'CI', `${repo.branch} latest run ${state} on ${String(latest.headSha).slice(0, 7)} (HEAD ${shortHead})`, issues);
 }
 
-const CHECKS = [checkService, checkDrift, checkLogs, checkSignals, checkInterface, checkPermissions, checkDisk, checkData, checkCost, checkConfig, checkCi];
+const ROUTER_LIMITS = { fallbackRate: 0.2, p95Ms: Router.TIMEOUT_MS };
+
+function routerKey(ctx, routerCfg) {
+  const serviceEnv = (ctx.plist && ctx.plist.env) || {};
+  if (serviceEnv.TYPESAFE_API_KEY || (ctx.sys.env && ctx.sys.env.TYPESAFE_API_KEY)) return { found: true, source: 'TYPESAFE_API_KEY' };
+  if (ctx.sys.platform !== 'darwin') return { found: false, source: 'TYPESAFE_API_KEY' };
+  const item = Router.keychainItem(routerCfg.keychain);
+  const source = `keychain ${item.service}/${item.account}`;
+  const r = ctx.sys.run('security', ['find-generic-password', '-s', item.service, '-a', item.account]) || {};
+  return { found: !!r.ok, source };
+}
+
+function checkRouter(ctx) {
+  const routerCfg = ctx.config.router && typeof ctx.config.router === 'object' ? ctx.config.router : {};
+  const pre = Router.resolveMode(routerCfg, true);
+  if (pre.mode === 'off') return finish('router', 'Router', 'off (router.mode)', []);
+  const issues = [];
+  const key = routerKey(ctx, routerCfg);
+  if (!key.found) {
+    issues.push(warn(`The router has no TypeSafe key (${key.source}).`,
+      'The router stays off: messages take the old path and no shadow log is written.',
+      'Set TYPESAFE_API_KEY for the service, store the key in the Keychain item named by router.keychain, or set router.mode to "off".'));
+  }
+  const mode = Router.resolveMode(routerCfg, key.found);
+  const text = ctx.sys.tailText(ctx.homePaths.router || path.join(ctx.homePaths.dir, 'router.jsonl'), LOG_TAIL_BYTES);
+  const s = Router.summarize(Router.parseLog(text || ''), { since: ctx.now - DAY_MS });
+  let recent = 'no routed messages in the last 24 h';
+  if (s.count) {
+    recent = `24 h: ${s.count} routed, fallback ${(s.fallbackRate * 100).toFixed(1)}%, p95 ${s.p95 === null ? '-' : s.p95 + ' ms'}`;
+    if (s.fallbackRate > ROUTER_LIMITS.fallbackRate) {
+      const reasons = Object.entries(s.reasons).map(([k, v]) => `${k} ${v}`).join(', ');
+      issues.push(warn(`The router fell back on ${s.fallbacks} of ${s.count} messages in 24 h (${reasons}).`,
+        'A fallback is a message the router could not judge, so the shadow log has less to evaluate.',
+        'Run "npm run router:report" and check the key, the network and the TypeSafe status.'));
+    }
+    if (s.p95 !== null && s.p95 > ROUTER_LIMITS.p95Ms) {
+      issues.push(warn(`Router p95 latency is ${s.p95} ms (limit ${ROUTER_LIMITS.p95Ms} ms).`,
+        'In execute mode a slow router would delay the handler it picks.',
+        'Run "npm run router:report"; check the network, or raise router.timeoutMs only after an eval.'));
+    }
+  }
+  const modeText = mode.mode === 'off' ? 'off (no key)' : mode.requested === 'execute' ? 'shadow (execute is reserved)' : mode.mode;
+  return finish('router', 'Router', `${modeText}, key ${key.found ? 'from ' + key.source : 'missing'}, ${recent}`, issues);
+}
+
+const CHECKS = [checkService, checkDrift, checkLogs, checkSignals, checkInterface, checkPermissions, checkDisk, checkData, checkCost, checkConfig, checkRouter, checkCi];
 
 function runChecks(ctx, checks = CHECKS) {
   return checks.map(check => {
@@ -570,6 +616,6 @@ function runChecks(ctx, checks = CHECKS) {
 
 module.exports = {
   CHECKS, LIMITS, TROUBLE_PATTERN,
-  runChecks, checkService, checkDrift, checkLogs, checkSignals, checkInterface, checkPermissions, checkDisk, checkData, checkCost, checkConfig, checkCi,
+  runChecks, checkService, checkDrift, checkLogs, checkSignals, checkInterface, checkPermissions, checkDisk, checkData, checkCost, checkConfig, checkRouter, checkCi, ROUTER_LIMITS,
   parseEtime, formatBytes, summarizeLog, parseLastSeq, slotsAhead, tocInterface, interfaceFromVersion, productForFlavor, parseBuildInfo, parseReflog, claudeProjectDir, allowsEdits,
 };

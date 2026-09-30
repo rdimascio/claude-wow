@@ -50,6 +50,17 @@ A `config.json` from before agents existed kept Claude's settings at the top lev
 
 A `config.json` without a `plugins` block keeps working: the default applies. Chats made before plugins existed are bound to `claude-code` by the addon, so they behave as before whatever the default is.
 
+## Router
+
+The message router in shadow mode. Every key and the thresholds are in [ROUTER.md](ROUTER.md). When it is on, message text goes to TypeSafe.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `router.mode` | `"shadow"` | `off`, `shadow` (decide and log, change nothing), or `execute` (reserved; runs as shadow for now). Without a key the router is off whatever this says. |
+| `router.keychain` | `org.ellie.assistant` / `decision.typesafe` | The macOS Keychain item holding the TypeSafe key: `"service/account"`, `"account"`, or `{ "service", "account" }`. `TYPESAFE_API_KEY` wins over it. |
+| `router.roots`, `router.depth`, `router.includeWorktrees`, `router.aliases` | `["~", "~/Projects"]`, `3`, `false`, `{}` | The project scan (`npm run projects:scan`, and at bridge start). |
+| `router.timeoutMs`, `router.codePermissionMode` | `800`, `"acceptEdits"` | The call's deadline, and the code agent's mode for a request that is not a risky edit (phase 2). |
+
 ## Runs
 
 | Key | Default | Meaning |
@@ -139,6 +150,7 @@ Exit codes: `0` normal, `1` the injected or one-shot job failed, `2` config miss
 | `GROK_DISABLE_AUTOUPDATER` | Set to `1` for Grok runs, so a headless run never stops for an update. |
 | `GROK_HOME` | Honoured when looking for `grok.exe` (`<GROK_HOME>\bin`); Grok's own setting. |
 | `CLAUDE_WOW_UI_FILE` | Set by the bridge for each run of a plugin with the `ui` surface: a file where the agent's tools append UI widget commands, one JSON object per line (see [UI-WIDGETS.md](UI-WIDGETS.md)). |
+| `TYPESAFE_API_KEY` | The router's TypeSafe key. When set, the bridge uses it and does not read the Keychain. Never written to a file. |
 | `CLAUDE_WOW_MAP_FILE` | Set by the bridge for each run, whatever the agent: a file where the agent's tools append map commands, one JSON object per line (see [MAP.md](MAP.md)). |
 
 ## Which folder the agent works in
@@ -172,6 +184,8 @@ The bridge's banner prints the folder it chose (`home :`). The one-line installe
 | `~/.claude-wow/uijobs/` | One widget command file per running job (`CLAUDE_WOW_UI_FILE`), read and deleted when the job ends. The widgets themselves live in `state.json` (`widgets`). |
 | `~/.claude-wow/mapjobs/` | One map command file per running job (`CLAUDE_WOW_MAP_FILE`), read and deleted when the job ends. Map layers themselves live in `state.json` (`map`). |
 | `~/.claude-wow/bridge.log` | Every line the bridge logs, with timestamps. Rotated by the supervisor at 5 MB (`bridge.log.1` … `.5` kept), so it never grows without bound. Under the background service the bridge's full output (banner, log lines, crashes) also goes to the service log: `~/Library/Logs/claude-wow/bridge.log` on macOS, `$XDG_STATE_HOME/claude-wow/bridge.log` (default `~/.local/state/claude-wow`) on Linux, `%LocalAppData%\claude-wow\logs\bridge.log` on Windows, rotated the same way; `claude-wow service logs` shows whichever applies. |
+| `~/.claude-wow/router.jsonl` | The router's shadow log: one JSON line per routed message (route, probabilities, confidence, project, latency, fallback, the path taken, and the first 80 characters of the text). Only written while the router is on. `npm run router:report` reads it. |
+| `~/.claude-wow/projects.json` | The project registry the router chooses from: git repositories under `router.roots`. Rebuilt by `npm run projects:scan` and at bridge start while the router is on. |
 | `~/.claude-wow/tmp/` | Prompt files for agents that read the prompt from disk (Grok). Each is deleted when its run ends. |
 
 ## `setup.js` flags

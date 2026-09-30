@@ -52,6 +52,8 @@ const AS = require('./assets');  // the capture scripts and the primer, by path,
 const ACH = require('./achievements');
 const SS = require('./sessions');
 const G = require('./gamefs');
+const RT = require('./router');
+const PJ = require('./projects');
 
 // The plugins this bridge has (docs/PLATFORM.md). Registration order is the
 // order match() is asked in, and the first one is the default unless
@@ -872,6 +874,7 @@ function runJob(job) {
     saveState();
   }
   if (r.text !== undefined) job.text = r.text; // "@ask ..." addressed it; the address is not part of the prompt
+  router.observe(job, { context: gameContext(), taken: { plugin: r.plugin.id, why: r.why }, folder: core.sessionFolder(job) });
   const failed = e => {
     log(`${tag} ${r.plugin.id}: ${e && e.stack ? e.stack : e}`);
     finish(job, 'error', `The ${r.plugin.id} plugin failed: ${e && e.message ? e.message : e}`);
@@ -903,6 +906,18 @@ const core = {
   get claudeDir() { return CLAUDE_DIR; },
   runAgent,
 };
+
+const routerCfg = cfg.router && typeof cfg.router === 'object' ? cfg.router : {};
+const router = RT.createRouter({ config: routerCfg, logFile: HOME.router, projectsFile: HOME.projects, log });
+
+function startRouter() {
+  router.init().then(() => {
+    if (router.mode === 'off') return;
+    PJ.refresh({ file: HOME.projects, routerCfg }).then(
+      data => { router.reloadProjects(); log(`router: ${data.projects.length} project(s) in ${HOME.projects}`); },
+      e => log(`router: project scan failed (${e.message})`));
+  }, e => log(`router: could not start (${e.message})`));
+}
 
 function liveStartCommand() {
   return LP.startCommand({ repo: REPO, home: HOME.source === 'CLAUDE_WOW_HOME' ? HOME.dir : '' });
@@ -1466,6 +1481,7 @@ function banner() {
 
 banner();
 if (!once) startPlugins();
+if (!exitWhenIdle) startRouter();
 if (inject !== null) {
   const job = { id: state.lastId + 1, session: '', chat: '', text: inject, cwd: '', newSession: false, via: 'inject', agent: injectAgent || '' };
   if (injectPlugin) job.plugin = injectPlugin;

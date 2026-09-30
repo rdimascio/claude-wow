@@ -26,6 +26,8 @@ test('parseFlags reads new-session, hello, forget, context, agent and allow list
   assert.deepEqual(P.parseFlags('n;agent=grok;allow=WebSearch'), { ...none, newSession: true, agent: 'grok', allow: ['WebSearch'] });
   assert.deepEqual(P.parseFlags('once=Bash(rm:*), WebFetch'), { ...none, allowOnce: ['Bash(rm:*)', 'WebFetch'] });
   assert.equal(P.parseFlags('allow=WebSearch').allowOnce, undefined, 'no allowOnce key at all without the flag');
+  assert.deepEqual(P.parseFlags('cli;model=opus'), { ...none, cli: true, model: 'opus' });
+  assert.equal(P.parseFlags('model=opus').cli, undefined, 'no cli key without the flag');
 });
 
 test('parseFlags reads the per-chat settings and the resume and live targets /claude sends, and drops values that do not fit', () => {

@@ -89,6 +89,12 @@
       "extraArgs": []
     }
   },
+  "router": {
+    "mode": "shadow",
+    "roots": ["~", "~/Projects"],
+    "depth": 3,
+    "includeWorktrees": false
+  },
   "gameContext": true,
   "primerFile": "docs/WOW-ADDON-PRIMER.md",
   "pollMs": 750,

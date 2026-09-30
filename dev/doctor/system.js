@@ -13,6 +13,7 @@ const READ_ONLY_COMMANDS = {
     return ['rev-parse', 'log', 'status', 'reflog', 'show'].includes(sub);
   },
   gh: args => args[0] === 'run' && args[1] === 'list',
+  security: args => args[0] === 'find-generic-password' && !args.includes('-w') && !args.includes('-g'),
 };
 
 function isGitOptionValue(args, value) {

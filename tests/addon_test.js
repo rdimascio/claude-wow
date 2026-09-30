@@ -1485,6 +1485,7 @@ test('/claude <text> starts a new chat and sends there; /claude <command> runs i
   let rec = stripRecords(vm).find(r => r.text === 'hi');
   assert.ok(rec, 'sent');
   assert.equal(rec.chat, secondId, 'sent in the new chat');
+  assert.ok(!rec.flags.split(';').includes('cli'), 'a bare /claude <text> carries no cli flag, so the router may judge it');
   assert.equal(vm.num('STUB.serverSends'), 0);
   replyTo(vm, secondId, 'status = "done", text = "hello", agent = "claude"');
 
@@ -1501,6 +1502,7 @@ test('/claude <text> starts a new chat and sends there; /claude <command> runs i
   typeIn(vm, 'ChatFrame1EditBox', '/claude -c continue here');
   assert.equal(vm.num('#ClaudeWoWDB.chats'), 3, '/claude -c is not a new chat');
   assert.equal(stripRecords(vm).find(r => r.text === 'continue here').chat, firstId);
+  assert.ok(stripRecords(vm).find(r => r.text === 'continue here').flags.split(';').includes('cli'), '-c marks the record as explicit input');
   replyTo(vm, firstId, 'status = "done", text = "continued", agent = "claude"');
 
   vm.run('SlashCmdList.CLAUDE("-c --agent claude")');
@@ -1509,12 +1511,14 @@ test('/claude <text> starts a new chat and sends there; /claude <command> runs i
   assert.ok(tab, 'the first chat has a tab');
   typeIn(vm, tab, 'plain text in the tab');
   assert.equal(stripRecords(vm).find(r => r.text === 'plain text in the tab').chat, firstId, 'the tab continues its chat');
+  assert.ok(!stripRecords(vm).find(r => r.text === 'plain text in the tab').flags.split(';').includes('cli'), 'plain text in a tab is not explicit input');
   replyTo(vm, firstId, 'status = "done", text = "tab reply", agent = "claude"');
   vm.run(`ClaudeWoW.SwitchChat("${secondId}")`);
   typeIn(vm, tab, '/claude -c --model opus from the tab');
   rec = stripRecords(vm).find(r => r.text === 'from the tab');
   assert.equal(rec.chat, firstId, '/claude -c in a tab goes to that tab\'s chat');
   assert.ok(rec.flags.split(';').includes('model=opus'), rec.flags);
+  assert.ok(rec.flags.split(';').includes('cli'), rec.flags);
   replyTo(vm, firstId, 'status = "done", text = "tab reply 2", agent = "claude"');
   typeIn(vm, tab, '/claude fresh thread from the tab');
   assert.equal(vm.num('#ClaudeWoWDB.chats'), 4, '/claude in a tab starts a new chat');
@@ -1838,6 +1842,7 @@ test('/claude -r: bare lists running and recent sessions; a number, a name or an
   const headless = rec.flags.split(';');
   assert.ok(headless.includes('resume=f02436b8-8a5f-4c05-823e-bef25f88ff7b'), rec.flags);
   assert.ok(headless.includes('plugin=claude-code') && headless.includes('agent=claude') && headless.includes('model=opus'), rec.flags);
+  assert.ok(headless.includes('cli'), rec.flags);
   const headlessChat = field('id');
   replyTo(vm, headlessChat, 'status = "done", text = "resumed", agent = "claude", session = "f02436b8-8a5f-4c05-823e-bef25f88ff7b", cwd = "/Users/me/proj"');
   assert.equal(field('resumeId'), null, 'the resume goes out once');

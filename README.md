@@ -304,6 +304,14 @@ By default a denial does not show that button. It pops a frame in the style of t
 
 The bar under the item counts down 60 seconds. When it runs out, that is a Pass. Each choice plays the game's own loot sounds. `/claude config roll off` brings back the **Allow & retry** button, and `/claude config roll on` returns to the roll frame.
 
+### Message router (shadow mode)
+
+The bridge can ask TypeSafe's Jev model where each message belongs: game lore, the web, a code project on this machine, the open terminal session, in-game help, or plain chat. It also picks the project a code request is about. For now it only watches: every message still takes the path it took before, and the router's pick goes to `~/.claude-wow/router.jsonl`. `npm run router:report` summarizes that log.
+
+**When the router is on, the text of each routed message, the game context and the names of your recent projects go to TypeSafe.** It is on (`router.mode: "shadow"`) when the bridge finds a key: `TYPESAFE_API_KEY`, else the Keychain item in `router.keychain`. With no key it is off and sends nothing. `"router": { "mode": "off" }` turns it off. A `/claude` line with a flag (`-c`, `-r`, `--agent`), a chat with a folder, and a chat attached to a session skip it.
+
+`npm run projects:scan` builds the project list from the git repositories under `~` and `~/Projects`. Design, thresholds, the log format and every key: [docs/ROUTER.md](docs/ROUTER.md).
+
 ## Configuration (`~/.claude-wow/config.json`)
 
 The keys you are most likely to touch. Every key, flag and environment variable is in [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
@@ -349,6 +357,7 @@ The keys you are most likely to touch. Every key, flag and environment variable 
 - [docs/INSTALL-LINUX.md](docs/INSTALL-LINUX.md): Linux + Wine notes, systemd, and how to check the screen capture
 - [docs/MAP.md](docs/MAP.md): map layers, the navigator and herb/ore nodes
 - [docs/UI-WIDGETS.md](docs/UI-WIDGETS.md): live UI widgets the agent writes, their contract and the display-only checks
+- [docs/ROUTER.md](docs/ROUTER.md): the message router in shadow mode, what it sends to TypeSafe, its thresholds and its log
 - [CONTRIBUTING.md](CONTRIBUTING.md): repo layout, running the tests, conventions
 - [CHANGELOG.md](CHANGELOG.md): release notes
 

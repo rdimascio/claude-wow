@@ -50,6 +50,8 @@ function paths(dir, source) {
     tmp: path.join(dir, 'tmp'),
     mapjobs: path.join(dir, 'mapjobs'),
     uijobs: path.join(dir, 'uijobs'),
+    router: path.join(dir, 'router.jsonl'),
+    projects: path.join(dir, 'projects.json'),
   };
 }
 

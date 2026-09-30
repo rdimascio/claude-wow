@@ -1,0 +1,67 @@
+{
+  "model": "jev-latest",
+  "state": {
+    "message": "fix the failing test in wow-ai",
+    "game_context": "Character: Thrall, level 12 Orc Shaman\nZone: Durotar",
+    "previous": {
+      "route": "chat",
+      "folder": ""
+    },
+    "projects": [
+      {
+        "name": "wow-ai",
+        "summary": "claude-wow: Claude in World of Warcraft; also called wow ai, wowai",
+        "last_activity": "2026-09-29"
+      },
+      {
+        "name": "ellie",
+        "summary": "Ellie, a desktop assistant",
+        "last_activity": "2026-09-20"
+      }
+    ]
+  },
+  "questions": {
+    "route": {
+      "type": "choice",
+      "instructions": "The player typed `message` into an AI chat window inside World of Warcraft. `game_context` describes their character. `previous.route` is how their last message in this chat was handled. Which handler should answer `message`?",
+      "criteria": {
+        "lore": "A factual question about World of Warcraft game content that a game database or wiki can answer: a quest, an item, an NPC, a zone, a class or spell, a profession, a drop, or where something is in the world.",
+        "web": "A question that needs information from outside the game data or newer than it: patch notes, news, the current state of the game, auction prices, guides on websites, or real-world topics.",
+        "code": "A request about software on the player's computer: a code project or repository, a bug, a failing test, a build, a commit, a pull request, or a deploy.",
+        "live": "The player speaks to a Claude Code terminal session that is already open and running, or asks to continue the work that session is doing (\"tell my session\", \"in the terminal\").",
+        "game": "Help to do something inside the game client for the player's own character: write a macro or keybind, set up the interface or an addon, plan or mark a route on the map, or explain a game mechanic for their situation.",
+        "chat": "Conversation or anything else: banter, jokes, a roast, opinions, feelings, or a general question that fits none of the other routes."
+      }
+    },
+    "lore.kind": {
+      "type": "choice",
+      "instructions": "Suppose `message` asks about World of Warcraft game content. What kind of game content is it about?",
+      "criteria": {
+        "quest": "A quest: where it starts, its steps, its reward, or its chain.",
+        "item": "An item: gear, a consumable, a recipe, where it drops, or its stats.",
+        "npc": "An NPC or a creature: where it is, what it sells, what it drops.",
+        "zone": "A zone, a dungeon, a raid, a city, or a place in the world.",
+        "class-spell": "A class, a talent, a spell, or an ability.",
+        "profession": "A profession: skill-up, recipes, gathering nodes, trainers.",
+        "other": "Any other game topic, or the message is not about game content."
+      }
+    },
+    "needs_fresh": {
+      "type": "noul",
+      "instructions": "Does a good answer to `message` depend on information that changes over time or is newer than a stored game database: patch notes, recent changes, prices, news, or today's events?"
+    },
+    "risky_edit": {
+      "type": "noul",
+      "instructions": "Does `message` ask to change files, run commands, commit, push, deploy, or delete something on the player's computer or in a repository?"
+    },
+    "code.project": {
+      "type": "choice",
+      "instructions": "Suppose `message` is about software. Which project in `projects` is it about? `previous.folder` is the folder this chat worked in last.",
+      "criteria": {
+        "wow-ai": "claude-wow: Claude in World of Warcraft; also called wow ai, wowai",
+        "ellie": "Ellie, a desktop assistant",
+        "none": "The message is not about any of these projects, or not about code at all."
+      }
+    }
+  }
+}

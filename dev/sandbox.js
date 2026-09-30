@@ -113,6 +113,7 @@ function buildConfig(L, opts = {}) {
   const claude = Object.assign({}, cfg.agents.claude, { path: opts.agentPath || path.join(REPO, 'dev', 'fake-claude.js') });
   cfg.agents = Object.assign({}, cfg.agents, { claude });
   cfg.agent = 'claude';
+  cfg.router = Object.assign({}, cfg.router, { mode: 'off' }, opts.router || {});
   if (opts.primerFile !== undefined) cfg.primerFile = opts.primerFile;
   return Object.assign(cfg, opts.config || {});
 }

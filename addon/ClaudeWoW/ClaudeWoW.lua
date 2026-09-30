@@ -2155,6 +2155,7 @@ function ClaudeWoW.Send(text, allow, opts)
 	if plugin ~= "" then table.insert(tokens, "plugin=" .. plugin) end
 	if db.settings.vision or (opts and opts.vision) then table.insert(tokens, "v") end
 	if opts and opts.kind then table.insert(tokens, "kind=" .. opts.kind) end
+	if opts and opts.cli then table.insert(tokens, "cli") end
 	local allowHex, allowOnceHex
 	if type(allow) == "table" and #allow > 0 then
 		if opts and opts.allowForThisRunOnly then
@@ -4518,7 +4519,7 @@ function Cli.RunResume(o)
 	local notes = Cli.ApplyChatFlags(c, o)
 	if #notes > 0 then AddHistory(c, "system", table.concat(notes, "\n")) end
 	if o.text ~= "" then
-		ClaudeWoW.Send(o.text, nil, { chat = c.id })
+		ClaudeWoW.Send(o.text, nil, { chat = c.id, cli = true })
 	else
 		ClaudeWoW.Render()
 		ClaudeWoW.Toggle(true)
@@ -4564,7 +4565,7 @@ function ClaudeWoW.RunCli(o)
 	local notes = Cli.ApplyChatFlags(c, o)
 	if #notes > 0 then AddHistory(c, "system", table.concat(notes, "\n")) end
 	if o.text ~= "" then
-		ClaudeWoW.Send(o.text, nil, { chat = c.id })
+		ClaudeWoW.Send(o.text, nil, { chat = c.id, cli = o.flags > 0 or nil })
 	else
 		ClaudeWoW.Render()
 		ClaudeWoW.Toggle(true)

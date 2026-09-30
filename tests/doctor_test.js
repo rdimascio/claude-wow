@@ -95,6 +95,7 @@ function fakeRunner(world, overrides = {}) {
     ps: pid => (overrides.ps && pid in overrides.ps ? overrides.ps[pid] : { ok: true, out: `  03:00:00 /node/bin/node something\n` }),
     pgrep: overrides.pgrep || { ok: false, out: '' },
     gh: overrides.gh || { ok: true, out: JSON.stringify([{ conclusion: 'success', status: 'completed', headSha: 'aaaaaaa1111111111111111111111111111111' }]) },
+    security: overrides.security || { ok: true, out: '' },
   };
   const run = (cmd, args) => {
     calls.push([cmd, ...args].join(' '));
@@ -112,9 +113,9 @@ function fakeRunner(world, overrides = {}) {
   return run;
 }
 
-function context(world, runOverrides = {}) {
+function context(world, runOverrides = {}, sysOverrides = {}) {
   const run = fakeRunner(world, runOverrides);
-  const sys = createSystem({ home: world.home, env: {}, uid: 501, now: () => NOW, run });
+  const sys = createSystem({ home: world.home, env: { TYPESAFE_API_KEY: 'test-key' }, uid: 501, now: () => NOW, run, ...sysOverrides });
   return gather(sys);
 }
 
@@ -156,7 +157,7 @@ test('a healthy world: every check ok, exit code 0', () => {
   Doctor.main(['--json'], ctx.sys, l => json.push(l));
   const parsed = JSON.parse(json[0]);
   assert.equal(parsed.status, 'ok');
-  assert.equal(parsed.checks.length, 11);
+  assert.equal(parsed.checks.length, 12);
 });
 
 test('service: missing plist, missing node, unloaded job, dead child', () => {
@@ -352,6 +353,44 @@ test('exit codes and the text format: fail beats warn, each problem prints what,
   assert.match(text, /what: w\n\s+why: {2}y\n\s+fix: {2}f/);
   const world = makeWorld('exit', { stateText: 'nope' });
   assert.equal(Doctor.main([], context(world).sys, () => {}), 2);
+});
+
+test('router check: off, missing key, key from the Keychain, and 24 h fallback rate and p95 latency', () => {
+  const off = makeWorld('router-off', { config: { router: { mode: 'off' } } });
+  const offResult = C.checkRouter(context(off, {}, { env: {} }));
+  assert.equal(offResult.status, 'ok');
+  assert.match(offResult.summary, /^off/);
+
+  const world = makeWorld('router');
+  const missing = context(world, { security: { ok: false, out: '', err: 'could not be found' } }, { env: {}, platform: 'darwin' });
+  const noKey = C.checkRouter(missing);
+  assert.equal(noKey.status, 'warn');
+  assert.match(noKey.problems[0].what, /no TypeSafe key \(keychain org\.ellie\.assistant\/decision\.typesafe\)/);
+  assert.ok(missing.sys.run.calls.includes('security find-generic-password -s org.ellie.assistant -a decision.typesafe'));
+
+  const found = C.checkRouter(context(world, {}, { env: {}, platform: 'darwin' }));
+  assert.equal(found.status, 'ok');
+  assert.match(found.summary, /shadow, key from keychain org\.ellie\.assistant\/decision\.typesafe, no routed messages/);
+
+  const row = (minutesAgo, latencyMs, fallback = null) => JSON.stringify({ t: iso(NOW - minutesAgo * MINUTE), route: fallback ? 'chat' : 'code', confidence: fallback ? null : 0.9, latencyMs, fallback, decision: 'run', wouldRoute: 'code', taken: { plugin: 'ask' } });
+  const good = [row(5, 200), row(10, 300), row(20, 250), row(30, 400), row(40, 350), row(26 * 60, 5000, 'timeout')];
+  write(path.join(world.clawHome, 'router.jsonl'), good.join('\n') + '\n');
+  const healthy = C.checkRouter(context(world));
+  assert.equal(healthy.status, 'ok');
+  assert.match(healthy.summary, /24 h: 5 routed, fallback 0\.0%, p95 400 ms/);
+
+  write(path.join(world.clawHome, 'router.jsonl'), [...good, row(1, 900, 'timeout'), row(2, 10, 'http-429')].join('\n') + '\n');
+  const slow = C.checkRouter(context(world));
+  assert.equal(slow.status, 'warn');
+  assert.ok(slow.problems.some(p => /fell back on 2 of 7/.test(p.what)));
+  assert.ok(slow.problems.some(p => /p95 latency is 900 ms/.test(p.what)));
+});
+
+test('read-only guard: the Keychain check may look an item up but never print its secret', () => {
+  assert.ok(isReadOnlyCommand('security', ['find-generic-password', '-s', 'a', '-a', 'b']));
+  assert.ok(!isReadOnlyCommand('security', ['find-generic-password', '-s', 'a', '-a', 'b', '-w']));
+  assert.ok(!isReadOnlyCommand('security', ['find-generic-password', '-g', '-s', 'a']));
+  assert.ok(!isReadOnlyCommand('security', ['delete-generic-password', '-s', 'a']));
 });
 
 test('a crashing check reports fail instead of throwing', () => {
