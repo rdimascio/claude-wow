@@ -12,6 +12,7 @@ STUB.units = {}
 function UnitGUID(unit) return STUB.units[unit] and STUB.units[unit].guid end
 function UnitName(unit) return STUB.units[unit] and STUB.units[unit].name end
 function UnitCanAttack(a, unit) return STUB.units[unit] and STUB.units[unit].hostile or false end
+function UnitPlayerControlled(unit) return STUB.units[unit] and STUB.units[unit].controlled or false end
 function strsplit(sep, s)
   local out = {}
   for part in (s .. sep):gmatch("(.-)%" .. sep) do out[#out + 1] = part end
@@ -99,4 +100,16 @@ test('hostile mobs and critters seen on nameplates or under the mouse are not re
   assert.equal(vm.evaluate('next(ClaudeWoWNpcDB.npcs)'), null);
   vm.run('STUB.units["npc"] = { name = "Neutral Vendor", guid = "Creature-0-1-0-0-9999-0000000003", hostile = true }; STUB.FireEvent("MERCHANT_SHOW")');
   assert.equal(vm.evaluate('ClaudeWoWNpcDB.npcs[9999].name'), 'Neutral Vendor');
+});
+
+test('totems and guardians are skipped, and the record keeps at most the most recently seen NPCs', () => {
+  const vm = newVM();
+  vm.run('STUB.units["nameplate1"] = { name = "Searing Totem", guid = "Creature-0-1-0-0-2523-0000000001", controlled = true }; STUB.FireEvent("NAME_PLATE_UNIT_ADDED", "nameplate1")');
+  assert.equal(vm.evaluate('next(ClaudeWoWNpcDB.npcs)'), null);
+  vm.run('ClaudeWoWSightings.MAX_NPCS = 3');
+  for (let i = 1; i <= 5; i++) {
+    vm.run(`STUB.epoch = STUB.epoch + 10; STUB.units["npc"] = { name = "N${i}", guid = "Creature-0-1-0-0-${100 + i}-0000000001" }; STUB.FireEvent("GOSSIP_SHOW")`);
+  }
+  const ids = vm.evaluate('(function() local t = {} for id in pairs(ClaudeWoWNpcDB.npcs) do t[#t + 1] = id end table.sort(t) return table.concat(t, ",") end)()');
+  assert.equal(ids, '103,104,105', 'the oldest sightings are dropped');
 });

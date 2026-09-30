@@ -20,6 +20,7 @@ S.NPC_GUID_TYPES = { Creature = true, Vehicle = true }
 S.CONTEXT_MAX = 4
 S.CONTEXT_NAME_MAX = 24
 S.PERCENT = 100
+S.MAX_NPCS = 2000
 
 local function Try(fn, ...)
 	if type(fn) ~= "function" then return nil end
@@ -52,19 +53,34 @@ function S.NpcId(guid)
 	return tonumber(id)
 end
 
-function S.Hostile(unit)
-	return Try(UnitCanAttack, "player", unit) and true or false
+function S.Skip(unit)
+	return (Try(UnitCanAttack, "player", unit) or Try(UnitPlayerControlled, unit)) and true or false
+end
+
+function S.LastSeen(npc)
+	local latest = 0
+	for _, spot in pairs(npc.spots) do latest = math.max(latest, spot.seen or 0) end
+	return latest
+end
+
+function S.Prune(npcs)
+	local ids = {}
+	for id in pairs(npcs) do table.insert(ids, id) end
+	if #ids <= S.MAX_NPCS then return end
+	table.sort(ids, function(a, b) return S.LastSeen(npcs[a]) < S.LastSeen(npcs[b]) end)
+	for i = 1, #ids - S.MAX_NPCS do npcs[ids[i]] = nil end
 end
 
 function S.Record(unit, role)
 	local id = S.NpcId(Try(UnitGUID, unit))
 	if not id then return nil end
-	if role == nil and S.Hostile(unit) then return nil end
+	if role == nil and S.Skip(unit) then return nil end
 	local name = Try(UnitName, unit)
 	if type(name) ~= "string" or name == "" then return nil end
 	local mapId, x, y = S.PlayerSpot()
 	if not mapId then return nil end
 	local npcs = S.DB().npcs
+	local isNew = npcs[id] == nil
 	local npc = npcs[id] or { spots = {} }
 	npcs[id] = npc
 	npc.name = name
@@ -73,6 +89,7 @@ function S.Record(unit, role)
 	if spot and spot.exact and not exact then return spot end
 	spot = { x = math.floor(x * 10 + 0.5) / 10, y = math.floor(y * 10 + 0.5) / 10, exact = exact or nil, role = role or (spot and spot.role), seen = time() }
 	npc.spots[mapId] = spot
+	if isNew then S.Prune(npcs) end
 	return spot
 end
 
