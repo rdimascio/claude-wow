@@ -1,0 +1,13 @@
+{
+  "scannedAt": "2026-09-29",
+  "roots": ["~", "~/Projects"],
+  "depth": 3,
+  "includeWorktrees": false,
+  "projects": [
+    { "name": "wow-ai", "readme": "claude-wow", "aliases": ["wow ai", "wowai"], "lastCommit": "2026-09-30" },
+    { "name": "every", "readme": "Every", "aliases": [], "lastCommit": "2026-09-28" },
+    { "name": "ellie-final-main-artifact", "readme": "Ellie", "aliases": ["ellie final main artifact", "elliefinalmainartifact", "ellie-bundle-runtime-signature-successor"], "lastCommit": "2026-09-25" },
+    { "name": "ellie-pr242-final-artifact", "readme": "Ellie", "aliases": ["ellie pr242 final artifact", "elliepr242finalartifact", "ellie-bundle-runtime-signature-successor"], "lastCommit": "2026-09-25" },
+    { "name": "ellie", "readme": "Ellie", "aliases": [], "lastCommit": "2026-09-25" }
+  ]
+}

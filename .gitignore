@@ -21,3 +21,5 @@ __pycache__/
 
 # build output (node build.js)
 dist/
+
+evals/router/results/

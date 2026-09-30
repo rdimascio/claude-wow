@@ -67,7 +67,7 @@ A chat that the addon bound to `claude-code` when plugins arrived, but that has 
 
 ## Policy and thresholds
 
-The thresholds live in `bridge/router.js` (`THRESHOLDS`). They are starting points to check against the shadow log, not measured values.
+The thresholds live in `bridge/router.js` (`THRESHOLDS`). They are starting points to check against the shadow log, not measured values. `npm run eval:router` scores the router on labelled messages and recommends a threshold per route (see `evals/router/README.md`).
 
 | Condition | Phase 2 action | Shadow log `decision` |
 |---|---|---|
