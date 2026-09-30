@@ -28,6 +28,7 @@ local Codec = ClaudeWoW_Codec
 local DEFAULT_CWD = "" -- empty = the bridge's configured defaultCwd
 local MAX_HISTORY = 200
 local MAX_CHATS = 16
+local Archive = { MAX = 200, LINES = 4, TEXT_MAX = 400, DROP = { history = true, pendingId = true, progress = true, unread = true } }
 
 local SLOT_COUNT = 200
 local SLOT_PREFIX = "ClaudeWoW_S"
@@ -299,8 +300,104 @@ local function ActiveChat()
 	return FindChat(db.activeChat)
 end
 
+function Archive.Touch(c)
+	db.useSeq = (tonumber(db.useSeq) or 0) + 1
+	c.used = db.useSeq
+end
+
+function Archive.FindArchived(id)
+	for i, a in ipairs(db.archived or {}) do
+		if a.id == id then return a, i end
+	end
+end
+
+function Archive.Archivable(c)
+	if c.id == db.activeChat or c.pendingId then return false end
+	if run.lateWait and run.lateWait[c.id] then return false end
+	if ClaudeWoW.OpenDenial and ClaudeWoW.OpenDenial(c.id) then return false end
+	return true
+end
+
+function Archive.LeastRecent()
+	local pick, pickUsed
+	for _, c in ipairs(db.chats) do
+		if Archive.Archivable(c) then
+			local used = tonumber(c.used) or 0
+			if not pick or used < pickUsed then pick, pickUsed = c, used end
+		end
+	end
+	return pick
+end
+
+function Archive.CompactHistory(history)
+	local kept = {}
+	local list = type(history) == "table" and history or {}
+	for i = math.max(1, #list - Archive.LINES + 1), #list do
+		local m = list[i]
+		local text = tostring(m.text or "")
+		if #text > Archive.TEXT_MAX then text = text:sub(1, Archive.TEXT_MAX) .. "..." end
+		table.insert(kept, { role = m.role, text = text, id = m.id, t = m.t, agent = m.agent })
+	end
+	return kept
+end
+
+function Archive.ArchiveEntry(c)
+	local a = {}
+	for k, v in pairs(c) do
+		if not Archive.DROP[k] and type(v) ~= "function" then a[k] = v end
+	end
+	a.history = Archive.CompactHistory(c.history)
+	return a
+end
+
+function Archive.StoreArchived(a)
+	db.archived = db.archived or {}
+	table.insert(db.archived, a)
+	while #db.archived > Archive.MAX do table.remove(db.archived, 1) end
+end
+
+function Archive.ArchiveChat(c)
+	local _, idx = FindChat(c.id)
+	if not idx then return end
+	Whisper.Close(c)
+	table.remove(db.chats, idx)
+	if run.act then run.act[c.id] = nil end
+	Archive.StoreArchived(Archive.ArchiveEntry(c))
+end
+
+function Archive.MakeRoom()
+	local names = {}
+	while #db.chats >= MAX_CHATS do
+		local victim = Archive.LeastRecent()
+		if not victim then break end
+		Archive.ArchiveChat(victim)
+		table.insert(names, victim.name)
+	end
+	return names
+end
+
+function Cli.NoteArchived(c, names)
+	for _, name in ipairs(names or {}) do
+		Cli.Out(c, "Archived '" .. Display(name) .. "' (no reply pending); /claude -r brings it back")
+	end
+end
+
+function Archive.Unarchive(id)
+	local a, i = Archive.FindArchived(id)
+	if not a then return nil end
+	table.remove(db.archived, i)
+	local names = Archive.MakeRoom()
+	a.history = type(a.history) == "table" and a.history or {}
+	a.unread = 0
+	table.insert(db.chats, a)
+	Archive.Touch(a)
+	Cli.NoteArchived(a, names)
+	return a
+end
+ClaudeWoW.Unarchive = Archive.Unarchive
+
 local function AddChat(name, cwd)
-	if #db.chats >= MAX_CHATS then return nil end
+	local archived = Archive.MakeRoom()
 	local current = ActiveChat()
 	local c = {
 		id = NewId(),
@@ -313,6 +410,8 @@ local function AddChat(name, cwd)
 		created = time(),
 	}
 	table.insert(db.chats, c)
+	Archive.Touch(c)
+	Cli.NoteArchived(c, archived)
 	return c
 end
 
@@ -354,6 +453,8 @@ local function InitDB()
 	db.lastSeq = db.lastSeq or 0
 	-- Chats deleted in game that the bridge hasn't confirmed forgetting yet.
 	db.forget = db.forget or {}
+	db.archived = type(db.archived) == "table" and db.archived or {}
+	while #db.archived > Archive.MAX do table.remove(db.archived, 1) end
 	-- Identifies this counter's lifetime. If the saved data is ever reset, a new
 	-- session lets the bridge tell "message #1 again" from "message #1, already done".
 	if not db.session then
@@ -438,6 +539,7 @@ end
 
 local function AddHistory(chat, role, text, id, denied, agent, macros)
 	table.insert(chat.history, { role = role, text = text, id = id, t = time(), denied = denied, agent = agent, macros = macros })
+	Archive.Touch(chat)
 	while #chat.history > MAX_HISTORY do
 		table.remove(chat.history, 1)
 	end
@@ -1392,11 +1494,20 @@ local function MarkAcked(id)
 	NotedBridge()
 end
 
+function Cli.ReviveFor(r)
+	if type(r) ~= "table" or r.late ~= true or r.status ~= "done" then return nil end
+	local a = Archive.FindArchived(r.chat)
+	if not a or (tonumber(a.lateSeen) or 0) >= (tonumber(r.id) or 0) then return nil end
+	local c = Archive.Unarchive(a.id)
+	ClaudeWoW.RenderChatList()
+	return c
+end
+
 -- Dispatch a list of reply records to the chats waiting for them.
 local function ApplyReplies(replies)
 	local matched = false
 	for _, r in ipairs(replies or {}) do
-		local c = FindChat(r.chat)
+		local c = FindChat(r.chat) or Cli.ReviveFor(r)
 		if c and c.titleFor and r.id == c.titleFor and type(r.title) == "string" and r.title ~= "" then
 			c.name = r.title
 			c.titleFor = nil
@@ -1444,7 +1555,7 @@ local function ImportRestore(r)
 	local current = ActiveChat()
 	for _, rc in ipairs(r.chats or {}) do
 		-- Skip chats deleted here that the bridge hasn't been told about yet.
-		if type(rc) == "table" and rc.id and not FindChat(rc.id) and not db.forget[rc.id] and #db.chats < MAX_CHATS then
+		if type(rc) == "table" and rc.id and not FindChat(rc.id) and not Archive.FindArchived(rc.id) and not db.forget[rc.id] then
 			local chat = {
 				id = rc.id,
 				name = (rc.name and rc.name ~= "") and rc.name or ("Chat " .. (#db.chats + 1)),
@@ -1465,8 +1576,16 @@ local function ImportRestore(r)
 				if agent == "" then agent = nil end
 				table.insert(chat.history, { role = role, text = m.text, id = m.id, t = m.t, agent = agent })
 			end
-			-- Keep the chat we're currently using last so it stays where it was.
-			table.insert(db.chats, math.max(1, #db.chats), chat)
+			if #db.chats < MAX_CHATS then
+				table.insert(db.chats, math.max(1, #db.chats), chat)
+			else
+				local seen = 0
+				for _, m in ipairs(chat.history) do seen = math.max(seen, tonumber(m.id) or 0) end
+				chat.lateSeen = seen > 0 and seen or nil
+				chat.history = Archive.CompactHistory(chat.history)
+				chat.unread = nil
+				Archive.StoreArchived(chat)
+			end
 			added = added + 1
 		end
 	end
@@ -2876,6 +2995,7 @@ function ClaudeWoW.SwitchChat(id)
 	end
 	db.activeChat = c.id
 	c.unread = 0
+	Archive.Touch(c)
 	if ui.input then
 		ui.input:SetText(c.draft or "")
 		c.draft = nil
@@ -2894,10 +3014,6 @@ end
 
 function ClaudeWoW.NewChat(name)
 	local c = AddChat(name and name ~= "" and name or nil)
-	if not c then
-		Cli.Out(ActiveChat(), "Chat limit reached (" .. MAX_CHATS .. "). Delete one first with /claude delete.")
-		return nil
-	end
 	ClaudeWoW.SwitchChat(c.id)
 	Cli.Show(c)
 	return c
@@ -4555,8 +4671,7 @@ function ClaudeWoW.RenderQuestList()
 	for i = nr + 1, #q.rows do q.rows[i]:Hide() end
 	q.empty:SetShown(filter ~= "" and matched == 0)
 	q.content:SetHeight(math.max(y + Q.PAD_FIRST, 1))
-	local full = #db.chats >= MAX_CHATS
-	ui.chatCount:SetText("Chats: " .. (full and (_G.RED_FONT_COLOR_CODE or "|cffff2020") or "|cffffffff") .. #db.chats .. "/" .. MAX_CHATS .. "|r")
+	ui.chatCount:SetText("Chats: |cffffffff" .. #db.chats .. "|r")
 end
 
 function Q.ListSettingsMenu(anchor)
@@ -5442,20 +5557,10 @@ local function ApplyLongChat()
 	box:SetMaxLetters(db.settings.longchat and 4000 or 255)
 end
 
-function Cli.LimitReachedWith(text)
-	local a = ActiveChat()
-	if ui.input then ui.input:SetText(text) end
-	ClaudeWoW.Toggle(true)
-	print("|cff66ccff[Claude WoW]|r Chat limit reached (" .. MAX_CHATS .. "), so no new chat was started. Your message is in the window's input box: delete a chat with /claude delete and send it with /claude again, or press Enter there to send it to " .. Display(a and a.name or "the current chat") .. ".")
-end
-
 function ClaudeWoW.NewChatWith(text)
-	if ClaudeWoW.NewChat() then
-		ClaudeWoW.Send(text)
-		return true
-	end
-	Cli.LimitReachedWith(text)
-	return false
+	ClaudeWoW.NewChat()
+	ClaudeWoW.Send(text)
+	return true
 end
 
 Cli.emitted = setmetatable({}, { __mode = "k" })
@@ -5913,6 +6018,7 @@ Cli.BADGES = {
 	live = { "live", "55ff55" },
 	deaf = { "running, not listening", "ff9933" },
 	resume = { "resume", "aaaaaa" },
+	archived = { "archived", "aaaaaa" },
 }
 
 function Cli.SessionEntries()
@@ -5921,10 +6027,12 @@ function Cli.SessionEntries()
 		if e.id == "" or not seenId[e.id] then
 			if e.id ~= "" then seenId[e.id] = true end
 			local alias = e.name
-			local chat = e.chat ~= "" and FindChat(e.chat) or nil
-			for _, ch in ipairs(db.chats) do
-				if not chat and e.id ~= "" and (ch.session == e.id or ch.resumeId == e.id) and not e.running then chat = ch end
-				if not chat and e.running and ch.liveTarget and (ch.liveTarget == e.id or ch.liveTarget:lower() == alias:lower()) then chat = ch end
+			local chat = e.chat ~= "" and (FindChat(e.chat) or Archive.FindArchived(e.chat)) or nil
+			for _, list in ipairs({ db.chats, db.archived }) do
+				for _, ch in ipairs(list) do
+					if not chat and e.id ~= "" and (ch.session == e.id or ch.resumeId == e.id) and not e.running then chat = ch end
+					if not chat and e.running and ch.liveTarget and (ch.liveTarget == e.id or ch.liveTarget:lower() == alias:lower()) then chat = ch end
+				end
 			end
 			if not (chat and seen[chat.id]) then
 				local kind = e.live and "live" or (e.running and "deaf" or (chat and "chat" or "headless"))
@@ -5933,15 +6041,18 @@ function Cli.SessionEntries()
 					kind = kind, id = e.id, name = (chat and not e.running) and chat.name or title, alias = alias,
 					cwd = e.cwd, branch = e.branch, agent = e.agent, plugin = e.plugin, at = e.at,
 					live = e.live, running = e.running, restart = e.restart, chat = chat and chat.id or nil,
+					archived = chat and not FindChat(chat.id) or nil,
 				}
 				table.insert(kind == "live" and live or (kind == "deaf" and deaf or rest), entry)
 				if chat then seen[chat.id] = true end
 			end
 		end
 	end
-	for _, ch in ipairs(db.chats) do
-		if not seen[ch.id] then
-			table.insert(rest, { kind = "chat", id = ch.session or "", name = ch.name, cwd = ch.cwd or "", branch = "", agent = ch.agent or "", at = Cli.LastActivity(ch), chat = ch.id })
+	for _, list in ipairs({ db.chats, db.archived }) do
+		for _, ch in ipairs(list) do
+			if not seen[ch.id] then
+				table.insert(rest, { kind = "chat", id = ch.session or "", name = ch.name, cwd = ch.cwd or "", branch = "", agent = ch.agent or "", at = Cli.LastActivity(ch), chat = ch.id, archived = list == db.archived or nil })
+			end
 		end
 	end
 	for i, e in ipairs(rest) do e.order = i end
@@ -5960,6 +6071,7 @@ end
 function Cli.Badge(e)
 	if e.kind == "live" then return Cli.BADGES.live end
 	if e.kind == "deaf" then return Cli.BADGES.deaf end
+	if e.archived then return Cli.BADGES.archived end
 	return Cli.BADGES.resume
 end
 
@@ -6098,9 +6210,10 @@ function Cli.MatchEntries(entries, ref)
 end
 
 function Cli.AttachTo(e)
-	local c = e.chat and FindChat(e.chat) or nil
+	local c = e.chat and (FindChat(e.chat) or Archive.Unarchive(e.chat)) or nil
 	if c then
 		ClaudeWoW.SwitchChat(c.id)
+		ClaudeWoW.RenderChatList()
 		return c, false
 	end
 	if e.chat and (e.id or "") == "" then
@@ -6109,10 +6222,6 @@ function Cli.AttachTo(e)
 	end
 	local name = (e.name ~= "" and e.name or e.id:sub(1, 8)):sub(1, 24)
 	c = AddChat(name, "")
-	if not c then
-		Cli.Say(ActiveChat(), "Chat limit reached (" .. MAX_CHATS .. "). Delete one first with /claude delete, then /claude -r again.")
-		return nil
-	end
 	c.plugin = ""
 	c.agent = ""
 	if e.live then
@@ -6239,10 +6348,6 @@ function ClaudeWoW.RunCli(o)
 		end
 	else
 		c = ClaudeWoW.NewChat(type(o.name) == "string" and o.name:sub(1, 24) or nil)
-		if not c then
-			if o.text ~= "" then Cli.LimitReachedWith(o.text) end
-			return
-		end
 	end
 	local notes = Cli.ApplyChatFlags(c, o)
 	if #notes > 0 then Cli.Out(c, table.concat(notes, "\n")) end

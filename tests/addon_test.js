@@ -1677,18 +1677,110 @@ test('/claude <text> starts a new chat and sends there; /claude <command> runs i
   assert.equal(vm.num('STUB.serverSends'), 0, 'nothing reached the server');
 });
 
-test('/claude <text> at the chat limit says so and keeps the text in the window\'s input box', () => {
+const chatIds = vm => JSON.parse(vm.evaluate('(function() local t = {} for _, c in ipairs(ClaudeWoWDB.chats) do t[#t + 1] = string.format("%q", c.id) end return "[" .. table.concat(t, ",") .. "]" end)()'));
+const archivedIds = vm => JSON.parse(vm.evaluate('(function() local t = {} for _, c in ipairs(ClaudeWoWDB.archived) do t[#t + 1] = string.format("%q", c.id) end return "[" .. table.concat(t, ",") .. "]" end)()'));
+const ARCHIVE_NOTE = name => `Archived '${name}' (no reply pending); /claude -r brings it back`;
+
+test('/claude <text> past 16 chats archives the least recently used idle chat, closes its tab, says so once and sends the text', () => {
   const vm = whisperVM();
+  const firstId = vm.evaluate('ClaudeWoWDB.chats[1].id');
+  vm.run('ClaudeWoWDB.chats[1].session = "sess-first"');
+  vm.run('SlashCmdList.CLAUDE("config whisper on")');
+  assert.ok(tabOf(vm, firstId), 'the first chat has a whisper tab');
   vm.run('for i = 2, 16 do ClaudeWoW.NewChat("c" .. i) end');
   assert.equal(vm.num('#ClaudeWoWDB.chats'), 16);
+  typeIn(vm, 'ChatFrame1EditBox', '/claude one more');
+  assert.equal(vm.num('#ClaudeWoWDB.chats'), 16, 'the visible list stays at 16');
+  assert.ok(!chatIds(vm).includes(firstId), 'the least recently used chat left the list');
+  assert.deepEqual(archivedIds(vm), [firstId]);
+  assert.equal(vm.evaluate('ClaudeWoWDB.archived[1].session'), 'sess-first', 'the agent session id is kept');
+  assert.equal(tabOf(vm, firstId), null, 'its whisper tab is closed');
   const active = vm.evaluate('ClaudeWoWDB.activeChat');
-  vm.run('STUB.prints = {}');
-  typeIn(vm, 'ChatFrame1EditBox', '/claude one too many');
+  assert.equal(stripRecords(vm).find(r => r.text === 'one more').chat, active, 'the message went to the new chat');
+  const notes = vm.evaluate('(function() local t = {} for _, c in ipairs(ClaudeWoWDB.chats) do for _, m in ipairs(c.history) do if m.text:match("^Archived") then t[#t + 1] = m.text end end end return table.concat(t, "\\n") end)()');
+  assert.equal(notes, ARCHIVE_NOTE('Chat 1'), 'one line says what was archived');
+});
+
+test('a chat with a pending message is never archived; the next least recently used idle chat goes instead', () => {
+  const vm = whisperVM();
+  const firstId = vm.evaluate('ClaudeWoWDB.chats[1].id');
+  vm.run('ClaudeWoW.Send("still working on it")');
+  assert.ok(pendingOf(vm, firstId) >= 1);
+  vm.run('for i = 2, 16 do ClaudeWoW.NewChat("c" .. i) end');
+  const secondId = vm.evaluate('ClaudeWoWDB.chats[2].id');
+  vm.run('ClaudeWoW.NewChat("c17")');
+  assert.ok(chatIds(vm).includes(firstId), 'the pending chat stays');
+  assert.deepEqual(archivedIds(vm), [secondId]);
+  vm.run('for _, c in ipairs(ClaudeWoWDB.chats) do if c.id ~= ClaudeWoWDB.activeChat then c.pendingId = 900 end end');
+  vm.run('ClaudeWoW.NewChat("c18")');
+  assert.equal(vm.num('#ClaudeWoWDB.chats'), 17, 'nothing idle to archive: the chat still starts');
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[17].name'), 'c18');
+  assert.deepEqual(archivedIds(vm), [secondId]);
+});
+
+test('/claude -r lists an archived chat and brings it back with its session, archiving the next idle chat', () => {
+  const vm = whisperVM();
+  const firstId = vm.evaluate('ClaudeWoWDB.chats[1].id');
+  vm.run('ClaudeWoWDB.chats[1].session = "sess-first"; ClaudeWoWDB.chats[1].cwd = "/srv/first"');
+  vm.run('for i = 2, 17 do ClaudeWoW.NewChat("c" .. i) end');
+  const secondId = vm.evaluate('ClaudeWoWDB.chats[1].id');
+  assert.deepEqual(archivedIds(vm), [firstId]);
+  vm.run('SlashCmdList.CLAUDE("-r more")');
+  const picker = activeField(vm, 'history[#c.history].text');
+  assert.match(picker, /\d+\. Chat 1 · first · now · archived/, picker);
+  vm.run('SlashCmdList.CLAUDE("-r Chat 1")');
+  assert.equal(vm.evaluate('ClaudeWoWDB.activeChat'), firstId, 'the archived chat is active again');
+  assert.equal(activeField(vm, 'session'), 'sess-first');
+  assert.equal(activeField(vm, 'cwd'), '/srv/first');
   assert.equal(vm.num('#ClaudeWoWDB.chats'), 16);
-  assert.equal(vm.evaluate('ClaudeWoWDB.activeChat'), active);
-  assert.equal(vm.evaluate('ClaudeWoWInput:GetText()'), 'one too many');
-  assert.ok(vm.evaluate('table.concat(STUB.prints, "\\n")').includes('Chat limit reached (16)'));
-  assert.ok(!stripRecords(vm).find(r => r.text === 'one too many'), 'not sent anywhere');
+  assert.ok(!archivedIds(vm).includes(firstId));
+  assert.ok(archivedIds(vm).includes(secondId), 'it took its slot back from the next least recently used chat');
+  const texts = activeField(vm, 'history[#c.history].text') + '|' + vm.evaluate('(function() for _, c in ipairs(ClaudeWoWDB.chats) do if c.id == ClaudeWoWDB.activeChat then local t = {} for _, m in ipairs(c.history) do t[#t + 1] = m.text end return table.concat(t, "|") end end end)()');
+  assert.ok(texts.includes("Archived 'c2'"), texts);
+});
+
+test('a late reply for an archived chat brings the chat back and lands in it', () => {
+  const vm = whisperVM();
+  const firstId = vm.evaluate('ClaudeWoWDB.chats[1].id');
+  vm.run('for i = 2, 17 do ClaudeWoW.NewChat("c" .. i) end');
+  assert.deepEqual(archivedIds(vm), [firstId]);
+  vm.run('ClaudeWoW.Send("keep the poll going")');
+  const activeId = vm.evaluate('ClaudeWoWDB.activeChat');
+  const id = pendingOf(vm, activeId);
+  nextSlot(vm, `{ now = time(), cwd = "", replies = { { chat = "${activeId}", id = ${id}, status = "done", text = "ok", agent = "claude" }, { chat = "${firstId}", id = 7, status = "done", late = true, text = "late answer", agent = "claude" } } }`);
+  for (let i = 0; i < 8; i++) vm.run('STUB.now = STUB.now + 10; STUB.Tick()');
+  assert.ok(chatIds(vm).includes(firstId), 'the chat is back in the list');
+  assert.ok(!archivedIds(vm).includes(firstId));
+  assert.equal(vm.num('#ClaudeWoWDB.chats'), 16);
+  assert.equal(vm.evaluate(`(function() for _, c in ipairs(ClaudeWoWDB.chats) do if c.id == "${firstId}" then return c.history[#c.history].text end end end)()`), 'late answer');
+  assert.equal(vm.evaluate('ClaudeWoWDB.activeChat'), activeId, 'the player stays where they are');
+});
+
+test('100 archived chats keep SavedVariables small: each keeps a few short lines, not its whole history', () => {
+  const vm = whisperVM();
+  const long = 'x'.repeat(3000);
+  vm.run(`for n = 1, 116 do
+    local c = ClaudeWoW.NewChat("n" .. n)
+    c.session = "sess-" .. n
+    for i = 1, 60 do table.insert(c.history, { role = i % 2 == 0 and "assistant" or "user", text = "${long}", id = i, t = time() }) end
+  end`);
+  assert.equal(vm.num('#ClaudeWoWDB.chats'), 16);
+  assert.ok(vm.num('#ClaudeWoWDB.archived') >= 100, vm.evaluate('#ClaudeWoWDB.archived'));
+  const bytes = vm.num(`(function()
+    local total = 0
+    local function size(v, depth)
+      if depth > 8 then return end
+      if type(v) == "table" then for k, x in pairs(v) do size(k, depth + 1); size(x, depth + 1) end
+      else total = total + #tostring(v) end
+    end
+    size(ClaudeWoWDB.archived, 0)
+    return total
+  end)()`);
+  assert.ok(bytes < 101 * 2500, `archived chats take ${bytes} bytes`);
+  assert.ok(vm.num('(function() local most = 0 for _, a in ipairs(ClaudeWoWDB.archived) do most = math.max(most, #a.history) end return most end)()') <= 4);
+  assert.match(vm.evaluate('ClaudeWoWDB.archived[#ClaudeWoWDB.archived].session'), /^sess-/);
+  vm.run('for n = 1, 300 do ClaudeWoW.NewChat("m" .. n) end');
+  assert.ok(vm.num('#ClaudeWoWDB.archived') <= 200, 'the archive list itself is capped');
 });
 
 test('opening chat, a chat type change, Esc and "/r " after an agent replied run the game\'s edit box with no addon hook on its methods', () => {
