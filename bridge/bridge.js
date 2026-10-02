@@ -1930,7 +1930,8 @@ function startScreenshotWatch(r) {
   const dir = r.client.screenshotDir;
   if (!fs.existsSync(dir)) {
     // The client creates it on the first screenshot; look again in a while.
-    log(`screenshot transport: ${dir} does not exist yet; retrying in 10 s`);
+    if (!r.waitingForShots) log(`screenshot transport: ${dir} does not exist yet; looking again every 10 s`);
+    r.waitingForShots = true;
     setTimeout(() => startScreenshotWatch(r), 10000);
     return;
   }

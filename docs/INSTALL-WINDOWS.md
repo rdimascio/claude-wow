@@ -63,7 +63,7 @@ If you had installed the command with npm: `npm unlink -g wow-ai`, and `npm link
 
 **"Cannot read config.json … Run node setup.js".** The command is pointing at a copy of the repo that hasn't been set up (usually `npm install -g .` was used instead of `npm link`, or the folder was moved). Run `claude-wow setup`.
 
-**The banner says `slots : NOT INSTALLED`.** `setup.js` couldn't write into the AddOns folder, or it wrote somewhere else. Check `addonDir` in `~\.claude-wow\config.json`, then run `claude-wow setup` (or `node bridge\install-slots.js`) and relaunch the game.
+**The banner says `slots : NOT INSTALLED`.** `setup.js` couldn't write into the AddOns folder, or it wrote somewhere else. Check the `dir` of each entry in `clients` in `~\.claude-wow\config.json`, then run `claude-wow setup` (or `node bridge\install-slots.js`) and relaunch the game.
 
 **A reply says `… is not installed on the bridge PC`, or `Could not start …`.** The bridge looks for each agent in its installer's folder (`%UserProfile%\.local\bin\claude.exe`, `%UserProfile%\.grok\bin\grok.exe`), then for `<name>.exe` on the `PATH`, then behind npm's `<name>.cmd` launchers (how `npm install -g @openai/codex` installs Codex; for Codex, a `CODEX_BIN` environment variable is checked first). The banner shows what it found for each. If yours lives elsewhere, put the full path in `agents.<id>.path` in `~\.claude-wow\config.json` and restart the bridge. Under the service, re-run `claude-wow service install` after installing a new CLI so it sees the new `PATH`.
 

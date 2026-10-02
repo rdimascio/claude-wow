@@ -265,3 +265,26 @@ test('the strip flags carry the self-test and the probe token; the slot file nam
   assert.match(lua, /\tpresence = \{ ring = "b", at = 12, n = 2000, probe = "abcd" \},/);
   assert.doesNotMatch(P.luaTable('X', [], {}), /presence =/);
 });
+
+test('install-slots arms each client from its own ring: the old top-level ring is the first client\'s only', () => {
+  const { dir } = scratch('two-clients');
+  const home = path.join(dir, 'home');
+  fs.mkdirSync(home, { recursive: true });
+  const dirs = ['_classic_beta_', '_classic_era_'].map(f => path.join(dir, f));
+  const addonsOf = d => path.join(d, 'Interface', 'AddOns');
+  for (const d of dirs) {
+    fs.mkdirSync(path.join(addonsOf(d), 'ClaudeWoW'), { recursive: true });
+    fs.writeFileSync(path.join(addonsOf(d), 'ClaudeWoW', 'ClaudeWoW.toc'), '## Interface: 16001\n');
+  }
+  fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify({ clients: dirs.map(d => ({ dir: d })), slots: 3, actMax: 2, presenceMax: 5 }));
+  fs.writeFileSync(path.join(home, 'state.json'), JSON.stringify({ presence: { ring: 'b', at: 2 }, clients: { [CLI.keyOf(dirs[1])]: { presence: { ring: 'a', at: 4 } } } }));
+  const r = runInstallSlots(home);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /^_classic_beta_: presence: ring b at 2 of 5/m);
+  assert.match(r.stdout, /^_classic_era_: presence: ring a at 4 of 5/m);
+  assert.deepEqual(presentRange(addonsOf(dirs[0]), 'b', 1, 5), [false, false, true, true, true]);
+  assert.deepEqual(presentRange(addonsOf(dirs[1]), 'a', 1, 5), [false, false, false, false, true]);
+  assert.deepEqual(presentRange(addonsOf(dirs[1]), 'b', 1, 5), Array(5).fill(true), 'the second client never takes the first one\'s ring');
+  for (const d of dirs) assert.ok(fs.existsSync(SIG.signalFile(addonsOf(d), 'ack', 3)));
+  fs.rmSync(dir, { recursive: true, force: true });
+});

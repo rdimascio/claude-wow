@@ -130,6 +130,7 @@ function findAccount(client, { wanted = '', current = '', strict = true } = {}) 
   if (wanted) {
     if (names.includes(wanted)) return wanted;
     if (strict) throw new Error(`Account "${wanted}" not found under ${base}`);
+    console.log(`Account "${wanted}" not found in ${CLI.labelOf(client)} (${names.join(', ') || 'no account folder'}); keeping its own.`);
   }
   if (current && names.includes(current)) return current;
   if (!names.length) return '';
@@ -285,7 +286,8 @@ function chooseClients(cfg, notes) {
 
 function refreshClient(cfg, client, notes) {
   const account = findAccount(client.dir, { wanted: args.wow ? '' : args.account || '', current: client.account, strict: false });
-  const how = CLI.upsertClient(cfg, { ...entryFor(client.dir, account), processName: processNameFor(client.dir) || client.processName });
+  const raw = cfg.clients.find(e => e && CLI.sameDir(e.dir || CLI.dirOfAddons(e.addonDir), client.dir)) || {};
+  const how = CLI.upsertClient(cfg, { ...entryFor(client.dir, account), ...(raw.processName ? { processName: raw.processName } : {}) });
   if (how !== 'same') noteOnce(notes, 'client');
   return CLI.clientsOf(cfg).find(c => c.key === client.key);
 }

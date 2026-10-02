@@ -8,13 +8,40 @@ The bridge reads `config.json` once at start. Restart it after editing, except f
 
 | Key | Default (from `config.example.json`) | Meaning |
 |---|---|---|
-| `addonDir` | `…\World of Warcraft\_classic_beta_\Interface\AddOns` | The game's AddOns folder. The bridge writes the slot addons, `Inbox.lua` and every signal file under it. `setup.js` fills this in from the client it finds. |
-| `inboxFile` | `<addonDir>\ClaudeWoW_Runtime\Inbox.lua` | The file the game reads on `/reload` (fallback path). Normally derived from `addonDir`; only change it if you moved the addon. A value still naming an old addon (`WoWAI`, `WoWClaude`) or the shipped `ClaudeWoW\Inbox.lua` is ignored in favour of the derived one. |
-| `savedVariablesFile` | `…\WTF\Account\<account>\SavedVariables\ClaudeWoW.lua` | The addon's saved data. The bridge polls it for the reload-path outbox. `setup.js` picks the first account under `WTF\Account`; pass `--account <name>` to choose another. |
+| `clients` | `[]` (setup fills it) | The WoW clients this bridge serves, one entry per client folder. See [Clients](#clients). |
 | `defaultCwd` | `C:\path\to\your\project` | Folder for chats that have not chosen one with `/claude cd`, when the bridge is started from inside this repo (`npm start`). See [Which folder the agent works in](#which-folder-the-agent-works-in). |
 | `claudeDir` | `$CLAUDE_CONFIG_DIR`, else `~/.claude` | Claude Code's own folder. `/claude -r` lists the recent sessions from its `history.jsonl` (names from the session files' titles) and looks up an id it was given in `projects/`; a running session's id comes from `sessions/<pid>.json`. The bridge only reads here. |
 | `claudeSessions` | `true` | `false` keeps Claude Code's sessions out of `/claude -r`: only the bridge's own chats and the running sessions are listed and resumable. |
 | `titleModel` | `"claude-haiku-4-5"` | The model that names a new chat from its first message. It runs through the Claude Code CLI with no tools and no saved session, next to the agent's run; the reply waits up to 4 s for it. Until it lands, the chat shows its first words. `false` turns it off. |
+
+### Clients
+
+One bridge serves every WoW client on the machine, for example WoW Forever in `_classic_beta_` and Classic Era in `_classic_era_`. Each entry of `clients` names one client folder and stores only what cannot be derived from it:
+
+```json
+"clients": [
+  { "dir": "/Applications/World of Warcraft/_classic_beta_", "account": "84831040#1", "processName": "World of Warcraft" },
+  { "dir": "/Applications/World of Warcraft/_classic_era_", "account": "84831040#1", "processName": "World of Warcraft Classic" }
+]
+```
+
+| Entry key | Meaning |
+|---|---|
+| `dir` | The client folder (the one that holds `Interface` and the game binary). Required. |
+| `account` | The `WTF/Account/<account>` folder. Setup picks the first one, or the one `--account` names. Without it the bridge cannot read that client's `/reload` outbox. |
+| `processName` | The game executable for the deprecated pixel capture. Setup sets it. The pixel capture watches only the first client. |
+| `tocInterface` | `## Interface:` for this client's slot and runtime `.toc` files. Without it the top-level `tocInterface` applies. |
+| `enabled` | `false` keeps the entry in the list, but setup and the bridge skip it, and setup does not add it again. |
+| `addonDir`, `savedVariablesFile`, `inboxFile`, `screenshotDir` | Only for a folder layout that is not the standard one. |
+
+The bridge derives the rest from `dir`: `Interface/AddOns` (the addon, the 200 slot folders and `ClaudeWoW_Runtime` with `Inbox.lua` and the signal files), `WTF/Account/<account>/SavedVariables/ClaudeWoW.lua` (the reload outbox), `Screenshots` and `Logs/WoWChatLog.txt`.
+
+- **Old config:** a config from before `clients` has `addonDir`, `savedVariablesFile` and `inboxFile` at the top level. The bridge reads them as one client. `setup` moves them into `clients[0]` and removes them.
+- **Which client a message came from:** the folder the bridge read it from (the client's Screenshots folder, chat log or SavedVariables file). The reply, its ack and heartbeat signals and the slots ahead of it go to that client only. Each client gets only its own chats in its slot files and its `Inbox.lua`, and a restore after a saved-data reset offers only that client's chats (and chats from before this change).
+- **Per-client state:** `state.json` keeps `clients.<dir>` with each client's presence ring, its signal self-test, its chat log write sizes, its last message id and when it was last heard. The old top-level `presence`, `presenceTest` and `chatLogWrites` move to the first client once.
+- **Game context:** each run uses the game context of its own client. The top-level `state.context` stays "the character the game last reported" for goals, orders and campaigns.
+- **Which client is live:** the bridge does not poll the process list. It notes when it last heard each client. `/claude diag`, `claude-wow service status` and `npm run doctor` show each client, its installed addon build and which one spoke last.
+- **Signal files:** the game sees only signal files that existed at its launch. When setup arms new files in a client that runs, it says so: fully quit and relaunch that client.
 
 ## Agents
 
@@ -76,8 +103,8 @@ Keys under `capture`:
 | `screenshotLevels` | `{ "off": 0, "on": 60 }` | `screenshot` mode only: the two levels (0-255) the strip's colour channels span. A screenshot is bit-exact, so dark levels read as well as bright ones and the strip is nearly invisible for the two frames it is up. Codec 2 spreads four levels evenly between them (0/20/40/60 by default) and the bridge reads the actual levels off each strip's ramp; codec 1 draws the two and the bridge decodes at the threshold halfway between them. `on - off` must be at least 8 or the default is used. The pixel transport ignores this and always draws full primaries. |
 | `chatLog` | `{ "enabled": false, "line": 900, "filler": 50000, "show": false }` | `screenshot` mode only, experimental, off by default: the chat log transport ([ARCHITECTURE.md](ARCHITECTURE.md#the-chat-log-transport-experimental)). With `enabled: true` the addon writes each message into the client's own `Logs/WoWChatLog.txt` as local system lines and the bridge reads the file; no strip is drawn and no screenshot is taken on the first try. `line`: base64 characters per line (60-940; the key and the frame header add about 60 more, and 1,000-character lines are the longest measured). `filler`: bytes of padding lines written after each message so the client's write buffer fills and reaches disk (0-65536; the Forever client writes the log each time 49,152 bytes are buffered, measured 2026-09-30, so the default is 50,000; the bridge raises it when it measures a larger buffer and never lowers it below this value). `show: true` leaves the lines visible in the chat window, with `...` in place of the key, for a client where a hidden line is not logged. `clean: false` stops the bridge from removing its lines when the game is closed. Run `/claude probe chatlog` with `node dev/transport-probe.js` watching before turning it on. |
 | `screenshotCodec` | `2` | `screenshot` mode only: which strip the addon draws. `2`: 2 px cells, four levels per channel, 400 cells a row (six bits a cell, eight times the payload per screen area: a typical message is one 800×2 px line, a 1 KB message 8 px tall). `1`: the pixel transport's 4 px cells with one bit per channel (a 1 KB message is 56 px tall), for a client whose screenshots turn out not to be exact at 2 px. The bridge decodes both whatever this says, so an addon from before the setting (which draws codec 1) keeps working. |
-| `screenshotDir` | *(derived)* | `screenshot` mode: the client's `Screenshots` folder. Derived from `addonDir` (`<client>/Interface/AddOns` -> `<client>/Screenshots`) unless set. |
-| `processName` | `"WowB"` | The game executable without `.exe`. `setup.js` sets it from the `Wow*.exe` it finds in the client folder (on macOS, from the binary inside the `.app` bundle). |
+| `screenshotDir` | *(derived)* | `screenshot` mode, old single-client config only: the client's `Screenshots` folder. Setup moves it into `clients[0].screenshotDir`. Each client otherwise uses `<dir>/Screenshots`. |
+| `processName` | `"WowB"` | The game executable without `.exe`, for a client entry without its own `processName`. `setup.js` sets it on each client entry from the `Wow*.exe` it finds in the client folder (on macOS, from the binary inside the `.app` bundle). |
 | `cellPx` | `4` | Codec 1 only (the pixel transport, and `screenshotCodec: 1`): pixel size of one strip cell. Must match `GEOMETRY[1]` in `addon/ClaudeWoW/Codec.lua`. Codec 2's geometry is fixed on both sides. |
 | `cellsPerRow` | `200` | Codec 1 only: cells per strip row. Must match the addon. |
 | `maxRows` | `48` | Codec 1 only: maximum strip rows captured. Must match the addon. |
@@ -271,8 +298,8 @@ Nothing schedules it. Two ways to run it daily, neither installed by the bridge:
 
 | Flag | Meaning |
 |---|---|
-| `--wow "<client folder>"` | The folder containing `Wow*.exe` and `Interface\`, when auto-detection fails. |
+| `--wow "<client folder>"` | Adds this client to `clients` (or updates its entry), then installs into every client in the list. Without `--wow`, setup adds every client it finds under the usual folders. |
 | `--project "<dir>"` | Written to `defaultCwd`. Defaults to the folder you ran setup from. |
-| `--account <name>` | Which `WTF\Account\<name>` to use when there are several. |
+| `--account <name>` | Which `WTF\Account\<name>` to use when there are several. With `--wow` it applies to that client only. |
 
-Re-running `setup.js` re-copies the addon (except `Inbox.lua`, which the bridge owns once running), keeps an existing `config.json` (adding the `agents` blocks and fixing paths if it predates them), and only creates slot and signal files that are missing. An install under one of the project's old names (the `WoWAI` addon, or `WoWClaude` before it) is migrated: its saved data is copied to `ClaudeWoW.lua` with the globals renamed so chats survive (the old file is kept), the old addon and slot folders are removed, and `inboxFile` / `savedVariablesFile` in an old `config.json` are rewritten.
+Setup installs the same addon build into every enabled client in `clients` and prints one `addon` line per client with its build. Re-running `setup.js` re-copies the addon (except `Inbox.lua`, which the bridge owns once running), keeps an existing `config.json` (adding the `agents` blocks and fixing paths if it predates them), and only creates slot and signal files that are missing. An install under one of the project's old names (the `WoWAI` addon, or `WoWClaude` before it) is migrated: its saved data is copied to `ClaudeWoW.lua` with the globals renamed so chats survive (the old file is kept), the old addon and slot folders are removed, and `inboxFile` / `savedVariablesFile` in an old `config.json` are rewritten.

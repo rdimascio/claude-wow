@@ -70,6 +70,9 @@ test('a message from client B is answered in B, and never spends a signal or lan
       assert.match(fs.readFileSync(SIG.runtimeInbox(eraDirs.addons), 'utf8'), /only for era/);
       const state = h.state();
       assert.ok(CLI.heardAt(state, CLI.keyOf(eraDirs.client)) > 0, 'the bridge heard client B');
+      assert.ok(h.clientState(eraDirs.client).lastId >= r.id, 'client B keeps its own last message id');
+      assert.ok(h.clientState(eraDirs.client).hello > 0, 'and when it said hello');
+      assert.equal(h.clientState(forever.client).lastId, undefined, 'client A has no message id from B');
       assert.equal(CLI.heardAt(state, CLI.keyOf(forever.client)), 0, 'and never client A');
       for (const c of h.sb.clients) assert.ok(h.clientState(c.client).presence, `${c.flavor} keeps a presence ring of its own`);
     });

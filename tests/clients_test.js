@@ -143,7 +143,7 @@ test('lastSpoke picks the client heard last, ignores dates no Date can hold, and
   assert.equal(CLI.lastSpoke(state, clients).label, '_classic_beta_');
   assert.equal(state.clients[clients[0].key].lastId, 5, 'a lower id does not lower lastId');
   assert.equal(state.clients[clients[1].key].hello, 2000);
-  CLI.noteHeard(state, clients[1].key, { now: 3000, id: 1.5 });
+  CLI.noteHeard(state, clients[1].key, { now: 3000, id: 7.5 });
   assert.equal(state.clients[clients[1].key].lastId, 2, 'a fractional id is not an id');
   state.clients[clients[1].key].heard = 9e15;
   assert.equal(CLI.heardAt(state, clients[1].key), 0);
