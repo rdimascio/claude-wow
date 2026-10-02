@@ -1879,10 +1879,10 @@ function noteChatLogWrite(bytes) {
   saveState();
   publishNow();
 }
-function cleanChatLog(why) {
+async function cleanChatLog(why) {
   if (!CHAT_LOG.clean) return;
   let r;
-  try { r = CL.cleanWhenClosed(CHAT_LOG_FILE, CL.clientFolder(cfg)); } catch (e) { log(`chat log clean (${why}): failed (${e.message})`); return; }
+  try { r = await CL.cleanWhenClosed(CHAT_LOG_FILE, CL.clientFolder(cfg)); } catch (e) { log(`chat log clean (${why}): failed (${e.message})`); return; }
   if (!r.cleaned || !r.removed) return;
   if (chatLogWatch) chatLogWatch.resync();
   if (r.grewMeanwhile) {
@@ -1906,13 +1906,11 @@ function startChatLogWatch() {
   chatLogWatch = CL.watchChatLog(CHAT_LOG_FILE, handleLogFrame, { log, pollMs: CHAT_LOG.pollMs, onWrite: noteChatLogWrite, key: chatLogKey(), onRefused: noteRefusedFrame });
   log(`chat log transport: watching ${CHAT_LOG_FILE} (lines of ${CHAT_LOG.line}, filler ${chatLogSlot().filler} bytes${CHAT_LOG.show ? ', lines shown in chat' : ''}); screenshots stay as the retry path`);
   if (!CHAT_LOG.clean) return;
-  if (process.platform !== 'darwin') {
-    log(`chat log transport: WARNING, the bridge cannot tell on ${process.platform} whether the game is running, so it never removes its lines from ${path.basename(CHAT_LOG_FILE)}: the file grows by about ${Math.round(chatLogSlot().filler / 1000)} KB per message. The transport is measured on macOS only.`);
-    return;
-  }
-  cleanChatLog('startup');
-  const cleaner = setInterval(() => cleanChatLog('periodic'), SWEEP_MS);
-  if (cleaner.unref) cleaner.unref();
+  CL.scheduleCleaning({
+    clean: cleanChatLog,
+    everyMs: SWEEP_MS,
+    warn: () => log(`chat log transport: WARNING, the bridge cannot tell on ${process.platform} whether the game is running, so it never removes its lines from ${path.basename(CHAT_LOG_FILE)}: the file grows by about ${Math.round(chatLogSlot().filler / 1000)} KB per message. Cleaning works on macOS, Windows and Linux only.`),
+  });
 }
 
 function agentLine(id) {
