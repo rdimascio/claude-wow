@@ -28,12 +28,12 @@ Check the category names against the CurseForge form when you create the project
 **What it does**
 
 - A **Claude** tab in your chat dock. Type a message there and it goes to your agent, never to the game server. The reply comes back as a whisper.
-- Several chats at once. Each chat is its own agent session, with its own folder and its own agent: Claude Code, Codex, Grok Build, Antigravity or Hermes.
-- Live progress while the agent works: time, number of actions, and the file it is editing.
+- Several chats at once. Each chat is its own agent session with its own agent (Claude Code, Codex, Grok Build, Antigravity or Hermes), and each chat can have its own folder.
+- Live progress while the agent works: time, number of actions, and the file it is editing (not for Hermes, which reports only when it is done).
 - The agent knows your character, level, zone, professions and quest log (you can turn this off). Shift-click items, spells and quests into a message.
 - Routes and marks on your world map, with an arrow that walks you from stop to stop.
 - Ready-made macros: ask for one and click **Create macro** to save it.
-- **Need / Greed / Pass** on permissions: when the agent wants to run a command you have not allowed, it comes up as a loot roll.
+- **Need / Greed / Pass** on permissions: when Claude Code or Grok Build wants to run a command you have not allowed, it comes up as a loot roll.
 
 **How it works**
 
@@ -45,7 +45,7 @@ Addons cannot use the network or read files while the game runs. The addon sends
 2. Install the claude-wow bridge (see the companion note above).
 3. Run `claude-wow setup`. It finds the game and creates the helper addons (`ClaudeWoW_Runtime` and 200 `ClaudeWoW_S###` slot addons). If you play Classic Era and also have Forever installed, run `claude-wow setup --wow "<path to World of Warcraft>/_classic_era_"`.
 4. Fully quit the game and start it again once. A `/reload` does not add new addon folders.
-5. Leave the *Claude WoW slot* addons enabled, start the bridge with `claude-wow`, and type `/claude hello` in game.
+5. Leave the *Claude WoW slot* addons enabled, start the bridge with `claude-wow`, and type `/claude hello` in game. The default agent is Claude Code; if you use only Codex, type `/claude --agent codex hello`.
 
 **Known limits**
 
