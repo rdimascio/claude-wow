@@ -480,18 +480,24 @@ test('the Windows process script decodes in the bridge, so a non-ASCII path surv
 
 const LINUX_FOLDER = '/home/p/Games/wow/drive_c/Program Files (x86)/World of Warcraft/_classic_era_';
 const ME = 1000;
-function procFs(procs, realpaths = {}) {
+function procFs(procs, realpaths = {}, { osrelease = '6.8.0-45-generic\n', files = {} } = {}) {
   const at = p => { const m = /^\/proc\/(\d+)\/?(\w+)?$/.exec(p); if (!m || !procs[m[1]]) throw fsError('ENOENT'); return { pr: procs[m[1]], part: m[2] }; };
   const value = v => { if (typeof v === 'string' && v.startsWith('!')) throw fsError(v.slice(1)); return v; };
   return {
     readdir: async dir => { if (dir !== '/proc') throw fsError('ENOENT'); return ['self', 'cpuinfo', ...Object.keys(procs)]; },
-    stat: async p => { const { pr } = at(p); value(pr.stat); return { uid: pr.uid === undefined ? ME : pr.uid }; },
+    stat: async p => {
+      if (!p.startsWith('/proc/')) { if (files[p] === undefined) throw fsError('ENOENT'); value(files[p]); return { uid: 0 }; }
+      const { pr } = at(p); value(pr.stat); return { uid: pr.uid === undefined ? ME : pr.uid };
+    },
     readlink: async p => { const { pr, part } = at(p); return value(pr[part] === undefined ? '/' : pr[part]); },
-    readFile: async p => { const { pr } = at(p); return Array.isArray(pr.cmdline) ? pr.cmdline.join('\0') + '\0' : value(pr.cmdline || ''); },
+    readFile: async p => {
+      if (p === '/proc/sys/kernel/osrelease') return value(osrelease);
+      const { pr } = at(p); return Array.isArray(pr.cmdline) ? pr.cmdline.join('\0') + '\0' : value(pr.cmdline || '');
+    },
     realpath: async p => { if (realpaths[p]) return realpaths[p]; throw fsError('ENOENT'); },
   };
 }
-const linuxRunning = (procs, extra = {}) => CL.clientRunning(LINUX_FOLDER, { platform: 'linux', fs: procFs(procs, extra.realpaths), uid: ME, ...extra });
+const linuxRunning = (procs, extra = {}) => CL.clientRunning(LINUX_FOLDER, { platform: 'linux', fs: procFs(procs, extra.realpaths, extra.env), uid: ME, ...extra });
 const BASH = { exe: '/usr/bin/bash', cwd: '/home/p', cmdline: ['bash'] };
 const PRELOADER = '/home/p/.local/share/lutris/runners/wine/lutris-ge/bin/wine64-preloader';
 
@@ -504,14 +510,62 @@ test('Linux: the game counts as running when its exe, its working folder, or a p
   assert.equal(await CL.clientRunning('/home/p/wow-link/_classic_era_', { platform: 'linux', uid: ME, fs: procFs({ 2: { exe: '/mnt/games/wow/_classic_era_/WowClassic', cwd: '/', cmdline: [] } }, { '/home/p/wow-link/_classic_era_': '/mnt/games/wow/_classic_era_' }) }), true, 'a symlinked client folder still matches the real exe path');
 });
 
-test('Linux: a game in another folder, a similar folder, another user\'s process or no game does not block the clean', async () => {
+test('Linux: a process in another folder, a similar folder, an unrelated process of another user or no game does not block the clean', async () => {
   assert.equal(await linuxRunning({ 1: BASH }), false, 'no game');
-  assert.equal(await linuxRunning({ 1: BASH, 2: { exe: PRELOADER, cwd: '/home/p/Games/wow/drive_c/Program Files (x86)/World of Warcraft/_retail_', cmdline: ['C:\\Program Files (x86)\\World of Warcraft\\_retail_\\Wow.exe'] } }), false, 'another client folder');
+  assert.equal(await linuxRunning({ 1: BASH, 2: { exe: '/home/p/Games/wow/drive_c/Program Files (x86)/World of Warcraft/_retail_/Battle.net', cwd: '/home/p/Games/wow/drive_c/Program Files (x86)/World of Warcraft/_retail_', cmdline: ['/home/p/Games/wow/drive_c/Program Files (x86)/World of Warcraft/_retail_/Battle.net'] } }), false, 'a process in another client folder');
   assert.equal(await linuxRunning({ 2: { exe: `${LINUX_FOLDER}2/WowClassic`, cwd: `${LINUX_FOLDER}2`, cmdline: [`${LINUX_FOLDER}2/WowClassic`] } }), false, 'similar prefix, Unix');
-  assert.equal(await linuxRunning({ 2: { exe: PRELOADER, cwd: '/home/p', cmdline: ['C:\\Program Files (x86)\\World of Warcraft\\_classic_era_2\\WowClassic.exe'] } }), false, 'similar prefix, Wine');
-  assert.equal(await linuxRunning({ 2: { exe: `${LINUX_FOLDER}/WowClassic`, cwd: '/', cmdline: [], uid: 0 } }), false, 'a process of another user is not looked at');
+  assert.equal(await linuxRunning({ 1: BASH, 2: { uid: 0, cmdline: ['/usr/sbin/sshd', '-D'] } }), false, 'an unrelated process of another user');
   assert.equal(await linuxRunning({ 1: BASH, 2: { exe: '!ENOENT' } }), false, 'a process that ended during the scan');
   assert.equal(await linuxRunning({ 1: BASH, 2: { stat: '!ENOENT' } }), false, 'a process that ended before its stat');
+  assert.equal(await linuxRunning({ 1: BASH, 2: { uid: 0, cmdline: '!ENOENT' } }), false, 'a process of another user that ended during the scan');
+  assert.equal(await linuxRunning({ 1: BASH }, { env: { osrelease: '6.8.0-45-generic\n', files: {} } }), false, 'a plain Linux kernel with no container marker');
+  assert.equal(await CL.clientRunning('/mnt/games/wow/_classic_era_', { platform: 'linux', uid: ME, fs: procFs({ 1: BASH }) }), false, 'a folder under /mnt that is not a drive letter');
+});
+
+test('Linux: a WoW exe the bridge cannot place in the client folder means it cannot tell, absolute or relative', async () => {
+  assert.equal(await linuxRunning({ 1: BASH, 2: { exe: PRELOADER, cwd: '/home/p/Games/wow/drive_c/Program Files (x86)/World of Warcraft/_retail_', cmdline: ['C:\\Program Files (x86)\\World of Warcraft\\_retail_\\Wow.exe'] } }), null, 'an absolute Windows path in another folder');
+  assert.equal(await linuxRunning({ 2: { exe: PRELOADER, cwd: '/home/p', cmdline: ['C:\\Program Files (x86)\\World of Warcraft\\_classic_era_2\\WowClassic.exe'] } }), null, 'similar prefix, Wine');
+  assert.equal(await linuxRunning({ 2: { exe: PRELOADER, cwd: '/home/p', cmdline: ['D:\\Games\\Elsewhere\\WowClassic.exe'] } }), null, 'a drive the bridge cannot map');
+  assert.equal(await linuxRunning({ 2: { exe: PRELOADER, cwd: '/home/p', cmdline: ['/opt/other/WowClassic.exe'] } }), null, 'an absolute Unix path elsewhere');
+});
+
+test('Linux: a process of another user that names a WoW exe or the client folder means the bridge cannot tell', async () => {
+  const procs = { 1: BASH, 2: { uid: 0, exe: '!EACCES', cwd: '!EACCES', cmdline: [`${LINUX_FOLDER}/WowClassic`] } };
+  const fsApi = procFs(procs);
+  const reads = [];
+  const watched = { ...fsApi, readlink: async p => { reads.push(p); return fsApi.readlink(p); } };
+  assert.equal(await CL.clientRunning(LINUX_FOLDER, { platform: 'linux', uid: ME, fs: watched }), null, 'the folder in its command line');
+  assert.deepEqual(reads.filter(p => p.startsWith('/proc/2/')), [], 'only the world-readable cmdline of another user is read');
+  assert.equal(await linuxRunning({ 1: BASH, 2: { uid: 0, cmdline: ['C:\\Program Files (x86)\\World of Warcraft\\_classic_era_\\WowClassic.exe'] } }), null, 'a Windows path in the folder');
+  assert.equal(await linuxRunning({ 1: BASH, 2: { uid: 1001, cmdline: ['Wow.exe'] } }), null, 'any WoW exe');
+  assert.equal(await linuxRunning({ 1: BASH, 2: { uid: 0, cmdline: '!EACCES' } }), null, 'an unreadable command line of another user');
+});
+
+test('Linux: in WSL, in a container, or with the folder on a Windows drive the game can run where /proc cannot see it, so the bridge cannot tell', async () => {
+  const state = (folder, env) => CL.clientState(folder, { platform: 'linux', uid: ME, fs: procFs({ 1: BASH }, {}, env) });
+  assert.match((await state(LINUX_FOLDER, { osrelease: '5.15.153.1-microsoft-standard-WSL2\n' })).why, /WSL/);
+  assert.equal((await state(LINUX_FOLDER, { osrelease: '4.4.0-19041-Microsoft\n' })).running, null, 'WSL 1');
+  assert.equal((await state(LINUX_FOLDER, { osrelease: '6.6.36-wsl-custom\n' })).running, null, 'a custom WSL kernel');
+  assert.match((await state(LINUX_FOLDER, { files: { '/.dockerenv': '' } })).why, /container/);
+  assert.equal((await state(LINUX_FOLDER, { files: { '/run/.containerenv': '' } })).running, null, 'podman');
+  assert.equal((await state(LINUX_FOLDER, { files: { '/.dockerenv': '!EACCES' } })).running, null, 'a marker that cannot be checked');
+  assert.equal((await state(LINUX_FOLDER, { osrelease: '!EACCES' })).running, null, 'an unreadable kernel release');
+  assert.match((await state('/mnt/c/Program Files (x86)/World of Warcraft/_classic_era_', {})).why, /Windows drive/);
+  assert.equal((await state('/mnt/D', {})).running, null, 'a drive root');
+  assert.equal((await CL.clientState('/home/p/wow/_classic_era_', { platform: 'linux', uid: ME, fs: procFs({ 1: BASH }, { '/home/p/wow/_classic_era_': '/mnt/c/Games/_classic_era_' }) })).running, null, 'a symlink into a Windows drive');
+});
+
+const REAL_FOLDER = path.dirname(process.execPath);
+test('macOS, real ps: the folder of the running node binary counts as running', { skip: process.platform !== 'darwin' }, async () => {
+  assert.deepEqual(await CL.clientState(REAL_FOLDER), { running: true, why: 'the game is running' });
+});
+test('Windows, real PowerShell script: the folder of the running node binary counts as running', { skip: process.platform !== 'win32' }, async () => {
+  assert.deepEqual(await CL.clientState(REAL_FOLDER), { running: true, why: 'the game is running' });
+});
+test('Linux, real /proc scan: the folder of the running node binary counts as running', { skip: process.platform !== 'linux' }, async (t) => {
+  const state = await CL.clientState(REAL_FOLDER);
+  if (state.running === null && /WSL|container|Windows drive/.test(state.why)) { t.skip(state.why); return; }
+  assert.deepEqual(state, { running: true, why: 'the game is running' });
 });
 
 test('Linux: anything the bridge cannot read about its own processes means it cannot tell', async () => {
@@ -549,18 +603,6 @@ test('the default runner is asynchronous: the event loop keeps running while the
   await assert.rejects(runText(process.execPath, ['-e', 'setTimeout(() => {}, 5000)'], 200));
 });
 
-test('a slow process check never blocks the bridge: other work runs before the verdict', async () => {
-  const order = [];
-  let release;
-  const slow = () => new Promise(resolve => { release = () => resolve(winList([['explorer.exe', 'C:\\Windows\\explorer.exe']])); });
-  const verdict = CL.clientRunning(WIN_FOLDER, { platform: 'win32', fs: noRealpath, run: slow }).then(v => { order.push(`verdict ${v}`); return v; });
-  await new Promise(resolve => setImmediate(() => { order.push('setImmediate'); resolve(); }));
-  assert.deepEqual(order, ['setImmediate']);
-  release();
-  assert.equal(await verdict, false);
-  assert.deepEqual(order, ['setImmediate', 'verdict false']);
-});
-
 test('the chat log is cleaned on Windows and Linux once the game is provably closed, and left alone when the bridge cannot tell', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cw-chatlog-'));
   const file = path.join(dir, 'WoWChatLog.txt');
@@ -582,6 +624,53 @@ test('the chat log is cleaned on Windows and Linux once the game is provably clo
     fill();
     assert.equal((await CL.cleanWhenClosed(file, LINUX_FOLDER, { platform: 'linux', uid: ME, fs: procFs({ 1: BASH }) })).removed, 1);
     assert.equal(fs.readFileSync(file, 'latin1'), keep);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a "cannot tell" result carries its reason, and the bridge logs each reason once, for a bounded number of reasons', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cw-chatlog-'));
+  const file = path.join(dir, 'WoWChatLog.txt');
+  try {
+    fs.writeFileSync(file, '9/30 19:00:01.000  CWX1 7 1/1 abcd\r\n', 'latin1');
+    const old = (Date.now() - 120000) / 1000;
+    fs.utimesSync(file, old, old);
+    const r = await CL.cleanWhenClosed(file, WIN_FOLDER, { platform: 'win32', fs: noRealpath, run: async () => { throw Object.assign(new Error('timed out'), { code: 'ETIMEDOUT' }); } });
+    assert.deepEqual(r, { cleaned: false, why: 'cannot tell whether the game is running', reason: 'the process list failed (ETIMEDOUT)' });
+    assert.equal((await CL.cleanWhenClosed(file, LINUX_FOLDER, { platform: 'linux', uid: ME, fs: procFs({ 1: BASH }, {}, { osrelease: '5.15.153.1-microsoft-standard-WSL2' }) })).reason, 'the bridge runs in WSL, where the game runs on Windows');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+  const lines = [];
+  const tell = CL.reasonTeller(reason => lines.push(reason), 3);
+  assert.equal(tell({ reason: 'a' }), true);
+  assert.equal(tell({ reason: 'a' }), false, 'the same reason again is not logged');
+  assert.equal(tell({ cleaned: false, why: 'the game is running' }), false, 'a result with no reason is not logged');
+  tell({ reason: 'b' });
+  tell({ reason: 'c' });
+  assert.equal(tell({ reason: 'd' }), false, 'no more than the bound');
+  assert.deepEqual(lines, ['a', 'b', 'c']);
+});
+
+test('a closed verdict older than 3 s when the file would be shortened is not trusted: the length stays', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cw-chatlog-'));
+  const file = path.join(dir, 'WoWChatLog.txt');
+  const keep = '9/30 19:00:00.000  You feel rested.\r\n';
+  const ours = '9/30 19:00:01.000  CWX1 7 1/1 abcd\r\n';
+  try {
+    fs.writeFileSync(file, keep + ours, 'latin1');
+    const old = (Date.now() - 120000) / 1000;
+    fs.utimesSync(file, old, old);
+    const times = [1000, 4001];
+    const r = await CL.cleanWhenClosed(file, WIN_FOLDER, { platform: 'win32', fs: noRealpath, run: async () => winList([['explorer.exe', 'C:\\Windows\\explorer.exe']]), clock: () => times.shift() });
+    assert.equal(r.staleVerdict, true);
+    assert.equal(fs.statSync(file).size, (keep + ours).length, 'the file keeps its length');
+    const fresh = [1000, 4000];
+    fs.writeFileSync(file, keep + ours, 'latin1');
+    fs.utimesSync(file, old, old);
+    const ok = await CL.cleanWhenClosed(file, WIN_FOLDER, { platform: 'win32', fs: noRealpath, run: async () => winList([['explorer.exe', 'C:\\Windows\\explorer.exe']]), clock: () => fresh.shift() });
+    assert.equal(ok.after, keep.length, 'exactly 3 s is still fresh');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

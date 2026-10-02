@@ -1879,14 +1879,17 @@ function noteChatLogWrite(bytes) {
   saveState();
   publishNow();
 }
+const tellCleanBlocked = CL.reasonTeller(reason => log(`chat log clean: cannot tell whether the game is running (${reason}), so ${path.basename(CHAT_LOG_FILE)} is left as it is. Said once per reason`));
 async function cleanChatLog(why) {
   if (!CHAT_LOG.clean) return;
   let r;
   try { r = await CL.cleanWhenClosed(CHAT_LOG_FILE, CL.clientFolder(cfg)); } catch (e) { log(`chat log clean (${why}): failed (${e.message})`); return; }
+  if (!r.cleaned) tellCleanBlocked(r);
   if (!r.cleaned || !r.removed) return;
   if (chatLogWatch) chatLogWatch.resync();
-  if (r.grewMeanwhile) {
-    log(`chat log clean (${why}): ${path.basename(CHAT_LOG_FILE)} grew while it was cleaned, so it was left at full length: bytes ${r.keptUpTo} to ${r.before} are stale copies of older lines, starting inside a line. Nothing the game wrote is lost`);
+  if (r.grewMeanwhile || r.staleVerdict) {
+    const cause = r.grewMeanwhile ? 'grew while it was cleaned' : 'took more than 3 s to clean after the process check';
+    log(`chat log clean (${why}): ${path.basename(CHAT_LOG_FILE)} ${cause}, so it was left at full length: bytes ${r.keptUpTo} to ${r.before} are stale copies of older lines, starting inside a line. Nothing the game wrote is lost`);
     return;
   }
   log(`chat log clean (${why}): the game is closed; removed ${r.removed} transport line(s) from ${path.basename(CHAT_LOG_FILE)}, ${r.before} -> ${r.after} bytes`);
