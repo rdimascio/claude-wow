@@ -3406,7 +3406,6 @@ function ClaudeWoW.SwitchChat(id)
 		prev.draft = typed ~= "" and typed or nil
 	end
 	db.activeChat = c.id
-	c.opened = time()
 	c.unread = 0
 	ui.chatPage = nil
 	if ui.input then
@@ -5412,25 +5411,21 @@ function ClaudeWoW.RenderQuestList()
 end
 
 function Q.LastActive(c)
-	local opened = tonumber(c.opened)
 	for i = #(c.history or {}), 1, -1 do
 		local t = tonumber(c.history[i].t)
-		if t then return math.max(t, opened or 0) end
+		if t then return t end
 	end
-	return opened
+	return tonumber(c.created) or 0
 end
 
 function Q.NewestFirst(chats)
 	local sorted, rank = {}, {}
 	for i, c in ipairs(chats) do
-		local active = Q.LastActive(c)
-		local tier = (c.id == db.activeChat and not active) and 3 or (active and 2 or 1)
-		rank[c] = { tier = tier, t = active or tonumber(c.created) or 0, i = i }
+		rank[c] = { t = Q.LastActive(c), i = i }
 		table.insert(sorted, c)
 	end
 	table.sort(sorted, function(a, b)
 		local ra, rb = rank[a], rank[b]
-		if ra.tier ~= rb.tier then return ra.tier > rb.tier end
 		if ra.t ~= rb.t then return ra.t > rb.t end
 		return ra.i > rb.i
 	end)
