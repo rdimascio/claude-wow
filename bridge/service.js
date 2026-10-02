@@ -27,6 +27,7 @@ const { spawn, spawnSync } = require('child_process');
 const H = require('./home');
 const R = require('./runtime');
 const P = require('./protocol'); // which transport a config starts the bridge on
+const REL = require('./releases');
 
 const LABEL = 'io.claudewow.bridge';      // launchd label
 const UNIT = 'claude-wow-bridge';         // systemd unit name
@@ -299,11 +300,11 @@ function run(cmd, args, opts = {}) {
   return { ok: !r.error && r.status === 0, status: r.status, out: (r.stdout || '') + (r.stderr || ''), error: r.error };
 }
 
-function agentEnv() {
+function agentEnv(execDir = process.execPath ? path.dirname(process.execPath) : '') {
   // What the bridge needs from the login environment and would not get from launchd/systemd.
   const env = { PATH: process.env.PATH || '' };
-  if (process.execPath && !env.PATH.split(path.delimiter).includes(path.dirname(process.execPath))) {
-    env.PATH = path.dirname(process.execPath) + path.delimiter + env.PATH;
+  if (execDir && !env.PATH.split(path.delimiter).includes(execDir)) {
+    env.PATH = execDir + path.delimiter + env.PATH;
   }
   for (const k of ['HOME', 'DISPLAY', 'LANG', 'CLAUDE_WOW_HOME', 'CLAUDE_WOW_PROJECT', 'WOW_AI_PROJECT', 'CODEX_BIN', 'GROK_HOME']) if (process.env[k]) env[k] = process.env[k];
   return env;
@@ -313,13 +314,23 @@ function agentEnv() {
 // this node, bridge/supervisor.js, the repo (so bridge.js falls back to
 // defaultCwd rather than taking the repo as the project). From the binary:
 // the binary alone, in the home folder, which bridge.js treats the same way.
-function program(r = R.DEFAULT) {
-  const [node, args] = R.scriptCommand('supervisor', [], r);
-  return { node, script: args[0] || '', cwd: r.compiled ? H.resolve().dir : r.root };
+function releaseProgram(r, home) {
+  if (!r.compiled) return null;
+  const layout = REL.layout(home);
+  if (!REL.isInsideReleases(layout, r.execPath)) return null;
+  return { node: REL.currentBinary(layout), script: '', cwd: home };
 }
 
-function definition(platform, d, r = R.DEFAULT) {
-  const base = { ...program(r), env: agentEnv() };
+function program(r = R.DEFAULT, home = H.resolve().dir) {
+  const release = releaseProgram(r, home);
+  if (release) return release;
+  const [node, args] = R.scriptCommand('supervisor', [], r);
+  return { node, script: args[0] || '', cwd: r.compiled ? home : r.root };
+}
+
+function definition(platform, d, r = R.DEFAULT, home = H.resolve().dir) {
+  const prog = program(r, home);
+  const base = { ...prog, env: agentEnv(path.dirname(prog.node)) };
   if (platform === 'darwin') return launchdPlist({ ...base, logFile: launchdLogFile(d) });
   if (platform === 'win32') return startupVbs(base);
   return systemdUnit(base);
@@ -614,7 +625,7 @@ function main(argv, { platform = process.platform, out = console.log, err = cons
 module.exports = {
   LABEL, UNIT, OLD_LABEL, OLD_UNIT, COMMANDS, LOG_MAX_BYTES, LOG_KEEP, HELP,
   dirs, oldDirs, backend, serviceLogFile, launchdLogFile, pidFile,
-  parseArgs, launchdPlist, systemdUnit, startupVbs, xmlEscape, program, definition,
+  parseArgs, launchdPlist, systemdUnit, startupVbs, xmlEscape, releaseProgram, program, definition,
   rotate, RotatingLog, writePid, readPid, clearPid, alive,
   parseLaunchctlPrint, formatUptime, lastLines, agentEnv,
   status, main,

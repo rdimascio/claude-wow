@@ -955,6 +955,8 @@ function submit(job) {
   if (q && q.id === job.id) return;
   if (cur || running.size >= MAX_PARALLEL) {
     queued.set(key, job);
+    noteQueued();
+    saveState();
     log(`#${job.id}${job.session ? '@' + job.session : ''} queued (${cur ? 'chat busy' : running.size + ' running'})`);
     return;
   }
@@ -973,6 +975,7 @@ function cancelRun(job) {
   const q = queued.get(key);
   if (q && q.id === job.cancel) {
     queued.delete(key);
+    noteQueued();
     markHandled(q);
     saveState();
     log(`${tagOf(q)} cancelled from the game before it started`);
@@ -1002,8 +1005,16 @@ function drainQueue() {
     if (running.size >= MAX_PARALLEL) break;
     if (running.has(key)) continue;
     queued.delete(key);
+    noteQueued();
+    saveState();
     runJob(job);
   }
+}
+
+function noteQueued() {
+  const waiting = [...queued.values()].map(j => ({ id: j.id, chat: j.chat, session: j.session }));
+  if (waiting.length) state.queued = waiting;
+  else delete state.queued;
 }
 
 const tagOf = job => `#${job.id}${job.session ? '@' + job.session : ''}`;
@@ -1579,8 +1590,13 @@ function noteInflight(key, job, child, agentName, marker) {
 }
 
 function recoverInflight() {
+  const staleQueue = state.queued !== undefined;
+  delete state.queued;
   const lost = Object.entries(state.inflight || {});
-  if (!lost.length) return;
+  if (!lost.length) {
+    if (staleQueue) saveState();
+    return;
+  }
   for (const [key, run] of lost) {
     if (process.platform !== 'win32' && isSameProcess(run.pid, run.startedAt, run.marker)) {
       try { process.kill(-run.pid, 'SIGKILL'); log(`#${run.id}: ended the orphaned ${run.agent || 'agent'} process group ${run.pid} left by the previous bridge`); } catch {}

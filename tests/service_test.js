@@ -268,3 +268,28 @@ test('the definition runs node + supervisor.js from a checkout, and the binary a
   assert.match(S.launchdPlist({ node: '/n', script: '', cwd: '/c', logFile: '/l' }), /<array>\s*<string>\/n<\/string>\s*<\/array>/);
   assert.match(S.systemdUnit({ node: '/n', script: '', cwd: '/c' }), /^ExecStart="\/n"$/m);
 });
+
+test('a binary installed under <home>/releases makes a service that runs <home>/current/claude-wow, with no node and no release path in it', () => {
+  const REL = require('../bridge/releases');
+  const home = scratch('release-program');
+  const l = REL.layout(home);
+  fs.mkdirSync(REL.releaseDir(l, '0.5.0-abc'), { recursive: true });
+  fs.writeFileSync(REL.releaseBinary(l, '0.5.0-abc'), 'bin');
+  const fromRelease = { compiled: true, execPath: REL.releaseBinary(l, '0.5.0-abc'), root: '/build/machine/claude-wow' };
+  const want = { node: REL.currentBinary(l), script: '', cwd: home };
+  assert.deepEqual(S.program(fromRelease, home), want);
+  if (process.platform !== 'win32') {
+    fs.symlinkSync(path.join('releases', '0.5.0-abc'), l.current);
+    assert.deepEqual(S.program({ ...fromRelease, execPath: REL.currentBinary(l) }, home), want, 'run through the current symlink');
+  }
+  const elsewhere = { compiled: true, execPath: path.join(home, 'bin', 'claude-wow'), root: '/x' };
+  assert.equal(S.program(elsewhere, home).node, elsewhere.execPath, 'a binary outside releases keeps its own path');
+  assert.equal(S.program({ compiled: false, execPath: REL.releaseBinary(l, '0.5.0-abc'), root: '/repo' }, home).script, path.join('/repo', 'bridge', 'supervisor.js'), 'a checkout is never a release');
+  const plist = S.definition('darwin', S.dirs('darwin', {}, '/Users/p'), fromRelease, home);
+  assert.ok(plist.includes(`<string>${S.xmlEscape(REL.currentBinary(l))}</string>\n    </array>`), 'one argument: the current binary');
+  assert.ok(plist.includes(`<key>WorkingDirectory</key>\n    <string>${S.xmlEscape(home)}</string>`));
+  assert.ok(!plist.includes(`${path.sep}releases${path.sep}`), 'no release folder is baked in, so a flip of current is enough');
+  const programArgs = /<key>ProgramArguments<\/key>\s*<array>([\s\S]*?)<\/array>/.exec(plist)[1];
+  assert.equal((programArgs.match(/<string>/g) || []).length, 1, 'no node and no script before or after the binary');
+  assert.match(plist, new RegExp(`<key>PATH</key>\\s*<string>${S.xmlEscape(l.current).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}${path.delimiter}`), 'PATH starts with the current folder');
+});

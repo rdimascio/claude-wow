@@ -24,6 +24,11 @@ if (argv[0] === '--version' || argv[0] === '-v') {
   console.log(`claude-wow ${require('../package.json').version} (${R.describe()})`);
 } else if (argv[0] === 'service') {
   process.exitCode = require('./service').main(argv.slice(1));
+} else if (argv[0] === 'dev') {
+  require('./deploy').main(argv.slice(1)).then((code) => { process.exitCode = code; }, (e) => {
+    process.stderr.write(`claude-wow dev failed: ${e && e.message ? e.message : String(e)}\n`);
+    process.exitCode = 1;
+  });
 } else if (argv[0] === 'setup' && R.compiled) {
   // The binary has setup.js inside it: run it here rather than spawn ourselves.
   process.argv.splice(2, 1);
@@ -54,7 +59,7 @@ if (argv[0] === '--version' || argv[0] === '-v') {
 } else if (argv[0] === 'report') {
   process.exitCode = require('./report').main(argv.slice(1));
 } else {
-  if (argv.includes('--help') || argv.includes('-h')) console.log('claude-wow setup [...]   game-side install (setup.js)\nclaude-wow service <cmd> background service (install, uninstall, start, stop, restart, status, logs)\nclaude-wow bridge [...]  the bridge alone in this process, without the restarts\nclaude-wow channel      the live-session channel server Claude Code starts (docs/LIVE-SESSION.md)\nclaude-wow data sync    fetch client tables from wago.tools into the home folder (--flavor forever or classic_era)\nclaude-wow data-mcp     the read-only wowdata MCP server the bridge gives ask runs\nclaude-wow goals-mcp    the per-run wowgoals MCP server the bridge gives ask runs\nclaude-wow events [--follow] [--min N]  game events from the telemetry, one JSON line each\nclaude-wow report [--day [YYYY-MM-DD]]  a day of game events, orders and goal progress, from the goals folder\n');
+  if (argv.includes('--help') || argv.includes('-h')) console.log('claude-wow setup [...]   game-side install (setup.js)\nclaude-wow service <cmd> background service (install, uninstall, start, stop, restart, status, logs)\nclaude-wow dev <cmd>     releases for a developer machine (deploy [ref|worktree], rollback, status; docs/MIGRATE-PROD-INSTALL.md)\nclaude-wow bridge [...]  the bridge alone in this process, without the restarts\nclaude-wow channel      the live-session channel server Claude Code starts (docs/LIVE-SESSION.md)\nclaude-wow data sync    fetch client tables from wago.tools into the home folder (--flavor forever or classic_era)\nclaude-wow data-mcp     the read-only wowdata MCP server the bridge gives ask runs\nclaude-wow goals-mcp    the per-run wowgoals MCP server the bridge gives ask runs\nclaude-wow events [--follow] [--min N]  game events from the telemetry, one JSON line each\nclaude-wow report [--day [YYYY-MM-DD]]  a day of game events, orders and goal progress, from the goals folder\n');
   supervise();
 }
 
