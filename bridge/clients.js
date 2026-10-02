@@ -148,6 +148,7 @@ function clientState(state, key) {
 function adoptLegacyState(state, clients) {
   const first = clients[0];
   if (!first) return false;
+  const oldState = !state.clients || typeof state.clients !== 'object';
   let moved = false;
   for (const k of STATE_KEYS) {
     if (state[k] === undefined) continue;
@@ -156,6 +157,7 @@ function adoptLegacyState(state, clients) {
     delete state[k];
     moved = true;
   }
+  if (!oldState) return moved;
   const cs = clientState(state, first.key);
   if (state.context && typeof state.context === 'object' && cs.context === undefined) {
     cs.context = { ...state.context };
@@ -174,10 +176,9 @@ function legacyStateFor(state, clients, key) {
   return out;
 }
 
-function noteHeard(state, key, { now = Date.now(), hello = false, id } = {}) {
+function noteHeard(state, key, { now = Date.now(), id } = {}) {
   const cs = clientState(state, key);
   cs.heard = now;
-  if (hello) cs.hello = now;
   if (Number.isInteger(id) && id > 0) cs.lastId = Math.max(Number(cs.lastId) || 0, id);
   return cs;
 }
@@ -186,6 +187,15 @@ function contextText(state, key) {
   if (!key) return (state && state.context && typeof state.context.text === 'string' && state.context.text) || '';
   const own = state && state.clients && state.clients[key] && state.clients[key].context;
   return own && typeof own.text === 'string' ? own.text : '';
+}
+
+function foreignContext(state, key, characterKeyOf) {
+  const shared = state && state.context;
+  if (!shared || typeof shared.text !== 'string') return '';
+  const theirs = characterKeyOf(shared.text) || '';
+  if ((characterKeyOf(contextText(state, key)) || '') !== theirs) return theirs || 'no character';
+  if (key && shared.client && shared.client !== key) return theirs || 'no character';
+  return '';
 }
 
 function heardAt(state, key) {
@@ -251,6 +261,6 @@ module.exports = {
   LEGACY_KEYS, ENTRY_KEYS, STATE_KEYS, CLIENTS_MAX,
   keyOf, sameDir, labelOf, dirOfAddons, addonDirFor, savedFileFor, accountOf, productFor,
   legacyEntry, resolveEntry, allClients, clientsOf, compactEntry, migrateConfig, upsertClient,
-  clientState, adoptLegacyState, legacyStateFor, contextText, noteHeard, heardAt, lastSpoke, recordsFor,
+  clientState, adoptLegacyState, legacyStateFor, contextText, foreignContext, noteHeard, heardAt, lastSpoke, recordsFor,
   installedBuild, slotClients, describe, agoText,
 };

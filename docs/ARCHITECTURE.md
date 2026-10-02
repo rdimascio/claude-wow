@@ -176,7 +176,7 @@ One bridge serves every client in `config.clients` (`bridge/clients.js`): for ex
 - **Signals:** a message's ack, sig and act files, and the 50 slots armed ahead of it, are in its own client's `ClaudeWoW_Runtime` only. Message ids are per client (each addon counts its own), so a slot number means nothing across clients.
 - **Presence:** each client has its own ring position in `state.json` (`clients.<dir>.presence`). The bridge beats every client whose runtime folder exists, the same as it beat a closed game before.
 - **Context:** each client's last game context is kept next to its ring (`clients.<dir>.context`). A run uses its own client's context for the prompt and for the game data flavor; `state.context` stays the last context of any client for goals and campaigns.
-- **Which client is live:** the bridge notes when it last heard each client (`clients.<dir>.heard`, `hello`) and does not poll the process list. The slot field `clients = { { name, version, build, heard, here, last }, ... }` lets `/claude diag` show every client, its installed build, which one is this client and which one spoke last. A missing field means an older bridge.
+- **Which client is live:** the bridge notes when it last heard each client (`clients.<dir>.heard`) and does not poll the process list. The slot field `clients = { { name, version, build, heard, here, last }, ... }` lets `/claude diag` show every client, its installed build, which one is this client and which one spoke last. A missing field means an older bridge.
 - **Transcripts:** each chat records the client that last used it. A restore offers only that client's chats and chats from before clients were recorded.
 
 ## Signals: armed files, deleted to signal

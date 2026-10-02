@@ -867,11 +867,13 @@ function setContext(job) {
   const client = clientFor(job);
   const cs = client ? clientStateOf(client) : null;
   const prev = (state.context && state.context.text) || '';
-  const prevHere = cs ? (cs.context && cs.context.text) || '' : prev;
-  if (text === prev && text === prevHere) { noteContextHeard(); return; }
+  const ownsShared = !state.context || (state.context.client || '') === (job.client || '');
+  const sharedChanges = text ? text !== prev || !ownsShared : !!state.context && ownsShared;
+  const ownChanges = cs ? text !== ((cs.context && cs.context.text) || '') || cs.context === undefined : sharedChanges;
+  if (!sharedChanges && !ownChanges) { noteContextHeard(); return; }
   const heardAt = Date.now();
-  const made = () => (text ? { text, at: heardAt, receivedAt: heardAt, session: job.session || '' } : null);
-  if (text || !state.context || state.context.session === (job.session || '')) state.context = made();
+  const made = () => (text ? { text, at: heardAt, receivedAt: heardAt, session: job.session || '', client: job.client || '' } : null);
+  if (sharedChanges) state.context = made();
   if (cs) cs.context = made();
   saveState();
   const who = (text.split('\n').find(l => /^Character:/i.test(l)) || text.split('\n')[0] || '').slice(0, 100);
@@ -980,7 +982,7 @@ function submit(job) {
     if (r) r.acks = P.noteAck(r.acks, job);
     return;
   }
-  if (client) CLI.noteHeard(state, client.key, { hello: !!job.hello, id: job.id });
+  if (client) CLI.noteHeard(state, client.key, { id: job.id });
   clearSignalsAhead(client, job.id);
   if (CAMPAIGN.isDmRecord(job)) {
     markHandled(job);
@@ -1300,9 +1302,11 @@ function runToolsSocket(tag, job) {
   const socket = lp && typeof lp.runEndpoint === 'function' ? lp.runEndpoint() : '';
   if (!socket) return noRunTools(tag, 'the live socket is not listening (plugins.live.enabled, or --once)');
   if (!runGrantCharacter()) return noRunTools(tag, 'the game context names no character');
-  const own = (GOALS.characterOf(contextTextFor(job)) || {}).key || '';
-  if (own !== runGrantCharacter()) {
-    log(`${tag} ${GM.SERVER_NAME}: another client reported its game context after this one (${runGrantCharacter()}, not ${own || 'no character'}), so this run goes without the goal, order and campaign tools`);
+  const client = clientFor(job);
+  const theirs = CLI.foreignContext(state, client ? client.key : '', text => (GOALS.characterOf(text) || {}).key || '');
+  if (theirs) {
+    const from = rtOf(state.context.client) ? rtOf(state.context.client).client.label : 'another client';
+    log(`${tag} ${GM.SERVER_NAME}: another client reported its game context after this one (${theirs} in ${from}), so this run goes without the goal, order and campaign tools`);
     return '';
   }
   return socket;
@@ -2072,7 +2076,7 @@ if (inject !== null) {
     for (const c of CLIENTS) {
       migrateRuntime(c);
       const lastId = Number(clientStateOf(c).lastId);
-      clearSignalsAhead(c, Number.isFinite(lastId) && lastId > 0 ? lastId : c === CLIENTS[0] ? state.lastId : NaN);
+      clearSignalsAhead(c, Number.isFinite(lastId) && lastId > 0 ? lastId : c.key === (CLI.allClients(cfg)[0] || {}).key ? state.lastId : NaN);
       preparePresence(c);
     }
     presenceBeat();

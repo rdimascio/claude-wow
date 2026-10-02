@@ -193,6 +193,7 @@ test('the environment baked into the service puts node on PATH and drops nothing
 test('status on a clean machine says not installed / not running and exits 3; help and bad input exit cleanly', () => {
   const lines = [];
   const dir = scratch('status');
+  fs.writeFileSync(path.join(dir, 'bridge.log'), '');
   const code = S.status({ run: dir, logs: dir, definition: path.join(dir, 'io.claudewow.bridge.plist') }, 'darwin', l => lines.push(l), path.join(dir, 'state.json'), path.join(dir, 'config.json'));
   assert.equal(code, 3);
   assert.match(lines.join('\n'), /installed : no/);
@@ -279,6 +280,7 @@ test('status names every client in config.json with its installed build and whic
   fs.writeFileSync(path.join(dir, 'config.json'), JSON.stringify({ clients: [{ dir: forever }, { dir: era }] }));
   fs.writeFileSync(path.join(dir, 'state.json'), JSON.stringify({ clients: { [CLI.keyOf(era)]: { heard: Date.now() - 60000 } } }));
   const lines = [];
+  fs.writeFileSync(path.join(dir, 'bridge.log'), '');
   S.status({ run: dir, logs: dir, definition: path.join(dir, 'none.plist') }, 'darwin', l => lines.push(l), path.join(dir, 'state.json'), path.join(dir, 'config.json'));
   const at = lines.findIndex(l => l.startsWith('  clients   : '));
   assert.ok(at >= 0, lines.join('\n'));

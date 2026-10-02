@@ -137,12 +137,11 @@ test('lastSpoke picks the client heard last, ignores dates no Date can hold, and
   const state = {};
   assert.equal(CLI.lastSpoke(state, clients), null);
   CLI.noteHeard(state, clients[0].key, { now: 1000, id: 5 });
-  CLI.noteHeard(state, clients[1].key, { now: 2000, hello: true, id: 2 });
+  CLI.noteHeard(state, clients[1].key, { now: 2000, id: 2 });
   assert.equal(CLI.lastSpoke(state, clients).label, '_classic_era_');
   CLI.noteHeard(state, clients[0].key, { now: 3000, id: 4 });
   assert.equal(CLI.lastSpoke(state, clients).label, '_classic_beta_');
   assert.equal(state.clients[clients[0].key].lastId, 5, 'a lower id does not lower lastId');
-  assert.equal(state.clients[clients[1].key].hello, 2000);
   CLI.noteHeard(state, clients[1].key, { now: 3000, id: 7.5 });
   assert.equal(state.clients[clients[1].key].lastId, 2, 'a fractional id is not an id');
   state.clients[clients[1].key].heard = 9e15;
@@ -213,4 +212,24 @@ test('contextText: a known client reads only its own context, never the shared o
   assert.equal(CLI.contextText(state, CLI.keyOf('/never/heard')), '', 'a client that never sent one gets none');
   assert.equal(CLI.contextText(state, ''), 'shared');
   assert.equal(CLI.contextText({}, ''), '');
+});
+
+test('adoptLegacyState copies the shared context only from a state.json that has no per-client block yet', () => {
+  const all = CLI.allClients({ clients: [{ dir: FOREVER }, { dir: ERA }] });
+  const state = { context: { text: 'Character: B' }, clients: { [all[1].key]: { context: { text: 'Character: B' } } } };
+  assert.equal(CLI.adoptLegacyState(state, all), false);
+  assert.equal(state.clients[all[0].key], undefined, 'after a restart the first client does not take the context another client reported');
+});
+
+test('foreignContext: goal tools are refused when the shared context is another character, or the same character from another client', () => {
+  const a = CLI.keyOf(FOREVER), b = CLI.keyOf(ERA);
+  const charOf = text => (/^Character: (\S+)/.exec(text) || [])[1] || '';
+  const mine = { text: 'Character: Ann' };
+  assert.equal(CLI.foreignContext({ context: { ...mine, client: a }, clients: { [a]: { context: mine } } }, a, charOf), '', 'A reported last');
+  assert.equal(CLI.foreignContext({ context: { text: 'Character: Bob', client: b }, clients: { [a]: { context: mine } } }, a, charOf), 'Bob', 'B reported another character last');
+  assert.equal(CLI.foreignContext({ context: { text: 'Character: Ann', client: b }, clients: { [a]: { context: mine } } }, a, charOf), 'Ann', 'B reported the same name and realm last');
+  assert.equal(CLI.foreignContext({ context: { text: 'Character: Ann' }, clients: { [a]: { context: mine } } }, a, charOf), '', 'a shared context from before clients were recorded, same character');
+  assert.equal(CLI.foreignContext({ context: { text: 'Character: Ann', client: b } }, a, charOf), 'Ann', 'A never reported a context of its own');
+  assert.equal(CLI.foreignContext({ context: null }, a, charOf), '', 'no shared context: the caller refuses for that reason');
+  assert.equal(CLI.foreignContext({ context: { text: 'Character: Ann', client: b } }, '', charOf), '', 'a job with no client only checks the character');
 });

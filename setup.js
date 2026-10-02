@@ -360,7 +360,7 @@ function macCaptureReport(cfg, transport) {
   }
   const py = (cfg.capture && cfg.capture.python) || 'python3';
   const r = spawnSync(py, [AS.file('bridge/capture_mac.py'), '--check',
-    '--process-name', (CLI.clientsOf(cfg)[0] || {}).processName || 'World of Warcraft'], { encoding: 'utf8' });
+    '--process-name', (CLI.clientsOf(cfg)[0] || { processName: 'WowB' }).processName], { encoding: 'utf8' });
   if (r.error) return; // python already reported missing
   const rows = String(r.stdout || '').trim().split('\n').filter(Boolean).map(l => {
     try { return JSON.parse(l); } catch { return null; }

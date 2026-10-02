@@ -221,6 +221,7 @@ test('service status and the doctor show both versions and the verdict of the la
     P.noteAddonVersion(state, { session: 's', addonVersion: '0.3.0', addonProto: 9 }, bridgeAt('0.4.0', 1, 1), Date.UTC(2026, 9, 2));
     fs.writeFileSync(path.join(dir, 'state.json'), JSON.stringify(state));
     const lines = [];
+    fs.writeFileSync(path.join(dir, 'bridge.log'), '');
     S.status({ run: dir, logs: dir, definition: path.join(dir, 'none.plist') }, 'darwin', l => lines.push(l), path.join(dir, 'state.json'), path.join(dir, 'config.json'));
     const line = lines.find(l => l.startsWith('  versions  :'));
     assert.match(line, /addon 0\.3\.0 \(protocol 9\), bridge 0\.4\.0 \(protocol 1\): update-bridge, at the last hello 2026-10-02T00:00:00\.000Z/);
