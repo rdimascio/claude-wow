@@ -46,16 +46,49 @@ function readCommunity(root) {
   }
 }
 
-function openCommunity({ dataDir, flavor, client = null }) {
-  if (flavor !== FLAVOR || !dataDir) return null;
+const CROSS_GAME = Object.freeze(['forever']);
+
+function sameRectangle(a, b) {
+  const near = (p, q) => Array.isArray(p) && Array.isArray(q) && p.length === q.length && p.every((n, k) => Math.abs(n - q[k]) < 0.01);
+  return a.mapID === b.mapID && near(a.region, b.region) && near(a.uiMin, b.uiMin) && near(a.uiMax, b.uiMax);
+}
+
+function sharedMaps(era, game) {
+  const byMap = rows => {
+    const m = new Map();
+    for (const a of rows) m.set(a.uiMapID, [...(m.get(a.uiMapID) || []), a]);
+    return m;
+  };
+  const eraMaps = byMap(era.rows('uimapassignments'));
+  const gameMaps = byMap(game.rows('uimapassignments'));
+  const same = new Set();
+  for (const [uiMapID, ours] of eraMaps) {
+    const theirs = gameMaps.get(uiMapID);
+    if (theirs && theirs.length === ours.length && ours.every(a => theirs.some(b => sameRectangle(a, b)))) same.add(uiMapID);
+  }
+  return same;
+}
+
+function openCommunity({ dataDir, flavor, client = null, gameStore = null }) {
+  if (!dataDir || (flavor !== FLAVOR && !CROSS_GAME.includes(flavor))) return null;
   const current = readCommunity(communityRoot(dataDir));
   if (!current) return null;
   const made = current.manifest.client || {};
+  const crossGame = flavor !== FLAVOR;
+  const era = crossGame ? GD.openStore({ dataDir, flavor: FLAVOR }) : null;
+  const madeWith = crossGame ? (era.build ? { build: era.build, tableHash: era.manifest.tableHash || null } : null) : client;
+  let shared;
   return {
     source: SOURCE,
     version: current.version,
-    trust: GD.TRUST.communityDb,
-    stale: !client || made.build !== client.build || made.tableHash !== client.tableHash,
+    trust: crossGame ? GD.TRUST.communityOtherGame : GD.TRUST.communityDb,
+    crossGame,
+    stale: !madeWith || made.build !== madeWith.build || made.tableHash !== madeWith.tableHash,
+    sameMaps() {
+      if (!crossGame) return null;
+      if (shared === undefined) shared = era.build && gameStore ? sharedMaps(era, gameStore) : new Set();
+      return shared;
+    },
     manifest: current.manifest,
     dir: current.dir,
     ...GD.tableReader(current.dir, current.manifest, ENTITIES),
