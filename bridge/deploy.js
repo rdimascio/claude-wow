@@ -14,25 +14,29 @@ const DEFAULT_REF = 'origin/main';
 const SUPPORTED_PLATFORMS = ['darwin', 'linux'];
 const OUTPUT_TAIL_LINES = 30;
 const GAME_LINE = /\/reload|relaunch|restart/i;
+const LOCK_AGE_LEFT_FOR_BUILD_AND_SETUP_MS = 60 * 60 * 1000;
+const MAX_TIMEOUT_MS = REL.LOCK_MAX_AGE_MS - LOCK_AGE_LEFT_FOR_BUILD_AND_SETUP_MS;
+const PATH_FORM = /^\.\.?([\\/]|$)/;
 
 const HELP = `claude-wow dev <command>
 
   deploy [ref|worktree]   Build this bridge with bun build.js --host and make it the running release.
                           ref: a git ref in the checkout (default ${DEFAULT_REF}; run git fetch first),
                           built in a temporary git worktree that is removed afterwards.
-                          worktree: a folder that holds a checkout, built as it is (a dirty tree gets
-                          a -dirty-<time> release name).
+                          worktree: a folder that holds a checkout, written as a path (/abs, ./rel or
+                          ../rel), built as it is (a dirty tree gets a -dirty-<time> release name).
     --repo <checkout>     the checkout a ref is read from (default: this checkout)
-    --timeout <seconds>   how long to wait for the bridge to go idle (default ${I.DEFAULT_TIMEOUT_MS / 1000})
+    --timeout <seconds>   how long to wait for the bridge to go idle (default ${I.DEFAULT_TIMEOUT_MS / 1000}, at most ${MAX_TIMEOUT_MS / 1000})
     --keep <n>            how many releases to keep (default ${REL.KEEP_RELEASES}; the current and the previous are always kept)
   rollback                Point current back at the previous release and restart the service.
     --timeout <seconds>
   status                  The current and previous release, the releases on disk, and what the service runs.
 
 Releases live in <home>/releases/<version>-<sha>/claude-wow and <home>/current points at one
-(<home> is ~/.claude-wow, or CLAUDE_WOW_HOME). One deploy or rollback at a time (<home>/deploy.lock).
-The service is restarted (launchctl kickstart -k, or systemctl --user restart) and setup is run for the
-configured client only when the service runs <home>/current/claude-wow. See docs/MIGRATE-PROD-INSTALL.md.`;
+(<home> is ~/.claude-wow, or CLAUDE_WOW_HOME). One deploy or rollback at a time (<home>/deploy.lock,
+for this machine only). The idle wait, the restart (claude-wow service restart) and setup for the
+configured client run only when the service runs <home>/current/claude-wow and the release changes.
+See docs/MIGRATE-PROD-INSTALL.md.`;
 
 function parseArgs(argv) {
   const [cmd, ...rest] = argv;
@@ -47,7 +51,7 @@ function parseArgs(argv) {
       opts.repo = dir;
     } else if (a === '--timeout') {
       const s = Number(rest[++i]);
-      if (!Number.isFinite(s) || s < 0) return { ...opts, error: `--timeout needs a number of seconds, not "${rest[i]}"` };
+      if (!Number.isFinite(s) || s <= 0 || s * 1000 > MAX_TIMEOUT_MS) return { ...opts, error: `--timeout needs a number of seconds above 0 and at most ${MAX_TIMEOUT_MS / 1000}, not "${rest[i]}"` };
       opts.timeoutMs = s * 1000;
     } else if (a === '--keep') {
       const n = Number(rest[++i]);
@@ -105,9 +109,14 @@ function releaseNameFor(version, sha, dirty, nowMs) {
   return `${version}-${sha.slice(0, 12)}${dirty ? `-dirty-${stamp(nowMs)}` : ''}`;
 }
 
+function isPathForm(target) {
+  return path.isAbsolute(target) || PATH_FORM.test(target);
+}
+
 function resolveSource(target, ctx) {
   const run = ctx.run;
-  if (target && isDir(target)) {
+  if (target && isPathForm(target)) {
+    if (!isDir(target)) throw new Error(`${target} is not a folder`);
     const dir = path.resolve(target);
     const sha = git(run, dir, ['rev-parse', 'HEAD']);
     const dirty = git(run, dir, ['status', '--porcelain']) !== '';
@@ -119,7 +128,7 @@ function resolveSource(target, ctx) {
   const repo = ctx.repo || (R.compiled ? '' : R.ROOT);
   if (!repo) throw new Error('the binary has no checkout of its own: pass --repo <checkout>, or a worktree folder');
   const found = run('git', ['-C', repo, 'rev-parse', '--verify', '--quiet', `${ref}^{commit}`]);
-  if (!found.ok) throw new Error(`"${ref}" is not a commit in ${repo}${ref === DEFAULT_REF ? ' (run git fetch origin first)' : ''}`);
+  if (!found.ok) throw new Error(`"${ref}" is not a commit in ${repo}${ref === DEFAULT_REF ? ' (run git fetch origin first)' : ''}${isDir(ref) ? ` (to build the folder, write it as ./${ref})` : ''}`);
   const sha = found.out.trim();
   const tmp = fs.mkdtempSync(path.join(ctx.tmpRoot || os.tmpdir(), 'claude-wow-deploy-'));
   const dir = path.join(tmp, 'src');
@@ -150,8 +159,14 @@ function serviceRunsCurrent(l, ctx) {
 }
 
 function restartService(ctx) {
-  if (ctx.platform === 'darwin') return ctx.run('launchctl', ['kickstart', '-k', `gui/${ctx.uid}/${SVC.LABEL}`]);
-  return ctx.run('systemctl', ['--user', 'restart', SVC.UNIT]);
+  const service = ctx.service || SVC.backend(ctx.platform);
+  const dirs = { ...SVC.dirs(ctx.platform), definition: serviceDefinition(ctx) };
+  try {
+    service.restart(dirs);
+    return { ok: true, status: 0, out: '' };
+  } catch (e) {
+    return { ok: false, status: 1, out: e && e.message ? e.message : String(e) };
+  }
 }
 
 function configuredClients(configFile) {
@@ -214,18 +229,35 @@ function afterSwitch(l, ctx, flip) {
 }
 
 function idleProbe(l, ctx) {
-  return ctx.probe || I.probeFor({ stateFile: l.state, readPid: () => SVC.readPid(SVC.dirs(ctx.platform)), alive: REL.pidAlive });
+  return ctx.probe || I.probeFor({ stateFile: l.state, bridgeLockFile: l.bridgeLock, readPid: () => SVC.readPid(SVC.dirs(ctx.platform)), alive: REL.pidAlive });
 }
 
-function idleWaiter(l, ctx, timeoutMs) {
-  return () => I.waitForIdle({
+function waitIdle(l, ctx, timeoutMs) {
+  return I.waitForIdle({
     probe: idleProbe(l, ctx), timeoutMs, now: ctx.now, sleep: ctx.sleep, pollMs: ctx.pollMs, settleMs: ctx.settleMs,
     onWait: s => ctx.out(`waiting : ${s.reason}`),
   });
 }
 
+function switchWaiter(l, ctx, lock, timeoutMs) {
+  return async () => {
+    const first = await waitIdle(l, ctx, timeoutMs);
+    lock.setPhase(REL.SWITCHING);
+    ctx.out('hold    : the bridge holds new messages until this deploy ends');
+    const settleMs = ctx.settleMs === undefined ? I.DEFAULT_SETTLE_MS : ctx.settleMs;
+    const pollMs = ctx.pollMs === undefined ? I.DEFAULT_POLL_MS : ctx.pollMs;
+    await waitIdle(l, ctx, Math.max(timeoutMs - first.waitedMs, settleMs + pollMs));
+  };
+}
+
 function lockFor(l, ctx, command) {
   return REL.acquireLock(l.lock, { command, alive: ctx.alive || REL.pidAlive, now: ctx.now, pid: ctx.pid || process.pid });
+}
+
+function reportPrune(ctx, result) {
+  if (result.pruned.length) ctx.out(`pruned  : ${result.pruned.join(', ')}`);
+  if (result.prunedStaging.length) ctx.out(`pruned  : unfinished ${result.prunedStaging.join(', ')}`);
+  if (result.pruneError) ctx.err(`claude-wow dev: old releases were not pruned (${result.pruneError}); the deploy itself is done`);
 }
 
 async function deploy(opts, ctx) {
@@ -236,6 +268,10 @@ async function deploy(opts, ctx) {
   try {
     source = resolveSource(opts.target, { ...ctx, repo: opts.repo });
     ctx.out(`source  : ${source.from} at ${source.sha.slice(0, 12)}${source.dirty ? ' (uncommitted changes)' : ''}`);
+    if (REL.currentName(l) === source.name && REL.hasRelease(l, source.name)) {
+      ctx.out(`current : ${source.name} is already current; nothing to switch, restart or set up`);
+      return 0;
+    }
     let binaryFile = '';
     if (REL.hasRelease(l, source.name)) {
       ctx.out(`release : ${source.name} is already built`);
@@ -245,10 +281,16 @@ async function deploy(opts, ctx) {
       binaryFile = ctx.build(source.dir, outDir);
     }
     const meta = { sha: source.sha, version: source.version, from: source.from, dirty: source.dirty };
-    const result = await REL.installAndActivate(l, { name: source.name, binaryFile, meta, keep: opts.keep, now: ctx.now }, { waitIdle: idleWaiter(l, ctx, opts.timeoutMs) });
-    ctx.out(`release : ${result.dir}${result.reused ? '' : ' (new)'}`);
-    if (result.pruned.length) ctx.out(`pruned  : ${result.pruned.join(', ')}`);
-    return afterSwitch(l, ctx, result);
+    const waiter = serviceRunsCurrent(l, ctx) ? switchWaiter(l, ctx, lock, opts.timeoutMs) : null;
+    const result = await REL.installAndActivate(l, { name: source.name, binaryFile, meta, keep: opts.keep, now: ctx.now, alive: ctx.alive }, {
+      waitIdle: waiter,
+      afterFlip: flip => {
+        ctx.out(`release : ${REL.releaseDir(l, flip.name)}${binaryFile ? ' (new)' : ''}`);
+        return afterSwitch(l, ctx, flip);
+      },
+    });
+    reportPrune(ctx, result);
+    return result.outcome;
   } finally {
     if (outDir) fs.rmSync(outDir, { recursive: true, force: true });
     if (source) source.cleanup();
@@ -263,7 +305,8 @@ async function rollback(opts, ctx) {
     const prev = REL.previousName(l);
     if (!prev) throw new Error(`no previous release is recorded in ${l.previous}`);
     if (!REL.hasRelease(l, prev)) throw new Error(`the previous release ${prev} is gone from ${l.releases}`);
-    await idleWaiter(l, ctx, opts.timeoutMs)();
+    if (REL.currentName(l) === prev) throw new Error(`the previous release ${prev} is already current`);
+    if (serviceRunsCurrent(l, ctx)) await switchWaiter(l, ctx, lock, opts.timeoutMs)();
     return afterSwitch(l, ctx, REL.rollback(l));
   } finally {
     lock.release();
@@ -288,7 +331,6 @@ function defaultContext(overrides = {}) {
   return {
     base: H.resolve().dir,
     platform: process.platform,
-    uid: typeof process.getuid === 'function' ? process.getuid() : 0,
     run,
     build: (src, out) => bunBuild(src, out, run),
     now: Date.now,

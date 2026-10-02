@@ -19,20 +19,32 @@ function idleStatus(state, { bridgeRunning = true } = {}) {
     const ids = queued.map(j => `#${j && j.id}`).join(', ');
     return { idle: false, reason: `${queued.length} message(s) waiting in the queue (${ids})` };
   }
-  return { idle: true, reason: 'no agent run in flight and nothing queued' };
+  const handling = Object.values(state.handling && typeof state.handling === 'object' ? state.handling : {});
+  if (handling.length) {
+    const ids = handling.map(h => `#${h && h.id}${h && h.plugin ? ' ' + h.plugin : ''}`).join(', ');
+    return { idle: false, reason: `${handling.length} message(s) being handled by a plugin (${ids})` };
+  }
+  return { idle: true, reason: 'no agent run in flight, no plugin at work and nothing queued' };
 }
 
 function readState(file) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) { return e.code === 'ENOENT' ? {} : null; }
 }
 
-function bridgeRunning(pidInfo, alive) {
-  if (!pidInfo) return true;
-  return alive(pidInfo.pid) || alive(pidInfo.bridgePid);
+function readBridgeLock(file) {
+  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
 }
 
-function probeFor({ stateFile, readPid = () => null, alive }) {
-  return () => idleStatus(readState(stateFile), { bridgeRunning: bridgeRunning(readPid(), alive) });
+function bridgeRunning({ lock, pidInfo }, alive) {
+  if (lock && alive(Number(lock.pid))) return true;
+  return !!(pidInfo && alive(Number(pidInfo.bridgePid)));
+}
+
+function probeFor({ stateFile, bridgeLockFile = '', readPid = () => null, alive }) {
+  return () => {
+    const running = bridgeRunning({ lock: bridgeLockFile ? readBridgeLock(bridgeLockFile) : null, pidInfo: readPid() }, alive);
+    return idleStatus(readState(stateFile), { bridgeRunning: running });
+  };
 }
 
 const realSleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -63,4 +75,4 @@ async function waitForIdle({ probe, timeoutMs = DEFAULT_TIMEOUT_MS, pollMs = DEF
   }
 }
 
-module.exports = { DEFAULT_TIMEOUT_MS, DEFAULT_POLL_MS, DEFAULT_SETTLE_MS, idleStatus, readState, bridgeRunning, probeFor, waitForIdle };
+module.exports = { DEFAULT_TIMEOUT_MS, DEFAULT_POLL_MS, DEFAULT_SETTLE_MS, idleStatus, readState, readBridgeLock, bridgeRunning, probeFor, waitForIdle };

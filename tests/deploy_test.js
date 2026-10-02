@@ -42,7 +42,11 @@ function commit(repo, marker) {
   return git(repo, 'rev-parse', 'HEAD');
 }
 
-function harness(root, { runsCurrent = true, platform = 'darwin', probe, setupOut = 'addon    : 18 file(s)\nDone. Next:\n  1. Fully quit and relaunch World of Warcraft (it only discovers new addon folders at launch).\n  4. In game:  /claude', failRestart = false } = {}) {
+function fakeService(platform, exec) {
+  return Object.assign(Object.create(S.backend(platform === 'darwin' ? 'darwin' : 'linux')), { exec, uid: () => UID });
+}
+
+function harness(root, { runsCurrent = true, platform = 'darwin', probe, setupOut = 'addon    : 18 file(s)\nDone. Next:\n  1. Fully quit and relaunch World of Warcraft (it only discovers new addon folders at launch).\n  4. In game:  /claude', failRestart = false, loaded = true } = {}) {
   const base = path.join(root, 'home');
   fs.mkdirSync(base, { recursive: true });
   const l = REL.layout(base);
@@ -61,14 +65,21 @@ function harness(root, { runsCurrent = true, platform = 'darwin', probe, setupOu
     base, platform, uid: UID, definitionFile, tmpRoot: root,
     now: () => clock, sleep: async ms => { clock += ms; }, pollMs: 1000, settleMs: 0,
     out: line => out.push(line), err: line => err.push(line),
-    probe: probe ? () => { const s = probe(); events.push(['probe', s.idle, REL.currentName(l)]); return s; } : () => ({ idle: true, reason: 'idle' }),
+    probe: probe ? () => { const s = probe(); events.push(['probe', s.idle, REL.currentName(l), (REL.readLock(l.lock) || {}).phase]); return s; } : () => ({ idle: true, reason: 'idle' }),
     run: (cmd, args, opts) => {
       if (cmd === 'git') return D.runCommand(cmd, args, opts);
+      if (cmd === 'launchctl' || cmd === 'systemctl') throw new Error(`the test reached ${cmd} through ctx.run`);
       events.push([cmd, ...args]);
-      if ((cmd === 'launchctl' || cmd === 'systemctl') && failRestart) return { ok: false, status: 1, out: 'Could not find service' };
       if (cmd === REL.currentBinary(l)) return { ok: true, status: 0, out: setupOut };
       return { ok: true, status: 0, out: '' };
     },
+    service: fakeService(platform, (cmd, args) => {
+      assert.ok(cmd === 'launchctl' || cmd === 'systemctl', `the service backend ran ${cmd}`);
+      if (cmd === 'launchctl' && args[0] === 'print') return { ok: loaded && !failRestart, status: loaded ? 0 : 113, out: '' };
+      events.push([cmd, ...args]);
+      if (failRestart) return { ok: false, status: 1, out: 'Could not find service' };
+      return { ok: true, status: 0, out: '' };
+    }),
     build: (src, outDir) => {
       builds.push(src);
       assert.ok(fs.existsSync(path.join(src, 'marker.txt')), 'the build sees the source tree');
@@ -116,10 +127,11 @@ test('deploy of a ref: built in a temporary worktree that is removed, installed 
   assert.ok(!fs.existsSync(h.l.lock), 'the lock is released');
   assert.deepEqual(fs.readdirSync(root).filter(f => f.startsWith('claude-wow-')), [], 'no temporary build or source folder is left');
 
-  const again = harness(root);
-  assert.equal(await D.main(['deploy', 'HEAD', '--repo', repo], again.ctx), 0);
+  const again = harness(root, { probe: () => { throw new Error('the release is already current: no idle wait'); } });
+  assert.equal(await D.main(['deploy', 'HEAD', '--repo', repo], again.ctx), 0, again.err.join('\n'));
   assert.equal(again.builds.length, 0, 'an already built release is not built again');
-  assert.ok(again.out.includes(`current : ${name} was already current`));
+  assert.ok(again.out.includes(`current : ${name} is already current; nothing to switch, restart or set up`), again.out.join('\n'));
+  assert.deepEqual(again.events, [], 'no idle wait, no restart, no setup');
 });
 
 test('rollback goes back to the release before the last deploy and kickstarts; a second deploy records the first as previous', { skip: NO_SYMLINKS }, async () => {
@@ -155,10 +167,10 @@ test('rollback goes back to the release before the last deploy and kickstarts; a
 test('before the migration the service does not run current: the release is staged and current flipped, but nothing restarts and setup does not run', { skip: NO_SYMLINKS }, async () => {
   const root = scratch('premigration');
   const repo = makeRepo(root);
-  const h = harness(root, { runsCurrent: false });
-  assert.equal(await D.main(['deploy', 'HEAD', '--repo', repo], h.ctx), 0);
+  const h = harness(root, { runsCurrent: false, probe: () => ({ idle: false, reason: '1 agent run(s) in flight (#5)' }) });
+  assert.equal(await D.main(['deploy', 'HEAD', '--repo', repo, '--timeout', '5'], h.ctx), 0, h.err.join('\n'));
   assert.ok(REL.currentName(h.l));
-  assert.deepEqual(h.events, [], 'no launchctl, no setup');
+  assert.deepEqual(h.events, [], 'no idle wait for a bridge that does not run current, no launchctl, no setup');
   assert.ok(h.out.some(l => /does not run .*current.*nothing was restarted and setup was not run/.test(l)), h.out.join('\n'));
   assert.ok(h.out.some(l => l.includes('MIGRATE-PROD-INSTALL.md')));
 });
@@ -170,9 +182,11 @@ test('the idle wait: the flip waits while a run is in flight, proceeds once idle
   const h = harness(root, { probe: () => (busy-- > 0 ? { idle: false, reason: '1 agent run(s) in flight (#4)' } : { idle: true, reason: 'idle' }) });
   assert.equal(await D.main(['deploy', 'HEAD', '--repo', repo], h.ctx), 0);
   const probes = h.events.filter(e => e[0] === 'probe');
-  assert.deepEqual(probes.map(p => p[1]), [false, false, false, true]);
+  assert.deepEqual(probes.map(p => p[1]), [false, false, false, true, true]);
   assert.ok(probes.every(p => p[2] === ''), 'current did not move while waiting');
+  assert.deepEqual(probes.map(p => p[3]), [REL.PREPARING, REL.PREPARING, REL.PREPARING, REL.PREPARING, REL.SWITCHING], 'probed again after the lock says switching');
   assert.deepEqual(h.events[probes.length], KICKSTART, 'the restart comes after the wait');
+  assert.ok(h.out.includes('hold    : the bridge holds new messages until this deploy ends'));
   assert.ok(h.out.includes('waiting : 1 agent run(s) in flight (#4)'));
 
   const before = REL.currentName(h.l);
@@ -227,8 +241,85 @@ test('a failed restart is an error that names how to restart, and setup is not r
   const repo = makeRepo(root);
   const h = harness(root, { failRestart: true });
   assert.equal(await D.main(['deploy', 'HEAD', '--repo', repo], h.ctx), 1);
-  assert.match(h.err.join('\n'), /did not restart: Could not find service/);
-  assert.deepEqual(h.events, [KICKSTART]);
+  assert.match(h.err.join('\n'), /did not restart: launchctl could not start the service: Could not find service/);
+  assert.deepEqual(h.events.map(e => e.slice(0, 2)), [['launchctl', 'bootstrap'], ['launchctl', 'load']], 'an agent that is not loaded is bootstrapped, never kickstarted');
+});
+
+test('the restart goes through the service backend: a loaded agent is kickstarted, an unloaded one (after service stop) is bootstrapped', { skip: NO_SYMLINKS }, async () => {
+  const root = scratch('restart-backend');
+  const repo = makeRepo(root);
+  const h = harness(root, { loaded: false });
+  assert.equal(await D.main(['deploy', 'HEAD', '--repo', repo], h.ctx), 0, h.err.join('\n'));
+  assert.deepEqual(h.events[0], ['launchctl', 'bootstrap', `gui/${UID}`, h.ctx.definitionFile]);
+  assert.ok(!h.events.some(e => e[1] === 'kickstart'), 'kickstart of an unloaded agent fails, so it is not tried');
+  assert.equal(h.events[1][1], 'setup');
+});
+
+test('a message that slipped in before the switching mark is waited for: the flip comes only after a second idle read under the mark', { skip: NO_SYMLINKS }, async () => {
+  const root = scratch('slipped');
+  const repo = makeRepo(root);
+  let slipped = 2;
+  let l;
+  const h = harness(root, { probe: () => ((REL.readLock(l.lock) || {}).phase === REL.SWITCHING && slipped-- > 0 ? { idle: false, reason: '1 agent run(s) in flight (#8)' } : { idle: true, reason: 'idle' }) });
+  l = h.l;
+  assert.equal(await D.main(['deploy', 'HEAD', '--repo', repo], h.ctx), 0, h.err.join('\n'));
+  const probes = h.events.filter(e => e[0] === 'probe');
+  assert.deepEqual(probes.map(p => [p[1], p[3]]), [[true, REL.PREPARING], [false, REL.SWITCHING], [false, REL.SWITCHING], [true, REL.SWITCHING]]);
+  assert.ok(probes.every(p => p[2] === ''), 'current did not move until the second idle read');
+  assert.deepEqual(h.events[probes.length], KICKSTART);
+});
+
+test('--timeout must be above 0 and below the lock\'s maximum age', () => {
+  assert.match(D.parseArgs(['deploy', '--timeout', '0']).error, /above 0/);
+  assert.match(D.parseArgs(['deploy', '--timeout', '-3']).error, /above 0/);
+  assert.match(D.parseArgs(['rollback', '--timeout', String(REL.LOCK_MAX_AGE_MS / 1000)]).error, /at most/);
+  assert.equal(D.parseArgs(['rollback', '--timeout', '7200']).timeoutMs, 7200 * 1000);
+});
+
+test('a folder is built only when it is written as a path; a bare name is a ref even when a folder of that name exists', { skip: NO_SYMLINKS }, async () => {
+  const root = scratch('pathform');
+  const repo = makeRepo(root);
+  const cwd = process.cwd();
+  process.chdir(root);
+  try {
+    const h = harness(root);
+    assert.equal(await D.main(['deploy', 'repo', '--repo', repo], h.ctx), 1);
+    assert.match(h.err.join('\n'), /"repo" is not a commit .*\(to build the folder, write it as \.\/repo\)/);
+    assert.equal(h.builds.length, 0);
+    const p = harness(root);
+    assert.equal(await D.main(['deploy', './repo'], p.ctx), 0, p.err.join('\n'));
+    assert.deepEqual(p.builds, [path.resolve(repo)]);
+    const missing = harness(root);
+    assert.equal(await D.main(['deploy', './no-such-folder'], missing.ctx), 1);
+    assert.match(missing.err.join('\n'), /no-such-folder is not a folder/);
+  } finally {
+    process.chdir(cwd);
+  }
+});
+
+test('a prune failure after the switch is reported, never thrown: the deploy still succeeds', { skip: NO_SYMLINKS || process.getuid() === 0 }, async () => {
+  const root = scratch('prune-fails');
+  const repo = makeRepo(root);
+  const at = ms => { const x = harness(root); x.ctx.now = () => ms; return x.ctx; };
+  assert.equal(await D.main(['deploy', 'HEAD', '--repo', repo], at(1000)), 0);
+  commit(repo, 'two');
+  assert.equal(await D.main(['deploy', 'HEAD', '--repo', repo], at(2000)), 0);
+  commit(repo, 'three');
+  const h = harness(root);
+  h.ctx.now = () => 3000;
+  const realRun = h.ctx.run;
+  h.ctx.run = (cmd, args, opts) => {
+    const r = realRun(cmd, args, opts);
+    if (cmd === REL.currentBinary(h.l)) fs.chmodSync(h.l.releases, 0o555);
+    return r;
+  };
+  try {
+    assert.equal(await D.main(['deploy', 'HEAD', '--repo', repo, '--keep', '1'], h.ctx), 0, h.err.join('\n'));
+  } finally {
+    fs.chmodSync(h.l.releases, 0o755);
+  }
+  assert.match(h.err.join('\n'), /old releases were not pruned \(.*\); the deploy itself is done/);
+  assert.deepEqual(h.events.map(e => e[1]), ['kickstart', 'setup'], 'the restart and setup ran before the prune');
 });
 
 test('helpers: the configured client from addonDir, the game lines from setup output, the release name, bad refs and Windows', async () => {

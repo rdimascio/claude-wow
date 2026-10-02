@@ -23,20 +23,33 @@ test('idleStatus: a run in flight or a queued message is busy, an empty state is
   assert.equal(I.idleStatus({ inflight: { c1: { id: 7 } } }, { bridgeRunning: false }).idle, true, 'what a dead bridge left behind does not block');
 });
 
-test('readState and the probe: a missing state.json is empty, a corrupt one is unknown, the pid file decides whether a bridge runs', () => {
+test('readState and the probe: a missing state.json is empty, a corrupt one is unknown, bridge.lock decides whether a bridge runs', () => {
   const dir = path.join(__dirname, 'tmp', 'idle');
   fs.rmSync(dir, { recursive: true, force: true });
   fs.mkdirSync(dir, { recursive: true });
   const stateFile = path.join(dir, 'state.json');
+  const bridgeLockFile = path.join(dir, 'bridge.lock');
   assert.deepEqual(I.readState(stateFile), {});
   fs.writeFileSync(stateFile, '{not json');
   assert.equal(I.readState(stateFile), null);
-  fs.writeFileSync(stateFile, JSON.stringify({ inflight: { c: { id: 3 } } }));
-  const alivePids = new Set([100]);
+  fs.writeFileSync(stateFile, JSON.stringify({ inflight: { c: { id: 3 } }, queued: [{ id: 4 }] }));
+  const alivePids = new Set([100, 101, 300]);
   const alive = pid => alivePids.has(pid);
-  assert.equal(I.probeFor({ stateFile, readPid: () => ({ pid: 100, bridgePid: 101 }), alive })().idle, false);
-  assert.equal(I.probeFor({ stateFile, readPid: () => null, alive })().idle, false, 'no pid file: a bridge may still run');
-  assert.equal(I.probeFor({ stateFile, readPid: () => ({ pid: 200, bridgePid: 201 }), alive })().idle, true, 'supervisor and bridge both gone');
+  assert.equal(I.probeFor({ stateFile, bridgeLockFile, alive })().idle, true, 'no bridge.lock and no pid file: no bridge, so what is left in state.json does not block (after service stop)');
+  assert.equal(I.probeFor({ stateFile, bridgeLockFile, readPid: () => null, alive })().idle, true);
+  fs.writeFileSync(bridgeLockFile, JSON.stringify({ pid: 300, startedAt: 1 }));
+  assert.equal(I.probeFor({ stateFile, bridgeLockFile, alive })().idle, false, 'a live pid in bridge.lock is a running bridge');
+  fs.writeFileSync(bridgeLockFile, JSON.stringify({ pid: 400, startedAt: 1 }));
+  assert.equal(I.probeFor({ stateFile, bridgeLockFile, alive })().idle, true, 'a dead pid in bridge.lock is no bridge');
+  assert.equal(I.probeFor({ stateFile, bridgeLockFile, readPid: () => ({ pid: 100, bridgePid: 101 }), alive })().idle, false, 'a bridge without the lock is still found through the pid file');
+  assert.equal(I.probeFor({ stateFile, bridgeLockFile, readPid: () => ({ pid: 100, bridgePid: 201 }), alive })().idle, true, 'a supervisor alone, between bridge restarts, runs nothing');
+});
+
+test('idleStatus: a message a plugin is handling (live session, stream, a roast hook) keeps the bridge busy', () => {
+  const s = I.idleStatus({ handling: { 'c1#12': { id: 12, plugin: 'live' } } });
+  assert.equal(s.idle, false);
+  assert.match(s.reason, /1 message\(s\) being handled by a plugin \(#12 live\)/);
+  assert.equal(I.idleStatus({ handling: {} }).idle, true);
 });
 
 test('waitForIdle defers while a run is in flight and proceeds once idle has held for the settle time', async () => {

@@ -82,6 +82,7 @@ const VOTES = require('./votes');
 const OB = require('./observed');
 const OT = require('./observedtools');
 const MH = require('./maphold');
+const REL = require('./releases');
 
 const HERE = __dirname;
 // Config, state, transcripts, log and scratch live in the home folder (home.js:
@@ -90,6 +91,8 @@ const HOME = H.resolve();
 const CONFIG_FILE = HOME.config;
 const STATE_FILE = HOME.state;
 const LOG_FILE = HOME.log;
+const DEPLOY_LOCK_FILE = REL.layout(HOME.dir).lock;
+const DEPLOY_HOLD_POLL_MS = 1000;
 const TMP_DIR = HOME.tmp; // prompt files for agents that read the prompt from disk
 
 const argv = process.argv.slice(2);
@@ -424,6 +427,7 @@ function shutdown(sig) {
   if (shuttingDown) return;
   shuttingDown = true;
   try { runGrants.revokeAll(); } catch {}
+  forgetUnstartedWork();
   stopPlugins();
   let voteClosing = Promise.resolve();
   try { voteClosing = VOTES.settleWithin(voteBox.stop(), VOTES.SHUTDOWN_PUSH_WAIT_MS); } catch {}
@@ -948,11 +952,18 @@ function submit(job) {
     log(`hello from session ${job.session}${pendingRestore ? ' (restore offered)' : ''}`);
     return;
   }
+  if (inFlight(job)) return;
+  if (holdForDeploy(job)) return;
+  dispatchMessage(job);
+}
+
+function dispatchMessage(job) {
   const key = chatKey(job);
   const cur = running.get(key);
   if (cur && cur.job.id === job.id) return;
   const q = queued.get(key);
   if (q && q.id === job.id) return;
+  if (state.handling && state.handling[handlingKey(job)]) return;
   if (cur || running.size >= MAX_PARALLEL) {
     queued.set(key, job);
     noteQueued();
@@ -1017,6 +1028,55 @@ function noteQueued() {
   else delete state.queued;
 }
 
+function forgetUnstartedWork() {
+  queued.clear();
+  held.clear();
+  if (heldTimer) { clearInterval(heldTimer); heldTimer = null; }
+  noteQueued();
+  delete state.handling;
+  try { saveState(); } catch (e) { log(`could not save state.json while stopping (${e.message})`); }
+}
+
+const handlingKey = (job, suffix = '') => `${chatKey(job)}#${job.id}${suffix}`;
+
+function noteHandling(key, job) {
+  (state.handling = state.handling || {})[key] = { id: job.id, chat: job.chat, session: job.session, plugin: job.plugin || '', since: Date.now() };
+  saveState();
+}
+
+function dropHandling(key) {
+  if (!state.handling || !state.handling[key]) return false;
+  delete state.handling[key];
+  if (!Object.keys(state.handling).length) delete state.handling;
+  return true;
+}
+
+const held = new Map();
+let heldTimer = null;
+
+function holdForDeploy(job) {
+  const holder = REL.switchingHolder(DEPLOY_LOCK_FILE);
+  if (!holder) return false;
+  const key = handlingKey(job);
+  if (!held.has(key)) log(`${tagOf(job)} held: a deploy (pid ${holder.pid}) is switching releases; it starts when the deploy ends`);
+  held.set(key, job);
+  if (!heldTimer) heldTimer = setInterval(releaseHeld, DEPLOY_HOLD_POLL_MS);
+  return true;
+}
+
+function releaseHeld() {
+  if (shuttingDown || REL.switchingHolder(DEPLOY_LOCK_FILE)) return;
+  clearInterval(heldTimer);
+  heldTimer = null;
+  const jobs = [...held.values()];
+  held.clear();
+  for (const job of jobs) {
+    if (alreadyHandled(job)) continue;
+    log(`${tagOf(job)} released: the deploy ended`);
+    dispatchMessage(job);
+  }
+}
+
 const tagOf = job => `#${job.id}${job.session ? '@' + job.session : ''}`;
 
 // A message the addon sent: acknowledge it, decide which plugin it belongs to
@@ -1059,6 +1119,7 @@ function runJob(job) {
     log(`${tag} ${r.plugin.id}: ${e && e.stack ? e.stack : e}`);
     finish(job, 'error', `The ${r.plugin.id} plugin failed: ${e && e.message ? e.message : e}`);
   };
+  noteHandling(handlingKey(job), job);
   let handled;
   try { handled = r.plugin.handle(job, core); } catch (e) { failed(e); return; }
   if (handled && typeof handled.then === 'function') handled.then(null, failed);
@@ -1590,8 +1651,9 @@ function noteInflight(key, job, child, agentName, marker) {
 }
 
 function recoverInflight() {
-  const staleQueue = state.queued !== undefined;
+  const staleQueue = state.queued !== undefined || state.handling !== undefined;
   delete state.queued;
+  delete state.handling;
   const lost = Object.entries(state.inflight || {});
   if (!lost.length) {
     if (staleQueue) saveState();
@@ -1646,7 +1708,12 @@ function tellPluginFinished(plugin, job, outcome) {
   const failed = e => log(`${tagOf(job)} ${plugin.id}: finished hook failed (${e && e.message ? e.message : e})`);
   try {
     const pending = plugin.finished(job, outcome, core);
-    if (pending && typeof pending.then === 'function') pending.then(null, failed);
+    if (pending && typeof pending.then === 'function') {
+      const key = handlingKey(job, ':finished');
+      noteHandling(key, job);
+      const settled = () => { if (dropHandling(key)) saveState(); };
+      pending.then(settled, e => { settled(); failed(e); });
+    }
   } catch (e) { failed(e); }
 }
 
@@ -1662,6 +1729,7 @@ function finish(job, status, text, session, denied) {
   job.finished = true;
   running.delete(chatKey(job));
   if (state.inflight) delete state.inflight[chatKey(job)];
+  dropHandling(handlingKey(job));
   markHandled(job);
   saveState();
   // A finished reply ends with the "TL;DR:" block the system prompt asks for:

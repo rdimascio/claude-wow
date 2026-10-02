@@ -351,15 +351,17 @@ function preflight(d) {
 
 // macOS ---------------------------------------------------------------------
 const mac = {
-  target: () => `gui/${process.getuid()}/${LABEL}`,
-  loaded() { return run('launchctl', ['print', this.target()]).ok; },
+  exec: run,
+  uid: () => process.getuid(),
+  target() { return `gui/${this.uid()}/${LABEL}`; },
+  loaded() { return this.exec('launchctl', ['print', this.target()]).ok; },
   bootstrap(d) {
-    let r = run('launchctl', ['bootstrap', `gui/${process.getuid()}`, d.definition]);
-    if (!r.ok) r = run('launchctl', ['load', '-w', d.definition]); // pre-10.11 spelling
+    let r = this.exec('launchctl', ['bootstrap', `gui/${this.uid()}`, d.definition]);
+    if (!r.ok) r = this.exec('launchctl', ['load', '-w', d.definition]); // pre-10.11 spelling
     return r;
   },
   bootout() {
-    let r = run('launchctl', ['bootout', this.target()]);
+    let r = this.exec('launchctl', ['bootout', this.target()]);
     if (!r.ok && /not find|No such process|3: /.test(r.out)) r.ok = true; // was not loaded
     return r;
   },
@@ -395,7 +397,7 @@ const mac = {
   },
   start(d) {
     if (!fs.existsSync(d.definition)) throw new Error('the service is not installed. Run: claude-wow service install');
-    const r = this.loaded() ? run('launchctl', ['kickstart', this.target()]) : this.bootstrap(d);
+    const r = this.loaded() ? this.exec('launchctl', ['kickstart', this.target()]) : this.bootstrap(d);
     if (!r.ok) throw new Error(`launchctl could not start the service: ${r.out.trim()}`);
   },
   stop() {
@@ -404,11 +406,11 @@ const mac = {
   },
   restart(d) {
     if (!this.loaded()) return this.start(d);
-    const r = run('launchctl', ['kickstart', '-k', this.target()]);
+    const r = this.exec('launchctl', ['kickstart', '-k', this.target()]);
     if (!r.ok) throw new Error(`launchctl could not restart the service: ${r.out.trim()}`);
   },
   probe() {
-    const r = run('launchctl', ['print', this.target()]);
+    const r = this.exec('launchctl', ['print', this.target()]);
     return r.ok ? { loaded: true, ...parseLaunchctlPrint(r.out) } : { loaded: false, pid: 0, state: '' };
   },
   kind: 'macOS LaunchAgent ' + LABEL,
@@ -416,8 +418,9 @@ const mac = {
 
 // Linux ---------------------------------------------------------------------
 const linux = {
+  exec: run,
   sys(args) {
-    const r = run('systemctl', ['--user', ...args]);
+    const r = this.exec('systemctl', ['--user', ...args]);
     if (r.error && r.error.code === 'ENOENT') throw new Error('systemctl was not found. Without systemd, start the bridge from your session startup with: ' + programArgs(program()).join(' '));
     return r;
   },

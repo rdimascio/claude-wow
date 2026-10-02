@@ -21,17 +21,23 @@ After the migration, the service runs one built binary:
 | Command | What it does |
 |---|---|
 | `claude-wow dev deploy [ref]` | Takes `deploy.lock`, adds a temporary `git worktree` of the ref (default `origin/main`; run `git fetch origin` first), builds it with `bun build.js --host`, copies the binary into `releases/<name>/`, waits until the bridge is idle, points `current` at the new release, restarts the service, runs `claude-wow setup --wow <client>` with the new binary for the client in `config.json`, and prints the setup lines about `/reload` or a full restart. It removes the temporary worktree and the lock at the end, also after an error. |
-| `claude-wow dev deploy <folder>` | The same, but it builds the checkout in that folder as it is, with no temporary worktree. |
+| `claude-wow dev deploy <folder>` | The same, but it builds the checkout in that folder as it is, with no temporary worktree. Write the folder as a path (`/abs/path`, `./name` or `../name`); a bare name is always read as a ref. |
 | `claude-wow dev rollback` | Takes the lock, waits until the bridge is idle, points `current` at the previous release, restarts the service and runs setup. A second rollback goes forward again. |
 | `claude-wow dev status` | The current and the previous release, the releases on disk, whether the service runs `current`, and whether the bridge is idle. |
 
-Options: `--repo <checkout>` (where a ref is read; the default is the checkout the command runs from, and the binary needs it), `--timeout <seconds>` (the idle wait, default 1800), `--keep <n>`.
+Options: `--repo <checkout>` (where a ref is read; the default is the checkout the command runs from, and the binary needs it), `--timeout <seconds>` (the idle wait, default 1800, more than 0 and at most 7200, so the lock cannot go stale while a deploy waits), `--keep <n>`.
 
-**Idle** means: no agent run in `state.json` `inflight` and no message in `state.json` `queued`, for 3 s in a row, or no bridge process alive (from the supervisor pid file). If the wait times out, nothing is switched: the new release stays on disk and the next deploy uses it without a new build.
+**Idle** means: no agent run in `state.json` `inflight`, no message in `state.json` `queued`, and no message a plugin is still handling in `state.json` `handling` (a live-session chat waiting for its answer, a `/stream` command waiting for the overlay, a roast being sent to the overlay), for 3 s in a row. It also means idle when no bridge process is alive: the pid in `~/.claude-wow/bridge.lock`, or the bridge pid in the supervisor pid file. A bridge that stops cleanly (`service stop`) clears `queued` and `handling`. If the wait times out, nothing is switched: the new release stays on disk and the next deploy uses it without a new build.
 
-**The restart and setup run only when the service runs `~/.claude-wow/current/claude-wow`.** Before the migration, a deploy only builds the release and moves `current`. It does not restart the service, and it does not run setup. It says so.
+**The switch.** After the first idle wait, the deploy marks `deploy.lock` as `switching`. While a live deploy on this machine holds that mark, the bridge holds every new chat message: it does not run it and does not acknowledge it, and it starts it when the lock goes (the addon also sends it again after a restart). The deploy then checks idle a second time, so a message that started just before the mark is waited for too. Only then does it move `current`, restart and run setup. What is left: a plugin run that started less than 3 s before the mark and has not written `state.json` yet. The settle time of the second check covers that in practice.
 
-The restart is `launchctl kickstart -k gui/<uid>/io.claudewow.bridge` on macOS and `systemctl --user restart claude-wow-bridge` on Linux. `dev` does not run on Windows.
+**The restart and setup run only when the service runs `~/.claude-wow/current/claude-wow`.** Before the migration, a deploy only builds the release and moves `current`. It does not wait for idle, restart the service, or run setup. It says so. A deploy of the release that is already current does nothing after the build check: no wait, no restart, no setup.
+
+The restart is `claude-wow service restart`: on macOS it bootstraps the LaunchAgent if it is not loaded (after `service stop`), else `launchctl kickstart -k gui/<uid>/io.claudewow.bridge`; on Linux `systemctl --user restart claude-wow-bridge`. `dev` does not run on Windows.
+
+Old releases are pruned after the restart and setup. A prune failure is printed and does not fail the deploy. Staging folders (`releases/.staging-*`) left by an install whose process is gone are removed at the same time.
+
+`deploy.lock` is for one machine. A lock written on another host (a home folder on a shared drive) is never taken over until it is 3 hours old, and the bridge ignores its `switching` mark. Do not deploy into one home folder from two machines.
 
 ## Migrate (macOS)
 
@@ -122,4 +128,10 @@ The releases stay in `~/.claude-wow/releases`. To remove them too: `rm -rf ~/.cl
 
 ## Linux
 
-The same steps work with the systemd user unit: `service install` from the release writes `~/.config/systemd/user/claude-wow-bridge.service` with `ExecStart="/home/<you>/.claude-wow/current/claude-wow"`. Check it with `systemctl --user cat claude-wow-bridge`.
+The same steps work with the systemd user unit, with one more step. `service install` from the release writes `~/.config/systemd/user/claude-wow-bridge.service` with `ExecStart="/home/<you>/.claude-wow/current/claude-wow"` and runs `systemctl --user enable --now`. That does not restart a unit that is already active, so the old bridge keeps running. Restart it after step 4:
+
+```sh
+~/.claude-wow/current/claude-wow service restart
+```
+
+Check it with `systemctl --user cat claude-wow-bridge` and `systemctl --user status claude-wow-bridge` (the main process must be `/home/<you>/.claude-wow/current/claude-wow`).

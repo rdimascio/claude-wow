@@ -63,6 +63,79 @@ test('a stale lock is taken over: a dead holder, an old one, an unreadable one p
   assert.equal(REL.acquireLock(l.lock, { pid: 7171, alive, now: fresh }).staleRemoved, true);
 });
 
+test('a stale lock is taken over only when the file moved aside is the one judged stale: a pid-less lock replaced in between is put back', () => {
+  const l = REL.layout(scratch('stale-race'));
+  const old = clock(10_000_000);
+  fs.writeFileSync(l.lock, '');
+  const judged = REL.readLock(l.lock);
+  assert.equal(judged.pid, 0);
+  fs.writeFileSync(`${l.lock}.next`, '');
+  fs.renameSync(`${l.lock}.next`, l.lock);
+  const replaced = REL.readLock(l.lock);
+  assert.equal(replaced.pid, 0, 'the new file is just as pid-less as the old one');
+  assert.throws(() => REL.takeOverStale(l.lock, judged, 5151), /another deploy holds/);
+  assert.ok(fs.existsSync(l.lock), 'the newer lock is back in place');
+  assert.equal(REL.readLock(l.lock).ino, replaced.ino);
+  assert.deepEqual(fs.readdirSync(path.dirname(l.lock)).filter(f => f.includes('stale')), []);
+  fs.unlinkSync(l.lock);
+
+  const a = REL.acquireLock(l.lock, { pid: 4242, alive: () => false, now: old });
+  const seenByB = REL.readLock(l.lock);
+  const c = REL.acquireLock(l.lock, { pid: 6161, alive: pid => pid === 6161, now: old });
+  assert.equal(c.staleRemoved, true);
+  assert.throws(() => REL.takeOverStale(l.lock, seenByB, 5151), /pid 6161/, 'B, late with its view of the dead lock, does not remove the lock C took');
+  assert.equal(REL.readLock(l.lock).token, c.token);
+  assert.equal(a.release(), false, 'the old holder cannot release the new one');
+  assert.equal(c.release(), true);
+});
+
+test('a new lock is never seen half written, carries a token, and only its token releases it or marks it switching', () => {
+  const l = REL.layout(scratch('lock-token'));
+  const now = clock();
+  const lock = REL.acquireLock(l.lock, { pid: 4242, command: 'dev deploy', alive: () => true, now });
+  const held = REL.readLock(l.lock);
+  assert.match(held.token, /^[0-9a-f]{32}$/);
+  assert.equal(held.token, lock.token);
+  assert.equal(held.phase, REL.PREPARING);
+  assert.deepEqual(fs.readdirSync(path.dirname(l.lock)).filter(f => f.endsWith('.new')), [], 'no temp file left');
+  assert.equal(REL.releaseLock(l.lock, 'not-the-token'), false);
+  assert.equal(REL.switchingHolder(l.lock, { alive: () => true, now }), null, 'preparing is not switching');
+  lock.setPhase(REL.SWITCHING);
+  const switching = REL.readLock(l.lock);
+  assert.deepEqual([switching.phase, switching.token, switching.pid, switching.command], [REL.SWITCHING, lock.token, 4242, 'dev deploy']);
+  assert.equal(REL.switchingHolder(l.lock, { alive: () => true, now }).pid, 4242);
+  assert.equal(REL.switchingHolder(l.lock, { alive: () => false, now }), null, 'a dead deployer holds nothing');
+  assert.equal(REL.switchingHolder(l.lock, { alive: () => true, now, host: 'another-host' }), null, 'a lock from another machine holds nothing here');
+  fs.writeFileSync(l.lock, JSON.stringify({ ...JSON.parse(fs.readFileSync(l.lock, 'utf8')), token: 'someone-else' }));
+  assert.throws(() => lock.setPhase(REL.SWITCHING), /no longer held by this process/);
+  assert.equal(lock.release(), false);
+});
+
+test('the flip records previous before it moves current, so a crash between the two never loses the way back', { skip: NO_SYMLINKS }, () => {
+  const base = scratch('flip-order');
+  const l = REL.layout(base);
+  for (const n of ['a', 'b']) REL.installRelease(l, { name: `0.5.0-${n}`, binaryFile: fakeBinary(base, n) });
+  REL.activate(l, '0.5.0-a');
+  assert.throws(() => REL.activate(l, '0.5.0-b', { point: () => { throw new Error('crash during the flip'); } }), /crash during the flip/);
+  assert.equal(REL.previousName(l), '0.5.0-a', 'previous was written first');
+  assert.equal(REL.currentName(l), '0.5.0-a');
+});
+
+test('pruning removes the staging folders of installs whose process is gone and keeps a live one', { skip: NO_SYMLINKS }, () => {
+  const base = scratch('prune-staging');
+  const l = REL.layout(base);
+  REL.installRelease(l, { name: 'r1', binaryFile: fakeBinary(base, 'r1') });
+  REL.activate(l, 'r1');
+  const dead = path.join(l.releases, '.staging-0.5.0-abc-4242-0123abcd');
+  const live = path.join(l.releases, '.staging-0.5.0-abc-5151-89abcdef');
+  for (const d of [dead, live]) { fs.mkdirSync(d); fs.writeFileSync(path.join(d, REL.BINARY), 'partial'); }
+  const r = REL.prune(l, 5, { alive: pid => pid === 5151 });
+  assert.deepEqual(r.staging, [path.basename(dead)]);
+  assert.ok(!fs.existsSync(dead));
+  assert.ok(fs.existsSync(live));
+  assert.deepEqual(REL.listReleases(l).map(x => x.name), ['r1']);
+});
+
 test('the flip: current is a symlink into releases, previous is recorded, the same release twice changes nothing', { skip: NO_SYMLINKS }, () => {
   const base = scratch('flip');
   const l = REL.layout(base);
@@ -130,14 +203,17 @@ test('pruning keeps the newest releases and never removes the current or the pre
   assert.equal(REL.listReleases(l).length, 5, 'without a known current nothing is removed');
 });
 
-test('installAndActivate installs, waits for idle before the flip, flips, and prunes: the step the self-updater reuses', { skip: NO_SYMLINKS }, async () => {
+test('installAndActivate installs, waits for idle before the flip, flips, runs the after-flip step, and prunes last: the step the self-updater reuses', { skip: NO_SYMLINKS }, async () => {
   const base = scratch('install-activate');
   const l = REL.layout(base);
   const seen = [];
   const r = await REL.installAndActivate(l, { name: '0.5.0-x', binaryFile: fakeBinary(base, 'x'), meta: { sha: 'x' } }, {
     waitIdle: async () => { seen.push(['idle', REL.currentName(l), REL.hasRelease(l, '0.5.0-x')]); },
+    afterFlip: async flip => { seen.push(['after', flip.name, REL.currentName(l)]); return 7; },
   });
-  assert.deepEqual(seen, [['idle', '', true]], 'the release is on disk and current is untouched while it waits');
+  assert.deepEqual(seen, [['idle', '', true], ['after', '0.5.0-x', '0.5.0-x']], 'the release is on disk and current is untouched while it waits');
+  assert.equal(r.outcome, 7);
+  assert.equal(r.pruneError, '');
   assert.equal(r.changed, true);
   assert.equal(REL.currentName(l), '0.5.0-x');
   assert.equal(JSON.parse(fs.readFileSync(path.join(REL.releaseDir(l, '0.5.0-x'), REL.RELEASE_INFO), 'utf8')).sha, 'x');
