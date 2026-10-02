@@ -3000,3 +3000,32 @@ test('context warning: the default is 300k; a saved old default of 100k moves up
   login(vm);
   assert.equal(vm.num('ClaudeWoWDB.settings.contextWarn'), 100000, 'a 100k chosen after the move is kept');
 });
+
+test('after deleting the chat that replied last, /r and the window go to the chat used most recently, and its tab still talks to it', () => {
+  const vm = whisperVM();
+  vm.run('for i = 1, 3 do local c = ClaudeWoW.NewChat("Old " .. i); c.created = time() - 86400 * i end');
+  const firstId = vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].id');
+  vm.run('SlashCmdList.CLAUDE("-c --agent claude")');
+  vm.run('ClaudeWoW.Send("first question")');
+  replyTo(vm, firstId, 'status = "done", text = "one", agent = "claude"');
+  typeIn(vm, 'ChatFrame1EditBox', '/claude second question');
+  const secondId = vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].id');
+  replyTo(vm, secondId, 'status = "done", text = "two", agent = "claude"');
+  assert.equal(vm.evaluate('(ChatFrameUtil.GetLastTellTarget())'), `Claude [${chatName(vm, secondId)}]`);
+  vm.run('ClaudeWoWDB.chats[1].created = time() - 86400 * 9');
+  vm.run(`local c = ClaudeWoW.NewChat("Old 4"); c.created = time() - 86400 * 4; ClaudeWoW.SwitchChat("${secondId}")`);
+
+  vm.run(`ClaudeWoW.DeleteChat("${secondId}")`);
+  assert.equal(vm.evaluate('ClaudeWoWDB.activeChat'), firstId, 'the window shows the chat used last, not the next row');
+  vm.run('ChatFrame1EditBox:SetText("/r "); ChatFrame1EditBox:ParseText(0)');
+  assert.equal(vm.evaluate('ChatFrame1EditBoxHeader:GetText()'), `To Claude [${chatName(vm, firstId)}]: `, '/r names the chat that is left, not the deleted one');
+  vm.run('ChatFrame1EditBox:ClearChat()');
+
+  const tab = vm.evaluate(`(function() for i = 1, 20 do local f = _G["ChatFrame" .. i] if f and f.claudewowChatId == "${firstId}" then return i end end end)()`);
+  assert.ok(tab, 'the first chat still has its tab');
+  typeIn(vm, `ChatFrame${tab}EditBox`, 'from the first tab');
+  const rec = stripRecords(vm).find(r => r.text === 'from the first tab');
+  assert.ok(rec, 'typed in the first chat\'s tab it reached the agent');
+  assert.equal(rec.chat, firstId);
+  assert.equal(vm.num('STUB.serverSends'), 0);
+});
