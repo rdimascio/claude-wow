@@ -406,3 +406,39 @@ test('a crashing check reports fail instead of throwing', () => {
   assert.equal(r.status, 'fail');
   assert.match(r.problems[0].what, /boom/);
 });
+
+test('clients: each client with its build, a different build in one of them, old keys next to clients, and a vanished folder', () => {
+  const healthy = C.checkClients(context(makeWorld('clients-one')));
+  assert.equal(healthy.status, 'ok', JSON.stringify(healthy.problems));
+  assert.match(healthy.summary, /^_classic_beta_: addon .*not heard yet/);
+
+  const world = makeWorld('clients-two');
+  const era = path.join(path.dirname(world.clientDir), '_classic_era_');
+  const tocOf = dir => path.join(dir, 'Interface', 'AddOns', 'ClaudeWoW', 'ClaudeWoW.toc');
+  write(tocOf(world.clientDir), '## Interface: 11509, 16001\n## Version: 1.2.3\n## X-Build: aaaaaaaaaaaa\n');
+  write(tocOf(era), '## Interface: 11509, 16001\n## Version: 1.2.2\n## X-Build: bbbbbbbbbbbb\n');
+  const cfgFile = path.join(world.clawHome, 'config.json');
+  const cfg = JSON.parse(fs.readFileSync(cfgFile, 'utf8'));
+  const twoClients = { ...cfg, clients: [{ dir: world.clientDir }, { dir: era }] };
+  for (const k of ['addonDir', 'savedVariablesFile', 'inboxFile']) delete twoClients[k];
+  write(cfgFile, JSON.stringify(twoClients));
+  const two = C.checkClients(context(world));
+  assert.equal(two.status, 'warn');
+  assert.equal(two.problems.length, 1, JSON.stringify(two.problems));
+  assert.equal(two.problems[0].what, 'The clients hold different addon builds: _classic_beta_ aaaaaaaaaaaa, _classic_era_ bbbbbbbbbbbb.');
+  assert.match(two.summary, /_classic_beta_: addon 1\.2\.3 build aaaaaaaaaaaa, not heard yet .*; _classic_era_: addon 1\.2\.2 build bbbbbbbbbbbb/);
+  assert.match(C.checkInterface(context(world)).summary, /^_classic_beta_: ClaudeWoW\.toc .*; _classic_era_: ClaudeWoW\.toc /, 'per-client checks name each client');
+
+  write(tocOf(era), '## Interface: 11509, 16001\n## Version: 1.2.3\n## X-Build: aaaaaaaaaaaa\n');
+  assert.equal(C.checkClients(context(world)).status, 'ok', 'the same build everywhere is fine');
+
+  write(cfgFile, JSON.stringify({ ...twoClients, addonDir: cfg.addonDir }));
+  const leftover = C.checkClients(context(world));
+  assert.equal(leftover.status, 'warn');
+  assert.match(leftover.problems[0].what, /^config\.json has both "clients" and the old addonDir\.$/);
+
+  write(cfgFile, JSON.stringify({ ...twoClients, clients: [{ dir: world.clientDir }, { dir: path.join(world.root, 'gone', '_classic_era_') }] }));
+  const gone = C.checkClients(context(world));
+  assert.equal(gone.status, 'fail');
+  assert.match(gone.problems[0].what, /^_classic_era_: the client folder .* is gone\.$/);
+});

@@ -156,6 +156,11 @@ function adoptLegacyState(state, clients) {
     delete state[k];
     moved = true;
   }
+  const cs = clientState(state, first.key);
+  if (state.context && typeof state.context === 'object' && cs.context === undefined) {
+    cs.context = { ...state.context };
+    moved = true;
+  }
   return moved;
 }
 
@@ -175,6 +180,12 @@ function noteHeard(state, key, { now = Date.now(), hello = false, id } = {}) {
   if (hello) cs.hello = now;
   if (Number.isInteger(id) && id > 0) cs.lastId = Math.max(Number(cs.lastId) || 0, id);
   return cs;
+}
+
+function contextText(state, key) {
+  if (!key) return (state && state.context && typeof state.context.text === 'string' && state.context.text) || '';
+  const own = state && state.clients && state.clients[key] && state.clients[key].context;
+  return own && typeof own.text === 'string' ? own.text : '';
 }
 
 function heardAt(state, key) {
@@ -240,6 +251,6 @@ module.exports = {
   LEGACY_KEYS, ENTRY_KEYS, STATE_KEYS, CLIENTS_MAX,
   keyOf, sameDir, labelOf, dirOfAddons, addonDirFor, savedFileFor, accountOf, productFor,
   legacyEntry, resolveEntry, allClients, clientsOf, compactEntry, migrateConfig, upsertClient,
-  clientState, adoptLegacyState, legacyStateFor, noteHeard, heardAt, lastSpoke, recordsFor,
+  clientState, adoptLegacyState, legacyStateFor, contextText, noteHeard, heardAt, lastSpoke, recordsFor,
   installedBuild, slotClients, describe, agoText,
 };

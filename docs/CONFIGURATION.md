@@ -41,7 +41,7 @@ The bridge derives the rest from `dir`: `Interface/AddOns` (the addon, the 200 s
 - **Per-client state:** `state.json` keeps `clients.<dir>` with each client's presence ring, its signal self-test, its chat log write sizes, its last message id and when it was last heard. The old top-level `presence`, `presenceTest` and `chatLogWrites` move to the first client once.
 - **Game context:** each run uses the game context of its own client. The top-level `state.context` stays "the character the game last reported" for goals, orders and campaigns.
 - **Which client is live:** the bridge does not poll the process list. It notes when it last heard each client. `/claude diag`, `claude-wow service status` and `npm run doctor` show each client, its installed addon build and which one spoke last.
-- **Signal files:** the game sees only signal files that existed at its launch. When setup arms new files in a client that runs, it says so: fully quit and relaunch that client.
+- **Signal files:** the game sees only signal files that existed at its launch. When setup arms new files in a client that runs, it says so on macOS: fully quit and relaunch that client. On Windows and Linux it cannot tell which client runs, so it asks to relaunch every client.
 
 ## Agents
 

@@ -341,7 +341,7 @@ function perClient(ctx, id, title, noClient, one) {
   const parts = [];
   const issues = [];
   for (const client of clients) {
-    const r = one(client, CLI.legacyStateFor(ctx.state, clients, client.key));
+    const r = one(client, CLI.legacyStateFor(ctx.state, CLI.allClients(ctx.config), client.key));
     parts.push(several ? `${client.label}: ${r.summary}` : r.summary);
     for (const issue of r.issues) issues.push(several ? { ...issue, what: `${client.label}: ${issue.what}` } : issue);
   }

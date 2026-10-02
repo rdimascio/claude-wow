@@ -193,7 +193,7 @@ test('the environment baked into the service puts node on PATH and drops nothing
 test('status on a clean machine says not installed / not running and exits 3; help and bad input exit cleanly', () => {
   const lines = [];
   const dir = scratch('status');
-  const code = S.status({ run: dir, logs: dir, definition: path.join(dir, 'io.claudewow.bridge.plist') }, 'darwin', l => lines.push(l), path.join(dir, 'state.json'));
+  const code = S.status({ run: dir, logs: dir, definition: path.join(dir, 'io.claudewow.bridge.plist') }, 'darwin', l => lines.push(l), path.join(dir, 'state.json'), path.join(dir, 'config.json'));
   assert.equal(code, 3);
   assert.match(lines.join('\n'), /installed : no/);
   assert.match(lines.join('\n'), /running   : no/);
@@ -267,4 +267,24 @@ test('the definition runs node + supervisor.js from a checkout, and the binary a
   assert.match(S.definition('win32', S.dirs('win32', {}, 'C:\\Users\\p'), { ...binary, execPath: 'C:\\Users\\p\\bin\\claude-wow.exe' }), /sh\.Run """C:\\Users\\p\\bin\\claude-wow\.exe""", 0, False/);
   assert.match(S.launchdPlist({ node: '/n', script: '', cwd: '/c', logFile: '/l' }), /<array>\s*<string>\/n<\/string>\s*<\/array>/);
   assert.match(S.systemdUnit({ node: '/n', script: '', cwd: '/c' }), /^ExecStart="\/n"$/m);
+});
+
+test('status names every client in config.json with its installed build and which one spoke last', () => {
+  const CLI = require('../bridge/clients');
+  const dir = scratch('status-clients');
+  const forever = path.join(dir, '_classic_beta_');
+  const era = path.join(dir, '_classic_era_');
+  fs.mkdirSync(path.join(era, 'Interface', 'AddOns', 'ClaudeWoW'), { recursive: true });
+  fs.writeFileSync(path.join(era, 'Interface', 'AddOns', 'ClaudeWoW', 'ClaudeWoW.toc'), '## Version: 1.2.3\n## X-Build: abcdefabcdef\n');
+  fs.writeFileSync(path.join(dir, 'config.json'), JSON.stringify({ clients: [{ dir: forever }, { dir: era }] }));
+  fs.writeFileSync(path.join(dir, 'state.json'), JSON.stringify({ clients: { [CLI.keyOf(era)]: { heard: Date.now() - 60000 } } }));
+  const lines = [];
+  S.status({ run: dir, logs: dir, definition: path.join(dir, 'none.plist') }, 'darwin', l => lines.push(l), path.join(dir, 'state.json'), path.join(dir, 'config.json'));
+  const at = lines.findIndex(l => l.startsWith('  clients   : '));
+  assert.ok(at >= 0, lines.join('\n'));
+  assert.equal(lines[at], `  clients   : _classic_beta_: addon not installed, not heard yet (${forever})`);
+  assert.equal(lines[at + 1], `              _classic_era_: addon 1.2.3 build abcdefabcdef, heard 60 s ago, spoke last (${era})`);
+  const none = [];
+  S.status({ run: dir, logs: dir, definition: path.join(dir, 'none.plist') }, 'darwin', l => none.push(l), path.join(dir, 'state.json'), path.join(dir, 'missing.json'));
+  assert.ok(none.includes('  clients   : no config.json (claude-wow setup)'));
 });

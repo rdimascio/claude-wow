@@ -347,6 +347,7 @@ test('node setup.js --wow <another client> adds it next to the first one and ins
   assert.equal(cfg.tocInterface, P.TOC_INTERFACE);
   cfg.tocInterface = '16001';
   cfg.defaultCwd = project;
+  cfg.clients[0].processName = 'stale';
   fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify(cfg, null, 2) + '\n');
   fs.writeFileSync(path.join(foreverClient.addons, P.ADDON, `${P.ADDON}.toc`), '## Interface: 16001\n## Version: 0.0.1\n## X-Build: 000000000000\n');
 
@@ -357,6 +358,7 @@ test('node setup.js --wow <another client> adds it next to the first one and ins
   assert.deepEqual(after.clients.map(c => c.dir), [path.resolve(forever), path.resolve(era)], 'the first client stays, the new one is added after it');
   assert.equal(after.tocInterface, P.TOC_INTERFACE);
   assert.equal(after.defaultCwd, project, 'the rest of the config is kept');
+  assert.deepEqual(after.clients.map(c => c.processName), ['World of Warcraft.app', 'World of Warcraft.app'], 'a stale processName is detected again');
   const build = /^## X-Build: ([0-9a-f]{12})$/m.exec(tocOf(eraClient.addons))[1];
   assert.equal(/^## X-Build: ([0-9a-f]{12})$/m.exec(tocOf(foreverClient.addons))[1], build, 'the stale copy in the first client is replaced by the same build');
   assert.match(added.stdout, new RegExp(`^addon {4}: _classic_beta_: \\d+ file\\(s\\) -> .* \\(build ${build}, `, 'm'));

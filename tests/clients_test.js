@@ -191,3 +191,26 @@ test('accountOf reads the account from POSIX and Windows SavedVariables paths', 
   assert.equal(CLI.productFor('/x/_classic_era_'), 'wow_classic_era');
   assert.equal(CLI.productFor('/x/_retail_'), 'wow');
 });
+
+test('adoptLegacyState copies the old context to the first client listed, disabled or not, and leaves the global one', () => {
+  const all = CLI.allClients({ clients: [{ dir: FOREVER, enabled: false }, { dir: ERA }] });
+  const state = { context: { text: 'Character: A', at: 1 }, presence: { ring: 'b', at: 3 } };
+  CLI.adoptLegacyState(state, all);
+  assert.deepEqual(state.clients[all[0].key].context, { text: 'Character: A', at: 1 });
+  assert.deepEqual(state.clients[all[0].key].presence, { ring: 'b', at: 3 }, 'the disabled first entry keeps its ring');
+  assert.equal(state.clients[all[1].key], undefined, 'the enabled second client gets neither');
+  assert.deepEqual(state.context, { text: 'Character: A', at: 1 });
+  state.context = { text: 'Character: B', at: 2 };
+  CLI.adoptLegacyState(state, all);
+  assert.equal(state.clients[all[0].key].context.text, 'Character: A', 'a later global context is not copied again');
+});
+
+test('contextText: a known client reads only its own context, never the shared one; no client reads the shared one', () => {
+  const a = CLI.keyOf(FOREVER), b = CLI.keyOf(ERA);
+  const state = { context: { text: 'shared' }, clients: { [a]: { context: { text: 'mine' } }, [b]: { context: null } } };
+  assert.equal(CLI.contextText(state, a), 'mine');
+  assert.equal(CLI.contextText(state, b), '', 'a client that cleared its context gets none, not the other client\'s');
+  assert.equal(CLI.contextText(state, CLI.keyOf('/never/heard')), '', 'a client that never sent one gets none');
+  assert.equal(CLI.contextText(state, ''), 'shared');
+  assert.equal(CLI.contextText({}, ''), '');
+});

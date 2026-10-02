@@ -65,7 +65,7 @@ function install(client) {
     ensure(path.join(dir, 'Inbox.lua'), 'ClaudeWoW_SlotData = nil\n', counts);
   }
 
-  const saved = CLI.legacyStateFor(state, clients, client.key);
+  const saved = CLI.legacyStateFor(state, CLI.allClients(cfg), client.key);
   const runtime = SIG.prepareRuntime(addons, { slots: N, actMax: ACT, presence: saved.presence || null, presenceMax: PRESENCE, tocInterface: iface, removeLegacy: true });
   counts.made += runtime.made;
   counts.updated += runtime.updated;

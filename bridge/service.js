@@ -542,7 +542,7 @@ function status(d, platform = process.platform, out = console.log, stateFile = H
   }
   const state = readState(stateFile);
   out(`  versions  : ${P.versionsSummary(state)}; ${P.installedSummary()}`);
-  clientLines(configFile, state).forEach((line, i) => out(`  ${i ? '           ' : 'clients   : '}${line}`));
+  clientLines(configFile, state).forEach((line, i) => out(`  ${i ? ' '.repeat(12) : 'clients   : '}${line}`));
   const log = fs.existsSync(serviceLogFile(d)) ? serviceLogFile(d) : H.resolve().log;
   out(`  log       : ${log}  (rotates at 5 MB, 5 kept)`);
   const tail = lastLines(log, 5);

@@ -286,8 +286,7 @@ function chooseClients(cfg, notes) {
 
 function refreshClient(cfg, client, notes) {
   const account = findAccount(client.dir, { wanted: args.wow ? '' : args.account || '', current: client.account, strict: false });
-  const raw = cfg.clients.find(e => e && CLI.sameDir(e.dir || CLI.dirOfAddons(e.addonDir), client.dir)) || {};
-  const how = CLI.upsertClient(cfg, { ...entryFor(client.dir, account), ...(raw.processName ? { processName: raw.processName } : {}) });
+  const how = CLI.upsertClient(cfg, entryFor(client.dir, account));
   if (how !== 'same') noteOnce(notes, 'client');
   return CLI.clientsOf(cfg).find(c => c.key === client.key);
 }
@@ -361,7 +360,7 @@ function macCaptureReport(cfg, transport) {
   }
   const py = (cfg.capture && cfg.capture.python) || 'python3';
   const r = spawnSync(py, [AS.file('bridge/capture_mac.py'), '--check',
-    '--process-name', (cfg.capture && cfg.capture.processName) || 'World of Warcraft'], { encoding: 'utf8' });
+    '--process-name', (CLI.clientsOf(cfg)[0] || {}).processName || 'World of Warcraft'], { encoding: 'utf8' });
   if (r.error) return; // python already reported missing
   const rows = String(r.stdout || '').trim().split('\n').filter(Boolean).map(l => {
     try { return JSON.parse(l); } catch { return null; }

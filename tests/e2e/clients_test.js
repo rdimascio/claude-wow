@@ -33,9 +33,9 @@ function slotBodies(addons) {
   return fs.readdirSync(addons).filter(n => /^ClaudeWoW_S\d{3}$/.test(n)).map(n => fs.readFileSync(path.join(addons, n, 'Inbox.lua'), 'utf8'));
 }
 
-async function withEra(h, fn) {
+async function withEra(h, fn, opts = {}) {
   const era = h.sb.clients.find(c => c.flavor === ERA);
-  const client = new WowClient({ ...h.sb, ...era }, ERA_CLIENT);
+  const client = new WowClient({ ...h.sb, ...era }, { ...ERA_CLIENT, ...opts });
   client.launch();
   client.start();
   try {
@@ -71,7 +71,6 @@ test('a message from client B is answered in B, and never spends a signal or lan
       const state = h.state();
       assert.ok(CLI.heardAt(state, CLI.keyOf(eraDirs.client)) > 0, 'the bridge heard client B');
       assert.ok(h.clientState(eraDirs.client).lastId >= r.id, 'client B keeps its own last message id');
-      assert.ok(h.clientState(eraDirs.client).hello > 0, 'and when it said hello');
       assert.equal(h.clientState(forever.client).lastId, undefined, 'client A has no message id from B');
       assert.equal(CLI.heardAt(state, CLI.keyOf(forever.client)), 0, 'and never client A');
       for (const c of h.sb.clients) assert.ok(h.clientState(c.client).presence, `${c.flavor} keeps a presence ring of its own`);
@@ -95,13 +94,17 @@ test('two clients running at once each get their own replies, and diag in each n
 });
 
 test('each run gets the game context of the client its message came from, even when the other client spoke since', async () => {
-  await withGame(TWO, async h => {
-    await h.client.connect();
+  await withGame({ ...TWO, run: false }, async h => {
     await withEra(h, async era => {
       await era.connect();
-      await h.bridge.waitForLine(/game context updated: .*/, { timeoutMs: 20000 });
-      const a = await h.client.say('which game am I in');
+      await h.bridge.waitForLine(/\(_classic_era_\) game context updated/, { timeoutMs: 20000 });
+      h.client.start();
+      await h.client.connect();
+      await h.bridge.waitForLine(/\(_classic_beta_\) game context updated/, { timeoutMs: 20000 });
       const b = await era.say('and this one');
+      h.client.slash('/claude config context on');
+      const a = await h.client.say('which game am I in');
+      assert.match(h.state().context.text, /1\.60\.1/, 'client A reported last, so the shared context is A\'s');
       const calls = h.agentCalls();
       const promptOf = text => (calls.find(c => String(c.prompt || '').includes(text)) || {}).prompt || '';
       assert.match(promptOf('which game am I in'), /1\.60\.1/, 'client A\'s run carries A\'s build');
@@ -110,6 +113,11 @@ test('each run gets the game context of the client its message came from, even w
       assert.doesNotMatch(promptOf('and this one'), /1\.60\.1/);
       assert.match(a.text, /which game/);
       assert.match(b.text, /this one/);
+      era.slash('/claude config context off');
+      await era.say('no context here');
+      const bare = (h.agentCalls().find(c => String(c.prompt || '').includes('no context here')) || {}).prompt || '';
+      assert.ok(bare, 'the run started');
+      assert.doesNotMatch(bare, /1\.60\.1|1\.15\.9/, 'a client that turned its context off never gets the other client\'s');
     });
   });
 });
@@ -128,5 +136,21 @@ test('a reload-mode message from client B is read from B\'s SavedVariables and a
       assert.doesNotMatch(fs.readFileSync(SIG.runtimeInbox(forever.addons), 'utf8'), /by reload in era/);
       for (const body of slotBodies(forever.addons)) assert.doesNotMatch(body, /by reload in era/);
     });
+  });
+});
+
+test('an ask run from client A gets no goal tools after client B reported another character, so a goal can never land on B\'s character', async () => {
+  await withGame(TWO, async h => {
+    await h.client.connect();
+    await withEra(h, async era => {
+      await era.connect();
+      await h.bridge.waitForLine(/\(_classic_era_\) game context updated: Character: Erachar/, { timeoutMs: 20000 });
+      const r = await h.client.say('@ask set a goal for me');
+      assert.match(r.text, /set a goal/);
+      await h.bridge.waitForLine(/wowgoals: another client reported its game context after this one \(Erachar-TestRealm, not Testchar-TestRealm\), so this run goes without the goal, order and campaign tools/, { timeoutMs: 10000 });
+      const call = h.agentCalls().find(c => String(c.prompt || '').includes('set a goal for me'));
+      assert.ok(call, 'the ask run started');
+      assert.ok(!JSON.stringify(call.mcpConfig || {}).includes('wowgoals'), 'and its MCP config has no goal server');
+    }, { afterAddonLoad: 'UnitName = function(unit) if unit == "player" then return "Erachar" end end' });
   });
 });

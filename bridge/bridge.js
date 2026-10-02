@@ -253,7 +253,7 @@ const fromLabel = client => (CLIENTS.length > 1 && client ? ` from ${client.labe
 let state = Object.keys(stateEarly).length ? stateEarly : { lastId: 0, sessions: {}, handled: {} };
 if (!state.handled) state.handled = {};
 if (!state.sessions) state.sessions = {};
-const adoptedLegacyState = CLI.adoptLegacyState(state, CLIENTS);
+const adoptedLegacyState = CLI.adoptLegacyState(state, CLI.allClients(cfg));
 // Older versions stored handled[session] as "highest id so far"; expand to a map.
 for (const [k, v] of Object.entries(state.handled)) {
   if (typeof v === 'number') {
@@ -871,7 +871,7 @@ function setContext(job) {
   if (text === prev && text === prevHere) { noteContextHeard(); return; }
   const heardAt = Date.now();
   const made = () => (text ? { text, at: heardAt, receivedAt: heardAt, session: job.session || '' } : null);
-  state.context = made();
+  if (text || !state.context || state.context.session === (job.session || '')) state.context = made();
   if (cs) cs.context = made();
   saveState();
   const who = (text.split('\n').find(l => /^Character:/i.test(l)) || text.split('\n')[0] || '').slice(0, 100);
@@ -884,10 +884,7 @@ function noteContextHeard() {
 
 function contextTextFor(job) {
   const client = clientFor(job);
-  const own = client && clientStateOf(client).context;
-  if (own && typeof own.text === 'string') return own.text;
-  if (client && own === null) return '';
-  return (state.context && state.context.text) || '';
+  return CLI.contextText(state, client ? client.key : '');
 }
 
 function gameContext(job) {
@@ -976,7 +973,6 @@ function submit(job) {
     }
     return;
   }
-  if (client) CLI.noteHeard(state, client.key, { hello: !!job.hello, id: job.id });
   if (job.shot) fallbackToPixel(job.shot, job); // even for a message already handled: the report stands
   noteSignalReport(job);
   if (alreadyHandled(job)) {
@@ -984,6 +980,7 @@ function submit(job) {
     if (r) r.acks = P.noteAck(r.acks, job);
     return;
   }
+  if (client) CLI.noteHeard(state, client.key, { hello: !!job.hello, id: job.id });
   clearSignalsAhead(client, job.id);
   if (CAMPAIGN.isDmRecord(job)) {
     markHandled(job);
@@ -1298,11 +1295,16 @@ function noRunTools(tag, why) {
   log(`${tag} ${GM.SERVER_NAME}: ${why}, so in-game runs go without the goal, order and campaign tools`);
   return '';
 }
-function runToolsSocket(tag) {
+function runToolsSocket(tag, job) {
   const lp = livePlugin();
   const socket = lp && typeof lp.runEndpoint === 'function' ? lp.runEndpoint() : '';
   if (!socket) return noRunTools(tag, 'the live socket is not listening (plugins.live.enabled, or --once)');
   if (!runGrantCharacter()) return noRunTools(tag, 'the game context names no character');
+  const own = (GOALS.characterOf(contextTextFor(job)) || {}).key || '';
+  if (own !== runGrantCharacter()) {
+    log(`${tag} ${GM.SERVER_NAME}: another client reported its game context after this one (${runGrantCharacter()}, not ${own || 'no character'}), so this run goes without the goal, order and campaign tools`);
+    return '';
+  }
   return socket;
 }
 function runGrantCharacter() {
@@ -1354,7 +1356,7 @@ function runAgent(job, opts = {}) {
   const agent = A.AGENTS[agentId];
   const chosen = chatSettings(job);
   const claudeRun = agentId === 'claude';
-  const runToolSocket = claudeRun && opts.runTools ? runToolsSocket(tag) : '';
+  const runToolSocket = claudeRun && opts.runTools ? runToolsSocket(tag, job) : '';
   const runDenied = inGameDeniedTools({ claudeRun, plugin, withRunTools: !!runToolSocket });
   const grantForGood = P.splitGrants(inGameGrantable(job.allow, runDenied));
   const grantOnce = P.splitGrants(inGameGrantable(job.allowOnce, runDenied));
