@@ -74,6 +74,7 @@ function* rows(text, table, wanted) {
     if (k < 0) throw new DumpError(`${table}: column ${c} is missing; the dump layout changed`);
     return k;
   });
+  if (text.includes(`INSERT INTO \`${table}\` (`)) throw new DumpError(`${table}: an INSERT names its columns, which this reader does not read`);
   const head = `INSERT INTO \`${table}\` VALUES `;
   let at = text.indexOf(head);
   while (at >= 0) {

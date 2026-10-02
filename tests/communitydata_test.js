@@ -52,9 +52,9 @@ async function eraData(name) {
 
 const call = (store, tool, args) => JSON.parse(DM.callTool(store, tool, args).content[0].text);
 
-test('sqldump reads multi-row INSERTs with escapes, NULL and numbers, by column name', () => {
+test('sqldump reads multi-row INSERTs with escapes, NULL and numbers, by column name, and refuses forms it does not read', () => {
   const rows = [...S.rows(SQL, 'creature_template', ['Name', 'Entry', 'SubName'])];
-  assert.deepEqual(rows.map(r => r.Entry), [7001, 7002, 7003, 7004, 7005]);
+  assert.deepEqual(rows.map(r => r.Entry), [7001, 7002, 7003, 7004, 7005, 7006, 7007]);
   assert.equal(rows[0].SubName, 'Quest Clerk');
   assert.equal(rows[1].SubName, null);
   assert.equal(rows[3].Name, "Fixture O'Brien");
@@ -66,6 +66,8 @@ test('sqldump reads multi-row INSERTs with escapes, NULL and numbers, by column 
   assert.throws(() => [...S.rows(broken, 'creature_template', ['Entry'])], /a row has 3 values for 4 columns/);
   assert.throws(() => [...S.rows(SQL.replace("'Fixture Rock')", "'Fixture Rock)"), 'gameobject_template', ['entry'])], S.DumpError);
   assert.throws(() => [...S.rows(SQL.replace('(10,8001,1,1,100,100)', '(10,8001,1,1,100,DROP)'), 'gameobject', ['id'])], /unexpected value/);
+  const listed = SQL.replace('INSERT INTO `creature` VALUES', 'INSERT INTO `creature` (`guid`,`id`,`map`,`spawnMask`,`position_x`,`position_y`,`position_z`) VALUES');
+  assert.throws(() => [...S.rows(listed, 'creature', ['id'])], /names its columns, which this reader does not read/);
 });
 
 test('a community sync converts NPCs, spawns, quests and givers into their own store, labeled community-db', async () => {
@@ -74,24 +76,31 @@ test('a community sync converts NPCs, spawns, quests and givers into their own s
   const r = await C.syncCommunity({ dataDir, fetch: gh.fetchImpl });
   assert.equal(r.status, 'synced');
   assert.equal(r.version, `z2815-${gh.entry.sha.slice(0, 7)}`);
-  assert.deepEqual(r.manifest.droppedBy, { junk: 2, relationWithoutQuest: 1 });
+  assert.deepEqual(r.manifest.droppedBy, { junk: 3, relationWithoutQuest: 1 });
   assert.equal(r.manifest.trust, 'community-db');
   assert.equal(r.manifest.client.build, '1.15.9.300');
   assert.equal(path.dirname(r.dir), path.join(dataDir, 'classic_era', 'community'));
   const cs = GD.openStore({ dataDir, clientBuild: ERA_CLIENT }).community;
   assert.equal(cs.trust, 'community-db');
+  assert.equal(cs.stale, false);
   const giver = cs.byId('npcs', 7001);
   assert.deepEqual([giver.name, giver.subname, giver.gives, giver.ends, giver.spawnTotal], ['Fixture Giver', 'Quest Clerk', [111], [111], 2]);
   assert.deepEqual(giver.spawns[0].maps.map(m => m.uiMapID), [9102, 9101], 'a zone spawn lists the zone, then the continent');
   assert.deepEqual(giver.spawns[1], { mapID: 33, maps: [] }, 'a dungeon spawn has no world map');
   assert.equal(giver.spawns[0].event, undefined, 'a spawn removed during an event is a normal spawn');
+  assert.deepEqual(giver.onMaps.map(m => [m.uiMapID, m.count]), [[9101, 1], [9102, 1]]);
   const wanderer = cs.byId('npcs', 7002);
   assert.deepEqual(wanderer.spawns.map(s => [s.shared || false, s.event || false]), [[true, false], [false, true]]);
   assert.equal(cs.byId('npcs', 7004).spawns[0].shared, true, 'every entry of a random spawn gets it');
+  const twin = cs.byId('npcs', 7005);
+  assert.equal(twin.spawnTotal, 1, 'an event entry substitution is a spawn of the substituted NPC');
+  assert.equal(twin.spawns[0].event, true);
+  assert.equal(cs.byId('npcs', 7006).name, 'Fixture Combat Dummy', 'a real NPC named Dummy is kept');
   assert.equal(cs.byId('npcs', 7003), null, 'junk rows are dropped');
+  assert.equal(cs.byId('npcs', 7007), null);
   assert.deepEqual(cs.byId('questinfo', 222), { id: 222, title: 'Fixture Errand', inClientData: false, givers: [{ kind: 'npc', id: 7002 }, { kind: 'object', id: 8001 }], enders: [] });
   assert.equal(cs.byId('questinfo', 111).inClientData, true);
-  assert.deepEqual(cs.rows('objects').map(o => o.name), ['Fixture Poster'], 'only objects that give or end a quest');
+  assert.deepEqual(cs.rows('objects').map(o => [o.name, o.onMaps.map(m => m.uiMapID)]), [['Fixture Poster', [9101, 9102]]], 'only objects that give or end a quest');
   assert.equal(GD.openStore({ dataDir, clientBuild: '1.60.1.70124' }).community, null, 'Forever never reads it');
 
   const again = await C.syncCommunity({ dataDir, fetch: fakeGitHub().fetchImpl });
@@ -101,6 +110,34 @@ test('a community sync converts NPCs, spawns, quests and givers into their own s
   const forced = await C.syncCommunity({ dataDir, fetch: fakeGitHub().fetchImpl, force: true });
   assert.equal(forced.status, 'synced');
   assert.deepEqual(fs.readdirSync(C.communityRoot(dataDir)).filter(n => !n.startsWith('.')).sort(), [path.basename(forced.dir), 'current'].sort());
+});
+
+test('an NPC with more spawns than the sample keeps every map it stands on', async () => {
+  const dataDir = await eraData('many');
+  const crowd = Array.from({ length: 40 }, (_, k) => `(${100 + k},7001,1,1,${-900 + k},-900,0)`).join(',');
+  const sql = SQL.replace('INSERT INTO `creature` VALUES (1,7001,1,1,500,500,0),', `INSERT INTO \`creature\` VALUES ${crowd},(1,7001,1,1,500,500,0),`);
+  await C.syncCommunity({ dataDir, fetch: fakeGitHub({ gz: zlib.gzipSync(Buffer.from(sql)) }).fetchImpl });
+  const store = GD.openStore({ dataDir, clientBuild: ERA_CLIENT });
+  const giver = store.community.byId('npcs', 7001);
+  assert.equal(giver.spawnTotal, 42);
+  assert.equal(giver.spawns.length, C.MAX_SPAWNS);
+  assert.ok(giver.spawns.some(s => s.maps.some(m => m.uiMapID === 9102)), 'the sample is spread over maps, not the first 25 rows');
+  const onVale = call(store, 'wow_npc', { name: 'Fixture Giver', uiMapID: 9102 });
+  assert.deepEqual(onVale.results.map(r => r.id), [7001]);
+  assert.equal(onVale.results[0].onMap.count, 1);
+  assert.match(onVale.results[0].spawnsShown, /25 of 42/);
+});
+
+test('a map only seen past the spawn sample still finds the NPC and its position there', async () => {
+  const dataDir = await eraData('pastsample');
+  const dungeons = Array.from({ length: 30 }, (_, k) => `(${100 + k},7001,${200 + k},1,1,1,0)`).join(',');
+  const sql = SQL.replace('INSERT INTO `creature` VALUES (1,7001,1,1,500,500,0),', `INSERT INTO \`creature\` VALUES ${dungeons},(1,7001,1,1,500,500,0),`);
+  await C.syncCommunity({ dataDir, fetch: fakeGitHub({ gz: zlib.gzipSync(Buffer.from(sql)) }).fetchImpl });
+  const store = GD.openStore({ dataDir, clientBuild: ERA_CLIENT });
+  assert.ok(!store.community.byId('npcs', 7001).spawns.some(s => s.maps.some(m => m.uiMapID === 9102)), 'precondition: the sample misses the vale');
+  const onVale = call(store, 'wow_npc', { name: 'Fixture Giver', uiMapID: 9102 });
+  assert.deepEqual(onVale.results.map(r => r.id), [7001]);
+  assert.deepEqual([onVale.results[0].onMap.uiMapID, onVale.results[0].onMap.count, onVale.results[0].onMap.x], [9102, 1, 50]);
 });
 
 test('a community sync refuses a bad listing, a file that does not match its sha, a rate limit, and missing client data', async () => {
@@ -131,10 +168,10 @@ test('data sync --source community is Classic Era only and goes through the CLI'
   const out = [];
   const code = await D.main(['sync', '--flavor', 'classic_era', '--source', 'community'], { env: { CLAUDE_WOW_HOME: home }, fetch: fakeGitHub().fetchImpl, out: s => out.push(s), err: s => out.push(s) });
   assert.equal(code, 0, out.join(''));
-  assert.match(out.join(''), /7 rows kept, 3 dropped; current community data z2815-[0-9a-f]{7}/);
+  assert.match(out.join(''), /8 rows kept, 4 dropped; current community data z2815-[0-9a-f]{7}/);
 });
 
-test('wow_npc and wow_quest serve community rows with their own source and trust, and say when there are none', async () => {
+test('wow_npc, wow_quest and wow_sources serve community rows with their own source and trust, and say when there are none', async () => {
   const dataDir = await eraData('tools');
   const before = GD.openStore({ dataDir, clientBuild: ERA_CLIENT });
   const none = call(before, 'wow_npc', { name: 'Fixture' });
@@ -148,11 +185,12 @@ test('wow_npc and wow_quest serve community rows with their own source and trust
   assert.deepEqual(npc.results[0].gives, [{ id: 111, title: 'Fixture Errand' }]);
   assert.equal(npc.results[0].trust, 'community-db');
   assert.equal(npc.results[0].spawns[1].instanceMapID, 33);
+  assert.equal(npc.results[0].onMaps[1].x, 50, 'a placed spawn carries its percent position');
   assert.equal('level' in npc.results[0] || 'MinLevel' in npc.results[0], false, 'no community numbers');
   assert.match(npc.notes[0], /community data .* Classic Era renamed some/);
   const onVale = call(store, 'wow_npc', { name: 'fixture', uiMapID: 9102 });
-  assert.deepEqual(onVale.results.map(r => r.id), [7001, 7002]);
-  assert.deepEqual(onVale.results[0].spawns.map(s => s.onMap.uiMapID), [9102]);
+  assert.deepEqual(onVale.results.map(r => r.id), [7001, 7002, 7005]);
+  assert.deepEqual(onVale.results[0].spawns.map(s => s.maps[0].uiMapID), [9102]);
   const quest = call(store, 'wow_quest', { id: 111 });
   assert.equal(quest.trust, 'client-data');
   assert.equal(quest.results[0].title, null, 'the client part still has no title');
@@ -161,9 +199,45 @@ test('wow_npc and wow_quest serve community rows with their own source and trust
   const onlyCommunity = call(store, 'wow_quest', { id: 222 });
   assert.equal(onlyCommunity.trust, 'community-db');
   assert.match(onlyCommunity.notes.join(' '), /not in the client data .* may not exist in this game/);
+  assert.deepEqual(onlyCommunity.results[0].community.givers[1].onMaps.map(m => m.uiMapID), [9101, 9102], 'an object giver comes with the maps it stands on');
   const byTitle = call(store, 'wow_quest', { name: 'errand' });
   assert.deepEqual(byTitle.results.map(r => r.id), [111, 222]);
   assert.match(byTitle.notes.join(' '), /2 quests are titled "Fixture Errand"/);
+  const sources = call(store, 'wow_sources', {});
+  const community = sources.results.find(r => r.source === 'cmangos');
+  assert.equal(community.trust, 'community-db');
+  assert.match(community.license, /GPL-3\.0/);
+  assert.equal(community.positionsCurrent, true);
   const forever = GD.openStore({ dataDir, clientBuild: '1.60.1.70124' });
   assert.match(call(forever, 'wow_npc', { id: 7001 }).notes.join(' '), /no data for NPCs/);
+});
+
+test('community positions computed with other client data are left out, and a damaged community table is reported in the same answer', async () => {
+  const dataDir = await eraData('stale');
+  const r = await C.syncCommunity({ dataDir, fetch: fakeGitHub().fetchImpl });
+  const manifestFile = path.join(r.dir, 'manifest.json');
+  const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
+  fs.writeFileSync(manifestFile, JSON.stringify({ ...manifest, client: { ...manifest.client, tableHash: 'other' } }));
+  const store = GD.openStore({ dataDir, clientBuild: ERA_CLIENT });
+  assert.equal(store.community.stale, true);
+  const npc = call(store, 'wow_npc', { id: 7001 });
+  assert.equal(npc.results[0].onMaps[0].x, undefined, 'no stale coordinates');
+  assert.equal(npc.results[0].spawns[0].maps[0].x, undefined);
+  assert.equal(npc.results[0].name, 'Fixture Giver', 'names still answer');
+  assert.match(npc.notes.join(' '), /computed with client data 1\.15\.9\.300, not the current/);
+  fs.writeFileSync(manifestFile, JSON.stringify({ ...manifest, entities: { ...manifest.entities, questinfo: { ...manifest.entities.questinfo, rows: 99 } } }));
+  const damaged = GD.openStore({ dataDir, clientBuild: ERA_CLIENT });
+  const quest = call(damaged, 'wow_quest', { id: 111 });
+  assert.equal(quest.results[0].community, undefined);
+  assert.deepEqual(quest.unavailable, ['questinfo']);
+  assert.match(quest.notes.join(' '), /Table questinfo is unavailable/);
+  assert.deepEqual(call(damaged, 'wow_npc', { id: 7006 }).unavailable, [], 'the failure is not carried into the next answer');
+});
+
+test('a dump whose NPC or quest table converts to nothing never replaces the current data', async () => {
+  const dataDir = await eraData('empty');
+  const r = await C.syncCommunity({ dataDir, fetch: fakeGitHub().fetchImpl });
+  const empty = SQL.replace(/INSERT INTO `quest_template` VALUES [^\n]*\n/, '');
+  await assert.rejects(C.syncCommunity({ dataDir, fetch: fakeGitHub({ gz: zlib.gzipSync(Buffer.from(empty)) }).fetchImpl, force: true }), /no questinfo row survived conversion/);
+  assert.equal(C.readCommunity(C.communityRoot(dataDir)).version, r.version);
 });

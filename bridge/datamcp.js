@@ -87,7 +87,8 @@ function envelope(store, tool, query, results, extra = {}) {
   else if (!store.build) notes.push(noDataNote(store));
   else if (store.buildCheck === GD.BUILD_CHECK.mismatch) notes.push(MISMATCH_NOTE);
   else if (store.buildCheck === GD.BUILD_CHECK.unknown) notes.push(UNKNOWN_BUILD_NOTE);
-  const missed = store.takeMissed ? store.takeMissed() : [];
+  const cs = store.community;
+  const missed = [...(store.takeMissed ? store.takeMissed() : []), ...(cs ? cs.takeMissed() : [])];
   notes.push(...missed.map(tableUnavailableNote));
   if (extra.notes) notes.push(...extra.notes);
   const found = results.length > 0;
@@ -180,14 +181,18 @@ function sharedNameNotes(shown, hits) {
 
 function communityNotes(store) {
   const cs = store.community;
-  if (cs) return [`NPC names, quest titles, givers and spawn points come from community data (cMaNGOS ${cs.version}, the 1.12 world), not the client. Classic Era renamed some of them and changed some spawns: say it is community data.`];
+  if (cs) {
+    const notes = [`NPC names, quest titles, givers and spawn points come from community data (cMaNGOS ${cs.version}, the 1.12 world), not the client. Classic Era renamed some of them and changed some spawns: say it is community data.`];
+    if (cs.stale) notes.push(`The community spawn points were computed with client data ${cs.manifest.client.build}, not the current ${store.build}, so they are left out. The owner can run "claude-wow data sync --flavor classic_era --source community".`);
+    return notes;
+  }
   if (store.flavor === 'classic_era') return ['No community data for NPCs and quest givers is synced on this machine. The owner can run "claude-wow data sync --flavor classic_era --source community".'];
   return ['There is no data for NPCs, quest titles or quest givers for this game.'];
 }
 
 function communityEnvelope(store, tool, query, results, extra = {}) {
   const cs = store.community;
-  const env = envelope(store, tool, query, results, { ...extra, notes: [...(cs ? cs.takeMissed() : []).map(tableUnavailableNote), ...(extra.notes || [])] });
+  const env = envelope(store, tool, query, results, extra);
   return { ...env, source: cs ? cs.source : null, communityVersion: cs ? cs.version : null, trust: env.found ? GD.TRUST.communityDb : GD.TRUST.none };
 }
 
@@ -195,10 +200,14 @@ function communityCited(cs, fields) {
   return { ...fields, source: cs.source, version: cs.version, trust: cs.trust };
 }
 
-function spawnRow(store, s) {
+function onMapRow(store, cs, m) {
+  return { ...mapRef(store, m.uiMapID), count: m.count, ...(cs.stale ? {} : { x: m.x, y: m.y }), ...(m.event ? { event: true } : {}) };
+}
+
+function spawnRow(store, cs, s) {
   const maps = Array.isArray(s.maps) ? s.maps : [];
   return {
-    maps: maps.map(m => placed(store, m)),
+    maps: maps.map(m => (cs.stale ? mapRef(store, m.uiMapID) : placed(store, m))),
     ...(maps.length ? {} : { instanceMapID: s.mapID, note: 'not on any world map the client has (a dungeon or another instance)' }),
     ...(s.zoneAmbiguous ? { zoneAmbiguous: true } : {}),
     ...(s.event ? { event: true } : {}),
@@ -207,21 +216,26 @@ function spawnRow(store, s) {
 }
 
 function questRefs(cs, ids) {
-  return ids.slice(0, MAX_LIMIT).map(id => {
+  return ids.map(id => {
     const q = cs.byId('questinfo', id);
     return { id, title: q ? q.title : null };
   });
 }
 
-function ownerRefs(cs, list) {
-  return list.slice(0, MAX_LIMIT).map(o => {
-    const row = cs.byId(o.kind === 'npc' ? 'npcs' : 'objects', o.id);
-    return { kind: o.kind, id: o.id, name: row ? row.name : null };
+function ownerRefs(store, cs, list) {
+  return list.map(o => {
+    if (o.kind === 'npc') {
+      const npc = cs.byId('npcs', o.id);
+      return { kind: 'npc', id: o.id, name: npc ? npc.name : null };
+    }
+    const object = cs.byId('objects', o.id);
+    return { kind: 'object', id: o.id, name: object ? object.name : null, ...(object ? { spawnTotal: object.spawnTotal, onMaps: object.onMaps.map(m => onMapRow(store, cs, m)) } : {}) };
   });
 }
 
 function npcRow(store, cs, npc, uiMapID) {
   const spawns = uiMapID ? npc.spawns.filter(s => s.maps.some(m => m.uiMapID === uiMapID)) : npc.spawns;
+  const onMap = uiMapID ? npc.onMaps.find(m => m.uiMapID === uiMapID) : null;
   return communityCited(cs, {
     kind: 'npc',
     id: npc.id,
@@ -230,18 +244,17 @@ function npcRow(store, cs, npc, uiMapID) {
     gives: questRefs(cs, npc.gives),
     ends: questRefs(cs, npc.ends),
     spawnTotal: npc.spawnTotal,
-    spawns: spawns.map(s => {
-      const row = spawnRow(store, s);
-      if (uiMapID) row.onMap = placed(store, s.maps.find(m => m.uiMapID === uiMapID));
-      return row;
-    }),
+    onMaps: npc.onMaps.map(m => onMapRow(store, cs, m)),
+    ...(uiMapID ? { onMap: onMap ? onMapRow(store, cs, onMap) : null } : {}),
+    spawns: spawns.map(s => spawnRow(store, cs, s)),
+    ...(npc.spawnTotal > npc.spawns.length ? { spawnsShown: `${npc.spawns.length} of ${npc.spawnTotal}, spread over its maps; onMaps lists every map` } : {}),
   });
 }
 
 function questRow(store, cs, id, info) {
   const known = store.has('quests') ? !!store.byId('quests', id) : null;
   const row = { kind: 'quest', id, inClientData: known, title: null, startedByItems: known ? startedByItems(store, id) : [] };
-  if (info) row.community = communityCited(cs, { title: info.title, givers: ownerRefs(cs, info.givers), enders: ownerRefs(cs, info.enders) });
+  if (info) row.community = communityCited(cs, { title: info.title, givers: ownerRefs(store, cs, info.givers), enders: ownerRefs(store, cs, info.enders) });
   return known ? cited(store, row) : { ...row, source: null, build: null, trust: GD.TRUST.none };
 }
 
@@ -408,7 +421,7 @@ const TOOLS = [
       const name = nameArg(args, true);
       const limit = limitArg(args);
       let hits = cs ? cs.search('npcs', name) : [];
-      if (uiMapID) hits = hits.filter(h => h.row.spawns.some(s => s.maps.some(m => m.uiMapID === uiMapID)));
+      if (uiMapID) hits = hits.filter(h => h.row.onMaps.some(m => m.uiMapID === uiMapID));
       const shown = hits.slice(0, limit);
       return communityEnvelope(store, 'wow_npc', { name, uiMapID }, shown.map(h => npcRow(store, cs, h.row, uiMapID)), { total: hits.length, notes });
     },
@@ -490,6 +503,22 @@ const TOOLS = [
         dropped: Number.isSafeInteger(m.dropped) ? m.dropped : null,
         notInData: [...NOT_IN_DATA],
       })] : [];
+      const cs = store.community;
+      if (cs) {
+        const c = cs.manifest;
+        results.push(communityCited(cs, {
+          kind: 'dataset',
+          flavor: c.flavor,
+          url: c.url,
+          file: c.file,
+          fetchedAt: c.fetchedAt,
+          license: c.license,
+          client: c.client,
+          positionsCurrent: !cs.stale,
+          rows: Object.fromEntries(Object.entries(c.entities || {}).map(([entity, info]) => [entity, info && Number.isSafeInteger(info.rows) ? info.rows : null])),
+          dropped: Number.isSafeInteger(c.dropped) ? c.dropped : null,
+        }));
+      }
       return envelope(store, 'wow_sources', {}, results);
     },
   },
@@ -506,6 +535,7 @@ function callTool(store, name, args) {
   if (!tool) return { content: [{ type: 'text', text: JSON.stringify({ error: `unknown tool ${String(name).slice(0, 60)}` }) }], isError: true };
   let result;
   if (store.takeMissed) store.takeMissed();
+  if (store.community) store.community.takeMissed();
   try {
     result = tool.run(store, args && typeof args === 'object' && !Array.isArray(args) ? args : {});
   } catch (e) {

@@ -7,7 +7,7 @@ CREATE TABLE `creature_template` (
   PRIMARY KEY (`Entry`)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8mb3;
 INSERT INTO `creature_template` VALUES (7001,'Fixture Giver','Quest Clerk',5),(7002,'Fixture Wanderer',NULL,6),(7003,'[UNUSED] Old Fixture',NULL,1);
-INSERT INTO `creature_template` VALUES (7004,'Fixture O\'Brien',NULL,2),(7005,'Fixture \"Twin\" Smith','',3);
+INSERT INTO `creature_template` VALUES (7004,'Fixture O\'Brien',NULL,2),(7005,'Fixture \"Twin\" Smith','',3),(7006,'Fixture Combat Dummy',NULL,1),(7007,'Fixture Trigger',NULL,1);
 DROP TABLE IF EXISTS `creature`;
 CREATE TABLE `creature` (
   `guid` int unsigned NOT NULL AUTO_INCREMENT,
@@ -32,6 +32,17 @@ CREATE TABLE `game_event_creature` (
   `event` smallint NOT NULL DEFAULT '0'
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8mb3;
 INSERT INTO `game_event_creature` VALUES (3,5),(1,-2);
+DROP TABLE IF EXISTS `game_event_creature_data`;
+CREATE TABLE `game_event_creature_data` (
+  `guid` int unsigned NOT NULL DEFAULT '0',
+  `entry_id` mediumint unsigned NOT NULL DEFAULT '0',
+  `modelid` mediumint unsigned NOT NULL DEFAULT '0',
+  `equipment_id` mediumint unsigned NOT NULL DEFAULT '0',
+  `spell_start` mediumint unsigned NOT NULL DEFAULT '0',
+  `spell_end` mediumint unsigned NOT NULL DEFAULT '0',
+  `event` smallint unsigned NOT NULL DEFAULT '0'
+) ENGINE=MyISAM DEFAULT CHARSET=utf8mb3;
+INSERT INTO `game_event_creature_data` VALUES (1,7005,0,0,0,0,7);
 DROP TABLE IF EXISTS `quest_template`;
 CREATE TABLE `quest_template` (
   `entry` mediumint unsigned NOT NULL DEFAULT '0',

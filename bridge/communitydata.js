@@ -23,7 +23,7 @@ const MAX_DUMP_BYTES = 64 * 1024 * 1024;
 const MAX_SQL_BYTES = 256 * 1024 * 1024;
 const MAX_SPAWNS = 25;
 const ENTITIES = Object.freeze(['npcs', 'questinfo', 'objects']);
-const JUNK = /^\[|<(?:NYI|UNUSED|TXT|TEST)>|\b(?:UNUSED|DEPRECATED|Dummy|Trigger|Credit Marker|Only GM|zzOLD)\b|\(OLD\)/i;
+const JUNK = /^\[|<(?:NYI|UNUSED|TXT|TEST)>|\b(?:UNUSED|DEPRECATED|Trigger|Credit Marker|Only GM|zzOLD)\b|\(OLD\)/i;
 
 function communityRoot(dataDir) {
   return path.join(D.flavorDir(dataDir, FLAVOR), 'community');
@@ -44,14 +44,16 @@ function readCommunity(root) {
   }
 }
 
-function openCommunity({ dataDir, flavor }) {
+function openCommunity({ dataDir, flavor, client = null }) {
   if (flavor !== FLAVOR || !dataDir) return null;
   const current = readCommunity(communityRoot(dataDir));
   if (!current) return null;
+  const made = current.manifest.client || {};
   return {
     source: SOURCE,
     version: current.version,
     trust: GD.TRUST.communityDb,
+    stale: !client || made.build !== client.build || made.tableHash !== client.tableHash,
     manifest: current.manifest,
     dir: current.dir,
     ...GD.tableReader(current.dir, current.manifest, ENTITIES),
@@ -99,6 +101,38 @@ function nameOrDrop(value, drop) {
   return name;
 }
 
+function spawnKey(spot) {
+  return spot.maps.length ? `m${spot.maps[0].uiMapID}` : `i${spot.mapID}`;
+}
+
+function finishSpawns(owner) {
+  const { all, ...rest } = owner;
+  const onMaps = new Map();
+  for (const spot of all) {
+    for (const m of spot.maps) {
+      const seen = onMaps.get(m.uiMapID);
+      if (seen) seen.count++;
+      else onMaps.set(m.uiMapID, { uiMapID: m.uiMapID, count: 1, x: m.x, y: m.y, ...(spot.event ? { event: true } : {}) });
+    }
+  }
+  for (const seen of onMaps.values()) if (seen.event && all.some(s => !s.event && s.maps.some(m => m.uiMapID === seen.uiMapID))) delete seen.event;
+  const queues = new Map();
+  for (const spot of all) {
+    const key = spawnKey(spot);
+    if (!queues.has(key)) queues.set(key, []);
+    queues.get(key).push(spot);
+  }
+  const spawns = [];
+  while (spawns.length < MAX_SPAWNS && queues.size) {
+    for (const [key, queue] of queues) {
+      if (spawns.length >= MAX_SPAWNS) break;
+      spawns.push(queue.shift());
+      if (!queue.length) queues.delete(key);
+    }
+  }
+  return { ...rest, spawnTotal: all.length, onMaps: [...onMaps.values()].sort((a, b) => a.uiMapID - b.uiMapID), spawns };
+}
+
 function convert(sql, client) {
   const droppedBy = {};
   const drop = reason => { droppedBy[reason] = (droppedBy[reason] || 0) + 1; };
@@ -112,13 +146,17 @@ function convert(sql, client) {
     return p.map ? { maps: p.maps, ...(p.zoneAmbiguous ? { zoneAmbiguous: true } : {}) } : { mapID: map, maps: [] };
   };
   const eventGuids = table => new Set([...S.rows(sql, table, ['guid', 'event'])].filter(r => r.event > 0).map(r => r.guid));
+  const addSpawn = (owner, spot) => {
+    if (!spot) { drop('badSpawn'); return; }
+    owner.all.push(spot);
+  };
 
   const npcs = new Map();
   for (const r of S.rows(sql, 'creature_template', ['Entry', 'Name', 'SubName'])) {
     if (!GD.isId(r.Entry)) { drop('badId'); continue; }
     const name = nameOrDrop(r.Name, drop);
     if (!name) continue;
-    npcs.set(r.Entry, { id: r.Entry, name, subname: r.SubName ? D.toName(r.SubName) : null, gives: [], ends: [], spawns: [], spawnTotal: 0 });
+    npcs.set(r.Entry, { id: r.Entry, name, subname: r.SubName ? D.toName(r.SubName) : null, gives: [], ends: [], all: [] });
   }
   const spawnEntries = new Map();
   for (const r of S.rows(sql, 'creature_spawn_entry', ['guid', 'entry'])) {
@@ -126,17 +164,19 @@ function convert(sql, client) {
     spawnEntries.get(r.guid).push(r.entry);
   }
   const npcEvents = eventGuids('game_event_creature');
+  const guidSpots = new Map();
   for (const r of S.rows(sql, 'creature', ['guid', 'id', 'map', 'position_x', 'position_y'])) {
+    const spot = place(r.map, r.position_x, r.position_y);
+    guidSpots.set(r.guid, spot);
     const shared = !r.id;
     for (const entry of shared ? spawnEntries.get(r.guid) || [] : [r.id]) {
       const npc = npcs.get(entry);
-      if (!npc) continue;
-      npc.spawnTotal++;
-      if (npc.spawns.length >= MAX_SPAWNS) continue;
-      const spot = place(r.map, r.position_x, r.position_y);
-      if (!spot) { drop('badSpawn'); continue; }
-      npc.spawns.push({ ...spot, ...(npcEvents.has(r.guid) ? { event: true } : {}), ...(shared ? { shared: true } : {}) });
+      if (npc) addSpawn(npc, spot && { ...spot, ...(npcEvents.has(r.guid) ? { event: true } : {}), ...(shared ? { shared: true } : {}) });
     }
+  }
+  for (const r of S.rows(sql, 'game_event_creature_data', ['guid', 'entry_id'])) {
+    const npc = npcs.get(r.entry_id);
+    if (npc && guidSpots.has(r.guid)) addSpawn(npc, guidSpots.get(r.guid) && { ...guidSpots.get(r.guid), event: true });
   }
 
   const objects = new Map();
@@ -155,7 +195,7 @@ function convert(sql, client) {
       let owner = kind === 'npc' ? npcs.get(r.id) : objects.get(r.id);
       if (!owner && kind === 'object') {
         const name = objectNames.has(r.id) ? nameOrDrop(objectNames.get(r.id), drop) : null;
-        if (name) { owner = { id: r.id, name, gives: [], ends: [], spawns: [], spawnTotal: 0 }; objects.set(r.id, owner); }
+        if (name) { owner = { id: r.id, name, gives: [], ends: [], all: [] }; objects.set(r.id, owner); }
       }
       if (!owner) { drop('relationWithoutOwner'); continue; }
       quest[list].push({ kind, id: r.id });
@@ -170,13 +210,13 @@ function convert(sql, client) {
   for (const r of S.rows(sql, 'gameobject', ['guid', 'id', 'map', 'position_x', 'position_y'])) {
     const object = objects.get(r.id);
     if (!object) continue;
-    object.spawnTotal++;
-    if (object.spawns.length >= MAX_SPAWNS) continue;
     const spot = place(r.map, r.position_x, r.position_y);
-    if (spot) object.spawns.push({ ...spot, ...(objectEvents.has(r.guid) ? { event: true } : {}) });
+    addSpawn(object, spot && { ...spot, ...(objectEvents.has(r.guid) ? { event: true } : {}) });
   }
-  const sorted = m => [...m.values()].sort((a, b) => a.id - b.id);
-  return { entities: { npcs: sorted(npcs), questinfo: sorted(quests), objects: sorted(objects) }, droppedBy };
+  const sorted = m => [...m.values()].map(finishSpawns).sort((a, b) => a.id - b.id);
+  const entities = { npcs: sorted(npcs), questinfo: [...quests.values()].sort((a, b) => a.id - b.id), objects: sorted(objects) };
+  for (const required of ['npcs', 'questinfo']) if (!entities[required].length) throw new S.DumpError(`no ${required} row survived conversion; the dump layout changed`);
+  return { entities, droppedBy };
 }
 
 function writeJsonl(file, records) {

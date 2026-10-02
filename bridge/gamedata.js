@@ -169,7 +169,7 @@ function openStore({ dataDir, flavor: chosen, clientBuild = '' } = {}) {
     source: manifest ? manifest.source || null : null,
     ...reader,
     get community() {
-      if (community === undefined) community = flavor ? require('./communitydata').openCommunity({ dataDir, flavor }) : null;
+      if (community === undefined) community = flavor ? require('./communitydata').openCommunity({ dataDir, flavor, client: build ? { build, tableHash: manifest.tableHash || null } : null }) : null;
       return community;
     },
   };
