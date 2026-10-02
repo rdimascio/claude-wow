@@ -27,6 +27,7 @@ const { spawn, spawnSync } = require('child_process');
 const H = require('./home');
 const R = require('./runtime');
 const P = require('./protocol'); // which transport a config starts the bridge on
+const CLI = require('./clients');
 
 const LABEL = 'io.claudewow.bridge';      // launchd label
 const UNIT = 'claude-wow-bridge';         // systemd unit name
@@ -513,7 +514,15 @@ function readState(file) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return {}; }
 }
 
-function status(d, platform = process.platform, out = console.log, stateFile = H.resolve().state) {
+function clientLines(configFile, state) {
+  let cfg = null;
+  try { cfg = JSON.parse(fs.readFileSync(configFile, 'utf8')); } catch { return ['no config.json (claude-wow setup)']; }
+  const clients = CLI.clientsOf(cfg);
+  if (!clients.length) return ['none in config.json (claude-wow setup)'];
+  return CLI.describe(clients, state);
+}
+
+function status(d, platform = process.platform, out = console.log, stateFile = H.resolve().state, configFile = H.resolve().config) {
   const b = backend(platform);
   const installed = fs.existsSync(d.definition);
   const probe = installed ? b.probe(d) : { loaded: false, pid: 0, state: '' };
@@ -531,7 +540,9 @@ function status(d, platform = process.platform, out = console.log, stateFile = H
   } else {
     out('  running   : no');
   }
-  out(`  versions  : ${P.versionsSummary(readState(stateFile))}; ${P.installedSummary()}`);
+  const state = readState(stateFile);
+  out(`  versions  : ${P.versionsSummary(state)}; ${P.installedSummary()}`);
+  clientLines(configFile, state).forEach((line, i) => out(`  ${i ? '           ' : 'clients   : '}${line}`));
   const log = fs.existsSync(serviceLogFile(d)) ? serviceLogFile(d) : H.resolve().log;
   out(`  log       : ${log}  (rotates at 5 MB, 5 kept)`);
   const tail = lastLines(log, 5);
@@ -617,5 +628,5 @@ module.exports = {
   parseArgs, launchdPlist, systemdUnit, startupVbs, xmlEscape, program, definition,
   rotate, RotatingLog, writePid, readPid, clearPid, alive,
   parseLaunchctlPrint, formatUptime, lastLines, agentEnv,
-  status, main,
+  status, clientLines, main,
 };

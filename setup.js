@@ -29,6 +29,7 @@ const A = require('./bridge/agents');   // which agent CLIs this PC has
 const AS = require('./bridge/assets');  // the addon, the config template and the capture scripts, by path
 const G = require('./bridge/gamefs');
 const SIG = require('./bridge/signals');
+const CLI = require('./bridge/clients');
 const ADDON_SRC = AS.dir('addon/' + P.ADDON);
 const EXAMPLE = AS.file('bridge/config.example.json');
 let CONFIG = H.resolve().config; // settled in main(), after the legacy layout has been migrated
@@ -88,11 +89,12 @@ function isClient(dir) {
   } catch { return false; }
 }
 
-function findClient() {
-  if (args.wow) {
-    if (isClient(args.wow)) return args.wow;
-    throw new Error(`--wow "${args.wow}" does not look like a WoW client folder (needs Interface\\ and a game binary)`);
-  }
+function namedClient() {
+  if (isClient(args.wow)) return path.resolve(args.wow);
+  throw new Error(`--wow "${args.wow}" does not look like a WoW client folder (needs Interface\\ and a game binary)`);
+}
+
+function detectClients() {
   let roots;
   if (process.platform === 'win32') {
     roots = [process.env['ProgramFiles(x86)'], process.env.ProgramFiles, 'D:\\', 'E:\\', 'D:\\Games', 'E:\\Games', 'C:\\Games']
@@ -105,25 +107,33 @@ function findClient() {
       path.join(os.homedir(), 'Games', 'battlenet')]
       .filter(Boolean).flatMap(p => ['Program Files (x86)', 'Program Files'].map(pf => path.join(p, 'drive_c', pf, 'World of Warcraft')));
   }
+  const found = [];
   for (const root of roots) {
     for (const flavor of ['_classic_beta_', '_forever_', '_classic_era_']) {
       const dir = path.join(root, flavor);
-      if (isClient(dir)) return dir;
+      if (isClient(dir) && !found.some(d => CLI.sameDir(d, dir))) found.push(dir);
     }
   }
-  throw new Error('Could not find the WoW client. Pass --wow "<path to World of Warcraft/_classic_beta_, _forever_ or _classic_era_>"');
+  return found;
 }
 
-function findAccount(client) {
+const NO_CLIENT = 'Could not find the WoW client. Pass --wow "<path to World of Warcraft/_classic_beta_, _forever_ or _classic_era_>"';
+
+function accountsIn(client) {
   const base = path.join(client, 'WTF', 'Account');
-  let names = [];
-  try { names = listDir(base).filter(n => n !== 'SavedVariables' && fs.statSync(path.join(base, n)).isDirectory()); } catch {}
-  if (args.account) {
-    if (!names.includes(args.account)) throw new Error(`Account "${args.account}" not found under ${base}`);
-    return args.account;
+  try { return listDir(base).filter(n => n !== 'SavedVariables' && fs.statSync(path.join(base, n)).isDirectory()); } catch { return []; }
+}
+
+function findAccount(client, { wanted = '', current = '', strict = true } = {}) {
+  const base = path.join(client, 'WTF', 'Account');
+  const names = accountsIn(client);
+  if (wanted) {
+    if (names.includes(wanted)) return wanted;
+    if (strict) throw new Error(`Account "${wanted}" not found under ${base}`);
   }
-  if (!names.length) throw new Error(`No account folder under ${base}. Log into the game once, then run setup again.`);
-  if (names.length > 1) console.log(`Several accounts found (${names.join(', ')}); using "${names[0]}". Pass --account to choose another.`);
+  if (current && names.includes(current)) return current;
+  if (!names.length) return '';
+  if (names.length > 1) console.log(`Several accounts found in ${CLI.labelOf(client)} (${names.join(', ')}); using "${names[0]}". Pass --account to choose another.`);
   return names[0];
 }
 
@@ -193,6 +203,12 @@ function upgradeConfig(cfg, example) {
     cfg.tocInterface = P.TOC_INTERFACE;
     notes.push('tocInterface');
   }
+  for (const entry of Array.isArray(cfg.clients) ? cfg.clients : []) {
+    if (entry && P.OLD_TOC_INTERFACES.includes(String(entry.tocInterface || '').trim())) {
+      delete entry.tocInterface;
+      if (!notes.includes('tocInterface')) notes.push('tocInterface');
+    }
+  }
   if (!cfg.agents) {
     const claude = { ...example.agents.claude };
     if (cfg.claudePath) claude.path = cfg.claudePath;
@@ -220,45 +236,71 @@ function processNameFor(client) {
   return exe.replace(/\.exe$/i, '');
 }
 
-function pointAtClient(cfg, client, account) {
-  cfg.addonDir = path.join(client, 'Interface', 'AddOns');
-  cfg.inboxFile = SIG.runtimeInbox(cfg.addonDir);
-  cfg.savedVariablesFile = path.join(client, 'WTF', 'Account', account, 'SavedVariables', P.ADDON + '.lua');
+function entryFor(client, account) {
+  const entry = { dir: client };
+  if (account) entry.account = account;
   const processName = processNameFor(client);
-  if (processName) cfg.capture = { ...(cfg.capture || {}), processName };
-  return cfg;
+  if (processName) entry.processName = processName;
+  return entry;
 }
 
-function writeConfig(client, account) {
+function noteOnce(notes, name) {
+  if (!notes.includes(name)) notes.push(name);
+}
+
+function loadConfig() {
   const example = JSON.parse(fs.readFileSync(EXAMPLE, 'utf8'));
-  if (fs.existsSync(CONFIG)) {
-    const cfg = JSON.parse(fs.readFileSync(CONFIG, 'utf8'));
-    const notes = upgradeConfig(cfg, example);
-    // An explicit --project on a re-run is a correction: honour it. Without this
-    // there was no way to fix a bad defaultCwd short of editing config.json.
-    if (args.project) {
-      const want = resolveProject(args.project);
-      if (cfg.defaultCwd !== want) { cfg.defaultCwd = want; notes.push('defaultCwd'); }
-    }
-    if (args.wow && cfg.addonDir !== path.join(client, 'Interface', 'AddOns')) {
-      pointAtClient(cfg, client, account);
-      notes.push('client');
-    }
-    if (notes.length) {
-      fs.writeFileSync(CONFIG, JSON.stringify(cfg, null, 2) + '\n');
-      console.log(`config   : ${CONFIG} updated (${notes.join(', ')}); everything else kept`);
-    } else {
-      console.log(`config   : ${CONFIG} already exists, keeping it`);
-    }
-    return cfg;
+  if (!fs.existsSync(CONFIG)) {
+    const cfg = example;
+    for (const k of CLI.LEGACY_KEYS) delete cfg[k];
+    cfg.clients = [];
+    cfg.defaultCwd = args.project ? resolveProject(args.project) : process.cwd();
+    return { cfg, notes: [], fresh: true };
   }
-  const cfg = example;
-  pointAtClient(cfg, client, account);
-  cfg.defaultCwd = args.project ? resolveProject(args.project) : process.cwd();
-  fs.mkdirSync(path.dirname(CONFIG), { recursive: true }); // the home folder, on a fresh install
-  fs.writeFileSync(CONFIG, JSON.stringify(cfg, null, 2) + '\n');
-  console.log(`config   : wrote ${CONFIG}`);
-  return cfg;
+  const cfg = JSON.parse(fs.readFileSync(CONFIG, 'utf8'));
+  const notes = upgradeConfig(cfg, example);
+  for (const n of CLI.migrateConfig(cfg)) noteOnce(notes, n);
+  if (args.project) {
+    const want = resolveProject(args.project);
+    if (cfg.defaultCwd !== want) { cfg.defaultCwd = want; notes.push('defaultCwd'); }
+  }
+  return { cfg, notes, fresh: false };
+}
+
+function chooseClients(cfg, notes) {
+  if (args.wow) {
+    const dir = namedClient();
+    const known = CLI.allClients(cfg).find(c => CLI.sameDir(c.dir, dir));
+    const account = findAccount(dir, { wanted: args.account || '', current: known ? known.account : '' });
+    const how = CLI.upsertClient(cfg, { ...entryFor(dir, account), enabled: true });
+    if (how !== 'same') noteOnce(notes, 'client');
+    return;
+  }
+  for (const dir of detectClients()) {
+    if (CLI.allClients(cfg).some(c => CLI.sameDir(c.dir, dir))) continue;
+    CLI.upsertClient(cfg, entryFor(dir, findAccount(dir, { wanted: args.account || '', strict: false })));
+    noteOnce(notes, 'client');
+  }
+}
+
+function refreshClient(cfg, client, notes) {
+  const account = findAccount(client.dir, { wanted: args.wow ? '' : args.account || '', current: client.account, strict: false });
+  const how = CLI.upsertClient(cfg, { ...entryFor(client.dir, account), processName: processNameFor(client.dir) || client.processName });
+  if (how !== 'same') noteOnce(notes, 'client');
+  return CLI.clientsOf(cfg).find(c => c.key === client.key);
+}
+
+function saveConfig(cfg, notes, fresh) {
+  if (fresh) {
+    fs.mkdirSync(path.dirname(CONFIG), { recursive: true });
+    fs.writeFileSync(CONFIG, JSON.stringify(cfg, null, 2) + '\n');
+    console.log(`config   : wrote ${CONFIG}`);
+  } else if (notes.length) {
+    fs.writeFileSync(CONFIG, JSON.stringify(cfg, null, 2) + '\n');
+    console.log(`config   : ${CONFIG} updated (${notes.join(', ')}); everything else kept`);
+  } else {
+    console.log(`config   : ${CONFIG} already exists, keeping it`);
+  }
 }
 
 // Warnings collected as we go, repeated at the end so they are not scrolled past.
@@ -357,14 +399,27 @@ try {
   CONFIG = home.config;
   console.log(`home     : ${home.dir}${home.source === 'CLAUDE_WOW_HOME' ? '  (CLAUDE_WOW_HOME)' : ''}`);
   if (carried.length) console.log(`migrate  : ${carried.join(', ')} copied from ${H.LEGACY_DIR} to ${home.dir}; the bridge reads them there from now on (the copies in bridge/ are no longer used)`);
-  const client = findClient();
-  console.log(`client   : ${client}`);
-  const account = findAccount(client);
-  console.log(`account  : ${account}`);
-  migrateOldInstall(client, account);
-  const { dest, copied, build } = copyAddon(client);
-  console.log(`addon    : ${copied} file(s) -> ${dest} (build ${build}, /claude diag shows it)`);
-  const cfg = writeConfig(client, account);
+  const { cfg, notes, fresh } = loadConfig();
+  chooseClients(cfg, notes);
+  const targets = CLI.clientsOf(cfg);
+  if (!targets.length) throw new Error(NO_CLIENT);
+  const several = targets.length > 1;
+  for (const listed of targets) {
+    const client = refreshClient(cfg, listed, notes);
+    const tag = several ? `${client.label}: ` : '';
+    console.log(`client   : ${client.dir}`);
+    if (client.account) {
+      console.log(`account  : ${tag}${client.account}`);
+      migrateOldInstall(client.dir, client.account);
+    } else {
+      warn(`${client.label} has no account folder under ${path.join(client.dir, 'WTF', 'Account')}, so the bridge cannot read its /reload outbox`, 'Log into that game once, then run setup again.');
+    }
+    const { dest, copied, build } = copyAddon(client.dir);
+    console.log(`addon    : ${tag}${copied} file(s) -> ${dest} (build ${build}, /claude diag shows it)`);
+  }
+  const skipped = CLI.allClients(cfg).filter(c => !c.enabled);
+  for (const c of skipped) console.log(`client   : ${c.dir} skipped ("enabled": false in config.json)`);
+  saveConfig(cfg, notes, fresh);
   console.log(`project  : ${cfg.defaultCwd}  (change with /claude-wow cd in game, or defaultCwd in config.json)`);
   // A defaultCwd that no longer exists (moved folder, or a bad --project from an
   // earlier run) makes every chat fail with "Folder does not exist" in game.
@@ -379,7 +434,7 @@ try {
   pythonReport(cfg, transport);
   macCaptureReport(cfg, transport);
   console.log('slots    : building the reply-slot pool and signal files...');
-  const movesSignals = SIG.legacySignalFolders(cfg.addonDir).length > 0;
+  const movesSignals = CLI.clientsOf(cfg).some(c => SIG.legacySignalFolders(c.addonDir).length > 0);
   const r = spawnSync(...R.scriptCommand('install-slots'), { stdio: 'inherit' });
   if (r.status !== 0) throw new Error('install-slots.js failed');
   if (movesSignals) warn(SIG.RESTART_NOTE, 'A /reload is not enough: the game only sees files that existed when it started.');
@@ -389,7 +444,7 @@ try {
   }
   console.log(`
 Done. Next:
-  1. Fully quit and relaunch World of Warcraft (it only discovers new addon folders at launch).
+  1. Fully quit and relaunch each World of Warcraft client above that is running (it only discovers new addon folders at launch).
   2. Enable "Claude WoW" at the character select AddOns screen (the Claude WoW slot ### entries stay enabled).
   3. Start the bridge:  ${R.compiled ? 'claude-wow' : 'npm start'}   (in this terminal${
     process.platform === 'win32' ? '; bridge\\start-window.cmd opens its own window'
@@ -407,4 +462,4 @@ Done. Next:
 // Run as a script this is the installer; required (tests/setup_test.js) it only
 // lends out the pieces, the migration above all.
 if (require.main === module) main();
-module.exports = { migrateOldInstall, migrateSavedData, copyAddon, upgradeConfig, pointAtClient, isClient, parseArgs, transportReport, main };
+module.exports = { migrateOldInstall, migrateSavedData, copyAddon, upgradeConfig, entryFor, isClient, detectClients, findAccount, parseArgs, transportReport, main };

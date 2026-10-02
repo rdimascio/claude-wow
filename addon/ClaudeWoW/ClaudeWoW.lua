@@ -1812,6 +1812,44 @@ function ClaudeWoW.Version.ApplyDisk(d, stamp)
 	end
 end
 
+ClaudeWoW.Version.CLIENTS_MAX = 8
+
+function ClaudeWoW.Version.ApplyClients(list, stamp)
+	local V = ClaudeWoW.Version
+	if type(list) ~= "table" then return end
+	local at = tonumber(stamp)
+	if not at or time() - at > Q.INBOX_FRESH_SECONDS then return end
+	local out = {}
+	for i = 1, math.min(#list, V.CLIENTS_MAX) do
+		local c = list[i]
+		if type(c) == "table" and type(c.name) == "string" and #c.name <= 40 and c.name:match("^[%w_ %.%-]+$") then
+			local heard = tonumber(c.heard)
+			table.insert(out, {
+				name = c.name,
+				version = type(c.version) == "string" and #c.version <= 40 and c.version:match(V.PATTERN) and c.version or "",
+				build = type(c.build) == "string" and #c.build == 12 and c.build:match("^[0-9a-f]+$") and c.build or "",
+				heard = heard and heard > 0 and heard == math.floor(heard) and heard or 0,
+				here = c.here == true,
+				last = c.last == true,
+			})
+		end
+	end
+	run.bridgeClients = out
+end
+
+function ClaudeWoW.Version.ClientsStatus()
+	local list = run.bridgeClients
+	if not list then return "clients: not reported (an older bridge, or not heard yet)" end
+	if #list == 0 then return "clients: none in the bridge's config.json" end
+	local parts = {}
+	for _, c in ipairs(list) do
+		local files = c.version ~= "" and (c.version .. (c.build ~= "" and (" build " .. c.build) or "")) or "no addon installed"
+		local heard = c.heard > 0 and ("heard " .. FmtDur(math.max(0, time() - c.heard)) .. " ago") or "not heard yet"
+		table.insert(parts, c.name .. (c.here and " (this client)" or "") .. ": " .. files .. ", " .. heard .. (c.last and ", spoke last" or ""))
+	end
+	return "clients: " .. table.concat(parts, "; ")
+end
+
 function ClaudeWoW.Version.CheckFolders()
 	local info = C_AddOns and C_AddOns.GetAddOnInfo
 	if run.restartTold or type(info) ~= "function" then return end
@@ -1930,6 +1968,7 @@ local function TryLoadSlot(why)
 		Presence.Check(data.presence, data.now)
 		ClaudeWoW.Version.Apply(data.bridge, data.now)
 		ClaudeWoW.Version.ApplyDisk(data.addonDisk, data.now)
+		ClaudeWoW.Version.ApplyClients(data.clients, data.now)
 	end
 	local matched = ApplyReplies(type(data) == "table" and data.replies or nil)
 	if type(data) == "table" and data.restore then ImportRestore(data.restore) end
@@ -2107,6 +2146,7 @@ local function ProcessInbox()
 	ApplyTransport(inbox)
 	ClaudeWoW.Version.Apply(inbox.bridge, inbox.now)
 	ClaudeWoW.Version.ApplyDisk(inbox.addonDisk, inbox.now)
+	ClaudeWoW.Version.ApplyClients(inbox.clients, inbox.now)
 	ApplyReplies(inbox.replies)
 	if inbox.restore then ImportRestore(inbox.restore) end
 	if inbox.map and ClaudeWoWMap then ClaudeWoWMap.Sync(inbox.map) end
@@ -7569,6 +7609,7 @@ RunCommand = function(cmd, rest)
 			select(5, ClaudeWoW.BridgeState()),
 			"mode: " .. s.mode .. ", session token: " .. tostring(db.session),
 			ClaudeWoW.Version.Status(),
+			ClaudeWoW.Version.ClientsStatus(),
 			Whisper.Status(),
 			"transport: " .. tostring(s.transport or "pixel") .. (s.transport == "screenshot" and type(Screenshot) ~= "function" and " (Screenshot() missing: strip stays up, and the bridge is told to fall back to the pixel capture)" or "")
 				.. (s.transport == "pixel" and s.transportNote and (" (bridge: " .. s.transportNote .. ")") or "")

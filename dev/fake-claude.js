@@ -273,7 +273,7 @@ async function main() {
   const prior = resume ? loadSession(resume) : null;
   const session = prior || { id: resume || crypto.randomUUID(), turns: 0, total: {}, created: Date.now() };
   session.turns += 1;
-  recordCall({ at: new Date().toISOString(), session: session.id, turn: session.turns, resume: resume || null, images, directives: d, argv, mcpConfig: mcpConfigOf(argv), cwd: process.cwd(), pid: process.pid });
+  recordCall({ at: new Date().toISOString(), session: session.id, turn: session.turns, resume: resume || null, images, directives: d, prompt: String(text).slice(0, 4000), argv, mcpConfig: mcpConfigOf(argv), cwd: process.cwd(), pid: process.pid });
 
   if (d.auth) {
     emit({ type: 'result', subtype: 'success', is_error: true, result: 'Invalid API key · Please run /login', session_id: session.id });

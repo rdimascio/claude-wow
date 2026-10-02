@@ -939,6 +939,15 @@ function luaTable(globalName, records, opts = {}) {
   if (opts.addonDisk && typeof opts.addonDisk === 'object' && opts.addonDisk.version) {
     lines.splice(lines.length - 1, 0, `\taddonDisk = { version = ${luaStr(opts.addonDisk.version)}, build = ${luaStr(opts.addonDisk.build || '')} },`);
   }
+  if (Array.isArray(opts.clients)) {
+    const rows = opts.clients.filter(c => c && typeof c === 'object').map(c => {
+      const f = [`name = ${luaStr(c.name || '')}`, `version = ${luaStr(c.version || '')}`, `build = ${luaStr(BUILD_RE.test(String(c.build || '')) ? c.build : '')}`, `heard = ${Math.max(0, Math.floor(Number(c.heard) || 0))}`];
+      if (c.here) f.push('here = true');
+      if (c.last) f.push('last = true');
+      return `{ ${f.join(', ')} }`;
+    });
+    lines.splice(lines.length - 1, 0, `\tclients = { ${rows.join(', ')} },`);
+  }
   if (opts.live && typeof opts.live === 'object') {
     const sessions = Array.isArray(opts.live.sessions) ? opts.live.sessions : [];
     lines.splice(lines.length - 1, 0, `\tlive = { sessions = { ${sessions.map(luaStr).join(', ')} }, start = ${luaStr(opts.live.start || '')} },`);
@@ -1357,7 +1366,7 @@ module.exports = {
   alreadyHandled, markHandled, pruneStale, MONTH_MS, noteAck, recentAcks, RECENT_ACKS_MAX, RECENT_ACK_MS,
   noteUsage, usageFields, tokensLabel,
   resolveCwd, sameFolder, baseName,
-  PROTO, PROTO_MIN, PROTO_MAX, LEGACY_PROTO, SEMVER_RE, ADDON_VERSIONS_MAX, bridgeVersion, bridgeInfo, compareSemver, versionVerdict, noteAddonVersion, addonRefusal, latestAddonVersion, versionsSummary, installedSummary, BUILD_RE, addonBuild, tocField, tocWithBuild, addonDiskInfo,
+  PROTO, PROTO_MIN, PROTO_MAX, LEGACY_PROTO, SEMVER_RE, ADDON_VERSIONS_MAX, MAX_DATE_MS, bridgeVersion, bridgeInfo, compareSemver, versionVerdict, noteAddonVersion, addonRefusal, latestAddonVersion, versionsSummary, installedSummary, BUILD_RE, addonBuild, tocField, tocWithBuild, addonDiskInfo,
   parseFlags, PERMISSION_MODES, permissionModeName, ADD_DIRS_MAX, jobsFromStrip, parseOutbox, withRunOnlyRules, withRunDeniedRules, withoutRules, absolutePathRule, systemPrompt, systemRulesHash, rulesChanged, noteRules, messagePrompt, visionHint, splitSummary,
   ruleFor, describeToolUse,
   folderRule, ruleFolder, splitGrants, insideFolder, nearestFolder, denialPath, classifyDenial, grantsFor, deniedAgain, denialNotes,

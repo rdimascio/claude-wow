@@ -8,6 +8,7 @@ const { spawn, spawnSync } = require('child_process');
 const SIG = require('../bridge/signals');
 const { INERT_OPTIONS: INERT_STREAM } = require('../bridge/plugins/stream');
 const P = require('../bridge/protocol');
+const CLI = require('../bridge/clients');
 
 const posixOnly = { skip: process.platform === 'win32' };
 const modeOf = file => fs.statSync(file).mode & 0o777;
@@ -110,7 +111,7 @@ test('install-slots arms every signal file before the game starts', () => {
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /signal files armed: 20/);
   assert.match(r.stdout, /presence: ring b at 2 of 5/);
-  assert.match(r.stdout, /relaunch WoW/);
+  assert.match(r.stdout, /relaunch WoW so it sees the new files|^restart: WoW is not running; it sees the new files at its next launch/m);
   assert.doesNotMatch(r.stdout, /^migrate:/m, 'nothing to move on a fresh install');
   for (let slot = 1; slot <= 3; slot++) {
     for (const kind of ['ack', 'sig']) assert.ok(fs.existsSync(SIG.signalFile(addons, kind, slot)), `${kind} ${slot}`);
@@ -231,7 +232,9 @@ test('a bridge started on an old install builds ClaudeWoW_Runtime from state.jso
     assert.match(out, /The 5 old folder\(s\) in .*ClaudeWoW stay until setup/, out);
     assert.ok(fs.existsSync(SIG.validFile(addons)));
     assert.ok(fs.existsSync(SIG.runtimeToc(addons)));
-    assert.equal(JSON.parse(fs.readFileSync(path.join(home, 'state.json'), 'utf8')).presence.ring, 'b', 'the ring in state.json carries over');
+    const saved = JSON.parse(fs.readFileSync(path.join(home, 'state.json'), 'utf8'));
+    assert.equal(saved.clients[CLI.keyOf(CLI.dirOfAddons(addons))].presence.ring, 'b', 'the ring in state.json carries over to the client it was armed for');
+    assert.equal(saved.presence, undefined, 'the old top-level ring is moved, not copied');
     assert.deepEqual(presentRange(addons, 'b', 1, 2), [false, false], 'its spent prefix reads fired in the new folder');
     assert.ok(fs.existsSync(path.join(addons, 'ClaudeWoW', 'ack', '001.wav')), 'a running game may still read the old files');
     assert.ok(published(), 'the bridge publishes into the runtime Inbox.lua');

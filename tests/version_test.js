@@ -479,3 +479,77 @@ test('a runtime folder installed after launch asks for a full restart, once', ()
   helloPoll(present, null, 'time()', luaDisk(TOC_VERSION));
   assert.equal(told(present, 'restart the game'), 0);
 });
+
+const CLI = require('../bridge/clients');
+const luaClients = rows => `, clients = { ${rows.map(r => `{ ${Object.entries(r).map(([k, v]) => `${k} = ${typeof v === 'string' && k !== 'heard' ? JSON.stringify(v) : v}`).join(', ')} }`).join(', ')} }`;
+const ERA = { name: '_classic_era_', version: '1.2.3', build: BUILD_A, heard: 'time() - 120', here: true, last: true };
+const FOREVER = { name: '_classic_beta_', version: '1.2.2', build: BUILD_B, heard: 0 };
+const clientsStatus = vm => vm.evaluate('ClaudeWoW.Version.ClientsStatus()');
+
+test('the bridge writes one clients row per client, marks this one and the last speaker, and drops a malformed build', () => {
+  const lua = P.luaTable('ClaudeWoW_SlotData', [], { now: 1000, clients: [
+    { name: '_classic_era_', version: '1.2.3', build: BUILD_A, heard: 900.7, here: true, last: true },
+    { name: '_classic_beta_', version: '', build: 'not-a-build', heard: -5 },
+  ] });
+  assert.match(lua, /\tclients = \{ \{ name = "_classic_era_", version = "1\.2\.3", build = "aaaaaaaaaaaa", heard = 900, here = true, last = true \}, \{ name = "_classic_beta_", version = "", build = "", heard = 0 \} \},/);
+  assert.match(P.luaTable('ClaudeWoW_SlotData', [], { now: 1000, clients: [] }), /\tclients = \{  \},/, 'a bridge with no client still sends the field');
+  assert.doesNotMatch(P.luaTable('ClaudeWoW_SlotData', [], { now: 1000 }), /clients =/);
+});
+
+test('diag shows every client with its build, which one this is and which spoke last, from a slot read', () => {
+  const vm = newVM();
+  assert.equal(clientsStatus(vm), 'clients: not reported (an older bridge, or not heard yet)');
+  helloPoll(vm, null, 'time()', luaClients([ERA, FOREVER]));
+  assert.equal(clientsStatus(vm), 'clients: _classic_era_ (this client): 1.2.3 build aaaaaaaaaaaa, heard 2m00s ago, spoke last; _classic_beta_: 1.2.2 build bbbbbbbbbbbb, not heard yet');
+  vm.run('SlashCmdList.CLAUDEWOW("diag")');
+  assert.equal(told(vm, 'clients: _classic_era_ (this client): 1.2.3 build aaaaaaaaaaaa'), 1, 'the line is part of /claude diag');
+  slotPoll(vm, null, 'time()', luaClients([]));
+  assert.equal(clientsStatus(vm), "clients: none in the bridge's config.json", 'an explicit empty list replaces the old one');
+});
+
+test('Inbox.lua carries the clients field too, under the 5-minute age rule', () => {
+  const fresh = newVM({ beforeLogin: `ClaudeWoW_Inbox = { now = time() - 120, replies = {}${luaClients([ERA])} }` });
+  assert.match(clientsStatus(fresh), /^clients: _classic_era_ \(this client\): 1\.2\.3/);
+  const stale = newVM({ beforeLogin: `ClaudeWoW_Inbox = { now = time() - 3600, replies = {}${luaClients([ERA])} }` });
+  assert.match(clientsStatus(stale), /not reported/);
+  const undated = newVM({ beforeLogin: `ClaudeWoW_Inbox = { replies = {}${luaClients([ERA])} }` });
+  assert.match(clientsStatus(undated), /not reported/);
+});
+
+test('a stale slot read leaves the clients list it had, and an old bridge without the field changes nothing', () => {
+  const vm = newVM();
+  helloPoll(vm, null, 'time()', luaClients([ERA]));
+  slotPoll(vm, null, 'time() - 900', luaClients([FOREVER]));
+  assert.match(clientsStatus(vm), /^clients: _classic_era_/);
+  slotPoll(vm, null, 'time()', '');
+  assert.match(clientsStatus(vm), /^clients: _classic_era_/);
+});
+
+test('each guard on a clients row drops only what it guards', () => {
+  const rows = {
+    'name not a string': [{ ...ERA, name: 5 }, 'none'],
+    'name too long': [{ ...ERA, name: 'x'.repeat(41) }, 'none'],
+    'name with a pipe': [{ ...ERA, name: 'era|x' }, 'none'],
+    'row not a table': ['"era"', 'none'],
+    'bad build': [{ ...ERA, build: 'ZZZZZZZZZZZZ' }, /: 1\.2\.3, heard/],
+    'short build': [{ ...ERA, build: 'aaaa' }, /: 1\.2\.3, heard/],
+    'bad version': [{ ...ERA, version: 'x' }, /: no addon installed, heard/],
+    'long version': [{ ...ERA, version: '1.2.3-' + 'a'.repeat(40) }, /: no addon installed, heard/],
+    'fractional heard': [{ ...ERA, heard: 'time() - 120.5' }, /not heard yet/],
+    'negative heard': [{ ...ERA, heard: -1 }, /not heard yet/],
+    'here not true': [{ ...ERA, here: 1 }, /^clients: _classic_era_: /],
+    'last not true': [{ ...ERA, last: '"yes"' }, /ago$/],
+  };
+  for (const [name, [row, want]] of Object.entries(rows)) {
+    const vm = newVM();
+    const field = typeof row === 'string' ? `, clients = { ${row} }` : luaClients([row]);
+    helloPoll(vm, null, 'time()', field);
+    const text = clientsStatus(vm);
+    if (want === 'none') assert.equal(text, "clients: none in the bridge's config.json", name);
+    else assert.match(text, want, name);
+  }
+  const many = newVM();
+  helloPoll(many, null, 'time()', luaClients(Array.from({ length: CLI.CLIENTS_MAX + 3 }, (_, i) => ({ ...FOREVER, name: `c${i}` }))));
+  assert.equal(clientsStatus(many).split('; ').length, CLI.CLIENTS_MAX, 'at most CLIENTS_MAX rows are kept');
+  assert.equal(many.num('ClaudeWoW.Version.CLIENTS_MAX'), CLI.CLIENTS_MAX, 'the addon and the bridge share one limit');
+});

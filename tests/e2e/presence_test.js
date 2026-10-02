@@ -37,10 +37,10 @@ test('the bridge deletes launch-time presence files: the self-test passes at the
     const r = await h.client.say('after the self-test');
     assert.match(r.text, /after the self-test/);
     await h.bridge.waitForLine(/signal self-test from the game: deleting a launch-time file reads as missing \(presence beats work\); a file created after launch is unseen/, { timeoutMs: 10000 });
-    assert.equal(h.state().presenceTest.result, 'passed');
-    assert.equal(h.state().presenceTest.late, 'unseen');
+    assert.equal(h.clientState().presenceTest.result, 'passed');
+    assert.equal(h.clientState().presenceTest.late, 'unseen');
     const dir = path.join(h.sb.addons, 'ClaudeWoW_Runtime', 'presence', 'a');
-    const st = h.state().presence;
+    const st = h.clientState().presence;
     assert.ok(!fs.existsSync(path.join(dir, String(st.at).padStart(4, '0') + '.wav')), 'the beaten file is gone');
     assert.ok(fs.existsSync(path.join(dir, String(st.at + 1).padStart(4, '0') + '.wav')), 'the next one is still armed');
     assert.equal(fs.readdirSync(path.join(h.sb.addons, 'ClaudeWoW_Runtime', 'presence', 'b')).length, 2000, 'the other ring stays armed for the next launch');
@@ -68,7 +68,7 @@ test('a client where a deleted launch-time file still reads present fails the se
     const r = await h.client.say('after a failed self-test');
     assert.match(r.text, /after a failed self-test/);
     await h.bridge.waitForLine(/deleting a launch-time file does NOT read as missing/, { timeoutMs: 10000 });
-    assert.equal(h.state().presenceTest.result, 'failed');
+    assert.equal(h.clientState().presenceTest.result, 'failed');
   });
 });
 

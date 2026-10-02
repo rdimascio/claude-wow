@@ -127,7 +127,7 @@ async function sendToOverlay(job, outcome, core) {
     return null;
   }
   const url = stream.serviceUrl(options);
-  const gameData = typeof core.gameData === 'function' ? () => core.gameData() : null;
+  const gameData = typeof core.gameData === 'function' ? () => core.gameData(job) : null;
   const checked = checkLine(job.recap, outcome, gameData);
   if (checked.refused) core.log(`${core.tag(job)} roast: line left off the card (${checked.refused})`);
   if (checked.text && checked.phrasesNote) core.log(`${core.tag(job)} roast: ${checked.phrasesNote}`);
