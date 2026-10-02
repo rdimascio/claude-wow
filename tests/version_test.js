@@ -358,7 +358,7 @@ test('the build hash covers every shipped file but the toc, in any order', () =>
   assert.equal(P.addonBuild([...files].reverse()), build);
   assert.equal(P.addonBuild(files.map(f => (f.name.endsWith('.toc') ? { ...f, data: Buffer.from('changed') } : f))), build, 'the toc carries the build, so it is not in it');
   assert.notEqual(P.addonBuild(files.map(f => (f.name === 'A.lua' ? { ...f, data: Buffer.from('a2') } : f))), build);
-  assert.notEqual(P.addonBuild(files.map(f => (f.name === 'A.lua' ? { ...f, name: 'C.lua' } : f))), build);
+  assert.notEqual(P.addonBuild(files.map(f => (f.name === 'A.lua' ? { ...f, name: 'A2.lua' } : f))), build, 'a renamed file in the same order is a new build');
 });
 
 test('the toc gets one X-Build line after its Version line, and the bridge reads both back', () => {

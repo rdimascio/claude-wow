@@ -389,7 +389,7 @@ try {
   }
   console.log(`
 Done. Next:
-  1. Fully quit and relaunch World of Warcraft (it only discovers new addon files at launch).
+  1. Fully quit and relaunch World of Warcraft (it only discovers new addon folders at launch).
   2. Enable "Claude WoW" at the character select AddOns screen (the Claude WoW slot ### entries stay enabled).
   3. Start the bridge:  ${R.compiled ? 'claude-wow' : 'npm start'}   (in this terminal${
     process.platform === 'win32' ? '; bridge\\start-window.cmd opens its own window'

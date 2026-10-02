@@ -90,7 +90,11 @@
 5. Does a CurseForge update of `ClaudeWoW/` leave sibling `ClaudeWoW_*` folders untouched? (Expected yes, because it tracks folders by fingerprint.)
 6. Can the Forever client read toc metadata through `C_AddOns.GetAddOnMetadata`? Run a strings check against the binary.
 
-Next step: step 1, the release workflow, unblocks everything else. Step 2 has to land before the first CurseForge upload.
+Answered so far:
+- Q6: yes. `GetAddOnMetadata` is in both the Era 1.15.9 and the Forever 1.60 binary (PR #63).
+- New (2026-10-02, Era only): `/reload` re-reads the toc and loads changed, late and newly listed Lua files; only a new addon folder needs a restart. So step 4 compares the loaded and installed toc instead of a file-list snapshot.
+
+Status: steps 1 (PR #52), 2 (PR #53) and 3 (PR #63) are on main; step 4 is the reload notice PR. Step 3 used flag tokens `ver=`/`proto=` and the slot field `bridge = { version, protoMin, protoMax }`, with no `Manifest.lua`.
 
 ### Sources
 https://github.com/BigWigsMods/packager

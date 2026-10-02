@@ -303,7 +303,7 @@ main() {
   fi
 
   printf '\nInstalled. The claude-wow command works from any folder. Next:\n'
-  say "  1. Fully quit and relaunch World of Warcraft (it only discovers new addon files at launch)."
+  say "  1. Fully quit and relaunch World of Warcraft (it only discovers new addon folders at launch)."
   say "  2. Enable \"Claude WoW\" at the character-select AddOns screen."
   if [ "$SERVICE" = no ]; then
     say "  3. Start the bridge:  claude-wow        (or: claude-wow service install, to keep it running in the background)"
