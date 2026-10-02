@@ -62,6 +62,7 @@ const DSYNC = require('./datasync');
 const GR = require('./gamerefs');
 const RT = require('./replytokens');
 const UPD = require('./selfupdate');
+const IDLE = require('./idle');
 
 // The plugins this bridge has (docs/PLATFORM.md). Registration order is the
 // order match() is asked in, and the first one is the default unless
@@ -354,7 +355,7 @@ let lastMtime = 0;
 const running = new Map(); // chatKey -> { job, child }
 const queued = new Map();  // chatKey -> job waiting for that chat (or for a free parallel slot)
 const live = new Map();    // chatKey -> latest record shown to the game
-let lastGameAt = Date.now();
+let lastActivityAt = Date.now();
 let lastPublish = 0;
 let publishTimer = null;
 
@@ -888,7 +889,7 @@ function allowRules(agentId, rules) {
 // ---------------------------------------------------------------------------
 
 function submit(job) {
-  lastGameAt = Date.now();
+  lastActivityAt = Date.now();
   if (TL.isTelemetry(job)) {
     if (!TELEMETRY_ON) return;
     let applied = null;
@@ -1730,6 +1731,7 @@ function finish(job, status, text, session, denied) {
     return;
   }
   job.finished = true;
+  lastActivityAt = Date.now();
   running.delete(chatKey(job));
   if (state.inflight) delete state.inflight[chatKey(job)];
   dropHandling(handlingKey(job));
@@ -2036,8 +2038,13 @@ function banner() {
 }
 
 function bridgeIdleStatus() {
-  const busy = new Set([...running.keys(), ...queued.keys(), ...Object.keys(state.inflight || {})]).size;
-  return busy ? { idle: false, reason: `${busy} message(s) running or queued` } : { idle: true, reason: 'no message running or queued' };
+  const fromState = IDLE.idleStatus(state);
+  if (!fromState.idle) return fromState;
+  if (held.size) return { idle: false, reason: `${held.size} message(s) held for a deploy that is switching releases` };
+  const holder = REL.switchingHolder(DEPLOY_LOCK_FILE);
+  if (holder) return { idle: false, reason: `a deploy (pid ${holder.pid}) is switching releases` };
+  const busy = new Set([...running.keys(), ...queued.keys()]).size;
+  return busy ? { idle: false, reason: `${busy} message(s) running or queued` } : fromState;
 }
 
 function startSelfUpdate() {
@@ -2049,7 +2056,7 @@ function startSelfUpdate() {
       log,
       version: BRIDGE_INFO.version,
       idle: bridgeIdleStatus,
-      lastGameAt: () => lastGameAt,
+      lastActivityAt: () => lastActivityAt,
       gameRunning: () => CL.clientRunning(CL.clientFolder(cfg)),
       restart: () => shutdown('update', UPD.UPDATE_EXIT_CODE),
       supervised: process.env.CLAUDE_WOW_SUPERVISED === '1',

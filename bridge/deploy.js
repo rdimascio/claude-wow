@@ -280,7 +280,7 @@ async function deploy(opts, ctx) {
       ctx.out(`build   : bun build.js --host in ${source.dir}`);
       binaryFile = ctx.build(source.dir, outDir);
     }
-    const meta = { sha: source.sha, version: source.version, from: source.from, dirty: source.dirty };
+    const meta = { source: REL.SOURCE_DEV_DEPLOY, sha: source.sha, version: source.version, from: source.from, dirty: source.dirty };
     const waiter = serviceRunsCurrent(l, ctx) ? switchWaiter(l, ctx, lock, opts.timeoutMs) : null;
     const result = await REL.installAndActivate(l, { name: source.name, binaryFile, meta, keep: opts.keep, now: ctx.now, alive: ctx.alive }, {
       waitIdle: waiter,

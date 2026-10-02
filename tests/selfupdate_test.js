@@ -8,6 +8,7 @@ const http = require('http');
 const crypto = require('crypto');
 const UPD = require('../bridge/selfupdate');
 const B = require('../build');
+const REL = require('../bridge/releases');
 
 const POSIX = process.platform !== 'win32';
 const PLATFORM = POSIX ? 'linux' : 'win32';
@@ -310,32 +311,103 @@ test('Windows swap: the running exe is renamed aside, the new one takes its name
   fs.rmSync(t.dir, { recursive: true, force: true });
 });
 
-test('releases layout: an update adds releases/<version>/ and flips current; a dev deploy name is refused', { skip: !POSIX }, async () => {
-  const root = fs.realpathSync(tmpDir('releases'));
+function releasesRoot(label) {
+  const root = fs.realpathSync(tmpDir(label));
+  const l = REL.layout(root);
+  const add = (name, meta) => {
+    const file = path.join(root, `.src-${name}`);
+    fs.writeFileSync(file, OLD, { mode: 0o755 });
+    REL.installRelease(l, { name, binaryFile: file, meta });
+    fs.rmSync(file);
+    return REL.releaseBinary(l, name);
+  };
+  return { root, l, add };
+}
+
+test('releases layout: a published release updates through installAndActivate: a new releases/<version>/, current flipped, previous kept for rollback', { skip: !POSIX }, async () => {
+  const { root, l, add } = releasesRoot('releases');
   const home = path.join(root, 'home');
   fs.mkdirSync(home);
-  const oldDir = path.join(root, 'releases', '1.0.0');
-  fs.mkdirSync(oldDir, { recursive: true });
-  const oldBin = path.join(oldDir, 'claude-wow');
-  fs.writeFileSync(oldBin, OLD, { mode: 0o755 });
-  fs.symlinkSync(path.join('releases', '1.0.0'), path.join(root, 'current'));
-  const install = UPD.installKind({ compiled: true, execPath: path.join(root, 'current', 'claude-wow') });
-  assert.equal(install.kind, 'releases');
-  assert.equal(UPD.launchPath({ compiled: true, execPath: oldBin }), path.join(root, 'current', 'claude-wow'));
+  const oldBin = add('1.0.0', { source: REL.SOURCE_RELEASE });
+  REL.activate(l, '1.0.0');
+  const install = UPD.installKind({ compiled: true, execPath: REL.currentBinary(l) });
+  assert.equal(install.kind, 'releases', install.why);
+  assert.equal(UPD.launchPath({ compiled: true, execPath: oldBin }), REL.currentBinary(l));
   const srv = await releaseServer();
   try {
     const out = await UPD.checkAndRecord({ home, version: '1.0.0', api: `${srv.base}/repos/x`, install, platform: PLATFORM, arch: ARCH, probe: async () => ({ ok: true, version: '9.9.9' }) });
     assert.equal(out.status, 'updated', out.message);
-    assert.equal(fs.readlinkSync(path.join(root, 'current')), path.join('releases', '9.9.9'));
-    assert.deepEqual(fs.readFileSync(path.join(root, 'releases', '9.9.9', 'claude-wow')), NEW);
-    assert.deepEqual(fs.readFileSync(oldBin), OLD, 'the old release stays for a rollback');
-    assert.equal(UPD.readRecord(home).binary, path.join(root, 'current', 'claude-wow'));
-    assert.deepEqual(fs.readdirSync(path.join(root, 'releases')).sort(), ['1.0.0', '9.9.9']);
-  } finally { await srv.close(); }
-  const devDir = path.join(root, 'releases', 'a1b2c3d');
-  fs.mkdirSync(devDir);
-  fs.writeFileSync(path.join(devDir, 'claude-wow'), OLD);
-  assert.equal(UPD.installKind({ compiled: true, execPath: path.join(devDir, 'claude-wow') }).kind, 'dev');
+    assert.equal(REL.currentName(l), '9.9.9');
+    assert.equal(REL.previousName(l), '1.0.0', 'claude-wow dev rollback can go back');
+    assert.deepEqual(fs.readFileSync(REL.releaseBinary(l, '9.9.9')), NEW);
+    assert.equal(REL.releaseInfo(l, '9.9.9').source, REL.SOURCE_SELF_UPDATE);
+    assert.equal(REL.releaseInfo(l, '9.9.9').sha256, sha(NEW));
+    assert.deepEqual(fs.readFileSync(oldBin), OLD, 'the old release stays');
+    assert.equal(UPD.readRecord(home).binary, REL.currentBinary(l));
+    assert.deepEqual(fs.readdirSync(l.releases).filter(n => !n.startsWith('.')).sort(), ['1.0.0', '9.9.9'], 'no temp file left');
+    assert.equal(UPD.installKind({ compiled: true, execPath: REL.currentBinary(l) }).kind, 'releases', 'a self-updated release updates again');
+    assert.equal(fs.existsSync(l.lock), false, 'the deploy lock is released');
+  } finally { await srv.close(); fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('releases layout: while a deploy holds deploy.lock, self-update switches nothing and says who holds it', { skip: !POSIX }, async () => {
+  const { root, l, add } = releasesRoot('locked');
+  const home = path.join(root, 'home');
+  fs.mkdirSync(home);
+  add('1.0.0', { source: REL.SOURCE_RELEASE });
+  REL.activate(l, '1.0.0');
+  const install = UPD.installKind({ compiled: true, execPath: REL.currentBinary(l) });
+  const deploy = REL.acquireLock(l.lock, { command: 'dev deploy' });
+  const srv = await releaseServer();
+  try {
+    const out = await UPD.checkAndRecord({ home, version: '1.0.0', api: `${srv.base}/repos/x`, install, platform: PLATFORM, arch: ARCH, probe: async () => ({ ok: true, version: '9.9.9' }) });
+    assert.equal(out.status, 'failed');
+    assert.match(out.message, /another deploy holds .*dev deploy/);
+    assert.equal(REL.currentName(l), '1.0.0');
+    assert.equal(REL.hasRelease(l, '9.9.9'), false);
+    assert.notEqual(UPD.readRecord(home).pendingRestart, true);
+    assert.ok(fs.existsSync(l.lock), 'the deploy keeps its lock');
+    assert.deepEqual(fs.readdirSync(l.releases).filter(n => n.startsWith('.')), [], 'no temp file left');
+  } finally { deploy.release(); await srv.close(); fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('releases layout: an E-style dev deploy (0.5.0-beta.1-abc123def456) is never self-updated, though its name parses as semver', { skip: !POSIX }, async () => {
+  const DEV = '0.5.0-beta.1-abc123def456';
+  assert.ok(UPD.parseSemver(DEV), 'the name is a valid semver prerelease, so a name rule alone cannot tell');
+  for (const [label, meta] of [['tagged', { source: REL.SOURCE_DEV_DEPLOY, sha: 'abc123def456', version: '0.5.0-beta.1' }], ['untagged', { sha: 'abc123def456', version: '0.5.0-beta.1' }]]) {
+    const { root, l, add } = releasesRoot(`dev-${label}`);
+    const home = path.join(root, 'home');
+    fs.mkdirSync(home);
+    add(DEV, meta);
+    REL.activate(l, DEV);
+    const install = UPD.installKind({ compiled: true, execPath: REL.currentBinary(l) });
+    assert.equal(install.kind, 'dev', label);
+    assert.match(install.why, new RegExp(`releases/${DEV.replace(/\./g, '\\.')} is not a published release`));
+    const srv = await releaseServer();
+    try {
+      const out = await UPD.checkAndRecord({ home, version: '0.5.0-beta.1', api: `${srv.base}/repos/x`, install, platform: PLATFORM, arch: ARCH, probe: async () => ({ ok: true, version: '9.9.9' }) });
+      assert.equal(out.status, 'refused', label);
+      assert.deepEqual(srv.hits, [], `${label}: no network`);
+      assert.equal(REL.currentName(l), DEV);
+    } finally { await srv.close(); fs.rmSync(root, { recursive: true, force: true }); }
+  }
+});
+
+test('releases layout: a release with no release.json, or a published one while current points at a dev deploy, is not self-updated', { skip: !POSIX }, () => {
+  const { root, l, add } = releasesRoot('mixed');
+  const bare = path.join(l.releases, '1.0.0');
+  fs.mkdirSync(bare, { recursive: true });
+  fs.writeFileSync(path.join(bare, REL.BINARY), OLD, { mode: 0o755 });
+  REL.pointCurrentAt(l, '1.0.0');
+  assert.equal(UPD.installKind({ compiled: true, execPath: REL.currentBinary(l) }).kind, 'dev', 'no release.json');
+  const published = add('2.0.0', { source: REL.SOURCE_RELEASE });
+  add('2.0.0-abc123def456', { source: REL.SOURCE_DEV_DEPLOY });
+  REL.activate(l, '2.0.0-abc123def456');
+  const install = UPD.installKind({ compiled: true, execPath: published });
+  assert.equal(install.kind, 'dev', 'running a published release, but the supervisor would restart onto the dev deploy');
+  assert.match(install.why, /2\.0\.0-abc123def456/);
+  REL.activate(l, '2.0.0');
+  assert.equal(UPD.installKind({ compiled: true, execPath: published }).kind, 'releases');
   fs.rmSync(root, { recursive: true, force: true });
 });
 
@@ -419,17 +491,17 @@ test('a failed check keeps the daily timer: it is retried an hour later', async 
 test('restart verdict: never while busy or right after a message; at once when the game is closed; after the idle time otherwise', () => {
   const IDLE = { idle: true, reason: 'nothing' };
   const BUSY = { idle: false, reason: '1 agent run(s) in flight (#4)' };
-  const base = { record: { pendingRestart: true, version: '9.9.9' }, version: '1.0.0', now: 1e9, idleMs: 600000, supervised: true, lastGameAt: 1e9 - 700000, gameRunning: true, idle: IDLE };
+  const base = { record: { pendingRestart: true, version: '9.9.9' }, version: '1.0.0', now: 1e9, idleMs: 600000, supervised: true, lastActivityAt: 1e9 - 700000, gameRunning: true, idle: IDLE };
   assert.equal(UPD.restartVerdict(base).restart, true, 'idle long enough with the game open');
   const busy = UPD.restartVerdict({ ...base, idle: BUSY });
   assert.equal(busy.code, 'busy');
   assert.equal(busy.why, BUSY.reason, 'the idle probe\'s reason is what gets logged');
   assert.equal(UPD.restartVerdict({ ...base, idle: BUSY, gameRunning: false }).restart, false, 'a run in flight blocks even with the game closed');
   assert.equal(UPD.restartVerdict({ ...base, idle: null }).restart, false, 'no idle answer counts as busy');
-  assert.equal(UPD.restartVerdict({ ...base, lastGameAt: 1e9 - 5000, gameRunning: false }).code, 'recent');
-  assert.equal(UPD.restartVerdict({ ...base, lastGameAt: 1e9 - 60000, gameRunning: false }).code, 'closed');
-  assert.equal(UPD.restartVerdict({ ...base, lastGameAt: 1e9 - 60000, gameRunning: true }).code, 'active');
-  assert.equal(UPD.restartVerdict({ ...base, lastGameAt: 1e9 - 60000, gameRunning: null }).code, 'active');
+  assert.equal(UPD.restartVerdict({ ...base, lastActivityAt: 1e9 - 5000, gameRunning: false }).code, 'recent');
+  assert.equal(UPD.restartVerdict({ ...base, lastActivityAt: 1e9 - 60000, gameRunning: false }).code, 'closed');
+  assert.equal(UPD.restartVerdict({ ...base, lastActivityAt: 1e9 - 60000, gameRunning: true }).code, 'active');
+  assert.equal(UPD.restartVerdict({ ...base, lastActivityAt: 1e9 - 60000, gameRunning: null }).code, 'active');
   assert.equal(UPD.restartVerdict({ ...base, supervised: false }).code, 'manual');
   assert.equal(UPD.restartVerdict({ ...base, record: { pendingRestart: true, version: '1.0.0' } }).restart, false, 'no restart onto the same version');
   assert.equal(UPD.restartVerdict({ ...base, record: { pendingRestart: true, version: '9.9.9', restartFrom: '1.0.0' } }).code, 'tried');
@@ -446,7 +518,7 @@ test('the restart gate defers while a run is in flight, then restarts once when 
   let restarts = 0;
   const logs = [];
   const idle = () => (busy ? { idle: false, reason: `${busy} message(s) running or queued` } : { idle: true, reason: 'none' });
-  const u = UPD.createUpdater({ home, version: '1.0.0', supervised: true, cfg: { autoUpdateIdleSeconds: 60 }, idle, lastGameAt: () => 0, now: () => 1e9, gameRunning: () => false, restart: () => restarts++, log: l => logs.push(l), install: { kind: 'binary', binary: '/x' }, timers: fakeTimers().timers });
+  const u = UPD.createUpdater({ home, version: '1.0.0', supervised: true, cfg: { autoUpdateIdleSeconds: 60 }, idle, lastActivityAt: () => 0, now: () => 1e9, gameRunning: () => false, restart: () => restarts++, log: l => logs.push(l), install: { kind: 'binary', binary: '/x' }, timers: fakeTimers().timers });
   assert.equal(u.restartTick().code, 'busy');
   assert.equal(u.restartTick().code, 'busy');
   assert.equal(restarts, 0);

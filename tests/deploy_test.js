@@ -118,6 +118,8 @@ test('deploy of a ref: built in a temporary worktree that is removed, installed 
   const name = `0.5.0-${sha.slice(0, 12)}`;
   assert.equal(REL.currentName(h.l), name);
   assert.equal(fs.readFileSync(REL.currentBinary(h.l), 'utf8'), 'binary of one');
+  assert.equal(REL.releaseInfo(h.l, name).source, REL.SOURCE_DEV_DEPLOY, 'release.json marks it a dev deploy');
+  assert.equal(REL.isPublishedRelease(h.l, name), false, 'so self-update never treats it as a release');
   assert.equal(h.builds.length, 1);
   assert.ok(h.builds[0].startsWith(root) && !h.builds[0].startsWith(repo), 'built outside the checkout');
   assert.ok(!fs.existsSync(h.builds[0]), 'the temporary worktree is gone');

@@ -9,6 +9,7 @@ const { execFile } = require('child_process');
 const R = require('./runtime');
 const H = require('./home');
 const B = require('../build');
+const REL = require('./releases');
 
 const DEFAULT_API = 'https://api.github.com/repos/rdimascio/wow-ai';
 const RECORD_FILE = 'update.json';
@@ -94,13 +95,16 @@ function gitCheckoutAbove(file) {
 }
 
 function releasesLayout(real) {
-  const versionDir = path.dirname(real);
-  const releases = path.dirname(versionDir);
-  if (path.basename(releases) !== 'releases') return null;
-  const root = path.dirname(releases);
-  const link = path.join(root, 'current');
-  try { if (!fs.lstatSync(link).isSymbolicLink()) return null; } catch { return null; }
-  return { root, releases, link, name: path.basename(real), release: path.basename(versionDir) };
+  const releasesDir = path.dirname(path.dirname(real));
+  if (path.basename(releasesDir) !== REL.RELEASES_DIR) return null;
+  const layout = REL.layout(path.dirname(releasesDir));
+  if (!REL.isInsideReleases(layout, real)) return null;
+  try { if (!fs.lstatSync(layout.current).isSymbolicLink()) return null; } catch { return null; }
+  return { layout, release: path.basename(path.dirname(real)), currentRelease: REL.currentName(layout) };
+}
+
+function unpublishedRelease(found) {
+  return [found.release, found.currentRelease].find(name => name && !REL.isPublishedRelease(found.layout, name)) || '';
 }
 
 function installKind({ compiled = R.compiled, execPath = process.execPath } = {}) {
@@ -109,16 +113,17 @@ function installKind({ compiled = R.compiled, execPath = process.execPath } = {}
   if (HOMEBREW_PATH.test(real.split(path.sep).join('/'))) return { kind: 'homebrew', binary: real, why: 'Homebrew installed this binary; update it with: brew upgrade claude-wow' };
   const repo = gitCheckoutAbove(real);
   if (repo) return { kind: 'dev', binary: real, why: `the binary is inside the git checkout ${repo}; rebuild it there` };
-  const layout = releasesLayout(real);
-  if (layout && !parseSemver(layout.release)) return { kind: 'dev', binary: real, why: `releases/${layout.release} is a dev deploy, not a release; claude-wow dev deploy updates it` };
-  if (layout) return { kind: 'releases', binary: real, ...layout };
-  return { kind: 'binary', binary: real };
+  const found = releasesLayout(real);
+  if (!found) return { kind: 'binary', binary: real };
+  const devName = unpublishedRelease(found);
+  if (devName) return { kind: 'dev', binary: real, why: `releases/${devName} is not a published release (its ${REL.RELEASE_INFO} has no source "${REL.SOURCE_RELEASE}" or "${REL.SOURCE_SELF_UPDATE}"); claude-wow dev deploy updates it` };
+  return { kind: 'releases', binary: real, ...found };
 }
 
 function launchPath({ compiled = R.compiled, execPath = process.execPath } = {}) {
   if (!compiled) return execPath;
-  const layout = releasesLayout(realpathOf(execPath));
-  return layout ? path.join(layout.link, layout.name) : execPath;
+  const found = releasesLayout(realpathOf(execPath));
+  return found ? REL.currentBinary(found.layout) : execPath;
 }
 
 function httpError(status, url) {
@@ -213,10 +218,6 @@ function rmQuiet(file) {
   try { fs.rmSync(file, { force: true }); } catch {}
 }
 
-function sha256File(file) {
-  try { return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex'); } catch { return ''; }
-}
-
 async function downloadTo(url, file, limits) {
   const fd = fs.openSync(file, 'w', 0o600);
   const hash = crypto.createHash('sha256');
@@ -257,31 +258,16 @@ function replaceFile(tmp, target, platform = process.platform) {
   }
 }
 
-function flipLink(link, dir) {
-  const previous = fs.readlinkSync(link);
-  const target = path.isAbsolute(previous) ? dir : path.relative(path.dirname(link), dir);
-  const tmp = `${link}.update-${process.pid}`;
-  rmQuiet(tmp);
-  fs.symlinkSync(target, tmp, 'dir');
-  fs.renameSync(tmp, link);
-}
-
-function installRelease(tmp, install, version, sum) {
-  const plain = path.join(install.releases, version);
-  const dir = !fs.existsSync(plain) || sha256File(path.join(plain, install.name)) === sum ? plain : path.join(install.releases, `${version}-${sum.slice(0, 12)}`);
-  const file = path.join(dir, install.name);
-  if (fs.existsSync(file) && sha256File(file) === sum) {
-    rmQuiet(tmp);
-  } else {
-    fs.mkdirSync(dir, { recursive: true });
-    fs.renameSync(tmp, file);
+async function swapIn(install, tmp, version, sum, platform = process.platform) {
+  if (install.kind === 'releases') {
+    const lock = REL.acquireLock(install.layout.lock, { command: `claude-wow update to ${version}` });
+    try {
+      await REL.installAndActivate(install.layout, { name: version, binaryFile: tmp, meta: { source: REL.SOURCE_SELF_UPDATE, version, sha256: sum } });
+    } finally {
+      lock.release();
+    }
+    return REL.currentBinary(install.layout);
   }
-  flipLink(install.link, dir);
-  return path.join(install.link, install.name);
-}
-
-function swapIn(install, tmp, version, sum, platform = process.platform) {
-  if (install.kind === 'releases') return installRelease(tmp, install, version, sum);
   replaceFile(tmp, install.binary, platform);
   return install.binary;
 }
@@ -346,7 +332,7 @@ async function runUpdate(opts = {}) {
   if (!sumsFile) return failed(`release ${release.tag} has no ${SUMS_ASSET}, so ${asset} cannot be verified; nothing was replaced`);
   const want = parseSums((await get(sumsFile.url, limits.sums)).toString('utf8')).get(asset);
   if (!want) return failed(`${SUMS_ASSET} of ${release.tag} has no line for ${asset}; nothing was replaced`);
-  const dir = install.kind === 'releases' ? install.releases : path.dirname(install.binary);
+  const dir = install.kind === 'releases' ? install.layout.releases : path.dirname(install.binary);
   const tmp = tempPath(dir, asset, platform);
   try {
     const have = await downloadTo(file.url, tmp, limits.asset);
@@ -355,7 +341,7 @@ async function runUpdate(opts = {}) {
     const ran = await probe(tmp);
     if (!ran.ok) return failed(`the downloaded ${asset} does not run (${ran.why}); nothing was replaced`);
     if (compareSemver(ran.version, latest) !== 0) return failed(`the downloaded ${asset} says it is ${ran.version}, not ${latest}; nothing was replaced`);
-    const binary = swapIn(install, tmp, latest, want, platform);
+    const binary = await swapIn(install, tmp, latest, want, platform);
     return { status: 'updated', current, latest, binary, message: `updated claude-wow ${current} to ${latest} (${binary})` };
   } finally {
     rmQuiet(tmp);
@@ -394,24 +380,24 @@ function seconds(ms) {
   return `${Math.round(ms / 1000)} s`;
 }
 
-function restartVerdict({ record, version, idle = { idle: true, reason: '' }, lastGameAt = 0, now = Date.now(), idleMs = DEFAULT_IDLE_SECONDS * 1000, supervised = false, gameRunning = null }) {
+function restartVerdict({ record, version, idle = { idle: true, reason: '' }, lastActivityAt = 0, now = Date.now(), idleMs = DEFAULT_IDLE_SECONDS * 1000, supervised = false, gameRunning = null }) {
   if (!record || !record.pendingRestart || !record.version) return { restart: false, pending: false, code: 'none', why: 'no update waits' };
   const order = compareSemver(record.version, version);
   if (order === null || order <= 0) return { restart: false, pending: false, code: 'running', why: `already running ${version}` };
   if (record.restartFrom === version) return { restart: false, pending: false, code: 'tried', why: `a restart for ${record.version} already happened and this is still ${version}` };
   if (!supervised) return { restart: false, pending: true, code: 'manual', why: 'this bridge runs without the supervisor; restart it by hand' };
   if (!idle || !idle.idle) return { restart: false, pending: true, code: 'busy', why: (idle && idle.reason) || 'the bridge is busy' };
-  const quietMs = Math.max(0, now - (Number(lastGameAt) || 0));
-  if (quietMs < Math.min(MIN_QUIET_MS, idleMs)) return { restart: false, pending: true, code: 'recent', why: `the game sent something ${seconds(quietMs)} ago` };
+  const quietMs = Math.max(0, now - (Number(lastActivityAt) || 0));
+  if (quietMs < Math.min(MIN_QUIET_MS, idleMs)) return { restart: false, pending: true, code: 'recent', why: `the last message or reply was ${seconds(quietMs)} ago` };
   const game = typeof gameRunning === 'function' ? gameRunning() : gameRunning;
   if (game === false) return { restart: true, pending: true, code: 'closed', why: 'nothing is running and the game is closed' };
-  if (quietMs >= idleMs) return { restart: true, pending: true, code: 'idle', why: `nothing is running and the game sent nothing for ${seconds(quietMs)}` };
-  return { restart: false, pending: true, code: 'active', why: `the game ${game ? 'is running and ' : ''}sent something ${seconds(quietMs)} ago; it restarts after ${seconds(idleMs)} of quiet or when the game closes` };
+  if (quietMs >= idleMs) return { restart: true, pending: true, code: 'idle', why: `nothing is running and no message or reply for ${seconds(quietMs)}` };
+  return { restart: false, pending: true, code: 'active', why: `${game ? 'the game is running and ' : ''}the last message or reply was ${seconds(quietMs)} ago; it restarts after ${seconds(idleMs)} of quiet or when the game closes` };
 }
 
 function createUpdater(deps) {
   const {
-    home, cfg = {}, log = () => {}, version = ownVersion(), idle = () => ({ idle: true, reason: '' }), lastGameAt = () => 0,
+    home, cfg = {}, log = () => {}, version = ownVersion(), idle = () => ({ idle: true, reason: '' }), lastActivityAt = () => 0,
     gameRunning = () => null, restart, supervised = false, install = installKind(), api,
     now = Date.now, check = checkAndRecord, timers = { setTimeout, setInterval },
   } = deps;
@@ -457,7 +443,7 @@ function createUpdater(deps) {
     let rec, v;
     try {
       rec = readRecord(home);
-      v = restartVerdict({ record: rec, version, idle: idle(), lastGameAt: lastGameAt(), now: now(), idleMs, supervised, gameRunning });
+      v = restartVerdict({ record: rec, version, idle: idle(), lastActivityAt: lastActivityAt(), now: now(), idleMs, supervised, gameRunning });
     } catch (e) {
       log(`self-update: restart check failed (${e && e.message ? e.message : e})`);
       return null;
@@ -542,7 +528,7 @@ module.exports = {
   DEFAULT_API, RECORD_FILE, SUMS_ASSET, LIMITS, UPDATE_EXIT_CODE, RESTART_TICK_MS, CHECK_TICK_MS, FIRST_CHECK_DELAY_MS,
   DEFAULT_IDLE_SECONDS, MIN_QUIET_MS, DAY_MS, HOUR_MS, HELP,
   apiBase, parseSemver, normalizeVersion, compareSemver, assetName, installKind, launchPath, releasesLayout,
-  get, latestRelease, parseSums, downloadTo, probeBinary, swapIn, replaceFile, flipLink, installRelease, cleanupAside,
+  get, latestRelease, parseSums, downloadTo, probeBinary, swapIn, replaceFile, cleanupAside, unpublishedRelease,
   recordFile, readRecord, writeRecord, effectiveVersion, runUpdate, checkAndRecord, checkDue, idleMsFrom,
   restartVerdict, createUpdater, statusLine, main,
 };
