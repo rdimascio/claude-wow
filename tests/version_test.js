@@ -450,6 +450,16 @@ test('Inbox.lua carries the disk field too, but only a copy written since this a
   assert.equal(told(beforeLoad, 'Type /reload'), 0);
 });
 
+test('a field written after this load but more than 5 minutes ago (a dark bridge) is skipped', () => {
+  const vm = newVM(loadedAs('1.2.3', BUILD_A));
+  helloPoll(vm, null, 'time()', luaDisk('1.2.3', BUILD_A));
+  vm.run('STUB.now = STUB.now + 1200');
+  slotPoll(vm, null, 'time() - 900', luaDisk('1.2.3', BUILD_B));
+  assert.equal(told(vm, 'Type /reload'), 0);
+  slotPoll(vm, null, 'time()', luaDisk('1.2.3', BUILD_B));
+  assert.equal(told(vm, 'Type /reload'), 1, 'a fresh one is read');
+});
+
 test('a /reload right after an install, before the bridge republishes: the older field is not news, the next one is', () => {
   const vm = newVM({ ...loadedAs('1.2.3', BUILD_B), beforeLogin: `ClaudeWoW_Inbox = { now = time() - 1, replies = {}${luaDisk('1.2.3', BUILD_A)} }` });
   helloPoll(vm, null, 'time() - 7', luaDisk('1.2.3', BUILD_A));
