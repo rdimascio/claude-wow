@@ -55,6 +55,8 @@ jobs:
         with:
           name: addon-zip
           path: .release/*.zip
+          include-hidden-files: true
+          if-no-files-found: error
 
   bridge:
     needs: addon
@@ -77,6 +79,7 @@ jobs:
         with:
           name: claude-wow-binaries
           path: dist/
+          if-no-files-found: error
       - if: github.event_name == 'push' && github.ref_type == 'tag'
         run: gh release upload "$GITHUB_REF_NAME" dist/* --clobber
         env:
