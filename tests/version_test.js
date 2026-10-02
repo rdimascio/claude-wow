@@ -49,17 +49,17 @@ function newVM({ prelude = '', beforeLogin = '' } = {}) {
 
 const luaBridge = b => (b ? `, bridge = { version = "${b.version}", protoMin = ${b.protoMin}, protoMax = ${b.protoMax} }` : '');
 
-function helloPoll(vm, bridge, nowLua = 'time()') {
+function helloPoll(vm, bridge, nowLua = 'time()', extra = '') {
   vm.run('STUB.RunTimers()');
   const before = vm.num('STUB.loads');
-  vm.run(`STUB.onLoadAddOn = function(name) ClaudeWoW_SlotData = { now = ${nowLua}, cwd = "", replies = {}${luaBridge(bridge)} } end`);
+  vm.run(`STUB.onLoadAddOn = function(name) ClaudeWoW_SlotData = { now = ${nowLua}, cwd = "", replies = {}${luaBridge(bridge)}${extra} } end`);
   vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
   assert.ok(vm.num('STUB.loads') > before, 'the hello poll read a slot');
 }
 
-function slotPoll(vm, bridge, nowLua = 'time()') {
+function slotPoll(vm, bridge, nowLua = 'time()', extra = '') {
   const before = vm.num('STUB.loads');
-  vm.run(`STUB.onLoadAddOn = function(name) ClaudeWoW_SlotData = { now = ${nowLua}, cwd = "", replies = {}${luaBridge(bridge)} } end`);
+  vm.run(`STUB.onLoadAddOn = function(name) ClaudeWoW_SlotData = { now = ${nowLua}, cwd = "", replies = {}${luaBridge(bridge)}${extra} } end`);
   vm.run('STUB.now = STUB.now + 601; STUB.Tick()');
   assert.equal(vm.num('STUB.loads'), before + 1, 'the idle poll read one slot');
 }
@@ -344,4 +344,118 @@ test('the verdict rides on the hello poll: no slot load of its own', () => {
   });
   assert.ok(counts[0] > 0, 'the load counter is installed');
   assert.equal(counts[1], counts[0]);
+});
+
+const BUILD_A = 'aaaaaaaaaaaa';
+const BUILD_B = 'bbbbbbbbbbbb';
+const luaDisk = (version, build = '') => `, addonDisk = { version = "${version}", build = "${build}" }`;
+const loadedAs = (version, build) => ({ prelude: `STUB.addonMeta = { ClaudeWoW = { Version = ${version === null ? 'nil' : `"${version}"`}${build ? `, ["X-Build"] = "${build}"` : ''} } }` });
+
+test('the build hash covers every shipped file but the toc, in any order', () => {
+  const files = [{ name: 'B.lua', data: Buffer.from('b') }, { name: 'A.lua', data: Buffer.from('a') }, { name: 'ClaudeWoW.toc', data: Buffer.from('x') }];
+  const build = P.addonBuild(files);
+  assert.match(build, P.BUILD_RE);
+  assert.equal(P.addonBuild([...files].reverse()), build);
+  assert.equal(P.addonBuild(files.map(f => (f.name.endsWith('.toc') ? { ...f, data: Buffer.from('changed') } : f))), build, 'the toc carries the build, so it is not in it');
+  assert.notEqual(P.addonBuild(files.map(f => (f.name === 'A.lua' ? { ...f, data: Buffer.from('a2') } : f))), build);
+  assert.notEqual(P.addonBuild(files.map(f => (f.name === 'A.lua' ? { ...f, name: 'C.lua' } : f))), build);
+});
+
+test('the toc gets one X-Build line after its Version line, and the bridge reads both back', () => {
+  const toc = '## Interface: 11509\n## Version: 1.2.3\n## Title: X\nA.lua\n';
+  const once = P.tocWithBuild(toc, BUILD_A);
+  assert.equal(once, '## Interface: 11509\n## Version: 1.2.3\n## X-Build: aaaaaaaaaaaa\n## Title: X\nA.lua\n');
+  assert.equal(P.tocWithBuild(once, BUILD_B), once.replace(BUILD_A, BUILD_B), 'a new install replaces the line');
+  assert.equal(P.tocWithBuild(toc.replace(/\n/g, '\r\n'), BUILD_A), once.replace(/\n/g, '\r\n'), 'CRLF stays CRLF');
+  assert.equal(P.tocWithBuild('A.lua\n', BUILD_A), '## X-Build: aaaaaaaaaaaa\nA.lua\n');
+  assert.deepEqual(P.addonDiskInfo(once), { version: '1.2.3', build: BUILD_A });
+  assert.deepEqual(P.addonDiskInfo(once.replace(/\n/g, '\r\n')), { version: '1.2.3', build: BUILD_A });
+  assert.deepEqual(P.addonDiskInfo('## Version: x\n## X-Build: nothex\n'), { version: '', build: '' });
+});
+
+test('setup installs the toc with the build of the files it copies', () => {
+  const Setup = require('../setup');
+  const client = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-wow-build-'));
+  try {
+    const { dest, build } = Setup.copyAddon(client);
+    const names = fs.readdirSync(ADDON);
+    assert.equal(build, P.addonBuild(names.map(name => ({ name, data: fs.readFileSync(path.join(ADDON, name)) }))));
+    const toc = fs.readFileSync(path.join(dest, 'ClaudeWoW.toc'), 'utf8');
+    assert.deepEqual(P.addonDiskInfo(toc), { version: TOC_VERSION, build });
+    assert.equal(toc.replace(/^## X-Build: .*\n/m, ''), fs.readFileSync(path.join(ADDON, 'ClaudeWoW.toc'), 'utf8'));
+    for (const name of names.filter(n => !n.endsWith('.toc'))) assert.ok(fs.readFileSync(path.join(dest, name)).equals(fs.readFileSync(path.join(ADDON, name))), name);
+  } finally {
+    fs.rmSync(client, { recursive: true, force: true });
+  }
+});
+
+test('slot files carry the addon toc on disk, and none without a version', () => {
+  assert.match(P.luaTable('ClaudeWoW_SlotData', [], { now: 1000, addonDisk: { version: '1.2.3', build: BUILD_A } }), /\taddonDisk = \{ version = "1\.2\.3", build = "aaaaaaaaaaaa" \},/);
+  assert.doesNotMatch(P.luaTable('ClaudeWoW_SlotData', [], { now: 1000, addonDisk: { version: '', build: '' } }), /addonDisk/);
+  assert.doesNotMatch(P.luaTable('ClaudeWoW_SlotData', [], { now: 1000, addonDisk: null }), /addonDisk/);
+});
+
+test('files on disk equal to the loaded ones: nothing said, and diag shows both', () => {
+  const vm = newVM(loadedAs('1.2.3', BUILD_A));
+  helloPoll(vm, null, 'time()', luaDisk('1.2.3', BUILD_A));
+  slotPoll(vm, null, 'time()', luaDisk('1.2.3', BUILD_A));
+  assert.equal(told(vm, '/reload'), 0);
+  vm.run('SlashCmdList.CLAUDEWOW("diag")');
+  assert.equal(told(vm, 'addon files loaded: 1.2.3 build aaaaaaaaaaaa, on disk: 1.2.3 build aaaaaaaaaaaa'), 1);
+});
+
+test('a new build on disk: one /reload line per session over many slot reads', () => {
+  const vm = newVM(loadedAs('1.2.3', BUILD_A));
+  helloPoll(vm, null, 'time()', luaDisk('1.2.3', BUILD_B));
+  slotPoll(vm, null, 'time()', luaDisk('1.2.3', BUILD_B));
+  assert.equal(told(vm, 'New addon files are installed (1.2.3, build bbbbbbbbbbbb). Type /reload to load them.'), 1);
+});
+
+test('a new version on disk without builds (a CurseForge install): one /reload line', () => {
+  const vm = newVM(loadedAs('1.2.3', ''));
+  helloPoll(vm, null, 'time()', luaDisk('1.2.4'));
+  assert.equal(told(vm, 'New addon files are installed (1.2.4). Type /reload to load them.'), 1);
+  const same = newVM(loadedAs('1.2.3', ''));
+  helloPoll(same, null, 'time()', luaDisk('1.2.3'));
+  assert.equal(told(same, '/reload'), 0);
+});
+
+test('a build first stamped by setup after a launch without one asks for /reload', () => {
+  const vm = newVM(loadedAs('1.2.3', ''));
+  helloPoll(vm, null, 'time()', luaDisk('1.2.3', BUILD_A));
+  assert.equal(told(vm, 'Type /reload'), 1);
+});
+
+test('the disk field is skipped when stale, malformed, from an old bridge, or when the client gives no metadata', () => {
+  const cases = {
+    stale: [loadedAs('1.2.3', BUILD_A), 'time() - 600', luaDisk('1.2.4', BUILD_B)],
+    'old bridge': [loadedAs('1.2.3', BUILD_A), 'time()', ''],
+    'bad version': [loadedAs('1.2.3', BUILD_A), 'time()', luaDisk('x', BUILD_B)],
+    'no metadata': [loadedAs(null, ''), 'time()', luaDisk('1.2.4', BUILD_B)],
+  };
+  for (const [name, [opts, now, extra]] of Object.entries(cases)) {
+    const vm = newVM(opts);
+    helloPoll(vm, null, now, extra);
+    assert.equal(told(vm, '/reload'), 0, name);
+  }
+  const badBuild = newVM(loadedAs('1.2.3', ''));
+  helloPoll(badBuild, null, 'time()', luaDisk('1.2.3', 'ZZZZZZZZZZZZ'));
+  assert.equal(told(badBuild, '/reload'), 0, 'a malformed build counts as none');
+});
+
+test('Inbox.lua carries the disk field too, under the 5-minute age rule', () => {
+  const fresh = newVM({ ...loadedAs('1.2.3', BUILD_A), beforeLogin: `ClaudeWoW_Inbox = { now = time() - 120, replies = {}${luaDisk('1.2.3', BUILD_B)} }` });
+  assert.equal(told(fresh, 'Type /reload'), 1);
+  const stale = newVM({ ...loadedAs('1.2.3', BUILD_A), beforeLogin: `ClaudeWoW_Inbox = { now = time() - 3600, replies = {}${luaDisk('1.2.3', BUILD_B)} }` });
+  assert.equal(told(stale, 'Type /reload'), 0);
+});
+
+test('a runtime folder installed after launch asks for a full restart, once', () => {
+  const vm = newVM({ prelude: 'STUB.addonMissing = { ClaudeWoW_Runtime = true }' });
+  helloPoll(vm, null, 'time()', luaDisk(TOC_VERSION));
+  slotPoll(vm, null, 'time()', luaDisk(TOC_VERSION));
+  assert.equal(told(vm, 'The ClaudeWoW_Runtime folder was installed after the game started. Fully quit and restart the game'), 1);
+  const present = newVM();
+  helloPoll(present, null, 'time()', luaDisk(TOC_VERSION));
+  assert.equal(told(present, 'restart the game'), 0);
 });

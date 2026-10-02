@@ -535,6 +535,19 @@ function takeWidgetCommands(job, text) {
 
 let acksSent = [];
 const BRIDGE_INFO = P.bridgeInfo();
+let addonDiskCache = { key: '', info: null };
+
+function addonOnDisk() {
+  const toc = path.join(cfg.addonDir, P.ADDON, P.ADDON + '.toc');
+  try {
+    const st = fs.statSync(toc);
+    const key = `${st.mtimeMs}:${st.size}:${st.ino}`;
+    if (addonDiskCache.key !== key) addonDiskCache = { key, info: P.addonDiskInfo(fs.readFileSync(toc, 'utf8')) };
+    return addonDiskCache.info;
+  } catch {
+    return null;
+  }
+}
 
 // Slot file / Inbox.lua body: see protocol.luaTable.
 function slotFile(globalName, records, urgent = true) {
@@ -551,7 +564,7 @@ function slotFile(globalName, records, urgent = true) {
   if (TELEMETRY_ON) {
     try { gsLua = telemetry.luaGs(); } catch (e) { log(`telemetry: slot field gs left out (${e && e.message ? e.message : e})`); }
   }
-  return P.luaTable(globalName, records, { live: liveInfo, sessions: sessionList(), cwd: DEFAULT_CWD, restore: pendingRestore, agent: DEFAULT_AGENT, agents: A.agentIds(), plugin: DEFAULT_PLUGIN, plugins: registry.ids(), map, widgets, transport: TRANSPORT, levels: LEVELS, codec: STRIP_CODEC, chatlog: chatLogSlot(), acks: P.recentAcks(acksSent), transportNote, achievementsLua, goalsLua, dmLua, gsLua, presence: presenceInfo(), bridge: BRIDGE_INFO });
+  return P.luaTable(globalName, records, { live: liveInfo, sessions: sessionList(), cwd: DEFAULT_CWD, restore: pendingRestore, agent: DEFAULT_AGENT, agents: A.agentIds(), plugin: DEFAULT_PLUGIN, plugins: registry.ids(), map, widgets, transport: TRANSPORT, levels: LEVELS, codec: STRIP_CODEC, chatlog: chatLogSlot(), acks: P.recentAcks(acksSent), transportNote, achievementsLua, goalsLua, dmLua, gsLua, presence: presenceInfo(), bridge: BRIDGE_INFO, addonDisk: addonOnDisk() });
 }
 
 function recentClaudeSessions() {

@@ -164,12 +164,16 @@ function migrateOldInstall(client, account) {
 function copyAddon(client) {
   const dest = path.join(client, 'Interface', 'AddOns', P.ADDON);
   G.mkdir(dest);
+  const names = fs.readdirSync(ADDON_SRC);
+  const build = P.addonBuild(names.map(name => ({ name, data: fs.readFileSync(path.join(ADDON_SRC, name)) })));
+  const toc = P.ADDON + '.toc';
   let copied = 0;
-  for (const f of fs.readdirSync(ADDON_SRC)) {
-    G.copyFile(path.join(ADDON_SRC, f), path.join(dest, f));
+  for (const f of names) {
+    if (f === toc) G.writeFile(path.join(dest, f), P.tocWithBuild(fs.readFileSync(path.join(ADDON_SRC, f), 'utf8'), build));
+    else G.copyFile(path.join(ADDON_SRC, f), path.join(dest, f));
     copied++;
   }
-  return { dest, copied };
+  return { dest, copied, build };
 }
 
 // A config.json from before a rename, or from before agents: fix the paths
