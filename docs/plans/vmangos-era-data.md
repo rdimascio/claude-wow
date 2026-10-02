@@ -1,6 +1,18 @@
-# Plan: Classic Era NPC and quest data from VMaNGOS
+# Plan: Classic Era NPC and quest data from community sources
 
-Status: draft, revision 1 (2026-10-02). Replaces the blocked QuestieDB source (`router-and-game-data.md` §4.1, decision 3) for Classic Era only.
+Status: revision 2 (2026-10-02), built in PR "feat(data): Classic Era NPCs and quest givers from cMaNGOS community data". Revision 1 proposed VMaNGOS; its review (§9) moved the source to cMaNGOS `classic-db`. Replaces the blocked QuestieDB source (`router-and-game-data.md` §4.1, decision 3) for Classic Era only.
+
+## 0. Decisions (revision 2)
+
+- **Source: cMaNGOS `classic-db`** (`Full_DB/ClassicDB_1_12_1_z<rev>.sql.gz`, 13 MB, GPL-3.0 in its own `LICENSE.md`). VMaNGOS is dropped: its world data comes from `brotalnia/database`, which has no license. The dump is a MySQL text file, so no SQLite and no Node minimum change: `bridge/sqldump.js` reads the INSERT rows.
+- **Own store:** `data/classic_era/community/<rev>-<sha7>/` with its own manifest (`kind: community`, `trust: community-db`, the client build and table hash used for map positions), `current` pointer, lock and swap.
+- **Integrity:** the GitHub folder listing gives the git blob sha; the download must match it and its size. 64 MB download cap, 256 MB unpacked cap, raw.githubusercontent.com only, no redirects.
+- **Shown where:** `wow_npc` and the `community` block of `wow_quest`, always labeled. Orders keep refusing `{npc:ID}` and `{quest:ID}`, so the stream overlay never shows a community name (open question 1: no).
+- **No numbers:** no levels, factions, loot, vendors or trainers.
+- **Positions:** every candidate map; `uiMapID` filters to the player's map; dungeons are `instanceMapID` with no position.
+- **Phrase index:** unchanged in this step. Adding NPC names (not quest titles) is a follow-up with its own measurement.
+
+The sections below are revision 1, kept for the review trail.
 
 ## 1. Problem
 

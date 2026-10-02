@@ -123,9 +123,12 @@ test('wow_quest: IDs only, never a title; the items that start it', async () => 
   assert.equal(missing.found, false);
   assert.equal(missing.trust, 'none');
   assert.match(missing.notes.join(' '), /Quest ID 104 is not in the client data for build 1\.60\.1\.200/);
-  assert.match(call(store, 'wow_quest', { name: 'Fixture' }).error, /id is required/);
+  const byTitle = call(store, 'wow_quest', { name: 'Fixture' });
+  assert.equal(byTitle.found, false, 'Forever has no quest titles to search');
+  assert.match(byTitle.notes.join(' '), /no data for NPCs, quest titles or quest givers/);
+  assert.match(call(store, 'wow_quest', {}).error, /give one of: id, name/);
   const schema = DM.toolList().find(t => t.name === 'wow_quest').inputSchema;
-  assert.deepEqual(Object.keys(schema.properties), ['id']);
+  assert.deepEqual(Object.keys(schema.properties), ['id', 'name', 'limit']);
 });
 
 test('wow_flights: by id, by name, and every one on a map with its position there', async () => {
@@ -169,7 +172,8 @@ test('wow_sources: provenance, table sizes and what the data does not hold', asy
   assert.match(ds.license, /never committed or redistributed/);
   assert.equal(ds.rows.items, 3);
   assert.equal(ds.rows.skilllines, 2);
-  assert.ok(ds.notInData.includes('NPC and object spawns or positions'));
+  assert.ok(ds.notInData.includes('on Forever, NPCs, quest titles and quest givers'));
+  assert.ok(ds.notInData.includes('NPC levels, factions and any other number from community data'));
   assert.ok(ds.notInData.includes('item drop sources and drop rates'));
 });
 
@@ -250,7 +254,7 @@ test('an older sync without the SkillLine table still answers, with no skill nam
   assert.equal(GR.createExpander(store).expand('{skill:40}').errors[0].reason, 'tableUnavailable');
 });
 
-test('MCP surface: initialize, tools/list (five read-only tools), tools/call, errors and notifications', async () => {
+test('MCP surface: initialize, tools/list (six read-only tools), tools/call, errors and notifications', async () => {
   const { dataDir } = await syncedHome('mcp');
   const store = GD.openStore({ dataDir, flavor: 'forever' });
   const out = [];
@@ -267,7 +271,7 @@ test('MCP surface: initialize, tools/list (five read-only tools), tools/call, er
   assert.equal(out[0].result.protocolVersion, '2025-06-18');
   assert.deepEqual(out[0].result.serverInfo.name, 'wowdata');
   assert.deepEqual(out[0].result.capabilities, { tools: {} });
-  assert.deepEqual(out[1].result.tools.map(t => t.name), ['wow_item', 'wow_quest', 'wow_flights', 'wow_where', 'wow_sources']);
+  assert.deepEqual(out[1].result.tools.map(t => t.name), ['wow_item', 'wow_quest', 'wow_npc', 'wow_flights', 'wow_where', 'wow_sources']);
   for (const t of out[1].result.tools) {
     assert.equal(t.annotations.readOnlyHint, true, t.name);
     assert.equal(t.inputSchema.additionalProperties, false, t.name);
