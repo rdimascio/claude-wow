@@ -48,15 +48,15 @@ function readCommunity(root) {
 
 const CROSS_GAME = Object.freeze(['forever']);
 
-function sameRectangle(a, b) {
-  const near = (p, q) => Array.isArray(p) && Array.isArray(q) && p.length === q.length && p.every((n, k) => Math.abs(n - q[k]) < 0.01);
-  return a.mapID === b.mapID && near(a.region, b.region) && near(a.uiMin, b.uiMin) && near(a.uiMax, b.uiMax);
+function rectangleKey(a) {
+  return JSON.stringify([a.mapID, a.region, a.uiMin, a.uiMax]);
 }
 
 function sharedMaps(era, game) {
   const byMap = rows => {
     const m = new Map();
-    for (const a of rows) m.set(a.uiMapID, [...(m.get(a.uiMapID) || []), a]);
+    for (const a of rows) m.set(a.uiMapID, [...(m.get(a.uiMapID) || []), rectangleKey(a)]);
+    for (const keys of m.values()) keys.sort();
     return m;
   };
   const eraMaps = byMap(era.rows('uimapassignments'));
@@ -64,34 +64,47 @@ function sharedMaps(era, game) {
   const same = new Set();
   for (const [uiMapID, ours] of eraMaps) {
     const theirs = gameMaps.get(uiMapID);
-    if (theirs && theirs.length === ours.length && ours.every(a => theirs.some(b => sameRectangle(a, b)))) same.add(uiMapID);
+    if (theirs && theirs.length === ours.length && ours.every((key, k) => key === theirs[k])) same.add(uiMapID);
   }
   return same;
 }
 
 function openCommunity({ dataDir, flavor, client = null, gameStore = null }) {
   if (!dataDir || (flavor !== FLAVOR && !CROSS_GAME.includes(flavor))) return null;
+  const crossGame = flavor !== FLAVOR;
+  if (crossGame && !(gameStore && gameStore.build)) return null;
   const current = readCommunity(communityRoot(dataDir));
   if (!current) return null;
   const made = current.manifest.client || {};
-  const crossGame = flavor !== FLAVOR;
   const era = crossGame ? GD.openStore({ dataDir, flavor: FLAVOR }) : null;
   const madeWith = crossGame ? (era.build ? { build: era.build, tableHash: era.manifest.tableHash || null } : null) : client;
+  const stale = !madeWith || made.build !== madeWith.build || made.tableHash !== madeWith.tableHash;
+  const reader = GD.tableReader(current.dir, current.manifest, ENTITIES);
+  const mapProblems = [];
   let shared;
   return {
     source: SOURCE,
     version: current.version,
     trust: crossGame ? GD.TRUST.communityOtherGame : GD.TRUST.communityDb,
     crossGame,
-    stale: !madeWith || made.build !== madeWith.build || made.tableHash !== madeWith.tableHash,
+    stale,
+    madeWith: madeWith ? madeWith.build : null,
     sameMaps() {
       if (!crossGame) return null;
-      if (shared === undefined) shared = era.build && gameStore ? sharedMaps(era, gameStore) : new Set();
+      gameStore.has('uimapassignments');
+      if (shared === undefined) {
+        shared = new Set();
+        if (!stale && era.has('uimapassignments') && gameStore.has('uimapassignments')) shared = sharedMaps(era, gameStore);
+        for (const m of era.takeMissed()) mapProblems.push({ entity: `${m.entity} (Classic Era client data)`, problem: m.problem });
+      }
       return shared;
     },
     manifest: current.manifest,
     dir: current.dir,
-    ...GD.tableReader(current.dir, current.manifest, ENTITIES),
+    ...reader,
+    takeMissed() {
+      return [...reader.takeMissed(), ...mapProblems];
+    },
   };
 }
 
@@ -366,4 +379,4 @@ async function syncCommunity(opts = {}) {
   }
 }
 
-module.exports = { FLAVOR, SOURCE, SHAPE, finishSpawns, LISTING_URL, ENTITIES, MAX_SPAWNS, LICENSE_NOTE, communityRoot, readCommunity, openCommunity, gitBlobSha, pickDump, convert, syncCommunity };
+module.exports = { FLAVOR, SOURCE, SHAPE, finishSpawns, sharedMaps, LISTING_URL, ENTITIES, MAX_SPAWNS, LICENSE_NOTE, communityRoot, readCommunity, openCommunity, gitBlobSha, pickDump, convert, syncCommunity };

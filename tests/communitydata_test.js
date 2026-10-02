@@ -297,7 +297,48 @@ test('on Forever the Classic community data shows only quests the Forever client
   assert.equal(quest.results[0].inClientData, true);
   assert.equal(call(store, 'wow_npc', { name: 'fixture', uiMapID: 9101 }).found, false, 'a map filter on a map Forever draws differently finds nothing');
   const era = GD.openStore({ dataDir, clientBuild: ERA_CLIENT });
-  assert.deepEqual([era.community.crossGame, era.community.trust], [false, 'community-db'], 'Classic Era is unchanged');
+  assert.deepEqual([era.community.crossGame, era.community.trust], [false, 'community-db'], 'Classic Era is unchanged');  assert.equal(npc.results[0].spawnTotal, null, 'no Classic total on Forever');
+  assert.match(npc.results[0].spawnsShown, /^1 of a 2-spawn sample; dungeon spawns .* left out/);
+  assert.equal(call(store, 'wow_npc', { id: 7004 }).found, false, 'an NPC with no shared map and no Forever quest is not shown');
+  assert.equal(call(store, 'wow_npc', { name: "O'Brien" }).found, false);
+  assert.equal(C.openCommunity({ dataDir, flavor: 'tbc' }), null);
+});
+
+test('on Forever, missing or other Classic Era data hides every community position and says which sync fixes it', async () => {
+  const dataDir = await eraData('forevermissing');
+  const r = await C.syncCommunity({ dataDir, fetch: fakeGitHub().fetchImpl });
+  assert.equal(GD.openStore({ dataDir, clientBuild: FOREVER_CLIENT }).community, null, 'no Forever client data, no community data on Forever');
+  foreverFromEra(dataDir);
+  const manifestFile = path.join(r.dir, 'manifest.json');
+  const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
+  fs.writeFileSync(manifestFile, JSON.stringify({ ...manifest, client: { ...manifest.client, tableHash: 'older' } }));
+  const stale = GD.openStore({ dataDir, clientBuild: FOREVER_CLIENT });
+  assert.deepEqual([...stale.community.sameMaps()], []);
+  const staleNpc = call(stale, 'wow_npc', { id: 7001 });
+  assert.deepEqual(staleNpc.results[0].onMaps, [], 'no map membership from rectangles that no longer match');
+  assert.match(staleNpc.notes.join(' '), /built with Classic Era client data 1\.15\.9\.300, not the Classic Era data synced now \(1\.15\.9\.300\)/);
+  fs.writeFileSync(manifestFile, JSON.stringify(manifest));
+  fs.renameSync(path.join(dataDir, 'classic_era', 'current'), path.join(dataDir, 'classic_era', 'current.off'));
+  const noEra = GD.openStore({ dataDir, clientBuild: FOREVER_CLIENT });
+  assert.match(call(noEra, 'wow_npc', { id: 7001 }).notes.join(' '), /Classic Era client tables are not synced, .*"claude-wow data sync --flavor classic_era"/);
+  fs.renameSync(path.join(dataDir, 'classic_era', 'current.off'), path.join(dataDir, 'classic_era', 'current'));
+  const era = D.readCurrent(path.join(dataDir, 'classic_era'));
+  const eraManifest = path.join(era.dir, 'manifest.json');
+  const em = JSON.parse(fs.readFileSync(eraManifest, 'utf8'));
+  fs.writeFileSync(eraManifest, JSON.stringify({ ...em, entities: { ...em.entities, uimapassignments: { ...em.entities.uimapassignments, rows: 99 } } }));
+  const broken = GD.openStore({ dataDir, clientBuild: FOREVER_CLIENT });
+  for (let k = 0; k < 2; k++) {
+    const answer = call(broken, 'wow_npc', { id: 7001 });
+    assert.ok(answer.unavailable.includes('uimapassignments (Classic Era client data)'), `a broken Era table is named in every answer (${k})`);
+  }
+});
+
+test('sharedMaps needs every rectangle of a map to be identical, counted pairwise', () => {
+  const rect = (id, uiMapID, n) => ({ id, uiMapID, mapID: 1, region: [0, 0, 0, n, n, 0], uiMin: [0, 0], uiMax: [1, 1] });
+  const fake = rows => ({ rows: () => rows });
+  assert.deepEqual([...C.sharedMaps(fake([rect(1, 5, 10)]), fake([rect(9, 5, 10)]))], [5], 'the assignment ID does not matter');
+  assert.deepEqual([...C.sharedMaps(fake([rect(1, 5, 10)]), fake([{ ...rect(1, 5, 10), uiMin: [0.009, 0] }]))], [], 'a small change is a change');
+  assert.deepEqual([...C.sharedMaps(fake([rect(1, 5, 10), rect(2, 5, 10)]), fake([rect(1, 5, 10), rect(2, 5, 20)]))], [], 'two rectangles are not matched by one');
 });
 
 test('a store written by another converter shape is not read, and the next sync converts again', async () => {

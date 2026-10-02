@@ -28,7 +28,7 @@ const NOT_IN_DATA = Object.freeze([
 ]);
 
 const INSTRUCTIONS = [
-  'Read-only World of Warcraft client data for the player\'s game, cached on this machine from the client tables (DB2) of one build. The bridge picks the data from the client build the game reports: Forever (1.60.*) or Classic Era (1.15.*), never the other one.',
+  'Read-only World of Warcraft client data for the player\'s game, cached on this machine from the client tables (DB2) of one build. The bridge picks the client tables from the client build the game reports: Forever (1.60.*) or Classic Era (1.15.*), never the other one\'s. The one exception is the Classic community data below, which Forever is served only where its own client tables back it.',
   `Each result carries source, build and trust. trust "${GD.TRUST.clientData}" rows come from the client tables of the player's build family; "none" means nothing was found, so say you do not know.`,
   `trust "${GD.TRUST.buildMismatch}" (buildCheck "build-mismatch") means the data is for another build family than the player's client: call it unverified. trust "${GD.TRUST.buildUnchecked}" means the client build is unknown: say the data is not checked against the client.`,
   'A table listed in "unavailable" could not be read: a missing answer from it is not proof that the thing is absent from the game.',
@@ -186,7 +186,10 @@ function communityNotes(store) {
     const notes = [cs.crossGame
       ? `NPC names, quest titles, givers and spawn points come from Classic community data (cMaNGOS ${cs.version}, the 1.12 world), not from this game. It is shown here only for quest IDs this game's client has and on maps whose rectangles are the same in both games, but this game may have renamed, moved or replaced any of it: say it is Classic community data not checked for this game.`
       : `NPC names, quest titles, givers and spawn points come from community data (cMaNGOS ${cs.version}, the 1.12 world), not the client. Classic Era renamed some of them and changed some spawns: say it is community data.`];
-    if (cs.stale) notes.push(`The community spawn points were computed with client data ${(cs.manifest.client || {}).build || 'of an unknown build'}, not the client data synced now (${store.build || 'none'}), so their coordinates are left out. The owner can run "claude-wow data sync --flavor classic_era --source community".`);
+    const builtWith = (cs.manifest.client || {}).build || 'of an unknown build';
+    if (cs.crossGame && !cs.madeWith) notes.push('The Classic Era client tables are not synced, so no map can be checked against this game and no community position is shown. The owner can run "claude-wow data sync --flavor classic_era", then "claude-wow data sync --flavor classic_era --source community".');
+    else if (cs.crossGame && cs.stale) notes.push(`The community data was built with Classic Era client data ${builtWith}, not the Classic Era data synced now (${cs.madeWith}), so no community position is shown on this game. The owner can run "claude-wow data sync --flavor classic_era --source community".`);
+    else if (cs.stale) notes.push(`The community spawn points were computed with client data ${builtWith}, not the client data synced now (${store.build || 'none'}), so their coordinates are left out. The owner can run "claude-wow data sync --flavor classic_era --source community".`);
     return notes;
   }
   if (['classic_era', 'forever'].includes(store.flavor)) return ['No community data for NPCs and quest givers is synced on this machine. The owner can run "claude-wow data sync --flavor classic_era --source community".'];
@@ -210,6 +213,10 @@ function visibleMaps(cs, maps) {
 function visibleSpawns(cs, spawns) {
   if (!cs.crossGame) return spawns;
   return spawns.map(s => ({ ...s, maps: visibleMaps(cs, s.maps) })).filter(s => s.maps.length);
+}
+
+function npcVisible(store, cs, npc) {
+  return !cs.crossGame || visibleMaps(cs, npc.onMaps).length > 0 || [...npc.gives, ...npc.ends].some(id => questAllowed(store, cs, id));
 }
 
 function questAllowed(store, cs, id) {
@@ -245,7 +252,7 @@ function ownerRefs(store, cs, list) {
       return { kind: 'npc', id: o.id, name: npc ? npc.name : null };
     }
     const object = cs.byId('objects', o.id);
-    return { kind: 'object', id: o.id, name: object ? object.name : null, ...(object ? { spawnTotal: object.spawnTotal, onMaps: visibleMaps(cs, object.onMaps).map(m => onMapRow(store, cs, m)), spawns: visibleSpawns(cs, object.spawns).slice(0, MAX_OBJECT_SPAWNS).map(sp => spawnRow(store, cs, sp)) } : {}) };
+    return { kind: 'object', id: o.id, name: object ? object.name : null, ...(object ? { spawnTotal: cs.crossGame ? null : object.spawnTotal, onMaps: visibleMaps(cs, object.onMaps).map(m => onMapRow(store, cs, m)), spawns: visibleSpawns(cs, object.spawns).slice(0, MAX_OBJECT_SPAWNS).map(sp => spawnRow(store, cs, sp)) } : {}) };
   });
 }
 
@@ -261,11 +268,13 @@ function npcRow(store, cs, npc, uiMapID) {
     subname: npc.subname,
     gives: questRefs(store, cs, npc.gives),
     ends: questRefs(store, cs, npc.ends),
-    spawnTotal: npc.spawnTotal,
+    spawnTotal: cs.crossGame ? null : npc.spawnTotal,
     onMaps: onMaps.map(m => onMapRow(store, cs, m)),
     ...(uiMapID ? { onMap: onMap ? onMapRow(store, cs, onMap) : null } : {}),
     spawns: spawns.map(s => spawnRow(store, cs, s)),
-    ...(uiMapID ? { spawnsShown: `${spawns.length} sampled of ${onMap ? onMap.count : 0} on this map; onMap has the count and one position` } : npc.spawnTotal > npc.spawns.length ? { spawnsShown: `${npc.spawns.length} of ${npc.spawnTotal}, spread over its maps; onMaps lists every map` } : {}),
+    ...(uiMapID ? { spawnsShown: `${spawns.length} sampled of ${onMap ? onMap.count : 0} on this map; onMap has the count and one position` }
+      : cs.crossGame ? { spawnsShown: `${spawns.length} of a ${npc.spawns.length}-spawn sample; dungeon spawns and spawns on maps drawn differently in this game are left out, and so is the Classic total` }
+        : npc.spawnTotal > npc.spawns.length ? { spawnsShown: `${npc.spawns.length} of ${npc.spawnTotal}, spread over its maps; onMaps lists every map` } : {}),
   });
 }
 
@@ -433,12 +442,13 @@ const TOOLS = [
       const uiMapID = idArg(args, 'uiMapID');
       const notes = communityNotes(store);
       if (id) {
-        const npc = cs ? cs.byId('npcs', id) : null;
+        const found = cs ? cs.byId('npcs', id) : null;
+        const npc = found && npcVisible(store, cs, found) ? found : null;
         return communityEnvelope(store, 'wow_npc', { id, uiMapID }, npc ? [npcRow(store, cs, npc, uiMapID)] : [], { notes });
       }
       const name = nameArg(args, true);
       const limit = limitArg(args);
-      let hits = cs ? cs.search('npcs', name) : [];
+      let hits = cs ? cs.search('npcs', name).filter(h => npcVisible(store, cs, h.row)) : [];
       if (uiMapID) hits = hits.filter(h => visibleMaps(cs, h.row.onMaps).some(m => m.uiMapID === uiMapID));
       const shown = hits.slice(0, limit);
       return communityEnvelope(store, 'wow_npc', { name, uiMapID }, shown.map(h => npcRow(store, cs, h.row, uiMapID)), { total: hits.length, notes });
