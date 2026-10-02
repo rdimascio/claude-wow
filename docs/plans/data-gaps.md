@@ -1,80 +1,68 @@
 # Plan: the game data we do not have yet
 
-Status: draft, revision 1 (2026-10-02). Scope: every gap in the `wowdata` answers for Classic Era and Forever, except pet battles (owner's decision; the Classic clients have none). Builds on `vmangos-era-data.md` (community data, PR #68) and the Forever use of it (PR #69).
+Status: revision 2 (2026-10-02). Revision 1 was reviewed by fresh-eyes (fable and gpt-6-astra, 29 findings); this revision answers every one. Scope: every gap in the `wowdata` answers for Classic Era and Forever, except pet battles (owner's decision). Builds on `vmangos-era-data.md` (community data, PR #68, merged) and its Forever use (PR #75, open: the Forever rules below assume it merges).
 
-## 1. What we have today
+## 1. Rules (unchanged, and what they mean here)
 
-| Data | Source | Trust |
-|---|---|---|
-| Items (name, quality, levels, prices), quest IDs, zones, maps, flight paths, skill lines, recipe spells and reagents | client tables (wago.tools) | `client-data` |
-| NPC names and titles, spawns, quest titles, quest givers and enders | cMaNGOS `classic-db` | `community-db` (Era), `community-db-unchecked-for-this-game` (Forever) |
-| Vendor prices, auction prices, loot the player saw | the addon (observed) | `observed` |
+- **No community numbers, in fields or in prose.** Drop chances, costs, levels, counts and quantities from cMaNGOS are not shown. Quest objective text carries counts ("Kill 10 Kobold Vermin"), so community quest prose is not shown either; objectives come back as typed relations without quantities.
+- **Client numbers are fine** when the client table says what they are (`BuyPrice` with `VendorStackCount`, `TaxiPath.Cost`), labeled as base values.
+- **Every community relation joins through the right column** and is asserted after conversion (counts of unreferenced and unresolved rows recorded in the manifest).
+- **Conditions are carried, not evaluated:** `questOnly` (negative loot chance) and `conditional` (`condition_id` > 0) are booleans on every relation; conditional rows are listed after unconditioned ones and labeled.
+- **New client tables are optional** in the sync, and their absence never weakens an existing check (the phrase index keeps working without them).
+- **Upgrades are explicit:** a new table or a new community field bumps a converter version (client manifest `tablesVersion`, community `SHAPE`), so a sync on an unchanged build is not skipped; readers pin the folder they opened and report the whole store unavailable when it is swept, never a half-old answer.
+- **On Forever** (after PR #75): only IDs Forever's own client has; positions only on shared maps; trust `community-db-unchecked-for-this-game`. Measured: 2,347 creature loot rows and 28,917 of 33,360 reference loot rows name items Forever lacks; 133 shared item IDs have another name in Forever (those relations are dropped on Forever).
 
-## 2. The gaps, and where each one can come from
+## 2. Coverage matrix
 
-Every count below was measured on 2026-10-02: client tables with a GET of `https://wago.tools/db2/<Table>/csv?build=<build>` for Era `1.15.9.70003` and Forever `1.60.1.70094`, and cMaNGOS tables by parsing `ClassicDB_1_12_1_z2815.sql.gz` with `bridge/sqldump.js`.
+Counts measured 2026-10-02 (client: wago.tools CSV for Era `1.15.9.70003` and Forever `1.60.1.70094`; community: cMaNGOS `z2815`). "Step" refers to §3.
 
-### 2.1 From the client (trust `client-data`, both games)
-
-| Gap | Table | Era rows | Forever rows | What it unlocks |
-|---|---|---|---|---|
-| Spell names | `SpellName` | 31,249 | 31,716 | `wow_spell`; names for recipes, trainer spells and talents; spell names in the phrase check (the gap the docs name today) |
-| Dungeons and raids | `Map`, `LFGDungeons` | 59, 67 | 74, 71 | instance names, type (dungeon or raid), level range, entrance map |
-| Factions | `Faction` | 209 | 253 | faction names; `{faction:ID}` tokens stop being refused |
-| Item sets | `ItemSet` | 481 | 536 | set name and members (tier sets) |
-| Talents | `Talent`, `TalentTab`, `ChrClasses` | 432, 27, 9 | 432, 27, - | talent trees per class, with spell names from `SpellName` |
-| Points of interest | `AreaPOI` | 359 | 372 | named places with positions |
-| Item classes | `Item` | 24,973 | - | class and subclass (mounts, bags, recipes, quest items) |
-
-`Creature` has 1 row on Era: the client does not ship NPC names, so NPCs stay community data.
-
-### 2.2 From cMaNGOS (trust `community-db`; on Forever the PR #69 rules)
-
-| Gap | Tables | Rows | What it unlocks |
+| Category | Source | Trust | Decision |
 |---|---|---|---|
-| Who drops what | `creature_loot_template`, `reference_loot_template`, `gameobject_loot_template` | 169,994, 33,366, 12,548 | "dropped by" for gear and mounts, bosses with their instance (from the boss's spawn map and the client `Map` name) |
-| Skinning, pick pocket, fishing, containers | `skinning_`, `pickpocketing_`, `fishing_`, `item_loot_template` | 2,802, 6,910, 155, 3,791 | gather and container sources |
-| Vendors | `npc_vendor`, `npc_vendor_template` | 11,890, 164 | "sold by"; the price comes from the client `BuyPrice` |
-| Trainers | `npc_trainer`, `npc_trainer_template` | 27,309, 1,239 | "taught by", with spell names from `SpellName` |
-| Quest details | `quest_template` (objectives text, required items and kills, reward items, previous and next quest) | 4,245 | what a quest asks for and gives, quest chains |
-| Gathering nodes | `gameobject` + `gameobject_template` (to measure: the node types and their `Lock` skill) | to measure | herb and ore spawn points per zone |
+| Spell names | client `SpellName` (Era 31,249; Forever 31,716) | client | step 1 |
+| Spell rank text ("Rank 3") | client `Spell.NameSubtext_lang` (35,312) | client | step 1 (same spell named "Blizzard" three times otherwise) |
+| Faction names, `{faction:ID}` | client `Faction` (209; 253) | client | step 1 |
+| Reputation rewards (what a faction sells) | community vendor rows with reputation conditions | community | step 4, as `conditional` |
+| Instances (dungeon or raid) | client `Map` (`InstanceType` 1 or 2) limited to maps in `DungeonEncounter` | client | step 2 |
+| Bosses per instance, world bosses | client `DungeonEncounter` (307; 342): name, `MapID`, order; MapID 0 for world bosses | client | step 2 |
+| Instance level ranges | client `LFGDungeons` on Era only (21 dungeons + 5 raids, `MapID` is 0, names differ): a hand-checked name map, rows with Min > Max rejected; none on Forever (no level columns) | client | step 2, Era only |
+| Attunements and keys | community entrance requirements (`areatrigger_teleport`: Onyxia needs Drakefire Amulet, Blackwing Lair quest 7761, Molten Core quest 7848) and client `Item` class 13 keys (133 on Era) | community + client | step 6 |
+| Who drops what (gear, mounts) | community `creature_loot_template` via `creature_template.LootId`, `reference_loot_template` (depth 1, no cycles today; asserted), boss names joined to `DungeonEncounter` by exact name; encounter chests via `gameobject_loot_template` keyed by the chest's `data1` | community | step 3 |
+| Skinning, pick pocket, fishing, containers, disenchant | `skinning_` via `SkinningLootId`, `pickpocketing_` via `PickpocketLootId`, `fishing_` by zone, `item_loot_template` (containers), `disenchant_loot_template` | community | step 3 |
+| Mail and spell loot | `mail_loot_template`, `spell_loot_template` | community | not planned: rare questions; revisit on request |
+| Mounts | client `ItemEffect` (16,965) joined to `SpellEffect` with aura 78 (mounted); the item class does not mark mounts on Era (all 1.12 mounts are class 15 subclass 0) | client | step 5 |
+| Class mounts (Felsteed, Dreadsteed, Warhorse) | community quest reward spells (`RewSpell`, `RewSpellCast`) on quests 4490, 7631, 1661, typed, not assumed to teach | community | step 5 |
+| Trainers (what you learn where) | community `npc_trainer` and `npc_trainer_template` via `TrainerTemplateId`, each teaching spell mapped to the learned spell through client `SpellEffect` effect 36; unmapped rows dropped and counted | community + client | step 4 |
+| Recipe sources | client `ItemEffect` on recipe items to the teaching spell, then `SpellEffect` 36 to the craft spell; vendors and drops of the recipe item from steps 3 and 4 | client + community | step 4 |
+| Vendors | community `npc_vendor` and `npc_vendor_template` via `VendorTemplateId`; 283 conditional rows labeled; base price `BuyPrice` per `VendorStackCount` from the client; the player's real price stays the observed one | community + client | step 4 |
+| Services (innkeepers, bankers, flight masters, mailboxes) | community `creature_template.NpcFlags` bits; mailboxes from `gameobject` type 19 (77 templates) | community | step 7 |
+| Flight path costs | client `TaxiPath` (294 rows on Era, `Cost` in copper, 28 free) | client | step 7 |
+| Quest objectives (what to kill or collect) | community `ReqItemId`, `ReqCreatureOrGOId` (negative = object, 31 rows), `ReqSpellCast`, as relations without counts; objective prose not shown | community | step 6 |
+| Quest rewards | community `RewItemId`, `RewChoiceItemId`, `RewSpell`; items checked against the client | community | step 6 |
+| Quest chains | community `PrevQuestId` (negative = must be active, 42 rows), `NextQuestId`, `ExclusiveGroup` (shared prerequisite groups, e.g. 188, 193, 197 lead to 208); a typed relation, references to IDs the client lacks dropped and counted (17) | community | step 6 |
+| Item sets and set bonuses | client `ItemSet` (481; 536), `ItemSetSpell` (1,276) with spell names | client | step 5 |
+| Talents | client `Talent`, `TalentTab`, `ChrClasses` (432, 27, 9 on both games) | client | step 5 |
+| Points of interest | client `AreaPOI` (359; 372) | client | step 7 |
+| Gathering nodes (herbs, ore) | community `gameobject` spawns, skill from client `Lock` (258 rows; `gameobject_template.data0` is the lock ID); pooled spawns (20,853 of 47,827) marked `pooled` | community + client | step 7 |
+| Rare spawns | community `creature_template.Rank` 2 or 4 | community | step 7 |
+| World events | client `Holidays` has no names on Era (`HolidayNames` absent); community schedules differ from the real calendar | - | not planned: no trustworthy source |
+| Honor ranks and titles | client `CharTitles` absent on Era | - | not planned: no source |
+| Drop rates | the player's own observed loot (`farm_spot_lookup`) | observed | already built; community chances never shown |
+| NPC levels, health, damage | community | - | not planned: community numbers |
+| Pet battles | - | - | out of scope (owner) |
 
-## 3. Rules that carry over
+## 3. Order of work (one PR each, fresh-eyes per PR)
 
-- **No community numbers.** Drop chances, trainer costs, required levels, quest levels, stack counts and stock limits from cMaNGOS are emulator values: they are not shown. A number shown comes from the client (`BuyPrice`, `LFGDungeons` levels) or from what the player observed (`observed.jsonl`).
-- **Names through tokens or labeled tool rows.** Client names (spells, factions, instances) can back tokens. Community names never reach the stream overlay.
-- **Every new client table is optional in the sync** (like `SkillLineAbility`): a missing table marks its tools unavailable, never fails the sync.
-- **Every community relation is checked against client IDs**: an item in a loot or vendor row must be in `ItemSparse`, a spell in `SpellName`, a quest in `QuestV2`; anything else is dropped and counted.
-- **Measure before indexing names** in the phrase check (spell names include ordinary phrases), the same way item names were measured and left out.
-- **On Forever**, community rows follow PR #69: only IDs Forever's own client has, positions only on shared maps.
+1. **Spell names and factions:** `SpellName`, `Spell` (rank text only), `Faction`; `wow_spell {id | name}`; `{faction:ID}` expands. The phrase index does not gain spell names in this step.
+2. **Instances and bosses:** `Map`, `DungeonEncounter`, Era `LFGDungeons` levels; `wow_instance {id | name}`.
+3. **Who drops what:** the loot joins above, stored grouped by loot template (not expanded per NPC: the full expansion is 1,313,686 NPC-item pairs, 55 MB as flat JSONL), with a reverse index built on first use and its memory and latency measured; `wow_item.droppedBy`, `wow_npc.drops`, boss drops in `wow_instance`.
+4. **Vendors, trainers, recipes:** `SpellEffect` (effect 36 only), `ItemEffect`; `soldBy`, `sells`, `teaches`, `taughtBy`, recipe sources.
+5. **Mounts, item sets, talents:** `ItemEffect` + `SpellEffect` aura 78, quest reward spells, `ItemSet`, `ItemSetSpell`, `Talent*`.
+6. **Quest details and attunements:** objectives as relations, rewards, typed chains, entrance requirements, keys.
+7. **Places and services:** `AreaPOI`, `TaxiPath` costs, service NPCs and mailboxes, gathering nodes, rare spawns.
+8. **Spell names in the phrase check:** after a verified spell-token path exists, measured on real data, with an optional source that never disables the rest of the index.
 
-## 4. Tools
+## 4. Open questions for the owner
 
-- `wow_spell {id | name}`: client name and rank text, the skill line or talent tree it belongs to, and (community) the trainers that teach it.
-- `wow_instance {id | name}`: name, type, level range (client), and (community) its bosses and their notable drops.
-- `wow_item` gains: `set`, `droppedBy` (NPC or object, with its instance or zones), `soldBy`, `rewardFrom` (quests), `class` and `subclass`. Lists are capped with totals.
-- `wow_npc` gains `drops`, `sells`, `teaches`.
-- `wow_quest` gains `objectives` text, `requires` (items, kills, objects by ID and name), `rewards` (item IDs and names), `chain` (previous and next quest IDs that the client has).
-- `wow_where` gains AreaPOI places and instances.
-- `{faction:ID}` tokens expand from `Faction`.
-
-## 5. Order of work (one PR each, fresh-eyes per PR)
-
-1. **Client tables**: `SpellName`, `Map`, `LFGDungeons`, `Faction`, `ItemSet`, `Talent`, `TalentTab`, `ChrClasses`, `AreaPOI`, `Item` in the sync; `wow_spell`, `wow_instance`, item sets and classes; `{faction:ID}` tokens.
-2. **Who drops what**: the loot tables with reference resolution (nested, cycle-safe, depth-capped), bosses mapped to instances, `droppedBy` and `drops`.
-3. **Vendors and trainers**: `soldBy`, `sells`, `teaches`.
-4. **Quest details**: objectives, requirements, rewards, chains.
-5. **Gathering nodes**: herb and ore spawns by skill.
-6. **Spell names in the phrase check**, measured on real data first.
-
-## 6. Open questions
-
-1. Quest objective text is Blizzard's prose: show it in `wowdata` answers only (labeled), never in game chat or on the overlay?
-2. Are client numbers that describe content (instance level range, item set bonuses) fine to show? They pass the "never a community number" rule.
-3. World events (`game_event`, 67 rows) have emulator schedules that differ from the real calendar: leave them out?
-
-## 7. Not in this plan
-
-- Pet battles (owner's decision).
-- Drop rates, until the player's own observed loot has enough samples (`farm_spot_lookup` already does this per source).
-- NPC levels, health, damage and factions from cMaNGOS (community numbers).
+1. Client base prices and flight costs are client numbers: fine to show, labeled as base values?
+2. Conditional rows (reputation, quest, event gated): list them labeled "conditional", or leave them out until conditions are decoded?
+3. World events and honor ranks have no trustworthy source: leave them out as planned?
