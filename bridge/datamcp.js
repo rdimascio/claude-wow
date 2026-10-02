@@ -11,6 +11,7 @@ const MAX_ANCESTORS = 10;
 const UI_MAP_TYPE_NAMES = ['cosmic', 'world', 'continent', 'zone', 'dungeon', 'micro', 'orphan'];
 const ID_TEXT = /^\d{1,9}$/;
 const MAX_SHARED_IDS = 10;
+const MAX_OBJECT_SPAWNS = 5;
 
 const noDataNote = store => `No game data is synced on this machine for this client, so nothing here is verified. The owner can run "${store.syncCommand || 'claude-wow data sync'}".`;
 const NO_FLAVOR_NOTE = 'The client build does not say which game this is (Forever is 1.60.*, Classic Era is 1.15.*), so no game data is used.';
@@ -183,7 +184,7 @@ function communityNotes(store) {
   const cs = store.community;
   if (cs) {
     const notes = [`NPC names, quest titles, givers and spawn points come from community data (cMaNGOS ${cs.version}, the 1.12 world), not the client. Classic Era renamed some of them and changed some spawns: say it is community data.`];
-    if (cs.stale) notes.push(`The community spawn points were computed with client data ${cs.manifest.client.build}, not the current ${store.build}, so they are left out. The owner can run "claude-wow data sync --flavor classic_era --source community".`);
+    if (cs.stale) notes.push(`The community spawn points were computed with client data ${(cs.manifest.client || {}).build || 'of an unknown build'}, not the client data synced now (${store.build || 'none'}), so their coordinates are left out. The owner can run "claude-wow data sync --flavor classic_era --source community".`);
     return notes;
   }
   if (store.flavor === 'classic_era') return ['No community data for NPCs and quest givers is synced on this machine. The owner can run "claude-wow data sync --flavor classic_era --source community".'];
@@ -201,7 +202,7 @@ function communityCited(cs, fields) {
 }
 
 function onMapRow(store, cs, m) {
-  return { ...mapRef(store, m.uiMapID), count: m.count, ...(cs.stale ? {} : { x: m.x, y: m.y }), ...(m.event ? { event: true } : {}) };
+  return { ...mapRef(store, m.uiMapID), count: m.count, ...(cs.stale ? {} : { x: m.x, y: m.y }), ...(m.zoneAmbiguous ? { zoneAmbiguous: true } : {}), ...(m.event ? { event: true } : {}) };
 }
 
 function spawnRow(store, cs, s) {
@@ -229,7 +230,7 @@ function ownerRefs(store, cs, list) {
       return { kind: 'npc', id: o.id, name: npc ? npc.name : null };
     }
     const object = cs.byId('objects', o.id);
-    return { kind: 'object', id: o.id, name: object ? object.name : null, ...(object ? { spawnTotal: object.spawnTotal, onMaps: object.onMaps.map(m => onMapRow(store, cs, m)) } : {}) };
+    return { kind: 'object', id: o.id, name: object ? object.name : null, ...(object ? { spawnTotal: object.spawnTotal, onMaps: object.onMaps.map(m => onMapRow(store, cs, m)), spawns: object.spawns.slice(0, MAX_OBJECT_SPAWNS).map(sp => spawnRow(store, cs, sp)) } : {}) };
   });
 }
 
@@ -247,7 +248,7 @@ function npcRow(store, cs, npc, uiMapID) {
     onMaps: npc.onMaps.map(m => onMapRow(store, cs, m)),
     ...(uiMapID ? { onMap: onMap ? onMapRow(store, cs, onMap) : null } : {}),
     spawns: spawns.map(s => spawnRow(store, cs, s)),
-    ...(npc.spawnTotal > npc.spawns.length ? { spawnsShown: `${npc.spawns.length} of ${npc.spawnTotal}, spread over its maps; onMaps lists every map` } : {}),
+    ...(uiMapID ? { spawnsShown: `${spawns.length} sampled of ${onMap ? onMap.count : 0} on this map; onMap has the count and one position` } : npc.spawnTotal > npc.spawns.length ? { spawnsShown: `${npc.spawns.length} of ${npc.spawnTotal}, spread over its maps; onMaps lists every map` } : {}),
   });
 }
 

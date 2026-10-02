@@ -54,7 +54,7 @@ const call = (store, tool, args) => JSON.parse(DM.callTool(store, tool, args).co
 
 test('sqldump reads multi-row INSERTs with escapes, NULL and numbers, by column name, and refuses forms it does not read', () => {
   const rows = [...S.rows(SQL, 'creature_template', ['Name', 'Entry', 'SubName'])];
-  assert.deepEqual(rows.map(r => r.Entry), [7001, 7002, 7003, 7004, 7005, 7006, 7007]);
+  assert.deepEqual(rows.map(r => r.Entry), [7001, 7002, 7003, 7004, 7005, 7006, 7007, 7008, 7009]);
   assert.equal(rows[0].SubName, 'Quest Clerk');
   assert.equal(rows[1].SubName, null);
   assert.equal(rows[3].Name, "Fixture O'Brien");
@@ -67,7 +67,11 @@ test('sqldump reads multi-row INSERTs with escapes, NULL and numbers, by column 
   assert.throws(() => [...S.rows(SQL.replace("'Fixture Rock')", "'Fixture Rock)"), 'gameobject_template', ['entry'])], S.DumpError);
   assert.throws(() => [...S.rows(SQL.replace('(10,8001,1,1,100,100)', '(10,8001,1,1,100,DROP)'), 'gameobject', ['id'])], /unexpected value/);
   const listed = SQL.replace('INSERT INTO `creature` VALUES', 'INSERT INTO `creature` (`guid`,`id`,`map`,`spawnMask`,`position_x`,`position_y`,`position_z`) VALUES');
-  assert.throws(() => [...S.rows(listed, 'creature', ['id'])], /names its columns, which this reader does not read/);
+  assert.throws(() => [...S.rows(listed, 'creature', ['id'])], /1 INSERT statement\(s\) in a form this reader does not read/);
+  for (const spelling of ['INSERT INTO `creature`(`guid`) VALUES (1);', 'INSERT INTO creature VALUES (1);', 'insert  into `creature` values (1);']) {
+    assert.throws(() => [...S.rows(SQL + spelling, 'creature', ['id'])], /in a form this reader does not read/, spelling);
+  }
+  assert.equal([...S.rows(SQL, 'creature_template', ['Entry'])].length, 9, 'a table whose name starts like another is not confused with it');
 });
 
 test('a community sync converts NPCs, spawns, quests and givers into their own store, labeled community-db', async () => {
@@ -76,7 +80,7 @@ test('a community sync converts NPCs, spawns, quests and givers into their own s
   const r = await C.syncCommunity({ dataDir, fetch: gh.fetchImpl });
   assert.equal(r.status, 'synced');
   assert.equal(r.version, `z2815-${gh.entry.sha.slice(0, 7)}`);
-  assert.deepEqual(r.manifest.droppedBy, { junk: 3, relationWithoutQuest: 1 });
+  assert.deepEqual(r.manifest.droppedBy, { junk: 5, relationWithoutQuest: 1 });
   assert.equal(r.manifest.trust, 'community-db');
   assert.equal(r.manifest.client.build, '1.15.9.300');
   assert.equal(path.dirname(r.dir), path.join(dataDir, 'classic_era', 'community'));
@@ -93,11 +97,13 @@ test('a community sync converts NPCs, spawns, quests and givers into their own s
   assert.deepEqual(wanderer.spawns.map(s => [s.shared || false, s.event || false]), [[true, false], [false, true]]);
   assert.equal(cs.byId('npcs', 7004).spawns[0].shared, true, 'every entry of a random spawn gets it');
   const twin = cs.byId('npcs', 7005);
-  assert.equal(twin.spawnTotal, 1, 'an event entry substitution is a spawn of the substituted NPC');
+  assert.equal(twin.spawnTotal, 1, 'an event entry substitution is one spawn of the substituted NPC, however many events list it');
   assert.equal(twin.spawns[0].event, true);
   assert.equal(cs.byId('npcs', 7006).name, 'Fixture Combat Dummy', 'a real NPC named Dummy is kept');
   assert.equal(cs.byId('npcs', 7003), null, 'junk rows are dropped');
   assert.equal(cs.byId('npcs', 7007), null);
+  assert.equal(cs.byId('npcs', 7008), null, 'a test dummy is developer content');
+  assert.equal(cs.byId('npcs', 7009), null);
   assert.deepEqual(cs.byId('questinfo', 222), { id: 222, title: 'Fixture Errand', inClientData: false, givers: [{ kind: 'npc', id: 7002 }, { kind: 'object', id: 8001 }], enders: [] });
   assert.equal(cs.byId('questinfo', 111).inClientData, true);
   assert.deepEqual(cs.rows('objects').map(o => [o.name, o.onMaps.map(m => m.uiMapID)]), [['Fixture Poster', [9101, 9102]]], 'only objects that give or end a quest');
@@ -125,7 +131,8 @@ test('an NPC with more spawns than the sample keeps every map it stands on', asy
   const onVale = call(store, 'wow_npc', { name: 'Fixture Giver', uiMapID: 9102 });
   assert.deepEqual(onVale.results.map(r => r.id), [7001]);
   assert.equal(onVale.results[0].onMap.count, 1);
-  assert.match(onVale.results[0].spawnsShown, /25 of 42/);
+  assert.match(onVale.results[0].spawnsShown, /^1 sampled of 1 on this map/);
+  assert.match(call(store, 'wow_npc', { id: 7001 }).results[0].spawnsShown, /^25 of 42, spread over its maps/);
 });
 
 test('a map only seen past the spawn sample still finds the NPC and its position there', async () => {
@@ -168,7 +175,7 @@ test('data sync --source community is Classic Era only and goes through the CLI'
   const out = [];
   const code = await D.main(['sync', '--flavor', 'classic_era', '--source', 'community'], { env: { CLAUDE_WOW_HOME: home }, fetch: fakeGitHub().fetchImpl, out: s => out.push(s), err: s => out.push(s) });
   assert.equal(code, 0, out.join(''));
-  assert.match(out.join(''), /8 rows kept, 4 dropped; current community data z2815-[0-9a-f]{7}/);
+  assert.match(out.join(''), /8 rows kept, 6 dropped; current community data z2815-[0-9a-f]{7}/);
 });
 
 test('wow_npc, wow_quest and wow_sources serve community rows with their own source and trust, and say when there are none', async () => {
@@ -200,9 +207,14 @@ test('wow_npc, wow_quest and wow_sources serve community rows with their own sou
   assert.equal(onlyCommunity.trust, 'community-db');
   assert.match(onlyCommunity.notes.join(' '), /not in the client data .* may not exist in this game/);
   assert.deepEqual(onlyCommunity.results[0].community.givers[1].onMaps.map(m => m.uiMapID), [9101, 9102], 'an object giver comes with the maps it stands on');
+  assert.equal(onlyCommunity.results[0].community.givers[1].spawns[1].instanceMapID, 33, 'and its dungeon spawns');
   const byTitle = call(store, 'wow_quest', { name: 'errand' });
   assert.deepEqual(byTitle.results.map(r => r.id), [111, 222]);
   assert.match(byTitle.notes.join(' '), /2 quests are titled "Fixture Errand"/);
+  const npcsFile = path.join(store.community.dir, 'npcs.jsonl');
+  fs.writeFileSync(npcsFile, fs.readFileSync(npcsFile, 'utf8').split('\n').map(l => (l.startsWith('{"id":7001,') ? JSON.stringify({ ...JSON.parse(l), onMaps: JSON.parse(l).onMaps.map(m => ({ ...m, zoneAmbiguous: true })) }) : l)).join('\n'));
+  const ambiguous = call(GD.openStore({ dataDir, clientBuild: ERA_CLIENT }), 'wow_npc', { id: 7001 });
+  assert.deepEqual(ambiguous.results[0].onMaps.map(m => m.zoneAmbiguous), [true, true], 'an ambiguous position says so');
   const sources = call(store, 'wow_sources', {});
   const community = sources.results.find(r => r.source === 'cmangos');
   assert.equal(community.trust, 'community-db');
@@ -224,7 +236,7 @@ test('community positions computed with other client data are left out, and a da
   assert.equal(npc.results[0].onMaps[0].x, undefined, 'no stale coordinates');
   assert.equal(npc.results[0].spawns[0].maps[0].x, undefined);
   assert.equal(npc.results[0].name, 'Fixture Giver', 'names still answer');
-  assert.match(npc.notes.join(' '), /computed with client data 1\.15\.9\.300, not the current/);
+  assert.match(npc.notes.join(' '), /computed with client data 1\.15\.9\.300, not the client data synced now \(1\.15\.9\.300\)/);
   fs.writeFileSync(manifestFile, JSON.stringify({ ...manifest, entities: { ...manifest.entities, questinfo: { ...manifest.entities.questinfo, rows: 99 } } }));
   const damaged = GD.openStore({ dataDir, clientBuild: ERA_CLIENT });
   const quest = call(damaged, 'wow_quest', { id: 111 });
@@ -232,6 +244,23 @@ test('community positions computed with other client data are left out, and a da
   assert.deepEqual(quest.unavailable, ['questinfo']);
   assert.match(quest.notes.join(' '), /Table questinfo is unavailable/);
   assert.deepEqual(call(damaged, 'wow_npc', { id: 7006 }).unavailable, [], 'the failure is not carried into the next answer');
+});
+
+test('onMaps keeps an ordinary position over an event-only one, and the ambiguity of the position it shows', () => {
+  const mapped = (x, extra = {}) => ({ maps: [{ uiMapID: 5, x, y: x }], ...extra });
+  const npc = C.finishSpawns({ id: 1, all: [mapped(1, { event: true }), mapped(2, { zoneAmbiguous: true }), mapped(3)] });
+  assert.deepEqual(npc.onMaps, [{ uiMapID: 5, count: 3, x: 2, y: 2, zoneAmbiguous: true }]);
+  const eventOnly = C.finishSpawns({ id: 2, all: [mapped(7, { event: true }), mapped(8, { event: true })] });
+  assert.deepEqual(eventOnly.onMaps, [{ uiMapID: 5, count: 2, x: 7, y: 7, event: true }]);
+});
+
+test('a store written by another converter shape is not read, and the next sync converts again', async () => {
+  const dataDir = await eraData('shape');
+  const r = await C.syncCommunity({ dataDir, fetch: fakeGitHub().fetchImpl });
+  const manifestFile = path.join(r.dir, 'manifest.json');
+  fs.writeFileSync(manifestFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(manifestFile, 'utf8')), shape: C.SHAPE - 1 }));
+  assert.equal(GD.openStore({ dataDir, clientBuild: ERA_CLIENT }).community, null);
+  assert.equal((await C.syncCommunity({ dataDir, fetch: fakeGitHub().fetchImpl })).status, 'synced');
 });
 
 test('a dump whose NPC or quest table converts to nothing never replaces the current data', async () => {

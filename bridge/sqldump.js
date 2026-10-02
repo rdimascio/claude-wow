@@ -74,8 +74,11 @@ function* rows(text, table, wanted) {
     if (k < 0) throw new DumpError(`${table}: column ${c} is missing; the dump layout changed`);
     return k;
   });
-  if (text.includes(`INSERT INTO \`${table}\` (`)) throw new DumpError(`${table}: an INSERT names its columns, which this reader does not read`);
   const head = `INSERT INTO \`${table}\` VALUES `;
+  const any = new RegExp(`INSERT\\s+(?:IGNORE\\s+)?INTO\\s+\`?${table}\`?[\\s(]`, 'gi');
+  const canonical = text.split(head).length - 1;
+  const all = (text.match(any) || []).length;
+  if (all !== canonical) throw new DumpError(`${table}: ${all - canonical} INSERT statement(s) in a form this reader does not read (a column list or other spelling)`);
   let at = text.indexOf(head);
   while (at >= 0) {
     for (const row of tuples(text, at + head.length, table)) {

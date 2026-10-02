@@ -24,6 +24,8 @@ const MAX_SQL_BYTES = 256 * 1024 * 1024;
 const MAX_SPAWNS = 25;
 const ENTITIES = Object.freeze(['npcs', 'questinfo', 'objects']);
 const JUNK = /^\[|<(?:NYI|UNUSED|TXT|TEST)>|\b(?:UNUSED|DEPRECATED|Trigger|Credit Marker|Only GM|zzOLD)\b|\(OLD\)/i;
+const NPC_JUNK = /\bDND\b|\((?:TEST|PH)\)|<PH>|\b[Pp]laceholder\b|\bTest Dummy\b|\bTEST\b/;
+const SHAPE = 2;
 
 function communityRoot(dataDir) {
   return path.join(D.flavorDir(dataDir, FLAVOR), 'community');
@@ -37,7 +39,7 @@ function readCommunity(root) {
   const dir = path.join(root, pointer);
   try {
     const manifest = JSON.parse(fs.readFileSync(path.join(dir, D.MANIFEST_FILE), 'utf8'));
-    if (!manifest || manifest.kind !== 'community' || manifest.flavor !== FLAVOR || manifest.version !== match[1]) return null;
+    if (!manifest || manifest.kind !== 'community' || manifest.shape !== SHAPE || manifest.flavor !== FLAVOR || manifest.version !== match[1]) return null;
     return { version: match[1], dir, manifest };
   } catch {
     return null;
@@ -94,10 +96,10 @@ function pickDump(listing) {
   return { name: dump.name, sha: dump.sha, size: dump.size, url: url.href, revision: DUMP_NAME.exec(dump.name)[1] };
 }
 
-function nameOrDrop(value, drop) {
+function nameOrDrop(value, drop, extraJunk = null) {
   const name = D.toName(typeof value === 'string' ? value : '');
   if (!name) { drop('badName'); return null; }
-  if (JUNK.test(name)) { drop('junk'); return null; }
+  if (JUNK.test(name) || (extraJunk && extraJunk.test(name))) { drop('junk'); return null; }
   return name;
 }
 
@@ -108,14 +110,21 @@ function spawnKey(spot) {
 function finishSpawns(owner) {
   const { all, ...rest } = owner;
   const onMaps = new Map();
+  const pick = (m, spot) => ({ x: m.x, y: m.y, ...(spot.zoneAmbiguous ? { zoneAmbiguous: true } : {}), ...(spot.event ? { event: true } : {}) });
   for (const spot of all) {
     for (const m of spot.maps) {
       const seen = onMaps.get(m.uiMapID);
-      if (seen) seen.count++;
-      else onMaps.set(m.uiMapID, { uiMapID: m.uiMapID, count: 1, x: m.x, y: m.y, ...(spot.event ? { event: true } : {}) });
+      if (!seen) onMaps.set(m.uiMapID, { uiMapID: m.uiMapID, count: 1, ...pick(m, spot) });
+      else {
+        seen.count++;
+        if (seen.event && !spot.event) {
+          delete seen.zoneAmbiguous;
+          delete seen.event;
+          Object.assign(seen, pick(m, spot));
+        }
+      }
     }
   }
-  for (const seen of onMaps.values()) if (seen.event && all.some(s => !s.event && s.maps.some(m => m.uiMapID === seen.uiMapID))) delete seen.event;
   const queues = new Map();
   for (const spot of all) {
     const key = spawnKey(spot);
@@ -154,7 +163,7 @@ function convert(sql, client) {
   const npcs = new Map();
   for (const r of S.rows(sql, 'creature_template', ['Entry', 'Name', 'SubName'])) {
     if (!GD.isId(r.Entry)) { drop('badId'); continue; }
-    const name = nameOrDrop(r.Name, drop);
+    const name = nameOrDrop(r.Name, drop, NPC_JUNK);
     if (!name) continue;
     npcs.set(r.Entry, { id: r.Entry, name, subname: r.SubName ? D.toName(r.SubName) : null, gives: [], ends: [], all: [] });
   }
@@ -164,19 +173,24 @@ function convert(sql, client) {
     spawnEntries.get(r.guid).push(r.entry);
   }
   const npcEvents = eventGuids('game_event_creature');
-  const guidSpots = new Map();
+  const eventEntries = new Map();
+  for (const r of S.rows(sql, 'game_event_creature_data', ['guid', 'entry_id'])) {
+    if (!GD.isId(r.entry_id)) continue;
+    if (!eventEntries.has(r.guid)) eventEntries.set(r.guid, new Set());
+    eventEntries.get(r.guid).add(r.entry_id);
+  }
   for (const r of S.rows(sql, 'creature', ['guid', 'id', 'map', 'position_x', 'position_y'])) {
     const spot = place(r.map, r.position_x, r.position_y);
-    guidSpots.set(r.guid, spot);
     const shared = !r.id;
-    for (const entry of shared ? spawnEntries.get(r.guid) || [] : [r.id]) {
+    const entries = shared ? spawnEntries.get(r.guid) || [] : [r.id];
+    for (const entry of entries) {
       const npc = npcs.get(entry);
       if (npc) addSpawn(npc, spot && { ...spot, ...(npcEvents.has(r.guid) ? { event: true } : {}), ...(shared ? { shared: true } : {}) });
     }
-  }
-  for (const r of S.rows(sql, 'game_event_creature_data', ['guid', 'entry_id'])) {
-    const npc = npcs.get(r.entry_id);
-    if (npc && guidSpots.has(r.guid)) addSpawn(npc, guidSpots.get(r.guid) && { ...guidSpots.get(r.guid), event: true });
+    for (const entry of eventEntries.get(r.guid) || []) {
+      const npc = npcs.get(entry);
+      if (npc && !entries.includes(entry)) addSpawn(npc, spot && { ...spot, event: true });
+    }
   }
 
   const objects = new Map();
@@ -290,6 +304,7 @@ async function syncCommunity(opts = {}) {
       const manifest = {
         schema: D.MANIFEST_SCHEMA,
         kind: 'community',
+        shape: SHAPE,
         flavor: FLAVOR,
         source: SOURCE,
         trust: GD.TRUST.communityDb,
@@ -318,4 +333,4 @@ async function syncCommunity(opts = {}) {
   }
 }
 
-module.exports = { FLAVOR, SOURCE, LISTING_URL, ENTITIES, MAX_SPAWNS, LICENSE_NOTE, communityRoot, readCommunity, openCommunity, gitBlobSha, pickDump, convert, syncCommunity };
+module.exports = { FLAVOR, SOURCE, SHAPE, finishSpawns, LISTING_URL, ENTITIES, MAX_SPAWNS, LICENSE_NOTE, communityRoot, readCommunity, openCommunity, gitBlobSha, pickDump, convert, syncCommunity };
