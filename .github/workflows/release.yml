@@ -39,11 +39,11 @@ jobs:
           fetch-depth: 0
       - uses: BigWigsMods/packager@v2
         with:
-          args: ${{ github.ref_type == 'tag' && '' || '-d' }}
+          args: ${{ !(github.event_name == 'push' && github.ref_type == 'tag') && '-d' || '' }}
         env:
-          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
-          WAGO_API_TOKEN: ${{ secrets.WAGO_API_TOKEN }}
-          GITHUB_OAUTH: ${{ github.ref_type == 'tag' && secrets.GITHUB_TOKEN || '' }}
+          CF_API_TOKEN: ${{ github.event_name == 'push' && github.ref_type == 'tag' && secrets.CF_API_TOKEN || '' }}
+          WAGO_API_TOKEN: ${{ github.event_name == 'push' && github.ref_type == 'tag' && secrets.WAGO_API_TOKEN || '' }}
+          GITHUB_OAUTH: ${{ github.event_name == 'push' && github.ref_type == 'tag' && secrets.GITHUB_TOKEN || '' }}
       - name: the zip holds only the ClaudeWoW folder, with its toc
         run: |
           zip=$(ls .release/*.zip)
@@ -58,7 +58,7 @@ jobs:
 
   bridge:
     needs: addon
-    if: github.ref_type == 'tag'
+    if: (github.event_name == 'push' && github.ref_type == 'tag') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -67,6 +67,17 @@ jobs:
           bun-version: 1.4.2
       - run: bun build.js
       - run: ./dist/claude-wow-linux-x64 service help
-      - run: gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+      - name: SHA256SUMS lists the four binaries and every sum matches
+        working-directory: dist
+        run: |
+          cat SHA256SUMS
+          test "$(wc -l < SHA256SUMS)" -eq 4
+          sha256sum --check --strict SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: claude-wow-binaries
+          path: dist/
+      - if: github.event_name == 'push' && github.ref_type == 'tag'
+        run: gh release upload "$GITHUB_REF_NAME" dist/* --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
