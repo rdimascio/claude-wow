@@ -96,3 +96,19 @@ Spot checks: quest 364 (The Mindless Ones) has giver 1569; NPC 1568 (Undertaker 
 3. `wow_npc` and the `wow_quest` fields.
 4. Token expansion for `{npc:ID}` and `{quest:ID}` with the QuestV2 cross-check; phrase index measured on real data.
 5. Docs, CHANGELOG, fresh-eyes per PR.
+
+## 9. Review findings (fresh-eyes, 2026-10-02, fable + gpt-6-astra)
+
+Checked against the real `mangos.sqlite` and the Era 1.15.9.70003 data. Decisions needed before code are marked **D**.
+
+- **D: the license does not clear the data.** VMaNGOS code is GPL-2.0, but its release imports the world data from `brotalnia/database`, which has no license (GitHub API, 2026-10-02). That is the QuestieDB problem again. cMaNGOS `classic-db` ships its own `LICENSE.md` (GPL-3.0), but as MySQL dumps, not SQLite. The names and quest text are Blizzard's text either way; that, not the GPL, is why nothing converted is ever committed or shipped.
+- **D: names are 1.12 names.** 31 of 17,593 shared item IDs (0.18%) have another name in Era, mostly developer tributes Blizzard renamed ("Fras Siabi's Postbox Key" is "Ezra Grimm's Postbox Key" in Era); NPCs were renamed the same way. Quest IDs can be checked against `QuestV2`, but the client has no quest titles or NPC names, so nothing verifies a community name against Era. Every community name needs a label the bridge adds itself; the stream overlay has no room for one (open question 1).
+- **D: no numbers.** NPC levels, factions and quest levels are community numbers; v1 returns names, relations and labeled positions only.
+- **Positions are mostly zone-ambiguous:** 33,991 of 53,551 continent spawns (63%) and 72% of quest-giver spawns sit in overlapping zone rectangles and fall back to the continent. Dungeons cannot be placed (the client has assignments for maps 30, 489 and 529 only). Return every candidate map and prefer the player's current uiMap.
+- **Data shape:** filter quest relations by `patch_min <= 10 <= patch_max` too (quest 171's giver 2142 belongs to patches 0-1); emit spawns for `id2..id5`; flag event spawns (`game_event_creature`, 2,907 guids, Darkmoon Faire and others); drop junk rows (`[UNUSED]`, `<NYI>`, `Dummy`, `Trigger`, `Credit Marker`); decide display of `" ( ) /` (508 NPC names and 132 titles fail today's safe-name check).
+- **Phrase index:** index NPC names only. Quest titles would refuse about 200 ordinary roast phrases ("a free lunch", "missing in action") and 8 order phrases ("at last", "clear the way").
+- **Store:** a separate community store (`data/classic_era/community/<commit>/`, own manifest, `current`, lock and atomic swap), because trust and source are per store today and a client re-sync would sweep entities added to its folder.
+- **Runtime:** Bun 1.4.2 reads the file through `node:sqlite` (checked), so no adapter. `node:sqlite` needs Node 22.13 without a flag; load it only inside this sync and say so, rather than raising the bridge minimum.
+- **Download and file safety:** the asset redirects once to `release-assets.githubusercontent.com`; match `^db-sqlite-[0-9a-f]{7}\.zip$`, verify the API's `sha256` digest, stream to a capped temp file, extract only `mangos.sqlite` with a size cap (no zip reader exists in Node or Bun), refuse views, triggers and virtual tables, set `trusted_schema=OFF`, run `quick_check`.
+- **Size:** spawns as written would be about 39 MB of JSONL; group them per NPC.
+- **Gaps in the tool plan:** quest-title search (the motivating question names a title), object givers (quest 248's giver is object 31), and how replies show `{npc:ID}` (the addon has no NPC links).
