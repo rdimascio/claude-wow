@@ -24,7 +24,6 @@ const NOT_IN_DATA = Object.freeze([
   'NPC levels, factions and any other number from community data',
   'item drop sources and drop rates',
   'vendor and trainer lists',
-  'spell names',
 ]);
 
 const INSTRUCTIONS = [
@@ -158,13 +157,36 @@ function reagentUse(store, itemID) {
   const abilities = store.group('skilllineabilities', 'spell', r => (GD.isId(r.spell) ? [r.spell] : []));
   const reagentIn = recipes.slice(0, MAX_LIMIT).map(r => ({
     spellID: r.spellID,
+    ...spellNaming(store, r.spellID),
     count: r.reagents.find(x => x.itemID === itemID).count,
     skillLines: abilitiesKnown ? skillLinesFor(store, abilities, r.spellID) : null,
   }));
   return { reagentIn, reagentInTotal: recipes.length };
 }
 
-function sharedNameNotes(shown, hits) {
+function spellNaming(store, spellID) {
+  if (!store.has('spells')) return { name: null };
+  const spell = store.byId('spells', spellID);
+  const rank = store.has('spellranks') ? store.byId('spellranks', spellID) : null;
+  return { name: spell ? spell.name : null, ...(rank && rank.rank ? { rank: rank.rank } : {}) };
+}
+
+function spellRow(store, spell) {
+  const abilities = store.group('skilllineabilities', 'spell', r => (GD.isId(r.spell) ? [r.spell] : []));
+  const recipes = store.group('spellreagents', 'spellID', r => (GD.isId(r.spellID) ? [r.spellID] : [])).get(spell.id) || [];
+  return cited(store, {
+    kind: 'spell',
+    id: spell.id,
+    ...spellNaming(store, spell.id),
+    skillLines: store.has('skilllineabilities') ? skillLinesFor(store, abilities, spell.id) : null,
+    reagents: recipes.length ? recipes[0].reagents.map(x => {
+      const it = store.byId('items', x.itemID);
+      return { itemID: x.itemID, name: it ? it.name : null, count: x.count };
+    }) : [],
+  });
+}
+
+function sharedNameNotes(shown, hits, noun = 'items') {
   const idsByName = new Map();
   for (const h of hits) {
     const key = GD.foldName(h.row.name);
@@ -175,7 +197,7 @@ function sharedNameNotes(shown, hits) {
     const ids = idsByName.get(key);
     if (ids.length < 2) continue;
     const name = shown.find(h => GD.foldName(h.row.name) === key).row.name;
-    notes.push(`${ids.length} items are named "${name}" (IDs ${ids.slice(0, MAX_SHARED_IDS).join(', ')}${ids.length > MAX_SHARED_IDS ? ', ...' : ''}): the name alone does not pick one.`);
+    notes.push(`${ids.length} ${noun} are named "${name}" (IDs ${ids.slice(0, MAX_SHARED_IDS).join(', ')}${ids.length > MAX_SHARED_IDS ? ', ...' : ''}): the name alone does not pick one.`);
   }
   return notes;
 }
@@ -362,6 +384,32 @@ const TOOLS = [
       const hits = store.search('items', name);
       const shown = hits.slice(0, limit);
       return envelope(store, 'wow_item', { name }, shown.map(h => itemRow(store, h.row, false)), { total: hits.length, notes: sharedNameNotes(shown, hits) });
+    },
+  },
+  {
+    name: 'wow_spell',
+    description: 'Look up a spell by ID or by name in the client spell table: its name and rank text, the skill lines it belongs to (professions and class skills) and, for a recipe, its reagents. Several ranks share one name; a note then lists their IDs. It has no trainers, costs or descriptions.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'integer', minimum: 1, description: 'Spell ID' },
+        name: { type: 'string', maxLength: GD.MAX_QUERY_LENGTH, description: 'Spell name or part of it, any case' },
+        limit: { type: 'integer', minimum: 1, maximum: MAX_LIMIT },
+      },
+      additionalProperties: false,
+    },
+    run(store, args) {
+      requireOne(args, ['id', 'name']);
+      const id = idArg(args, 'id');
+      if (id) {
+        const spell = store.byId('spells', id);
+        return envelope(store, 'wow_spell', { id }, spell ? [spellRow(store, spell)] : []);
+      }
+      const name = nameArg(args, true);
+      const limit = limitArg(args);
+      const hits = store.search('spells', name);
+      const shown = hits.slice(0, limit);
+      return envelope(store, 'wow_spell', { name }, shown.map(h => spellRow(store, h.row)), { total: hits.length, notes: sharedNameNotes(shown, hits, 'spells') });
     },
   },
   {

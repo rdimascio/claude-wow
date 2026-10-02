@@ -329,7 +329,35 @@ const TABLES = Object.freeze([
       return { id: idOf(row), spellID: idOf(row, 'SpellID'), reagents };
     },
   },
+  {
+    table: 'SpellName',
+    entity: 'spells',
+    optional: true,
+    columns: ['ID', 'Name_lang'],
+    convert(row) {
+      return { id: idOf(row), name: nameOf(row, 'Name_lang') };
+    },
+  },
+  {
+    table: 'Spell',
+    entity: 'spellranks',
+    optional: true,
+    columns: ['ID', 'NameSubtext_lang'],
+    convert(row) {
+      return { id: idOf(row), rank: toName(row.NameSubtext_lang) };
+    },
+  },
+  {
+    table: 'Faction',
+    entity: 'factions',
+    optional: true,
+    columns: ['ID', 'Name_lang', 'ParentFactionID'],
+    convert(row) {
+      return { id: idOf(row), name: nameOf(row, 'Name_lang'), parentFactionID: intOf(row, 'ParentFactionID') };
+    },
+  },
 ]);
+const TABLES_VERSION = 2;
 
 function sha256(text) {
   return crypto.createHash('sha256').update(text).digest('hex');
@@ -582,7 +610,7 @@ async function sync(opts = {}) {
     assertBuild(build);
     assertFlavorBuild(flavorName, build);
     const before = readCurrent(root);
-    if (!opts.force && before && before.build === build) {
+    if (!opts.force && before && before.build === build && before.manifest.tablesVersion === TABLES_VERSION) {
       log(`${flavorName} data is already at ${build}; nothing to do (--force syncs it again)`);
       return { status: 'current', build, dir: before.dir, manifest: before.manifest };
     }
@@ -628,6 +656,7 @@ async function sync(opts = {}) {
       const manifest = {
         schema: MANIFEST_SCHEMA,
         flavor: flavorName,
+        tablesVersion: TABLES_VERSION,
         source: SOURCE_NAME,
         product: flavor.product,
         url: WAGO_ORIGIN,
@@ -715,7 +744,7 @@ async function main(argv, deps = {}) {
 }
 
 module.exports = {
-  BUILD_PATTERN, FLAVORS, TABLES, MAX_NAME_LENGTH, LOCK_FILE, LOCK_STALE_MS, CURRENT_FILE, MANIFEST_FILE,
+  BUILD_PATTERN, FLAVORS, TABLES, TABLES_VERSION, MAX_NAME_LENGTH, LOCK_FILE, LOCK_STALE_MS, CURRENT_FILE, MANIFEST_FILE,
   SyncError, LockedError, UsageError,
   DEFAULT_FLAVOR, isBuild, assertBuild, flavorForBuild, syncCommand, buildFamily, compatibility, compareBuilds, buildsUrl, tableUrl,
   parseCsv, toInt, toNumber, toName, convertTable, placeOnMap,
