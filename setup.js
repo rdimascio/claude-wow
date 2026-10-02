@@ -362,8 +362,8 @@ try {
   const account = findAccount(client);
   console.log(`account  : ${account}`);
   migrateOldInstall(client, account);
-  const { dest, copied } = copyAddon(client);
-  console.log(`addon    : ${copied} file(s) -> ${dest}`);
+  const { dest, copied, build } = copyAddon(client);
+  console.log(`addon    : ${copied} file(s) -> ${dest} (build ${build}, /claude diag shows it)`);
   const cfg = writeConfig(client, account);
   console.log(`project  : ${cfg.defaultCwd}  (change with /claude-wow cd in game, or defaultCwd in config.json)`);
   // A defaultCwd that no longer exists (moved folder, or a bad --project from an

@@ -149,8 +149,8 @@ On Classic Era 1.15.9, `/reload` re-reads the toc and every Lua file it lists: a
 - `setup` writes `## X-Build: <build>` after the `## Version` line of the toc it installs. The build is the first 12 hex digits of a SHA-256 over every shipped file but the toc, by name and content (`P.addonBuild`). A CurseForge install has no `X-Build` line, so only the version counts there.
 - The addon keeps what it loaded, `ClaudeWoW.Version.LOADED = { version, build }`, read from `GetAddOnMetadata` when `ClaudeWoW.lua` runs.
 - The bridge reads the installed toc (cached on mtime, size and inode) and puts it in every slot file and `Inbox.lua`: `addonDisk = { version = "0.4.0", build = "1a2b3c4d5e6f" }`. It leaves the field out when the toc has no valid version.
-- When the field differs from what the addon loaded, the addon says once per UI session: "New addon files are installed (...). Type /reload to load them." A stale field (older than 5 minutes), a malformed one, and a client that gives no metadata are skipped.
-- When `C_AddOns.GetAddOnInfo("ClaudeWoW_Runtime")` says `MISSING`, the runtime folder came after launch, and the addon asks once for a full restart.
+- When the field differs from what the addon loaded, the addon says once per UI session: "New addon files are installed (...). Type /reload to load them." A field written before this addon load is skipped, because a `/reload` right after an install can read an `Inbox.lua` or slot that still names the old build; the hello makes the bridge publish again at once. A malformed field and a client that gives no metadata are skipped too.
+- When `C_AddOns.GetAddOnInfo("ClaudeWoW_Runtime")` says `MISSING`, the runtime folder came after launch, and the addon asks once for a full restart. Not measured: that the client reports `MISSING` for a folder made after launch (it does for a slot folder through `LoadAddOn`). If it does not, the notice stays silent.
 - `/claude diag` shows `addon files loaded: <version build>, on disk: <version build>`.
 
 ## What ships and what the bridge writes

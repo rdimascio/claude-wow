@@ -159,7 +159,7 @@ test('verdicts: equal, the older side by semver, different builds, either side o
     assert.equal(v.text === '', verdict === 'equal', JSON.stringify(addon));
   }
   assert.equal(P.versionVerdict({ version: '', proto: null }, bridgeAt('1.4.0', 1, 1)).verdict, 'unknown', 'an addon from before the handshake speaks protocol 1');
-  assert.match(P.versionVerdict({ version: '1.4.0', proto: 1 }, b).text, /CurseForge.*claude-wow setup.*restart WoW/);
+  assert.match(P.versionVerdict({ version: '1.4.0', proto: 1 }, b).text, /CurseForge.*claude-wow setup, then type \/reload\./);
   assert.match(P.versionVerdict({ version: '1.4.0', proto: 4 }, b).text, /brew upgrade claude-wow.*claude-wow service restart/);
 });
 
@@ -443,11 +443,21 @@ test('the disk field is skipped when stale, malformed, from an old bridge, or wh
   assert.equal(told(badBuild, '/reload'), 0, 'a malformed build counts as none');
 });
 
-test('Inbox.lua carries the disk field too, under the 5-minute age rule', () => {
-  const fresh = newVM({ ...loadedAs('1.2.3', BUILD_A), beforeLogin: `ClaudeWoW_Inbox = { now = time() - 120, replies = {}${luaDisk('1.2.3', BUILD_B)} }` });
-  assert.equal(told(fresh, 'Type /reload'), 1);
-  const stale = newVM({ ...loadedAs('1.2.3', BUILD_A), beforeLogin: `ClaudeWoW_Inbox = { now = time() - 3600, replies = {}${luaDisk('1.2.3', BUILD_B)} }` });
-  assert.equal(told(stale, 'Type /reload'), 0);
+test('Inbox.lua carries the disk field too, but only a copy written since this addon load counts', () => {
+  const now = newVM({ ...loadedAs('1.2.3', BUILD_A), beforeLogin: `ClaudeWoW_Inbox = { now = time(), replies = {}${luaDisk('1.2.3', BUILD_B)} }` });
+  assert.equal(told(now, 'Type /reload'), 1);
+  const beforeLoad = newVM({ ...loadedAs('1.2.3', BUILD_A), beforeLogin: `ClaudeWoW_Inbox = { now = time() - 1, replies = {}${luaDisk('1.2.3', BUILD_B)} }` });
+  assert.equal(told(beforeLoad, 'Type /reload'), 0);
+});
+
+test('a /reload right after an install, before the bridge republishes: the older field is not news, the next one is', () => {
+  const vm = newVM({ ...loadedAs('1.2.3', BUILD_B), beforeLogin: `ClaudeWoW_Inbox = { now = time() - 1, replies = {}${luaDisk('1.2.3', BUILD_A)} }` });
+  helloPoll(vm, null, 'time() - 7', luaDisk('1.2.3', BUILD_A));
+  assert.equal(told(vm, 'Type /reload'), 0, 'snapshots from before the load name the old build');
+  slotPoll(vm, null, 'time()', luaDisk('1.2.3', BUILD_B));
+  assert.equal(told(vm, 'Type /reload'), 0);
+  vm.run('SlashCmdList.CLAUDEWOW("diag")');
+  assert.equal(told(vm, `on disk: 1.2.3 build ${BUILD_B}`), 1, 'the republished field is read');
 });
 
 test('a runtime folder installed after launch asks for a full restart, once', () => {

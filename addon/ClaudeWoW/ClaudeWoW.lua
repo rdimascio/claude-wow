@@ -1791,7 +1791,7 @@ function ClaudeWoW.Version.Own()
 	return V.SEMVER
 end
 
-ClaudeWoW.Version.LOADED = { version = ClaudeWoW.Version.Meta("Version"), build = ClaudeWoW.Version.Meta("X-Build") }
+ClaudeWoW.Version.LOADED = { version = ClaudeWoW.Version.Meta("Version"), build = ClaudeWoW.Version.Meta("X-Build"), at = time() }
 
 function ClaudeWoW.Version.ApplyDisk(d, stamp)
 	local V = ClaudeWoW.Version
@@ -1799,6 +1799,7 @@ function ClaudeWoW.Version.ApplyDisk(d, stamp)
 	local at = tonumber(stamp)
 	if not at or time() - at > Q.INBOX_FRESH_SECONDS then return end
 	V.CheckFolders()
+	if at < V.LOADED.at then return end
 	if type(d.version) ~= "string" or #d.version > 40 or not d.version:match(V.PATTERN) then return end
 	local build = type(d.build) == "string" and #d.build == 12 and d.build:match("^[0-9a-f]+$") and d.build or ""
 	run.addonDisk = { version = d.version, build = build }
@@ -1840,7 +1841,7 @@ function ClaudeWoW.Version.Verdict(b)
 	local mine = version .. ", protocol " .. V.PROTO
 	local theirs = b.version .. ", protocol " .. range
 	if V.PROTO < b.protoMin then
-		return "update-addon", "This addon (" .. mine .. ") is too old for the bridge (" .. theirs .. "). The bridge refuses messages until you update the addon: update the addon in the CurseForge app or run claude-wow setup, then restart WoW."
+		return "update-addon", "This addon (" .. mine .. ") is too old for the bridge (" .. theirs .. "). The bridge refuses messages until you update the addon: update the addon in the CurseForge app or run claude-wow setup, then type /reload."
 	end
 	if V.PROTO > b.protoMax then
 		return "update-bridge", "The bridge (" .. theirs .. ") is too old for this addon (" .. mine .. "). The bridge refuses messages until you update it: run brew upgrade claude-wow or the installer again, then claude-wow service restart."
