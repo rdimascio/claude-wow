@@ -10,6 +10,7 @@ Status: revision 2 (2026-10-02), built in PR "feat(data): Classic Era NPCs and q
 - **Shown where:** `wow_npc` and the `community` block of `wow_quest`, always labeled. Orders keep refusing `{npc:ID}` and `{quest:ID}`, so the stream overlay never shows a community name (open question 1: no).
 - **No numbers:** no levels, factions, loot, vendors or trainers.
 - **Positions:** every candidate map; `uiMapID` filters to the player's map; dungeons are `instanceMapID` with no position.
+- **Forever (owner's decision, 2026-10-02):** the store also answers on Forever, labeled `community-db-unchecked-for-this-game`, only for quest IDs in the Forever client and positions on maps whose rectangles match the Era data the store was built with. This is a deliberate exception to "Classic IDs are never assumed valid on Forever", limited to what Forever's own client data backs.
 - **Phrase index:** unchanged in this step. Adding NPC names (not quest titles) is a follow-up with its own measurement.
 
 The sections below are revision 1, kept for the review trail.
