@@ -117,7 +117,7 @@ Things worth knowing:
 
 ## Updating
 
-- Route 1: run the one-line installer again. It replaces the binary (or pulls the source), re-runs setup, and keeps your config and chats. Then `claude-wow service restart` (or restart the terminal bridge), and `/reload` in game, or relaunch the game if setup reports new files. A new binary writes its own capture scripts and addon out under `~/.claude-wow/assets` the first time it runs.
+- Route 1: run the one-line installer again. It replaces the binary (or pulls the source), re-runs setup, and keeps your config and chats. Then `claude-wow service restart` (or restart the terminal bridge), and `/reload` in game (the addon asks for it when the files on disk are newer than the ones it loaded), or relaunch the game when the addon asks for a full restart (a new addon folder). A new binary writes its own capture scripts and addon out under `~/.claude-wow/assets` the first time it runs.
 - Route 2: `brew upgrade claude-wow` (`--fetch-HEAD` for a `--HEAD` install), then `claude-wow service restart` (your config and sessions are in `~/.claude-wow`, untouched; `claude-wow setup` again only if the addon changed, which the changelog says).
 - Route 3: `git pull && node setup.js`, then restart the bridge.
 

@@ -164,12 +164,16 @@ function migrateOldInstall(client, account) {
 function copyAddon(client) {
   const dest = path.join(client, 'Interface', 'AddOns', P.ADDON);
   G.mkdir(dest);
+  const names = fs.readdirSync(ADDON_SRC);
+  const build = P.addonBuild(names.map(name => ({ name, data: fs.readFileSync(path.join(ADDON_SRC, name)) })));
+  const toc = P.ADDON + '.toc';
   let copied = 0;
-  for (const f of fs.readdirSync(ADDON_SRC)) {
-    G.copyFile(path.join(ADDON_SRC, f), path.join(dest, f));
+  for (const f of names) {
+    if (f === toc) G.writeFile(path.join(dest, f), P.tocWithBuild(fs.readFileSync(path.join(ADDON_SRC, f), 'utf8'), build));
+    else G.copyFile(path.join(ADDON_SRC, f), path.join(dest, f));
     copied++;
   }
-  return { dest, copied };
+  return { dest, copied, build };
 }
 
 // A config.json from before a rename, or from before agents: fix the paths
@@ -358,8 +362,8 @@ try {
   const account = findAccount(client);
   console.log(`account  : ${account}`);
   migrateOldInstall(client, account);
-  const { dest, copied } = copyAddon(client);
-  console.log(`addon    : ${copied} file(s) -> ${dest}`);
+  const { dest, copied, build } = copyAddon(client);
+  console.log(`addon    : ${copied} file(s) -> ${dest} (build ${build}, /claude diag shows it)`);
   const cfg = writeConfig(client, account);
   console.log(`project  : ${cfg.defaultCwd}  (change with /claude-wow cd in game, or defaultCwd in config.json)`);
   // A defaultCwd that no longer exists (moved folder, or a bad --project from an
@@ -385,7 +389,7 @@ try {
   }
   console.log(`
 Done. Next:
-  1. Fully quit and relaunch World of Warcraft (it only discovers new addon files at launch).
+  1. Fully quit and relaunch World of Warcraft (it only discovers new addon folders at launch).
   2. Enable "Claude WoW" at the character select AddOns screen (the Claude WoW slot ### entries stay enabled).
   3. Start the bridge:  ${R.compiled ? 'claude-wow' : 'npm start'}   (in this terminal${
     process.platform === 'win32' ? '; bridge\\start-window.cmd opens its own window'
