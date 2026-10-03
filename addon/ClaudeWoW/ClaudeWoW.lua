@@ -3835,20 +3835,14 @@ function ClaudeWoW.DeleteChat(id)
 		return
 	end
 	table.remove(db.chats, idx)
+	local heldReply = run.replyTarget and run.replyNames and run.replyNames[run.replyTarget:lower()] == c.id
+	if run.lastReplyChat == c.id then run.lastReplyChat = nil end
 	if db.activeChat == c.id then
-		local nextChat = db.chats[math.min(idx, #db.chats)]
-		if nextChat.quiet then
-			for _, ch in ipairs(db.chats) do
-				if not ch.quiet then
-					nextChat = ch
-					break
-				end
-			end
-		end
-		ClaudeWoW.SwitchChat(nextChat.id)
+		ClaudeWoW.SwitchChat(Cli.LatestChat().id)
 	else
 		ClaudeWoW.RenderChatList()
 	end
+	if heldReply then Whisper.OfferReply(Cli.LatestChat()) end
 end
 
 -- The trash can on a chat row asks first; /claude-wow delete does not.
@@ -6853,6 +6847,14 @@ end
 function Cli.LastActivity(ch)
 	local last = ch.history and ch.history[#ch.history]
 	return (last and last.t) or ch.created or 0
+end
+
+function Cli.LatestChat()
+	local best
+	for _, ch in ipairs(db.chats) do
+		if not ch.quiet and (not best or Cli.LastActivity(ch) > Cli.LastActivity(best)) then best = ch end
+	end
+	return best or db.chats[1]
 end
 
 Cli.PICKER_ROWS = 8
