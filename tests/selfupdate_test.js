@@ -126,10 +126,20 @@ test('install kind: source, a Homebrew keg, a git checkout and a dev deploy are 
   const repo = tmpDir('repo');
   fs.mkdirSync(path.join(repo, '.git'));
   fs.mkdirSync(path.join(repo, 'dist'));
+  fs.writeFileSync(path.join(repo, 'package.json'), JSON.stringify({ name: 'claude-wow' }));
   fs.writeFileSync(path.join(repo, 'dist', 'claude-wow'), OLD);
   const inRepo = UPD.installKind({ compiled: true, execPath: path.join(repo, 'dist', 'claude-wow') });
   assert.equal(inRepo.kind, 'dev');
   assert.match(inRepo.why, /git checkout/);
+  for (const [label, files] of [['dotfiles', {}], ['another project', { 'package.json': JSON.stringify({ name: 'something-else' }) }]]) {
+    const home = tmpDir('dotfiles');
+    fs.mkdirSync(path.join(home, '.git'));
+    for (const [f, text] of Object.entries(files)) fs.writeFileSync(path.join(home, f), text);
+    fs.mkdirSync(path.join(home, '.local', 'bin'), { recursive: true });
+    fs.writeFileSync(path.join(home, '.local', 'bin', 'claude-wow'), OLD);
+    assert.equal(UPD.installKind({ compiled: true, execPath: path.join(home, '.local', 'bin', 'claude-wow') }).kind, 'binary', `${label}: a git repo above the binary that is not this project does not turn updates off`);
+    fs.rmSync(home, { recursive: true, force: true });
+  }
   const t = setup('kind');
   const plain = UPD.installKind({ compiled: true, execPath: t.binary });
   assert.equal(plain.kind, 'binary');
@@ -411,6 +421,103 @@ test('releases layout: a release with no release.json, or a published one while 
   fs.rmSync(root, { recursive: true, force: true });
 });
 
+test('releases layout: under deploy.lock the update looks at current again, so a newer release or a dev deploy that landed meanwhile is never replaced', { skip: !POSIX }, async () => {
+  for (const [label, landed, meta] of [['newer release', '10.0.0', { source: REL.SOURCE_RELEASE, version: '10.0.0' }], ['same version', '9.9.9-other', { source: REL.SOURCE_SELF_UPDATE, version: '9.9.9' }], ['dev deploy', '0.5.0-beta.1-abc123def456', { source: REL.SOURCE_DEV_DEPLOY, version: '0.5.0-beta.1' }]]) {
+    const { root, l, add } = releasesRoot(`race-${label.replace(/ /g, '-')}`);
+    const home = path.join(root, 'home');
+    fs.mkdirSync(home);
+    add('1.0.0', { source: REL.SOURCE_RELEASE, version: '1.0.0' });
+    REL.activate(l, '1.0.0');
+    const install = UPD.installKind({ compiled: true, execPath: REL.currentBinary(l) });
+    assert.equal(install.kind, 'releases');
+    add(landed, meta);
+    const srv = await releaseServer();
+    try {
+      const probe = async () => { REL.activate(l, landed); return { ok: true, version: '9.9.9' }; };
+      const out = await UPD.checkAndRecord({ home, version: '1.0.0', api: `${srv.base}/repos/x`, install, platform: PLATFORM, arch: ARCH, probe });
+      assert.equal(out.status, 'skipped', `${label}: ${out.message}`);
+      assert.equal(REL.currentName(l), landed, `${label}: current is left where the other install put it`);
+      assert.equal(REL.hasRelease(l, '9.9.9'), false, `${label}: nothing was installed`);
+      assert.notEqual(UPD.readRecord(home).pendingRestart, true, `${label}: no restart is asked for`);
+      assert.equal(fs.existsSync(l.lock), false, `${label}: the lock is released`);
+    } finally { await srv.close(); fs.rmSync(root, { recursive: true, force: true }); }
+  }
+});
+
+test('releases layout: a prune error after the switch is reported in the outcome, the update still counts', { skip: !POSIX }, async () => {
+  const { root, l, add } = releasesRoot('pruneerr');
+  const home = path.join(root, 'home');
+  fs.mkdirSync(home);
+  add('1.0.0', { source: REL.SOURCE_RELEASE, version: '1.0.0' });
+  REL.activate(l, '1.0.0');
+  const install = UPD.installKind({ compiled: true, execPath: REL.currentBinary(l) });
+  const srv = await releaseServer();
+  try {
+    const activate = async (...args) => ({ ...(await REL.installAndActivate(...args)), pruneError: 'EACCES on releases/0.1.0' });
+    const out = await UPD.checkAndRecord({ home, version: '1.0.0', api: `${srv.base}/repos/x`, install, platform: PLATFORM, arch: ARCH, probe: async () => ({ ok: true, version: '9.9.9' }), activate });
+    assert.equal(out.status, 'updated', out.message);
+    assert.match(out.message, /old releases were not pruned \(EACCES on releases\/0\.1\.0\)/);
+    assert.match(UPD.readRecord(home).message, /not pruned/);
+  } finally { await srv.close(); fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('a partial download left by a dead process, or one older than the limit, is removed; a fresh one of a live process is kept', async () => {
+  const t = setup('stale');
+  const dead = path.join(t.bin, `.${ASSET}.update-999999-deadbeef`);
+  const old = path.join(t.bin, `.${ASSET}.update-${process.pid}-0badf00d`);
+  const fresh = path.join(t.bin, `.${ASSET}.update-${process.pid}-c0ffee00`);
+  const unrelated = path.join(t.bin, '.keep-me');
+  for (const f of [dead, old, fresh, unrelated]) fs.writeFileSync(f, 'partial');
+  const longAgo = new Date(Date.now() - UPD.STALE_DOWNLOAD_MS - 60000);
+  fs.utimesSync(old, longAgo, longAgo);
+  const srv = await releaseServer({ tag: 'v1.0.0' });
+  try {
+    const out = await UPD.checkAndRecord(opts(t, srv, { alive: pid => pid === process.pid }));
+    assert.equal(out.status, 'current', out.message);
+    assert.deepEqual(fs.readdirSync(t.bin).sort(), [path.basename(fresh), '.keep-me', path.basename(t.binary)].sort());
+  } finally { await srv.close(); fs.rmSync(t.dir, { recursive: true, force: true }); }
+});
+
+test('a skipped version (after dev rollback) is not reinstalled by the daily check until a newer one is out; claude-wow update installs it and lifts the skip', async () => {
+  const t = setup('skip');
+  UPD.skipVersion(t.home, '9.9.9', 'dev rollback from releases/9.9.9');
+  assert.deepEqual(UPD.readSkip(t.home).version, '9.9.9');
+  const srv = await releaseServer();
+  try {
+    const daily = await UPD.checkAndRecord(opts(t, srv));
+    assert.equal(daily.status, 'skipped', daily.message);
+    assert.match(daily.message, /9\.9\.9 is skipped \(dev rollback from releases\/9\.9\.9\)/);
+    assert.deepEqual(srv.downloads(), []);
+    untouched(t);
+    assert.equal(UPD.readRecord(t.home).ok, true, 'a skip is not a failure, so no hourly retry');
+    const lines = [];
+    assert.equal(await UPD.main(['--check'], { ...opts(t, srv), out: l => lines.push(l), err: l => lines.push(l) }), 0);
+    assert.match(lines.join('\n'), /skipped/);
+    untouched(t);
+    assert.equal(await UPD.main([], { ...opts(t, srv), out: l => lines.push(l), err: l => lines.push(l) }), 0);
+    assert.deepEqual(fs.readFileSync(t.binary), NEW, 'the explicit command installs the skipped version');
+    assert.equal(UPD.readSkip(t.home), null, 'and lifts the skip');
+  } finally { await srv.close(); fs.rmSync(t.dir, { recursive: true, force: true }); }
+  const t2 = setup('skipnewer');
+  UPD.skipVersion(t2.home, '9.9.8', 'dev rollback');
+  const srv2 = await releaseServer();
+  try {
+    const out = await UPD.checkAndRecord(opts(t2, srv2));
+    assert.equal(out.status, 'updated', `a release newer than the skipped one installs: ${out.message}`);
+  } finally { await srv2.close(); fs.rmSync(t2.dir, { recursive: true, force: true }); }
+});
+
+test('skipRelease reads the version a rolled-back release carries, for dev rollback to call', { skip: !POSIX }, () => {
+  const { root, l, add } = releasesRoot('skiprel');
+  add('9.9.9', { source: REL.SOURCE_SELF_UPDATE, version: '9.9.9' });
+  add('0.5.0-beta.1-abc123def456', { source: REL.SOURCE_DEV_DEPLOY, version: '0.5.0-beta.1' });
+  assert.equal(UPD.skipRelease(l, '9.9.9', 'dev rollback').version, '9.9.9');
+  assert.equal(UPD.readSkip(l.base).version, '9.9.9');
+  assert.equal(UPD.skipRelease(l, '0.5.0-beta.1-abc123def456', 'dev rollback'), null, 'a dev deploy is not a release, so nothing is skipped');
+  assert.equal(UPD.readSkip(l.base).version, '9.9.9');
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
 test('checkDue: a day after a good check, an hour after a failed one, and at once with no record', () => {
   const now = 10 * UPD.DAY_MS;
   assert.equal(UPD.checkDue({}, now), true);
@@ -502,6 +609,8 @@ test('restart verdict: never while busy or right after a message; at once when t
   assert.equal(UPD.restartVerdict({ ...base, lastActivityAt: 1e9 - 60000, gameRunning: false }).code, 'closed');
   assert.equal(UPD.restartVerdict({ ...base, lastActivityAt: 1e9 - 60000, gameRunning: true }).code, 'active');
   assert.equal(UPD.restartVerdict({ ...base, lastActivityAt: 1e9 - 60000, gameRunning: null }).code, 'active');
+  assert.equal(UPD.restartVerdict({ ...base, gameRunning: null }).code, 'idle', 'a platform that cannot tell whether the game runs restarts on quiet time alone');
+  assert.equal(UPD.restartVerdict({ ...base, gameRunning: () => null }).restart, true);
   assert.equal(UPD.restartVerdict({ ...base, supervised: false }).code, 'manual');
   assert.equal(UPD.restartVerdict({ ...base, record: { pendingRestart: true, version: '1.0.0' } }).restart, false, 'no restart onto the same version');
   assert.equal(UPD.restartVerdict({ ...base, record: { pendingRestart: true, version: '9.9.9', restartFrom: '1.0.0' } }).code, 'tried');

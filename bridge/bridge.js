@@ -889,7 +889,6 @@ function allowRules(agentId, rules) {
 // ---------------------------------------------------------------------------
 
 function submit(job) {
-  lastActivityAt = Date.now();
   if (TL.isTelemetry(job)) {
     if (!TELEMETRY_ON) return;
     let applied = null;
@@ -957,6 +956,7 @@ function submit(job) {
     return;
   }
   if (inFlight(job)) return;
+  lastActivityAt = Date.now();
   if (holdForDeploy(job)) return;
   dispatchMessage(job);
 }

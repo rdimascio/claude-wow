@@ -2,6 +2,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
+const path = require('path');
+const SB = require('../../dev/sandbox');
+const { encodePng, luaQuote } = require('../../dev/wow/client');
 const { makeRoot, gameRunner } = require('./helpers');
 const UPD = require('../../bridge/selfupdate');
 const REL = require('../../bridge/releases');
@@ -13,6 +16,30 @@ const withGame = gameRunner(ROOT);
 
 function count(text, re) {
   return (text.match(new RegExp(re.source, 'g')) || []).length;
+}
+
+const CELL = 4;
+const CELLS = 200;
+const WIDTH = 1920;
+const HEIGHT = 1080;
+const CHARACTER = 'Testchar-TestRealm';
+
+function gsRecord(session, seq) {
+  return [session, '', String(seq), '', 'kind=gs', CHARACTER, `gs1\nmoney:${String(seq).padStart(8, '0')}:${1000 + seq}`].join('\x1F');
+}
+
+function writeGsShot(h, payload, n) {
+  const cells = h.client.luaValue(`(function() local c = ClaudeWoW_Codec.Encode(0, ${luaQuote(payload)}, 1); local t = {}; for i = 1, #c do t[i] = c[i] end; return table.concat(t, ",") end)()`).split(',').map(Number);
+  const rgb = Buffer.alloc(WIDTH * HEIGHT * 3);
+  cells.forEach((v, i) => {
+    const r = Math.floor(i / CELLS), c = i % CELLS;
+    const lv = [(v >> 2) & 1, (v >> 1) & 1, v & 1].map(b => (b ? 255 : 0));
+    for (let y = 0; y < CELL; y++) for (let x = 0; x < CELL; x++) {
+      const o = ((r * CELL + y) * WIDTH + c * CELL + x) * 3;
+      rgb[o] = lv[0]; rgb[o + 1] = lv[1]; rgb[o + 2] = lv[2];
+    }
+  });
+  fs.writeFileSync(SB.assertSafe(path.join(h.sb.screenshots, `WoWScrnShot_020299_${String(n).padStart(6, '0')}.png`)), encodePng(WIDTH, HEIGHT, rgb));
 }
 
 test('an installed update waits for the run in flight, then the supervisor restarts the bridge once', async () => {
@@ -62,6 +89,30 @@ test('an installed update does not restart the bridge while a deploy is switchin
     }
     await h.bridge.waitForLine(/self-update: restarting on 99\.0\.0 now/, { timeoutMs: 30000, from: 0 });
     await h.bridge.waitForLine(/self-update: restarted for 99\.0\.0, but this is still/, { timeoutMs: 30000, from: 0 });
+  });
+});
+
+test('game-state telemetry that keeps coming does not hold the restart back: only chat messages and replies count as activity', async () => {
+  await withGame({ supervised: true, config: { autoUpdateIdleSeconds: 6 } }, async h => {
+    await h.client.connect();
+    await h.bridge.waitForLine(/hello from session/, { from: 0 });
+    const session = h.client.db().session;
+    const from = h.bridge.output.length;
+    UPD.writeRecord(h.sb.home, { pendingRestart: true, version: '99.0.0', from: VERSION, attemptAt: Date.now(), ok: true, status: 'updated', message: 'test' });
+    const until = Date.now() + 40000;
+    let n = 0;
+    while (Date.now() < until && !/self-update: restarting on 99\.0\.0/.test(h.bridge.output.slice(from))) {
+      writeGsShot(h, gsRecord(session, 5000 + n), n);
+      n++;
+      await new Promise(res => setTimeout(res, 1500));
+    }
+    const restartAt = h.bridge.output.slice(from).search(/self-update: restarting on 99\.0\.0/);
+    assert.ok(restartAt >= 0, `the bridge restarted while gs records kept coming (${n} sent)`);
+    const before = h.bridge.output.slice(from, from + restartAt);
+    const gsStamps = [...before.matchAll(/\[(\S+)\] strip #0 \(screenshot WoWScrnShot_020299_\d+\.png, .*?\): 1 message/g)].map(m => Date.parse(m[1]));
+    const restartStamp = Date.parse(/\[(\S+)\] self-update: restarting on 99\.0\.0/.exec(h.bridge.output.slice(from))[1]);
+    assert.ok(gsStamps.length >= 1, 'the gs frames reached the bridge');
+    assert.ok(restartStamp - gsStamps[gsStamps.length - 1] < 6000, `a gs record came in less than the 6 s quiet time before the restart (${restartStamp - gsStamps[gsStamps.length - 1]} ms), so it did not count as activity`);
   });
 });
 

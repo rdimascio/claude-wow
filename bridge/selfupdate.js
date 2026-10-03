@@ -32,7 +32,11 @@ const LIMITS = {
 };
 const SEMVER = /^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 const HOMEBREW_PATH = /\/Cellar\/|\/opt\/homebrew\/|\/\.linuxbrew\//;
-const SUM_LINE = /^([0-9a-fA-F]{64})\s+\*?(\S.*?)\s*$/;
+const PROJECT_NAMES = ['claude-wow', 'wow-ai'];
+const SKIP_FILE = 'update-skip.json';
+const STALE_DOWNLOAD_MS = 6 * HOUR_MS;
+const DOWNLOAD_NAME = /^\..+\.update-(\d+)-[0-9a-f]{8}(\.exe)?$/;
+const SUM_LINE =/^([0-9a-fA-F]{64})\s+\*?(\S.*?)\s*$/;
 
 function ownVersion() {
   try { return require('../package.json').version; } catch { return '0.0.0'; }
@@ -84,10 +88,15 @@ function realpathOf(p) {
   try { return fs.realpathSync(p); } catch { return path.resolve(p); }
 }
 
+function isThisProject(dir) {
+  if (fs.existsSync(path.join(dir, 'bridge', 'supervisor.js'))) return true;
+  try { return PROJECT_NAMES.includes(JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8')).name); } catch { return false; }
+}
+
 function gitCheckoutAbove(file) {
   let dir = path.dirname(file);
   for (;;) {
-    if (fs.existsSync(path.join(dir, '.git'))) return dir;
+    if (fs.existsSync(path.join(dir, '.git'))) return isThisProject(dir) ? dir : '';
     const up = path.dirname(dir);
     if (up === dir) return '';
     dir = up;
@@ -258,18 +267,87 @@ function replaceFile(tmp, target, platform = process.platform) {
   }
 }
 
-async function swapIn(install, tmp, version, sum, platform = process.platform) {
+function releaseVersion(l, name) {
+  const info = REL.releaseInfo(l, name);
+  return normalizeVersion(info && info.version) || normalizeVersion(name);
+}
+
+function supersededBy(l, version) {
+  const now = REL.currentName(l);
+  if (!now) return `current no longer points at a release in ${l.releases}`;
+  if (!REL.isPublishedRelease(l, now)) return `releases/${now} became current meanwhile and is not a published release (a dev deploy)`;
+  const nowVersion = releaseVersion(l, now);
+  const order = compareSemver(nowVersion, version);
+  if (order === null) return `releases/${now} became current meanwhile and its version cannot be compared with ${version}`;
+  if (order >= 0) return `releases/${now} (${nowVersion}) became current meanwhile, as new as ${version} or newer`;
+  return '';
+}
+
+async function swapIn(install, tmp, version, sum, platform = process.platform, activate = REL.installAndActivate) {
   if (install.kind === 'releases') {
-    const lock = REL.acquireLock(install.layout.lock, { command: `claude-wow update to ${version}` });
+    const l = install.layout;
+    const lock = REL.acquireLock(l.lock, { command: `claude-wow update to ${version}` });
+    let result;
     try {
-      await REL.installAndActivate(install.layout, { name: version, binaryFile: tmp, meta: { source: REL.SOURCE_SELF_UPDATE, version, sha256: sum } });
+      const superseded = supersededBy(l, version);
+      if (superseded) return { binary: '', superseded };
+      result = await activate(l, { name: version, binaryFile: tmp, meta: { source: REL.SOURCE_SELF_UPDATE, version, sha256: sum } });
     } finally {
       lock.release();
     }
-    return REL.currentBinary(install.layout);
+    return { binary: REL.currentBinary(l), pruneError: (result && result.pruneError) || '' };
   }
   replaceFile(tmp, install.binary, platform);
-  return install.binary;
+  return { binary: install.binary, pruneError: '' };
+}
+
+function pruneStaleDownloads(dir, { alive = REL.pidAlive, now = Date.now, maxAgeMs = STALE_DOWNLOAD_MS } = {}) {
+  let names = [];
+  try { names = fs.readdirSync(dir); } catch { return []; }
+  const removed = [];
+  for (const n of names) {
+    const m = DOWNLOAD_NAME.exec(n);
+    if (!m) continue;
+    const file = path.join(dir, n);
+    let age = 0;
+    try { age = now() - fs.statSync(file).mtimeMs; } catch { continue; }
+    if (alive(Number(m[1])) && age < maxAgeMs) continue;
+    try { fs.rmSync(file, { force: true }); removed.push(n); } catch {}
+  }
+  return removed;
+}
+
+function skipFile(home) {
+  return path.join(home, SKIP_FILE);
+}
+
+function readSkip(home) {
+  try {
+    const s = JSON.parse(fs.readFileSync(skipFile(home), 'utf8'));
+    return s && typeof s === 'object' && normalizeVersion(s.version) ? { ...s, version: normalizeVersion(s.version) } : null;
+  } catch { return null; }
+}
+
+function skipVersion(home, version, reason = '', now = Date.now) {
+  const v = normalizeVersion(version);
+  if (!v) throw new Error(`"${version}" is not a version to skip`);
+  const record = { version: v, reason: String(reason || ''), at: now() };
+  const file = skipFile(home);
+  const tmp = `${file}.${process.pid}.tmp`;
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(tmp, JSON.stringify(record, null, 2) + '\n');
+  fs.renameSync(tmp, file);
+  return record;
+}
+
+function clearSkip(home) {
+  try { fs.rmSync(skipFile(home), { force: true }); } catch {}
+}
+
+function skipRelease(l, name, reason = '') {
+  if (!REL.isPublishedRelease(l, name)) return null;
+  const version = releaseVersion(l, name);
+  return version ? skipVersion(l.base, version, reason) : null;
 }
 
 function cleanupAside(install, platform = process.platform) {
@@ -313,17 +391,21 @@ function effectiveVersion(version, record) {
 }
 
 async function runUpdate(opts = {}) {
-  const { home, version = ownVersion(), api = apiBase(), install = installKind(), platform = process.platform, arch = process.arch, probe = probeBinary, checkOnly = false, limits = LIMITS } = opts;
+  const { home, version = ownVersion(), api = apiBase(), install = installKind(), platform = process.platform, arch = process.arch, probe = probeBinary, checkOnly = false, explicit = false, limits = LIMITS, activate, alive } = opts;
   const current = effectiveVersion(version, readRecord(home));
   if (install.kind === 'dev') return { status: 'refused', current, message: `self-update is off: ${install.why}` };
   const asset = assetName(platform, arch);
   if (!asset && install.kind !== 'homebrew') return { status: 'failed', current, message: `no release binary is built for ${platform} ${arch}` };
+  const dir = install.kind === 'releases' ? install.layout.releases : install.kind === 'binary' ? path.dirname(install.binary) : '';
+  if (dir) pruneStaleDownloads(dir, alive ? { alive } : {});
   const release = await latestRelease(api, limits);
   const latest = release.version;
   const failed = message => ({ status: 'failed', current, latest, message });
   const order = compareSemver(latest, current);
   if (order === null) return failed(`cannot compare ${latest} with this version ${current}`);
   if (order <= 0) return { status: 'current', current, latest, message: `claude-wow ${current} is up to date (latest release ${latest})` };
+  const skip = explicit ? null : readSkip(home);
+  if (skip && compareSemver(latest, skip.version) <= 0) return { status: 'skipped', current, latest, message: `claude-wow ${latest} is out, but ${skip.version} is skipped${skip.reason ? ` (${skip.reason})` : ''}; a newer release or claude-wow update installs again` };
   if (install.kind === 'homebrew') return { status: 'homebrew', current, latest, message: `claude-wow ${latest} is out (this is ${current}). Homebrew installed this one, so run: brew upgrade claude-wow` };
   if (checkOnly) return { status: 'available', current, latest, message: `claude-wow ${latest} is out (this is ${current}); run claude-wow update to install it` };
   const file = release.assets.find(a => a.name === asset);
@@ -332,7 +414,6 @@ async function runUpdate(opts = {}) {
   if (!sumsFile) return failed(`release ${release.tag} has no ${SUMS_ASSET}, so ${asset} cannot be verified; nothing was replaced`);
   const want = parseSums((await get(sumsFile.url, limits.sums)).toString('utf8')).get(asset);
   if (!want) return failed(`${SUMS_ASSET} of ${release.tag} has no line for ${asset}; nothing was replaced`);
-  const dir = install.kind === 'releases' ? install.layout.releases : path.dirname(install.binary);
   const tmp = tempPath(dir, asset, platform);
   try {
     const have = await downloadTo(file.url, tmp, limits.asset);
@@ -341,8 +422,11 @@ async function runUpdate(opts = {}) {
     const ran = await probe(tmp);
     if (!ran.ok) return failed(`the downloaded ${asset} does not run (${ran.why}); nothing was replaced`);
     if (compareSemver(ran.version, latest) !== 0) return failed(`the downloaded ${asset} says it is ${ran.version}, not ${latest}; nothing was replaced`);
-    const binary = await swapIn(install, tmp, latest, want, platform);
-    return { status: 'updated', current, latest, binary, message: `updated claude-wow ${current} to ${latest} (${binary})` };
+    const swapped = await swapIn(install, tmp, latest, want, platform, activate);
+    if (swapped.superseded) return { status: 'skipped', current, latest, message: `not installing ${latest}: ${swapped.superseded}` };
+    if (explicit) clearSkip(home);
+    const pruneNote = swapped.pruneError ? `; old releases were not pruned (${swapped.pruneError})` : '';
+    return { status: 'updated', current, latest, binary: swapped.binary, message: `updated claude-wow ${current} to ${latest} (${swapped.binary})${pruneNote}` };
   } finally {
     rmQuiet(tmp);
   }
@@ -504,6 +588,8 @@ and the game is closed or quiet (autoUpdateIdleSeconds, default ${DEFAULT_IDLE_S
 Never downgrades. A Homebrew install is not touched: run brew upgrade claude-wow.
 A checkout (node or bun running the source) is never updated: use git pull.
 autoUpdate: false in config.json turns off the daily check, not this command.
+A version in update-skip.json (after dev rollback) is skipped by the daily
+check; this command installs it anyway and lifts the skip.
 Exit codes: 0 up to date, updated or newer found, 1 failed, 2 usage, 3 refused.`;
 
 async function main(argv = [], deps = {}) {
@@ -516,7 +602,7 @@ async function main(argv = [], deps = {}) {
     else { err(`claude-wow update: unknown option "${a}"`); out(HELP); return 2; }
   }
   const home = deps.home || H.resolve().dir;
-  const outcome = await checkAndRecord({ ...deps, home, checkOnly });
+  const outcome = await checkAndRecord({ ...deps, home, checkOnly, explicit: !checkOnly });
   if (outcome.status === 'failed') { err(`claude-wow update: ${outcome.message}`); return 1; }
   out(outcome.message);
   if (outcome.status === 'refused') return 3;
@@ -526,7 +612,8 @@ async function main(argv = [], deps = {}) {
 
 module.exports = {
   DEFAULT_API, RECORD_FILE, SUMS_ASSET, LIMITS, UPDATE_EXIT_CODE, RESTART_TICK_MS, CHECK_TICK_MS, FIRST_CHECK_DELAY_MS,
-  DEFAULT_IDLE_SECONDS, MIN_QUIET_MS, DAY_MS, HOUR_MS, HELP,
+  DEFAULT_IDLE_SECONDS, MIN_QUIET_MS, DAY_MS, HOUR_MS, HELP, SKIP_FILE, STALE_DOWNLOAD_MS,
+  readSkip, skipVersion, clearSkip, skipRelease, pruneStaleDownloads, supersededBy, releaseVersion,
   apiBase, parseSemver, normalizeVersion, compareSemver, assetName, installKind, launchPath, releasesLayout,
   get, latestRelease, parseSums, downloadTo, probeBinary, swapIn, replaceFile, cleanupAside, unpublishedRelease,
   recordFile, readRecord, writeRecord, effectiveVersion, runUpdate, checkAndRecord, checkDue, idleMsFrom,
