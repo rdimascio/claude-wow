@@ -81,7 +81,7 @@ function setup(label) {
 }
 
 function opts(t, srv, extra = {}) {
-  return { home: t.home, version: '1.0.0', api: `${srv.base}/repos/x`, install: t.install, platform: PLATFORM, arch: ARCH, probe: async () => ({ ok: true, version: '9.9.9' }), ...extra };
+  return { home: t.home, version: '1.0.0', api: `${srv.base}/repos/x`, install: t.install, platform: PLATFORM, arch: ARCH, probe: async file => ({ ok: true, version: file === t.binary ? '1.0.0' : '9.9.9' }), ...extra };
 }
 
 function untouched(t) {
@@ -219,7 +219,7 @@ test('a beta install updates to the release of that version', async () => {
   const t = setup('beta');
   const srv = await releaseServer({ tag: 'v0.5.0' });
   try {
-    const out = await UPD.checkAndRecord(opts(t, srv, { version: '0.5.0-beta.1', probe: async () => ({ ok: true, version: '0.5.0' }) }));
+    const out = await UPD.checkAndRecord(opts(t, srv, { version: '0.5.0-beta.1', probe: async file => ({ ok: true, version: file === t.binary ? '0.5.0-beta.1' : '0.5.0' }) }));
     assert.equal(out.status, 'updated', out.message);
   } finally { await srv.close(); fs.rmSync(t.dir, { recursive: true, force: true }); }
 });
@@ -443,6 +443,84 @@ test('releases layout: under deploy.lock the update looks at current again, so a
       assert.equal(fs.existsSync(l.lock), false, `${label}: the lock is released`);
     } finally { await srv.close(); fs.rmSync(root, { recursive: true, force: true }); }
   }
+});
+
+function withPatched(obj, name, wrap, fn) {
+  const original = obj[name];
+  obj[name] = wrap(original);
+  return Promise.resolve().then(fn).finally(() => { obj[name] = original; });
+}
+
+test('releases layout: a deploy.lock taken over before the switch stops the update; nothing is activated', { skip: !POSIX }, async () => {
+  const { root, l, add } = releasesRoot('stolen');
+  const home = path.join(root, 'home');
+  fs.mkdirSync(home);
+  add('1.0.0', { source: REL.SOURCE_RELEASE, version: '1.0.0' });
+  REL.activate(l, '1.0.0');
+  const install = UPD.installKind({ compiled: true, execPath: REL.currentBinary(l) });
+  const srv = await releaseServer();
+  try {
+    let stolen = false;
+    const steal = original => (...args) => {
+      if (!stolen && fs.existsSync(l.lock)) {
+        stolen = true;
+        fs.writeFileSync(l.lock, JSON.stringify({ pid: process.pid, host: os.hostname(), started: Date.now(), command: 'dev deploy', token: 'f'.repeat(32), phase: 'preparing' }));
+      }
+      return original(...args);
+    };
+    const out = await withPatched(REL, 'currentName', steal, () => UPD.checkAndRecord({ home, version: '1.0.0', api: `${srv.base}/repos/x`, install, platform: PLATFORM, arch: ARCH, probe: async () => ({ ok: true, version: '9.9.9' }) }));
+    assert.ok(stolen, 'the lock was taken over inside the locked window');
+    assert.equal(out.status, 'failed', out.message);
+    assert.equal(REL.currentName(l), '1.0.0');
+    assert.equal(REL.hasRelease(l, '9.9.9'), false);
+  } finally { await srv.close(); fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('a skip written while the download ran (a rollback meanwhile) is honored under the lock, in both layouts', async () => {
+  const t = setup('skiplate');
+  const srv = await releaseServer();
+  try {
+    const probe = async file => { if (file !== t.binary) UPD.skipVersion(t.home, '9.9.9', 'dev rollback meanwhile'); return { ok: true, version: file === t.binary ? '1.0.0' : '9.9.9' }; };
+    const out = await UPD.checkAndRecord(opts(t, srv, { probe }));
+    assert.equal(out.status, 'skipped', out.message);
+    assert.match(out.message, /9\.9\.9 is skipped/);
+    untouched(t);
+  } finally { await srv.close(); fs.rmSync(t.dir, { recursive: true, force: true }); }
+  if (!POSIX) return;
+  const { root, l, add } = releasesRoot('skiplate-rel');
+  add('1.0.0', { source: REL.SOURCE_RELEASE, version: '1.0.0' });
+  REL.activate(l, '1.0.0');
+  const install = UPD.installKind({ compiled: true, execPath: REL.currentBinary(l) });
+  const srv2 = await releaseServer();
+  try {
+    const probe = async () => { UPD.skipVersion(l.base, '9.9.9', 'dev rollback meanwhile'); return { ok: true, version: '9.9.9' }; };
+    const out = await UPD.checkAndRecord({ home: l.base, version: '1.0.0', api: `${srv2.base}/repos/x`, install, platform: PLATFORM, arch: ARCH, probe });
+    assert.equal(out.status, 'skipped', out.message);
+    assert.equal(REL.currentName(l), '1.0.0');
+    assert.equal(REL.hasRelease(l, '9.9.9'), false);
+  } finally { await srv2.close(); fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('plain binary: the swap takes a lock next to the binary and checks the installed version again, so it never puts an older binary over a newer one', async () => {
+  const t = setup('plainlock');
+  const srv = await releaseServer();
+  try {
+    const probe = async file => ({ ok: true, version: file === t.binary ? '10.0.0' : '9.9.9' });
+    const out = await UPD.checkAndRecord(opts(t, srv, { probe }));
+    assert.equal(out.status, 'skipped', out.message);
+    assert.match(out.message, /10\.0\.0/);
+    untouched(t);
+    const other = REL.acquireLock(UPD.binaryLockFile(t.binary), { command: 'claude-wow update to 9.9.9', pid: process.pid });
+    try {
+      const busy = await UPD.checkAndRecord(opts(t, srv));
+      assert.equal(busy.status, 'failed', busy.message);
+      assert.match(busy.message, /holds/);
+      assert.deepEqual(fs.readFileSync(t.binary), OLD, 'a second update while one holds the lock replaces nothing');
+    } finally { other.release(); }
+    const ok = await UPD.checkAndRecord(opts(t, srv));
+    assert.equal(ok.status, 'updated', ok.message);
+    assert.equal(fs.existsSync(UPD.binaryLockFile(t.binary)), false, 'the lock is released');
+  } finally { await srv.close(); fs.rmSync(t.dir, { recursive: true, force: true }); }
 });
 
 test('releases layout: a prune error after the switch is reported in the outcome, the update still counts', { skip: !POSIX }, async () => {

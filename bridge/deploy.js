@@ -346,6 +346,7 @@ async function rollback(opts, ctx) {
     lock.assertHeld();
     const flip = REL.rollback(l);
     if (flip.previous) UPD.skipRelease(l, flip.previous, `dev rollback from releases/${flip.previous}`);
+    UPD.clearPendingRestart(l.base, `dev rollback to releases/${flip.name}`);
     return afterSwitch(l, ctx, flip);
   } finally {
     stopListening();

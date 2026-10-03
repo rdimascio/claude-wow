@@ -3,6 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
+const { spawn } = require('child_process');
 const SB = require('../../dev/sandbox');
 const { encodePng, luaQuote } = require('../../dev/wow/client');
 const { makeRoot, gameRunner } = require('./helpers');
@@ -115,6 +116,71 @@ test('game-state telemetry that keeps coming does not hold the restart back: onl
     const restartStamp = Date.parse(/\[(\S+)\] self-update: restarting on 99\.0\.0/.exec(h.bridge.output.slice(from))[1]);
     assert.ok(gsStamps.length >= 1, 'the gs frames reached the bridge');
     assert.ok(restartStamp - gsStamps[gsStamps.length - 1] < 6000, `a gs record came in less than the 6 s quiet time before the restart (${restartStamp - gsStamps[gsStamps.length - 1]} ms), so it did not count as activity`);
+  });
+});
+
+function fakeLiveSession(sb, name) {
+  const script = path.join(sb.dir, 'fake-session.js');
+  fs.writeFileSync(SB.assertSafe(script), [
+    "'use strict';",
+    "const { spawn } = require('child_process');",
+    `const child = spawn(process.execPath, [${JSON.stringify(path.join(__dirname, '..', '..', 'bridge', 'channel.js'))}], { env: process.env, stdio: ['pipe', 'pipe', 'inherit'] });`,
+    'process.stdin.pipe(child.stdin);',
+    'child.stdout.pipe(process.stdout);',
+    "child.on('exit', code => process.exit(code || 0));",
+  ].join('\n'));
+  const proc = spawn(process.execPath, [script, '--dangerously-load-development-channels', 'server:claude-wow'], {
+    env: { ...sb.env, CLAUDE_WOW_LIVE_NAME: name },
+    stdio: ['pipe', 'pipe', 'inherit'],
+  });
+  const lines = [];
+  let buf = '';
+  proc.stdout.on('data', chunk => {
+    buf += chunk;
+    let nl;
+    while ((nl = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, nl);
+      buf = buf.slice(nl + 1);
+      try { lines.push(JSON.parse(line)); } catch {}
+    }
+  });
+  const send = msg => proc.stdin.write(JSON.stringify({ jsonrpc: '2.0', ...msg }) + '\n');
+  return { proc, lines, send };
+}
+
+test('a late reply from a live session counts as activity: the update restart waits the quiet time after it', { skip: process.platform === 'win32' }, async () => {
+  const beforeLaunch = sb => {
+    const cfg = JSON.parse(fs.readFileSync(sb.config, 'utf8'));
+    cfg.autoUpdateIdleSeconds = 6;
+    cfg.plugins = { ...cfg.plugins, live: { ...(cfg.plugins && cfg.plugins.live), pickupMs: 1000, pickupPollMs: 500 } };
+    fs.writeFileSync(SB.assertSafe(sb.config), JSON.stringify(cfg, null, 2) + '\n');
+  };
+  await withGame({ supervised: true, beforeLaunch }, async h => {
+    await h.client.connect();
+    await h.bridge.waitForLine(/hello from session/, { from: 0 });
+    const session = fakeLiveSession(h.sb, 'late-e2e');
+    try {
+      session.send({ id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'e2e', version: '0' } } });
+      session.send({ method: 'notifications/initialized' });
+      session.send({ id: 2, method: 'tools/list' });
+      await h.bridge.waitForLine(/session "late-e2e" connected.*, listening/, { timeoutMs: 30000 });
+      h.client.slash('/claude config plugin live');
+      h.client.send('are you there');
+      const note = await h.client.waitFor(() => session.lines.find(m => m.method === 'notifications/claude/channel'), { timeoutMs: 30000, label: 'the channel notification' });
+      const chatId = /chat_id "([^"]+)"/.exec(note.params.content)[1];
+      await h.bridge.waitForLine(/"late-e2e" showed no sign of it within 1000 ms/, { timeoutMs: 30000 });
+      const lastFinish = () => Math.max(0, ...[...h.bridge.output.matchAll(/\[(\S+)\] #\d+@\S+ (?:done|error) \(/g)].map(m => Date.parse(m[1])));
+      await h.client.waitFor(() => Date.now() - lastFinish() >= 7500, { timeoutMs: 40000, everyMs: 250, label: 'the bridge to be quiet for longer than the idle time' });
+      session.send({ id: 3, method: 'tools/call', params: { name: 'wow_reply', arguments: { chat_id: chatId, text: 'Sorry, I was busy.' } } });
+      await h.bridge.waitForLine(/late reply delivered/, { timeoutMs: 15000 });
+      UPD.writeRecord(h.sb.home, { pendingRestart: true, version: '99.0.0', from: VERSION, attemptAt: Date.now(), ok: true, status: 'updated', message: 'test' });
+      await h.bridge.waitForLine(/self-update: restarting on 99\.0\.0/, { timeoutMs: 40000 });
+      const stamp = re => Date.parse((new RegExp(`\\[(\\S+)\\] ${re.source}`).exec(h.bridge.output) || [])[1]);
+      const gap = stamp(/self-update: restarting on 99\.0\.0/) - stamp(/\S+ late reply delivered/);
+      assert.ok(gap >= 5900, `the restart waited the quiet time after the late reply (it came ${gap} ms after)`);
+    } finally {
+      session.proc.kill();
+    }
   });
 });
 

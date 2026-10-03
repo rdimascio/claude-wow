@@ -1318,6 +1318,7 @@ function checkedReply(job, reply) {
 }
 
 function lateReply(job, raw) {
+  lastActivityAt = Date.now();
   const { text, summary } = checkedReply(job, P.splitSummary(String(raw || '')));
   noteMessage(job, 'assistant', text);
   publish(`${chatKey(job)}#late`, { chat: job.chat, id: job.id, status: 'done', late: true, text, summary, cwd: job.cwd, agent: job.agent || '', plugin: job.plugin || '' }, true);

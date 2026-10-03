@@ -283,22 +283,59 @@ function supersededBy(l, version) {
   return '';
 }
 
-async function swapIn(install, tmp, version, sum, platform = process.platform, activate = REL.installAndActivate) {
+function skippedNow(home, version, explicit) {
+  if (explicit || !home) return '';
+  const skip = readSkip(home);
+  if (!skip || compareSemver(version, skip.version) > 0) return '';
+  return `${skip.version} is skipped${skip.reason ? ` (${skip.reason})` : ''}; a newer release or claude-wow update installs again`;
+}
+
+function binaryLockFile(binary) {
+  return path.join(path.dirname(binary), `.${path.basename(binary)}.update.lock`);
+}
+
+async function installedSupersedes(binary, version, probe) {
+  let ran;
+  try { ran = await probe(binary); } catch { return ''; }
+  if (!ran || !ran.ok) return '';
+  const order = compareSemver(ran.version, version);
+  return order !== null && order >= 0 ? `${binary} is already ${ran.version}, as new as ${version} or newer` : '';
+}
+
+async function swapIn(install, tmp, version, sum, ctx = {}) {
+  const { platform = process.platform, activate = REL.installAndActivate, home = '', explicit = false, probe = probeBinary } = ctx;
+  const command = `claude-wow update to ${version}`;
   if (install.kind === 'releases') {
     const l = install.layout;
-    const lock = REL.acquireLock(l.lock, { command: `claude-wow update to ${version}` });
+    const lock = REL.acquireLock(l.lock, { command });
     let result;
     try {
-      const superseded = supersededBy(l, version);
+      const superseded = skippedNow(home, version, explicit) || supersededBy(l, version);
       if (superseded) return { binary: '', superseded };
+      lock.assertHeld();
       result = await activate(l, { name: version, binaryFile: tmp, meta: { source: REL.SOURCE_SELF_UPDATE, version, sha256: sum } });
     } finally {
       lock.release();
     }
     return { binary: REL.currentBinary(l), pruneError: (result && result.pruneError) || '' };
   }
-  replaceFile(tmp, install.binary, platform);
+  const lock = REL.acquireLock(binaryLockFile(install.binary), { command });
+  try {
+    const superseded = skippedNow(home, version, explicit) || await installedSupersedes(install.binary, version, probe);
+    if (superseded) return { binary: '', superseded };
+    lock.assertHeld();
+    replaceFile(tmp, install.binary, platform);
+  } finally {
+    lock.release();
+  }
   return { binary: install.binary, pruneError: '' };
+}
+
+function clearPendingRestart(home, reason) {
+  const rec = readRecord(home);
+  if (!rec.pendingRestart) return false;
+  writeRecord(home, { pendingRestart: false, message: `the restart onto ${rec.version || 'the update'} was called off: ${reason}` });
+  return true;
 }
 
 function pruneStaleDownloads(dir, { alive = REL.pidAlive, now = Date.now, maxAgeMs = STALE_DOWNLOAD_MS } = {}) {
@@ -422,7 +459,7 @@ async function runUpdate(opts = {}) {
     const ran = await probe(tmp);
     if (!ran.ok) return failed(`the downloaded ${asset} does not run (${ran.why}); nothing was replaced`);
     if (compareSemver(ran.version, latest) !== 0) return failed(`the downloaded ${asset} says it is ${ran.version}, not ${latest}; nothing was replaced`);
-    const swapped = await swapIn(install, tmp, latest, want, platform, activate);
+    const swapped = await swapIn(install, tmp, latest, want, { platform, activate, home, explicit, probe });
     if (swapped.superseded) return { status: 'skipped', current, latest, message: `not installing ${latest}: ${swapped.superseded}` };
     if (explicit) clearSkip(home);
     const pruneNote = swapped.pruneError ? `; old releases were not pruned (${swapped.pruneError})` : '';
@@ -613,7 +650,7 @@ async function main(argv = [], deps = {}) {
 module.exports = {
   DEFAULT_API, RECORD_FILE, SUMS_ASSET, LIMITS, UPDATE_EXIT_CODE, RESTART_TICK_MS, CHECK_TICK_MS, FIRST_CHECK_DELAY_MS,
   DEFAULT_IDLE_SECONDS, MIN_QUIET_MS, DAY_MS, HOUR_MS, HELP, SKIP_FILE, STALE_DOWNLOAD_MS,
-  readSkip, skipVersion, clearSkip, skipRelease, pruneStaleDownloads, supersededBy, releaseVersion,
+  readSkip, skipVersion, clearSkip, skipRelease, clearPendingRestart, binaryLockFile, pruneStaleDownloads, supersededBy, releaseVersion,
   apiBase, parseSemver, normalizeVersion, compareSemver, assetName, installKind, launchPath, releasesLayout,
   get, latestRelease, parseSums, downloadTo, probeBinary, swapIn, replaceFile, cleanupAside, unpublishedRelease,
   recordFile, readRecord, writeRecord, effectiveVersion, runUpdate, checkAndRecord, checkDue, idleMsFrom,

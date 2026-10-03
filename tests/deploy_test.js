@@ -184,7 +184,10 @@ test('rollback away from a published release writes the self-update skip for its
   REL.activate(h.l, '1.0.0');
   REL.activate(h.l, '2.0.0');
   assert.equal(UPD.readSkip(h.l.base), null);
+  UPD.writeRecord(h.l.base, { pendingRestart: true, version: '2.0.0', from: '1.0.0', attemptAt: 1, ok: true });
   assert.equal(await D.main(['rollback'], h.ctx), 0, h.err.join('\n'));
+  assert.equal(UPD.readRecord(h.l.base).pendingRestart, false, 'the update restart that was waiting for 2.0.0 is called off');
+  assert.match(UPD.readRecord(h.l.base).message, /dev rollback/);
   assert.equal(REL.currentName(h.l), '1.0.0');
   const skip = UPD.readSkip(h.l.base);
   assert.equal(skip && skip.version, '2.0.0');
