@@ -83,6 +83,7 @@ Claude checks game IDs (items, quests, zones, flight paths, skill lines) against
 |---|---|---|
 | World of Warcraft: Forever (`1.60.*`) | `claude-wow data sync` | `~/.claude-wow/data/forever/` |
 | World of Warcraft Classic, Classic Era (`1.15.*`) | `claude-wow data sync --flavor classic_era` | `~/.claude-wow/data/classic_era/` |
+| Classic Era NPCs and quest givers (community data, after the line above) | `claude-wow data sync --flavor classic_era --source community` | `~/.claude-wow/data/classic_era/community/` |
 
 The bridge reads the client build the game reports and uses only the data of that game. With no data for it, the bridge refuses ID tokens in orders, goals and campaigns, and `ask` runs go without the `wowdata` tools; the bridge log names the command to run. No restart is needed after a sync. Details in [CONFIGURATION.md](CONFIGURATION.md#game-data).
 
