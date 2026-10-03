@@ -4,9 +4,11 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { EventEmitter } = require('events');
 const D = require('../bridge/deploy');
 const REL = require('../bridge/releases');
 const S = require('../bridge/service');
+const UPD = require('../bridge/selfupdate');
 
 const NO_SYMLINKS = process.platform === 'win32';
 const UID = 501;
@@ -63,6 +65,8 @@ function harness(root, { runsCurrent = true, platform = 'darwin', probe, setupOu
   let clock = 0;
   const ctx = {
     base, platform, uid: UID, definitionFile, tmpRoot: root,
+    signals: new EventEmitter(),
+    exit: code => { throw new Error(`the test reached process.exit(${code})`); },
     now: () => clock, sleep: async ms => { clock += ms; }, pollMs: 1000, settleMs: 0,
     out: line => out.push(line), err: line => err.push(line),
     probe: probe ? () => { const s = probe(); events.push(['probe', s.idle, REL.currentName(l), (REL.readLock(l.lock) || {}).phase]); return s; } : () => ({ idle: true, reason: 'idle' }),
@@ -75,7 +79,7 @@ function harness(root, { runsCurrent = true, platform = 'darwin', probe, setupOu
     },
     service: fakeService(platform, (cmd, args) => {
       assert.ok(cmd === 'launchctl' || cmd === 'systemctl', `the service backend ran ${cmd}`);
-      if (cmd === 'launchctl' && args[0] === 'print') return { ok: loaded && !failRestart, status: loaded ? 0 : 113, out: '' };
+      if (cmd === 'launchctl' && args[0] === 'print') return { ok: loaded, status: loaded ? 0 : 113, out: '' };
       events.push([cmd, ...args]);
       if (failRestart) return { ok: false, status: 1, out: 'Could not find service' };
       return { ok: true, status: 0, out: '' };
@@ -155,6 +159,7 @@ test('rollback goes back to the release before the last deploy and kickstarts; a
   assert.equal(REL.previousName(r.l), second);
   assert.deepEqual(r.events[0], KICKSTART);
   assert.ok(!fs.existsSync(r.l.lock));
+  assert.equal(UPD.readSkip(r.l.base), null, 'rolling away from a dev deploy skips no release version');
 
   const s = harness(root, { probe: () => ({ idle: false, reason: '1 agent run(s) in flight (#2)' }) });
   assert.equal(await D.main(['status'], s.ctx), 0);
@@ -164,6 +169,27 @@ test('rollback goes back to the release before the last deploy and kickstarts; a
   assert.match(text, new RegExp(`release  : ${first}  \\(current\\)`));
   assert.match(text, /service  : runs .*current.claude-wow/);
   assert.match(text, /bridge   : busy \(1 agent run\(s\) in flight \(#2\)\)/);
+});
+
+test('rollback away from a published release writes the self-update skip for its version, so the daily check does not reinstall it', { skip: NO_SYMLINKS }, async () => {
+  const root = scratch('rollskip');
+  const h = harness(root);
+  const add = (name, version) => {
+    const file = path.join(root, `bin-${name}`);
+    fs.writeFileSync(file, `binary ${name}`);
+    REL.installRelease(h.l, { name, binaryFile: file, meta: { source: REL.SOURCE_SELF_UPDATE, version } });
+  };
+  add('1.0.0', '1.0.0');
+  add('2.0.0', '2.0.0');
+  REL.activate(h.l, '1.0.0');
+  REL.activate(h.l, '2.0.0');
+  assert.equal(UPD.readSkip(h.l.base), null);
+  assert.equal(await D.main(['rollback'], h.ctx), 0, h.err.join('\n'));
+  assert.equal(REL.currentName(h.l), '1.0.0');
+  const skip = UPD.readSkip(h.l.base);
+  assert.equal(skip && skip.version, '2.0.0');
+  assert.match(skip.reason, /dev rollback from releases\/2\.0\.0/);
+  assert.deepEqual(h.events[0], KICKSTART, 'the restart went through the fake service');
 });
 
 test('before the migration the service does not run current: the release is staged and current flipped, but nothing restarts and setup does not run', { skip: NO_SYMLINKS }, async () => {
@@ -241,10 +267,103 @@ test('deploy of a worktree folder builds it in place under a -dirty-<time> name 
 test('a failed restart is an error that names how to restart, and setup is not run against a bridge that did not restart', { skip: NO_SYMLINKS }, async () => {
   const root = scratch('restart-fails');
   const repo = makeRepo(root);
-  const h = harness(root, { failRestart: true });
+  const h = harness(root, { failRestart: true, loaded: false });
   assert.equal(await D.main(['deploy', 'HEAD', '--repo', repo], h.ctx), 1);
   assert.match(h.err.join('\n'), /did not restart: launchctl could not start the service: Could not find service/);
   assert.deepEqual(h.events.map(e => e.slice(0, 2)), [['launchctl', 'bootstrap'], ['launchctl', 'load']], 'an agent that is not loaded is bootstrapped, never kickstarted');
+});
+
+test('a loaded agent whose kickstart -k fails: the deploy fails with the launchctl output and setup is not run', { skip: NO_SYMLINKS }, async () => {
+  const root = scratch('kickstart-fails');
+  const repo = makeRepo(root);
+  const h = harness(root, { failRestart: true, loaded: true });
+  assert.equal(await D.main(['deploy', 'HEAD', '--repo', repo], h.ctx), 1);
+  assert.match(h.err.join('\n'), /did not restart: launchctl could not restart the service: Could not find service/);
+  assert.match(h.err.join('\n'), /current points at 0\.5\.0-[0-9a-f]{12}; restart it with: claude-wow service restart/);
+  assert.deepEqual(h.events, [KICKSTART], 'kickstart -k was tried once, no bootstrap, no setup');
+  assert.ok(!fs.existsSync(h.l.lock));
+});
+
+test('a deploy or rollback whose lock was taken over while it waited switches nothing', { skip: NO_SYMLINKS }, async () => {
+  const root = scratch('lock-lost');
+  const repo = makeRepo(root);
+  assert.equal(await D.main(['deploy', 'HEAD', '--repo', repo], harness(root).ctx), 0);
+  const first = REL.currentName(REL.layout(path.join(root, 'home')));
+  commit(repo, 'two');
+  let l;
+  const stealUnderSwitching = () => {
+    const lock = REL.readLock(l.lock);
+    if (lock && lock.phase === REL.SWITCHING && lock.token !== 'thief') fs.writeFileSync(l.lock, JSON.stringify({ ...lock, pid: process.pid, token: 'thief' }));
+    return { idle: true, reason: 'idle' };
+  };
+  const h = harness(root, { probe: stealUnderSwitching });
+  l = h.l;
+  assert.equal(await D.main(['deploy', 'HEAD', '--repo', repo], h.ctx), 1);
+  assert.match(h.err.join('\n'), /no longer held by this process .*nothing was switched/);
+  assert.equal(REL.currentName(l), first, 'current did not move');
+  assert.deepEqual(h.events.filter(e => e[0] !== 'probe'), [], 'no restart, no setup');
+  assert.equal(REL.readLock(l.lock).token, 'thief', 'the other holder keeps its lock');
+  fs.unlinkSync(l.lock);
+
+  assert.equal(await D.main(['deploy', 'HEAD', '--repo', repo], harness(root).ctx), 0);
+  const second = REL.currentName(l);
+  assert.notEqual(second, first);
+  const r = harness(root, { probe: stealUnderSwitching });
+  assert.equal(await D.main(['rollback'], r.ctx), 1);
+  assert.match(r.err.join('\n'), /no longer held by this process/);
+  assert.equal(REL.currentName(l), second, 'the rollback did not move current');
+  assert.deepEqual(r.events.filter(e => e[0] !== 'probe'), []);
+  fs.unlinkSync(l.lock);
+
+  const quiet = harness(root, { runsCurrent: false });
+  quiet.ctx.build = (src, outDir) => {
+    fs.writeFileSync(l.lock, JSON.stringify({ ...REL.readLock(l.lock), token: 'thief' }));
+    const file = path.join(outDir, 'claude-wow-darwin-arm64');
+    fs.writeFileSync(file, 'three');
+    return file;
+  };
+  commit(repo, 'three');
+  assert.equal(await D.main(['deploy', 'HEAD', '--repo', repo], quiet.ctx), 1, 'no idle wait before the migration, and still no switch without the lock');
+  assert.equal(REL.currentName(l), second);
+  fs.unlinkSync(l.lock);
+});
+
+test('Ctrl+C or SIGTERM during a deploy removes the temporary worktree and build folder and releases the lock; during a rollback it releases the lock', { skip: NO_SYMLINKS }, async () => {
+  const root = scratch('signal');
+  const repo = makeRepo(root);
+  const h = harness(root);
+  const exits = [];
+  h.ctx.exit = code => {
+    exits.push({ code, lock: fs.existsSync(h.l.lock), worktrees: worktrees(repo), temp: fs.readdirSync(root).filter(f => f.startsWith('claude-wow-')).length });
+    throw new Error('exited');
+  };
+  h.ctx.build = (src) => {
+    assert.ok(fs.existsSync(src), 'the temporary worktree is there during the build');
+    assert.equal(worktrees(repo), 2);
+    assert.ok(fs.existsSync(h.l.lock));
+    h.ctx.signals.emit('SIGINT');
+    throw new Error('the build was interrupted');
+  };
+  assert.equal(await D.main(['deploy', 'HEAD', '--repo', repo], h.ctx), 1);
+  assert.deepEqual(exits, [{ code: 130, lock: false, worktrees: 1, temp: 0 }], 'everything is cleaned up before the process exits');
+  assert.match(h.err.join('\n'), /stopped by SIGINT; removed the temporary build folders and released the deploy lock/);
+  assert.ok(!fs.existsSync(h.l.lock), 'the lock is released');
+  assert.equal(worktrees(repo), 1, 'the temporary worktree is removed');
+  assert.deepEqual(fs.readdirSync(root).filter(f => f.startsWith('claude-wow-')), [], 'no temporary build or source folder is left');
+  assert.equal(h.ctx.signals.listenerCount('SIGINT') + h.ctx.signals.listenerCount('SIGTERM'), 0, 'the handlers go with the deploy');
+
+  assert.equal(await D.main(['deploy', 'HEAD', '--repo', repo], harness(root).ctx), 0);
+  commit(repo, 'two');
+  assert.equal(await D.main(['deploy', 'HEAD', '--repo', repo], harness(root).ctx), 0);
+  const r = harness(root, { probe: () => { r.ctx.signals.emit('SIGTERM'); return { idle: true, reason: 'idle' }; } });
+  const rollbackExits = [];
+  r.ctx.exit = code => { rollbackExits.push({ code, lock: fs.existsSync(r.l.lock) }); throw new Error('exited'); };
+  const before = REL.currentName(r.l);
+  assert.equal(await D.main(['rollback'], r.ctx), 1);
+  assert.deepEqual(rollbackExits, [{ code: 143, lock: false }]);
+  assert.ok(!fs.existsSync(r.l.lock), 'the rollback lock is released');
+  assert.equal(REL.currentName(r.l), before);
+  assert.deepEqual(r.events.filter(e => e[0] !== 'probe'), [], 'no restart');
 });
 
 test('the restart goes through the service backend: a loaded agent is kickstarted, an unloaded one (after service stop) is bootstrapped', { skip: NO_SYMLINKS }, async () => {

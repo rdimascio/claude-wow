@@ -408,8 +408,9 @@ test('releases layout: a release with no release.json, or a published one while 
   const bare = path.join(l.releases, '1.0.0');
   fs.mkdirSync(bare, { recursive: true });
   fs.writeFileSync(path.join(bare, REL.BINARY), OLD, { mode: 0o755 });
-  REL.pointCurrentAt(l, '1.0.0');
+  fs.symlinkSync(path.join(REL.RELEASES_DIR, '1.0.0'), l.current);
   assert.equal(UPD.installKind({ compiled: true, execPath: REL.currentBinary(l) }).kind, 'dev', 'no release.json');
+  fs.rmSync(l.current);
   const published = add('2.0.0', { source: REL.SOURCE_RELEASE });
   add('2.0.0-abc123def456', { source: REL.SOURCE_DEV_DEPLOY });
   REL.activate(l, '2.0.0-abc123def456');

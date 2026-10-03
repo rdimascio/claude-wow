@@ -9,6 +9,7 @@ const R = require('./runtime');
 const REL = require('./releases');
 const I = require('./idle');
 const SVC = require('./service');
+const UPD = require('./selfupdate');
 
 const DEFAULT_REF = 'origin/main';
 const SUPPORTED_PLATFORMS = ['darwin', 'linux'];
@@ -260,11 +261,42 @@ function reportPrune(ctx, result) {
   if (result.pruneError) ctx.err(`claude-wow dev: old releases were not pruned (${result.pruneError}); the deploy itself is done`);
 }
 
+const SIGNAL_EXIT_CODES = { SIGINT: 130, SIGTERM: 143 };
+
+function cleanupOnce(steps) {
+  let done = false;
+  return () => {
+    if (done) return;
+    done = true;
+    for (const step of steps) {
+      try { step(); } catch {}
+    }
+  };
+}
+
+function cleanupOnSignal(ctx, cleanup) {
+  const signals = ctx.signals || process;
+  const exit = ctx.exit || (code => process.exit(code));
+  const handlers = Object.keys(SIGNAL_EXIT_CODES).map(sig => [sig, () => {
+    cleanup();
+    ctx.err(`claude-wow dev: stopped by ${sig}; removed the temporary build folders and released the deploy lock`);
+    exit(SIGNAL_EXIT_CODES[sig]);
+  }]);
+  for (const [sig, handler] of handlers) signals.on(sig, handler);
+  return () => { for (const [sig, handler] of handlers) signals.removeListener(sig, handler); };
+}
+
 async function deploy(opts, ctx) {
   const l = REL.layout(ctx.base);
   const lock = lockFor(l, ctx, 'dev deploy');
   let source = null;
   let outDir = '';
+  const cleanup = cleanupOnce([
+    () => { if (outDir) fs.rmSync(outDir, { recursive: true, force: true }); },
+    () => { if (source) source.cleanup(); },
+    () => lock.release(),
+  ]);
+  const stopListening = cleanupOnSignal(ctx, cleanup);
   try {
     source = resolveSource(opts.target, { ...ctx, repo: opts.repo });
     ctx.out(`source  : ${source.from} at ${source.sha.slice(0, 12)}${source.dirty ? ' (uncommitted changes)' : ''}`);
@@ -283,7 +315,10 @@ async function deploy(opts, ctx) {
     const meta = { source: REL.SOURCE_DEV_DEPLOY, sha: source.sha, version: source.version, from: source.from, dirty: source.dirty };
     const waiter = serviceRunsCurrent(l, ctx) ? switchWaiter(l, ctx, lock, opts.timeoutMs) : null;
     const result = await REL.installAndActivate(l, { name: source.name, binaryFile, meta, keep: opts.keep, now: ctx.now, alive: ctx.alive }, {
-      waitIdle: waiter,
+      waitIdle: async () => {
+        if (waiter) await waiter();
+        lock.assertHeld();
+      },
       afterFlip: flip => {
         ctx.out(`release : ${REL.releaseDir(l, flip.name)}${binaryFile ? ' (new)' : ''}`);
         return afterSwitch(l, ctx, flip);
@@ -292,24 +327,29 @@ async function deploy(opts, ctx) {
     reportPrune(ctx, result);
     return result.outcome;
   } finally {
-    if (outDir) fs.rmSync(outDir, { recursive: true, force: true });
-    if (source) source.cleanup();
-    lock.release();
+    stopListening();
+    cleanup();
   }
 }
 
 async function rollback(opts, ctx) {
   const l = REL.layout(ctx.base);
   const lock = lockFor(l, ctx, 'dev rollback');
+  const cleanup = cleanupOnce([() => lock.release()]);
+  const stopListening = cleanupOnSignal(ctx, cleanup);
   try {
     const prev = REL.previousName(l);
     if (!prev) throw new Error(`no previous release is recorded in ${l.previous}`);
     if (!REL.hasRelease(l, prev)) throw new Error(`the previous release ${prev} is gone from ${l.releases}`);
     if (REL.currentName(l) === prev) throw new Error(`the previous release ${prev} is already current`);
     if (serviceRunsCurrent(l, ctx)) await switchWaiter(l, ctx, lock, opts.timeoutMs)();
-    return afterSwitch(l, ctx, REL.rollback(l));
+    lock.assertHeld();
+    const flip = REL.rollback(l);
+    if (flip.previous) UPD.skipRelease(l, flip.previous, `dev rollback from releases/${flip.previous}`);
+    return afterSwitch(l, ctx, flip);
   } finally {
-    lock.release();
+    stopListening();
+    cleanup();
   }
 }
 

@@ -62,6 +62,8 @@ test('an installed update waits for the run in flight, then the supervisor resta
     await h.bridge.waitForLine(/bridge stopped for an update; starting /, { from: 0 });
     await h.bridge.waitForLine(/self-update: restarted for 99\.0\.0, but this is still/, { timeoutMs: 30000, from: 0 });
     await h.bridge.waitForLine(/screenshot transport: watching[\s\S]*screenshot transport: watching/, { timeoutMs: 30000, from: 0 });
+    assert.match(h.bridge.output.slice(restarting.index), /republishing \d+ finished repl(y|ies) from before the restart/, 'the restarted bridge publishes the last reply again, in case the game had not read it');
+    assert.ok(Object.values(h.state().replies || {}).some(e => e.record && e.record.id === r.id), 'the reply is kept in state.json across the update restart');
     await new Promise(res => setTimeout(res, UPD.RESTART_TICK_MS + 2000));
     assert.equal(count(h.bridge.output, /self-update: restarting on/), 1, 'exactly one restart');
     assert.equal(count(h.bridge.output, /bridge exited \(/), 0, 'the supervisor did not treat it as a crash');
