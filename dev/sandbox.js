@@ -11,6 +11,8 @@ const REPO = path.resolve(__dirname, '..');
 const DEFAULT_ROOT = path.join(REPO, '.dev', 'sandboxes');
 const ACCOUNT = 'DEV#1';
 const CLIENT_INTERFACE = '16001';
+const PRIMARY_FLAVOR = '_classic_beta_';
+const FLAVOR_RE = /^_[a-z_]+_$/;
 
 const LIVE_PLIST = 'io.claudewow.bridge.plist';
 
@@ -71,16 +73,25 @@ function sandboxDir(root, name) {
   return assertSafe(dir);
 }
 
-function layout(dir) {
-  const client = path.join(dir, 'client', '_classic_beta_');
+function clientLayout(dir, flavor) {
+  const client = path.join(dir, 'client', flavor);
   const addons = path.join(client, 'Interface', 'AddOns');
   return {
-    dir,
+    flavor,
     client,
     addons,
     screenshots: path.join(client, 'Screenshots'),
     savedDir: path.join(client, 'WTF', 'Account', ACCOUNT, 'SavedVariables'),
     saved: path.join(client, 'WTF', 'Account', ACCOUNT, 'SavedVariables', 'ClaudeWoW.lua'),
+  };
+}
+
+function layout(dir, extraClients = []) {
+  const main = clientLayout(dir, PRIMARY_FLAVOR);
+  return {
+    dir,
+    ...main,
+    clients: [main, ...extraClients.map(flavor => clientLayout(dir, flavor))],
     home: path.join(dir, 'home'),
     user: path.join(dir, 'user'),
     project: path.join(dir, 'project'),
@@ -116,6 +127,10 @@ function buildConfig(L, opts = {}) {
     pollMs: opts.pollMs || 250,
     timeoutMs: opts.timeoutMs || cfg.timeoutMs || 1800000,
   });
+  if (L.clients.length > 1) {
+    for (const k of ['addonDir', 'savedVariablesFile', 'inboxFile']) delete cfg[k];
+    cfg.clients = L.clients.map(c => ({ dir: c.client, account: ACCOUNT }));
+  }
   cfg.capture = Object.assign({}, cfg.capture, { enabled: true, mode: 'screenshot', processName: 'World of Warcraft' }, opts.capture || {});
   cfg.plugins = Object.assign({}, cfg.plugins, { default: opts.plugin || 'claude-code', ask: { cwd: path.join(L.dir, 'ask') } });
   const claude = Object.assign({}, cfg.agents.claude, { path: opts.agentPath || path.join(REPO, 'dev', 'fake-claude.js') });
@@ -126,8 +141,12 @@ function buildConfig(L, opts = {}) {
 }
 
 function copyAddon(L) {
+  for (const c of L.clients || [L]) copyAddonTo(c.addons);
+}
+
+function copyAddonTo(addons) {
   const src = path.join(REPO, 'addon', 'ClaudeWoW');
-  const dest = path.join(L.addons, 'ClaudeWoW');
+  const dest = path.join(addons, 'ClaudeWoW');
   fs.mkdirSync(dest, { recursive: true });
   const names = fs.readdirSync(src);
   const build = P.addonBuild(names.map(name => ({ name, data: fs.readFileSync(path.join(src, name)) })));
@@ -160,8 +179,11 @@ function envFor(L, extra = {}) {
 function create(name = 'default', opts = {}) {
   const dir = sandboxDir(opts.root || DEFAULT_ROOT, name);
   if (opts.fresh !== false && fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
-  const L = layout(dir);
-  for (const d of [L.addons, L.screenshots, L.savedDir, L.home, L.user, L.project, L.agentState, L.logs]) fs.mkdirSync(assertSafe(d), { recursive: true });
+  const extra = opts.extraClients || [];
+  for (const flavor of extra) if (!FLAVOR_RE.test(String(flavor)) || flavor === PRIMARY_FLAVOR) throw new Error(`refusing extra client "${flavor}": use a flavor folder name like _classic_era_`);
+  const L = layout(dir, extra);
+  for (const c of L.clients) for (const d of [c.addons, c.screenshots, c.savedDir]) fs.mkdirSync(assertSafe(d), { recursive: true });
+  for (const d of [L.home, L.user, L.project, L.agentState, L.logs]) fs.mkdirSync(assertSafe(d), { recursive: true });
   fs.writeFileSync(path.join(L.project, 'README.md'), '# sandbox project\n');
   const cfg = buildConfig(L, opts);
   fs.writeFileSync(L.config, JSON.stringify(cfg, null, 2) + '\n');
@@ -174,7 +196,8 @@ function create(name = 'default', opts = {}) {
 function open(name = 'default', opts = {}) {
   const dir = sandboxDir(opts.root || DEFAULT_ROOT, name);
   if (!fs.existsSync(path.join(dir, 'sandbox.json'))) throw new Error(`no sandbox at ${dir}; run: npm run dev -- --fresh`);
-  const L = layout(dir);
+  const recorded = JSON.parse(fs.readFileSync(path.join(dir, 'sandbox.json'), 'utf8'));
+  const L = layout(dir, (recorded.opts && recorded.opts.extraClients) || []);
   const cfg = withInertStream(JSON.parse(fs.readFileSync(L.config, 'utf8')));
   fs.writeFileSync(assertSafe(L.config), JSON.stringify(cfg, null, 2) + '\n');
   return { ...L, name, cfg, env: envFor(L, opts.env) };
@@ -195,4 +218,4 @@ function spendSignals(sb, kinds, slots) {
   for (const kind of kinds) for (const s of slots) fs.rmSync(assertSafe(signalFile(sb, kind, s)), { force: true });
 }
 
-module.exports = { REPO, DEFAULT_ROOT, ACCOUNT, CLIENT_INTERFACE, assertSafe, sandboxDir, liveCheckouts, isWithin, forbiddenRoots, layout, buildConfig, create, open, writeConfig, envFor, signalFile, spendSignals };
+module.exports = { REPO, DEFAULT_ROOT, ACCOUNT, CLIENT_INTERFACE, PRIMARY_FLAVOR, assertSafe, sandboxDir, liveCheckouts, isWithin, forbiddenRoots, layout, clientLayout, buildConfig, create, open, writeConfig, envFor, signalFile, spendSignals };

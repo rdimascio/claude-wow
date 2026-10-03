@@ -1,6 +1,5 @@
 'use strict';
 const fs = require('fs');
-const path = require('path');
 
 const TAG = 'CWX1';
 const MAGIC = [0xc7, 0x3a];
@@ -115,11 +114,6 @@ function stripOurLines(file, chunkBytes = STRIP_CHUNK_BYTES) {
   }
 }
 
-function clientFolder(cfg) {
-  const addonDir = String((cfg && cfg.addonDir) || '').replace(/[\\/]+$/, '');
-  return addonDir ? path.dirname(path.dirname(addonDir)) : '';
-}
-
 function clientRunning(folder, { platform = process.platform, listProcesses } = {}) {
   if (platform !== 'darwin' || !folder) return null;
   let commands;
@@ -140,12 +134,6 @@ function cleanWhenClosed(file, folder, opts = {}) {
   const running = clientRunning(folder, opts);
   if (running !== false) return { cleaned: false, why: running === null ? 'cannot tell whether the game is running' : 'the game is running' };
   return Object.assign({ cleaned: true }, stripOurLines(file, opts.chunkBytes));
-}
-
-function chatLogFile(cfg) {
-  const addonDir = String((cfg && cfg.addonDir) || '').replace(/[\\/]+$/, '');
-  if (!addonDir) return '';
-  return path.join(path.dirname(path.dirname(addonDir)), 'Logs', 'WoWChatLog.txt');
 }
 
 function parseLine(line, key) {
@@ -282,4 +270,4 @@ function watchChatLog(file, onFrame, opts = {}) {
   return { close: () => clearInterval(timer), check, resync };
 }
 
-module.exports = { TAG, DEFAULTS, options, ensureKey, chatLogFile, parseLine, decodeFrame, createAssembler, watchChatLog, noteWrite, bufferSize, calibratedFiller, stripOurLines, clientFolder, clientRunning, cleanWhenClosed };
+module.exports = { TAG, DEFAULTS, options, ensureKey, parseLine, decodeFrame, createAssembler, watchChatLog, noteWrite, bufferSize, calibratedFiller, stripOurLines, clientRunning, cleanWhenClosed };
