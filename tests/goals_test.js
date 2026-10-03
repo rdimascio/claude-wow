@@ -300,6 +300,11 @@ test('order tokens: {item:ID}, {skill:ID} and {map:ID,x,y} expand from the fixtu
     assert.equal(r.posts[0].command.orders.order.text, want, 'the overlay gets the expanded names, never a raw token');
     assert.equal((await r.store.call('order_issue', { text: 'Raise Leatherworking to 150' })).ok, true, 'a plain order still works with data synced');
     assert.equal(r.read().orders.current.refs, undefined, 'an order without tokens stores no refs');
+    const faction = await r.store.call('order_issue', { text: 'Help {faction:76}' });
+    assert.equal(faction.ok, true, faction.text);
+    assert.equal(r.read().orders.current.text, 'Help Fixture Brotherhood');
+    assert.deepEqual(r.read().orders.current.refs, [{ kind: 'faction', id: 76, name: 'Fixture Brotherhood', trust: 'client-data', build: FIXTURE_BUILD }]);
+    assert.equal(r.posts.at(-1).command.orders.order.text, 'Help Fixture Brotherhood', 'the overlay gets the faction name');
   } finally { r.cleanup(); }
 });
 
@@ -317,7 +322,7 @@ test('order tokens: unknown IDs, a malformed map token, a kind with no name sour
     await refuse('go to {map:4242,10,10}', /\{map:4242,10,10\}: that map ID/);
     await refuse('go to {map:9003,101,10}', /coordinates run from 0 to 100/);
     await refuse('kill {npc:1} for {quest:2}', /\{npc:1\}: there is no verified source of npc names yet, so leave that name out\. \{quest:2\}: .*quest names/);
-    await refuse('help {faction:3}', /\{faction:3\}: /);
+    await refuse('help {faction:3}', /\{faction:3\}: that faction ID is not in the Forever client data for build 1\.60\.1\.200\./);
     await refuse('buy 2 {item:503}', /\{item:503\}: the name in the data has characters that cannot be shown/);
     await refuse('buy 2 {item:504}', /\{item:504\}: the name in the data has characters that cannot be shown/);
     assert.equal(fs.existsSync(r.file), false, 'nothing was written');

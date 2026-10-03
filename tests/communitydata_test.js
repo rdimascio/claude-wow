@@ -176,6 +176,10 @@ test('data sync --source community is Classic Era only and goes through the CLI'
   const code = await D.main(['sync', '--flavor', 'classic_era', '--source', 'community'], { env: { CLAUDE_WOW_HOME: home }, fetch: fakeGitHub().fetchImpl, out: s => out.push(s), err: s => out.push(s) });
   assert.equal(code, 0, out.join(''));
   assert.match(out.join(''), /8 rows kept, 6 dropped; current community data z2815-[0-9a-f]{7}/);
+  const changed = async url => (url.includes('/QuestV2/') ? new Response('ID,UniqueBitFlag\n111,1\n112,2\n', { status: 200, headers: { 'content-type': 'text/csv', 'content-disposition': `attachment; filename="QuestV2.${new URL(url).searchParams.get('build')}.csv"` } }) : fakeWago(url));
+  const again = [];
+  assert.equal(await D.main(['sync', '--flavor', 'classic_era', '--force'], { env: { CLAUDE_WOW_HOME: home }, fetch: changed, out: s => again.push(s), err: s => again.push(s) }), 0, again.join(''));
+  assert.match(again.join(''), /community data z2815-[0-9a-f]{7} was built with other client data, so its positions are hidden until you run "claude-wow data sync --flavor classic_era --source community"/);
 });
 
 test('wow_npc, wow_quest and wow_sources serve community rows with their own source and trust, and say when there are none', async () => {

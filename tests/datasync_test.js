@@ -153,8 +153,8 @@ test('sync: newest valid build, validated rows, drops counted, uiMap percent coo
     SkillLine: [2, { badName: 1 }],
     SkillLineAbility: [1, { badId: 1 }],
     SpellReagents: [1, { badReagent: 1 }],
-    SpellName: [2, { badName: 1 }],
-    Spell: [3, {}],
+    SpellName: [3, { badName: 1 }],
+    Spell: [2, {}],
     Faction: [2, {}],
   });
   assert.equal(m.rows, 27);
@@ -358,6 +358,37 @@ test('a lock held by someone else is not removed when our sync ends', () => {
   fs.writeFileSync(lockFile, JSON.stringify({ pid: 1, startedAt: FIXED_NOW, token: 'theirs' }));
   mine.release();
   assert.equal(fs.existsSync(lockFile), true);
+});
+
+test('a manifest from before the newer table list makes an already-current build sync again, once', async () => {
+  const dataDir = path.join(scratch('tablesversion'), 'data');
+  const root = path.join(dataDir, 'forever');
+  const first = await syncInto(dataDir, { build: BUILD });
+  const manifestFile = path.join(first.dir, 'manifest.json');
+  const old = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
+  delete old.tablesVersion;
+  for (const t of ['SpellName', 'Spell', 'Faction']) delete old.tables[t];
+  fs.writeFileSync(manifestFile, JSON.stringify(old));
+  const second = await syncInto(dataDir, { build: BUILD });
+  assert.equal(second.status, 'synced');
+  assert.equal(path.basename(second.dir), `${BUILD}-1`);
+  assert.deepEqual(second.manifest.previous.changedTables, ['SpellName', 'Spell', 'Faction']);
+  assert.deepEqual(fs.readdirSync(root).filter(n => !n.startsWith('.')).sort(), [`${BUILD}-1`, 'current']);
+  assert.equal((await syncInto(dataDir, { build: BUILD })).status, 'current');
+});
+
+test('an upgrade sync that cannot fetch a table the current data has changes nothing', async () => {
+  const dataDir = path.join(scratch('keeptable'), 'data');
+  const first = await syncInto(dataDir, { build: BUILD });
+  const manifestFile = path.join(first.dir, 'manifest.json');
+  const old = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
+  delete old.tablesVersion;
+  fs.writeFileSync(manifestFile, JSON.stringify(old));
+  await assert.rejects(syncInto(dataDir, { build: BUILD, wago: fakeWago({ failTable: 'SkillLineAbility' }) }), /SkillLineAbility could not be fetched again .* nothing was changed/);
+  assert.equal(D.readCurrent(path.join(dataDir, 'forever')).dir, first.dir);
+  const fresh = path.join(scratch('newtable'), 'data');
+  const partial = await syncInto(fresh, { build: BUILD, wago: fakeWago({ failTable: 'SkillLineAbility' }) });
+  assert.equal(partial.status, 'synced', 'a table the current data never had can still be missing');
 });
 
 test('a second build in the same family records which tables changed', async () => {

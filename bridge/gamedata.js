@@ -7,6 +7,7 @@ const TRUST = Object.freeze({ clientData: 'client-data', buildUnchecked: 'client
 const BUILD_CHECK = Object.freeze({ exact: 'exact', family: 'family', mismatch: 'build-mismatch', unknown: 'unknown', noData: 'no-data' });
 const ENTITIES = Object.freeze(['items', 'quests', 'zones', 'flightpaths', 'uimaps', 'uimapassignments', 'skilllines', 'skilllineabilities', 'spellreagents', 'spells', 'spellranks', 'factions']);
 const MAX_QUERY_LENGTH = 100;
+const REPLACED_PROBLEM = 'a newer sync replaced this data while it was in use; ask again';
 const CLIENT_BUILD_IN_CONTEXT = /^Game:[^\n]*\(client (\d+\.\d+\.\d+\.\d+)[,)]/m;
 
 function isId(value) {
@@ -76,17 +77,28 @@ function tableReader(dir, manifest, allowed) {
   const missed = new Map();
   const listed = manifest && manifest.entities && typeof manifest.entities === 'object' ? manifest.entities : {};
 
+  let replaced = false;
+
   function load(entity) {
     if (!tables.has(entity)) {
       const info = Object.prototype.hasOwnProperty.call(listed, entity) ? listed[entity] : null;
       tables.set(entity, info && typeof info === 'object' ? readTable(path.join(dir, `${entity}.jsonl`), info.rows) : unavailable('this sync has no such table'));
+      if (tables.get(entity).problem && !fs.existsSync(path.join(dir, 'manifest.json'))) replaced = true;
     }
     return tables.get(entity);
   }
 
   function has(entity) {
     if (!dir || !allowed.includes(entity)) return false;
+    if (replaced) {
+      missed.set('all tables', REPLACED_PROBLEM);
+      return false;
+    }
     const table = load(entity);
+    if (replaced) {
+      missed.set('all tables', REPLACED_PROBLEM);
+      return false;
+    }
     if (table.problem) missed.set(entity, table.problem);
     return !table.problem;
   }
