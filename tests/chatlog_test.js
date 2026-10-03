@@ -556,21 +556,40 @@ test('Linux: in WSL, in a container, or with the folder on a Windows drive the g
 });
 
 const REAL_FOLDER = path.dirname(process.execPath);
-test('macOS, real ps: the folder of the running node binary counts as running', { skip: process.platform !== 'darwin' }, async () => {
-  assert.deepEqual(await CL.clientState(REAL_FOLDER), { running: true, why: 'the game is running' });
+async function whileChildRuns(fn) {
+  const child = require('child_process').spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { stdio: 'ignore' });
+  try {
+    await new Promise((resolve, reject) => { child.once('spawn', resolve); child.once('error', reject); });
+    return await fn();
+  } finally {
+    child.kill();
+  }
+}
+const RUNNING_STATE = { running: true, why: 'the game is running' };
+test('macOS, real ps: a process launched by absolute path from a folder makes that folder count as running', { skip: process.platform !== 'darwin' }, async () => {
+  assert.deepEqual(await whileChildRuns(() => CL.clientState(REAL_FOLDER)), RUNNING_STATE);
 });
-test('Windows, real PowerShell script: the folder of the running node binary counts as running', { skip: process.platform !== 'win32' }, async () => {
-  assert.deepEqual(await CL.clientState(REAL_FOLDER), { running: true, why: 'the game is running' });
+test('Windows, real PowerShell script: a process launched by absolute path from a folder makes that folder count as running', { skip: process.platform !== 'win32' }, async () => {
+  assert.deepEqual(await whileChildRuns(() => CL.clientState(REAL_FOLDER)), RUNNING_STATE);
 });
-test('Linux, real /proc scan: the folder of the running node binary counts as running', { skip: process.platform !== 'linux' }, async (t) => {
-  const state = await CL.clientState(REAL_FOLDER);
+test('Linux, real /proc scan: a process launched by absolute path from a folder makes that folder count as running', { skip: process.platform !== 'linux' }, async (t) => {
+  const state = await whileChildRuns(() => CL.clientState(REAL_FOLDER));
   if (state.running === null && /WSL|container|Windows drive/.test(state.why)) { t.skip(state.why); return; }
-  assert.deepEqual(state, { running: true, why: 'the game is running' });
+  assert.deepEqual(state, RUNNING_STATE);
 });
 
-test('Linux: anything the bridge cannot read about its own processes means it cannot tell', async () => {
-  assert.equal(await linuxRunning({ 1: BASH, 2: { exe: '!EACCES' } }), null, 'unreadable exe');
-  assert.equal(await linuxRunning({ 1: BASH, 2: { exe: PRELOADER, cwd: '!EPERM' } }), null, 'unreadable working folder');
+test('Linux: an own process whose exe or cwd the bridge may not read (not dumpable) is judged by its world-readable command line', async () => {
+  assert.equal(await linuxRunning({ 1: BASH, 2: { exe: '!EACCES', cmdline: ['/usr/bin/ssh-agent', '-D'] } }), false, 'an unrelated process does not block the clean');
+  assert.equal(await linuxRunning({ 1: BASH, 2: { exe: PRELOADER, cwd: '!EPERM', cmdline: ['/usr/bin/gnome-keyring-daemon'] } }), false, 'an unreadable working folder alone does not block it');
+  assert.equal(await linuxRunning({ 1: BASH, 2: { exe: '!EACCES', cmdline: ['C:\\Program Files (x86)\\World of Warcraft\\_classic_era_\\WowClassic.exe'] } }), null, 'a WoW exe in its command line');
+  assert.equal(await linuxRunning({ 1: BASH, 2: { exe: '!EPERM', cmdline: [`${LINUX_FOLDER}/WowClassic`] } }), null, 'the folder in its command line');
+  assert.equal(await linuxRunning({ 1: BASH, 2: { exe: '!EACCES', cmdline: '!EACCES' } }), null, 'and its command line cannot be read either');
+  assert.equal(await linuxRunning({ 1: BASH, 2: { exe: '!EACCES', cmdline: '!ESRCH' } }), false, 'a process that ended before its command line was read');
+});
+
+test('Linux: anything else the bridge cannot read about its own processes means it cannot tell', async () => {
+  assert.equal(await linuxRunning({ 1: BASH, 2: { exe: '!EIO' } }), null, 'unreadable exe');
+  assert.equal(await linuxRunning({ 1: BASH, 2: { exe: PRELOADER, cwd: '!ELOOP' } }), null, 'unreadable working folder');
   assert.equal(await linuxRunning({ 1: BASH, 2: { exe: PRELOADER, cwd: '/', cmdline: '!EIO' } }), null, 'unreadable command line');
   assert.equal(await linuxRunning({ 1: BASH, 2: { stat: '!EACCES' } }), null, 'unreadable stat');
   assert.equal(await linuxRunning({ 1: BASH, 2: { exe: PRELOADER, cwd: '/home/p', cmdline: ['WowClassic.exe'] } }), null, 'a WoW exe the bridge cannot place in a folder');
@@ -613,7 +632,7 @@ test('the chat log is cleaned on Windows and Linux once the game is provably clo
     fill();
     assert.equal((await CL.cleanWhenClosed(file, WIN_FOLDER, { platform: 'win32', fs: noRealpath, run: async () => winList([['Wow.exe', '']]) })).why, 'cannot tell whether the game is running');
     assert.equal((await CL.cleanWhenClosed(file, WIN_FOLDER, { platform: 'win32', fs: noRealpath, run: async () => winList([['WowClassic.exe', `${WIN_FOLDER}/WowClassic.exe`]]) })).why, 'the game is running');
-    assert.equal((await CL.cleanWhenClosed(file, LINUX_FOLDER, { platform: 'linux', uid: ME, fs: procFs({ 2: { exe: '!EACCES' } }) })).why, 'cannot tell whether the game is running');
+    assert.equal((await CL.cleanWhenClosed(file, LINUX_FOLDER, { platform: 'linux', uid: ME, fs: procFs({ 2: { exe: '!EACCES', cmdline: ['Wow.exe'] } }) })).why, 'cannot tell whether the game is running');
     assert.equal(fs.readFileSync(file, 'latin1'), keep + ours, 'nothing was touched');
     const writtenDuringCheck = async () => { fs.appendFileSync(file, keep, 'latin1'); return winList([['explorer.exe', 'C:\\Windows\\explorer.exe']]); };
     assert.equal((await CL.cleanWhenClosed(file, WIN_FOLDER, { platform: 'win32', fs: noRealpath, run: writtenDuringCheck })).why, 'written while the process check ran');

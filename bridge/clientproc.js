@@ -150,19 +150,28 @@ function argsPlaceGame(args, folders) {
   return args.some(arg => (arg.startsWith('/') && insidePosixFolder(arg, folders)) || (WINDOWS_ABSOLUTE.test(arg) && wineExeInside(arg, folders)));
 }
 
+function denied(error) {
+  return error && (error.code === 'EACCES' || error.code === 'EPERM');
+}
+
 async function ownProcessState(pid, folders, fsApi) {
   const dir = `/proc/${pid}`;
-  if (insidePosixFolder(await fsApi.readlink(`${dir}/exe`), folders)) return RUNNING;
-  if (insidePosixFolder(await fsApi.readlink(`${dir}/cwd`), folders)) return RUNNING;
+  try {
+    if (insidePosixFolder(await fsApi.readlink(`${dir}/exe`), folders)) return RUNNING;
+    if (insidePosixFolder(await fsApi.readlink(`${dir}/cwd`), folders)) return RUNNING;
+  } catch (e) {
+    if (denied(e)) return cmdlineOnlyState(pid, folders, fsApi, 'a process whose exe the bridge may not read may be the game');
+    throw e;
+  }
   const args = await commandArgs(dir, fsApi);
   if (argsPlaceGame(args, folders)) return RUNNING;
   if (args.some(namesWowExe)) return unknown('a WoW exe runs that the bridge cannot place in a folder');
   return CLOSED;
 }
 
-async function foreignProcessState(pid, folders, fsApi) {
+async function cmdlineOnlyState(pid, folders, fsApi, reason) {
   const args = await commandArgs(`/proc/${pid}`, fsApi);
-  if (argsPlaceGame(args, folders) || args.some(namesWowExe)) return unknown('a process of another user may be the game');
+  if (argsPlaceGame(args, folders) || args.some(namesWowExe)) return unknown(reason);
   return CLOSED;
 }
 
@@ -202,7 +211,7 @@ async function linuxState(folders, fsApi, uid) {
     if (!NUMERIC.test(entry)) continue;
     try {
       const own = (await fsApi.stat(`/proc/${entry}`)).uid === uid;
-      const one = own ? await ownProcessState(entry, folders, fsApi) : await foreignProcessState(entry, folders, fsApi);
+      const one = own ? await ownProcessState(entry, folders, fsApi) : await cmdlineOnlyState(entry, folders, fsApi, 'a process of another user may be the game');
       if (one.running === true) return one;
       if (one.running === null && state.running === false) state = one;
     } catch (e) {
