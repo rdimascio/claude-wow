@@ -677,12 +677,49 @@ function publishNow(urgent = true, { refresh = false } = {}) {
   if (pendingRestore && !refresh) { pendingRestore.published = (pendingRestore.published || 0) + 1; if (pendingRestore.published >= 3) pendingRestore = null; }
 }
 
+const REPLIES_KEPT = 10;
+const REPLY_KEEP_MS = 24 * 60 * 60 * 1000;
+const FINAL_STATUSES = new Set(['done', 'error']);
+
+function keepReply(key, record) {
+  const kept = state.replies && typeof state.replies === 'object' ? state.replies : {};
+  const had = Object.prototype.hasOwnProperty.call(kept, key);
+  delete kept[key];
+  if (FINAL_STATUSES.has(record.status)) kept[key] = { at: Date.now(), record };
+  else if (!had) return;
+  const keys = Object.keys(kept);
+  for (const old of keys.slice(0, Math.max(0, keys.length - REPLIES_KEPT))) delete kept[old];
+  if (Object.keys(kept).length) state.replies = kept;
+  else delete state.replies;
+  try { saveState(); } catch (e) { log(`could not save the latest reply to state.json (${e.message})`); }
+}
+
+function restoreReplies() {
+  const kept = state.replies && typeof state.replies === 'object' ? state.replies : {};
+  const now = Date.now();
+  const fresh = {};
+  for (const [key, entry] of Object.entries(kept)) {
+    const r = entry && entry.record;
+    if (!r || typeof r !== 'object' || !FINAL_STATUSES.has(r.status) || !Number.isInteger(r.id) || !(now - entry.at < REPLY_KEEP_MS)) continue;
+    fresh[key] = entry;
+    live.set(key, r);
+  }
+  const restored = Object.keys(fresh).length;
+  if (restored !== Object.keys(kept).length) {
+    if (restored) state.replies = fresh;
+    else delete state.replies;
+    saveState();
+  }
+  if (restored) log(`republishing ${restored} finished repl${restored === 1 ? 'y' : 'ies'} from before the restart, so a reply the game has not read yet is not lost`);
+}
+
 // Final results publish immediately; progress is throttled. `key` is the chat
 // (record.session is the agent's session id, a different thing).
 function publish(key, record, urgent) {
   const named = titles.get(key);
   if (named && !record.title) { record.title = named.title; record.titleFor = named.id; }
   live.set(key, record);
+  keepReply(key, record);
   if (urgent) { if (publishTimer) { clearTimeout(publishTimer); publishTimer = null; } publishNow(); return; }
   const wait = (cfg.progressWriteMs || 3000) - (Date.now() - lastPublish);
   if (wait <= 0) publishNow(false);
@@ -992,6 +1029,13 @@ function cancelRun(job) {
     log(`${tagOf(q)} cancelled from the game before it started`);
     return;
   }
+  const wasHeld = dropHeld({ ...job, id: job.cancel });
+  if (wasHeld) {
+    markHandled(wasHeld);
+    saveState();
+    log(`${tagOf(wasHeld)} cancelled from the game while it was held for a deploy`);
+    return;
+  }
   const cur = running.get(key);
   if (cur && cur.job.id === job.cancel) {
     cur.job.cancelled = true;
@@ -1037,6 +1081,37 @@ function forgetUnstartedWork() {
   try { saveState(); } catch (e) { log(`could not save state.json while stopping (${e.message})`); }
 }
 
+const HELD_KEPT = 20;
+const HELD_KEEP_MS = 60 * 60 * 1000;
+
+function noteHeld() {
+  const entries = [...held.values()].slice(-HELD_KEPT).map(entry => ({ at: entry.at, job: entry.job }));
+  if (entries.length) state.held = entries;
+  else delete state.held;
+  try { saveState(); } catch (e) { log(`could not save the held messages to state.json (${e.message})`); }
+}
+
+function plainJob(job) {
+  try { return JSON.parse(JSON.stringify(job)); } catch { return null; }
+}
+
+function resubmitHeld() {
+  const saved = Array.isArray(state.held) ? state.held : [];
+  delete state.held;
+  const now = Date.now();
+  const seen = new Set();
+  for (const entry of saved) {
+    const job = entry && entry.job;
+    if (!job || typeof job !== 'object' || !Number.isInteger(job.id) || job.id <= 0 || !(now - entry.at < HELD_KEEP_MS)) continue;
+    const key = handlingKey(job);
+    if (seen.has(key) || alreadyHandled(job)) continue;
+    seen.add(key);
+    log(`${tagOf(job)} was held for a deploy when the previous bridge stopped; submitting it again`);
+    if (inFlight(job) || holdForDeploy(job, entry.at)) continue;
+    dispatchMessage(job);
+  }
+}
+
 const handlingKey = (job, suffix = '') => `${chatKey(job)}#${job.id}${suffix}`;
 
 function noteHandling(key, job) {
@@ -1054,22 +1129,36 @@ function dropHandling(key) {
 const held = new Map();
 let heldTimer = null;
 
-function holdForDeploy(job) {
+function holdForDeploy(job, since = Date.now()) {
   const holder = REL.switchingHolder(DEPLOY_LOCK_FILE);
   if (!holder) return false;
   const key = handlingKey(job);
-  if (!held.has(key)) log(`${tagOf(job)} held: a deploy (pid ${holder.pid}) is switching releases; it starts when the deploy ends`);
-  held.set(key, job);
+  if (!held.has(key)) {
+    log(`${tagOf(job)} held: a deploy (pid ${holder.pid}) is switching releases; it starts when the deploy ends`);
+    const copy = plainJob(job);
+    held.set(key, { at: since, job: copy || job });
+    noteHeld();
+  }
   if (!heldTimer) heldTimer = setInterval(releaseHeld, DEPLOY_HOLD_POLL_MS);
   return true;
+}
+
+function dropHeld(job) {
+  const key = handlingKey(job);
+  const entry = held.get(key);
+  if (!entry) return null;
+  held.delete(key);
+  noteHeld();
+  return entry.job;
 }
 
 function releaseHeld() {
   if (shuttingDown || REL.switchingHolder(DEPLOY_LOCK_FILE)) return;
   clearInterval(heldTimer);
   heldTimer = null;
-  const jobs = [...held.values()];
+  const jobs = [...held.values()].map(entry => entry.job);
   held.clear();
+  noteHeld();
   for (const job of jobs) {
     if (alreadyHandled(job)) continue;
     log(`${tagOf(job)} released: the deploy ended`);
@@ -1651,11 +1740,12 @@ function noteInflight(key, job, child, agentName, marker) {
 }
 
 function recoverInflight() {
-  const staleQueue = state.queued !== undefined || state.handling !== undefined;
+  const staleQueue = state.queued !== undefined || state.handling !== undefined || state.held !== undefined;
   delete state.queued;
   delete state.handling;
   const lost = Object.entries(state.inflight || {});
   if (!lost.length) {
+    resubmitHeld();
     if (staleQueue) saveState();
     return;
   }
@@ -1666,12 +1756,16 @@ function recoverInflight() {
     const since = new Date(run.startedAt || Date.now()).toISOString().slice(11, 19);
     const text = `The bridge stopped unexpectedly while ${run.agent || 'the agent'} was working on this message (started ${since} UTC), so its reply is lost. Send it again. The reason is in ${LOG_FILE}.`;
     P.markHandled(state, { session: run.session, chat: run.chat, id: run.id });
-    live.set(key, { chat: run.chat, id: run.id, status: 'error', text, cwd: run.cwd });
+    const lostRecord = { chat: run.chat, id: run.id, status: 'error', text, cwd: run.cwd };
+    live.set(key, lostRecord);
+    keepReply(key, lostRecord);
     ackJob({ session: run.session, id: run.id });
     signal('sig', run.id, true);
     log(`#${run.id}@${run.session || ''} was running when the previous bridge stopped; told the game it is lost`);
   }
   state.inflight = {};
+  saveState();
+  resubmitHeld();
   saveState();
 }
 
@@ -2048,7 +2142,10 @@ if (inject !== null) {
   }
   submit(job);
 } else {
-  if (!once) recoverInflight();
+  if (!once) {
+    restoreReplies();
+    recoverInflight();
+  }
   pollSavedVariables();
   if (once) {
     if (running.size === 0) { console.log('nothing pending'); process.exit(0); }

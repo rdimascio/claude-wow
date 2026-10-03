@@ -69,8 +69,31 @@ function previousName(l) {
   return validName(text) ? text : '';
 }
 
+function releaseComplete(l, name) {
+  try {
+    const info = JSON.parse(fs.readFileSync(path.join(releaseDir(l, name), RELEASE_INFO), 'utf8'));
+    return !!info && info.name === name && info.complete === true;
+  } catch { return false; }
+}
+
 function hasRelease(l, name) {
-  return validName(name) && isFile(releaseBinary(l, name));
+  return validName(name) && isFile(releaseBinary(l, name)) && releaseComplete(l, name);
+}
+
+function fsyncPath(p) {
+  let fd;
+  try {
+    fd = fs.openSync(p, 'r');
+    fs.fsyncSync(fd);
+  } catch (e) {
+    if (!isFile(p) && ['EISDIR', 'EPERM', 'EINVAL', 'EBADF'].includes(e.code)) return;
+    throw e;
+  } finally { if (fd !== undefined) try { fs.closeSync(fd); } catch {} }
+}
+
+function writeDurable(file, text) {
+  const fd = fs.openSync(file, 'w');
+  try { fs.writeSync(fd, text); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
 }
 
 function writeAtomic(file, text) {
@@ -82,7 +105,7 @@ function writeAtomic(file, text) {
 function installRelease(l, { name, binaryFile, meta = {}, now = Date.now }) {
   checkName(name);
   if (hasRelease(l, name) && !binaryFile) return { name, dir: releaseDir(l, name), reused: true };
-  if (!binaryFile || !isFile(binaryFile)) throw new Error(`no binary to install for release ${name}${binaryFile ? ` (${binaryFile} is missing)` : ''}`);
+  if (!binaryFile || !isFile(binaryFile)) throw new Error(`no binary to install for release ${name}${binaryFile ? ` (${binaryFile} is missing)` : ''}${fs.existsSync(releaseDir(l, name)) ? `; ${releaseDir(l, name)} is not a finished release, so it is not reused` : ''}`);
   fs.mkdirSync(l.releases, { recursive: true });
   const staging = path.join(l.releases, `.staging-${name}-${process.pid}-${crypto.randomBytes(4).toString('hex')}`);
   fs.mkdirSync(staging);
@@ -90,13 +113,16 @@ function installRelease(l, { name, binaryFile, meta = {}, now = Date.now }) {
     const staged = path.join(staging, BINARY);
     fs.copyFileSync(binaryFile, staged);
     fs.chmodSync(staged, 0o755);
-    fs.writeFileSync(path.join(staging, RELEASE_INFO), JSON.stringify({ ...meta, name, installedAt: now() }, null, 2) + '\n');
+    fsyncPath(staged);
+    writeDurable(path.join(staging, RELEASE_INFO), JSON.stringify({ ...meta, name, installedAt: now(), complete: true }, null, 2) + '\n');
+    fsyncPath(staging);
     const dir = releaseDir(l, name);
     if (fs.existsSync(dir)) {
       if (name === currentName(l)) throw new Error(`release ${name} is the current release; it is not replaced in place`);
       fs.rmSync(dir, { recursive: true, force: true });
     }
     fs.renameSync(staging, dir);
+    fsyncPath(l.releases);
     return { name, dir, reused: false };
   } catch (e) {
     fs.rmSync(staging, { recursive: true, force: true });
@@ -117,9 +143,32 @@ function activate(l, name, { point = pointCurrentAt } = {}) {
   const was = currentName(l);
   if (was === name) return { name, previous: previousName(l), changed: false };
   if (!hasRelease(l, name)) throw new Error(`release ${name} has no ${BINARY} in ${releaseDir(l, name)}`);
+  const recordedBefore = readPreviousFile(l);
   if (was) writeAtomic(l.previous, was + '\n');
-  point(l, name);
+  try {
+    point(l, name);
+  } catch (e) {
+    try { restorePreviousFile(l, recordedBefore); } catch (restoreError) {
+      e.message += `; ${l.previous} could not be put back to ${recordedBefore === null ? 'no previous release' : recordedBefore.trim()} (${restoreError.message})`;
+    }
+    throw e;
+  }
   return { name, previous: was, changed: true };
+}
+
+function readPreviousFile(l) {
+  try { return fs.readFileSync(l.previous, 'utf8'); } catch (e) {
+    if (e.code === 'ENOENT') return null;
+    throw e;
+  }
+}
+
+function restorePreviousFile(l, text) {
+  if (text === null) {
+    try { fs.unlinkSync(l.previous); } catch (e) { if (e.code !== 'ENOENT') throw e; }
+    return;
+  }
+  writeAtomic(l.previous, text);
 }
 
 function rollback(l) {
@@ -243,9 +292,20 @@ function takeOverStale(file, held, pid = process.pid) {
     fs.unlinkSync(aside);
     return true;
   }
-  try { fs.linkSync(aside, file); } catch {}
+  let restored = true;
+  try { fs.linkSync(aside, file); } catch { restored = false; }
   try { fs.unlinkSync(aside); } catch {}
+  if (!restored) throw new Error(`${file} changed while this deploy took over a stale lock, and the lock it moved aside (${moved && moved.pid ? `pid ${moved.pid}` : 'no pid'}) could not be put back because another deploy took the lock in between. That deploy stops before it switches anything. Nothing was done here; run this again.`);
   throw new Error(heldMessage(file, moved));
+}
+
+function lockHeldBy(file, token) {
+  const held = readLock(file);
+  return !!held && !!token && held.token === token;
+}
+
+function assertLockHeld(file, token) {
+  if (!lockHeldBy(file, token)) throw new Error(`${file} is no longer held by this process (another deploy took it over); nothing was switched`);
 }
 
 function switchingHolder(file, { alive = pidAlive, now = Date.now, host = os.hostname(), maxAgeMs = LOCK_MAX_AGE_MS } = {}) {
@@ -271,9 +331,8 @@ function heldMessage(file, held) {
 }
 
 function setLockPhase(file, token, phase) {
-  const held = readLock(file);
-  if (!held || held.token !== token) throw new Error(`${file} is no longer held by this process (another deploy took it over); nothing was switched`);
-  const { pid, host, started, command } = held;
+  assertLockHeld(file, token);
+  const { pid, host, started, command } = readLock(file);
   writeAtomic(file, JSON.stringify({ pid, host, started, command, token, phase }));
 }
 
@@ -288,6 +347,7 @@ function acquireLock(file, { pid = process.pid, command = '', alive = pidAlive, 
         file, pid, token, staleRemoved,
         release: () => releaseLock(file, token),
         setPhase: phase => setLockPhase(file, token, phase),
+        assertHeld: () => assertLockHeld(file, token),
       };
     }
     const held = readLock(file);
@@ -299,15 +359,14 @@ function acquireLock(file, { pid = process.pid, command = '', alive = pidAlive, 
 }
 
 function releaseLock(file, token) {
-  const held = readLock(file);
-  if (!held || !token || held.token !== token) return false;
+  if (!lockHeldBy(file, token)) return false;
   try { fs.unlinkSync(file); return true; } catch { return false; }
 }
 
 module.exports = {
   BINARY, RELEASES_DIR, KEEP_RELEASES, LOCK_MAX_AGE_MS, RELEASE_INFO, PREPARING, SWITCHING,
   layout, releaseDir, releaseBinary, currentBinary, validName, checkName, isInsideReleases,
-  currentName, previousName, hasRelease, installRelease, pointCurrentAt, activate, rollback,
+  currentName, previousName, hasRelease, releaseComplete, installRelease, pointCurrentAt, activate, rollback,
   listReleases, prune, pruneStaging, pruneReported, installAndActivate,
   pidAlive, readLock, acquireLock, releaseLock, takeOverStale, switchingHolder,
 };
