@@ -5,6 +5,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const I = require('../../bridge/idle');
+const V = require('../../bridge/vision');
 const { makeRoot, gameRunner } = require('./helpers');
 
 const ROOT = makeRoot('idle');
@@ -159,6 +160,96 @@ test('a held message cancelled from the game never runs when the deploy ends', a
     await new Promise(r => setTimeout(r, 3000));
     assert.ok(!h.agentCalls().slice(calls).some(c => c.directives && c.directives.tag === 'held-cancel'), 'the cancelled message did not run');
     assert.doesNotMatch(h.bridge.since(mark), new RegExp(`#${id}@\\S+ released`));
+  });
+});
+
+test('a strip retried in the gap after the deploy ends runs the held message once, takes it off the held list, and a cancel then stops the run', async () => {
+  await withGame({ config: { deployHoldPollMs: 120000 } }, async h => {
+    await h.client.connect();
+    const lockFile = switchingLock(h);
+    const id = h.client.lastSeq() + 1;
+    h.client.send('retried in the gap [[hang]]');
+    await h.bridge.waitForLine(new RegExp(`#${id}@\\S+ held: a deploy`));
+    fs.rmSync(lockFile);
+    h.client.slash('/claude resend');
+    await h.client.waitFor(() => Object.values(h.state().inflight || {}).some(r => r.id === id), { label: 'the retried message running' });
+    assert.ok(!(h.state().held || []).some(e => e.job.id === id), 'the message that started is no longer held in state.json');
+    h.client.slash('/claude cancel');
+    await h.bridge.waitForLine(new RegExp(`#${id}@\\S+ cancelled from the game; ending it`));
+    await h.client.waitFor(() => !Object.values(h.state().inflight || {}).some(r => r.id === id), { label: 'the run ended' });
+    assert.doesNotMatch(h.bridge.output, new RegExp(`#${id}@\\S+ cancelled from the game while it was held`));
+  });
+});
+
+test('at startup a vision screenshot that a held message needs is kept while leftovers go, and held messages past the saved limit are logged', async () => {
+  const token = 'feedc0de1234';
+  let kept = '', leftover = '';
+  const beforeLaunch = sb => {
+    const tmp = path.join(sb.home, 'tmp');
+    fs.mkdirSync(tmp, { recursive: true });
+    const png = V.encodePNG({ width: 1, height: 1, rgb: Buffer.from([10, 20, 30]) });
+    kept = path.join(tmp, V.fileName(1));
+    leftover = path.join(tmp, V.fileName(99));
+    fs.writeFileSync(kept, png);
+    fs.writeFileSync(leftover, png);
+    const at = Date.now();
+    const held = Array.from({ length: 21 }, (_, i) => ({ at, job: { id: i + 1, session: token, chat: `c${i + 1}`, cwd: '', text: `held ${i + 1}` } }));
+    held[0].job.vision = true;
+    held[0].job.image = { file: kept, width: 1, height: 1, mediaType: 'image/png', bytes: png.length };
+    fs.writeFileSync(path.join(sb.home, 'state.json'), JSON.stringify({ held }));
+    fs.writeFileSync(path.join(sb.home, 'deploy.lock'), JSON.stringify({ pid: process.pid, host: os.hostname(), started: Date.now(), command: 'dev deploy', token: 'e2e', phase: 'switching' }));
+  };
+  await withGame({ beforeLaunch }, async h => {
+    await h.bridge.waitForLine(new RegExp(`#21@${token} held: a deploy`));
+    assert.ok(fs.existsSync(kept), 'the held message keeps its screenshot');
+    assert.ok(!fs.existsSync(leftover), 'a screenshot no held message needs is still swept');
+    await h.bridge.waitForLine(new RegExp(`1 held message\\(s\\) \\(#1@${token}\\) are not saved to state\\.json: only the newest 20 are`));
+    assert.equal((h.state().held || []).length, 20);
+  });
+});
+
+test('after a SavedVariables wipe, a reply kept for the old addon session is dropped and never answers the new session\'s message with the same chat and id', async () => {
+  await withGame({}, async h => {
+    await h.client.connect();
+    const oldToken = h.client.db().session;
+    const chat = h.client.activeChat().id;
+    const id = 50;
+    h.client.runLua(`ClaudeWoWDB.lastSeq = ${id - 1}`);
+    h.client.send('old session question');
+    await h.client.waitFor(() => replyTo(h, id), { label: 'the old session reply' });
+    assert.ok(Object.keys(h.state().replies || {}).some(k => k.startsWith(`${oldToken}:`)), 'the reply is kept in state.json');
+    h.client.quit();
+    fs.rmSync(h.sb.saved, { force: true });
+    fs.rmSync(h.sb.saved + '.bak', { force: true });
+    await h.bridge.restart();
+    h.client.launch();
+    h.client.start();
+    await h.bridge.waitForLine(/republishing \d+ finished repl(y|ies) from before the restart/);
+    await h.client.connect();
+    const newToken = h.client.db().session;
+    assert.notEqual(newToken, oldToken, 'the wipe made a new addon session');
+    await h.bridge.waitForLine(new RegExp(`addon session ${newToken}: dropped \\d+ repl(y|ies) kept for another addon session`));
+    assert.ok(!Object.keys(h.state().replies || {}).some(k => k.startsWith(`${oldToken}:`)), 'gone from state.json too');
+    await h.client.waitFor(() => (h.client.db().chats || []).some(c => c.id === chat), { label: 'the old chat restored with its id' });
+    h.client.runLua(`ClaudeWoW.SwitchChat(${JSON.stringify(chat)})`);
+    assert.ok(h.client.lastSeq() < id - 1, 'ids restarted after the wipe');
+    h.client.runLua(`ClaudeWoWDB.lastSeq = ${id - 1}`);
+    const lockFile = switchingLock(h);
+    h.client.send('new session question');
+    assert.equal(h.client.activeChat().pendingId, id, 'the new message has the old chat and id');
+    await h.bridge.waitForLine(new RegExp(`#${id}@${newToken} held: a deploy`));
+    await new Promise(r => setTimeout(r, 7000));
+    assert.equal(h.client.activeChat().pendingId, id, 'no old reply answered the held message');
+    const afterNewQuestion = () => {
+      const history = h.client.activeChat().history || [];
+      const asked = history.findIndex(m => m.role === 'user' && m.text === 'new session question');
+      return asked < 0 ? [] : history.slice(asked + 1).filter(m => m.id === id && m.role !== 'user');
+    };
+    assert.deepEqual(afterNewQuestion(), [], 'nothing answered the new question while it was held');
+    fs.rmSync(lockFile);
+    const replies = await h.client.waitFor(() => !h.client.activeChat().pendingId && afterNewQuestion().length ? afterNewQuestion() : null, { label: 'the real reply' });
+    assert.equal(replies.length, 1);
+    assert.match(replies[0].text, /new session question/);
   });
 });
 

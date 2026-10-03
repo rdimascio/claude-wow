@@ -274,12 +274,12 @@ function cleanupOnce(steps) {
   };
 }
 
-function cleanupOnSignal(ctx, cleanup) {
+function cleanupOnSignal(ctx, cleanup, whatCleanupDid) {
   const signals = ctx.signals || process;
   const exit = ctx.exit || (code => process.exit(code));
   const handlers = Object.keys(SIGNAL_EXIT_CODES).map(sig => [sig, () => {
     cleanup();
-    ctx.err(`claude-wow dev: stopped by ${sig}; removed the temporary build folders and released the deploy lock`);
+    ctx.err(`claude-wow dev: stopped by ${sig}; ${whatCleanupDid}`);
     exit(SIGNAL_EXIT_CODES[sig]);
   }]);
   for (const [sig, handler] of handlers) signals.on(sig, handler);
@@ -288,16 +288,17 @@ function cleanupOnSignal(ctx, cleanup) {
 
 async function deploy(opts, ctx) {
   const l = REL.layout(ctx.base);
-  const lock = lockFor(l, ctx, 'dev deploy');
+  let lock = null;
   let source = null;
   let outDir = '';
   const cleanup = cleanupOnce([
     () => { if (outDir) fs.rmSync(outDir, { recursive: true, force: true }); },
     () => { if (source) source.cleanup(); },
-    () => lock.release(),
+    () => { if (lock) lock.release(); },
   ]);
-  const stopListening = cleanupOnSignal(ctx, cleanup);
+  const stopListening = cleanupOnSignal(ctx, cleanup, 'removed the temporary build folders and released the deploy lock');
   try {
+    lock = lockFor(l, ctx, 'dev deploy');
     source = resolveSource(opts.target, { ...ctx, repo: opts.repo });
     ctx.out(`source  : ${source.from} at ${source.sha.slice(0, 12)}${source.dirty ? ' (uncommitted changes)' : ''}`);
     if (REL.currentName(l) === source.name && REL.hasRelease(l, source.name)) {
@@ -334,14 +335,15 @@ async function deploy(opts, ctx) {
 
 async function rollback(opts, ctx) {
   const l = REL.layout(ctx.base);
-  const lock = lockFor(l, ctx, 'dev rollback');
-  const cleanup = cleanupOnce([() => lock.release()]);
-  const stopListening = cleanupOnSignal(ctx, cleanup);
+  let lock = null;
+  const cleanup = cleanupOnce([() => { if (lock) lock.release(); }]);
+  const stopListening = cleanupOnSignal(ctx, cleanup, 'released the deploy lock; nothing was switched');
   try {
+    lock = lockFor(l, ctx, 'dev rollback');
     const prev = REL.previousName(l);
     if (!prev) throw new Error(`no previous release is recorded in ${l.previous}`);
     if (!REL.hasRelease(l, prev)) throw new Error(`the previous release ${prev} is gone from ${l.releases}`);
-    if (REL.currentName(l) === prev) throw new Error(`the previous release ${prev} is already current`);
+    if (REL.currentName(l) === prev) throw new Error(REL.previousIsCurrentMessage(l, prev));
     if (serviceRunsCurrent(l, ctx)) await switchWaiter(l, ctx, lock, opts.timeoutMs)();
     lock.assertHeld();
     const flip = REL.rollback(l);
@@ -359,7 +361,9 @@ function status(ctx) {
   const current = REL.currentName(l);
   ctx.out(`home     : ${l.base}`);
   ctx.out(`current  : ${current || 'none'}`);
-  ctx.out(`previous : ${REL.previousName(l) || 'none'}`);
+  const previous = REL.previousName(l);
+  ctx.out(`previous : ${previous || 'none'}`);
+  if (previous && previous === current) ctx.out(`warning  : ${REL.previousIsCurrentMessage(l, previous)}`);
   for (const r of REL.listReleases(l)) ctx.out(`release  : ${r.name}${r.name === current ? '  (current)' : ''}`);
   ctx.out(`service  : ${serviceRunsCurrent(l, ctx) ? 'runs ' + REL.currentBinary(l) : `${serviceDefinition(ctx)} does not run ${REL.currentBinary(l)}`}`);
   const s = idleProbe(l, ctx)();
