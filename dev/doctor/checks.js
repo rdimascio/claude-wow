@@ -586,7 +586,7 @@ function checkVersions(ctx) {
   const issues = [];
   if (latest) {
     const v = versionVerdict(latest, { version: latest.bridge || '0.0.0', protoMin: latest.protoMin, protoMax: latest.protoMax });
-    if (v.refuse) issues.push(fail(v.text, 'The addon and the bridge speak different protocols, so the bridge answers every message with an error.', v.verdict === 'update-addon' ? 'Update the addon, then restart WoW.' : 'Update the bridge, then run "claude-wow service restart".'));
+    if (v.refuse) issues.push(fail(v.text, 'The addon and the bridge speak different protocols, so the bridge answers every message with an error.', v.verdict === 'update-addon' ? 'Update the addon, then type /reload in the game.' : 'Update the bridge, then run "claude-wow service restart".'));
   }
   return finish('versions', 'Versions', `${versionsSummary(ctx.state)}; ${installedSummary()}`, issues);
 }

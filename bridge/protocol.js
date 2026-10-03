@@ -296,7 +296,7 @@ function protoRange(bridge) {
   return bridge.protoMin === bridge.protoMax ? String(bridge.protoMin) : `${bridge.protoMin} to ${bridge.protoMax}`;
 }
 
-const ADDON_UPDATE_HOW = 'update the addon in the CurseForge app or run claude-wow setup, then restart WoW.';
+const ADDON_UPDATE_HOW = 'update the addon in the CurseForge app or run claude-wow setup, then type /reload.';
 const BRIDGE_UPDATE_HOW = 'run brew upgrade claude-wow or the installer again, then claude-wow service restart.';
 
 function versionVerdict(addon, bridge = bridgeInfo()) {
@@ -352,6 +352,32 @@ function versionsSummary(state) {
 
 function installedSummary(bridge = bridgeInfo()) {
   return `this install is bridge ${bridge.version} (protocol ${protoRange(bridge)})`;
+}
+
+const BUILD_RE = /^[0-9a-f]{12}$/;
+
+function addonBuild(files) {
+  const h = crypto.createHash('sha256');
+  const sorted = files.filter(f => !/\.toc$/i.test(f.name)).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  for (const f of sorted) h.update(f.name).update('\0').update(f.data).update('\0');
+  return h.digest('hex').slice(0, 12);
+}
+
+function tocField(text, key) {
+  const m = new RegExp(`^##\\s*${key}:[ \\t]*(.*?)[ \\t]*\\r?$`, 'm').exec(String(text || ''));
+  return m ? m[1] : '';
+}
+
+function tocWithBuild(text, build) {
+  const body = String(text || '').replace(/^##\s*X-Build:.*\r?\n?/m, '');
+  const line = `## X-Build: ${build}`;
+  return /^##\s*Version:.*$/m.test(body) ? body.replace(/^(##\s*Version:.*?)(\r?)$/m, `$1$2\n${line}$2`) : `${line}\n${body}`;
+}
+
+function addonDiskInfo(tocText) {
+  const version = tocField(tocText, 'Version');
+  const build = tocField(tocText, 'X-Build');
+  return { version: SEMVER_RE.test(version) ? version : '', build: BUILD_RE.test(build) ? build : '' };
 }
 
 // Strip payload: records separated by \x1E, fields by \x1F:
@@ -950,6 +976,9 @@ function luaTable(globalName, records, opts = {}) {
     const b = opts.bridge;
     lines.splice(lines.length - 1, 0, `\tbridge = { version = ${luaStr(b.version)}, protoMin = ${Math.floor(Number(b.protoMin)) || 0}, protoMax = ${Math.floor(Number(b.protoMax)) || 0} },`);
   }
+  if (opts.addonDisk && typeof opts.addonDisk === 'object' && opts.addonDisk.version) {
+    lines.splice(lines.length - 1, 0, `\taddonDisk = { version = ${luaStr(opts.addonDisk.version)}, build = ${luaStr(opts.addonDisk.build || '')} },`);
+  }
   if (opts.live && typeof opts.live === 'object') {
     const sessions = Array.isArray(opts.live.sessions) ? opts.live.sessions : [];
     lines.splice(lines.length - 1, 0, `\tlive = { sessions = { ${sessions.map(luaStr).join(', ')} }, start = ${luaStr(opts.live.start || '')} },`);
@@ -1369,7 +1398,7 @@ module.exports = {
   alreadyHandled, markHandled, pruneStale, MONTH_MS, noteAck, recentAcks, RECENT_ACKS_MAX, RECENT_ACK_MS,
   noteUsage, usageFields, tokensLabel,
   resolveCwd, sameFolder, baseName,
-  PROTO, PROTO_MIN, PROTO_MAX, LEGACY_PROTO, SEMVER_RE, ADDON_VERSIONS_MAX, bridgeVersion, bridgeInfo, compareSemver, versionVerdict, noteAddonVersion, addonRefusal, latestAddonVersion, versionsSummary, installedSummary,
+  PROTO, PROTO_MIN, PROTO_MAX, LEGACY_PROTO, SEMVER_RE, ADDON_VERSIONS_MAX, bridgeVersion, bridgeInfo, compareSemver, versionVerdict, noteAddonVersion, addonRefusal, latestAddonVersion, versionsSummary, installedSummary, BUILD_RE, addonBuild, tocField, tocWithBuild, addonDiskInfo,
   parseFlags, PERMISSION_MODES, permissionModeName, ADD_DIRS_MAX, jobsFromStrip, parseOutbox, withRunOnlyRules, withRunDeniedRules, withoutRules, absolutePathRule, systemPrompt, systemRulesHash, rulesChanged, noteRules, messagePrompt, visionHint, splitSummary,
   ruleFor, describeToolUse,
   folderRule, ruleFolder, splitGrants, insideFolder, nearestFolder, denialPath, classifyDenial, grantsFor, deniedAgain, denialNotes,

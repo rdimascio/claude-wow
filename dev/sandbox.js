@@ -5,6 +5,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { INERT_OPTIONS: INERT_STREAM } = require('../bridge/plugins/stream');
 const SIG = require('../bridge/signals');
+const P = require('../bridge/protocol');
 
 const REPO = path.resolve(__dirname, '..');
 const DEFAULT_ROOT = path.join(REPO, '.dev', 'sandboxes');
@@ -128,7 +129,12 @@ function copyAddon(L) {
   const src = path.join(REPO, 'addon', 'ClaudeWoW');
   const dest = path.join(L.addons, 'ClaudeWoW');
   fs.mkdirSync(dest, { recursive: true });
-  for (const f of fs.readdirSync(src)) fs.copyFileSync(path.join(src, f), path.join(dest, f));
+  const names = fs.readdirSync(src);
+  const build = P.addonBuild(names.map(name => ({ name, data: fs.readFileSync(path.join(src, name)) })));
+  for (const f of names) {
+    if (f === 'ClaudeWoW.toc') fs.writeFileSync(path.join(dest, f), P.tocWithBuild(fs.readFileSync(path.join(src, f), 'utf8'), build));
+    else fs.copyFileSync(path.join(src, f), path.join(dest, f));
+  }
 }
 
 function installAddon(L, env) {

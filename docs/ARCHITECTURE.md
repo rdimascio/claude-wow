@@ -116,6 +116,7 @@ ClaudeWoW_SlotData = {
   transport = "screenshot",   -- the addon must call Screenshot() with the strip up; or "pixel" (deprecated): the bridge screen-captures it
   strip = { on = 60, off = 0 },   -- screenshot transport only: the levels to draw the strip at
   transportNote = "pixel transport, fallen back to since ...",   -- only when the bridge fell back to pixels on its own; /claude diag shows it
+  addonDisk = { version = "0.4.0", build = "1a2b3c4d5e6f" },   -- the installed ClaudeWoW.toc: Version and X-Build (Reload or restart notice)
   bridge = { version = "0.4.0", protoMin = 1, protoMax = 1 },   -- the bridge's semver and the addon protocols it accepts (Version handshake); left out only by bridges older than the handshake
   acks = { { session = "<addon session>", id = 12 }, … },   -- records acknowledged in the last 10 minutes, at most 24: the ack path for a client whose signal files do not work
   replies = { { chat = "...", id = 12, status = "working"|"done"|"error", text = "...", cwd = "...", session = "<agent session id>", agent = "codex", denied = { "WebSearch" }, macros = { { name = "Charge", body = "#showtooltip\n/cast Charge", icon = nil, char = false, risky = false } } }, … },
@@ -140,6 +141,17 @@ Two numbers describe each side. The **semver** is `package.json` `version`, also
 - **Bridge to addon.** Every slot file and `Inbox.lua` carry `bridge = { version, protoMin, protoMax }`. The addon reads it in `TryLoadSlot` and in the `Inbox.lua` path, and skips it when the file's `now` is more than 5 minutes old. A file without the field (an older bridge) changes nothing and the addon says nothing. The field needs no slot load of its own: the hello poll reads it.
 - **Verdicts.** Protocol outside `[protoMin, protoMax]`: the bridge answers every message from that session with an error reply that names the side to update and how, and runs no agent; the addon says the same in the chat once per UI session. The check is in `runJob`, so a queued message is judged when it starts. It reads the session's last hello in `state.json`: a session with no hello on record (a wiped `state.json`) is not refused until it says hello again. Only the semver differs: one line, once per UI session, that names the older side; nothing is refused. Equal: nothing is said. Both sides build the same words (`P.versionVerdict`, `ClaudeWoW.Version.Verdict`).
 - **Where it shows.** The bridge keeps the last hello of up to 8 sessions as `addons` in `state.json` and logs a changed verdict. `/claude diag` shows a `versions:` line, `claude-wow service status` a `versions` line (with the version of the installed bridge), and `npm run doctor` a **Versions** check that fails on a protocol mismatch.
+
+### Reload or restart notice
+
+On Classic Era 1.15.9, `/reload` re-reads the toc and every Lua file it lists: a changed file, a file that was missing at launch, a file newly added to the toc, and a new `## Version` (measured with a throwaway addon, 2026-10-02). Only a new addon folder needs a full restart, because the client builds its addon list at launch. Textures and sounds made after launch are not measured, and Forever is not measured.
+
+- `setup` writes `## X-Build: <build>` after the `## Version` line of the toc it installs. The build is the first 12 hex digits of a SHA-256 over every shipped file but the toc, by name and content (`P.addonBuild`). A CurseForge install has no `X-Build` line, so only the version counts there.
+- The addon keeps what it loaded, `ClaudeWoW.Version.LOADED = { version, build }`, read from `GetAddOnMetadata` when `ClaudeWoW.lua` runs.
+- The bridge reads the installed toc (cached on mtime, size and inode) and puts it in every slot file and `Inbox.lua`: `addonDisk = { version = "0.4.0", build = "1a2b3c4d5e6f" }`. It leaves the field out when the toc has no valid version.
+- When the field differs from what the addon loaded, the addon says once per UI session: "New addon files are installed (...). Type /reload to load them." A field written before this addon load is skipped, because a `/reload` right after an install can read an `Inbox.lua` or slot that still names the old build; the hello makes the bridge publish again at once. A malformed field and a client that gives no metadata are skipped too.
+- When `C_AddOns.GetAddOnInfo("ClaudeWoW_Runtime")` says `MISSING`, the runtime folder came after launch, and the addon asks once for a full restart. Not measured: that the client reports `MISSING` for a folder made after launch (it does for a slot folder through `LoadAddOn`). If it does not, the notice stays silent.
+- `/claude diag` shows `addon files loaded: <version build>, on disk: <version build>`.
 
 ## What ships and what the bridge writes
 

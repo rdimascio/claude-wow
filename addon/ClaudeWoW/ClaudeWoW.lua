@@ -1803,14 +1803,49 @@ end
 
 ClaudeWoW.Version = { PROTO = 1, SEMVER = "0.4.0", PATTERN = "^%d+%.%d+%.%d+[%w%.%-+]*$" }
 
+function ClaudeWoW.Version.Meta(key)
+	local read = C_AddOns and C_AddOns.GetAddOnMetadata
+	if type(read) ~= "function" then return "" end
+	local ok, v = pcall(read, "ClaudeWoW", key)
+	return ok and type(v) == "string" and v or ""
+end
+
 function ClaudeWoW.Version.Own()
 	local V = ClaudeWoW.Version
-	local read = C_AddOns and C_AddOns.GetAddOnMetadata
-	if type(read) == "function" then
-		local ok, v = pcall(read, "ClaudeWoW", "Version")
-		if ok and type(v) == "string" and #v <= 40 and v:match(V.PATTERN) then return v end
-	end
+	local v = V.Meta("Version")
+	if #v <= 40 and v:match(V.PATTERN) then return v end
 	return V.SEMVER
+end
+
+ClaudeWoW.Version.LOADED = { version = ClaudeWoW.Version.Meta("Version"), build = ClaudeWoW.Version.Meta("X-Build"), at = time() }
+
+function ClaudeWoW.Version.ApplyDisk(d, stamp)
+	local V = ClaudeWoW.Version
+	if type(d) ~= "table" then return end
+	local at = tonumber(stamp)
+	if not at or time() - at > Q.INBOX_FRESH_SECONDS then return end
+	V.CheckFolders()
+	if at < V.LOADED.at then return end
+	if type(d.version) ~= "string" or #d.version > 40 or not d.version:match(V.PATTERN) then return end
+	local build = type(d.build) == "string" and #d.build == 12 and d.build:match("^[0-9a-f]+$") and d.build or ""
+	run.addonDisk = { version = d.version, build = build }
+	local L = V.LOADED
+	if L.version == "" or (d.version == L.version and build == L.build) then return end
+	local text = "New addon files are installed (" .. d.version .. (build ~= "" and (", build " .. build) or "") .. "). Type /reload to load them."
+	if run.reloadTold ~= text then
+		run.reloadTold = text
+		TellPlayer(text)
+	end
+end
+
+function ClaudeWoW.Version.CheckFolders()
+	local info = C_AddOns and C_AddOns.GetAddOnInfo
+	if run.restartTold or type(info) ~= "function" then return end
+	local ok, _, _, _, _, reason = pcall(info, "ClaudeWoW_Runtime")
+	if ok and reason == "MISSING" then
+		run.restartTold = true
+		TellPlayer("The ClaudeWoW_Runtime folder was installed after the game started. Fully quit and restart the game to load it; /reload is not enough.")
+	end
 end
 
 function ClaudeWoW.Version.Compare(a, b)
@@ -1832,7 +1867,7 @@ function ClaudeWoW.Version.Verdict(b)
 	local mine = version .. ", protocol " .. V.PROTO
 	local theirs = b.version .. ", protocol " .. range
 	if V.PROTO < b.protoMin then
-		return "update-addon", "This addon (" .. mine .. ") is too old for the bridge (" .. theirs .. "). The bridge refuses messages until you update the addon: update the addon in the CurseForge app or run claude-wow setup, then restart WoW."
+		return "update-addon", "This addon (" .. mine .. ") is too old for the bridge (" .. theirs .. "). The bridge refuses messages until you update the addon: update the addon in the CurseForge app or run claude-wow setup, then type /reload."
 	end
 	if V.PROTO > b.protoMax then
 		return "update-bridge", "The bridge (" .. theirs .. ") is too old for this addon (" .. mine .. "). The bridge refuses messages until you update it: run brew upgrade claude-wow or the installer again, then claude-wow service restart."
@@ -1869,7 +1904,9 @@ function ClaudeWoW.Version.Status()
 	local V = ClaudeWoW.Version
 	local b = run.bridgeVersion
 	local bridge = b and (b.version .. " (protocol " .. (b.protoMin == b.protoMax and b.protoMin or (b.protoMin .. " to " .. b.protoMax)) .. ")") or "not reported (an older bridge, or not heard yet)"
+	local function files(f) return f.version ~= "" and (f.version .. (f.build ~= "" and (" build " .. f.build) or "")) or "unknown" end
 	return "versions: addon " .. V.Own() .. " (protocol " .. V.PROTO .. "), bridge " .. bridge .. ", verdict: " .. (run.versionVerdict or "unknown")
+		.. "; addon files loaded: " .. files(V.LOADED) .. ", on disk: " .. (run.addonDisk and files(run.addonDisk) or "not reported")
 end
 
 local function TryLoadSlot(why)
@@ -1918,6 +1955,7 @@ local function TryLoadSlot(why)
 		if acked then RefreshStrip() end
 		Presence.Check(data.presence, data.now)
 		ClaudeWoW.Version.Apply(data.bridge, data.now)
+		ClaudeWoW.Version.ApplyDisk(data.addonDisk, data.now)
 	end
 	local matched = ApplyReplies(type(data) == "table" and data.replies or nil)
 	if type(data) == "table" and data.restore then ImportRestore(data.restore) end
@@ -2094,6 +2132,7 @@ local function ProcessInbox()
 	ClaudeWoW.ApplySessions(inbox.sessions, inbox.now)
 	ApplyTransport(inbox)
 	ClaudeWoW.Version.Apply(inbox.bridge, inbox.now)
+	ClaudeWoW.Version.ApplyDisk(inbox.addonDisk, inbox.now)
 	ApplyReplies(inbox.replies)
 	if inbox.restore then ImportRestore(inbox.restore) end
 	if inbox.map and ClaudeWoWMap then ClaudeWoWMap.Sync(inbox.map) end
