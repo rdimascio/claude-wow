@@ -89,7 +89,7 @@ brew install claude-wow
 
 Until the first stable release fills in the formula's checksums, only `brew install --HEAD claude-wow` works (it builds from the checkout and runs with Homebrew's node).
 
-The one-line installers download from the latest stable release (`releases/latest`), and GitHub skips prereleases there. To test a beta, name the release: `sh -s -- --release v0.5.0-beta.1` after the `curl` command on macOS and Linux, or `$env:CLAUDE_WOW_RELEASE = "v0.5.0-beta.1"` before the PowerShell command.
+The one-line installers download from the latest stable release (`releases/latest`). While no stable release has a binary, they fall back to the newest release, betas included. To pin one release, name it: `sh -s -- --release v0.5.0-beta.1` after the `curl` command on macOS and Linux, or `$env:CLAUDE_WOW_RELEASE = "v0.5.0-beta.1"` before the PowerShell command.
 
 The installer downloads the `claude-wow` binary for your computer (macOS arm64 and x64, Linux x64, Windows x64), checks it against the release's `SHA256SUMS`, runs setup for you, and asks whether to run the bridge in the background. When there is no binary for your computer (another platform, or no release yet), it installs from source instead, and that needs Node.js 22.2 or newer. It never uses sudo, and you run it again to update. Homebrew installs only the binary: it cannot write into the game folder, so you must run step 3 yourself.
 
