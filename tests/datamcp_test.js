@@ -164,7 +164,7 @@ test('wow_quest: IDs only, never a title; the items that start it', async () => 
   assert.match(missing.notes.join(' '), /Quest ID 104 is not in the client data for build 1\.60\.1\.200/);
   const byTitle = call(store, 'wow_quest', { name: 'Fixture' });
   assert.equal(byTitle.found, false, 'Forever has no quest titles to search');
-  assert.match(byTitle.notes.join(' '), /no data for NPCs, quest titles or quest givers/);
+  assert.match(byTitle.notes.join(' '), /No community data for NPCs and quest givers is synced/);
   assert.match(call(store, 'wow_quest', {}).error, /give one of: id, name/);
   const schema = DM.toolList().find(t => t.name === 'wow_quest').inputSchema;
   assert.deepEqual(Object.keys(schema.properties), ['id', 'name', 'limit']);
@@ -211,7 +211,7 @@ test('wow_sources: provenance, table sizes and what the data does not hold', asy
   assert.match(ds.license, /never committed or redistributed/);
   assert.equal(ds.rows.items, 3);
   assert.equal(ds.rows.skilllines, 2);
-  assert.ok(ds.notInData.includes('on Forever, NPCs, quest titles and quest givers'));
+  assert.ok(ds.notInData.includes('on Forever, any NPC, quest title or quest giver the Classic community data does not share with it'));
   assert.ok(ds.notInData.includes('NPC levels, factions and any other number from community data'));
   assert.ok(ds.notInData.includes('item drop sources and drop rates'));
 });

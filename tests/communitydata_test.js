@@ -17,6 +17,8 @@ const GZ = zlib.gzipSync(Buffer.from(SQL));
 const DUMP = 'ClassicDB_1_12_1_z2815.sql.gz';
 const RAW_URL = `https://raw.githubusercontent.com/cmangos/classic-db/master/Full_DB/${DUMP}`;
 const ERA_CLIENT = '1.15.9.70003';
+const FOREVER_BUILD = '1.60.1.200';
+const FOREVER_CLIENT = '1.60.1.70124';
 
 function scratch(name) {
   const dir = path.join(os.tmpdir(), `claude-wow-community-${name}-${process.pid}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`);
@@ -48,6 +50,24 @@ async function eraData(name) {
   const dataDir = path.join(scratch(name), 'data');
   await D.sync({ dataDir, flavor: 'classic_era', fetch: async url => fakeWago(url) });
   return dataDir;
+}
+
+function foreverFromEra(dataDir) {
+  const era = D.readCurrent(path.join(dataDir, 'classic_era'));
+  const root = path.join(dataDir, 'forever');
+  const dir = path.join(root, FOREVER_BUILD);
+  fs.mkdirSync(root, { recursive: true });
+  fs.cpSync(era.dir, dir, { recursive: true });
+  const lines = file => fs.readFileSync(path.join(dir, file), 'utf8').trim().split('\n').map(l => JSON.parse(l));
+  const write = (file, rows) => fs.writeFileSync(path.join(dir, file), rows.map(r => JSON.stringify(r)).join('\n') + '\n');
+  const quests = lines('quests.jsonl').filter(q => q.id === 111);
+  write('quests.jsonl', quests);
+  write('uimapassignments.jsonl', lines('uimapassignments.jsonl').map(a => (a.uiMapID === 9101 ? { ...a, region: a.region.map(n => n * 2) } : a)));
+  const manifest = JSON.parse(fs.readFileSync(path.join(dir, 'manifest.json'), 'utf8'));
+  manifest.entities.quests.rows = quests.length;
+  Object.assign(manifest, { flavor: 'forever', product: 'wow_cn_beta', build: FOREVER_BUILD, buildFamily: '1.60.1', tableHash: 'forever-fixture' });
+  fs.writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify(manifest));
+  fs.writeFileSync(path.join(root, 'current'), FOREVER_BUILD + '\n');
 }
 
 const call = (store, tool, args) => JSON.parse(DM.callTool(store, tool, args).content[0].text);
@@ -107,7 +127,7 @@ test('a community sync converts NPCs, spawns, quests and givers into their own s
   assert.deepEqual(cs.byId('questinfo', 222), { id: 222, title: 'Fixture Errand', inClientData: false, givers: [{ kind: 'npc', id: 7002 }, { kind: 'object', id: 8001 }], enders: [] });
   assert.equal(cs.byId('questinfo', 111).inClientData, true);
   assert.deepEqual(cs.rows('objects').map(o => [o.name, o.onMaps.map(m => m.uiMapID)]), [['Fixture Poster', [9101, 9102]]], 'only objects that give or end a quest');
-  assert.equal(GD.openStore({ dataDir, clientBuild: '1.60.1.70124' }).community, null, 'Forever never reads it');
+  assert.equal(GD.openStore({ dataDir, clientBuild: '2.5.4.1' }).community, null, 'a game with neither flavor never reads it');
 
   const again = await C.syncCommunity({ dataDir, fetch: fakeGitHub().fetchImpl });
   assert.equal(again.status, 'current');
@@ -224,8 +244,7 @@ test('wow_npc, wow_quest and wow_sources serve community rows with their own sou
   assert.equal(community.trust, 'community-db');
   assert.match(community.license, /GPL-3\.0/);
   assert.equal(community.positionsCurrent, true);
-  const forever = GD.openStore({ dataDir, clientBuild: '1.60.1.70124' });
-  assert.match(call(forever, 'wow_npc', { id: 7001 }).notes.join(' '), /no data for NPCs/);
+  assert.match(call(GD.openStore({ dataDir, clientBuild: '2.5.4.1' }), 'wow_npc', { id: 7001 }).notes.join(' '), /no data for NPCs/);
 });
 
 test('community positions computed with other client data are left out, and a damaged community table is reported in the same answer', async () => {
@@ -256,6 +275,74 @@ test('onMaps keeps an ordinary position over an event-only one, and the ambiguit
   assert.deepEqual(npc.onMaps, [{ uiMapID: 5, count: 3, x: 2, y: 2, zoneAmbiguous: true }]);
   const eventOnly = C.finishSpawns({ id: 2, all: [mapped(7, { event: true }), mapped(8, { event: true })] });
   assert.deepEqual(eventOnly.onMaps, [{ uiMapID: 5, count: 2, x: 7, y: 7, event: true }]);
+});
+
+test('on Forever the Classic community data shows only quests the Forever client has and maps the same in both games, labeled unchecked for Forever', async () => {
+  const dataDir = await eraData('forever');
+  await C.syncCommunity({ dataDir, fetch: fakeGitHub().fetchImpl });
+  foreverFromEra(dataDir);
+  const store = GD.openStore({ dataDir, clientBuild: FOREVER_CLIENT });
+  assert.equal(store.flavor, 'forever');
+  const cs = store.community;
+  assert.deepEqual([cs.crossGame, cs.trust, cs.stale], [true, 'community-db-unchecked-for-this-game', false]);
+  assert.deepEqual([...cs.sameMaps()], [9102], 'the continent rectangle changed, the vale did not');
+  const npc = call(store, 'wow_npc', { id: 7001 });
+  assert.equal(npc.trust, 'community-db-unchecked-for-this-game');
+  assert.equal(npc.results[0].trust, 'community-db-unchecked-for-this-game');
+  assert.deepEqual(npc.results[0].onMaps.map(m => m.uiMapID), [9102], 'no position on a map Forever draws differently');
+  assert.deepEqual(npc.results[0].spawns.map(s => s.maps.map(m => m.uiMapID)), [[9102]], 'and no dungeon spawn');
+  assert.match(npc.notes[0], /Classic community data .* not checked for this game/);
+  const wanderer = call(store, 'wow_npc', { id: 7002 });
+  assert.deepEqual(wanderer.results[0].gives, [], 'a quest the Forever client does not have is left out');
+  assert.equal(call(store, 'wow_quest', { id: 222 }).found, false);
+  assert.deepEqual(call(store, 'wow_quest', { name: 'errand' }).results.map(r => r.id), [111]);
+  const quest = call(store, 'wow_quest', { id: 111 });
+  assert.equal(quest.results[0].community.trust, 'community-db-unchecked-for-this-game');
+  assert.equal(quest.results[0].inClientData, true);
+  assert.equal(call(store, 'wow_npc', { name: 'fixture', uiMapID: 9101 }).found, false, 'a map filter on a map Forever draws differently finds nothing');
+  const era = GD.openStore({ dataDir, clientBuild: ERA_CLIENT });
+  assert.deepEqual([era.community.crossGame, era.community.trust], [false, 'community-db'], 'Classic Era is unchanged');  assert.equal(npc.results[0].spawnTotal, null, 'no Classic total on Forever');
+  assert.match(npc.results[0].spawnsShown, /^1 of a 2-spawn sample; dungeon spawns .* left out/);
+  assert.equal(call(store, 'wow_npc', { id: 7004 }).found, false, 'an NPC with no shared map and no Forever quest is not shown');
+  assert.equal(call(store, 'wow_npc', { name: "O'Brien" }).found, false);
+  assert.equal(C.openCommunity({ dataDir, flavor: 'tbc' }), null);
+});
+
+test('on Forever, missing or other Classic Era data hides every community position and says which sync fixes it', async () => {
+  const dataDir = await eraData('forevermissing');
+  const r = await C.syncCommunity({ dataDir, fetch: fakeGitHub().fetchImpl });
+  assert.equal(GD.openStore({ dataDir, clientBuild: FOREVER_CLIENT }).community, null, 'no Forever client data, no community data on Forever');
+  foreverFromEra(dataDir);
+  const manifestFile = path.join(r.dir, 'manifest.json');
+  const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
+  fs.writeFileSync(manifestFile, JSON.stringify({ ...manifest, client: { ...manifest.client, tableHash: 'older' } }));
+  const stale = GD.openStore({ dataDir, clientBuild: FOREVER_CLIENT });
+  assert.deepEqual([...stale.community.sameMaps()], []);
+  const staleNpc = call(stale, 'wow_npc', { id: 7001 });
+  assert.deepEqual(staleNpc.results[0].onMaps, [], 'no map membership from rectangles that no longer match');
+  assert.match(staleNpc.notes.join(' '), /built with Classic Era client data 1\.15\.9\.300, not the Classic Era data synced now \(1\.15\.9\.300\)/);
+  fs.writeFileSync(manifestFile, JSON.stringify(manifest));
+  fs.renameSync(path.join(dataDir, 'classic_era', 'current'), path.join(dataDir, 'classic_era', 'current.off'));
+  const noEra = GD.openStore({ dataDir, clientBuild: FOREVER_CLIENT });
+  assert.match(call(noEra, 'wow_npc', { id: 7001 }).notes.join(' '), /Classic Era client tables are not synced, .*"claude-wow data sync --flavor classic_era"/);
+  fs.renameSync(path.join(dataDir, 'classic_era', 'current.off'), path.join(dataDir, 'classic_era', 'current'));
+  const era = D.readCurrent(path.join(dataDir, 'classic_era'));
+  const eraManifest = path.join(era.dir, 'manifest.json');
+  const em = JSON.parse(fs.readFileSync(eraManifest, 'utf8'));
+  fs.writeFileSync(eraManifest, JSON.stringify({ ...em, entities: { ...em.entities, uimapassignments: { ...em.entities.uimapassignments, rows: 99 } } }));
+  const broken = GD.openStore({ dataDir, clientBuild: FOREVER_CLIENT });
+  for (let k = 0; k < 2; k++) {
+    const answer = call(broken, 'wow_npc', { id: 7001 });
+    assert.ok(answer.unavailable.includes('uimapassignments (Classic Era client data)'), `a broken Era table is named in every answer (${k})`);
+  }
+});
+
+test('sharedMaps needs every rectangle of a map to be identical, counted pairwise', () => {
+  const rect = (id, uiMapID, n) => ({ id, uiMapID, mapID: 1, region: [0, 0, 0, n, n, 0], uiMin: [0, 0], uiMax: [1, 1] });
+  const fake = rows => ({ rows: () => rows });
+  assert.deepEqual([...C.sharedMaps(fake([rect(1, 5, 10)]), fake([rect(9, 5, 10)]))], [5], 'the assignment ID does not matter');
+  assert.deepEqual([...C.sharedMaps(fake([rect(1, 5, 10)]), fake([{ ...rect(1, 5, 10), uiMin: [0.009, 0] }]))], [], 'a small change is a change');
+  assert.deepEqual([...C.sharedMaps(fake([rect(1, 5, 10), rect(2, 5, 10)]), fake([rect(1, 5, 10), rect(2, 5, 20)]))], [], 'two rectangles are not matched by one');
 });
 
 test('a store written by another converter shape is not read, and the next sync converts again', async () => {
