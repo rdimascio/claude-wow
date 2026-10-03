@@ -336,9 +336,47 @@ test('Ctrl+C or SIGTERM during a deploy removes the temporary worktree and build
   const before = REL.currentName(r.l);
   assert.equal(await D.main(['rollback'], r.ctx), 1);
   assert.deepEqual(rollbackExits, [{ code: 143, lock: false }]);
+  assert.match(r.err.join('\n'), /stopped by SIGTERM; released the deploy lock; nothing was switched/);
+  assert.doesNotMatch(r.err.join('\n'), /build folder/, 'a rollback builds nothing, so its message does not claim to remove build folders');
   assert.ok(!fs.existsSync(r.l.lock), 'the rollback lock is released');
   assert.equal(REL.currentName(r.l), before);
   assert.deepEqual(r.events.filter(e => e[0] !== 'probe'), [], 'no restart');
+});
+
+test('the signal handlers are in place before the lock is taken, so a Ctrl+C right after the lock is taken still releases it', { skip: NO_SYMLINKS }, async () => {
+  const root = scratch('signal-before-lock');
+  const repo = makeRepo(root);
+  for (const command of [['deploy', 'HEAD', '--repo', repo], ['rollback']]) {
+    const h = harness(root);
+    const listening = [];
+    const now = h.ctx.now;
+    h.ctx.now = () => {
+      if (!listening.length && !fs.existsSync(h.l.lock)) listening.push(h.ctx.signals.listenerCount('SIGINT') + h.ctx.signals.listenerCount('SIGTERM'));
+      return now();
+    };
+    await D.main(command, h.ctx);
+    assert.equal(listening[0], 2, `${command[0]}: SIGINT and SIGTERM handlers exist while the lock is being taken`);
+    assert.ok(!fs.existsSync(h.l.lock), `${command[0]}: the lock is released`);
+  }
+});
+
+test('previous names the current release after a deploy died between its two writes: rollback refuses with the way out, status warns', { skip: NO_SYMLINKS }, async () => {
+  const root = scratch('previous-is-current');
+  const repo = makeRepo(root);
+  assert.equal(await D.main(['deploy', 'HEAD', '--repo', repo], harness(root).ctx), 0);
+  commit(repo, 'two');
+  assert.equal(await D.main(['deploy', 'HEAD', '--repo', repo], harness(root).ctx), 0);
+  const h = harness(root);
+  const current = REL.currentName(h.l);
+  fs.writeFileSync(h.l.previous, `${current}\n`);
+  assert.equal(await D.main(['rollback'], h.ctx), 1);
+  assert.match(h.err.join('\n'), new RegExp(`names ${current.replace(/\./g, '\\.')}, the current release, so there is nothing to roll back to.*To finish that deploy, run it again`));
+  assert.deepEqual(h.events, [], 'no idle wait, no restart');
+  assert.ok(!fs.existsSync(h.l.lock));
+  const s = harness(root);
+  assert.equal(await D.main(['status'], s.ctx), 0);
+  assert.ok(s.out.some(line => /^warning  : .*nothing to roll back to/.test(line)), s.out.join('\n'));
+  assert.equal(REL.currentName(h.l), current);
 });
 
 test('the restart goes through the service backend: a loaded agent is kickstarted, an unloaded one (after service stop) is bootstrapped', { skip: NO_SYMLINKS }, async () => {

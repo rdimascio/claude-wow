@@ -523,6 +523,11 @@ test('the title flag and a generated title cross the protocol', () => {
   assert.match(P.luaTable('X', [{ chat: 'c', id: 5, status: 'working', text: 'x', title: 'T', titleFor: 3 }]), /titleFor = 3,/);
 });
 
+test('a reply record carries the addon session token it answers, and no token field when the bridge has none', () => {
+  assert.match(P.luaTable('X', [{ chat: 'c', id: 1, status: 'done', text: 'x', token: '5f3a1b2c3d4e' }]), /\t\t\ttoken = "5f3a1b2c3d4e",/);
+  for (const token of [undefined, '', 7, null]) assert.ok(!/token =/.test(P.luaTable('X', [{ chat: 'c', id: 1, status: 'done', text: 'x', token }])), `no token line for ${token}`);
+});
+
 test('titles: the model is configurable, and its answer is cut to one clean line', () => {
   const T = require('../bridge/titles');
   assert.equal(T.titleModel({}), 'claude-haiku-4-5');

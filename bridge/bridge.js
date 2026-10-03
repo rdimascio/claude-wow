@@ -657,7 +657,7 @@ function slotsInstalled() {
 let warnedNoAddon = false;
 function publishNow(urgent = true, { refresh = false } = {}) {
   lastPublish = Date.now();
-  const records = [...live.values()].slice(-30);
+  const records = [...live.entries()].slice(-30).map(([key, record]) => ({ ...record, token: addonSessionOfKey(key) }));
   try {
     G.atomicWrite(INBOX_FILE, slotFile('ClaudeWoW_Inbox', records, urgent));
   } catch (e) {
@@ -711,6 +711,29 @@ function restoreReplies() {
     saveState();
   }
   if (restored) log(`republishing ${restored} finished repl${restored === 1 ? 'y' : 'ies'} from before the restart, so a reply the game has not read yet is not lost`);
+}
+
+function addonSessionOfKey(key) {
+  return String(key).split(':')[0];
+}
+let currentAddonSession = '';
+
+function noteAddonSession(job) {
+  const token = typeof job.session === 'string' ? job.session : '';
+  if (!token || token === currentAddonSession) return;
+  currentAddonSession = token;
+  const fromOtherSession = key => addonSessionOfKey(key) !== token;
+  const droppedKeys = new Set();
+  for (const key of [...live.keys()]) if (fromOtherSession(key)) { live.delete(key); droppedKeys.add(key); }
+  const kept = state.replies && typeof state.replies === 'object' ? state.replies : null;
+  if (kept) {
+    for (const key of Object.keys(kept)) if (fromOtherSession(key)) { delete kept[key]; droppedKeys.add(key); }
+    if (!Object.keys(kept).length) delete state.replies;
+  }
+  const dropped = droppedKeys.size;
+  if (!dropped) return;
+  try { saveState(); } catch (e) { log(`could not save state.json after dropping old replies (${e.message})`); }
+  log(`addon session ${token}: dropped ${dropped} repl${dropped === 1 ? 'y' : 'ies'} kept for another addon session, so an old reply cannot answer a new message with the same id`);
 }
 
 // Final results publish immediately; progress is throttled. `key` is the chat
@@ -939,6 +962,7 @@ function submit(job) {
     acksSent = P.noteAck(acksSent, job);
     return;
   }
+  noteAddonSession(job);
   clearSignalsAhead(job.id);
   if (CAMPAIGN.isDmRecord(job)) {
     markHandled(job);
@@ -995,6 +1019,7 @@ function submit(job) {
 }
 
 function dispatchMessage(job) {
+  dropHeld(job);
   const key = chatKey(job);
   const cur = running.get(key);
   if (cur && cur.job.id === job.id) return;
@@ -1030,13 +1055,13 @@ function cancelRun(job) {
     return;
   }
   const wasHeld = dropHeld({ ...job, id: job.cancel });
-  if (wasHeld) {
+  const cur = running.get(key);
+  if (wasHeld && !(cur && cur.job.id === job.cancel)) {
     markHandled(wasHeld);
     saveState();
     log(`${tagOf(wasHeld)} cancelled from the game while it was held for a deploy`);
     return;
   }
-  const cur = running.get(key);
   if (cur && cur.job.id === job.cancel) {
     cur.job.cancelled = true;
     log(`${tagOf(cur.job)} cancelled from the game; ending it and everything it started`);
@@ -1085,7 +1110,10 @@ const HELD_KEPT = 20;
 const HELD_KEEP_MS = 60 * 60 * 1000;
 
 function noteHeld() {
-  const entries = [...held.values()].slice(-HELD_KEPT).map(entry => ({ at: entry.at, job: entry.job }));
+  const all = [...held.values()];
+  const unsaved = all.slice(0, Math.max(0, all.length - HELD_KEPT));
+  if (unsaved.length) log(`${unsaved.length} held message(s) (${unsaved.map(entry => tagOf(entry.job)).join(', ')}) are not saved to state.json: only the newest ${HELD_KEPT} are; they still run when the deploy ends unless the bridge restarts first`);
+  const entries = all.slice(-HELD_KEPT).map(entry => ({ at: entry.at, job: entry.job }));
   if (entries.length) state.held = entries;
   else delete state.held;
   try { saveState(); } catch (e) { log(`could not save the held messages to state.json (${e.message})`); }
@@ -1139,7 +1167,7 @@ function holdForDeploy(job, since = Date.now()) {
     held.set(key, { at: since, job: copy || job });
     noteHeld();
   }
-  if (!heldTimer) heldTimer = setInterval(releaseHeld, DEPLOY_HOLD_POLL_MS);
+  if (!heldTimer) heldTimer = setInterval(releaseHeld, Number(cfg.deployHoldPollMs) > 0 ? Number(cfg.deployHoldPollMs) : DEPLOY_HOLD_POLL_MS);
   return true;
 }
 
@@ -1981,11 +2009,23 @@ function attachGameView(img, cropTop, jobs, source) {
   log(`vision: ${source} -> ${view.width}x${view.height} png, ${Math.round(png.length / 1024)} KB, for ${jobs.map(j => '#' + j.id).join(', ')}`);
 }
 
+function heldVisionFiles() {
+  const saved = Array.isArray(state.held) ? state.held : [];
+  const files = new Set();
+  for (const entry of [...held.values(), ...saved]) {
+    const file = entry && entry.job && entry.job.image && entry.job.image.file;
+    if (typeof file === 'string' && file) files.add(path.resolve(file));
+  }
+  return files;
+}
+
 // Keep the newest `keep` vision files in bridge/tmp; 0 sweeps them all (startup).
 function pruneVisionFiles(keep) {
   let names = [];
   try { names = fs.readdirSync(TMP_DIR).filter(V.isVisionFile); } catch { return; }
-  const files = names.map(name => { const f = path.join(TMP_DIR, name); let m = 0; try { m = fs.statSync(f).mtimeMs; } catch {} return { f, m }; })
+  const waiting = heldVisionFiles();
+  const files = names.map(name => path.join(TMP_DIR, name)).filter(f => !waiting.has(path.resolve(f)))
+    .map(f => { let m = 0; try { m = fs.statSync(f).mtimeMs; } catch {} return { f, m }; })
     .sort((a, b) => b.m - a.m);
   for (const { f } of files.slice(keep)) { try { fs.unlinkSync(f); } catch {} }
 }

@@ -164,6 +164,28 @@ test('a flip that fails puts previous back as it was, so the way back to the rel
   assert.deepEqual(fs.readdirSync(base).filter(f => f.endsWith('.tmp')), []);
 });
 
+test('a deploy that died after it wrote previous and before the flip: rollback names the state and the way out, and running the deploy again repairs previous', { skip: NO_SYMLINKS }, () => {
+  const base = scratch('died-before-flip');
+  const l = REL.layout(base);
+  for (const n of ['a', 'b', 'c']) REL.installRelease(l, { name: `0.5.0-${n}`, binaryFile: fakeBinary(base, n) });
+  REL.activate(l, '0.5.0-a');
+  REL.activate(l, '0.5.0-b');
+  let diedAt = null;
+  assert.throws(() => REL.activate(l, '0.5.0-c', { point: () => { diedAt = [REL.currentName(l), REL.previousName(l)]; throw new Error('killed'); } }), /killed/);
+  fs.writeFileSync(l.previous, `${diedAt[1]}\n`);
+  assert.deepEqual([REL.currentName(l), REL.previousName(l)], ['0.5.0-b', '0.5.0-b'], 'the state a kill between the two writes leaves');
+  assert.throws(() => REL.rollback(l), e => {
+    assert.match(e.message, /names 0\.5\.0-b, the current release, so there is nothing to roll back to/);
+    assert.match(e.message, /stopped after it wrote .*previous and before it switched/);
+    assert.match(e.message, /To finish that deploy, run it again/);
+    return true;
+  });
+  assert.equal(REL.currentName(l), '0.5.0-b', 'nothing moved');
+  REL.activate(l, '0.5.0-c');
+  assert.deepEqual([REL.currentName(l), REL.previousName(l)], ['0.5.0-c', '0.5.0-b'], 'the deploy run again records the right previous');
+  assert.equal(REL.rollback(l).name, '0.5.0-b');
+});
+
 test('a release counts only once its binary and release.json are flushed and the folder has its final name; a folder without the marker is never reused', { skip: NO_SYMLINKS }, () => {
   const base = scratch('durable');
   const l = REL.layout(base);

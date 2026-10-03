@@ -176,8 +176,12 @@ function rollback(l) {
   if (!prev) throw new Error(`no previous release is recorded in ${l.previous}`);
   if (!hasRelease(l, prev)) throw new Error(`the previous release ${prev} is gone from ${l.releases}`);
   const was = currentName(l);
-  if (was === prev) throw new Error(`the previous release ${prev} is already current`);
+  if (was === prev) throw new Error(previousIsCurrentMessage(l, prev));
   return activate(l, prev);
+}
+
+function previousIsCurrentMessage(l, name) {
+  return `${l.previous} names ${name}, the current release, so there is nothing to roll back to. A deploy or rollback stopped after it wrote ${l.previous} and before it switched; ${name} is still the release that runs. To finish that deploy, run it again; to go to another release, deploy its ref (a release already in ${l.releases} is not built again).`;
 }
 
 function releaseTime(l, name) {
@@ -366,7 +370,7 @@ function releaseLock(file, token) {
 module.exports = {
   BINARY, RELEASES_DIR, KEEP_RELEASES, LOCK_MAX_AGE_MS, RELEASE_INFO, PREPARING, SWITCHING,
   layout, releaseDir, releaseBinary, currentBinary, validName, checkName, isInsideReleases,
-  currentName, previousName, hasRelease, releaseComplete, installRelease, pointCurrentAt, activate, rollback,
+  currentName, previousName, hasRelease, releaseComplete, installRelease, pointCurrentAt, activate, rollback, previousIsCurrentMessage,
   listReleases, prune, pruneStaging, pruneReported, installAndActivate,
   pidAlive, readLock, acquireLock, releaseLock, takeOverStale, switchingHolder,
 };
