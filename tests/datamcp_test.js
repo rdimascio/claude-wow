@@ -62,7 +62,7 @@ test('every row and every answer carries source, build and trust; found rows are
   assert.deepEqual({ source: row.source, build: row.build, trust: row.trust }, { source: 'wago.tools', build: BUILD, trust: 'client-data' });
   assert.deepEqual(row, {
     kind: 'item', id: 502, name: 'Fixture Letter', quality: 1, itemLevel: 1, requiredLevel: 0, inventoryType: 0, sellPrice: 0, buyPrice: 0,
-    startsQuest: { id: 101, inClientData: true }, reagentIn: [{ spellID: 4001, count: 1, skillLines: [{ id: 40, name: 'Fixture Craft', minSkillRank: 1 }] }], reagentInTotal: 1,
+    startsQuest: { id: 101, inClientData: true }, reagentIn: [{ spellID: 4001, name: 'Fixture Stitch', subtext: 'Rank 1', count: 1, skillLines: [{ id: 40, name: 'Fixture Craft', minSkillRank: 1 }] }], reagentInTotal: 1,
     source: 'wago.tools', build: BUILD, trust: 'client-data',
   });
   const missing = call(store, 'wow_item', { id: 999 });
@@ -99,6 +99,45 @@ test('wow_item by name says when several items share a shown name, and only then
   assert.deepEqual(shared.results.map(x => x.id), [blade.id]);
   assert.deepEqual(shared.notes.filter(n => /share|named/.test(n)), [`2 items are named "Fixture Blade" (IDs ${blade.id}, 9001): the name alone does not pick one.`]);
   assert.deepEqual(call(store, 'wow_item', { name: 'Fixture Letter' }).notes.filter(n => /named/.test(n)), []);
+});
+
+test('wow_spell names a spell and its rank from the client tables, with its skill lines and reagents, and says when ranks share a name', async () => {
+  const { dataDir } = await syncedHome('spell');
+  const store = GD.openStore({ dataDir, clientBuild: BUILD });
+  const r = call(store, 'wow_spell', { id: 4001 });
+  assert.equal(r.trust, 'client-data');
+  assert.deepEqual(r.results[0], { kind: 'spell', id: 4001, name: 'Fixture Stitch', subtext: 'Rank 1', skillLines: [{ id: 40, name: 'Fixture Craft', minSkillRank: 1 }], reagents: [{ itemID: 501, name: 'Fixture Blade', count: 2 }, { itemID: 502, name: 'Fixture Letter', count: 1 }], source: 'wago.tools', build: BUILD, trust: 'client-data' });
+  const ranks = call(store, 'wow_spell', { name: 'stitch' });
+  assert.deepEqual(ranks.results.map(x => [x.id, x.subtext]), [[4001, 'Rank 1'], [4002, 'Rank 2']]);
+  assert.match(ranks.notes.join(' '), /2 spells are named "Fixture Stitch" \(IDs 4001, 4002\)/);
+  assert.equal(call(store, 'wow_spell', { id: 4003 }).found, false, 'a name with a pipe never made it into the table');
+  assert.equal(call(store, 'wow_spell', { id: 4004 }).results[0].development, true, 'a test spell is marked');
+  assert.equal(r.results[0].development, undefined);
+  const manifestFile = path.join(D.readCurrent(path.join(dataDir, 'forever')).dir, 'manifest.json');
+  const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
+  delete manifest.entities.spellreagents;
+  fs.writeFileSync(manifestFile, JSON.stringify(manifest));
+  assert.equal(call(GD.openStore({ dataDir, clientBuild: BUILD }), 'wow_spell', { id: 4001 }).results[0].reagents, null, 'an unavailable reagent table is not "no reagents"');
+});
+
+test('wow_faction finds reputation factions only, with their parent, and its ID expands as a token', async () => {
+  const { dataDir } = await syncedHome('faction');
+  const store = GD.openStore({ dataDir, clientBuild: BUILD });
+  const r = call(store, 'wow_faction', { name: 'cartel' });
+  assert.deepEqual(r.results.map(x => [x.id, x.name, x.parent]), [[77, 'Fixture Cartel', { id: 76, name: 'Fixture Brotherhood' }]]);
+  assert.equal(call(store, 'wow_faction', { id: 78 }).found, false, 'a faction the reputation panel never shows is not in the table');
+  assert.equal(GR.createExpander(store).expand('help {faction:78}').ok, false);
+});
+
+test('a data folder swept by a newer sync while a store uses it answers nothing rather than half old data', async () => {
+  const { dataDir } = await syncedHome('swept');
+  const store = GD.openStore({ dataDir, clientBuild: BUILD });
+  assert.equal(call(store, 'wow_item', { name: 'Fixture' }).found, true, 'precondition: items are loaded');
+  await D.sync({ dataDir, build: BUILD, force: true, fetch: fakeWago({ ItemSparse: ITEMS_WITH_INJECTION }) });
+  const after = call(store, 'wow_item', { id: 501 });
+  assert.equal(after.found, false);
+  assert.deepEqual(after.unavailable, ['all tables']);
+  assert.match(after.notes.join(' '), /a newer sync replaced this data while it was in use; ask again/);
 });
 
 test('a name that reads like an instruction comes back as a quoted field value, never as text of its own', async () => {
@@ -248,13 +287,13 @@ test('an older sync without the SkillLine table still answers, with no skill nam
   const store = GD.openStore({ dataDir, clientBuild: BUILD });
   assert.equal(store.has('skilllines'), false);
   const r = call(store, 'wow_item', { id: 501 });
-  assert.deepEqual(r.results[0].reagentIn, [{ spellID: 4001, count: 2, skillLines: [{ id: 40, name: null, minSkillRank: 1 }] }]);
+  assert.deepEqual(r.results[0].reagentIn, [{ spellID: 4001, name: 'Fixture Stitch', subtext: 'Rank 1', count: 2, skillLines: [{ id: 40, name: null, minSkillRank: 1 }] }]);
   assert.deepEqual(r.unavailable, ['skilllines']);
   assert.match(r.notes.join(' '), /Table skilllines is unavailable \(this sync has no such table\)/);
   assert.equal(GR.createExpander(store).expand('{skill:40}').errors[0].reason, 'tableUnavailable');
 });
 
-test('MCP surface: initialize, tools/list (six read-only tools), tools/call, errors and notifications', async () => {
+test('MCP surface: initialize, tools/list (eight read-only tools), tools/call, errors and notifications', async () => {
   const { dataDir } = await syncedHome('mcp');
   const store = GD.openStore({ dataDir, flavor: 'forever' });
   const out = [];
@@ -271,7 +310,7 @@ test('MCP surface: initialize, tools/list (six read-only tools), tools/call, err
   assert.equal(out[0].result.protocolVersion, '2025-06-18');
   assert.deepEqual(out[0].result.serverInfo.name, 'wowdata');
   assert.deepEqual(out[0].result.capabilities, { tools: {} });
-  assert.deepEqual(out[1].result.tools.map(t => t.name), ['wow_item', 'wow_quest', 'wow_npc', 'wow_flights', 'wow_where', 'wow_sources']);
+  assert.deepEqual(out[1].result.tools.map(t => t.name), ['wow_item', 'wow_spell', 'wow_faction', 'wow_quest', 'wow_npc', 'wow_flights', 'wow_where', 'wow_sources']);
   for (const t of out[1].result.tools) {
     assert.equal(t.annotations.readOnlyHint, true, t.name);
     assert.equal(t.inputSchema.additionalProperties, false, t.name);
@@ -351,7 +390,7 @@ test('reference tokens: {item:ID}, {skill:ID} and {map:ID,x,y} expand to canonic
 test('reference tokens: unknown IDs, bad tokens, coordinates off the map and kinds with no names are rejected', async () => {
   const { dataDir } = await syncedHome('refs-bad');
   const ex = GR.createExpander(GD.openStore({ dataDir, clientBuild: BUILD }));
-  const r = ex.expand('{item:501} {item:999} {skill:41} {map:4242,1,1} {map:9002,100.5,3} {map:9002,-1,3} {item:abc} {quest:101} {npc:1} {faction:76}');
+  const r = ex.expand('{item:501} {item:999} {skill:41} {map:4242,1,1} {map:9002,100.5,3} {map:9002,-1,3} {item:abc} {quest:101} {npc:1} {faction:999}');
   assert.equal(r.ok, false);
   assert.equal(r.text, null, 'nothing partly expanded reaches a player');
   assert.deepEqual(r.errors.map(e => [e.token, e.reason]), [
@@ -363,10 +402,12 @@ test('reference tokens: unknown IDs, bad tokens, coordinates off the map and kin
     ['{item:abc}', 'badToken'],
     ['{quest:101}', 'unsupportedKind'],
     ['{npc:1}', 'unsupportedKind'],
-    ['{faction:76}', 'unsupportedKind'],
+    ['{faction:999}', 'unknownId'],
   ]);
   assert.deepEqual(r.refs.map(x => x.id), [501]);
   assert.deepEqual(GR.parseRefs('{item:1}{map:2,3,4}').map(x => x.kind), ['item', 'map']);
+  const faction = ex.expand('help {faction:76}');
+  assert.equal(faction.text, 'help Fixture Brotherhood', 'a faction token expands from the client Faction table');
 });
 
 test('reference tokens: no data or another build family rejects every token', async () => {
@@ -468,7 +509,7 @@ test('wow_item lists every skill line a recipe spell is in', async () => {
   const twoLines = 'AbilityVerb_lang,AbilityAllVerb_lang,ID,SkillLine,Spell,MinSkillLineRank,ClassMask,SupercedesSpell,AcquireMethod,TrivialSkillLineRankHigh,TrivialSkillLineRankLow\n,,301,40,4001,1,0,0,1,25,10\n,,303,2940,4001,75,0,0,1,100,90\n';
   const { dataDir } = await syncedHome('twolines', { overrides: { SkillLineAbility: twoLines } });
   const r = call(GD.openStore({ dataDir, clientBuild: BUILD }), 'wow_item', { id: 501 });
-  assert.deepEqual(r.results[0].reagentIn, [{ spellID: 4001, count: 2, skillLines: [{ id: 40, name: 'Fixture Craft', minSkillRank: 1 }, { id: 2940, name: 'Fixture Craft', minSkillRank: 75 }] }]);
+  assert.deepEqual(r.results[0].reagentIn, [{ spellID: 4001, name: 'Fixture Stitch', subtext: 'Rank 1', count: 2, skillLines: [{ id: 40, name: 'Fixture Craft', minSkillRank: 1 }, { id: 2940, name: 'Fixture Craft', minSkillRank: 75 }] }]);
 });
 
 test('wow_where by uiMapID says how many child maps there are and whether the list is cut', async () => {

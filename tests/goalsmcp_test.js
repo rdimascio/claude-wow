@@ -64,7 +64,7 @@ test('in-game runs get goals, orders, campaigns and routes, never the vote tools
   assert.ok(GM.deniedBy(['Read(//h/home/**)'], 'Read(/h//home/a)', 'linux'), 'duplicate separators collapse');
   assert.equal(P.absolutePathRule('Read', 'C:\\Users\\RUNNER~1\\home\\**'), 'Read(//c/Users/RUNNER~1/home/**)', 'the drive letter is kept');
   assert.deepEqual([...GM.DENIED_WITHOUT_TOOLS], ['mcp__wowgoals']);
-  assert.match(GM.INSTRUCTIONS, /\{item:ID\}, \{skill:ID\}, \{map:ID,x,y\}/);
+  assert.match(GM.INSTRUCTIONS, /\{item:ID\}, \{skill:ID\}, \{faction:ID\}, \{map:ID,x,y\}/);
 });
 
 test('launch config: the bridge\'s own command, the run id in the server args, the token only in the server env (the bridge writes it to a private file, never to argv), alwaysLoad', () => {

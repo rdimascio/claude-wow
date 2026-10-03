@@ -142,6 +142,8 @@ function isPercent(n) {
   return typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 100;
 }
 
+class Skip extends Error {}
+
 class Drop extends Error {
   constructor(reason) { super(reason); this.reason = reason; }
 }
@@ -329,7 +331,38 @@ const TABLES = Object.freeze([
       return { id: idOf(row), spellID: idOf(row, 'SpellID'), reagents };
     },
   },
+  {
+    table: 'SpellName',
+    entity: 'spells',
+    optional: true,
+    columns: ['ID', 'Name_lang'],
+    convert(row) {
+      return { id: idOf(row), name: nameOf(row, 'Name_lang') };
+    },
+  },
+  {
+    table: 'Spell',
+    entity: 'spellranks',
+    optional: true,
+    columns: ['ID', 'NameSubtext_lang'],
+    convert(row) {
+      const subtext = toName(row.NameSubtext_lang);
+      if (!subtext) throw new Skip();
+      return { id: idOf(row), subtext };
+    },
+  },
+  {
+    table: 'Faction',
+    entity: 'factions',
+    optional: true,
+    columns: ['ID', 'Name_lang', 'ParentFactionID', 'ReputationIndex'],
+    convert(row) {
+      if (intOf(row, 'ReputationIndex') < 0) throw new Skip();
+      return { id: idOf(row), name: nameOf(row, 'Name_lang'), parentFactionID: intOf(row, 'ParentFactionID') };
+    },
+  },
 ]);
+const TABLES_VERSION = 2;
 
 function sha256(text) {
   return crypto.createHash('sha256').update(text).digest('hex');
@@ -361,6 +394,7 @@ function convertTable(spec, text, ctx) {
     try {
       record = spec.convert(row, ctx);
     } catch (e) {
+      if (e instanceof Skip) continue;
       if (e instanceof Drop) { drop(e.reason); continue; }
       throw e;
     }
@@ -582,7 +616,7 @@ async function sync(opts = {}) {
     assertBuild(build);
     assertFlavorBuild(flavorName, build);
     const before = readCurrent(root);
-    if (!opts.force && before && before.build === build) {
+    if (!opts.force && before && before.build === build && before.manifest.tablesVersion === TABLES_VERSION) {
       log(`${flavorName} data is already at ${build}; nothing to do (--force syncs it again)`);
       return { status: 'current', build, dir: before.dir, manifest: before.manifest };
     }
@@ -611,6 +645,8 @@ async function sync(opts = {}) {
           converted = convertTable(spec, text, ctx);
         } catch (e) {
           if (!spec.optional || !(e instanceof SyncError)) throw e;
+          const had = before && before.build === build && before.manifest.tables && before.manifest.tables[spec.table];
+          if (had && had.sha256) throw new SyncError(`${spec.table} could not be fetched again (${e.message}); the current data keeps it, so nothing was changed. Try again later`);
           tables[spec.table] = { url, entity: spec.entity, error: e.message };
           log(`${spec.entity}: skipped, ${e.message}`);
           continue;
@@ -628,6 +664,7 @@ async function sync(opts = {}) {
       const manifest = {
         schema: MANIFEST_SCHEMA,
         flavor: flavorName,
+        tablesVersion: TABLES_VERSION,
         source: SOURCE_NAME,
         product: flavor.product,
         url: WAGO_ORIGIN,
@@ -706,6 +743,9 @@ async function main(argv, deps = {}) {
     }
     const result = await sync(run);
     if (result.status === 'synced') out(`${result.manifest.rows} rows kept, ${result.manifest.dropped} dropped; current build ${result.build} (${result.manifest.flavor}) in ${result.dir}\n`);
+    const C = require('./communitydata');
+    const community = result.manifest.flavor === C.FLAVOR ? C.readCommunity(C.communityRoot(home.data)) : null;
+    if (community && (community.manifest.client || {}).tableHash !== result.manifest.tableHash) out(`community data ${community.version} was built with other client data, so its positions are hidden until you run "claude-wow data sync --flavor classic_era --source community"\n`);
     return 0;
   } catch (e) {
     err(`data sync failed: ${e && e.message ? e.message : String(e)}\n`);
@@ -715,7 +755,7 @@ async function main(argv, deps = {}) {
 }
 
 module.exports = {
-  BUILD_PATTERN, FLAVORS, TABLES, MAX_NAME_LENGTH, LOCK_FILE, LOCK_STALE_MS, CURRENT_FILE, MANIFEST_FILE,
+  BUILD_PATTERN, FLAVORS, TABLES, TABLES_VERSION, MAX_NAME_LENGTH, LOCK_FILE, LOCK_STALE_MS, CURRENT_FILE, MANIFEST_FILE,
   SyncError, LockedError, UsageError,
   DEFAULT_FLAVOR, isBuild, assertBuild, flavorForBuild, syncCommand, buildFamily, compatibility, compareBuilds, buildsUrl, tableUrl,
   parseCsv, toInt, toNumber, toName, convertTable, placeOnMap,
