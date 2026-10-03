@@ -545,7 +545,7 @@ function createLive(overrides = {}) {
       c.fail(job, noSessionText(target));
       return;
     }
-    const ctx = c.gameContext();
+    const ctx = c.gameContext(job);
     const content = LP.channelContent(P.messagePrompt(job.text, ctx), chatId);
     const meta = LP.channelMeta(job, chatId, ctx);
     if (!sendTo(s, { type: 'message', content, meta })) {

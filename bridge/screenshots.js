@@ -10,16 +10,6 @@
 const fs = require('fs');
 const path = require('path');
 
-// <client>/Interface/AddOns -> <client>/Screenshots. The client root is the
-// grandparent of the addon folder, whatever the client is called.
-function screenshotDir(cfg) {
-  const c = (cfg && cfg.capture) || {};
-  if (c.screenshotDir) return path.resolve(c.screenshotDir);
-  const addonDir = String((cfg && cfg.addonDir) || '').replace(/[\\/]+$/, '');
-  if (!addonDir) return '';
-  return path.join(path.dirname(path.dirname(addonDir)), 'Screenshots');
-}
-
 const SHOT_RE = /^WoWScrnShot_\d{6}_\d{6}\.(png|tga)$/i;
 function isScreenshotFile(name) {
   return SHOT_RE.test(String(name || ''));
@@ -157,4 +147,4 @@ function sweepOrphans(dir, hasStrip, opts = {}) {
   return out;
 }
 
-module.exports = { screenshotDir, isScreenshotFile, watchScreenshots, sweepOrphans };
+module.exports = { isScreenshotFile, watchScreenshots, sweepOrphans };
