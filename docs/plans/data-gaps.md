@@ -26,7 +26,7 @@ Counts measured 2026-10-02 (client: wago.tools CSV for Era `1.15.9.70003` and Fo
 | Bosses per instance, world bosses | client `DungeonEncounter` (307; 342): name, `MapID`, order; MapID 0 for world bosses | client | step 2 |
 | Instance level ranges | client `LFGDungeons` on Era only (21 dungeons + 5 raids, `MapID` is 0, names differ): a hand-checked name map, rows with Min > Max rejected; none on Forever (no level columns) | client | step 2, Era only |
 | Attunements and keys | community entrance requirements (`areatrigger_teleport`: Onyxia needs Drakefire Amulet, Blackwing Lair quest 7761, Molten Core quest 7848) and client `Item` class 13 keys (133 on Era) | community + client | step 6 |
-| Who drops what (gear, mounts) | community `creature_loot_template` via `creature_template.LootId`, `reference_loot_template` (depth 1, no cycles today; asserted), boss names joined to `DungeonEncounter` by exact name; encounter chests via `gameobject_loot_template` keyed by the chest's `data1` | community | step 3 |
+| Who drops what (gear, mounts) | community `creature_loot_template` via `creature_template.LootId`, `reference_loot_template` (measured 2026-10-04: depth 2 in 6 rows, no cycles; deeper nests and loops refuse the conversion), boss names joined to `DungeonEncounter` by exact name; encounter chests via `gameobject_loot_template` keyed by the chest's `data1` | community | step 3 |
 | Skinning, pick pocket, fishing, containers, disenchant | `skinning_` via `SkinningLootId`, `pickpocketing_` via `PickpocketLootId`, `fishing_` by zone, `item_loot_template` (containers), `disenchant_loot_template` | community | step 3 |
 | Mail and spell loot | `mail_loot_template`, `spell_loot_template` | community | not planned: rare questions; revisit on request |
 | Mounts | client `ItemEffect` (16,965) joined to `SpellEffect` with aura 78 (mounted); the item class does not mark mounts on Era (all 1.12 mounts are class 15 subclass 0) | client | step 5 |
@@ -54,7 +54,7 @@ Counts measured 2026-10-02 (client: wago.tools CSV for Era `1.15.9.70003` and Fo
 
 1. **Spell names and factions:** `SpellName`, `Spell` (rank text only), `Faction`; `wow_spell {id | name}`; `{faction:ID}` expands. The phrase index does not gain spell names in this step.
 2. **Instances and bosses:** `Map`, `DungeonEncounter`, Era `LFGDungeons` levels; `wow_instance {id | name}`.
-3. **Who drops what:** the loot joins above, stored grouped by loot template (not expanded per NPC: the full expansion is 1,313,686 NPC-item pairs, 55 MB as flat JSONL), with a reverse index built on first use and its memory and latency measured; `wow_item.droppedBy`, `wow_npc.drops`, boss drops in `wow_instance`.
+3. **Who drops what** (built 2026-10-04, PR "feat(data): who drops what"): the loot joins above, stored grouped by loot template (not expanded per NPC: the full expansion is 1,312,485 NPC-item pairs (1,313,686 in revision 2's count), 55 MB as flat JSONL), with a reverse index built on first use and its memory and latency measured; `wow_item.droppedBy`, `wow_npc.drops`, boss drops in `wow_instance`.
 4. **Vendors, trainers, recipes:** `SpellEffect` (effect 36 only), `ItemEffect`; `soldBy`, `sells`, `teaches`, `taughtBy`, recipe sources.
 5. **Mounts, item sets, talents:** `ItemEffect` + `SpellEffect` aura 78, quest reward spells, `ItemSet`, `ItemSetSpell`, `Talent*`.
 6. **Quest details and attunements:** objectives as relations, rewards, typed chains, entrance requirements, keys.

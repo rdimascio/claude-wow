@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const D = require('./datasync');
 const GD = require('./gamedata');
 const S = require('./sqldump');
+const L = require('./communityloot');
 
 const FLAVOR = 'classic_era';
 const SOURCE = 'cmangos';
@@ -22,10 +23,10 @@ const MAX_LISTING_BYTES = 256 * 1024;
 const MAX_DUMP_BYTES = 64 * 1024 * 1024;
 const MAX_SQL_BYTES = 256 * 1024 * 1024;
 const MAX_SPAWNS = 25;
-const ENTITIES = Object.freeze(['npcs', 'questinfo', 'objects']);
+const ENTITIES = Object.freeze(['npcs', 'questinfo', 'objects', ...L.ENTITIES]);
 const JUNK = /^\[|<(?:NYI|UNUSED|TXT|TEST)>|\b(?:UNUSED|DEPRECATED|Trigger|Credit Marker|Only GM|zzOLD)\b|\(OLD\)/i;
 const NPC_JUNK = /\bDND\b|\((?:TEST|PH)\)|<PH>|\b[Pp]laceholder\b|\bTest Dummy\b|\bTEST\b/;
-const SHAPE = 2;
+const SHAPE = 3;
 
 function communityRoot(dataDir) {
   return path.join(D.flavorDir(dataDir, FLAVOR), 'community');
@@ -70,15 +71,20 @@ function sharedMaps(era, game) {
 }
 
 const PLACEMENT_TABLES = Object.freeze(['UiMap', 'UiMapAssignment', 'QuestV2']);
+const LOOT_TABLES = Object.freeze(['ItemSparse', 'AreaTable', 'DungeonEncounter']);
+
+function tablesHash(manifest, names) {
+  const tables = (manifest && manifest.tables) || {};
+  return crypto.createHash('sha256').update(names.map(t => `${t}:${(tables[t] && tables[t].sha256) || 'absent'}`).join('\n')).digest('hex');
+}
 
 function placementHash(manifest) {
   const tables = (manifest && manifest.tables) || {};
-  if (!PLACEMENT_TABLES.every(t => tables[t] && tables[t].sha256)) return null;
-  return crypto.createHash('sha256').update(PLACEMENT_TABLES.map(t => `${t}:${tables[t].sha256}`).join('\n')).digest('hex');
+  return PLACEMENT_TABLES.every(t => tables[t] && tables[t].sha256) ? tablesHash(manifest, PLACEMENT_TABLES) : null;
 }
 
 function clientIdentity(store) {
-  return store && store.build ? { build: store.build, placementHash: placementHash(store.manifest) } : null;
+  return store && store.build ? { build: store.build, placementHash: placementHash(store.manifest), lootHash: tablesHash(store.manifest, LOOT_TABLES) } : null;
 }
 
 function openCommunity({ dataDir, flavor, client = null, gameStore = null }) {
@@ -285,10 +291,11 @@ function convert(sql, client) {
     const spot = place(r.map, r.position_x, r.position_y);
     addSpawn(object, spot && { ...spot, ...(objectEvents.has(r.guid) ? { event: true } : {}) });
   }
+  const loot = L.convert(sql, client, { npcs, nameOrDrop, drop });
   const sorted = m => [...m.values()].map(finishSpawns).sort((a, b) => a.id - b.id);
-  const entities = { npcs: sorted(npcs), questinfo: [...quests.values()].sort((a, b) => a.id - b.id), objects: sorted(objects) };
+  const entities = { npcs: sorted(npcs), questinfo: [...quests.values()].sort((a, b) => a.id - b.id), objects: sorted(objects), ...loot.entities };
   for (const required of ['npcs', 'questinfo']) if (!entities[required].length) throw new S.DumpError(`no ${required} row survived conversion; the dump layout changed`);
-  return { entities, droppedBy };
+  return { entities, droppedBy, loot: loot.loot };
 }
 
 function writeJsonl(file, records) {
@@ -316,8 +323,9 @@ async function syncCommunity(opts = {}) {
   if (!opts.dataDir) throw new D.SyncError('no data folder given');
   if (typeof fetchImpl !== 'function') throw new D.SyncError('no fetch function given');
   const client = GD.openStore({ dataDir: opts.dataDir, flavor: FLAVOR });
-  if (!client.build || !['uimaps', 'uimapassignments', 'quests'].every(e => client.has(e))) {
-    throw new D.SyncError(`the Classic Era client tables are needed first (map positions and quest IDs come from them): run "${D.syncCommand(FLAVOR)}"`);
+  const needed = ['uimaps', 'uimapassignments', 'quests', 'items', 'zones', ...((client.manifest && client.manifest.entities && client.manifest.entities.encounters) ? ['encounters'] : [])];
+  if (!client.build || !needed.every(e => client.has(e))) {
+    throw new D.SyncError(`the Classic Era client tables are needed first (map positions, quest IDs, items, zones and encounters come from them): run "${D.syncCommand(FLAVOR)}"`);
   }
   const root = communityRoot(opts.dataDir);
   const lock = D.acquireLock(root, now, opts.pidAlive);
@@ -332,7 +340,7 @@ async function syncCommunity(opts = {}) {
     const version = `${dump.revision}-${dump.sha.slice(0, 7)}`;
     const before = readCommunity(root);
     const identity = clientIdentity(client);
-    if (!opts.force && before && before.manifest.sha === dump.sha && before.manifest.client && before.manifest.client.placementHash && before.manifest.client.placementHash === identity.placementHash) {
+    if (!opts.force && before && before.manifest.sha === dump.sha && before.manifest.client && before.manifest.client.placementHash && before.manifest.client.placementHash === identity.placementHash && before.manifest.client.lootHash === identity.lootHash) {
       log(`community data is already at ${version} for client data ${client.build}; nothing to do (--force syncs it again)`);
       return { status: 'current', version, dir: before.dir, manifest: before.manifest };
     }
@@ -377,6 +385,7 @@ async function syncCommunity(opts = {}) {
         rows: Object.values(entities).reduce((s, e) => s + e.rows, 0),
         dropped: Object.values(converted.droppedBy).reduce((s, n) => s + n, 0),
         droppedBy: converted.droppedBy,
+        loot: converted.loot,
         entities,
       };
       fs.writeFileSync(path.join(tmpDir, D.MANIFEST_FILE), JSON.stringify(manifest, null, 2) + '\n');

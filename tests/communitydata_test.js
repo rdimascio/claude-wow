@@ -10,6 +10,7 @@ const GD = require('../bridge/gamedata');
 const DM = require('../bridge/datamcp');
 const S = require('../bridge/sqldump');
 const C = require('../bridge/communitydata');
+const L = require('../bridge/communityloot');
 
 const ERA_FIXTURES = path.join(__dirname, 'fixtures', 'wago-era');
 const SQL = fs.readFileSync(path.join(__dirname, 'fixtures', 'cmangos', 'classicdb.sql'), 'utf8');
@@ -82,9 +83,10 @@ test('sqldump reads multi-row INSERTs with escapes, NULL and numbers, by column 
   assert.deepEqual([...S.rows(SQL, 'gameobject_involvedrelation', ['id'])], []);
   assert.throws(() => [...S.rows(SQL, 'npc_vendor', ['entry'])], /table npc_vendor is missing/);
   assert.throws(() => [...S.rows(SQL, 'creature_template', ['Nope'])], /column Nope is missing/);
-  const broken = SQL.replace("(7001,'Fixture Giver','Quest Clerk',5)", "(7001,'Fixture Giver','Quest Clerk')");
-  assert.throws(() => [...S.rows(broken, 'creature_template', ['Entry'])], /a row has 3 values for 4 columns/);
-  assert.throws(() => [...S.rows(SQL.replace("'Fixture Rock')", "'Fixture Rock)"), 'gameobject_template', ['entry'])], S.DumpError);
+  const broken = SQL.replace("(7001,'Fixture Giver','Quest Clerk',5,7001,0,0)", "(7001,'Fixture Giver','Quest Clerk',5,7001,0)");
+  assert.notEqual(broken, SQL);
+  assert.throws(() => [...S.rows(broken, 'creature_template', ['Entry'])], /a row has 6 values for 7 columns/);
+  assert.throws(() => [...S.rows(SQL.replace("'Fixture Rock',0)", "'Fixture Rock,0)"), 'gameobject_template', ['entry'])], S.DumpError);
   assert.throws(() => [...S.rows(SQL.replace('(10,8001,1,1,100,100)', '(10,8001,1,1,100,DROP)'), 'gameobject', ['id'])], /unexpected value/);
   const listed = SQL.replace('INSERT INTO `creature` VALUES', 'INSERT INTO `creature` (`guid`,`id`,`map`,`spawnMask`,`position_x`,`position_y`,`position_z`) VALUES');
   assert.throws(() => [...S.rows(listed, 'creature', ['id'])], /1 INSERT statement\(s\) in a form this reader does not read/);
@@ -100,7 +102,7 @@ test('a community sync converts NPCs, spawns, quests and givers into their own s
   const r = await C.syncCommunity({ dataDir, fetch: gh.fetchImpl });
   assert.equal(r.status, 'synced');
   assert.equal(r.version, `z2815-${gh.entry.sha.slice(0, 7)}`);
-  assert.deepEqual(r.manifest.droppedBy, { junk: 5, relationWithoutQuest: 1 });
+  assert.deepEqual(r.manifest.droppedBy, { junk: 5, relationWithoutQuest: 1, lootItemNotInClient: 2, lootItemNotIn112: 1, lootRowInvalid: 2, lootConditionMissing: 1, referenceNeverRolled: 2, lootGroupNeverReached: 3 });
   assert.equal(r.manifest.trust, 'community-db');
   assert.equal(r.manifest.client.build, '1.15.9.300');
   assert.equal(path.dirname(r.dir), path.join(dataDir, 'classic_era', 'community'));
@@ -195,7 +197,7 @@ test('data sync --source community is Classic Era only and goes through the CLI'
   const out = [];
   const code = await D.main(['sync', '--flavor', 'classic_era', '--source', 'community'], { env: { CLAUDE_WOW_HOME: home }, fetch: fakeGitHub().fetchImpl, out: s => out.push(s), err: s => out.push(s) });
   assert.equal(code, 0, out.join(''));
-  assert.match(out.join(''), /8 rows kept, 6 dropped; current community data z2815-[0-9a-f]{7}/);
+  assert.match(out.join(''), /27 rows kept, 17 dropped; current community data z2815-[0-9a-f]{7}/);
   const changed = async url => (url.includes('/QuestV2/') ? new Response('ID,UniqueBitFlag\n111,1\n112,2\n', { status: 200, headers: { 'content-type': 'text/csv', 'content-disposition': `attachment; filename="QuestV2.${new URL(url).searchParams.get('build')}.csv"` } }) : fakeWago(url));
   const again = [];
   assert.equal(await D.main(['sync', '--flavor', 'classic_era', '--force'], { env: { CLAUDE_WOW_HOME: home }, fetch: changed, out: s => again.push(s), err: s => again.push(s) }), 0, again.join(''));
@@ -380,6 +382,18 @@ test('community data goes stale only when the client tables it was built from ch
   assert.equal(GD.openStore({ dataDir, clientBuild: ERA_CLIENT }).community.stale, true, 'a change to the quest table does not');
 });
 
+test('a community sync converts again when the client item, zone or encounter table changes, and only then', async () => {
+  const dataDir = await eraData('lootHash');
+  await C.syncCommunity({ dataDir, fetch: fakeGitHub().fetchImpl });
+  const csv = (table, body) => async url => (url.includes(`/${table}/`) ? new Response(body, { status: 200, headers: { 'content-type': 'text/csv', 'content-disposition': `attachment; filename="${table}.${new URL(url).searchParams.get('build')}.csv"` } }) : fakeWago(url));
+  await D.sync({ dataDir, flavor: 'classic_era', force: true, fetch: csv('SkillLine', 'ID,DisplayName_lang,CategoryID,ParentSkillLineID\n9,Other Fixture Line,11,0\n') });
+  assert.equal((await C.syncCommunity({ dataDir, fetch: fakeGitHub().fetchImpl })).status, 'current', 'a table the conversion does not read changes nothing');
+  const areas = fs.readFileSync(path.join(ERA_FIXTURES, 'AreaTable.csv'), 'utf8').replace('"Era Fixture Vale"', '"Era Fixture Valley"');
+  await D.sync({ dataDir, flavor: 'classic_era', force: true, fetch: csv('AreaTable', areas) });
+  assert.equal(GD.openStore({ dataDir, clientBuild: ERA_CLIENT }).community.stale, false, 'positions stay current');
+  assert.equal((await C.syncCommunity({ dataDir, fetch: fakeGitHub().fetchImpl })).status, 'synced', 'but the loot joins are redone');
+});
+
 test('a store written by another converter shape is not read, and the next sync converts again', async () => {
   const dataDir = await eraData('shape');
   const r = await C.syncCommunity({ dataDir, fetch: fakeGitHub().fetchImpl });
@@ -395,4 +409,222 @@ test('a dump whose NPC or quest table converts to nothing never replaces the cur
   const empty = SQL.replace(/INSERT INTO `quest_template` VALUES [^\n]*\n/, '');
   await assert.rejects(C.syncCommunity({ dataDir, fetch: fakeGitHub({ gz: zlib.gzipSync(Buffer.from(empty)) }).fetchImpl, force: true }), /no questinfo row survived conversion/);
   assert.equal(C.readCommunity(C.communityRoot(dataDir)).version, r.version);
+});
+
+function addEraEncounter(dataDir, row) {
+  const era = D.readCurrent(path.join(dataDir, 'classic_era'));
+  fs.appendFileSync(path.join(era.dir, 'encounters.jsonl'), JSON.stringify(row) + '\n');
+  const manifestFile = path.join(era.dir, 'manifest.json');
+  const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
+  manifest.entities.encounters.rows++;
+  fs.writeFileSync(manifestFile, JSON.stringify(manifest));
+}
+
+const MAJORDOMO = { id: 230, name: 'Majordomo Executus', mapID: 409, difficultyID: 0, orderIndex: 0 };
+const ids = list => list.map(r => r.id);
+
+test('community loot keeps the rows the server keeps, groups them by template and records unreferenced and unresolved rows', async () => {
+  const dataDir = await eraData('loot');
+  addEraEncounter(dataDir, MAJORDOMO);
+  const r = await C.syncCommunity({ dataDir, fetch: fakeGitHub().fetchImpl });
+  assert.deepEqual(r.manifest.loot, {
+    unreferenced: { creatureloot: 2, fishingloot: 1, containerloot: 2, disenchantloot: 1, referenceloot: 2 },
+    unresolved: { referenceloot: 1, creatureloot: 1, objectloot: 1, containerloot: 1, encounterChest: 4 },
+    referenceDepth: 2,
+  });
+  const cs = GD.openStore({ dataDir, clientBuild: ERA_CLIENT }).community;
+  assert.deepEqual(cs.byId('creatureloot', 7001), { id: 7001, items: [{ id: 512 }, { id: 513, questOnly: true, conditional: true }], refs: [{ id: 700 }, { id: 702 }] });
+  assert.deepEqual(cs.byId('creatureloot', 7002), { id: 7002, items: [{ id: 512 }], refs: [{ id: 701, conditional: true }] }, 'a row with a missing condition, a zero chance outside a group, an item the client lacks, a reference that never rolls and a missing reference are all gone');
+  assert.equal(cs.byId('creatureloot', 7003), null, 'the loot of a dropped NPC is not kept');
+  assert.deepEqual(cs.byId('referenceloot', 701), { id: 701, items: [], refs: [{ id: 702 }] });
+  assert.equal(cs.byId('referenceloot', 703), null, 'a reference reached only through a row that never rolls is unreferenced');
+  const giver = cs.byId('npcs', 7001);
+  const wanderer = cs.byId('npcs', 7002);
+  assert.deepEqual([giver.lootId, giver.skinningId, giver.pickpocketId], [7001, undefined, undefined]);
+  assert.deepEqual([wanderer.lootId, wanderer.skinningId, wanderer.pickpocketId], [7002, 7002, 7002]);
+  assert.equal(cs.byId('npcs', 7004).lootId, undefined, 'a LootId with no template is unresolved, not kept');
+  assert.deepEqual(cs.rows('lootobjects'), [
+    { id: 8003, name: 'Cache of the Firelord', kind: 'chest', lootId: 8100, encounter: { mapID: 409, name: 'Majordomo Executus' } },
+    { id: 8004, name: 'Fixture School', kind: 'fishinghole', lootId: 8101 },
+    { id: 8006, name: 'Cache of the Firelord', kind: 'chest', lootId: 8100 },
+  ], 'only chests and fishing holes carry loot in data1, and only the chest spawned on the encounter map belongs to it');
+  assert.deepEqual(ids(cs.rows('fishingloot')), [7101], 'fishing loot is kept only for a zone the client has');
+  assert.deepEqual(ids(cs.rows('containerloot')), [514], 'item loot is kept only for an item with the has-loot flag the client has');
+  assert.deepEqual(cs.byId('disenchantloot', 61).fromItems, [512]);
+  assert.equal(cs.byId('lootitems', 511).name, 'Era Fixture Hide (1.12)', 'the 1.12 name is kept to compare on Forever');
+  const raw = fs.readFileSync(path.join(cs.dir, 'creatureloot.jsonl'), 'utf8') + fs.readFileSync(path.join(cs.dir, 'referenceloot.jsonl'), 'utf8');
+  assert.doesNotMatch(raw, /chance|count|group|condition_id/i, 'no community number is stored');
+});
+
+test('wow_npc, wow_item and wow_instance answer who drops what with flags, unconditioned first, and never a number', async () => {
+  const dataDir = await eraData('lootTools');
+  addEraEncounter(dataDir, MAJORDOMO);
+  await C.syncCommunity({ dataDir, fetch: fakeGitHub().fetchImpl });
+  const store = GD.openStore({ dataDir, clientBuild: ERA_CLIENT });
+  const giver = call(store, 'wow_npc', { id: 7001 });
+  assert.deepEqual(giver.results[0].drops, { total: 4, items: [
+    { id: 512, name: 'Era Fixture Cap', quality: 2 },
+    { id: 511, name: 'Era Fixture Hide', quality: 1, viaReference: true },
+    { id: 514, name: 'Recipe: Era Blast', quality: 1, viaReference: true },
+    { id: 513, name: 'Schematic: The Era Fixture', quality: 1, questOnly: true, conditional: true },
+  ] }, 'a direct drop that a shared table also holds is direct; an item one path gives without a condition is unconditioned; client names; conditional rows after every unconditioned one');
+  assert.deepEqual([giver.results[0].skinning, giver.results[0].pickpocket], [null, null]);
+  assert.match(giver.notes.join(' '), /Drop sources come from community loot tables .* No chance, count or rate/);
+  const wanderer = call(store, 'wow_npc', { id: 7002 }).results[0];
+  assert.deepEqual(wanderer.drops.items.map(i => [i.id, !!i.conditional, !!i.viaReference]), [[512, false, false], [514, true, true]], 'a nested reference behind a conditional row is conditional');
+  assert.deepEqual(ids(wanderer.skinning.items), [511, 513, 512], 'a conditional 100% row does not always fill its group');
+  assert.deepEqual(ids(wanderer.pickpocket.items), [512, 513], 'an equal-chance row in a group a 100% row always fills never drops');
+  const item = id => call(store, 'wow_item', { id }).results[0].community;
+  const cap = item(512);
+  assert.deepEqual(cap.droppedBy, { total: 2, npcs: [{ kind: 'npc', id: 7001, name: 'Fixture Giver' }, { kind: 'npc', id: 7002, name: 'Fixture Wanderer' }] });
+  assert.deepEqual(ids(cap.pickpocketedFrom.npcs), [7002]);
+  assert.deepEqual(cap.objects.objects, [{ kind: 'object', id: 8003, name: 'Cache of the Firelord', objectKind: 'chest', encounter: { mapID: 409, name: 'Majordomo Executus' } }, { kind: 'object', id: 8006, name: 'Cache of the Firelord', objectKind: 'chest' }]);
+  assert.deepEqual(ids(cap.inContainers.items), [514]);
+  assert.deepEqual(ids(cap.disenchantsInto.items), [511]);
+  assert.equal(cap.trust, 'community-db');
+  const hide = item(511);
+  assert.deepEqual(hide.droppedBy.npcs, [{ kind: 'npc', id: 7001, name: 'Fixture Giver', viaReference: true }]);
+  assert.deepEqual(ids(hide.skinnedFrom.npcs), [7002]);
+  assert.deepEqual(hide.fishedIn.zones, [{ id: 7101, name: 'Era Fixture Vale' }]);
+  assert.deepEqual(ids(hide.disenchantedFrom.items), [512]);
+  assert.deepEqual(item(513).droppedBy.npcs, [{ kind: 'npc', id: 7001, name: 'Fixture Giver', questOnly: true, conditional: true }]);
+  const recipe = item(514);
+  assert.deepEqual(recipe.droppedBy.npcs.map(n => [n.id, n.conditional, n.viaReference]), [[7001, undefined, true], [7002, true, true]]);
+  assert.deepEqual(recipe.objects.objects.map(o => [o.id, o.objectKind]), [[8004, 'fishinghole']]);
+  assert.deepEqual(ids(recipe.contains.items), [512]);
+  const LOOT_KEYS = new Set(['total', 'items', 'npcs', 'objects', 'zones', 'id', 'name', 'quality', 'kind', 'objectKind', 'encounter', 'mapID', 'questOnly', 'conditional', 'viaReference', 'droppedBy', 'skinnedFrom', 'pickpocketedFrom', 'fishedIn', 'inContainers', 'disenchantedFrom', 'contains', 'disenchantsInto', 'source', 'version', 'trust']);
+  const keys = (v, out = new Set()) => {
+    if (Array.isArray(v)) v.forEach(x => keys(x, out));
+    else if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) { out.add(k); keys(x, out); }
+    return out;
+  };
+  const lootParts = [giver.results[0].drops, wanderer.drops, wanderer.skinning, wanderer.pickpocket, cap, hide, recipe];
+  assert.deepEqual([...keys(lootParts)].filter(k => !LOOT_KEYS.has(k)), [], 'no community number reaches an answer');
+  const core = call(store, 'wow_instance', { id: 409 }).results[0].bossSets[0].bosses[0].community;
+  assert.deepEqual([core.drops, core.chest.name, ids(core.chest.items)], [[], 'Cache of the Firelord', [512]], 'an encounter whose loot is in a chest names the chest');
+  const canyon = call(store, 'wow_instance', { name: 'fixture giver' });
+  assert.deepEqual(canyon.results[0].bossSets[0].bosses[0].community.drops.map(d => [d.npc.id, d.total]), [[7001, 4]], 'one match is detailed');
+  assert.equal(canyon.results[0].bossSets[0].bosses[0].community.chest, undefined, 'another encounter\'s chest is not this boss\'s');
+  const both = call(store, 'wow_instance', { name: 'fixture' });
+  assert.ok(both.results.length > 1);
+  assert.ok(both.results.every(r => r.bossSets.every(s => s.bosses.every(b => !b.community || b.community.drops === undefined))), 'several matches list no drops');
+  assert.match(both.notes.join(' '), /look one up by its ID/);
+  const paged = call(store, 'wow_npc', { id: 7001, offset: 2 }).results[0].drops;
+  assert.deepEqual([paged.total, paged.offset, ids(paged.items)], [4, 2, [514, 513]], 'offset pages through a loot list');
+  assert.equal(DM.callTool(store, 'wow_npc', { id: 7001, offset: -1 }).isError, true);
+  assert.match(DM.callTool(store, 'wow_npc', { name: 'fixture', offset: 2 }).content[0].text, /offset needs id/, 'a search never pretends to page');
+  const search = call(store, 'wow_npc', { name: 'fixture' });
+  assert.match(search.notes.join(' '), /at most 10 items per loot list/);
+  assert.equal(call(store, 'wow_sources', {}).results.find(r => r.source === 'cmangos').loot.referenceDepth, 2, 'wow_sources carries the loot counts');
+});
+
+test('loot answers leave out an item the client tables no longer have', async () => {
+  const dataDir = await eraData('lootClient');
+  await C.syncCommunity({ dataDir, fetch: fakeGitHub().fetchImpl });
+  const era = D.readCurrent(path.join(dataDir, 'classic_era'));
+  const itemsFile = path.join(era.dir, 'items.jsonl');
+  const kept = fs.readFileSync(itemsFile, 'utf8').trim().split('\n').filter(l => !l.startsWith('{"id":513,'));
+  fs.writeFileSync(itemsFile, kept.join('\n') + '\n');
+  const manifestFile = path.join(era.dir, 'manifest.json');
+  const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
+  manifest.entities.items.rows = kept.length;
+  fs.writeFileSync(manifestFile, JSON.stringify(manifest));
+  const store = GD.openStore({ dataDir, clientBuild: ERA_CLIENT });
+  assert.ok(store.community.byId('lootitems', 513), 'precondition: the community data has it');
+  assert.deepEqual(ids(call(store, 'wow_npc', { id: 7001 }).results[0].drops.items), [512, 511, 514]);
+  assert.equal(store.community.byId('lootobjects', 8003).encounter, undefined, 'a chest is tied to no encounter the client does not have');
+});
+
+test('the reverse loot index is built once per store and only on first use', async () => {
+  const dataDir = await eraData('lootIndex');
+  await C.syncCommunity({ dataDir, fetch: fakeGitHub().fetchImpl });
+  const store = GD.openStore({ dataDir, clientBuild: ERA_CLIENT });
+  call(store, 'wow_npc', { id: 7001 });
+  assert.equal(store.community.loaded().includes('lootitems'), true);
+  assert.equal(L.hasIndex(store.community), false, 'an NPC lookup does not build the reverse index');
+  call(store, 'wow_item', { id: 512 });
+  assert.equal(L.hasIndex(store.community), true, 'the first item lookup builds it');
+  const first = L.lootIndex(store.community);
+  call(store, 'wow_item', { id: 514 });
+  assert.equal(L.lootIndex(store.community), first);
+  assert.notEqual(L.lootIndex(GD.openStore({ dataDir, clientBuild: ERA_CLIENT }).community), first, 'a new store builds its own');
+});
+
+test('a dump whose references nest deeper than two levels or loop, or whose creature loot converts to nothing, is refused', async () => {
+  const dataDir = await eraData('lootRefuse');
+  const deeper = SQL.replace("(702,514,1,0,1,1,0,'item')", "(702,514,1,0,1,1,0,'item'),(702,705,100,0,-705,1,0,'too deep')");
+  assert.notEqual(deeper, SQL);
+  await assert.rejects(C.syncCommunity({ dataDir, fetch: fakeGitHub({ gz: zlib.gzipSync(Buffer.from(deeper)) }).fetchImpl }), /reference loot 701 reaches reference 702, which references further/);
+  const loop = SQL.replace("(705,512,1,0,1,1,0,'unreferenced')", "(705,512,1,0,1,1,0,'unreferenced'),(705,705,100,0,-705,1,0,'loop')");
+  assert.notEqual(loop, SQL);
+  await assert.rejects(C.syncCommunity({ dataDir, fetch: fakeGitHub({ gz: zlib.gzipSync(Buffer.from(loop)) }).fetchImpl }), /references nest deeper than 2 levels or loop/);
+  const noLoot = SQL.replace(/INSERT INTO `creature_loot_template` VALUES [^\n]*\n/, '');
+  assert.notEqual(noLoot, SQL);
+  await assert.rejects(C.syncCommunity({ dataDir, fetch: fakeGitHub({ gz: zlib.gzipSync(Buffer.from(noLoot)) }).fetchImpl }), /no creature loot row survived conversion/);
+  const noTable = SQL.replace('CREATE TABLE `skinning_loot_template`', 'CREATE TABLE `skinning_other`');
+  await assert.rejects(C.syncCommunity({ dataDir, fetch: fakeGitHub({ gz: zlib.gzipSync(Buffer.from(noTable)) }).fetchImpl }), /table skinning_loot_template is missing/);
+  assert.equal(C.readCommunity(C.communityRoot(dataDir)), null);
+  for (const entity of ['items', 'zones', 'encounters']) {
+    const era = D.readCurrent(path.join(dataDir, 'classic_era'));
+    const manifestFile = path.join(era.dir, 'manifest.json');
+    const good = fs.readFileSync(manifestFile, 'utf8');
+    const m = JSON.parse(good);
+    m.entities[entity].rows += 1;
+    fs.writeFileSync(manifestFile, JSON.stringify(m));
+    await assert.rejects(C.syncCommunity({ dataDir, fetch: fakeGitHub().fetchImpl }), /client tables are needed first/, `an unreadable ${entity} table refuses the sync`);
+    fs.writeFileSync(manifestFile, good);
+  }
+});
+
+test('on Forever loot answers drop items Forever lacks or names differently, NPCs it cannot back, and chests of encounters it does not have', async () => {
+  const dataDir = await eraData('lootForever');
+  addEraEncounter(dataDir, MAJORDOMO);
+  await C.syncCommunity({ dataDir, fetch: fakeGitHub().fetchImpl });
+  foreverFromEra(dataDir);
+  const store = GD.openStore({ dataDir, clientBuild: FOREVER_CLIENT });
+  const giver = call(store, 'wow_npc', { id: 7001 });
+  assert.equal(giver.results[0].trust, 'community-db-unchecked-for-this-game');
+  assert.deepEqual(ids(giver.results[0].drops.items), [512, 514, 513], 'the hide has another name in 1.12, so it is left out');
+  assert.match(giver.notes.join(' '), /Classic community loot tables .* not checked for this game/);
+  const hide = call(store, 'wow_item', { id: 511 });
+  assert.equal(hide.results[0].community, undefined);
+  assert.match(hide.notes.join(' '), /Item 511 has another name in the 1.12 community data/);
+  const cap = call(store, 'wow_item', { id: 512 }).results[0].community;
+  assert.equal(cap.trust, 'community-db-unchecked-for-this-game');
+  assert.deepEqual(ids(cap.droppedBy.npcs), [7001, 7002]);
+  assert.deepEqual(ids(cap.objects.objects), [8003], 'the chest of an encounter Forever has');
+  assert.deepEqual(call(store, 'wow_item', { id: 514 }).results[0].community.objects.objects, [], 'a fishing hole has no Forever data behind it');
+  const forever = D.readCurrent(path.join(dataDir, 'forever'));
+  const encFile = path.join(forever.dir, 'encounters.jsonl');
+  const encounters = fs.readFileSync(encFile, 'utf8').trim().split('\n').filter(l => !l.includes('Majordomo'));
+  fs.writeFileSync(encFile, encounters.join('\n') + '\n');
+  const manifestFile = path.join(forever.dir, 'manifest.json');
+  const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
+  manifest.entities.encounters.rows = encounters.length;
+  fs.writeFileSync(manifestFile, JSON.stringify(manifest));
+  const without = GD.openStore({ dataDir, clientBuild: FOREVER_CLIENT });
+  assert.deepEqual(call(without, 'wow_item', { id: 512 }).results[0].community.objects.objects, [], 'no chest when Forever lacks the encounter');
+  assert.deepEqual(ids(call(without, 'wow_item', { id: 513 }).results[0].community.droppedBy.npcs), [7001]);
+  const npcsFile = path.join(store.community.dir, 'npcs.jsonl');
+  const original = fs.readFileSync(npcsFile, 'utf8');
+  const giverAs = extra => original.split('\n').map(l => (l.startsWith('{"id":7001,') ? JSON.stringify({ ...JSON.parse(l), onMaps: [], spawns: [], gives: [], ends: [], ...extra }) : l)).join('\n');
+  fs.writeFileSync(npcsFile, giverAs({}));
+  const named = GD.openStore({ dataDir, clientBuild: FOREVER_CLIENT });
+  assert.deepEqual(ids(call(named, 'wow_item', { id: 513 }).results[0].community.droppedBy.npcs), [7001], 'an NPC named exactly like a Forever encounter is kept');
+  assert.deepEqual(ids(call(named, 'wow_npc', { id: 7001 }).results), [7001], 'and wow_npc finds it, so the full loot list is reachable');
+  assert.deepEqual(ids(call(named, 'wow_npc', { name: 'Fixture Giver' }).results), [7001]);
+  fs.writeFileSync(npcsFile, giverAs({ name: 'Fixture Muted' }));
+  const muted = GD.openStore({ dataDir, clientBuild: FOREVER_CLIENT });
+  assert.deepEqual(ids(call(muted, 'wow_item', { id: 513 }).results[0].community.droppedBy.npcs), [], 'an NPC with no shared map, no Forever quest and no Forever encounter is left out');
+  assert.equal(call(muted, 'wow_npc', { id: 7001 }).found, false);
+  const lootItemsFile = path.join(store.community.dir, 'lootitems.jsonl');
+  const lootItems = fs.readFileSync(lootItemsFile, 'utf8').trim().split('\n').filter(l => !l.startsWith('{"id":513,'));
+  fs.writeFileSync(lootItemsFile, lootItems.join('\n') + '\n');
+  const cmf = path.join(store.community.dir, 'manifest.json');
+  const cm = JSON.parse(fs.readFileSync(cmf, 'utf8'));
+  cm.entities.lootitems.rows = lootItems.length;
+  fs.writeFileSync(cmf, JSON.stringify(cm));
+  const unlisted = call(GD.openStore({ dataDir, clientBuild: FOREVER_CLIENT }), 'wow_item', { id: 513 });
+  assert.ok(unlisted.results[0].community, 'an item no loot list names is answered, not called renamed');
+  assert.doesNotMatch(unlisted.notes.join(' '), /another name/);
 });

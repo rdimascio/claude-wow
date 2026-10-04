@@ -57,7 +57,7 @@ test('every row and every answer carries source, build and trust; found rows are
   assert.equal(r.build, BUILD);
   assert.equal(r.trust, 'client-data');
   assert.equal(r.buildCheck, 'family');
-  assert.deepEqual(r.notes, []);
+  assert.deepEqual(r.notes, ['No community loot data is synced on this machine, so who drops this item is not known here. The owner can run "claude-wow data sync --flavor classic_era --source community".']);
   const [row] = r.results;
   assert.deepEqual({ source: row.source, build: row.build, trust: row.trust }, { source: 'wago.tools', build: BUILD, trust: 'client-data' });
   assert.deepEqual(row, {
@@ -228,7 +228,7 @@ test('wow_sources: provenance, table sizes and what the data does not hold', asy
   assert.equal(ds.rows.skilllines, 2);
   assert.ok(ds.notInData.includes('on Forever, any NPC, quest title or quest giver the Classic community data does not share with it'));
   assert.ok(ds.notInData.includes('NPC levels, factions and any other number from community data'));
-  assert.ok(ds.notInData.includes('item drop sources and drop rates'));
+  assert.ok(ds.notInData.some(n => n.startsWith('drop chances, drop rates')));
 });
 
 test('bad input is an error result, not a crash or a guess', async () => {
@@ -468,7 +468,7 @@ test('trust on a build-family mismatch or an unknown client build is never plain
   assert.match(unknown.notes.join(' '), /client build is unknown/);
   const same = call(GD.openStore({ dataDir, clientBuild: '1.60.1.70124' }), 'wow_item', { id: 501 });
   assert.equal(same.trust, 'client-data');
-  assert.deepEqual(same.notes, []);
+  assert.deepEqual(same.notes.filter(n => !/community loot data/.test(n)), []);
   assert.equal(call(GD.openStore({ dataDir, clientBuild: '1.60.2.1' }), 'wow_item', { id: 999 }).trust, 'none');
 });
 
