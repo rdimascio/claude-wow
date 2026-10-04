@@ -57,10 +57,11 @@ test('install.sh: the binary route names the release asset build.js produces for
   assert.match(src, /get_source/, 'falls back to the source');
 });
 
-const INSTALLER_TOOLS_WITHOUT_NODE = ['uname', 'mktemp', 'rm', 'sed', 'head', 'chmod', 'mkdir', 'mv', 'cut', 'grep', 'sha256sum', 'shasum', 'id', 'cat', 'cp', 'ls', 'tr'];
+const INSTALLER_TOOLS_WITHOUT_NODE = ['uname', 'mktemp', 'rm', 'sed', 'head', 'chmod', 'mkdir', 'mv', 'cut', 'grep', 'sha256sum', 'shasum', 'cat', 'cp', 'ls', 'tr'];
+const NON_ROOT_ID = '#!/bin/sh\necho 1000\n';
 
-function fakeReleaseHost(newestTag) {
-  const asset = spawnSync('sh', [SH, '--binary-asset'], { encoding: 'utf8' }).stdout.trim();
+function fakeReleaseHost(newestTag, { machine } = {}) {
+  const asset = machine ? 'claude-wow-unsupported' : spawnSync('sh', [SH, '--binary-asset'], { encoding: 'utf8' }).stdout.trim();
   const root = fs.mkdtempSync(path.join(require('os').tmpdir(), 'claude-wow-install-'));
   const fakeBin = path.join(root, 'fake-bin');
   const files = path.join(root, 'files');
@@ -89,9 +90,12 @@ function fakeReleaseHost(newestTag) {
     '',
   ].join('\n'), { mode: 0o755 });
   for (const tool of INSTALLER_TOOLS_WITHOUT_NODE) {
+    if (tool === 'uname' && machine) continue;
     const found = spawnSync('/bin/sh', ['-c', `command -v ${tool}`], { encoding: 'utf8' }).stdout.trim();
     if (found.startsWith('/')) fs.symlinkSync(found, path.join(fakeBin, tool));
   }
+  fs.writeFileSync(path.join(fakeBin, 'id'), NON_ROOT_ID, { mode: 0o755 });
+  if (machine) fs.writeFileSync(path.join(fakeBin, 'uname'), `#!/bin/sh\ncase "$1" in -m) echo ${machine.arch} ;; *) echo ${machine.os} ;; esac\n`, { mode: 0o755 });
   const env = { PATH: `${fakeBin}:${binDir}`, HOME: home, SHELL: '/bin/sh', CLAUDE_WOW_BIN: binDir, CLAUDE_WOW_REPO: 'https://github.com/rdimascio/claude-wow' };
   return { asset, root, binDir, log, env };
 }
@@ -155,6 +159,49 @@ test('install.sh: a pinned --release that exists installs that release', { skip:
   } finally { fs.rmSync(h.root, { recursive: true, force: true }); }
 });
 
+test('install.sh: a pinned --release on a platform with no binary says so and points at --from-source', { skip: !hasSh && 'no sh here' }, () => {
+  const h = fakeReleaseHost('v0.5.0-beta.1', { machine: { os: 'Linux', arch: 'riscv64' } });
+  try {
+    const r = spawnSync('/bin/sh', [SH, '--no-service', '--release', 'v0.5.0-beta.1'], { encoding: 'utf8', env: h.env });
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    assert.match(r.stderr, /install failed: no claude-wow binary exists for Linux riscv64, in release v0\.5\.0-beta\.1 or any other/);
+    assert.match(r.stderr, /-> Run this again with --from-source/);
+    assert.doesNotMatch(r.stderr, /network/);
+    assert.ok(!fs.existsSync(h.log), 'nothing downloaded');
+    const latest = spawnSync('/bin/sh', [SH, '--no-service'], { encoding: 'utf8', env: h.env });
+    assert.equal(latest.status, 1);
+    assert.match(latest.stdout, /no prebuilt binary for Linux riscv64/);
+    assert.match(latest.stdout, /installing from source/, 'latest still takes the source route');
+  } finally { fs.rmSync(h.root, { recursive: true, force: true }); }
+});
+
+test('install.ps1: only latest falls back to the source; a pinned release fails, with a platform message when no binary exists', { skip: !pwsh && 'no PowerShell here' }, () => {
+  const script = `
+    $ErrorActionPreference = 'Stop'
+    $ast = [System.Management.Automation.Language.Parser]::ParseFile('${PS1.replace(/'/g, "''")}', [ref]$null, [ref]$null)
+    $fn = $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Select-BridgeRoute' }, $true) | Select-Object -First 1
+    if (-not $fn) { Write-Output 'FAIL no Select-BridgeRoute'; exit 1 }
+    . ([scriptblock]::Create($fn.Extent.Text))
+    $global:downloads = 0
+    function Expect($want, $got) { if ($want -ne $got) { Write-Output "FAIL want $want got $got"; exit 1 } }
+    Expect 'source' (Select-BridgeRoute $true 'v0.4.0' 'AMD64' { $global:downloads++; $true })
+    Expect 'no-binary-for-platform' (Select-BridgeRoute $false 'v0.4.0' 'ARM64' { $global:downloads++; $true })
+    Expect 'source' (Select-BridgeRoute $false 'latest' 'ARM64' { $global:downloads++; $true })
+    Expect 0 $global:downloads
+    Expect 'binary' (Select-BridgeRoute $false 'v0.4.0' 'AMD64' { $true })
+    Expect 'binary' (Select-BridgeRoute $false 'latest' 'AMD64' { $true })
+    Expect 'pinned-download-failed' (Select-BridgeRoute $false 'v0.4.0' 'AMD64' { $false })
+    Expect 'source' (Select-BridgeRoute $false 'latest' 'AMD64' { $false })
+    Write-Output OK`;
+  const r = spawnSync(pwsh, ['-NoProfile', '-NonInteractive', '-Command', script], { encoding: 'utf8', windowsHide: true });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /OK/);
+  const src = fs.readFileSync(PS1, 'utf8');
+  assert.match(src, /^switch \(Select-BridgeRoute \(\[bool\]\$FromSource\) \$Release \$env:PROCESSOR_ARCHITECTURE \{ Get-Binary \}\) \{$/m, 'the installer takes the route the function picks');
+  assert.match(src, /'no-binary-for-platform' \{ Fail "no claude-wow binary exists for .*-FromSource/);
+  assert.match(src, /'pinned-download-failed' \{ Fail "release \$Release has no claude-wow binary/);
+});
+
 test('install.ps1 parses, and its Node gate matches the shell one', { skip: !pwsh && 'no PowerShell here' }, () => {
   const script = `
     $errs = $null
@@ -191,7 +238,6 @@ test('the installers put the code under the home folder, name the claude-wow com
   assert.match(ps, /Get-Source/, 'falls back to the source');
   assert.match(ps, /\$newest = if \(\$Release -eq 'latest'\) \{ Get-NewestReleaseTag \}/, 'only latest falls back to the newest release');
   assert.match(ps, /\/releases\?per_page=1"/, 'the newest release, pre-releases included');
-  assert.match(ps, /elseif \(-not \(Get-Binary\)\) \{\n  if \(\$Release -ne 'latest'\) \{ Fail "release \$Release has no claude-wow binary/, 'a pinned release fails before the source route');
   assert.doesNotMatch(ps + sh, /newest pre-release/, 'the fallback takes the newest release of any kind');
   assert.match(ps, /Programs\\claude-wow'/);
   assert.match(ps, /\$OldDir = Join-Path \$env:LOCALAPPDATA 'Programs\\wow-ai'/);

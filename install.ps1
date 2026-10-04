@@ -8,7 +8,7 @@
 #   $env:CLAUDE_WOW_PROJECT = "C:\code\my-game"                          # the default folder the agents work in
 #   $env:CLAUDE_WOW_SERVICE = "yes"  (or "no")                           # start at login without asking (or never ask)
 #   $env:CLAUDE_WOW_SOURCE = "1"     no prebuilt binary: clone the repo and run it with Node.js 22.2+
-#   $env:CLAUDE_WOW_RELEASE = "..."  which release's binary (default latest, then the newest release of any kind)
+#   $env:CLAUDE_WOW_RELEASE = "..."  which release's binary (default latest, then the newest release of any kind; a named release never falls back)
 #   $env:CLAUDE_WOW_DIR = "..."      where it goes, default $env:LOCALAPPDATA\Programs\claude-wow
 #   $env:CLAUDE_WOW_REF = "..."      which version of the source, from source (default main)
 #
@@ -21,7 +21,8 @@
 #      the release's SHA256SUMS and runs it once. It is the bridge, setup and
 #      the service commands in one file with its runtime inside: nothing else
 #      to install, no Node.js. Where there is no binary (no release yet, another
-#      architecture, CLAUDE_WOW_SOURCE=1) it installs from source instead:
+#      architecture, CLAUDE_WOW_SOURCE=1) it installs from source instead, unless
+#      CLAUDE_WOW_RELEASE names a release, which stops with a message:
 #      checks for Node.js 22.2+, clones the repo with git (or downloads the zip;
 #      nothing to npm-install) and writes a claude-wow.cmd that runs it with node
 #   2. puts that folder on your user PATH (no admin rights)
@@ -85,13 +86,21 @@ $exe = Join-Path $binDir 'claude-wow.exe'
 $cmdShim = Join-Path $binDir 'claude-wow.cmd'
 $script:Cmd = $null
 
+function Select-BridgeRoute([bool]$sourceWanted, [string]$release, [string]$arch, [scriptblock]$tryBinary) {
+  if ($sourceWanted) { return 'source' }
+  $pinned = $release -ne 'latest'
+  if ($arch -ne 'AMD64') {
+    if ($pinned) { return 'no-binary-for-platform' }
+    Write-Host "no prebuilt binary for $arch Windows"
+    return 'source'
+  }
+  if (& $tryBinary) { return 'binary' }
+  if ($pinned) { return 'pinned-download-failed' }
+  return 'source'
+}
+
 # ---- 1. The bridge ----------------------------------------------------------
-# The binary route. $false, with a line saying why, whenever the source route
-# should be taken instead; a download that arrived but is wrong (checksum
-# mismatch, a binary that does not run) fails outright.
 function Get-Binary {
-  if ($FromSource) { return $false }
-  if ($env:PROCESSOR_ARCHITECTURE -ne 'AMD64') { Write-Host "no prebuilt binary for $env:PROCESSOR_ARCHITECTURE Windows"; return $false }
   $asset = 'claude-wow-windows-x64.exe'
   $base = if ($Release -eq 'latest') { "$Repo/releases/latest/download" } else { "$Repo/releases/download/$Release" }
   $tmp = Join-Path $env:TEMP "claude-wow-$PID.exe"
@@ -172,10 +181,10 @@ function Get-Source {
 }
 
 Step '1/4 The bridge'
-if ($FromSource) { Get-Source }
-elseif (-not (Get-Binary)) {
-  if ($Release -ne 'latest') { Fail "release $Release has no claude-wow binary for this machine, or it could not be downloaded; a pinned release never falls back to another release or to the source" "Check that $Repo/releases/tag/$Release exists and has claude-wow-windows-x64.exe, and check the network. Or clear `$env:CLAUDE_WOW_RELEASE for the newest release, or set `$env:CLAUDE_WOW_SOURCE = `"1`" to run $Ref with Node.js." }
-  Get-Source
+switch (Select-BridgeRoute ([bool]$FromSource) $Release $env:PROCESSOR_ARCHITECTURE { Get-Binary }) {
+  'source' { Get-Source }
+  'no-binary-for-platform' { Fail "no claude-wow binary exists for $env:PROCESSOR_ARCHITECTURE Windows, in release $Release or any other; a pinned release never falls back to the source" "Run this again with -FromSource (or `$env:CLAUDE_WOW_SOURCE = `"1`") to run $Ref with Node.js." }
+  'pinned-download-failed' { Fail "release $Release has no claude-wow binary for this machine, or it could not be downloaded; a pinned release never falls back to another release or to the source" "Check that $Repo/releases/tag/$Release exists and has claude-wow-windows-x64.exe, and check the network. Or clear `$env:CLAUDE_WOW_RELEASE for the newest release, or set `$env:CLAUDE_WOW_SOURCE = `"1`" to run $Ref with Node.js." }
 }
 
 # ---- 2. The command on the PATH ---------------------------------------------

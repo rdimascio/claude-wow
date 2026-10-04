@@ -12,7 +12,7 @@
 #   --service           install the background service without asking
 #   --no-service        don't install or ask
 #   --from-source       no prebuilt binary: clone the repo and run it with Node.js 22.2+ (or CLAUDE_WOW_SOURCE=1)
-#   --release <tag>     which release's binary (default latest, then the newest release of any kind; or CLAUDE_WOW_RELEASE)
+#   --release <tag>     which release's binary (default latest, then the newest release of any kind; or CLAUDE_WOW_RELEASE); a named release never falls back
 #   --dir <folder>      where the source goes, from source (default ~/.claude-wow/app; or CLAUDE_WOW_DIR)
 #   --ref <branch|tag>  which version of the source, from source (default main; or CLAUDE_WOW_REF)
 #
@@ -304,6 +304,9 @@ main() {
   step "1/3 The bridge"
   if [ -n "$SOURCE" ]; then
     get_source
+  elif [ "$RELEASE" != latest ] && [ -z "$(binary_asset)" ]; then
+    fail "no claude-wow binary exists for $(uname -s) $(uname -m), in release $RELEASE or any other; a pinned release never falls back to the source" \
+      "Run this again with --from-source to run $REF with Node.js."
   elif ! get_binary; then
     [ "$RELEASE" = latest ] || fail "release $RELEASE has no claude-wow binary for this machine, or it could not be downloaded; a pinned release never falls back to another release or to the source" \
       "Check that $REPO_URL/releases/tag/$RELEASE exists and has a binary for this machine, and check the network. Or drop --release (CLAUDE_WOW_RELEASE) for the newest release, or add --from-source to run $REF with Node.js."

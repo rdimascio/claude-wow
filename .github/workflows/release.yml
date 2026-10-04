@@ -33,7 +33,7 @@ jobs:
             echo "tag $GITHUB_REF_NAME"
             test "$GITHUB_REF_NAME" = "v$pkg"
           fi
-      - name: a tag push has a CHANGELOG heading for its version and a CurseForge project ID
+      - name: a tag push has a non-empty CHANGELOG section for its version and a CurseForge project ID
         if: github.event_name == 'push' && github.ref_type == 'tag'
         env:
           HAS_CF_API_TOKEN: ${{ secrets.CF_API_TOKEN != '' }}
@@ -43,6 +43,9 @@ jobs:
           status=0
           if ! sed -n 's/^## \[\([^]]*\)\].*/\1/p' CHANGELOG.md | grep -Fxq "$pkg"; then
             echo "::error file=CHANGELOG.md::CHANGELOG.md has no '## [$pkg]' heading. Rename [Unreleased] to [$pkg] - <date>, add the compare links, and tag again."
+            status=1
+          elif ! awk -v heading="## [$pkg]" 'index($0, heading) == 1 { found = 1; next } found && /^## \[/ { exit } found { print }' CHANGELOG.md | grep -q '[^[:space:]]'; then
+            echo "::error file=CHANGELOG.md::The '## [$pkg]' section of CHANGELOG.md is empty, so the GitHub release would have no notes. Move the [Unreleased] entries under it and tag again."
             status=1
           fi
           if ! grep -Eq '^## X-Curse-Project-ID: *[0-9]+' addon/ClaudeWoW/ClaudeWoW.toc; then
@@ -73,10 +76,7 @@ jobs:
           persist-credentials: false
       - uses: BigWigsMods/packager@v2
         with:
-          args: ${{ !(github.event_name == 'push' && github.ref_type == 'tag') && '-d' || '' }}
-        env:
-          CF_API_TOKEN: ${{ github.event_name == 'push' && github.ref_type == 'tag' && secrets.CF_API_TOKEN || '' }}
-          WAGO_API_TOKEN: ${{ github.event_name == 'push' && github.ref_type == 'tag' && secrets.WAGO_API_TOKEN || '' }}
+          args: -d
       - name: the zip holds only the ClaudeWoW folder, with its toc
         run: |
           zip=$(ls .release/*.zip)
@@ -92,7 +92,7 @@ jobs:
           if-no-files-found: error
 
   bridge:
-    needs: addon
+    needs: version
     if: (github.event_name == 'push' && github.ref_type == 'tag') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
@@ -116,8 +116,8 @@ jobs:
           path: dist/
           if-no-files-found: error
 
-  release-binaries:
-    needs: [addon, bridge]
+  github-release:
+    needs: [version, addon, bridge]
     if: github.event_name == 'push' && github.ref_type == 'tag'
     runs-on: ubuntu-latest
     permissions:
@@ -153,3 +153,40 @@ jobs:
           prerelease_flag=
           case "$version" in *-*) prerelease_flag=--prerelease ;; esac
           gh release create "$GITHUB_REF_NAME" --verify-tag --repo "$GITHUB_REPOSITORY" --title "Claude WoW $version" --notes-file release-notes.md $prerelease_flag addon-zip/*.zip dist/*
+
+  addon-stores:
+    needs: github-release
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: addon-zip
+          path: ${{ runner.temp }}/released-zip
+      - uses: BigWigsMods/packager@v2
+        with:
+          args: -d
+      - name: a fresh package of this tag has the same files, byte for byte, as the zip on the GitHub release
+        run: |
+          compare="$RUNNER_TEMP/compare"
+          mkdir -p "$compare/released" "$compare/rebuilt"
+          unzip -q "$RUNNER_TEMP"/released-zip/*.zip -d "$compare/released"
+          unzip -q .release/*.zip -d "$compare/rebuilt"
+          diff -r "$compare/released" "$compare/rebuilt"
+      - name: upload to CurseForge and Wago
+        uses: BigWigsMods/packager@v2
+        env:
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          WAGO_API_TOKEN: ${{ secrets.WAGO_API_TOKEN }}
+      - name: the uploaded zip has the same files, byte for byte, as the zip on the GitHub release
+        run: |
+          compare="$RUNNER_TEMP/compare"
+          mkdir -p "$compare/uploaded"
+          unzip -q .release/*.zip -d "$compare/uploaded"
+          diff -r "$compare/released" "$compare/uploaded"
