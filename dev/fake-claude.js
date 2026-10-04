@@ -269,6 +269,7 @@ async function main() {
   const raw = await readStdin();
   const { text, images } = promptText(raw);
   const d = directives(text);
+  if (d.hang) process.stdout.on('error', () => {});
   const resume = arg(argv, '--resume');
   const prior = resume ? loadSession(resume) : null;
   const session = prior || { id: resume || crypto.randomUUID(), turns: 0, total: {}, created: Date.now() };

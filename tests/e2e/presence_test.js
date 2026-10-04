@@ -40,9 +40,13 @@ test('the bridge deletes launch-time presence files: the self-test passes at the
     assert.equal(h.clientState().presenceTest.result, 'passed');
     assert.equal(h.clientState().presenceTest.late, 'unseen');
     const dir = path.join(h.sb.addons, 'ClaudeWoW_Runtime', 'presence', 'a');
-    const st = h.clientState().presence;
-    assert.ok(!fs.existsSync(path.join(dir, String(st.at).padStart(4, '0') + '.wav')), 'the beaten file is gone');
-    assert.ok(fs.existsSync(path.join(dir, String(st.at + 1).padStart(4, '0') + '.wav')), 'the next one is still armed');
+    const beatFile = at => path.join(dir, String(at).padStart(4, '0') + '.wav');
+    await h.client.waitFor(() => {
+      const at = h.clientState().presence.at;
+      const beatenGone = !fs.existsSync(beatFile(at));
+      const nextArmed = fs.existsSync(beatFile(at + 1));
+      return h.clientState().presence.at === at && beatenGone && nextArmed;
+    }, { timeoutMs: 10000, everyMs: 100, label: 'the beaten file gone and the next one still armed at the position in state.json' });
     assert.equal(fs.readdirSync(path.join(h.sb.addons, 'ClaudeWoW_Runtime', 'presence', 'b')).length, 2000, 'the other ring stays armed for the next launch');
   });
 });

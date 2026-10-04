@@ -1049,6 +1049,7 @@ function allowRules(agentId, rules) {
 // ---------------------------------------------------------------------------
 
 function submit(job) {
+  if (shuttingDown) return;
   const client = clientFor(job);
   if (TL.isTelemetry(job)) {
     if (client) CLI.noteHeard(state, client.key);
@@ -1271,10 +1272,10 @@ function holdForDeploy(job, since = Date.now()) {
   if (!holder) return false;
   const key = handlingKey(job);
   if (!held.has(key)) {
-    log(`${tagOf(job)} held: a deploy (pid ${holder.pid}) is switching releases; it starts when the deploy ends`);
     const copy = plainJob(job);
     held.set(key, { at: since, job: copy || job });
     noteHeld();
+    log(`${tagOf(job)} held: a deploy (pid ${holder.pid}) is switching releases; it starts when the deploy ends`);
   }
   if (!heldTimer) heldTimer = setInterval(releaseHeld, Number(cfg.deployHoldPollMs) > 0 ? Number(cfg.deployHoldPollMs) : DEPLOY_HOLD_POLL_MS);
   return true;
@@ -1486,6 +1487,7 @@ function lateReply(job, raw) {
   publish(`${chatKey(job)}#late`, { chat: job.chat, id: job.id, status: 'done', late: true, text, summary, cwd: job.cwd, agent: job.agent || '', plugin: job.plugin || '', client: job.client }, true);
   mapShare.onReplyPublished();
   log(`${tagOf(job)} late reply delivered (${text.length} chars)`);
+  lastActivityAt = Date.now();
 }
 
 function livePlugin() {
@@ -2055,6 +2057,7 @@ function finish(job, status, text, session, denied) {
   tellPluginFinished(plugin, job, { status, text, summary });
   const growth = usage.turns ? `, turn ${usage.turns}${usage.ctx ? ', ctx ' + P.tokensLabel(usage.ctx) + (usage.window ? ' of ' + P.tokensLabel(usage.window) : '') : ''}${usage.cost !== undefined ? ', ~$' + usage.cost.toFixed(2) + ' API so far' : ''}` : '';
   log(`#${job.id}${job.session ? '@' + job.session : ''} ${status} (${text.length} chars${summary ? ', summary ' + summary.length : ', no summary'}${growth})`);
+  lastActivityAt = Date.now();
   drainQueue();
   if (exitWhenIdle && running.size === 0 && !shuttingDown) process.exit(status === 'done' ? 0 : 1); // under a shutdown, shutdown() exits
 }
@@ -2144,6 +2147,7 @@ const stripGeometry = () => (STRIP_CODEC === 2
   ? `${D.DENSE.cells}x${D.DENSE.maxRows} cells of ${D.DENSE.cell}px, levels ${P.denseLevels(cap.screenshotLevels).join('/')}`
   : `${cap.cellsPerRow}x${cap.maxRows} cells of ${cap.cellPx}px, levels ${LEVELS.off}/${LEVELS.on}, threshold ${LEVELS.threshold}`);
 function handleScreenshot(file, r) {
+  const readKey = S.statKey(file);
   let buf;
   try { buf = fs.readFileSync(file); } catch (e) { log(`screenshot: cannot read ${path.basename(file)} (${e.message})`); return; }
   let img;
@@ -2166,7 +2170,9 @@ function handleScreenshot(file, r) {
     if (seeing.length) attachGameView(img, offset[1] + msg.height, seeing, path.basename(file));
     for (const job of jobs) submit(job);
   }
-  try { fs.unlinkSync(file); } catch (e) { log(`screenshot: could not delete ${path.basename(file)} (${e.message})`); }
+  try {
+    if (S.removeUnlessRewritten(file, readKey) === 'rewritten') log(`screenshot: ${path.basename(file)} was written again while it was read; it is read again, not deleted`);
+  } catch (e) { log(`screenshot: could not delete ${path.basename(file)} (${e.message})`); }
 }
 
 // Vision: crop the strip's rows off `img`, scale it down and write one PNG per
