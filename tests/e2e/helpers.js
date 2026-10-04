@@ -33,8 +33,14 @@ function sessionCostByAgent(h) {
   return JSON.parse(fs.readFileSync(path.join(h.sb.agentState, `${last.session}.json`), 'utf8')).total.costUSD;
 }
 
+function replyTo(h, id) {
+  const c = h.client.activeChat();
+  if (!c || c.pendingId) return null;
+  return (c.history || []).find(m => m.id === id && m.role !== 'user') || null;
+}
+
 function isAlive(pid) {
   try { process.kill(pid, 0); return true; } catch { return false; }
 }
 
-module.exports = { makeRoot, gameRunner, sessionCostByAgent, isAlive, H };
+module.exports = { makeRoot, gameRunner, sessionCostByAgent, isAlive, replyTo, H };
