@@ -4,7 +4,7 @@ Every route ends in the same place: the code on your machine, a `claude-wow` com
 
 Before any of them you need:
 
-- **World of Warcraft: Forever** or **World of Warcraft Classic** (Classic Era), run at least once with the account you play on (setup reads the account folder). Setup looks for `_classic_beta_`, then `_forever_`, then `_classic_era_`, and never picks another client; with Forever and Classic Era both installed, pass `--wow ".../_classic_era_"` to set up Classic Era.
+- **World of Warcraft: Forever** or **World of Warcraft Classic** (Classic Era), run at least once with the account you play on (setup reads the account folder). Setup finds every client in `_classic_beta_`, `_forever_` and `_classic_era_` and installs into all of them; one bridge serves them all.
 - **Nothing else, on route 1 or 2**: the bridge ships as one self-contained binary for macOS (arm64, x64), Linux (x64) and Windows (x64), with its runtime inside. Route 3, and route 1 where there is no binary for your machine, run the checkout and need **Node.js 22.2 or newer** (`node -v`: [nodejs.org](https://nodejs.org), `brew install node`, `winget install OpenJS.NodeJS.LTS`) or [Bun](https://bun.sh).
 - **At least one agent CLI**, installed and logged in: `claude`, `codex`, `grok`, `agy` or `hermes` (see [AGENTS.md](AGENTS.md)). One is enough; the bridge lists what it found.
 
@@ -41,6 +41,8 @@ Options go after `sh -s --` (macOS/Linux) or in the environment before `iex` (Wi
 | Which release's binary | `--release <tag>` | `$env:CLAUDE_WOW_RELEASE = "<tag>"` |
 | Where the source goes (from source) | `--dir <folder>` | `$env:CLAUDE_WOW_DIR = "<folder>"` |
 
+Without a release option the script takes the latest stable release. When that has no binary for your machine (for example, only pre-releases such as `v0.5.0-beta.1` exist so far), it takes the newest release of any kind, pre-releases included, and checks it against that release's `SHA256SUMS` the same way. To install one exact release, beta or not, name its tag: `--release v0.5.0-beta.1` (Windows: `$env:CLAUDE_WOW_RELEASE = "v0.5.0-beta.1"`). A named tag never falls back: when that release has no binary for your machine or the download fails, the installer stops and says so. It does not take another release or install from source. Add `--from-source` (`$env:CLAUDE_WOW_SOURCE = "1"`) when you want the source.
+
 For example:
 
 ```sh
@@ -75,9 +77,9 @@ This route needs Node.js 22.2+ or Bun (`bun setup.js`, `bun bridge/supervisor.js
 
 ## What setup does
 
-`claude-wow setup` (the same as `node setup.js`) finds the client (or takes `--wow`), copies the addon into `Interface/AddOns/ClaudeWoW`, writes `config.json` in `~/.claude-wow` (or `CLAUDE_WOW_HOME`) with the paths and the default project folder, reports which agent CLIs it found, and creates the 200 reply-slot addons plus about 16,400 tiny signal files. That count is normal: the client only sees addon files that existed at launch, so every signal file exists up front and the bridge signals by deleting one. Re-running it keeps your config and the slot pool; `--project <folder>` on a re-run corrects the default folder, and `--wow <client folder>` on a re-run points the config at that client (`addonDir`, `inboxFile`, `savedVariablesFile`, `capture.processName`). The addon loads in WoW Forever (`_classic_beta_`) and in Classic Era (`_classic_era_`); to switch, run `claude-wow setup --wow "/Applications/World of Warcraft/_classic_era_"`, restart the bridge, and restart the game.
+`claude-wow setup` (the same as `node setup.js`) finds the client (or takes `--wow`), copies the addon into `Interface/AddOns/ClaudeWoW`, writes `config.json` in `~/.claude-wow` (or `CLAUDE_WOW_HOME`) with the paths and the default project folder, reports which agent CLIs it found, and creates the 200 reply-slot addons plus about 16,400 tiny signal files. That count is normal: the client only sees addon files that existed at launch, so every signal file exists up front and the bridge signals by deleting one. Re-running it keeps your config and the slot pool; `--project <folder>` on a re-run corrects the default folder. The addon loads in WoW Forever (`_classic_beta_`) and in Classic Era (`_classic_era_`). Setup puts every client it finds into `clients` in `config.json` and installs the same build into each, with one `addon` line per client that names the build; `--wow <client folder>` adds one more client (or updates its entry) instead. The bridge then answers whichever client you play, in that client only. On macOS, setup prints a `restart:` line for each client that is running while it arms new signal files: fully quit and relaunch that one. Elsewhere it cannot tell which client runs, so it asks you to relaunch every client. To leave a client out, set `"enabled": false` on its entry ([CONFIGURATION.md](CONFIGURATION.md#clients)). After an update, run setup once and restart the bridge; there is nothing to switch.
 
-Then **fully quit and relaunch World of Warcraft** (a `/reload` is not enough) and enable *Claude WoW* on the character-select AddOns screen. The 200 *Claude WoW slot* entries stay enabled; leave them alone.
+Then **fully quit and relaunch each World of Warcraft client you play** (a `/reload` is not enough) and enable *Claude WoW* on the character-select AddOns screen. The 200 *Claude WoW slot* entries stay enabled; leave them alone.
 
 ## Game data
 
@@ -87,6 +89,7 @@ Claude checks game IDs (items, quests, zones, flight paths, skill lines) against
 |---|---|---|
 | World of Warcraft: Forever (`1.60.*`) | `claude-wow data sync` | `~/.claude-wow/data/forever/` |
 | World of Warcraft Classic, Classic Era (`1.15.*`) | `claude-wow data sync --flavor classic_era` | `~/.claude-wow/data/classic_era/` |
+| Classic Era NPCs and quest givers (community data, after the line above) | `claude-wow data sync --flavor classic_era --source community` | `~/.claude-wow/data/classic_era/community/` |
 
 The bridge reads the client build the game reports and uses only the data of that game. With no data for it, the bridge refuses ID tokens in orders, goals and campaigns, and `ask` runs go without the `wowdata` tools; the bridge log names the command to run. No restart is needed after a sync. Details in [CONFIGURATION.md](CONFIGURATION.md#game-data).
 
@@ -120,7 +123,7 @@ Things worth knowing:
 
 ## Updating
 
-- Route 1: run the one-line installer again. It replaces the binary (or pulls the source), re-runs setup, and keeps your config and chats. Then `claude-wow service restart` (or restart the terminal bridge), and `/reload` in game, or relaunch the game if setup reports new files. A new binary writes its own capture scripts and addon out under `~/.claude-wow/assets` the first time it runs.
+- Route 1: run the one-line installer again. It replaces the binary (or pulls the source), re-runs setup, and keeps your config and chats. Then `claude-wow service restart` (or restart the terminal bridge), and `/reload` in game (the addon asks for it when the files on disk are newer than the ones it loaded), or relaunch the game when the addon asks for a full restart (a new addon folder). A new binary writes its own capture scripts and addon out under `~/.claude-wow/assets` the first time it runs.
 - Route 2: `brew upgrade claude-wow` (`--fetch-HEAD` for a `--HEAD` install), then `claude-wow service restart` (your config and sessions are in `~/.claude-wow`, untouched; `claude-wow setup` again only if the addon changed, which the changelog says).
 - Route 3: `git pull && node setup.js`, then restart the bridge.
 

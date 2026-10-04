@@ -30,7 +30,7 @@ const DENIED_WITHOUT_TOOLS = Object.freeze([SERVER_RULE]);
 
 const INSTRUCTIONS = [
   'Goals, the current order, campaigns, narration and map routes for the player\'s character. The claude-wow bridge writes them for this in-game chat run only; the grant ends when the run ends.',
-  'Name every zone, NPC, item or quest only with a reference token ({item:ID}, {skill:ID}, {map:ID,x,y}) whose ID comes from the wowdata tools, never from memory. The bridge expands each token to the real name and refuses unknown IDs and any game name typed as plain text; the error names the word.',
+  'Name every zone, NPC, item or quest only with a reference token ({item:ID}, {skill:ID}, {faction:ID}, {map:ID,x,y}) whose ID comes from the wowdata tools, never from memory. The bridge expands each token to the real name and refuses unknown IDs and any game name typed as plain text; the error names the word.',
   'Twitch votes are not here: they belong to the live Claude Code session.',
 ].join('\n');
 

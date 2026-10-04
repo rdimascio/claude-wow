@@ -4,6 +4,7 @@ const path = require('path');
 const { spawn } = require('child_process');
 const SB = require('./sandbox');
 const { WowClient } = require('./wow/client');
+const CLI = require('../bridge/clients');
 
 const BRIDGE = path.join(SB.REPO, 'bridge', 'bridge.js');
 const SUPERVISOR = path.join(SB.REPO, 'bridge', 'supervisor.js');
@@ -132,6 +133,7 @@ async function start(name, opts = {}) {
   const h = {
     sb, bridge, client,
     state: () => readJson(sb.state, {}),
+    clientState: (dir = sb.client) => ((readJson(sb.state, {}) || {}).clients || {})[CLI.keyOf(dir)] || {},
     transcripts: () => readJson(sb.transcripts, {}),
     agentCalls: () => agentCalls(sb),
     screenshots: () => fs.readdirSync(sb.screenshots),

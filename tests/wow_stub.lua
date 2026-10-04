@@ -315,6 +315,10 @@ C_AddOns = {
 		if STUB.onLoadAddOn then STUB.onLoadAddOn(name) end
 		return true
 	end,
+	GetAddOnInfo = function(name)
+		local reason = STUB.addonMissing and STUB.addonMissing[name] and "MISSING" or nil
+		return name, name, "", reason == nil, reason, "INSECURE", false
+	end,
 	GetAddOnMetadata = function(name, key)
 		local meta = STUB.addonMeta and STUB.addonMeta[name]
 		return meta and meta[key] or nil

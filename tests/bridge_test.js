@@ -188,6 +188,7 @@ test('systemPrompt always asks for the TL;DR block, and adds the game rules and 
   assert.ok(!P.systemPrompt('').includes('World of Warcraft: Forever is its own game'), 'and only a game chat');
   assert.match(s, /an ID must come from a source that ties it to that exact thing: a "Linked from the game" entry in this chat \(item, spell, quest, or a recipe shown as enchant, which is a spell ID\), or a wowdata result whose name is the item you mean\. When several wowdata rows share that name, use a token only if the player's link or the situation picks out one of them; otherwise name it in plain words\./);
   assert.match(s, /never pick one from a list of bare IDs/);
+  assert.match(s, /A spell found with wow_spell, and not linked in this chat, is named in plain words with its rank, never as a token\./);
   assert.match(s, /Classic web databases describe it, but an item, spell or quest ID still comes only from the sources the link rule below names/);
   assert.doesNotMatch(s, /use the Classic ID|when you are sure of it|tokens are refused/);
   assert.ok(!s.includes('ClaudeWoWNpcDB') && !s.includes('NPCs seen on this map'), 'no stored NPC data is offered');
@@ -378,10 +379,24 @@ test('flags: a retry granted a folder carries it in dirs=, never in allow=', () 
   assert.deepEqual(f.allow, []);
 });
 
-test('describeToolUse gives one short line per tool call', () => {
-  assert.equal(P.describeToolUse({ name: 'Bash', input: { command: 'npm test\nsecond line' } }), '$ npm test');
-  assert.equal(P.describeToolUse({ name: 'Edit', input: { file_path: 'C:\\x\\player.gd' } }), 'edit player.gd');
+test('describeToolUse gives one short readable line per tool call', () => {
+  assert.equal(P.describeToolUse({ name: 'Bash', input: { command: 'gh pr list --author @me --json number,title', description: 'List my open PRs' } }), 'List my open PRs', 'the description Claude gives the command wins');
+  assert.equal(P.describeToolUse({ name: 'Bash', input: { command: 'npm test\nsecond line' } }), 'Run npm test');
+  assert.equal(P.describeToolUse({ name: 'Bash', input: { command: "cd /x && gh search prs --author=@me --jq '.[]' | sort" } }), 'Run gh search prs', 'flags, quotes and pipes are cut');
+  assert.equal(P.describeToolUse({ name: 'Edit', input: { file_path: 'C:\\x\\player.gd' } }), 'Edit player.gd');
+  assert.equal(P.describeToolUse({ name: 'WebFetch', input: { url: 'https://docs.github.com/en/rest?x=1' } }), 'Fetch docs.github.com');
+  assert.equal(P.describeToolUse({ name: 'mcp__claude_ai_Linear__list_issues' }), 'Linear: list issues');
+  assert.equal(P.describeToolUse({ name: 'mcp__plugin_playwright_playwright__browser_click' }), 'playwright: browser click');
   assert.equal(P.describeToolUse({ name: 'Mystery' }), 'Mystery');
+  const long = P.describeToolUse({ name: 'Bash', input: { command: 'x', description: 'a'.repeat(200) } });
+  assert.equal(long.length, 80);
+  assert.ok(long.endsWith('...'));
+});
+
+test('a working record carries its step count; other records never do', () => {
+  assert.match(P.luaTable('X', [{ chat: 'c', id: 1, status: 'working', text: 'x', steps: 4 }]), /steps = 4,/);
+  assert.ok(!/steps =/.test(P.luaTable('X', [{ chat: 'c', id: 1, status: 'working', text: 'x', steps: 0 }])));
+  assert.ok(!/steps =/.test(P.luaTable('X', [{ chat: 'c', id: 1, status: 'done', text: 'x', steps: 4 }])));
 });
 
 test('handled ids are tracked per session token and capped', () => {
