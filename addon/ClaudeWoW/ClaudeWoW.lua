@@ -1719,10 +1719,10 @@ function Q.LastLife(c)
 end
 
 function Q.ApplyRuns(data)
-	if type(data) ~= "table" or type(data.now) ~= "number" or time() - data.now > Q.INBOX_FRESH_SECONDS then return end
+	if type(data) ~= "table" then return end
 	local limit = data.runLimit
 	if type(limit) == "number" and limit == math.floor(limit) and limit >= Q.RUN_LIMIT_MIN and limit <= Q.RUN_LIMIT_MAX then run.runLimit = limit end
-	if type(data.alive) ~= "table" then return end
+	if type(data.now) ~= "number" or time() - data.now > Q.INBOX_FRESH_SECONDS or type(data.alive) ~= "table" then return end
 	for _, a in ipairs(data.alive) do
 		local since = type(a) == "table" and type(a.since) == "number" and a.since or nil
 		if since and since <= data.now and a.session == db.session then
@@ -1807,10 +1807,13 @@ local function ApplyReplies(replies)
 				run.steps[c.id] = tonumber(r.steps)
 				Whisper.Progress(c, r.text)
 			end
-		elseif c and c.gaveUp and r.id == c.gaveUp and r.status == "done" then
+		elseif c and c.gaveUp and r.id == c.gaveUp and (r.status == "done" or r.status == "error") then
 			c.gaveUp = nil
-			ClaudeWoW.LateReply(c, r)
-			Q.OfferDraft(c)
+			if run.staleSig then run.staleSig[r.id] = nil end
+			if r.status == "done" then
+				ClaudeWoW.LateReply(c, r)
+				Q.OfferDraft(c)
+			end
 		end
 	end
 	return matched

@@ -3099,9 +3099,6 @@ test('a pending chat that hears nothing for 35 minutes is freed once with one pl
   nextSlot(vm, `{ now = time(), cwd = "", replies = { { chat = "${chatId}", id = ${normal}, status = "done", text = "normal answer", agent = "claude" } } }`);
   minutes(vm, 2, 700);
   assert.equal(assistantCount('normal answer'), 1, 'only the reply to the message given up on is taken late');
-  nextSlot(vm, `{ now = time(), cwd = "", replies = { { chat = "${chatId}", id = ${second}, status = "error", text = "late error", agent = "claude" } } }`);
-  minutes(vm, 2, 700);
-  assert.equal(assistantCount('late error'), 0, 'a late error is not shown as a reply');
   vm.run('ClaudeWoW.Send("third")');
   const third = vm.num('ClaudeWoWDB.chats[1].pendingId');
   nextSlot(vm, `{ now = time(), cwd = "", replies = { { chat = "${chatId}", id = ${second}, status = "done", text = "second answer", agent = "claude" } } }`);
@@ -3111,6 +3108,13 @@ test('a pending chat that hears nothing for 35 minutes is freed once with one pl
   assert.equal(vm.num(`(function() for _, m in ipairs(ClaudeWoWDB.chats[1].history) do if m.text == "second answer" then return m.id end end end)()`), second);
   minutes(vm, 3);
   assert.equal(assistantCount('second answer'), 1);
+
+  minutes(vm, 37);
+  assert.equal(vm.num('ClaudeWoWDB.chats[1].gaveUp'), third, 'the third message is given up too');
+  nextSlot(vm, `{ now = time(), cwd = "", replies = { { chat = "${chatId}", id = ${third}, status = "error", text = "late error", agent = "claude" } } }`);
+  minutes(vm, 2, 700);
+  assert.equal(assistantCount('late error'), 0, 'a late error is not shown as a reply');
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].gaveUp'), null, 'but it ends the wait, so the sig file of that message is not watched any more');
 
   const quiet = vm.evaluate('ClaudeWoW.AddChat("Quiet", { cwd = "", plugin = "stream", quiet = true }).id');
   vm.run(`ClaudeWoW.Send("track", nil, { chat = "${quiet}" })`);
@@ -3476,7 +3480,16 @@ test('the bridge\'s run limit sets how long a silent chat waits; a missing or ba
   const stale = silentFor('runLimit = 3600', 0);
   stale.vm.run('STUB.onLoadAddOn = function() ClaudeWoW_SlotData = { now = time() - 600, cwd = "", replies = {}, runLimit = 3600 } end');
   minutes(stale.vm, 36);
-  assert.equal(stale.vm.evaluate('ClaudeWoWDB.chats[1].pendingId'), null, 'a limit from a slot written over 5 minutes ago is not used');
+  assert.equal(stale.vm.num('ClaudeWoWDB.chats[1].pendingId'), stale.id, 'the limit is the bridge config, so a slot written long ago still names it');
+
+  let rm = newVM();
+  rm.run('ClaudeWoWDB = { settings = { mode = "reload" } }');
+  login(rm);
+  rm.run('ClaudeWoW.Send("reload mode")');
+  const rmId = rm.num('ClaudeWoWDB.chats[1].pendingId');
+  rm = reloaded(rm, 'ClaudeWoW_Inbox = { now = time() - 600, cwd = "", replies = {}, runLimit = 3600 }');
+  minutes(rm, 40);
+  assert.equal(rm.num('ClaudeWoWDB.chats[1].pendingId'), rmId, 'reload mode: an Inbox.lua older than 5 minutes still sets the limit');
 });
 
 test('a message the bridge still lists as queued or running keeps its chat waiting; entries that do not match or carry a bad stamp do not', () => {
