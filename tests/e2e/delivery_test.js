@@ -42,7 +42,8 @@ test('every file the bridge writes into the game folder is 0777 like the rest of
     const pending = [addon, ...slotInboxes];
     while (pending.length) {
       const current = pending.pop();
-      const st = fs.statSync(current);
+      const st = fs.statSync(current, { throwIfNoEntry: false });
+      if (!st) continue;
       if ((st.mode & 0o777) !== 0o777) locked.push(`${current} ${(st.mode & 0o777).toString(8)}`);
       if (st.isDirectory()) for (const n of fs.readdirSync(current)) pending.push(path.join(current, n));
     }
