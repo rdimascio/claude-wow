@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const D = require('./datasync');
 const GD = require('./gamedata');
 const S = require('./sqldump');
+const L = require('./communityloot');
 
 const FLAVOR = 'classic_era';
 const SOURCE = 'cmangos';
@@ -22,10 +23,10 @@ const MAX_LISTING_BYTES = 256 * 1024;
 const MAX_DUMP_BYTES = 64 * 1024 * 1024;
 const MAX_SQL_BYTES = 256 * 1024 * 1024;
 const MAX_SPAWNS = 25;
-const ENTITIES = Object.freeze(['npcs', 'questinfo', 'objects']);
+const ENTITIES = Object.freeze(['npcs', 'questinfo', 'objects', ...L.ENTITIES]);
 const JUNK = /^\[|<(?:NYI|UNUSED|TXT|TEST)>|\b(?:UNUSED|DEPRECATED|Trigger|Credit Marker|Only GM|zzOLD)\b|\(OLD\)/i;
 const NPC_JUNK = /\bDND\b|\((?:TEST|PH)\)|<PH>|\b[Pp]laceholder\b|\bTest Dummy\b|\bTEST\b/;
-const SHAPE = 2;
+const SHAPE = 3;
 
 function communityRoot(dataDir) {
   return path.join(D.flavorDir(dataDir, FLAVOR), 'community');
@@ -285,10 +286,11 @@ function convert(sql, client) {
     const spot = place(r.map, r.position_x, r.position_y);
     addSpawn(object, spot && { ...spot, ...(objectEvents.has(r.guid) ? { event: true } : {}) });
   }
+  const loot = L.convert(sql, client, { npcs, nameOrDrop, drop });
   const sorted = m => [...m.values()].map(finishSpawns).sort((a, b) => a.id - b.id);
-  const entities = { npcs: sorted(npcs), questinfo: [...quests.values()].sort((a, b) => a.id - b.id), objects: sorted(objects) };
+  const entities = { npcs: sorted(npcs), questinfo: [...quests.values()].sort((a, b) => a.id - b.id), objects: sorted(objects), ...loot.entities };
   for (const required of ['npcs', 'questinfo']) if (!entities[required].length) throw new S.DumpError(`no ${required} row survived conversion; the dump layout changed`);
-  return { entities, droppedBy };
+  return { entities, droppedBy, loot: loot.loot };
 }
 
 function writeJsonl(file, records) {
@@ -377,6 +379,7 @@ async function syncCommunity(opts = {}) {
         rows: Object.values(entities).reduce((s, e) => s + e.rows, 0),
         dropped: Object.values(converted.droppedBy).reduce((s, n) => s + n, 0),
         droppedBy: converted.droppedBy,
+        loot: converted.loot,
         entities,
       };
       fs.writeFileSync(path.join(tmpDir, D.MANIFEST_FILE), JSON.stringify(manifest, null, 2) + '\n');
