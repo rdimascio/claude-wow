@@ -53,13 +53,13 @@ function token(id) {
   return Number.isSafeInteger(id) && id > 0 ? `{item:${id}}` : null;
 }
 
-function fit(parts, tail = '') {
+function fit(parts, tail = '', head = '') {
   const kept = [];
   for (const part of parts) {
-    if ([...kept, part].join(', ').length + tail.length > MAX_LINE) break;
+    if (head.length + [...kept, part].join(', ').length + tail.length > MAX_LINE) break;
     kept.push(part);
   }
-  return kept.join(', ') + tail;
+  return head + kept.join(', ') + tail;
 }
 
 function sentence(text) {
@@ -101,7 +101,7 @@ function instanceLine(result) {
   if (chests) parts.push(`${plural(chests, 'chest')} in 1.12 data`);
   const more = totalOf(result) - 1;
   if (more > 0) parts.push(`${more} more`);
-  return `${name}: ${fit(parts)}`;
+  return fit(parts, '', `${name}: `);
 }
 
 function npcLine(result) {
@@ -128,6 +128,7 @@ function resultLine(tool, text) {
   try { result = JSON.parse(text); } catch { return null; }
   if (!result || typeof result !== 'object' || result.error || !Array.isArray(result.results)) return null;
   if (!result.found || !result.results.length) return 'Nothing found';
+  if (!result.results[0] || typeof result.results[0] !== 'object') return null;
   switch (tool) {
     case 'wow_item': return itemLine(result);
     case 'wow_instance': return instanceLine(result);

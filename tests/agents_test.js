@@ -689,4 +689,10 @@ test('a wowdata call shows a loading line, then a line built from its result row
   assert.deepEqual(call('z', 'wow_item', {}, 'other'), ['other: wow item'], 'another server keeps its plain line');
   assert.deepEqual(answer('z', item), [], 'and its result adds no line');
   assert.ok(Object.values(PD.LOADING).every(l => l.length <= PD.MAX_LINE));
+  call('m', 'wow_item', { id: 1 });
+  assert.deepEqual(answer('m', { found: true, total: 1, query: { id: 1 }, results: [null] }), [], 'a malformed row adds no line and does not throw');
+  call('n', 'wow_instance', { id: 1 });
+  const longName = { ...core, total: 47, results: [{ ...core.results[0], name: 'N'.repeat(40), bossSets: [{ bosses: Array.from({ length: 12 }, (_, k) => boss(`B${k}`, true)) }] }] };
+  const [line] = answer('n', longName);
+  assert.ok(line.startsWith('N'.repeat(40) + ': 12 encounters') && line.length <= PD.MAX_LINE, `the name counts toward the line budget (${line.length})`);
 });
