@@ -8,6 +8,7 @@
 
 const fs = require('fs');
 const P = require('../protocol');
+const FACTORY = require('../factory');
 
 // Subfolders of the bridge's folder, for the "folder not found" hint.
 function siblingFolders(dir) {
@@ -25,6 +26,10 @@ const plugin = {
   tools: '',
   surfaces: ['map', 'macro', 'ui'],
   searchesFiles: true,
+  banner: options => {
+    const conf = FACTORY.settings(options);
+    return conf.enabled ? `factory dispatcher: ${conf.skills.length} skill(s), runs on ${conf.model} unless plugins.claude-code.factory.models says otherwise` : 'full coding sessions (plugins.claude-code.factory.enabled is off)';
+  },
   handle(job, core) {
     const cwd = P.resolveCwd(job.cwd, core.defaultCwd);
     job.cwd = cwd;
@@ -37,7 +42,10 @@ const plugin = {
         `\nUse /claude cd <folder> to pick one, or /claude cd alone for the default.`);
       return;
     }
+    const conf = FACTORY.settings(core.options('claude-code'));
+    const dispatcher = conf.enabled ? { tools: FACTORY.dispatcherRules(conf), factory: conf, deniedTools: [...FACTORY.DISPATCHER_DENIED] } : {};
     core.runAgent(job, {
+      ...dispatcher,
       cwd,
       // Agents keep sessions per project folder, so a chat that changed folder starts fresh.
       freshSession: () => {
