@@ -239,7 +239,7 @@ elseif ($Service -or (Ask 'Run the bridge in the background and start it at logi
 } else { Write-Host 'skipped (install later with: claude-wow service install; or start the bridge by hand with: claude-wow)' }
 
 Write-Host "`nInstalled. The claude-wow command works from any folder. Next:" -ForegroundColor Green
-Write-Host '  1. Fully quit and relaunch World of Warcraft (it only discovers new addon files at launch).'
+Write-Host '  1. Fully quit and relaunch World of Warcraft (it only discovers new addon folders at launch).'
 Write-Host '  2. Enable "Claude WoW" at the character-select AddOns screen.'
 if ($installService) { Write-Host '  3. Check the bridge:  claude-wow service status     (logs: claude-wow service logs)' }
 else { Write-Host '  3. Start the bridge:  claude-wow        (or: claude-wow service install, to keep it running in the background)' }

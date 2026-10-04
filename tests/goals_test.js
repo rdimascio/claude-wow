@@ -300,6 +300,11 @@ test('order tokens: {item:ID}, {skill:ID} and {map:ID,x,y} expand from the fixtu
     assert.equal(r.posts[0].command.orders.order.text, want, 'the overlay gets the expanded names, never a raw token');
     assert.equal((await r.store.call('order_issue', { text: 'Raise Leatherworking to 150' })).ok, true, 'a plain order still works with data synced');
     assert.equal(r.read().orders.current.refs, undefined, 'an order without tokens stores no refs');
+    const faction = await r.store.call('order_issue', { text: 'Help {faction:76}' });
+    assert.equal(faction.ok, true, faction.text);
+    assert.equal(r.read().orders.current.text, 'Help Fixture Brotherhood');
+    assert.deepEqual(r.read().orders.current.refs, [{ kind: 'faction', id: 76, name: 'Fixture Brotherhood', trust: 'client-data', build: FIXTURE_BUILD }]);
+    assert.equal(r.posts.at(-1).command.orders.order.text, 'Help Fixture Brotherhood', 'the overlay gets the faction name');
   } finally { r.cleanup(); }
 });
 
@@ -316,7 +321,8 @@ test('order tokens: unknown IDs, a malformed map token, a kind with no name sour
     await refuse('Buy 2 {item:501} and 5 {item:2318}', /\{item:2318\}: that item ID is not in the Forever client data/);
     await refuse('go to {map:4242,10,10}', /\{map:4242,10,10\}: that map ID/);
     await refuse('go to {map:9003,101,10}', /coordinates run from 0 to 100/);
-    await refuse('kill {npc:1} for {quest:2} and {faction:3}', /\{npc:1\}: there is no verified source of npc names yet, so leave that name out\. \{quest:2\}: .*quest names.*\{faction:3\}: .*faction names/);
+    await refuse('kill {npc:1} for {quest:2}', /\{npc:1\}: there is no verified source of npc names yet, so leave that name out\. \{quest:2\}: .*quest names/);
+    await refuse('help {faction:3}', /\{faction:3\}: that faction ID is not in the Forever client data for build 1\.60\.1\.200\./);
     await refuse('buy 2 {item:503}', /\{item:503\}: the name in the data has characters that cannot be shown/);
     await refuse('buy 2 {item:504}', /\{item:504\}: the name in the data has characters that cannot be shown/);
     assert.equal(fs.existsSync(r.file), false, 'nothing was written');
@@ -611,7 +617,7 @@ test('display push: stream off never posts, and a stream service that is down do
 test('MCP tool schemas: goal_set, goal_list, order_issue and the two vote tools; every writer, route_draw included, is denied to in-game runs', () => {
   assert.deepEqual(G.toolSchemas().map(t => t.name), ['goal_set', 'goal_list', 'order_issue', 'goal_vote_open', 'goal_vote_close']);
   assert.equal(G.toolSchemas()[2].inputSchema.properties.text.maxLength, GR.TOKEN_TEXT_MAX, 'raw text may carry tokens; the 90-character cap applies after expansion');
-  assert.match(G.toolSchemas()[2].description, /\{item:ID\}, \{skill:ID\} or \{map:ID,x,y\}/);
+  assert.match(G.toolSchemas()[2].description, /\{item:ID\}, \{skill:ID\}, \{faction:ID\} or \{map:ID,x,y\}/);
   assert.match(G.toolSchemas()[2].description, /never from memory or another game version/);
   assert.deepEqual(LP.GOAL_WRITE_TOOLS, ['mcp__claude-wow__goal_set', 'mcp__claude-wow__order_issue', 'mcp__claude-wow__goal_vote_open', 'mcp__claude-wow__goal_vote_close', 'mcp__claude-wow__route_draw',
     'mcp__claude-wow__campaign_start', 'mcp__claude-wow__campaign_end', 'mcp__claude-wow__beat_add', 'mcp__claude-wow__beat_trigger', 'mcp__claude-wow__narrate']);

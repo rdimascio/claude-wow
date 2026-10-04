@@ -49,7 +49,7 @@
   - On a Homebrew keg path it does not swap the binary. It only prints `brew upgrade claude-wow`.
 - **Who writes `ClaudeWoW/`:** if `addonSource` is `bridge` and the embedded version is newer than the on-disk toc `## Version`, the bridge extracts the files with a temp-then-rename per file and runs chmod 0777. If `addonSource` is `curseforge`, the bridge never writes there.
 - **Reload or restart:** the bridge records the file list of `ClaudeWoW/` and `_Runtime/` when it sees the game process start (`procs.js`). After any update it compares again. A new path means **"Restart the game"**. Only changed files means **"/reload"**. The bridge sends this as a system line through the existing slot or chat-log channel.
-- **Multiple clients:** `config.clients[]` replaces the single `addonDir`. Runtime and slots go into each client. Each client's slot toc uses that client's interface number.
+- **Multiple clients:** `config.clients[]` replaces the single `addonDir`. Runtime and slots go into each client. Each client's slot toc uses `tocInterface` (the shared `11509, 16001` list loads in both), and an entry can set its own.
 
 ### Developer flow
 - **Production is not the dev tree.** The LaunchAgent runs `~/.claude-wow/current/claude-wow`, a symlink to `~/.claude-wow/releases/<ver-or-sha>/claude-wow`. That is a Bun binary, so there is no nvm path.
@@ -90,7 +90,18 @@
 5. Does a CurseForge update of `ClaudeWoW/` leave sibling `ClaudeWoW_*` folders untouched? (Expected yes, because it tracks folders by fingerprint.)
 6. Can the Forever client read toc metadata through `C_AddOns.GetAddOnMetadata`? Run a strings check against the binary.
 
-Next step: step 1, the release workflow, unblocks everything else. Step 2 has to land before the first CurseForge upload.
+Answered so far:
+- Q6: yes. `GetAddOnMetadata` is in both the Era 1.15.9 and the Forever 1.60 binary (PR #63).
+- New (2026-10-02, Era only): `/reload` re-reads the toc and loads changed, late and newly listed Lua files; only a new addon folder needs a restart. So step 4 compares the loaded and installed toc instead of a file-list snapshot.
+
+Status: steps 1 (PR #52), 2 (PR #53) and 3 (PR #63) are on main; step 4 is the reload notice PR (#67); step 7 is the clients PR, stacked on #67. Step 3 used flag tokens `ver=`/`proto=` and the slot field `bridge = { version, protoMin, protoMax }`, with no `Manifest.lua`.
+
+Step 7 decisions (2026-10-02):
+- An entry stores `dir`, `account` and `processName`; `product` and every path come from `dir` (`bridge/clients.js`). Old single-client keys are read as `clients[0]` and moved there by setup.
+- `setup` adds every detected client only without `--wow`; with `--wow` it adds that one and installs into all listed ones. `"enabled": false` is how a client stays out.
+- The client of a record is the folder it was read from (Screenshots, chat log, SavedVariables). No record field and no `ps` poll. The pixel capture serves the first client only.
+- Replies, acks, the restore bundle, presence state, chat log padding and the run's game context are per client. Map, widgets, goals, campaign and `gs` stay shared.
+- Not measured: two clients running at the same time on one Mac (the e2e runs two simulated clients).
 
 ### Sources
 https://github.com/BigWigsMods/packager

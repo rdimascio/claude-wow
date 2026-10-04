@@ -12,6 +12,8 @@ const path = require('path');
 
 const S = require('../setup.js');
 const P = require('../bridge/protocol');
+const CLI = require('../bridge/clients');
+const SIG = require('../bridge/signals');
 
 function scratch(name) {
   const dir = path.join(os.tmpdir(), `claude-wow-setup-${name}-${process.pid}-${Date.now().toString(36)}`);
@@ -266,9 +268,12 @@ test('node setup.js --wow <fake client>: migrates the chats, installs ClaudeWoW 
 
   // The config: in the home folder, naming the new addon; nothing in bridge/ was touched.
   const cfg = JSON.parse(fs.readFileSync(path.join(home, 'config.json'), 'utf8'));
-  assert.equal(cfg.addonDir, addons);
-  assert.equal(cfg.inboxFile, path.join(addons, 'ClaudeWoW_Runtime', 'Inbox.lua'));
-  assert.equal(cfg.savedVariablesFile, path.join(saved, 'ClaudeWoW.lua'));
+  assert.deepEqual(cfg.clients, [{ dir: path.resolve(client), account: 'ACCT#1', processName: 'World of Warcraft.app' }], 'one client, only what cannot be derived from its folder');
+  for (const k of CLI.LEGACY_KEYS) assert.equal(cfg[k], undefined, `no single-client ${k}`);
+  const [resolved] = CLI.clientsOf(cfg);
+  assert.equal(resolved.addonDir, addons);
+  assert.equal(resolved.inboxFile, path.join(addons, 'ClaudeWoW_Runtime', 'Inbox.lua'));
+  assert.equal(resolved.savedVariablesFile, path.join(saved, 'ClaudeWoW.lua'));
   assert.equal(cfg.defaultCwd, project);
   assert.ok(!fs.existsSync(path.join(home, 'state.json')), 'an explicit CLAUDE_WOW_HOME is not filled from this checkout');
   // A new install is on the screenshot transport: python3 and the macOS
@@ -320,7 +325,7 @@ test('node setup.js --wow <fake client>: migrates the chats, installs ClaudeWoW 
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test('node setup.js --wow <another client> on an existing config points it at that client and replaces the old tocInterface default', () => {
+test('node setup.js --wow <another client> adds it next to the first one and installs into both, with one line per client and its build', () => {
   const { spawnSync } = require('child_process');
   const dir = scratch('switch');
   const forever = path.join(dir, '_classic_beta_');
@@ -328,12 +333,13 @@ test('node setup.js --wow <another client> on an existing config points it at th
   const home = path.join(dir, 'home');
   const project = path.join(dir, 'project');
   fs.mkdirSync(project, { recursive: true });
-  fakeClient(forever, 'WoWAI', { slots: 1 });
+  const foreverClient = fakeClient(forever, 'WoWAI', { slots: 1 });
   const eraClient = fakeClient(era, 'WoWClaude', { slots: 1 });
   const run = (...extra) => spawnSync(process.execPath, [path.join(__dirname, '..', 'setup.js'), ...extra], {
     encoding: 'utf8', env: { ...process.env, CLAUDE_WOW_HOME: home }, timeout: 120000,
   });
   const readCfg = () => JSON.parse(fs.readFileSync(path.join(home, 'config.json'), 'utf8'));
+  const tocOf = addons => fs.readFileSync(path.join(addons, P.ADDON, `${P.ADDON}.toc`), 'utf8');
 
   const first = run('--wow', forever, '--project', project);
   assert.equal(first.status, 0, first.stdout + first.stderr);
@@ -341,24 +347,67 @@ test('node setup.js --wow <another client> on an existing config points it at th
   assert.equal(cfg.tocInterface, P.TOC_INTERFACE);
   cfg.tocInterface = '16001';
   cfg.defaultCwd = project;
-  cfg.capture.processName = 'stale';
+  cfg.clients[0].processName = 'stale';
   fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify(cfg, null, 2) + '\n');
+  fs.writeFileSync(path.join(foreverClient.addons, P.ADDON, `${P.ADDON}.toc`), '## Interface: 16001\n## Version: 0.0.1\n## X-Build: 000000000000\n');
 
-  const switched = run('--wow', era);
-  assert.equal(switched.status, 0, switched.stdout + switched.stderr);
-  assert.match(switched.stdout, /updated \(tocInterface, client\); everything else kept/);
+  const added = run('--wow', era);
+  assert.equal(added.status, 0, added.stdout + added.stderr);
+  assert.match(added.stdout, /updated \(tocInterface, client\); everything else kept/);
   const after = readCfg();
-  assert.equal(after.addonDir, eraClient.addons);
-  assert.equal(after.inboxFile, path.join(eraClient.addons, P.RUNTIME_ADDON, 'Inbox.lua'));
-  assert.equal(after.savedVariablesFile, path.join(eraClient.saved, `${P.ADDON}.lua`));
-  assert.equal(after.capture.processName, 'World of Warcraft.app');
+  assert.deepEqual(after.clients.map(c => c.dir), [path.resolve(forever), path.resolve(era)], 'the first client stays, the new one is added after it');
   assert.equal(after.tocInterface, P.TOC_INTERFACE);
   assert.equal(after.defaultCwd, project, 'the rest of the config is kept');
-  assert.match(fs.readFileSync(path.join(eraClient.addons, 'ClaudeWoW_S001', 'ClaudeWoW_S001.toc'), 'utf8'), /^## Interface: 11509, 16001$/m);
+  assert.deepEqual(after.clients.map(c => c.processName), ['World of Warcraft.app', 'World of Warcraft.app'], 'a stale processName is detected again');
+  const build = /^## X-Build: ([0-9a-f]{12})$/m.exec(tocOf(eraClient.addons))[1];
+  assert.equal(/^## X-Build: ([0-9a-f]{12})$/m.exec(tocOf(foreverClient.addons))[1], build, 'the stale copy in the first client is replaced by the same build');
+  assert.match(added.stdout, new RegExp(`^addon {4}: _classic_beta_: \\d+ file\\(s\\) -> .* \\(build ${build}, `, 'm'));
+  assert.match(added.stdout, new RegExp(`^addon {4}: _classic_era_: \\d+ file\\(s\\) -> .* \\(build ${build}, `, 'm'));
+  for (const c of [foreverClient, eraClient]) {
+    assert.match(fs.readFileSync(path.join(c.addons, 'ClaudeWoW_S001', 'ClaudeWoW_S001.toc'), 'utf8'), /^## Interface: 11509, 16001$/m);
+    assert.ok(fs.existsSync(SIG.validFile(c.addons)), 'each client gets its own runtime folder');
+    assert.ok(fs.existsSync(path.join(c.saved, `${P.ADDON}.lua`)), 'each client keeps its own migrated saved data');
+  }
+  assert.match(added.stdout, /^_classic_era_: slots: 200 /m);
+  assert.match(added.stdout, /^_classic_beta_: slots: 200 /m);
 
   const same = run('--wow', era);
   assert.equal(same.status, 0, same.stdout + same.stderr);
   assert.match(same.stdout, /already exists, keeping it/, 'the same client again changes nothing');
+
+  after.clients[0].enabled = false;
+  fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify(after, null, 2) + '\n');
+  fs.writeFileSync(path.join(foreverClient.addons, P.ADDON, `${P.ADDON}.toc`), '## Interface: 16001\n');
+  const skipped = run('--wow', era);
+  assert.equal(skipped.status, 0, skipped.stdout + skipped.stderr);
+  assert.match(skipped.stdout, /_classic_beta_ skipped \("enabled": false in config\.json\)/);
+  assert.equal(tocOf(foreverClient.addons), '## Interface: 16001\n', 'a disabled client is not touched');
+  assert.equal(readCfg().clients[0].enabled, false, 'and stays disabled');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('node setup.js on a single-client config from before clients[] moves it into clients[0] and keeps it working', () => {
+  const { spawnSync } = require('child_process');
+  const dir = scratch('legacy-config');
+  const client = path.join(dir, '_classic_beta_');
+  const home = path.join(dir, 'home');
+  const project = path.join(dir, 'project');
+  fs.mkdirSync(project, { recursive: true });
+  fs.mkdirSync(home, { recursive: true });
+  const { addons, saved } = fakeClient(client, 'WoWAI', { slots: 1 });
+  const example = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'bridge', 'config.example.json'), 'utf8'));
+  const old = { ...example, addonDir: addons, savedVariablesFile: path.join(saved, `${P.ADDON}.lua`), inboxFile: path.join(addons, P.RUNTIME_ADDON, 'Inbox.lua'), defaultCwd: project };
+  old.capture = { ...old.capture, processName: 'World of Warcraft.app' };
+  fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify(old, null, 2) + '\n');
+  const r = spawnSync(process.execPath, [path.join(__dirname, '..', 'setup.js'), '--wow', client], {
+    encoding: 'utf8', env: { ...process.env, CLAUDE_WOW_HOME: home }, timeout: 120000,
+  });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  const cfg = JSON.parse(fs.readFileSync(path.join(home, 'config.json'), 'utf8'));
+  assert.match(r.stdout, /updated \(clients\); everything else kept/);
+  assert.deepEqual(cfg.clients, [{ dir: path.resolve(client), account: 'ACCT#1', processName: 'World of Warcraft.app' }]);
+  for (const k of CLI.LEGACY_KEYS) assert.equal(cfg[k], undefined, `${k} moved into clients[0]`);
+  assert.equal(cfg.defaultCwd, project);
   fs.rmSync(dir, { recursive: true, force: true });
 });
 

@@ -153,13 +153,17 @@ test('sync: newest valid build, validated rows, drops counted, uiMap percent coo
     SkillLine: [2, { badName: 1 }],
     SkillLineAbility: [1, { badId: 1 }],
     SpellReagents: [1, { badReagent: 1 }],
+    SpellName: [3, { badName: 1 }],
+    Spell: [2, {}],
+    Faction: [2, {}],
   });
-  assert.equal(m.rows, 20);
-  assert.equal(m.dropped, 15);
+  assert.equal(m.rows, 27);
+  assert.equal(m.dropped, 16);
+  assert.equal(m.tablesVersion, D.TABLES_VERSION);
   assert.deepEqual(m.tables.TaxiNodes.notes, { zoneAmbiguous: 1, notOnAnyMap: 1 });
 
   const dir = path.join(root, BUILD);
-  assert.deepEqual(fs.readdirSync(dir).sort(), ['flightpaths.jsonl', 'items.jsonl', 'manifest.json', 'quests.jsonl', 'skilllineabilities.jsonl', 'skilllines.jsonl','spellreagents.jsonl', 'uimapassignments.jsonl', 'uimaps.jsonl', 'zones.jsonl']);
+  assert.deepEqual(fs.readdirSync(dir).sort(), ['factions.jsonl', 'flightpaths.jsonl', 'items.jsonl', 'manifest.json', 'quests.jsonl', 'skilllineabilities.jsonl', 'skilllines.jsonl', 'spellranks.jsonl', 'spellreagents.jsonl', 'spells.jsonl', 'uimapassignments.jsonl', 'uimaps.jsonl', 'zones.jsonl']);
   const flights = readJsonl(path.join(dir, 'flightpaths.jsonl'));
   assert.deepEqual(flights.map(f => [f.id, f.name, f.map, f.zoneAmbiguous]), [
     [601, 'Fixture Town Roost', { uiMapID: 9001, x: 27.5, y: 25 }, true],
@@ -356,6 +360,37 @@ test('a lock held by someone else is not removed when our sync ends', () => {
   assert.equal(fs.existsSync(lockFile), true);
 });
 
+test('a manifest from before the newer table list makes an already-current build sync again, once', async () => {
+  const dataDir = path.join(scratch('tablesversion'), 'data');
+  const root = path.join(dataDir, 'forever');
+  const first = await syncInto(dataDir, { build: BUILD });
+  const manifestFile = path.join(first.dir, 'manifest.json');
+  const old = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
+  delete old.tablesVersion;
+  for (const t of ['SpellName', 'Spell', 'Faction']) delete old.tables[t];
+  fs.writeFileSync(manifestFile, JSON.stringify(old));
+  const second = await syncInto(dataDir, { build: BUILD });
+  assert.equal(second.status, 'synced');
+  assert.equal(path.basename(second.dir), `${BUILD}-1`);
+  assert.deepEqual(second.manifest.previous.changedTables, ['SpellName', 'Spell', 'Faction']);
+  assert.deepEqual(fs.readdirSync(root).filter(n => !n.startsWith('.')).sort(), [`${BUILD}-1`, 'current']);
+  assert.equal((await syncInto(dataDir, { build: BUILD })).status, 'current');
+});
+
+test('an upgrade sync that cannot fetch a table the current data has changes nothing', async () => {
+  const dataDir = path.join(scratch('keeptable'), 'data');
+  const first = await syncInto(dataDir, { build: BUILD });
+  const manifestFile = path.join(first.dir, 'manifest.json');
+  const old = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
+  delete old.tablesVersion;
+  fs.writeFileSync(manifestFile, JSON.stringify(old));
+  await assert.rejects(syncInto(dataDir, { build: BUILD, wago: fakeWago({ failTable: 'SkillLineAbility' }) }), /SkillLineAbility could not be fetched again .* nothing was changed/);
+  assert.equal(D.readCurrent(path.join(dataDir, 'forever')).dir, first.dir);
+  const fresh = path.join(scratch('newtable'), 'data');
+  const partial = await syncInto(fresh, { build: BUILD, wago: fakeWago({ failTable: 'SkillLineAbility' }) });
+  assert.equal(partial.status, 'synced', 'a table the current data never had can still be missing');
+});
+
 test('a second build in the same family records which tables changed', async () => {
   const dataDir = path.join(scratch('family'), 'data');
   const first = await syncInto(dataDir, { build: BUILD });
@@ -391,7 +426,7 @@ test('claude-wow data sync writes under CLAUDE_WOW_HOME/data and reports counts'
   const out = [];
   const code = await D.main(['sync'], { env: { CLAUDE_WOW_HOME: home }, fetch: wago.fetchImpl, now: () => FIXED_NOW, out: s => out.push(s), err: s => out.push(s) });
   assert.equal(code, 0);
-  assert.match(out.join(''), /20 rows kept, 15 dropped; current build 1\.60\.1\.200/);
+  assert.match(out.join(''), /27 rows kept, 16 dropped; current build 1\.60\.1\.200/);
   assert.equal(fs.readFileSync(path.join(home, 'data', 'forever', 'current'), 'utf8'), `${BUILD}\n`);
 
   const usage = [];

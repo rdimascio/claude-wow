@@ -3,6 +3,11 @@
 const fs = require('fs');
 const path = require('path');
 const HOME = require('../bridge/home');
+const CLI = require('../bridge/clients');
+
+function readState(file) {
+  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return {}; }
+}
 
 const CHAT_LOG = 'WoWChatLog.txt';
 const ASYNC_LOG = 'AsyncFile.log';
@@ -33,9 +38,9 @@ function logsDirFromConfig() {
   try {
     const home = HOME.resolve();
     const cfg = JSON.parse(fs.readFileSync(home.config, 'utf8'));
-    const addonDir = String(cfg.addonDir || '').replace(/[\\/]+$/, '');
-    if (!addonDir) return '';
-    return path.join(path.dirname(path.dirname(addonDir)), 'Logs');
+    const clients = CLI.clientsOf(cfg);
+    const client = CLI.lastSpoke(readState(home.state), clients) || clients[0];
+    return client ? path.dirname(client.chatLogFile) : '';
   } catch {
     return '';
   }
@@ -171,7 +176,7 @@ function main() {
   }
   const logs = o.logs || logsDirFromConfig();
   if (!logs || !fs.existsSync(logs)) {
-    console.error(`no Logs folder (${logs || 'no addonDir in config.json'}); pass --logs`);
+    console.error(`no Logs folder (${logs || 'no client in config.json'}); pass --logs`);
     process.exit(2);
   }
   const chatFile = path.join(logs, CHAT_LOG);
