@@ -15,7 +15,7 @@ This is the text for the CurseForge (and Wago) project page. It is not part of t
 | Other categories | Development Tools, Map & Minimap |
 | License | MIT |
 | Source | the project's GitHub repository (the project's Source URL field, not the description) |
-| Logo | TBD: not the Claude or Anthropic logo |
+| Logo | `docs/assets/logo.png` (400x400, upload this), source `docs/assets/logo.svg`: original art, a friendly wisp in a gold-ringed speech bubble. Not the Claude or Anthropic logo, no Blizzard art |
 
 Check the category names against the CurseForge form when you create the project; they are a proposal.
 
