@@ -63,7 +63,7 @@ function makeWorld(name, options = {}) {
   write(path.join(clawHome, 'bridge.log'), logLines.join('\n') + '\n');
 
   const toc = options.toc || '16001';
-  write(path.join(addonDir, 'ClaudeWoW', 'ClaudeWoW.toc'), `## Interface: ${toc}\n## Title: Claude WoW\n`);
+  write(path.join(addonDir, 'ClaudeWoW', 'ClaudeWoW.toc'), `## Interface: ${toc}\n## Title: Azeroth Companion\n`);
   write(path.join(addonDir, 'ClaudeWoW_S001', 'ClaudeWoW_S001.toc'), `## Interface: ${options.slotToc || toc}\n`);
   if (options.runtimeToc !== false) write(path.join(addonDir, 'ClaudeWoW_Runtime', 'ClaudeWoW_Runtime.toc'), `## Interface: ${options.runtimeToc || toc}\n`);
   for (const slot of options.ack || Array.from({ length: 200 }, (_, i) => i + 1)) write(path.join(addonDir, 'ClaudeWoW_Runtime', 'ack', String(slot).padStart(3, '0') + '.wav'), 'RIFF');

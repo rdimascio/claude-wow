@@ -115,7 +115,7 @@ Optional: fetch the game data that lets the agent check item, quest and zone IDs
 
 ### 4. Quit and start the game once
 
-**Fully quit World of Warcraft and start it again.** A `/reload` is not enough the first time: the game builds its addon list when it starts, and setup has just made new addon folders (`ClaudeWoW_Runtime` and the slot folders). On the character-select screen, open **AddOns** and enable *Claude WoW*. Leave the *Claude WoW slot* entries enabled.
+**Fully quit World of Warcraft and start it again.** A `/reload` is not enough the first time: the game builds its addon list when it starts, and setup has just made new addon folders (`ClaudeWoW_Runtime` and the slot folders). On the character-select screen, open **AddOns** and enable *Azeroth Companion*. Leave the *Azeroth Companion slot* entries enabled.
 
 ### 5. Start the bridge and say hello
 

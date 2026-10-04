@@ -446,7 +446,7 @@ try {
   console.log(`
 Done. Next:
   1. Fully quit and relaunch each World of Warcraft client above that is running (it only discovers new addon folders at launch).
-  2. Enable "Claude WoW" at the character select AddOns screen (the Claude WoW slot ### entries stay enabled).
+  2. Enable "Azeroth Companion" at the character select AddOns screen (the Azeroth Companion slot ### entries stay enabled).
   3. Start the bridge:  ${R.compiled ? 'claude-wow' : 'npm start'}   (in this terminal${
     process.platform === 'win32' ? '; bridge\\start-window.cmd opens its own window'
     : transport === 'screenshot' ? ''
