@@ -66,7 +66,10 @@ function watchScreenshots(dir, onFile, opts = {}) {
     if (closed) return;
     let names = [];
     try { names = fs.readdirSync(dir); } catch { return; }
-    for (const name of names) if (!seen.has(name)) check(name);
+    for (const name of names) {
+      const entry = seen.get(name);
+      if (!entry || entry.doneKey) check(name);
+    }
     // Forget files that went away, so a name reused later is looked at again.
     const present = new Set(names);
     for (const name of [...seen.keys()]) if (!present.has(name)) seen.delete(name);
