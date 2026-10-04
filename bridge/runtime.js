@@ -39,6 +39,7 @@ const SCRIPTS = {
   'data-mcp': 'bridge/datamcp.js',
   'goals-mcp': 'bridge/goalsmcp.js',
   'factory-mcp': 'bridge/factory.js',
+  'local-agent': 'bridge/localagent.js',
 };
 
 // [file, args]: what to spawn to run one of this project's scripts. From a

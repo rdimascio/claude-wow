@@ -1616,7 +1616,7 @@ function runAgent(job, opts = {}) {
   if (grantOnce.rules.length) {
     log(`${tag} allowed for this run only (${agentId}): ${grantOnce.rules.join(', ')}`);
   }
-  const dataServer = opts.gameData && agentId === 'claude' ? gameDataServer(tag, job) : null;
+  const dataServer = opts.gameData && (claudeRun || agent.mcp) ? gameDataServer(tag, job) : null;
   const runOnlyRules = [...grantOnce.rules, ...(dataServer ? dataServer.rules : []), ...(runToolSocket ? GM.RUN_RULES : []), ...(factoryToolSocket ? FACTORY.RUN_RULES : [])];
   const baseCfg = A.withPluginSettings(A.agentConfig(cfg, agentId), agentId, core.options(plugin.id));
   const acfg = A.withChatSettings(P.withRunDeniedRules(P.withRunOnlyRules(baseCfg, runOnlyRules), runDenied), agentId, chosen);
