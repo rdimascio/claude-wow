@@ -543,6 +543,16 @@ test('a reply record carries the addon session token it answers, and no token fi
   for (const token of [undefined, '', 7, null]) assert.ok(!/token =/.test(P.luaTable('X', [{ chat: 'c', id: 1, status: 'done', text: 'x', token }])), `no token line for ${token}`);
 });
 
+test('the slot file names the run limit and every message the bridge still holds, with when its run started', () => {
+  const lua = P.luaTable('X', [], { runLimit: 3600, alive: [{ session: 's"1', id: 7, since: 1700000000.9 }, { session: 's2', id: 8, since: 0 }, { session: 's3', id: 1.5 }, { session: 's4', id: 0 }, null] });
+  assert.match(lua, /\trunLimit = 3600,/);
+  assert.match(lua, /\talive = \{ \{ session = "s\\"1", id = 7, since = 1700000000 \}, \{ session = "s2", id = 8, since = 0 \} \},/);
+  assert.match(P.luaTable('X', [], { alive: [] }), /\talive = \{  \},/, 'an empty list is sent, so the addon knows nothing is held');
+  assert.match(P.luaTable('X', [], { alive: Array.from({ length: 40 }, (_, i) => ({ session: 's', id: i + 1, since: 0 })) }).match(/\talive = .*/)[0], /id = 30, since = 0 \} \},$/, 'at most 30');
+  for (const runLimit of [undefined, 0, -5, 1.5, '3600']) assert.doesNotMatch(P.luaTable('X', [], { runLimit }), /runLimit/, `no runLimit for ${runLimit}`);
+  assert.doesNotMatch(P.luaTable('X', [], {}), /alive/);
+});
+
 test('titles: the model is configurable, and its answer is cut to one clean line', () => {
   const T = require('../bridge/titles');
   assert.equal(T.titleModel({}), 'claude-haiku-4-5');

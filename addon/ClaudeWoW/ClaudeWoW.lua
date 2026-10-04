@@ -1225,7 +1225,16 @@ local function PollActivity(chat)
 		a.last = GetTime()
 		moved = true
 	end
+	if moved then Q.NoteLife(chat) end
 	return moved
+end
+
+function Q.ActivityAtLogin(chat)
+	local a = { next = 1, count = 0, startedAt = GetTime() }
+	while a.next <= ACT_MAX and Presence.Fired(ActPath(chat.pendingId, a.next)) do
+		a.next, a.count = a.next + 1, a.count + 1
+	end
+	return a
 end
 
 local function NotedBridge(at)
@@ -1678,12 +1687,59 @@ local function ContextWarning(c)
 	end
 end
 
+Q.RUN_LIMIT_DEFAULT = 30 * 60
+Q.RUN_LIMIT_MIN = 60
+Q.RUN_LIMIT_MAX = 7 * 86400
+Q.PENDING_MARGIN = 5 * 60
+Q.PENDING_LOGIN_GRACE = 120
+
+function Q.QuietLimit()
+	return (run.runLimit or Q.RUN_LIMIT_DEFAULT) + Q.PENDING_MARGIN
+end
+
+function Q.NoteLife(c, at)
+	if not c or not c.pendingId then return end
+	local now = time()
+	at = math.min(tonumber(at) or now, now)
+	if not c.lifeAt or at > c.lifeAt then c.lifeAt = at end
+end
+
+function Q.LastLife(c)
+	if type(c.lifeAt) == "number" then return c.lifeAt end
+	local at = time()
+	for i = #c.history, 1, -1 do
+		local m = c.history[i]
+		if m.id == c.pendingId and m.role == "user" then
+			at = tonumber(m.t) or at
+			break
+		end
+	end
+	c.lifeAt = at
+	return at
+end
+
+function Q.ApplyRuns(data)
+	if type(data) ~= "table" then return end
+	local limit = data.runLimit
+	if type(limit) == "number" and limit == math.floor(limit) and limit >= Q.RUN_LIMIT_MIN and limit <= Q.RUN_LIMIT_MAX then run.runLimit = limit end
+	if type(data.now) ~= "number" or time() - data.now > Q.INBOX_FRESH_SECONDS or type(data.alive) ~= "table" then return end
+	for _, a in ipairs(data.alive) do
+		local since = type(a) == "table" and type(a.since) == "number" and a.since or nil
+		if since and since <= data.now and a.session == db.session then
+			for _, c in ipairs(db.chats) do
+				if c.pendingId == a.id then Q.NoteLife(c, since > 0 and since or data.now) end
+			end
+		end
+	end
+end
+
 -- The bridge has read this record: whatever game context rode on it is now
 -- what the bridge knows, so later messages only carry it again if it changes.
 local function NoteAcked(rec)
 	rec.acked = true
 	ClaudeWoW.ChatLog.Acked(rec)
 	if rec.ctx ~= nil then run.contextSent = rec.ctx end
+	if not (rec.hello or rec.forget or rec.cancelOf or rec.dm) then Q.NoteLife((FindChat(rec.chat))) end
 end
 
 local function MarkAcked(id)
@@ -1723,6 +1779,7 @@ local function ApplyReplies(replies)
 			if r.status == "done" and r.id ~= c.pendingId and (tonumber(c.lateSeen) or 0) < (tonumber(r.id) or 0) then
 				c.lateSeen = r.id
 				ClaudeWoW.LateReply(c, r)
+				Q.OfferDraft(c)
 			end
 		elseif c and c.pendingId and r.id == c.pendingId then
 			matched = true
@@ -1744,10 +1801,18 @@ local function ApplyReplies(replies)
 				Finish(c, "system", "Bridge error: " .. tostring(r.text), denied)
 			elseif r.status == "working" then
 				if ClaudeWoWVoice then ClaudeWoWVoice.Started(r.id) end
+				if c.progress ~= r.text then Q.NoteLife(c) end
 				c.progress = r.text
 				run.steps = run.steps or {}
 				run.steps[c.id] = tonumber(r.steps)
 				Whisper.Progress(c, r.text)
+			end
+		elseif c and c.gaveUp and r.id == c.gaveUp and (r.status == "done" or r.status == "error") then
+			c.gaveUp = nil
+			if run.staleSig then run.staleSig[r.id] = nil end
+			if r.status == "done" then
+				ClaudeWoW.LateReply(c, r)
+				Q.OfferDraft(c)
 			end
 		end
 	end
@@ -1995,6 +2060,7 @@ local function TryLoadSlot(why)
 		ClaudeWoW.Version.Apply(data.bridge, data.now)
 		ClaudeWoW.Version.ApplyDisk(data.addonDisk, data.now)
 		ClaudeWoW.Version.ApplyClients(data.clients, data.now)
+		Q.ApplyRuns(data)
 	end
 	local matched = ApplyReplies(type(data) == "table" and data.replies or nil)
 	if type(data) == "table" and data.restore then ImportRestore(data.restore) end
@@ -2028,10 +2094,53 @@ local function PollLate(now)
 	end
 end
 
+function Q.GiveUp(c)
+	local id = c.pendingId
+	Whisper.StopProgress(c)
+	run.outbound[id] = nil
+	if run.act then run.act[c.id] = nil end
+	c.pendingId, c.progress, c.lifeAt = nil, nil, nil
+	RefreshStrip()
+	if not AnyPending() then keyCatcher:Hide() end
+	if c.quiet then return ClaudeWoW.Render() end
+	c.gaveUp = id
+	Cli.Out(c, "No reply to #" .. id .. " arrived and nothing was heard about it for " .. math.floor(Q.QuietLimit() / 60)
+		.. " minutes, so this chat is free again. If the reply comes later it still shows here. The bridge keeps the chat's session: send the message again, or ask for the last answer.")
+	Q.OfferDraft(c)
+end
+
+function Q.NoteLogin(isInitialLogin)
+	if isInitialLogin == true then db.graceUntil = time() + Q.PENDING_LOGIN_GRACE end
+end
+
+function Q.GiveUpSilent()
+	local now = time()
+	if now < (tonumber(db.graceUntil) or 0) then return end
+	local limit = Q.QuietLimit()
+	for _, c in ipairs(db.chats) do
+		if c.pendingId and now - Q.LastLife(c) > limit then Q.GiveUp(c) end
+	end
+end
+
+function Q.LateSignal()
+	for _, c in ipairs(db.chats) do
+		local id = c.gaveUp
+		if id and run.staleSig and run.staleSig[id] and not CheckSignal("sig", id) then run.staleSig[id] = nil end
+		if id and FreshSignal("sig", id) then
+			run.staleSig = run.staleSig or {}
+			run.staleSig[id] = true
+			TryLoadSlot("late")
+			return true
+		end
+	end
+	return false
+end
+
 local function Tick()
 	if not db then return end
 	local now = GetTime()
 	PollPresence()
+	Q.GiveUpSilent()
 	-- Without presence beats, the only evidence is a slot read; spend one every
 	-- IDLE_POLL_SECONDS while idle so the light still reflects reality (and stays
 	-- green while the bridge is up: BridgeState allows for this interval).
@@ -2136,6 +2245,7 @@ local function Tick()
 		RefreshStrip()
 		ClaudeWoW.UpdateStatus()
 	end
+	if Q.LateSignal() then return end
 	if not AnyPending() then
 		PollLate(now)
 		return
@@ -2173,6 +2283,7 @@ local function ProcessInbox()
 	ClaudeWoW.Version.Apply(inbox.bridge, inbox.now)
 	ClaudeWoW.Version.ApplyDisk(inbox.addonDisk, inbox.now)
 	ClaudeWoW.Version.ApplyClients(inbox.clients, inbox.now)
+	Q.ApplyRuns(inbox)
 	ApplyReplies(inbox.replies)
 	if inbox.restore then ImportRestore(inbox.restore) end
 	if inbox.map and ClaudeWoWMap then ClaudeWoWMap.Sync(inbox.map) end
@@ -2219,16 +2330,21 @@ Finish = function(chat, role, text, denied, agent, summary, macros)
 	if not AnyPending() then
 		keyCatcher:Hide()
 	end
-	if visible and ui.input and chat.draft and chat.draft ~= "" then
-		ui.input:SetText(chat.draft)
-		chat.draft = nil
-	end
+	if visible then Q.OfferDraft(chat) end
 	ClaudeWoW.Render()
 	if denied and ClaudeWoW.LootRollEnabled() then ClaudeWoWRoll.Offer(chat.id) end
 	ClaudeWoW.Notify(chat, text, agent, summary, role, denied, msgId, macros)
-	if chat.draft and chat.draft ~= "" and not visible then
-		Whisper.System(chat, "Waiting to go: " .. Flat(chat.draft) .. "  " .. Link("send", chat.id, "send it", "55ff55"), false, true)
+	if not visible then Q.OfferDraft(chat) end
+end
+
+function Q.OfferDraft(chat)
+	if chat.pendingId or not chat.draft or chat.draft == "" then return end
+	if ui.frame and ui.frame:IsShown() and db.activeChat == chat.id and ui.input then
+		ui.input:SetText(chat.draft)
+		chat.draft = nil
+		return
 	end
+	Whisper.System(chat, "Waiting to go: " .. Flat(chat.draft) .. "  " .. Link("send", chat.id, "send it", "55ff55"), false, true)
 end
 
 function ClaudeWoW.LateReply(chat, r)
@@ -3054,6 +3170,16 @@ function Whisper.TabChat(eb)
 	return nil
 end
 
+function Whisper.SelectedTabChat(eb)
+	if not WhisperOn() or type(eb) ~= "table" or not eb.GetAttribute or eb:GetAttribute("chatType") ~= "WHISPER" then return nil end
+	local frame = type(FCFDock_GetSelectedWindow) == "function" and type(GENERAL_CHAT_DOCK) == "table" and Try(FCFDock_GetSelectedWindow, GENERAL_CHAT_DOCK) or SELECTED_DOCK_FRAME or SELECTED_CHAT_FRAME
+	local chat = type(frame) == "table" and frame.claudewowChatId and FindChat(frame.claudewowChatId)
+	if not chat or not run.whisperTabs or run.whisperTabs[chat.id] ~= frame then return nil end
+	local target = tostring(eb:GetAttribute("tellTarget") or ""):lower()
+	if target ~= ChatAgentName(chat):lower() and ReplyNameChat(target) ~= chat then return nil end
+	return chat
+end
+
 function Whisper.ChatForBox(eb)
 	if type(eb) ~= "table" or not eb.GetAttribute then return nil end
 	if eb:GetAttribute("chatType") ~= "WHISPER" then return nil end
@@ -3078,9 +3204,6 @@ function Whisper.Intercept(eb, layer)
 		return true
 	end
 	if db.activeChat ~= chat.id then ClaudeWoW.SwitchChat(chat.id) end
-	if chat.pendingId then
-		Whisper.System(chat, ChatAgentName(chat) .. " is still working on your last message; this one waits and is offered again when the reply lands (/claude cancel gives up on the last one)")
-	end
 	ClaudeWoW.Send(text)
 	return true
 end
@@ -3138,6 +3261,13 @@ function Whisper.Status()
 		.. ", /r: " .. (run.replyTarget or "the game's last whisper")
 end
 
+function Q.SayStillWaiting(c)
+	run.waitSaid = run.waitSaid or {}
+	if c.quiet or run.waitSaid[c.id] == c.pendingId then return end
+	run.waitSaid[c.id] = c.pendingId
+	Cli.Out(c, ChatAgentName(c) .. " is still working on #" .. c.pendingId .. ". What you type now waits as a draft and is offered again when the reply lands. /claude cancel frees this chat.")
+end
+
 -- opts.vision asks for a picture of the screen with this one message, whatever
 -- the setting ("/claude-wow look <question>").
 function ClaudeWoW.Send(text, allow, opts)
@@ -3146,7 +3276,10 @@ function ClaudeWoW.Send(text, allow, opts)
 	text = Trim(text or "")
 	if c.pendingId then
 		-- Typing while waiting: keep the draft, and check for the reply.
-		if text ~= "" then c.draft = text end
+		if text ~= "" then
+			c.draft = text
+			Q.SayStillWaiting(c)
+		end
 		if db.settings.mode == "pixel" and not (run.slotsExhausted or run.slotsMissing) then
 			TryLoadSlot("manual")
 		else
@@ -3223,6 +3356,7 @@ function ClaudeWoW.Send(text, allow, opts)
 		t = time(),
 	}
 	c.pendingId = id
+	c.lifeAt = time()
 	c.draft = nil
 	c.progress = nil
 	if run.steps then run.steps[c.id] = nil end
@@ -3907,6 +4041,7 @@ function ClaudeWoW.DeleteChat(id)
 	if #db.chats == 1 or (otherUserChats == 0 and not c.quiet) then
 		wipe(c.history)
 		c.pendingId, c.progress, c.unread, c.draft = nil, nil, 0, nil
+		c.gaveUp, c.lifeAt = nil, nil
 		c.name = "Chat 1"
 		ClaudeWoW.Render()
 		ClaudeWoW.RenderChatList()
@@ -6518,7 +6653,7 @@ function Cli.Say(c, text)
 end
 
 function Cli.Begin(editBox)
-	local tab = Whisper.TabChat(editBox)
+	local tab = Whisper.TabChat(editBox) or Whisper.SelectedTabChat(editBox)
 	local marks = {}
 	for _, ch in ipairs(db.chats) do marks[ch.id] = ch.history[#ch.history] or false end
 	run.cmd = { tab = tab, general = type(editBox) == "table" and not tab or nil, marks = marks }
@@ -7326,6 +7461,13 @@ function ClaudeWoW.Cancel(c)
 		SendCancel(c, cancelled)
 		RefreshStrip()
 		if not AnyPending() then keyCatcher:Hide() end
+	elseif c then
+		local waiting = {}
+		for i, ch in ipairs(db.chats) do
+			if ch.pendingId and not ch.quiet then table.insert(waiting, i .. ". " .. ch.name .. " (#" .. ch.pendingId .. ")") end
+		end
+		Cli.Out(c, "Nothing to cancel: " .. c.name .. " is not waiting for a reply. "
+			.. (#waiting > 0 and ("Waiting: " .. table.concat(waiting, ", ") .. ". Pick one with /claude chat <number>, then /claude cancel.") or "No chat is waiting."))
 	end
 	ClaudeWoW.Render()
 end
@@ -7713,8 +7855,11 @@ ev:RegisterEvent("UPDATE_MACROS")
 ev:RegisterEvent("SCREENSHOT_SUCCEEDED")
 ev:RegisterEvent("SCREENSHOT_FAILED")
 ev:RegisterEvent("PLAYER_LOGOUT")
+ev:RegisterEvent("PLAYER_ENTERING_WORLD")
 ev:SetScript("OnEvent", function(self, event, arg1)
-	if event == "ADDON_LOADED" then
+	if event == "PLAYER_ENTERING_WORLD" then
+		if db then Q.NoteLogin(arg1) end
+	elseif event == "ADDON_LOADED" then
 		if arg1 == ADDON_NAME then
 			InitDB()
 			-- The saved data is here: a screenshotFormat left behind by a crash
@@ -7742,10 +7887,7 @@ ev:SetScript("OnEvent", function(self, event, arg1)
 			run.polls = 0
 			run.act = {}
 			for _, ch in ipairs(db.chats) do
-				if ch.pendingId then
-					-- Beats already written stay valid, so the counter catches up on its own.
-					run.act[ch.id] = { next = 1, count = 0, startedAt = GetTime() }
-				end
+				if ch.pendingId then run.act[ch.id] = Q.ActivityAtLogin(ch) end
 			end
 			ScheduleNextPoll()
 		end

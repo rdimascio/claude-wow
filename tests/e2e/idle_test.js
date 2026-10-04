@@ -6,7 +6,7 @@ const os = require('os');
 const path = require('path');
 const I = require('../../bridge/idle');
 const V = require('../../bridge/vision');
-const { makeRoot, gameRunner } = require('./helpers');
+const { makeRoot, gameRunner, replyTo } = require('./helpers');
 
 const ROOT = makeRoot('idle');
 const withGame = gameRunner(ROOT);
@@ -93,12 +93,6 @@ function switchingLock(h) {
   return lockFile;
 }
 
-function replyTo(h, id) {
-  const c = h.client.activeChat();
-  if (!c || c.pendingId) return null;
-  return (c.history || []).find(m => m.id === id && m.role !== 'user') || null;
-}
-
 test('a reply that finished while the game was not reading reaches the game after a bridge restart: the new bridge publishes it again', async () => {
   await withGame({}, async h => {
     await h.client.connect();
@@ -127,7 +121,7 @@ test('a message held for a deploy survives the restart the deploy makes: the new
     h.client.send('held across the restart [[tag held-restart]]');
     await h.bridge.waitForLine(new RegExp(`#${id}@\\S+ held: a deploy`));
     const heldIds = () => (h.state().held || []).map(e => e.job.id);
-    assert.ok(heldIds().includes(id), 'the held message is in state.json');
+    await h.client.waitFor(() => heldIds().includes(id), { label: 'the held message in state.json' });
     h.client.stop();
     await h.bridge.restart();
     await h.bridge.waitForLine(new RegExp(`#${id}@\\S+ was held for a deploy when the previous bridge stopped; submitting it again`));

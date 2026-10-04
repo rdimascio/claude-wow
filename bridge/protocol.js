@@ -942,6 +942,8 @@ function luaSession(s) {
   return `\t\t{ ${f.join(', ')} },`;
 }
 
+const ALIVE_MAX = 30;
+
 function luaTable(globalName, records, opts = {}) {
   const now = opts.now || Date.now();
   const agents = Array.isArray(opts.agents) ? opts.agents : [];
@@ -998,6 +1000,11 @@ function luaTable(globalName, records, opts = {}) {
   if (Array.isArray(opts.acks)) {
     const acks = opts.acks.filter(a => a && Number.isInteger(a.id) && a.id > 0);
     lines.splice(lines.length - 1, 0, `\tacks = { ${acks.map(a => `{ session = ${luaStr(a.session || '')}, id = ${a.id} }`).join(', ')} },`);
+  }
+  if (Number.isInteger(opts.runLimit) && opts.runLimit > 0) lines.splice(lines.length - 1, 0, `\trunLimit = ${opts.runLimit},`);
+  if (Array.isArray(opts.alive)) {
+    const alive = opts.alive.filter(a => a && Number.isInteger(a.id) && a.id > 0).slice(0, ALIVE_MAX);
+    lines.splice(lines.length - 1, 0, `\talive = { ${alive.map(a => `{ session = ${luaStr(a.session || '')}, id = ${a.id}, since = ${Math.max(0, Math.floor(Number(a.since) || 0))} }`).join(', ')} },`);
   }
   if (opts.presence && typeof opts.presence === 'object') {
     const pr = opts.presence;
