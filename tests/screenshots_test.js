@@ -56,6 +56,48 @@ test('a file the handler left alone is reported again when the client overwrites
   }
 });
 
+test('a strip the client writes again under the same name while the handler reads the first is kept and reported again', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wowai-shots-'));
+  const name = 'WoWScrnShot_010126_000005.png';
+  const got = [];
+  const verdicts = [];
+  const w = S.watchScreenshots(dir, f => {
+    const key = S.statKey(f);
+    got.push(fs.readFileSync(f, 'utf8'));
+    if (got.length === 1) fs.writeFileSync(f, 'the cancel strip, shot in the same second');
+    verdicts.push(S.removeUnlessRewritten(f, key));
+  }, { settleMs: 20, scanMs: 40 });
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  try {
+    fs.writeFileSync(path.join(dir, name), 'the hello strip');
+    await sleep(400);
+    assert.deepEqual(got, ['the hello strip', 'the cancel strip, shot in the same second']);
+    assert.deepEqual(verdicts, ['rewritten', 'removed']);
+    assert.ok(!fs.existsSync(path.join(dir, name)), 'the second strip is deleted once read');
+  } finally {
+    w.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('removeUnlessRewritten deletes a file only while it is the one that was read', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wowai-shots-'));
+  const file = path.join(dir, 'WoWScrnShot_010126_000006.png');
+  try {
+    fs.writeFileSync(file, 'strip');
+    const key = S.statKey(file);
+    fs.writeFileSync(file, 'a longer strip');
+    assert.equal(S.removeUnlessRewritten(file, key), 'rewritten');
+    assert.ok(fs.existsSync(file));
+    assert.equal(S.removeUnlessRewritten(file, S.statKey(file)), 'removed');
+    assert.ok(!fs.existsSync(file));
+    assert.equal(S.removeUnlessRewritten(file, key), 'gone');
+    assert.equal(S.statKey(file), null);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('the watcher reports a new file once its size settles, and never the files that were already there', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wowai-shots-'));
   fs.writeFileSync(path.join(dir, 'WoWScrnShot_010126_000000.png'), 'old');

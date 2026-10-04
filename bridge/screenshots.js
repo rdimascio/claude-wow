@@ -15,6 +15,21 @@ function isScreenshotFile(name) {
   return SHOT_RE.test(String(name || ''));
 }
 
+function statKey(file) {
+  try {
+    const st = fs.statSync(file);
+    return `${st.size}:${st.mtimeMs}`;
+  } catch { return null; }
+}
+
+function removeUnlessRewritten(file, key) {
+  const now = statKey(file);
+  if (now === null) return 'gone';
+  if (now !== key) return 'rewritten';
+  fs.unlinkSync(file);
+  return 'removed';
+}
+
 // Watch `dir` for new screenshot files; `onFile(fullPath)` is called once per
 // file, once its size has been the same over two consecutive checks (the client
 // writes big files in pieces). fs.watch gives the low latency; a slow scan
@@ -52,11 +67,12 @@ function watchScreenshots(dir, onFile, opts = {}) {
     } else { entry.size = st.size; entry.mtimeMs = st.mtimeMs; entry.at = now; entry.stable = 0; }
     if (entry.stable >= 1) {
       entry.done = true;
+      const settledKey = `${entry.size}:${entry.mtimeMs}`;
       try { onFile(path.join(dir, name)); } catch (e) { log(`screenshot handler failed: ${e.message}`); }
-      let after = null;
-      try { after = fs.statSync(path.join(dir, name)); } catch {}
-      if (!after) seen.delete(name);
-      else entry.doneKey = `${after.size}:${after.mtimeMs}`;
+      const after = statKey(path.join(dir, name));
+      if (after === null) seen.delete(name);
+      else if (after !== settledKey) { seen.delete(name); check(name); }
+      else entry.doneKey = after;
       return;
     }
     setTimeout(() => check(name), settleMs);
@@ -150,4 +166,4 @@ function sweepOrphans(dir, hasStrip, opts = {}) {
   return out;
 }
 
-module.exports = { isScreenshotFile, watchScreenshots, sweepOrphans };
+module.exports = { isScreenshotFile, statKey, removeUnlessRewritten, watchScreenshots, sweepOrphans };
