@@ -179,10 +179,11 @@ function claudeParser(opts = {}) {
         noteRefusal(ev.tool_use_id, ev.message || ev.decision_reason, ev.decision_reason_type, true);
       } else if (ev.type === 'user' && ev.message && Array.isArray(ev.message.content)) {
         for (const block of ev.message.content) {
+          const tool = block && block.type === 'tool_result' ? wowdataCalls.get(block.tool_use_id) : undefined;
+          if (tool) wowdataCalls.delete(block.tool_use_id);
           if (block && block.type === 'tool_result' && block.is_error) noteRefusal(block.tool_use_id, toolResultText(block.content), '', false);
-          else if (block && block.type === 'tool_result' && wowdataCalls.has(block.tool_use_id)) {
-            const line = PD.resultLine(wowdataCalls.get(block.tool_use_id), toolResultText(block.content));
-            wowdataCalls.delete(block.tool_use_id);
+          else if (tool) {
+            const line = PD.resultLine(tool, toolResultText(block.content));
             if (line) out.progress.push(line);
           }
         }

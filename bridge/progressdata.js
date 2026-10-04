@@ -4,6 +4,7 @@ const WOWDATA_TOOL = /^mcp__wowdata__(wow_[a-z]+)$/;
 const MAX_LINE = 80;
 const MAX_NAME = 40;
 const VERIFIED = new Set(['client-data', 'client-data-build-unchecked']);
+const UNMATCHED_BUILD = new Set(['build-mismatch', 'no-data']);
 const LOADING = Object.freeze({
   wow_item: 'Looking up an item',
   wow_spell: 'Looking up a spell',
@@ -19,7 +20,7 @@ const SOURCE_PARTS = Object.freeze([
   ['droppedBy', 'dropped by', 'NPC'],
   ['skinnedFrom', 'skinned from', 'NPC'],
   ['pickpocketedFrom', 'pick pocketed from', 'NPC'],
-  ['objects', 'in', 'chest or node', 'chests or nodes'],
+  ['objects', 'in', 'chest, node or pool', 'chests, nodes or pools'],
   ['fishedIn', 'fished in', 'zone'],
   ['inContainers', 'in', 'container'],
   ['disenchantedFrom', 'disenchanted from', 'item'],
@@ -38,80 +39,88 @@ function plural(n, one, many = `${one}s`) {
   return `${n} ${n === 1 ? one : many}`;
 }
 
+function totalOf(result) {
+  return Number.isSafeInteger(result.total) && result.total > 0 ? result.total : result.results.length;
+}
+
 function placeName(row) {
   if (!row || !VERIFIED.has(row.trust) || typeof row.name !== 'string') return null;
   const name = row.name.replace(/[\p{Cc}\p{Cf}{}|]/gu, '').trim();
   return name && name.length <= MAX_NAME ? name : null;
 }
 
-function itemToken(row) {
-  return row && Number.isSafeInteger(row.id) && row.id > 0 && VERIFIED.has(row.trust) ? `{item:${row.id}}` : null;
+function token(id) {
+  return Number.isSafeInteger(id) && id > 0 ? `{item:${id}}` : null;
 }
 
-function join(head, parts) {
-  let line = head;
+function fit(parts, tail = '') {
+  const kept = [];
   for (const part of parts) {
-    const next = line ? `${line}${line === head && head ? ': ' : ', '}${part}` : part;
-    if (next.length > MAX_LINE) break;
-    line = next;
+    if ([...kept, part].join(', ').length + tail.length > MAX_LINE) break;
+    kept.push(part);
   }
-  return line;
+  return kept.join(', ') + tail;
 }
 
-function andMore(head, n) {
-  return n > 0 ? `${head} and ${n} more` : head;
+function sentence(text) {
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 function itemLine(result) {
-  const rows = result.results;
+  const row = result.results[0];
+  const link = VERIFIED.has(row.trust) ? token(row.id) : null;
   if (result.query && result.query.id === undefined) {
-    const token = itemToken(rows[0]);
-    return token ? andMore(token, (result.total || rows.length) - 1) : plural(result.total || rows.length, 'item');
+    const count = plural(totalOf(result), 'item');
+    return link ? `${count}, first ${link}` : count;
   }
-  const row = rows[0];
-  const token = itemToken(row);
-  if (!token) return null;
+  if (!link) return null;
   const c = row.community;
-  if (!c) return token;
+  if (!c) return `Found ${link}`;
   const parts = [];
   for (const [key, verb, one, many] of SOURCE_PARTS) {
     const total = c[key] && Number.isSafeInteger(c[key].total) ? c[key].total : 0;
     if (total) parts.push(`${verb} ${plural(total, one, many)}`);
   }
-  return parts.length ? join(`${token} in 1.12 data`, parts) : `${token}: no 1.12 source`;
+  if (!parts.length) return `No source shown in 1.12 data: ${link}`;
+  return sentence(fit(parts, ` in 1.12 data: ${link}`));
 }
 
 function instanceLine(result) {
   const row = result.results[0];
   const name = placeName(row);
   if (!name) return null;
-  const bosses = new Set();
+  const encounters = new Set();
   let chests = 0;
   for (const set of Array.isArray(row.bossSets) ? row.bossSets : []) {
     for (const boss of Array.isArray(set.bosses) ? set.bosses : []) {
-      if (!bosses.has(boss.name) && boss.community && boss.community.chest) chests++;
-      bosses.add(boss.name);
+      if (!encounters.has(boss.name) && boss.community && boss.community.chest) chests++;
+      encounters.add(boss.name);
     }
   }
-  const parts = [plural(bosses.size, 'boss', 'bosses')];
-  if (chests) parts.push(plural(chests, 'chest'));
-  if (result.results.length > 1) parts.push(`${result.results.length - 1} more`);
-  return join(name, parts);
+  const parts = [plural(encounters.size, 'encounter')];
+  if (chests) parts.push(`${plural(chests, 'chest')} in 1.12 data`);
+  const more = totalOf(result) - 1;
+  if (more > 0) parts.push(`${more} more`);
+  return `${name}: ${fit(parts)}`;
 }
 
 function npcLine(result) {
-  const row = result.results[0];
-  const drops = row && row.drops;
-  if (!drops || !drops.total) return result.results.length > 1 ? plural(result.total || result.results.length, 'NPC') + ' in 1.12 data' : 'NPC found in 1.12 data';
-  const best = drops.items && drops.items[0] && Number.isSafeInteger(drops.items[0].id) ? `{item:${drops.items[0].id}}` : null;
-  return join('NPC in 1.12 data', [`${plural(drops.total, 'drop')}`, ...(best ? [`best ${best}`] : [])]);
+  const total = totalOf(result);
+  if (total > 1) return `${plural(total, 'NPC')} in 1.12 data`;
+  const drops = result.results[0].drops;
+  if (!drops || !drops.total) return 'NPC found in 1.12 data';
+  const head = `NPC in 1.12 data: ${plural(drops.total, 'drop')}`;
+  if (UNMATCHED_BUILD.has(result.buildCheck)) return head;
+  const shown = (Array.isArray(drops.items) ? drops.items : []).filter(it => token(it.id));
+  const top = shown.reduce((best, it) => ((it.quality || 0) > (best ? best.quality || 0 : -1) ? it : best), null);
+  return top ? `${head}, including ${token(top.id)}` : head;
 }
 
 function namedLine(result, noun, many) {
   const first = placeName(result.results[0]);
-  const total = result.total || result.results.length;
+  const total = totalOf(result);
   if (!first) return plural(total, noun, many);
-  return andMore(first, total - 1);
+  return total > 1 ? `${first} and ${total - 1} more` : first;
 }
 
 function resultLine(tool, text) {
@@ -125,9 +134,9 @@ function resultLine(tool, text) {
     case 'wow_npc': return npcLine(result);
     case 'wow_where': return namedLine(result, 'place');
     case 'wow_flights': return namedLine(result, 'flight path');
-    case 'wow_faction': return namedLine(result, 'faction');
-    case 'wow_spell': return plural(result.total || result.results.length, 'spell');
-    case 'wow_quest': return plural(result.total || result.results.length, 'quest');
+    case 'wow_faction': return plural(totalOf(result), 'faction');
+    case 'wow_spell': return plural(totalOf(result), 'spell');
+    case 'wow_quest': return plural(totalOf(result), 'quest');
     case 'wow_sources': return 'Game data checked';
     default: return null;
   }

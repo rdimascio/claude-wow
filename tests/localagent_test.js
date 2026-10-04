@@ -142,6 +142,24 @@ test('resume: the next message carries the saved chat and keeps the session id; 
   }
 });
 
+test('a long wowdata result is clipped for the model but read whole for the progress line', async () => {
+  const dir = scratch('bigresult');
+  const big = JSON.stringify({ found: true, total: 1, buildCheck: 'exact', query: { id: 6948 }, results: [{ id: 6948, trust: 'client-data' }], notes: ['x'.repeat(13000)] });
+  const server = FAKE_MCP.replace("text: JSON.stringify({ called: m.params.name, args: m.params.arguments, name: 'Fake Item' })", `text: ${JSON.stringify(big)}`);
+  assert.notEqual(server, FAKE_MCP);
+  const model = await fakeModel([callTools({ name: 'mcp__wowdata__wow_item', args: { id: 6948 } }), say('ok')]);
+  try {
+    const mcpConfig = mcpConfigFile(dir, { type: 'stdio', command: process.execPath, args: ['-e', server] });
+    const { code, events } = await runOnce({ baseUrl: model.baseUrl, sessions: dir, mcpConfig }, { system: 'S', prompt: 'item 6948?' });
+    assert.equal(code, 0);
+    assert.ok(model.bodies[1].body.messages[3].content.length < big.length, 'the model still gets the clipped text');
+    assert.ok(feedAll(events).progress.includes('Found {item:6948}'), 'the progress line reads the whole result');
+  } finally {
+    await model.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('tools: the wowdata MCP server from --mcp-config is offered to the model, its calls run over stdio, and the answer comes back', async () => {
   const dir = scratch('tools');
   const model = await fakeModel([callTools({ name: 'mcp__wowdata__wow_item', args: { id: 6948 } }), say('It is {item:6948}.')]);

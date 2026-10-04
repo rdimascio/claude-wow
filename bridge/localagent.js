@@ -217,7 +217,8 @@ async function callTool(route, name, input) {
     const r = await target.client.request('tools/call', { name: target.tool, arguments: input });
     const content = r && Array.isArray(r.content) ? r.content : [];
     const text = content.map(c => (c && c.type === 'text' && typeof c.text === 'string' ? c.text : '')).filter(Boolean).join('\n');
-    return { text: clip(text || JSON.stringify(r && r.structuredContent ? r.structuredContent : {})), error: !!(r && r.isError) };
+    const full = text || JSON.stringify(r && r.structuredContent ? r.structuredContent : {});
+    return { text: clip(full), full, error: !!(r && r.isError) };
   } catch (e) {
     return { text: JSON.stringify({ error: e.message }), error: true };
   }
@@ -313,7 +314,7 @@ async function run(opts, deps = {}) {
       for (const c of calls) {
         const res = c.args.error ? { text: JSON.stringify({ error: c.args.error }), error: true } : await callTool(mcp.route, c.name, c.args.value);
         history.push({ role: 'tool', tool_call_id: c.id, content: res.text });
-        results.push({ type: 'tool_result', tool_use_id: c.id, content: res.text, is_error: res.error });
+        results.push({ type: 'tool_result', tool_use_id: c.id, content: res.full || res.text, is_error: res.error });
       }
       emit({ type: 'user', session_id: id, message: { role: 'user', content: results } });
     }
