@@ -356,11 +356,33 @@ const mac = {
   exec: run,
   uid: () => process.getuid(),
   target() { return `gui/${this.uid()}/${LABEL}`; },
+  sleep: ms => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms),
+  settleMs: 250,
+  settleTries: 40,
   loaded() { return this.exec('launchctl', ['print', this.target()]).ok; },
+  waitUnloaded() {
+    for (let i = 0; i < this.settleTries; i++) {
+      if (!this.loaded()) return true;
+      this.sleep(this.settleMs);
+    }
+    return !this.loaded();
+  },
   bootstrap(d) {
-    let r = this.exec('launchctl', ['bootstrap', `gui/${this.uid()}`, d.definition]);
-    if (!r.ok) r = this.exec('launchctl', ['load', '-w', d.definition]); // pre-10.11 spelling
-    return r;
+    const r = this.exec('launchctl', ['bootstrap', `gui/${this.uid()}`, d.definition]);
+    if (r.ok) return r;
+    const legacy = this.exec('launchctl', ['load', '-w', d.definition]);
+    const legacyFailed = !legacy.ok || /failed|error/i.test(legacy.out);
+    return legacyFailed ? { ...r, out: [r.out, legacy.out].map(s => (s || '').trim()).filter(Boolean).join('; ') } : legacy;
+  },
+  bootstrapLoaded(d) {
+    let r = { ok: false, out: '' };
+    for (let i = 0; i < this.settleTries; i++) {
+      r = this.bootstrap(d);
+      if (r.ok && this.loaded()) return r;
+      this.sleep(this.settleMs);
+    }
+    if (this.loaded()) return { ok: true, out: r.out };
+    return { ...r, ok: false, out: r.out || 'launchctl reported success but the service is not loaded' };
   },
   bootout() {
     let r = this.exec('launchctl', ['bootout', this.target()]);
@@ -383,8 +405,12 @@ const mac = {
     rotate(launchdLogFile(d), { maxBytes: 1024 * 1024, keep: 1 });
     this.removeOld();
     fs.writeFileSync(d.definition, definition('darwin', d));
-    if (this.loaded()) this.bootout();
-    const r = this.bootstrap(d);
+    if (this.loaded()) {
+      const out = this.bootout();
+      if (!out.ok) throw new Error(`launchctl could not unload the running service: ${out.out.trim() || out.error}`);
+      if (!this.waitUnloaded()) throw new Error(`launchd still has ${LABEL} loaded after bootout; run "claude-wow service start" once it has stopped`);
+    }
+    const r = this.bootstrapLoaded(d);
     if (!r.ok) throw new Error(`launchctl could not load ${d.definition}: ${r.out.trim() || r.error}`);
   },
   uninstall(d) {

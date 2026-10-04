@@ -315,3 +315,57 @@ test('status names every client in config.json with its installed build and whic
   S.status({ run: dir, logs: dir, definition: path.join(dir, 'none.plist') }, 'darwin', l => none.push(l), path.join(dir, 'state.json'), path.join(dir, 'missing.json'));
   assert.ok(none.includes('  clients   : no config.json (claude-wow setup)'));
 });
+
+function fakeLaunchd({ teardownPolls = 3, bootstrapBroken = false } = {}) {
+  const state = { loaded: true, tearingDown: 0, calls: [], sleeps: 0 };
+  const exec = (cmd, args) => {
+    assert.equal(cmd, 'launchctl');
+    const [sub] = args;
+    state.calls.push(sub);
+    if (sub === 'print') {
+      if (state.loaded) return { ok: true, status: 0, out: 'state = running\npid = 4242\n' };
+      if (state.tearingDown > 0) { state.tearingDown--; return { ok: true, status: 0, out: 'state = exiting\n' }; }
+      return { ok: false, status: 113, out: 'Could not find service "io.claudewow.bridge" in domain for port\n' };
+    }
+    if (sub === 'bootout') {
+      state.loaded = false;
+      state.tearingDown = teardownPolls;
+      return { ok: true, status: 0, out: '' };
+    }
+    if (sub === 'bootstrap') {
+      if (bootstrapBroken || state.loaded || state.tearingDown > 0) return { ok: false, status: 5, out: 'Bootstrap failed: 5: Input/output error\n' };
+      state.loaded = true;
+      return { ok: true, status: 0, out: '' };
+    }
+    if (sub === 'load') return { ok: true, status: 0, out: 'Load failed: 5: Input/output error\n' };
+    throw new Error(`unexpected launchctl ${sub}`);
+  };
+  const b = Object.assign(Object.create(S.backend('darwin')), {
+    exec,
+    uid: () => 501,
+    sleep: () => { state.sleeps++; },
+    removeOld: () => false,
+  });
+  return { b, state };
+}
+
+test('install over a loaded LaunchAgent waits for bootout to finish, then ends loaded', () => {
+  const dir = scratch('macinstall');
+  const d = { logs: path.join(dir, 'logs'), run: path.join(dir, 'run'), definition: path.join(dir, 'LaunchAgents', `${S.LABEL}.plist`) };
+  fs.mkdirSync(path.dirname(d.definition), { recursive: true });
+  fs.writeFileSync(d.definition, '<plist>old</plist>');
+  const { b, state } = fakeLaunchd({ teardownPolls: 3 });
+  b.install(d);
+  assert.equal(state.loaded, true, `the agent is loaded after install (calls: ${state.calls.join(' ')})`);
+  assert.ok(state.calls.indexOf('bootout') < state.calls.indexOf('bootstrap'));
+  assert.ok(!state.calls.includes('load'), 'no bootstrap ran while launchd was still tearing the old job down');
+  assert.match(fs.readFileSync(d.definition, 'utf8'), /<key>Label<\/key>\s*<string>io\.claudewow\.bridge<\/string>/);
+});
+
+test('install fails loudly when launchd will not load the agent, even if the legacy load exits 0', () => {
+  const dir = scratch('macinstallfail');
+  const d = { logs: path.join(dir, 'logs'), run: path.join(dir, 'run'), definition: path.join(dir, 'LaunchAgents', `${S.LABEL}.plist`) };
+  const { b, state } = fakeLaunchd({ bootstrapBroken: true });
+  assert.throws(() => b.install(d), /launchctl could not load .*Bootstrap failed: 5/);
+  assert.equal(state.loaded, false);
+});
