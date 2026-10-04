@@ -1516,6 +1516,10 @@ test('whisper tabs: on by default; the active chat is a tab at login, Enter ther
   out = tabLines(vm, 11);
   assert.equal((out.match(/is working\.\.\./g) || []).length, 1, 'still one line');
   assert.ok(out.includes('Editing Map.lua') && !out.includes('Reading files'), 'showing the latest step');
+  slotReply(vm, chatId, 'status = "working", text = "List my open PRs\\nRun gh search prs", steps = 2');
+  out = tabLines(vm, 11);
+  assert.match(out, /Claude is working\.\.\. [^\n]*· 2 steps - Run gh search prs {2}\|H/, 'the step count and only the newest step: ' + out);
+  assert.ok(!out.includes('List my open PRs'), 'older steps stay out of the one-line tab: ' + out);
 
   slotReply(vm, chatId, 'status = "done", text = "hi back\\nsecond line", agent = "claude"');
   out = tabLines(vm, 11);
@@ -2641,6 +2645,7 @@ test('context growth: the footer, /claude-wow context and diag show ctx and turn
   // The numbers measured on a live machine: 106,863 tokens after 8 turns.
   // The footer reads like Claude Code's own status line: elapsed since the session
   // started, the tokens the next message carries, the session at API list prices.
+  vm.run('SlashCmdList.CLAUDE("config context 100k")');
   replyWith(vm, 'ctx = 106863, turns = 8, window = 200000, since = time() - 718, cost = 2.41');
   assert.equal(vm.num('ClaudeWoWDB.chats[1].ctx'), 106863);
   assert.equal(vm.num('ClaudeWoWDB.chats[1].turns'), 8);
@@ -2691,7 +2696,7 @@ test('context growth: past the threshold the chat is warned once per crossing, w
   connect(vm);
   const last = () => vm.evaluate('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history].text');
   const warnings = () => vm.num('(function() local n = 0; for _, m in ipairs(ClaudeWoWDB.chats[1].history) do if m.newChat then n = n + 1 end end; return n end)()');
-  assert.equal(vm.num('ClaudeWoWDB.settings.contextWarn'), 100000, 'the default threshold');
+  assert.equal(vm.num('ClaudeWoWDB.settings.contextWarn'), 300000, 'the default threshold');
   vm.run('SlashCmdList.CLAUDE("config context 50k")');
   assert.equal(vm.num('ClaudeWoWDB.settings.contextWarn'), 50000, 'persisted in the saved settings');
   assert.ok(last().startsWith('Context warning at 50.0k tokens'), last());
@@ -2933,7 +2938,10 @@ test('projects: a chat started by /claude in a whisper tab says general chat, no
   assert.match(general, / - general chat\. Type here/);
   assert.doesNotMatch(general, /coding in/);
   vm.run('SlashCmdList.CLAUDE("--project every fix the build")');
-  assert.match(chatTabText(vm, vm.evaluate('ClaudeWoWDB.activeChat')), /\nproject: every\n/);
+  const project = chatTabText(vm, vm.evaluate('ClaudeWoWDB.activeChat'));
+  assert.match(project, /\nproject: every\n/);
+  assert.match(project, / - coding in every\. Type here/, 'the welcome line names the project the flag set');
+  assert.doesNotMatch(project, /general chat/);
 });
 
 test('projects: a chat has none by default; --project, #name and none attach and detach one, and the wire carries the folder', () => {
@@ -2990,4 +2998,61 @@ test('a whisper reply waits briefly for an item the client has not loaded, then 
   deliver('again');
   for (let i = 0; i < 4; i++) vm.run('STUB.RunTimers()');
   assert.ok(chatTabText(vm, chatId).includes('farm |cff9d9d9ditem 2589|r'), 'after three tries the reply goes out with the plain id');
+});
+
+test('the working bubble: a step count, the newest steps as a list, and no second status line', () => {
+  const vm = newVM();
+  login(vm);
+  connectIn(vm, '');
+  vm.run('ClaudeWoW.Send("look at my open prs")');
+  const chatId = vm.evaluate('ClaudeWoWDB.chats[1].id');
+  const steps = Array.from({ length: 9 }, (_, i) => `Step ${i + 1}`).join('\\n');
+  nextSlot(vm, `{ now = time(), cwd = "", replies = { { chat = "${chatId}", id = ${pendingOf(vm, chatId)}, status = "working", text = "${steps}", steps = 12 } } }`);
+  vm.run('STUB.now = STUB.now + 6; STUB.Tick(); ClaudeWoW.Render()');
+  const body = vm.evaluate('(function() local t = {} for _, b in ipairs(ClaudeWoW.UI.bubbles) do if b.shown ~= false and b.body then table.insert(t, b.body.text) end end return table.concat(t, "\\n---\\n") end)()');
+  assert.match(body, /Working · \d+s · 12 steps\n\n\+6 earlier\n· Step 4\n· Step 5\n· Step 6\n· Step 7\n· Step 8\n· Step 9/, body);
+  assert.doesNotMatch(body, /is working on #/, 'the footer status is not repeated in the bubble');
+  assert.doesNotMatch(body, /0 actions|no activity seen yet/, body);
+});
+
+test('context warning: the default is 300k; a saved old default of 100k moves up once, any other choice is kept', () => {
+  for (const [saved, want] of [['nil', 300000], ['100000', 300000], ['50000', 50000], ['0', 0]]) {
+    const vm = newVM();
+    vm.run(`ClaudeWoWDB = { settings = { contextWarn = ${saved} } }`);
+    login(vm);
+    assert.equal(vm.num('ClaudeWoWDB.settings.contextWarn'), want, `saved ${saved}`);
+  }
+  const vm = newVM();
+  vm.run('ClaudeWoWDB = { settings = { contextWarn = 100000, contextWarnV2 = true } }');
+  login(vm);
+  assert.equal(vm.num('ClaudeWoWDB.settings.contextWarn'), 100000, 'a 100k chosen after the move is kept');
+});
+
+test('after deleting the chat that replied last, /r and the window go to the chat used most recently, and its tab still talks to it', () => {
+  const vm = whisperVM();
+  vm.run('for i = 1, 3 do local c = ClaudeWoW.NewChat("Old " .. i); c.created = time() - 86400 * i end');
+  const firstId = vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].id');
+  vm.run('SlashCmdList.CLAUDE("-c --agent claude")');
+  vm.run('ClaudeWoW.Send("first question")');
+  replyTo(vm, firstId, 'status = "done", text = "one", agent = "claude"');
+  typeIn(vm, 'ChatFrame1EditBox', '/claude second question');
+  const secondId = vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].id');
+  replyTo(vm, secondId, 'status = "done", text = "two", agent = "claude"');
+  assert.equal(vm.evaluate('(ChatFrameUtil.GetLastTellTarget())'), `Claude [${chatName(vm, secondId)}]`);
+  vm.run('ClaudeWoWDB.chats[1].created = time() - 86400 * 9');
+  vm.run(`local c = ClaudeWoW.NewChat("Old 4"); c.created = time() - 86400 * 4; ClaudeWoW.SwitchChat("${secondId}")`);
+
+  vm.run(`ClaudeWoW.DeleteChat("${secondId}")`);
+  assert.equal(vm.evaluate('ClaudeWoWDB.activeChat'), firstId, 'the window shows the chat used last, not the next row');
+  vm.run('ChatFrame1EditBox:SetText("/r "); ChatFrame1EditBox:ParseText(0)');
+  assert.equal(vm.evaluate('ChatFrame1EditBoxHeader:GetText()'), `To Claude [${chatName(vm, firstId)}]: `, '/r names the chat that is left, not the deleted one');
+  vm.run('ChatFrame1EditBox:ClearChat()');
+
+  const tab = vm.evaluate(`(function() for i = 1, 20 do local f = _G["ChatFrame" .. i] if f and f.claudewowChatId == "${firstId}" then return i end end end)()`);
+  assert.ok(tab, 'the first chat still has its tab');
+  typeIn(vm, `ChatFrame${tab}EditBox`, 'from the first tab');
+  const rec = stripRecords(vm).find(r => r.text === 'from the first tab');
+  assert.ok(rec, 'typed in the first chat\'s tab it reached the agent');
+  assert.equal(rec.chat, firstId);
+  assert.equal(vm.num('STUB.serverSends'), 0);
 });

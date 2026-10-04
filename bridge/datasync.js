@@ -142,6 +142,8 @@ function isPercent(n) {
   return typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 100;
 }
 
+class Skip extends Error {}
+
 class Drop extends Error {
   constructor(reason) { super(reason); this.reason = reason; }
 }
@@ -329,7 +331,38 @@ const TABLES = Object.freeze([
       return { id: idOf(row), spellID: idOf(row, 'SpellID'), reagents };
     },
   },
+  {
+    table: 'SpellName',
+    entity: 'spells',
+    optional: true,
+    columns: ['ID', 'Name_lang'],
+    convert(row) {
+      return { id: idOf(row), name: nameOf(row, 'Name_lang') };
+    },
+  },
+  {
+    table: 'Spell',
+    entity: 'spellranks',
+    optional: true,
+    columns: ['ID', 'NameSubtext_lang'],
+    convert(row) {
+      const subtext = toName(row.NameSubtext_lang);
+      if (!subtext) throw new Skip();
+      return { id: idOf(row), subtext };
+    },
+  },
+  {
+    table: 'Faction',
+    entity: 'factions',
+    optional: true,
+    columns: ['ID', 'Name_lang', 'ParentFactionID', 'ReputationIndex'],
+    convert(row) {
+      if (intOf(row, 'ReputationIndex') < 0) throw new Skip();
+      return { id: idOf(row), name: nameOf(row, 'Name_lang'), parentFactionID: intOf(row, 'ParentFactionID') };
+    },
+  },
 ]);
+const TABLES_VERSION = 2;
 
 function sha256(text) {
   return crypto.createHash('sha256').update(text).digest('hex');
@@ -361,6 +394,7 @@ function convertTable(spec, text, ctx) {
     try {
       record = spec.convert(row, ctx);
     } catch (e) {
+      if (e instanceof Skip) continue;
       if (e instanceof Drop) { drop(e.reason); continue; }
       throw e;
     }
@@ -373,7 +407,7 @@ function convertTable(spec, text, ctx) {
   return { records, dropped };
 }
 
-async function readCappedBody(res, url, maxBytes) {
+async function readCappedBytes(res, url, maxBytes) {
   const declared = Number(res.headers.get('content-length'));
   if (Number.isFinite(declared) && declared > maxBytes) throw new SyncError(`${url}: response is larger than ${maxBytes} bytes`);
   if (!res.body || typeof res.body.getReader !== 'function') throw new SyncError(`${url}: response has no body`);
@@ -390,7 +424,11 @@ async function readCappedBody(res, url, maxBytes) {
     }
     chunks.push(value);
   }
-  return new TextDecoder().decode(Buffer.concat(chunks));
+  return Buffer.concat(chunks);
+}
+
+async function readCappedBody(res, url, maxBytes) {
+  return new TextDecoder().decode(await readCappedBytes(res, url, maxBytes));
 }
 
 async function fetchText(fetchImpl, url, { expect, filename, maxBytes = MAX_BODY_BYTES }) {
@@ -578,7 +616,7 @@ async function sync(opts = {}) {
     assertBuild(build);
     assertFlavorBuild(flavorName, build);
     const before = readCurrent(root);
-    if (!opts.force && before && before.build === build) {
+    if (!opts.force && before && before.build === build && before.manifest.tablesVersion === TABLES_VERSION) {
       log(`${flavorName} data is already at ${build}; nothing to do (--force syncs it again)`);
       return { status: 'current', build, dir: before.dir, manifest: before.manifest };
     }
@@ -607,6 +645,8 @@ async function sync(opts = {}) {
           converted = convertTable(spec, text, ctx);
         } catch (e) {
           if (!spec.optional || !(e instanceof SyncError)) throw e;
+          const had = before && before.build === build && before.manifest.tables && before.manifest.tables[spec.table];
+          if (had && had.sha256) throw new SyncError(`${spec.table} could not be fetched again (${e.message}); the current data keeps it, so nothing was changed. Try again later`);
           tables[spec.table] = { url, entity: spec.entity, error: e.message };
           log(`${spec.entity}: skipped, ${e.message}`);
           continue;
@@ -624,6 +664,7 @@ async function sync(opts = {}) {
       const manifest = {
         schema: MANIFEST_SCHEMA,
         flavor: flavorName,
+        tablesVersion: TABLES_VERSION,
         source: SOURCE_NAME,
         product: flavor.product,
         url: WAGO_ORIGIN,
@@ -658,7 +699,10 @@ async function sync(opts = {}) {
 }
 
 const FLAVOR_LINES = Object.entries(FLAVORS).map(([name, f]) => `    ${name.padEnd(12)}${f.label} clients ${f.clientLine}.* (wago.tools product ${f.product}, newest ${f.family} build by default)`).join('\n');
-const USAGE = `claude-wow data sync [--flavor <name>] [--build <a.b.c.d>] [--force]\n  Fetches one game's client tables from wago.tools into <CLAUDE_WOW_HOME>/data/<flavor>/<build>/.\n  The bridge uses the flavor that matches the client build the game reports, never another one.\n  --flavor  which game (default ${DEFAULT_FLAVOR}):\n${FLAVOR_LINES}\n  --build   a build other than the newest one in the flavor's default family; needed to switch build families\n  --force   fetch again when that build is already current\n`;
+const SOURCES = Object.freeze(['client', 'community']);
+const USAGE = `claude-wow data sync [--flavor <name>] [--source client|community] [--build <a.b.c.d>] [--force]\n  Fetches one game's client tables from wago.tools into <CLAUDE_WOW_HOME>/data/<flavor>/<build>/.\n  The bridge uses the flavor that matches the client build the game reports, never another one.\n  --flavor  which game (default ${DEFAULT_FLAVOR}):\n${FLAVOR_LINES}\n  --build   a build other than the newest one in the flavor's default family; needed to switch build families\n  --source  client (default): the client tables above. community: Classic Era only, NPC names, spawns and quest titles and givers
+            from the cMaNGOS classic-db dump (GPL-3.0, 1.12 community data) into data/classic_era/community/; needs client data synced first
+  --force   fetch again when that build is already current\n`;
 
 function parseArgs(argv) {
   const opts = { force: false };
@@ -669,10 +713,15 @@ function parseArgs(argv) {
     else if (a.startsWith('--build=')) opts.build = a.slice('--build='.length);
     else if (a === '--flavor') opts.flavor = argv[++k] ?? '';
     else if (a.startsWith('--flavor=')) opts.flavor = a.slice('--flavor='.length);
+    else if (a === '--source') opts.source = argv[++k] ?? '';
+    else if (a.startsWith('--source=')) opts.source = a.slice('--source='.length);
     else throw new UsageError(`unknown option ${JSON.stringify(a)}`);
   }
   if (opts.build !== undefined && !isBuild(opts.build)) throw new UsageError(`bad build string ${JSON.stringify(opts.build)}: it must look like 1.60.1.70094`);
   if (opts.flavor !== undefined && !Object.prototype.hasOwnProperty.call(FLAVORS, opts.flavor)) throw new UsageError(`unknown flavor ${JSON.stringify(opts.flavor)}: use ${Object.keys(FLAVORS).join(', ')}`);
+  if (opts.source !== undefined && !SOURCES.includes(opts.source)) throw new UsageError(`unknown source ${JSON.stringify(opts.source)}: use ${SOURCES.join(', ')}`);
+  if (opts.source === 'community' && opts.flavor !== 'classic_era') throw new UsageError('--source community is for --flavor classic_era only');
+  if (opts.source === 'community' && opts.build !== undefined) throw new UsageError('--build is for the client tables, not --source community');
   return opts;
 }
 
@@ -686,8 +735,17 @@ async function main(argv, deps = {}) {
   try {
     const opts = parseArgs(rest);
     const home = require('./home').resolve(deps.env || process.env);
-    const result = await sync({ ...opts, dataDir: home.data, fetch: deps.fetch || globalThis.fetch, now: deps.now, log: line => out(line + '\n') });
+    const run = { ...opts, dataDir: home.data, fetch: deps.fetch || globalThis.fetch, now: deps.now, log: line => out(line + '\n') };
+    if (opts.source === 'community') {
+      const result = await require('./communitydata').syncCommunity(run);
+      if (result.status === 'synced') out(`${result.manifest.rows} rows kept, ${result.manifest.dropped} dropped; current community data ${result.version} in ${result.dir}\n`);
+      return 0;
+    }
+    const result = await sync(run);
     if (result.status === 'synced') out(`${result.manifest.rows} rows kept, ${result.manifest.dropped} dropped; current build ${result.build} (${result.manifest.flavor}) in ${result.dir}\n`);
+    const C = require('./communitydata');
+    const community = result.manifest.flavor === C.FLAVOR ? C.readCommunity(C.communityRoot(home.data)) : null;
+    if (community && (community.manifest.client || {}).tableHash !== result.manifest.tableHash) out(`community data ${community.version} was built with other client data, so its positions are hidden until you run "claude-wow data sync --flavor classic_era --source community"\n`);
     return 0;
   } catch (e) {
     err(`data sync failed: ${e && e.message ? e.message : String(e)}\n`);
@@ -697,9 +755,9 @@ async function main(argv, deps = {}) {
 }
 
 module.exports = {
-  BUILD_PATTERN, FLAVORS, TABLES, MAX_NAME_LENGTH, LOCK_FILE, LOCK_STALE_MS, CURRENT_FILE, MANIFEST_FILE,
+  BUILD_PATTERN, FLAVORS, TABLES, TABLES_VERSION, MAX_NAME_LENGTH, LOCK_FILE, LOCK_STALE_MS, CURRENT_FILE, MANIFEST_FILE,
   SyncError, LockedError, UsageError,
   DEFAULT_FLAVOR, isBuild, assertBuild, flavorForBuild, syncCommand, buildFamily, compatibility, compareBuilds, buildsUrl, tableUrl,
   parseCsv, toInt, toNumber, toName, convertTable, placeOnMap,
-  acquireLock, readCurrent, flavorDir, sync, parseArgs, main,
+  acquireLock, readCurrent, flavorDir, sync, parseArgs, main, readCappedBytes, sha256, MANIFEST_SCHEMA, FETCH_TIMEOUT_MS,
 };

@@ -251,5 +251,5 @@ test('the wowdata server for an Era client serves Classic Era rows labeled with 
   assert.deepEqual([item.found, item.flavor, item.build, item.trust, item.results[0].name], [true, 'classic_era', ERA_BUILD, 'client-data', 'Era Fixture Hide']);
   const sources = DM.callTool(store, 'wow_sources', {}).structuredContent.results[0];
   assert.deepEqual([sources.flavor, sources.product], ['classic_era', 'wow_classic_era']);
-  assert.match(DM.INSTRUCTIONS, /Forever \(1\.60\.\*\) or Classic Era \(1\.15\.\*\), never the other one/);
+  assert.match(DM.INSTRUCTIONS, /Forever \(1\.60\.\*\) or Classic Era \(1\.15\.\*\), never the other one's\. The one exception is the Classic community data/);
 });

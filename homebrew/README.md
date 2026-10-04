@@ -14,11 +14,14 @@ Then:
 
 ```sh
 brew tap rdimascio/claude-wow
-brew install claude-wow          # the release binary (macOS arm64 and x64): no Node.js
-brew install --HEAD claude-wow   # or the checkout, run with Homebrew's node
+brew install --HEAD claude-wow   # the checkout, run with Homebrew's node
 claude-wow setup                 # game side: addon, config.json, slot pool
 claude-wow service install       # optional: background service
 ```
+
+Until the first stable release fills in the formula's checksums, only `--HEAD`
+works. After that release, `brew install claude-wow` installs the release binary
+(macOS arm64 and x64), with no Node.js.
 
 The stable formula fetches one self-contained binary (`build.js`: the bridge, setup
 and the service commands with Bun's runtime inside) from the tagged release and

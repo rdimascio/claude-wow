@@ -8,7 +8,7 @@
 #   $env:CLAUDE_WOW_PROJECT = "C:\code\my-game"                          # the default folder the agents work in
 #   $env:CLAUDE_WOW_SERVICE = "yes"  (or "no")                           # start at login without asking (or never ask)
 #   $env:CLAUDE_WOW_SOURCE = "1"     no prebuilt binary: clone the repo and run it with Node.js 22.2+
-#   $env:CLAUDE_WOW_RELEASE = "..."  which release's binary (default latest)
+#   $env:CLAUDE_WOW_RELEASE = "..."  which release's binary (default latest, then the newest release of any kind; a named release never falls back)
 #   $env:CLAUDE_WOW_DIR = "..."      where it goes, default $env:LOCALAPPDATA\Programs\claude-wow
 #   $env:CLAUDE_WOW_REF = "..."      which version of the source, from source (default main)
 #
@@ -21,7 +21,8 @@
 #      the release's SHA256SUMS and runs it once. It is the bridge, setup and
 #      the service commands in one file with its runtime inside: nothing else
 #      to install, no Node.js. Where there is no binary (no release yet, another
-#      architecture, CLAUDE_WOW_SOURCE=1) it installs from source instead:
+#      architecture, CLAUDE_WOW_SOURCE=1) it installs from source instead, unless
+#      CLAUDE_WOW_RELEASE names a release, which stops with a message:
 #      checks for Node.js 22.2+, clones the repo with git (or downloads the zip;
 #      nothing to npm-install) and writes a claude-wow.cmd that runs it with node
 #   2. puts that folder on your user PATH (no admin rights)
@@ -70,25 +71,49 @@ function Test-NodeVersion([string]$v) {
   try { return ([version]($v -replace '^v', '')) -ge $MinNode } catch { return $false }
 }
 
+function Get-NewestReleaseTag {
+  if ($Repo -notmatch '^https://github\.com/(.+)$') { return $null }
+  try {
+    $releases = @(Invoke-RestMethod -UseBasicParsing -Headers @{ Accept = 'application/vnd.github+json' } "https://api.github.com/repos/$($Matches[1])/releases?per_page=1")
+    if ($releases.Count -and $releases[0].tag_name) { return [string]$releases[0].tag_name }
+  } catch {}
+  return $null
+}
+
 $binDir = Join-Path $Dir 'bin'
 New-Item -ItemType Directory -Force $binDir | Out-Null
 $exe = Join-Path $binDir 'claude-wow.exe'
 $cmdShim = Join-Path $binDir 'claude-wow.cmd'
 $script:Cmd = $null
 
+function Select-BridgeRoute([bool]$sourceWanted, [string]$release, [string]$arch, [scriptblock]$tryBinary) {
+  if ($sourceWanted) { return 'source' }
+  $pinned = $release -ne 'latest'
+  if ($arch -ne 'AMD64') {
+    if ($pinned) { return 'no-binary-for-platform' }
+    Write-Host "no prebuilt binary for $arch Windows"
+    return 'source'
+  }
+  if (& $tryBinary) { return 'binary' }
+  if ($pinned) { return 'pinned-download-failed' }
+  return 'source'
+}
+
 # ---- 1. The bridge ----------------------------------------------------------
-# The binary route. $false, with a line saying why, whenever the source route
-# should be taken instead; a download that arrived but is wrong (checksum
-# mismatch, a binary that does not run) fails outright.
 function Get-Binary {
-  if ($FromSource) { return $false }
-  if ($env:PROCESSOR_ARCHITECTURE -ne 'AMD64') { Write-Host "no prebuilt binary for $env:PROCESSOR_ARCHITECTURE Windows"; return $false }
   $asset = 'claude-wow-windows-x64.exe'
   $base = if ($Release -eq 'latest') { "$Repo/releases/latest/download" } else { "$Repo/releases/download/$Release" }
   $tmp = Join-Path $env:TEMP "claude-wow-$PID.exe"
   Write-Host "downloading $base/$asset"
   try { Invoke-WebRequest -UseBasicParsing "$base/$asset" -OutFile $tmp }
-  catch { Write-Host "no binary at $base/$asset (no release for it yet, or no network)"; return $false }
+  catch {
+    $newest = if ($Release -eq 'latest') { Get-NewestReleaseTag } else { $null }
+    if (-not $newest) { Write-Host "no binary at $base/$asset (no release for it yet, or no network)"; return $false }
+    $base = "$Repo/releases/download/$newest"
+    Write-Host "the latest stable release has no $asset; trying the newest release, ${newest}: $base/$asset"
+    try { Invoke-WebRequest -UseBasicParsing "$base/$asset" -OutFile $tmp }
+    catch { Write-Host "no binary at $base/$asset (no release for it yet, or no network)"; return $false }
+  }
   $sums = $null
   try { $sums = (Invoke-WebRequest -UseBasicParsing "$base/SHA256SUMS").Content } catch {}
   if ($sums) {
@@ -156,7 +181,11 @@ function Get-Source {
 }
 
 Step '1/4 The bridge'
-if (-not (Get-Binary)) { Get-Source }
+switch (Select-BridgeRoute ([bool]$FromSource) $Release $env:PROCESSOR_ARCHITECTURE { Get-Binary }) {
+  'source' { Get-Source }
+  'no-binary-for-platform' { Fail "no claude-wow binary exists for $env:PROCESSOR_ARCHITECTURE Windows, in release $Release or any other; a pinned release never falls back to the source" "Run this again with -FromSource (or `$env:CLAUDE_WOW_SOURCE = `"1`") to run $Ref with Node.js." }
+  'pinned-download-failed' { Fail "release $Release has no claude-wow binary for this machine, or it could not be downloaded; a pinned release never falls back to another release or to the source" "Check that $Repo/releases/tag/$Release exists and has claude-wow-windows-x64.exe, and check the network. Or clear `$env:CLAUDE_WOW_RELEASE for the newest release, or set `$env:CLAUDE_WOW_SOURCE = `"1`" to run $Ref with Node.js." }
+}
 
 # ---- 2. The command on the PATH ---------------------------------------------
 Step '2/4 The claude-wow command'
@@ -210,7 +239,7 @@ elseif ($Service -or (Ask 'Run the bridge in the background and start it at logi
 } else { Write-Host 'skipped (install later with: claude-wow service install; or start the bridge by hand with: claude-wow)' }
 
 Write-Host "`nInstalled. The claude-wow command works from any folder. Next:" -ForegroundColor Green
-Write-Host '  1. Fully quit and relaunch World of Warcraft (it only discovers new addon files at launch).'
+Write-Host '  1. Fully quit and relaunch World of Warcraft (it only discovers new addon folders at launch).'
 Write-Host '  2. Enable "Claude WoW" at the character-select AddOns screen.'
 if ($installService) { Write-Host '  3. Check the bridge:  claude-wow service status     (logs: claude-wow service logs)' }
 else { Write-Host '  3. Start the bridge:  claude-wow        (or: claude-wow service install, to keep it running in the background)' }

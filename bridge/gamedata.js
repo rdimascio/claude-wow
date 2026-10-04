@@ -3,10 +3,11 @@ const fs = require('fs');
 const path = require('path');
 const D = require('./datasync');
 
-const TRUST = Object.freeze({ clientData: 'client-data', buildUnchecked: 'client-data-build-unchecked', buildMismatch: 'unverified-build-mismatch', communityDb: 'community-db', none: 'none' });
+const TRUST = Object.freeze({ clientData: 'client-data', buildUnchecked: 'client-data-build-unchecked', buildMismatch: 'unverified-build-mismatch', communityDb: 'community-db', communityOtherGame: 'community-db-unchecked-for-this-game', none: 'none' });
 const BUILD_CHECK = Object.freeze({ exact: 'exact', family: 'family', mismatch: 'build-mismatch', unknown: 'unknown', noData: 'no-data' });
-const ENTITIES = Object.freeze(['items', 'quests', 'zones', 'flightpaths', 'uimaps', 'uimapassignments', 'skilllines', 'skilllineabilities', 'spellreagents']);
+const ENTITIES = Object.freeze(['items', 'quests', 'zones', 'flightpaths', 'uimaps', 'uimapassignments', 'skilllines', 'skilllineabilities', 'spellreagents', 'spells', 'spellranks', 'factions']);
 const MAX_QUERY_LENGTH = 100;
+const REPLACED_PROBLEM = 'a newer sync replaced this data while it was in use; ask again';
 const CLIENT_BUILD_IN_CONTEXT = /^Game:[^\n]*\(client (\d+\.\d+\.\d+\.\d+)[,)]/m;
 
 function isId(value) {
@@ -70,29 +71,34 @@ function flavorFor(clientBuild, flavor) {
   return flavor === undefined ? D.flavorForBuild(clientBuild) : flavor;
 }
 
-function openStore({ dataDir, flavor: chosen, clientBuild = '' } = {}) {
-  const flavor = flavorFor(clientBuild, chosen);
-  const root = dataDir && flavor ? D.flavorDir(dataDir, flavor) : null;
-  const current = root ? D.readCurrent(root) : null;
-  const build = current ? current.build : null;
-  const manifest = current ? current.manifest : null;
-  const dir = current ? current.dir : null;
+function tableReader(dir, manifest, allowed) {
   const tables = new Map();
   const indexes = new Map();
   const missed = new Map();
   const listed = manifest && manifest.entities && typeof manifest.entities === 'object' ? manifest.entities : {};
 
+  let replaced = false;
+
   function load(entity) {
     if (!tables.has(entity)) {
       const info = Object.prototype.hasOwnProperty.call(listed, entity) ? listed[entity] : null;
       tables.set(entity, info && typeof info === 'object' ? readTable(path.join(dir, `${entity}.jsonl`), info.rows) : unavailable('this sync has no such table'));
+      if (tables.get(entity).problem && !fs.existsSync(path.join(dir, 'manifest.json'))) replaced = true;
     }
     return tables.get(entity);
   }
 
   function has(entity) {
-    if (!dir || !ENTITIES.includes(entity)) return false;
+    if (!dir || !allowed.includes(entity)) return false;
+    if (replaced) {
+      missed.set('all tables', REPLACED_PROBLEM);
+      return false;
+    }
     const table = load(entity);
+    if (replaced) {
+      missed.set('all tables', REPLACED_PROBLEM);
+      return false;
+    }
     if (table.problem) missed.set(entity, table.problem);
     return !table.problem;
   }
@@ -123,32 +129,19 @@ function openStore({ dataDir, flavor: chosen, clientBuild = '' } = {}) {
     return indexes.get(memo);
   }
 
-  function search(entity, query) {
+  function search(entity, query, field = 'name') {
     const q = foldName(query);
     if (!q) return [];
     const hits = [];
     for (const r of rows(entity)) {
-      if (typeof r.name !== 'string') continue;
-      const rank = rankName(r.name, q);
+      if (typeof r[field] !== 'string') continue;
+      const rank = rankName(r[field], q);
       if (rank >= 0) hits.push({ rank, row: r });
     }
-    return hits.sort((a, b) => a.rank - b.rank || a.row.name.length - b.row.name.length || a.row.id - b.row.id);
+    return hits.sort((a, b) => a.rank - b.rank || a.row[field].length - b.row[field].length || a.row.id - b.row.id);
   }
 
-  const buildCheck = buildCheckFor(clientBuild, build);
-
   return {
-    flavor: flavor || null,
-    flavorLabel: flavor ? D.FLAVORS[flavor].label : null,
-    syncCommand: D.syncCommand(flavor || D.DEFAULT_FLAVOR),
-    build,
-    buildFamily: manifest ? manifest.buildFamily || null : null,
-    manifest,
-    dir,
-    clientBuild: D.isBuild(clientBuild) ? clientBuild : '',
-    buildCheck,
-    rowTrust: rowTrustFor(build ? buildCheck : BUILD_CHECK.noData),
-    source: manifest ? manifest.source || null : null,
     has,
     rows,
     byId,
@@ -163,4 +156,35 @@ function openStore({ dataDir, flavor: chosen, clientBuild = '' } = {}) {
   };
 }
 
-module.exports = { TRUST, BUILD_CHECK, ENTITIES, MAX_QUERY_LENGTH, isId, clientBuildOf, flavorFor, buildCheckFor, rowTrustFor, foldName, openStore };
+function openStore({ dataDir, flavor: chosen, clientBuild = '' } = {}) {
+  const flavor = flavorFor(clientBuild, chosen);
+  const root = dataDir && flavor ? D.flavorDir(dataDir, flavor) : null;
+  const current = root ? D.readCurrent(root) : null;
+  const build = current ? current.build : null;
+  const manifest = current ? current.manifest : null;
+  const dir = current ? current.dir : null;
+  const reader = tableReader(dir, manifest, ENTITIES);
+  let community;
+  const buildCheck = buildCheckFor(clientBuild, build);
+
+  return {
+    flavor: flavor || null,
+    flavorLabel: flavor ? D.FLAVORS[flavor].label : null,
+    syncCommand: D.syncCommand(flavor || D.DEFAULT_FLAVOR),
+    build,
+    buildFamily: manifest ? manifest.buildFamily || null : null,
+    manifest,
+    dir,
+    clientBuild: D.isBuild(clientBuild) ? clientBuild : '',
+    buildCheck,
+    rowTrust: rowTrustFor(build ? buildCheck : BUILD_CHECK.noData),
+    source: manifest ? manifest.source || null : null,
+    ...reader,
+    get community() {
+      if (community === undefined) community = flavor ? require('./communitydata').openCommunity({ dataDir, flavor, client: build ? { build, tableHash: manifest.tableHash || null } : null, gameStore: this }) : null;
+      return community;
+    },
+  };
+}
+
+module.exports = { TRUST, BUILD_CHECK, ENTITIES, MAX_QUERY_LENGTH, isId, clientBuildOf, flavorFor, buildCheckFor, rowTrustFor, foldName, tableReader, openStore };

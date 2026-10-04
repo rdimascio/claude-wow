@@ -52,7 +52,9 @@ function harness(root, { runsCurrent = true, platform = 'darwin', probe, setupOu
   fs.mkdirSync(base, { recursive: true });
   const l = REL.layout(base);
   const client = path.join(root, 'World of Warcraft', '_classic_era_');
-  fs.writeFileSync(l.config, JSON.stringify({ addonDir: path.join(client, 'Interface', 'AddOns') }));
+  const otherClient = path.join(root, 'World of Warcraft', '_classic_beta_');
+  const disabledClient = path.join(root, 'World of Warcraft', '_retail_');
+  fs.writeFileSync(l.config, JSON.stringify({ clients: [{ dir: client }, { dir: otherClient }, { dir: disabledClient, enabled: false }] }));
   const definitionFile = path.join(root, 'io.claudewow.bridge.plist');
   fs.writeFileSync(definitionFile, runsCurrent
     ? S.launchdPlist({ node: REL.currentBinary(l), script: '', cwd: base, logFile: '/l' })
@@ -91,7 +93,7 @@ function harness(root, { runsCurrent = true, platform = 'darwin', probe, setupOu
       return file;
     },
   };
-  return { ctx, l, client, events, builds, out, err };
+  return { ctx, l, client, otherClient, disabledClient, events, builds, out, err };
 }
 
 function worktrees(repo) {
@@ -125,7 +127,9 @@ test('deploy of a ref: built in a temporary worktree that is removed, installed 
   assert.ok(h.builds[0].startsWith(root) && !h.builds[0].startsWith(repo), 'built outside the checkout');
   assert.ok(!fs.existsSync(h.builds[0]), 'the temporary worktree is gone');
   assert.equal(worktrees(repo), 1, 'git no longer lists it');
-  assert.deepEqual(h.events, [KICKSTART, [REL.currentBinary(h.l), 'setup', '--wow', h.client]]);
+  assert.deepEqual(h.events, [KICKSTART, [REL.currentBinary(h.l), 'setup']], 'one setup call covers every enabled client');
+  assert.ok(h.out.includes(`setup   : ${h.client}`) && h.out.includes(`setup   : ${h.otherClient}`), h.out.join('\n'));
+  assert.ok(!h.out.some(line => line.includes(h.disabledClient)), 'a disabled client is not named');
   assert.ok(h.out.includes('in game : 1. Fully quit and relaunch World of Warcraft (it only discovers new addon folders at launch).'), h.out.join('\n'));
   assert.ok(!fs.existsSync(h.l.lock), 'the lock is released');
   assert.deepEqual(fs.readdirSync(root).filter(f => f.startsWith('claude-wow-')), [], 'no temporary build or source folder is left');
@@ -456,9 +460,13 @@ test('a prune failure after the switch is reported, never thrown: the deploy sti
   assert.deepEqual(h.events.map(e => e[1]), ['kickstart', 'setup'], 'the restart and setup ran before the prune');
 });
 
-test('helpers: the configured client from addonDir, the game lines from setup output, the release name, bad refs and Windows', async () => {
+test('helpers: the enabled clients from clients[] or a legacy addonDir, the game lines from setup output, the release name, bad refs and Windows', async () => {
   const dir = scratch('helpers');
   const cfg = path.join(dir, 'config.json');
+  fs.writeFileSync(cfg, JSON.stringify({ clients: [{ dir: path.join('/W', '_classic_era_') }, { dir: path.join('/W', '_classic_beta_') }, { dir: path.join('/W', '_retail_'), enabled: false }] }));
+  assert.deepEqual(D.configuredClients(cfg), [path.join('/W', '_classic_era_'), path.join('/W', '_classic_beta_')]);
+  fs.writeFileSync(cfg, JSON.stringify({ clients: [{ dir: path.join('/W', '_retail_'), enabled: false }] }));
+  assert.deepEqual(D.configuredClients(cfg), [], 'only disabled clients: nothing to set up');
   fs.writeFileSync(cfg, JSON.stringify({ addonDir: path.join('/W', '_classic_era_', 'Interface', 'AddOns') }));
   assert.deepEqual(D.configuredClients(cfg), [path.join('/W', '_classic_era_')]);
   fs.writeFileSync(cfg, JSON.stringify({ addonDir: '/somewhere/else' }));

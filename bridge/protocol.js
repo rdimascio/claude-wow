@@ -296,7 +296,7 @@ function protoRange(bridge) {
   return bridge.protoMin === bridge.protoMax ? String(bridge.protoMin) : `${bridge.protoMin} to ${bridge.protoMax}`;
 }
 
-const ADDON_UPDATE_HOW = 'update the addon in the CurseForge app or run claude-wow setup, then restart WoW.';
+const ADDON_UPDATE_HOW = 'update the addon in the CurseForge app or run claude-wow setup, then type /reload.';
 const BRIDGE_UPDATE_HOW = 'run brew upgrade claude-wow or the installer again, then claude-wow service restart.';
 
 function versionVerdict(addon, bridge = bridgeInfo()) {
@@ -352,6 +352,32 @@ function versionsSummary(state) {
 
 function installedSummary(bridge = bridgeInfo()) {
   return `this install is bridge ${bridge.version} (protocol ${protoRange(bridge)})`;
+}
+
+const BUILD_RE = /^[0-9a-f]{12}$/;
+
+function addonBuild(files) {
+  const h = crypto.createHash('sha256');
+  const sorted = files.filter(f => !/\.toc$/i.test(f.name)).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  for (const f of sorted) h.update(f.name).update('\0').update(f.data).update('\0');
+  return h.digest('hex').slice(0, 12);
+}
+
+function tocField(text, key) {
+  const m = new RegExp(`^##\\s*${key}:[ \\t]*(.*?)[ \\t]*\\r?$`, 'm').exec(String(text || ''));
+  return m ? m[1] : '';
+}
+
+function tocWithBuild(text, build) {
+  const body = String(text || '').replace(/^##\s*X-Build:.*\r?\n?/m, '');
+  const line = `## X-Build: ${build}`;
+  return /^##\s*Version:.*$/m.test(body) ? body.replace(/^(##\s*Version:.*?)(\r?)$/m, `$1$2\n${line}$2`) : `${line}\n${body}`;
+}
+
+function addonDiskInfo(tocText) {
+  const version = tocField(tocText, 'Version');
+  const build = tocField(tocText, 'X-Build');
+  return { version: SEMVER_RE.test(version) ? version : '', build: BUILD_RE.test(build) ? build : '' };
 }
 
 // Strip payload: records separated by \x1E, fields by \x1F:
@@ -492,7 +518,7 @@ const PLAYER_VOICE_FORMAT = [
 ];
 
 const LINK_HINT = [
-  'Name an item, spell or quest with a token, not with its name: {item:ID}, {spell:ID} or {quest:ID}. The addon turns each token into the real in-game link, with the name and color the client has, and the player can hover or shift-click it, so a wrong ID shows the wrong thing. Do not also write the name next to the token. On both games (Forever and Classic Era), an ID must come from a source that ties it to that exact thing: a "Linked from the game" entry in this chat (item, spell, quest, or a recipe shown as enchant, which is a spell ID), or a wowdata result whose name is the item you mean. When several wowdata rows share that name, use a token only if the player\'s link or the situation picks out one of them; otherwise name it in plain words. Never use an ID from memory, a website or another game version, and never pick one from a list of bare IDs (the recipe spell IDs of a wowdata result, the quest log line). Without such a source, name the thing in plain words. A quest token shows only for a quest in the player\'s quest log. NPCs, zones and other things have no token: name them in plain words.',
+  'Name an item, spell or quest with a token, not with its name: {item:ID}, {spell:ID} or {quest:ID}. The addon turns each token into the real in-game link, with the name and color the client has, and the player can hover or shift-click it, so a wrong ID shows the wrong thing. Do not also write the name next to the token. On both games (Forever and Classic Era), an ID must come from a source that ties it to that exact thing: a "Linked from the game" entry in this chat (item, spell, quest, or a recipe shown as enchant, which is a spell ID), or a wowdata result whose name is the item you mean. When several wowdata rows share that name, use a token only if the player\'s link or the situation picks out one of them; otherwise name it in plain words. A spell found with wow_spell, and not linked in this chat, is named in plain words with its rank, never as a token. Never use an ID from memory, a website or another game version, and never pick one from a list of bare IDs (the recipe spell IDs of a wowdata result, the quest log line). Without such a source, name the thing in plain words. A quest token shows only for a quest in the player\'s quest log. NPCs, zones and other things have no token: name them in plain words.',
   'For a list, put each item on its own line starting with "- "; the addon draws it as a bullet.',
 ];
 
@@ -528,7 +554,7 @@ function visionHint(image) {
 const SITUATION_RULE = 'A message may open with a block marked as the player\'s in-game situation, reported by the addon the moment they wrote it (not written by them): character, zone, map coordinates, money, professions, quest log. Use it when the request is about the game or the character (questions, macros, addon code, gear advice); ignore it when the task is unrelated. Every message carries a fresh one, so the latest block is where they are now. Items, spells or quests the player shift-clicked into a message appear as [Name] in the text, with their tooltip in a "Linked from the game" block at the end of the message.';
 
 const WHERE_HINT = [
-  'The situation block\'s "Game:" line names the client. World of Warcraft: Forever is its own game: its NPCs, quests, drops and spawns can differ from retail and from Classic, so web databases and wikis (Wowhead and the like) are unverified guides there. World of Warcraft Classic (interface 115xx) is Classic Era: Classic web databases describe it, but an item, spell or quest ID still comes only from the sources the link rule below names. The wowdata tools and order tokens use the synced data of the client\'s own game (Forever or Classic Era), never the other one; with no data synced for it, an order with a token is refused. In a chat reply, the bridge shows a spell token the player did not link in this chat as plain text, not as a link.',
+  'The situation block\'s "Game:" line names the client. World of Warcraft: Forever is its own game: its NPCs, quests, drops and spawns can differ from retail and from Classic, so web databases and wikis (Wowhead and the like) are unverified guides there. World of Warcraft Classic (interface 115xx) is Classic Era: Classic web databases describe it, but an item, spell or quest ID still comes only from the sources the link rule below names. The wowdata client tables and order tokens use the synced data of the client\'s own game (Forever or Classic Era), never the other one\'s (the Classic community data below is the one exception); with no data synced for it, an order with a token is refused. In a chat reply, the bridge shows a spell token the player did not link in this chat as plain text, not as a link. wow_npc and wow_quest also give NPC names, quest titles, quest givers and spawn points from Classic community data (a rebuild of the 1.12 world, not the client); on Forever only the part Forever\'s own client data backs. Take an NPC or quest name from them rather than from memory, and say it is community data that may differ in game, on Forever that it is Classic data not checked for Forever.',
   'Coordinates are percent of the map with that uiMapID, 0 to 100, with 0,0 at the top left; give them as "x, y" and mark the spot on the map as well.',
 ];
 
@@ -738,21 +764,61 @@ function denialNotes(agentName, fresh, again) {
   return notes;
 }
 
+const STEP_CHARS = 80;
+const MCP_PREFIXES = /^(?:claude_ai_|plugin_[^_]+_)/;
+
+function clip(text, max = STEP_CHARS) {
+  const s = String(text || '').trim().replace(/\s+/g, ' ');
+  return s.length > max ? s.slice(0, max - 3).trimEnd() + '...' : s;
+}
+
+function shortCommand(cmd) {
+  const first = String(cmd || '').split('\n')[0].replace(/^\s*cd\s+\S+\s*&&\s*/, '').trim();
+  const words = [];
+  for (const w of first.split(/\s+/)) {
+    if (!w || /^[-|&;<>'"$(]/.test(w) || words.length === 4) break;
+    words.push(w);
+  }
+  return words.join(' ') || first.split(/\s+/)[0] || '';
+}
+
+function hostOf(url) {
+  try { return new URL(String(url)).host; } catch { return clip(url, 40); }
+}
+
+function humanTool(name) {
+  return String(name || '').replace(/[_-]+/g, ' ').trim();
+}
+
+function describeMcp(name) {
+  const [, server = '', tool = ''] = /^mcp__(.*?)__(.*)$/.exec(name) || [];
+  const who = humanTool(server.replace(MCP_PREFIXES, ''));
+  const what = humanTool(tool.replace(/^[^_]*-/, ''));
+  return clip(who ? `${who}: ${what}` : what);
+}
+
 // One progress line per Claude tool call, as shown in the game's "working"
 // bubble (Codex and Grok have their own in agents.js).
 function describeToolUse(block) {
   const inp = block.input || {};
-  switch (block.name) {
-    case 'Bash': return `$ ${String(inp.command || '').split('\n')[0].slice(0, 110)}`;
-    case 'Read': return `read ${baseName(inp.file_path)}`;
-    case 'Edit': return `edit ${baseName(inp.file_path)}`;
-    case 'Write': return `write ${baseName(inp.file_path)}`;
-    case 'Grep': return `grep ${inp.pattern || ''}`;
-    case 'Glob': return `glob ${inp.pattern || ''}`;
-    case 'Agent': return `agent: ${inp.description || ''}`;
-    case 'WebSearch': return `search: ${inp.query || ''}`;
-    case 'WebFetch': return `fetch ${inp.url || ''}`;
-    default: return block.name;
+  const name = String(block.name || '');
+  switch (name) {
+    case 'Bash': return clip(inp.description) || clip(`Run ${shortCommand(inp.command)}`);
+    case 'Read': return `Read ${baseName(inp.file_path)}`;
+    case 'Edit':
+    case 'MultiEdit': return `Edit ${baseName(inp.file_path)}`;
+    case 'Write': return `Write ${baseName(inp.file_path)}`;
+    case 'NotebookEdit': return `Edit ${baseName(inp.notebook_path)}`;
+    case 'Grep': return clip(`Search for "${inp.pattern || ''}"`);
+    case 'Glob': return clip(`Find ${inp.pattern || 'files'}`);
+    case 'Agent':
+    case 'Task': return clip(`Agent: ${inp.description || 'subtask'}`);
+    case 'WebSearch': return clip(`Web search: ${inp.query || ''}`);
+    case 'WebFetch': return `Fetch ${hostOf(inp.url)}`;
+    case 'TodoWrite': return 'Update the plan';
+    case 'ToolSearch': return 'Load tools';
+    case 'Skill': return clip(`Use skill ${inp.skill || inp.command || ''}`);
+    default: return name.startsWith('mcp__') ? describeMcp(name) : name;
   }
 }
 
@@ -910,6 +976,18 @@ function luaTable(globalName, records, opts = {}) {
     const b = opts.bridge;
     lines.splice(lines.length - 1, 0, `\tbridge = { version = ${luaStr(b.version)}, protoMin = ${Math.floor(Number(b.protoMin)) || 0}, protoMax = ${Math.floor(Number(b.protoMax)) || 0} },`);
   }
+  if (opts.addonDisk && typeof opts.addonDisk === 'object' && opts.addonDisk.version) {
+    lines.splice(lines.length - 1, 0, `\taddonDisk = { version = ${luaStr(opts.addonDisk.version)}, build = ${luaStr(opts.addonDisk.build || '')} },`);
+  }
+  if (Array.isArray(opts.clients)) {
+    const rows = opts.clients.filter(c => c && typeof c === 'object').map(c => {
+      const f = [`name = ${luaStr(c.name || '')}`, `version = ${luaStr(c.version || '')}`, `build = ${luaStr(BUILD_RE.test(String(c.build || '')) ? c.build : '')}`, `heard = ${Math.max(0, Math.floor(Number(c.heard) || 0))}`];
+      if (c.here) f.push('here = true');
+      if (c.last) f.push('last = true');
+      return `{ ${f.join(', ')} }`;
+    });
+    lines.splice(lines.length - 1, 0, `\tclients = { ${rows.join(', ')} },`);
+  }
   if (opts.live && typeof opts.live === 'object') {
     const sessions = Array.isArray(opts.live.sessions) ? opts.live.sessions : [];
     lines.splice(lines.length - 1, 0, `\tlive = { sessions = { ${sessions.map(luaStr).join(', ')} }, start = ${luaStr(opts.live.start || '')} },`);
@@ -940,6 +1018,7 @@ function luaTable(globalName, records, opts = {}) {
     if (r.summary) lines.push(`\t\t\tsummary = ${luaStr(r.summary)},`);
     if (r.title) lines.push(`\t\t\ttitle = ${luaStr(r.title)},`);
     if (r.title && Number(r.titleFor) > 0) lines.push(`\t\t\ttitleFor = ${Math.floor(Number(r.titleFor))},`);
+    if (r.status === 'working' && Number.isInteger(r.steps) && r.steps > 0) lines.push(`\t\t\tsteps = ${r.steps},`);
     if (r.late) lines.push('\t\t\tlate = true,');
     if (r.lateOk) lines.push('\t\t\tlateOk = true,');
     // Context growth (noteUsage): only on a final record, and only what is known.
@@ -1329,7 +1408,7 @@ module.exports = {
   alreadyHandled, markHandled, pruneStale, MONTH_MS, noteAck, recentAcks, RECENT_ACKS_MAX, RECENT_ACK_MS,
   noteUsage, usageFields, tokensLabel,
   resolveCwd, sameFolder, baseName,
-  PROTO, PROTO_MIN, PROTO_MAX, LEGACY_PROTO, SEMVER_RE, ADDON_VERSIONS_MAX, bridgeVersion, bridgeInfo, compareSemver, versionVerdict, noteAddonVersion, addonRefusal, latestAddonVersion, versionsSummary, installedSummary,
+  PROTO, PROTO_MIN, PROTO_MAX, LEGACY_PROTO, SEMVER_RE, ADDON_VERSIONS_MAX, MAX_DATE_MS, bridgeVersion, bridgeInfo, compareSemver, versionVerdict, noteAddonVersion, addonRefusal, latestAddonVersion, versionsSummary, installedSummary, BUILD_RE, addonBuild, tocField, tocWithBuild, addonDiskInfo,
   parseFlags, PERMISSION_MODES, permissionModeName, ADD_DIRS_MAX, jobsFromStrip, parseOutbox, withRunOnlyRules, withRunDeniedRules, withoutRules, absolutePathRule, systemPrompt, systemRulesHash, rulesChanged, noteRules, messagePrompt, visionHint, splitSummary,
   ruleFor, describeToolUse,
   folderRule, ruleFolder, splitGrants, insideFolder, nearestFolder, denialPath, classifyDenial, grantsFor, deniedAgain, denialNotes,
