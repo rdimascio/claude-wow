@@ -595,5 +595,7 @@ test('the ask plugin speaks as a player: one lowercase line, no TL;DR block; oth
   for (const prompt of [player, coding]) {
     assert.match(prompt, /the answer is a list, in every voice, even when other rules ask for one line/, 'a loot answer is a list in both voices');
     assert.match(prompt, /Never run item links together on one line/);
+    assert.match(prompt, /within 8 lines/, 'sized for the whisper tab, which shows 8 lines whole');
   }
+  assert.ok(!P.systemPrompt('', '', { tools: ask.tools, surfaces: ask.surfaces, voice: ask.voice }).includes('Never run item links together'), 'a chat with no game context gets no loot rule');
 });
