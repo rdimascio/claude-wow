@@ -1801,7 +1801,7 @@ local function ImportRestore(r)
 	end
 end
 
-ClaudeWoW.Version = { PROTO = 1, SEMVER = "0.4.0", PATTERN = "^%d+%.%d+%.%d+[%w%.%-+]*$" }
+ClaudeWoW.Version = { PROTO = 1, SEMVER = "0.5.0-beta.1", PATTERN = "^%d+%.%d+%.%d+[%w%.%-+]*$" }
 
 function ClaudeWoW.Version.Meta(key)
 	local read = C_AddOns and C_AddOns.GetAddOnMetadata

@@ -8,8 +8,10 @@ const SIG = require('../../bridge/signals');
 const CLI = require('../../bridge/clients');
 const { WowClient } = require('../../dev/wow/client');
 const { makeRoot, gameRunner } = require('./helpers');
+const PKG = require('../../package.json');
 
 const ROOT = makeRoot('clients');
+const VERSION_IN_DIAG = PKG.version.replace(/[.+]/g, '\\$&');
 const withGame = gameRunner(ROOT);
 const ERA = '_classic_era_';
 const ERA_CLIENT = { interface: 11509, version: '1.15.9', build: '70003' };
@@ -88,7 +90,7 @@ test('two clients running at once each get their own replies, and diag in each n
       assert.doesNotMatch(JSON.stringify(h.client.db().chats), /from era/, 'client A never shows client B\'s chat');
       assert.doesNotMatch(JSON.stringify(era.db().chats), /from forever/, 'client B never shows client A\'s chat');
       const diag = await era.waitFor(() => { const d = era.diag(); return /clients: .*_classic_era_ \(this client\)[^;]*spoke last/.test(d) && d; }, { timeoutMs: 20000, everyMs: 500, label: 'the clients line in diag' });
-      assert.match(diag, /clients: _classic_beta_: \d+\.\d+\.\d+ build [0-9a-f]{12}, heard .* ago; _classic_era_ \(this client\): \d+\.\d+\.\d+ build [0-9a-f]{12}, heard .* ago, spoke last/);
+      assert.match(diag, new RegExp(`clients: _classic_beta_: ${VERSION_IN_DIAG} build [0-9a-f]{12}, heard .* ago; _classic_era_ \\(this client\\): ${VERSION_IN_DIAG} build [0-9a-f]{12}, heard .* ago, spoke last`));
     });
   });
 });

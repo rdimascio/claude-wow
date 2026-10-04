@@ -1,5 +1,6 @@
 'use strict';
 const fs = require('fs');
+const { clientState, clientRunning, cleanSupported } = require('./clientproc');
 
 const TAG = 'CWX1';
 const MAGIC = [0xc7, 0x3a];
@@ -74,10 +75,12 @@ function calibratedFiller(samples, configured) {
 const PROBE_TAG = 'CWLOG\\d+';
 const OUR_LINE = new RegExp(`${STAMP}(${TAG}|${PROBE_TAG}) `);
 const CLEAN_MIN_IDLE_MS = 60000;
+const VERDICT_MAX_AGE_MS = 3000;
+const MAX_TOLD_REASONS = 16;
 
 const STRIP_CHUNK_BYTES = 1 << 20;
 
-function stripOurLines(file, chunkBytes = STRIP_CHUNK_BYTES) {
+function stripOurLines(file, chunkBytes = STRIP_CHUNK_BYTES, { notAfter = Infinity, clock = Date.now } = {}) {
   const fd = fs.openSync(file, 'r+');
   try {
     const before = fs.fstatSync(fd).size;
@@ -107,6 +110,7 @@ function stripOurLines(file, chunkBytes = STRIP_CHUNK_BYTES) {
     else keep(carry);
     if (removed === 0) return { before, after: before, removed };
     if (fs.fstatSync(fd).size !== before) return { before, after: before, removed, grewMeanwhile: true, keptUpTo: writeAt };
+    if (clock() > notAfter) return { before, after: before, removed, staleVerdict: true, keptUpTo: writeAt };
     fs.ftruncateSync(fd, writeAt);
     return { before, after: writeAt, removed };
   } finally {
@@ -114,26 +118,48 @@ function stripOurLines(file, chunkBytes = STRIP_CHUNK_BYTES) {
   }
 }
 
-function clientRunning(folder, { platform = process.platform, listProcesses } = {}) {
-  if (platform !== 'darwin' || !folder) return null;
-  let commands;
-  try {
-    commands = listProcesses ? listProcesses() : require('child_process').execFileSync('ps', ['-axo', 'command='], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
-  } catch {
+function scheduleCleaning({ platform = process.platform, clean, everyMs, warn, every = setInterval }) {
+  if (!cleanSupported(platform)) {
+    warn();
     return null;
   }
-  const prefix = folder.replace(/[\\/]+$/, '') + '/';
-  return String(commands).split('\n').some(line => line.includes(prefix));
+  let busy = false;
+  const attempt = async (why) => {
+    if (busy) return false;
+    busy = true;
+    try { await clean(why); } catch {} finally { busy = false; }
+    return true;
+  };
+  attempt('startup');
+  const timer = every(() => attempt('periodic'), everyMs);
+  if (timer && timer.unref) timer.unref();
+  return timer;
 }
 
-function cleanWhenClosed(file, folder, opts = {}) {
+async function cleanWhenClosed(file, folder, opts = {}) {
   const now = opts.now || Date.now();
   let st;
   try { st = fs.statSync(file); } catch { return { cleaned: false, why: 'no file' }; }
   if (now - st.mtimeMs < CLEAN_MIN_IDLE_MS) return { cleaned: false, why: 'written less than a minute ago' };
-  const running = clientRunning(folder, opts);
-  if (running !== false) return { cleaned: false, why: running === null ? 'cannot tell whether the game is running' : 'the game is running' };
-  return Object.assign({ cleaned: true }, stripOurLines(file, opts.chunkBytes));
+  const clock = opts.clock || Date.now;
+  const state = await clientState(folder, opts);
+  const checkedAt = clock();
+  if (state.running === true) return { cleaned: false, why: 'the game is running' };
+  if (state.running !== false) return { cleaned: false, why: 'cannot tell whether the game is running', reason: state.why };
+  let after;
+  try { after = fs.statSync(file); } catch { return { cleaned: false, why: 'no file' }; }
+  if (after.mtimeMs !== st.mtimeMs || after.size !== st.size) return { cleaned: false, why: 'written while the process check ran' };
+  return Object.assign({ cleaned: true }, stripOurLines(file, opts.chunkBytes, { notAfter: checkedAt + VERDICT_MAX_AGE_MS, clock }));
+}
+
+function reasonTeller(log, max = MAX_TOLD_REASONS) {
+  const told = new Set();
+  return (result) => {
+    if (!result || !result.reason || told.has(result.reason) || told.size >= max) return false;
+    told.add(result.reason);
+    log(result.reason);
+    return true;
+  };
 }
 
 function parseLine(line, key) {
@@ -270,4 +296,4 @@ function watchChatLog(file, onFrame, opts = {}) {
   return { close: () => clearInterval(timer), check, resync };
 }
 
-module.exports = { TAG, DEFAULTS, options, ensureKey, parseLine, decodeFrame, createAssembler, watchChatLog, noteWrite, bufferSize, calibratedFiller, stripOurLines, clientRunning, cleanWhenClosed };
+module.exports = { TAG, DEFAULTS, options, ensureKey, parseLine, decodeFrame, createAssembler, watchChatLog, noteWrite, bufferSize, calibratedFiller, stripOurLines, clientState, clientRunning, cleanSupported, scheduleCleaning, cleanWhenClosed, reasonTeller };
