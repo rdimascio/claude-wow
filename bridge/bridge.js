@@ -57,6 +57,7 @@ const G = require('./gamefs');
 const SIG = require('./signals');
 const DM = require('./datamcp');
 const GM = require('./goalsmcp');
+const FACTORY = require('./factory');
 const GD = require('./gamedata');
 const DSYNC = require('./datasync');
 const GR = require('./gamerefs');
@@ -448,11 +449,13 @@ function shutdown(sig, exitCode) {
   if (shuttingDown) return;
   shuttingDown = true;
   try { runGrants.revokeAll(); } catch {}
+  try { factoryGrants.revokeAll(); } catch {}
+  factory.stop();
   forgetUnstartedWork();
   stopPlugins();
   let voteClosing = Promise.resolve();
   try { voteClosing = VOTES.settleWithin(voteBox.stop(), VOTES.SHUTDOWN_PUSH_WAIT_MS); } catch {}
-  const kids = [...running.values()].map(r => r.child).concat(T.titleChildren()).filter(Boolean);
+  const kids = [...running.values()].map(r => r.child).concat(T.titleChildren(), factory.children()).filter(Boolean);
   if (captureChild) kids.push(captureChild);
   const n = kids.filter(PR.alive).length;
   log(`${sig}: stopping${n ? `; ending ${n} child process${n === 1 ? '' : 'es'} (SIGTERM, SIGKILL after ${KILL_GRACE_MS} ms)` : ''}`);
@@ -462,7 +465,7 @@ process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 function crash(kind, err) {
   try { log(`CRASH (${kind}): ${err && err.stack ? err.stack : err}`); } catch {}
-  const kids = [...running.values()].map(r => r.child).concat(T.titleChildren(), captureChild ? [captureChild] : []).filter(Boolean);
+  const kids = [...running.values()].map(r => r.child).concat(T.titleChildren(), factory.children(), captureChild ? [captureChild] : []).filter(Boolean);
   for (const child of kids) { try { if (process.platform !== 'win32') process.kill(-child.pid, 'SIGKILL'); else child.kill('SIGKILL'); } catch {} }
   process.exit(70);
 }
@@ -1365,8 +1368,9 @@ const core = {
     return goalStore.call(tool, args);
   },
   gameData: job => GR.openFor(HOME.data, contextTextFor(job)),
-  get runGrants() { return runGrants; },
-  agentPids: () => [...running.values()].map(r => r.child).concat(T.titleChildren()).filter(Boolean).map(c => c.pid),
+  get runGrants() { return joinedGrants; },
+  get factory() { return factory; },
+  agentPids: () => [...running.values()].map(r => r.child).concat(T.titleChildren(), factory.children()).filter(Boolean).map(c => c.pid),
 };
 
 const runGrants = GM.createRunGrants({
@@ -1374,6 +1378,34 @@ const runGrants = GM.createRunGrants({
   character: () => runGrantCharacter(),
   log,
 });
+
+const factory = FACTORY.createFactory({
+  dir: path.join(HOME.dir, 'factory'),
+  log,
+  adopt: holdsLock,
+  command: base => A.resolveCommand('claude', base),
+  baseConfig: () => A.agentConfig(cfg, 'claude'),
+  env: () => A.AGENTS.claude.env({ ...process.env }),
+  onDone: (run, ctx) => deliverFactoryRun(run, ctx),
+});
+
+const factoryGrants = GM.createRunGrants({
+  call: (tool, args, ctx) => factory.call(tool, args, ctx),
+  character: null,
+  tools: FACTORY.TOOL_NAMES,
+  serverName: FACTORY.SERVER_NAME,
+  toolsLabel: 'factory',
+  log,
+});
+
+const joinedGrants = GM.joinGrants([runGrants, factoryGrants]);
+const factoryChats = new Map();
+
+function deliverFactoryRun(run, ctx) {
+  if (!ctx || !ctx.job) return;
+  const job = factoryChats.get(ctx.key) || ctx.job;
+  lateReply(job, FACTORY.describe(run, Date.now()));
+}
 
 const voteBox = VOTES.createVotes({
   config: () => cfg.votes,
@@ -1470,7 +1502,7 @@ function stopPlugins() {
 // run may mark the map and whether macro blocks in the reply become buttons.
 const IN_GAME_NEVER_GRANTED = LP.GOAL_WRITE_TOOLS;
 function neverOffered(denied) {
-  return rule => GM.isRunToolRule(rule) || GM.deniedBy(denied, rule);
+  return rule => GM.isRunToolRule(rule) || FACTORY.isRunToolRule(rule) || GM.deniedBy(denied, rule);
 }
 function inGameGrantable(rules, denied) {
   const blocked = neverOffered(denied);
@@ -1539,6 +1571,18 @@ function homeGuardRules() {
 
 function revokeRunGrant(job) {
   if (job && job.runGrantId && runGrants.revoke(job.runGrantId)) log(`${tagOf(job)} ${GM.SERVER_NAME} grant revoked before the run is ended`);
+  if (job && job.factoryGrantId && factoryGrants.revoke(job.factoryGrantId)) log(`${tagOf(job)} ${FACTORY.SERVER_NAME} grant revoked before the run is ended`);
+}
+
+const loggedNoFactory = new Set();
+function factorySocket(tag) {
+  const lp = livePlugin();
+  const socket = lp && typeof lp.runEndpoint === 'function' ? lp.runEndpoint() : '';
+  if (!socket && !loggedNoFactory.has(tag)) {
+    loggedNoFactory.add(tag);
+    log(`${tag} ${FACTORY.SERVER_NAME}: the live socket is not listening (plugins.live.enabled, or --once), so this dispatcher run goes without the factory tools`);
+  }
+  return socket;
 }
 
 function runAgent(job, opts = {}) {
@@ -1560,7 +1604,9 @@ function runAgent(job, opts = {}) {
   const chosen = chatSettings(job);
   const claudeRun = agentId === 'claude';
   const runToolSocket = claudeRun && opts.runTools ? runToolsSocket(tag, job) : '';
-  const runDenied = inGameDeniedTools({ claudeRun, plugin, withRunTools: !!runToolSocket });
+  const runDenied = [...inGameDeniedTools({ claudeRun, plugin, withRunTools: !!runToolSocket }), ...(Array.isArray(opts.deniedTools) ? opts.deniedTools : [])];
+  const factoryConf = claudeRun && opts.factory && opts.factory.enabled ? opts.factory : null;
+  const factoryToolSocket = factoryConf ? factorySocket(tag) : '';
   const grantForGood = P.splitGrants(inGameGrantable(job.allow, runDenied));
   const grantOnce = P.splitGrants(inGameGrantable(job.allowOnce, runDenied));
   if (grantForGood.rules.length) {
@@ -1571,7 +1617,7 @@ function runAgent(job, opts = {}) {
     log(`${tag} allowed for this run only (${agentId}): ${grantOnce.rules.join(', ')}`);
   }
   const dataServer = opts.gameData && agentId === 'claude' ? gameDataServer(tag, job) : null;
-  const runOnlyRules = [...grantOnce.rules, ...(dataServer ? dataServer.rules : []), ...(runToolSocket ? GM.RUN_RULES : [])];
+  const runOnlyRules = [...grantOnce.rules, ...(dataServer ? dataServer.rules : []), ...(runToolSocket ? GM.RUN_RULES : []), ...(factoryToolSocket ? FACTORY.RUN_RULES : [])];
   const baseCfg = A.withPluginSettings(A.agentConfig(cfg, agentId), agentId, core.options(plugin.id));
   const acfg = A.withChatSettings(P.withRunDeniedRules(P.withRunOnlyRules(baseCfg, runOnlyRules), runDenied), agentId, chosen);
   const runDirs = [...grantForGood.dirs, ...grantOnce.dirs].map(d => P.resolveCwd(d, DEFAULT_CWD));
@@ -1606,7 +1652,8 @@ function runAgent(job, opts = {}) {
     log(`${tag} plugin changed (${prevPlugin} -> ${plugin.id}): new session`);
     delete state.sessions[skey]; delete state.sessions[key];
   }
-  const rulesHash = P.systemRulesHash(gameContext(job), { tools: plugin.tools, surfaces: plugin.surfaces, voice: plugin.voice });
+  const pluginTools = typeof opts.tools === 'string' ? opts.tools : plugin.tools;
+  const rulesHash = P.systemRulesHash(gameContext(job), { tools: pluginTools, surfaces: plugin.surfaces, voice: plugin.voice });
   if (agentId === 'claude' && state.sessions[skey] && P.rulesChanged(state, skey, rulesHash)) {
     log(`${tag} system prompt rules changed (${state.sessionRules[skey]} -> ${rulesHash}): new session`);
     delete state.sessions[skey]; delete state.sessions[key];
@@ -1634,7 +1681,7 @@ function runAgent(job, opts = {}) {
   // The stable system prompt (the same bytes on every run of this chat) and the
   // message, which carries what changes: the situation and the vision note.
   const ctx = gameContext(job);
-  const system = P.systemPrompt(ctx, primer(), { tools: plugin.tools, surfaces: plugin.surfaces, voice: plugin.voice });
+  const system = P.systemPrompt(ctx, primer(), { tools: pluginTools, surfaces: plugin.surfaces, voice: plugin.voice });
   const systemShort = P.systemPrompt(ctx, '', { surfaces: plugin.surfaces, voice: plugin.voice });
   const prompt = P.messagePrompt(job.text, ctx, { image });
   const promptFile = path.join(TMP_DIR, `prompt-${job.id}-${Date.now().toString(36)}.txt`);
@@ -1645,18 +1692,23 @@ function runAgent(job, opts = {}) {
   }
   const runGrant = runToolSocket ? runGrants.grant(tag) : null;
   const runServer = runGrant ? GM.launchConfig({ runId: runGrant.id, token: runGrant.token, socket: runToolSocket }).server : null;
-  const mcpJson = GM.mcpConfig({ [DM.SERVER_NAME]: dataServer && dataServer.server, [GM.SERVER_NAME]: runServer });
+  const factoryGrant = factoryToolSocket ? factoryGrants.grant(tag, { key, job, cwd, conf: factoryConf, label: tag }) : null;
+  const factoryServer = factoryGrant ? FACTORY.launchConfig({ runId: factoryGrant.id, token: factoryGrant.token, socket: factoryToolSocket, skills: factoryConf.skills }).server : null;
+  if (factoryGrant) factoryChats.set(key, job);
+  const mcpJson = GM.mcpConfig({ [DM.SERVER_NAME]: dataServer && dataServer.server, [GM.SERVER_NAME]: runServer, [FACTORY.SERVER_NAME]: factoryServer });
   const mcpConfigFile = mcpJson ? path.join(MCP_CONFIG_DIR, `mcp-${job.id}-${crypto.randomBytes(8).toString('hex')}.json`) : '';
   if (mcpConfigFile) {
     try { writePrivateFile(mcpConfigFile, mcpJson); }
     catch (e) {
       if (runGrant) runGrants.revoke(runGrant.id);
+      if (factoryGrant) factoryGrants.revoke(factoryGrant.id);
       if (input.promptFile !== undefined) { try { fs.unlinkSync(promptFile); } catch {} }
       finish(job, 'error', `Could not write the MCP config file ${mcpConfigFile}: ${e.message}`);
       return;
     }
   }
   if (runGrant) job.runGrantId = runGrant.id;
+  if (factoryGrant) job.factoryGrantId = factoryGrant.id;
   const args = [...cmd.args, ...agent.args({
     cfg: acfg, resume, cwd, system, systemShort, promptFile, images,
     prompt, timeoutMs: cfg.timeoutMs, mcpConfig: mcpConfigFile,
@@ -1679,7 +1731,7 @@ function runAgent(job, opts = {}) {
     } catch (e) { log(`${tag} ui file unavailable: ${e.message}`); }
   }
 
-  const picked = [acfg.model && 'model ' + acfg.model, acfg.effort && 'effort ' + acfg.effort, chosen.permissionMode && 'mode ' + acfg.permissionMode, (acfg.addDirs || []).length && '+' + acfg.addDirs.length + ' dir(s)', dataServer && 'wowdata ' + dataServer.build + ' ' + dataServer.flavor, runGrant && GM.SERVER_NAME + ' for this run'].filter(Boolean).join(', ');
+  const picked = [acfg.model && 'model ' + acfg.model, acfg.effort && 'effort ' + acfg.effort, chosen.permissionMode && 'mode ' + acfg.permissionMode, (acfg.addDirs || []).length && '+' + acfg.addDirs.length + ' dir(s)', dataServer && 'wowdata ' + dataServer.build + ' ' + dataServer.flavor, runGrant && GM.SERVER_NAME + ' for this run', factoryGrant && FACTORY.SERVER_NAME + ' for this run'].filter(Boolean).join(', ');
   log(`${tag} (${job.via}) [${plugin.id}] ${agent.name} starting in ${cwd}${picked ? ' [' + picked + ']' : ''}${resume ? ' (resume ' + resume.slice(0, 8) + ')' : ' (new session)'}${ctx ? ' [game context]' : ''}${image ? ` [screen ${image.width}x${image.height}, ${Math.round(image.bytes / 1024)} KB]` : ''}${running.size ? ' [' + (running.size + 1) + ' running]' : ''}`);
   const startedAt = Date.now(); // a fresh session's clock starts here (the footer's elapsed time)
   const child = PR.spawnChild(cmd.file, args, { cwd, env, windowsHide: true, stdio: [input.stdin !== undefined ? 'pipe' : 'ignore', 'pipe', 'pipe'] });
@@ -1717,6 +1769,8 @@ function runAgent(job, opts = {}) {
     if (ours) notes.push(`The game data server (${DM.SERVER_NAME}) did not start (${ours.status}), so this answer was not checked against the client data.`);
     const goalsDown = runGrant && servers.find(s => s.name === GM.SERVER_NAME);
     if (goalsDown) notes.push(`The goal tools server (${GM.SERVER_NAME}) did not start (${goalsDown.status}), so no goal, order or campaign was changed by this run.`);
+    const factoryDown = factoryGrant && servers.find(s => s.name === FACTORY.SERVER_NAME);
+    if (factoryDown) notes.push(`The factory tools server (${FACTORY.SERVER_NAME}) did not start (${factoryDown.status}), so no factory run was started by this message.`);
   };
   if (agent.stream === 'text') pushProgress(`${agent.name} is working (no live progress)`);
   if (input.note) notes.push(input.note);
@@ -1785,6 +1839,7 @@ function runAgent(job, opts = {}) {
     clearTimeout(timer);
     clearInterval(keepalive);
     if (runGrant) runGrants.revoke(runGrant.id);
+    if (factoryGrant) factoryGrants.revoke(factoryGrant.id);
     if (mcpConfigFile) { try { fs.unlinkSync(mcpConfigFile); } catch {} }
     if (input.promptFile !== undefined) { try { fs.unlinkSync(promptFile); } catch {} }
     // The game view was for this run only; the agent has it in its session now.
@@ -2293,7 +2348,9 @@ function bridgeIdleStatus() {
   const holder = REL.switchingHolder(DEPLOY_LOCK_FILE);
   if (holder) return { idle: false, reason: `a deploy (pid ${holder.pid}) is switching releases` };
   const busy = new Set([...running.keys(), ...queued.keys()]).size;
-  return busy ? { idle: false, reason: `${busy} message(s) running or queued` } : fromState;
+  if (busy) return { idle: false, reason: `${busy} message(s) running or queued` };
+  const factoryRuns = factory.children().length;
+  return factoryRuns ? { idle: false, reason: `${factoryRuns} factory run(s) going` } : fromState;
 }
 
 const gameCheck = UPD.cachedGameCheck(() => Promise.all(CLIENTS.map(c => CL.clientState(c.dir))));

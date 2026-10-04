@@ -128,6 +128,7 @@ test('the shipped coding plugin: a folder resolved against the bridge\'s, refuse
   const calls = [];
   const core = {
     log: noop, tag: j => '#' + j.id, defaultCwd: base,
+    options: () => ({}),
     sessionFolder: () => path.join(base, 'realms'),
     fail: (job, text) => calls.push({ fail: text }),
     runAgent: (job, opts) => calls.push({ run: opts }),
