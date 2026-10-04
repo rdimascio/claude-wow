@@ -102,7 +102,7 @@ test('a community sync converts NPCs, spawns, quests and givers into their own s
   const r = await C.syncCommunity({ dataDir, fetch: gh.fetchImpl });
   assert.equal(r.status, 'synced');
   assert.equal(r.version, `z2815-${gh.entry.sha.slice(0, 7)}`);
-  assert.deepEqual(r.manifest.droppedBy, { junk: 5, relationWithoutQuest: 1, lootItemNotInClient: 2, lootItemNotIn112: 1, lootRowInvalid: 2, lootConditionMissing: 1, referenceNeverRolled: 1, lootGroupNeverReached: 2 });
+  assert.deepEqual(r.manifest.droppedBy, { junk: 5, relationWithoutQuest: 1, lootItemNotInClient: 2, lootItemNotIn112: 1, lootRowInvalid: 2, lootConditionMissing: 1, referenceNeverRolled: 2, lootGroupNeverReached: 3 });
   assert.equal(r.manifest.trust, 'community-db');
   assert.equal(r.manifest.client.build, '1.15.9.300');
   assert.equal(path.dirname(r.dir), path.join(dataDir, 'classic_era', 'community'));
@@ -197,7 +197,7 @@ test('data sync --source community is Classic Era only and goes through the CLI'
   const out = [];
   const code = await D.main(['sync', '--flavor', 'classic_era', '--source', 'community'], { env: { CLAUDE_WOW_HOME: home }, fetch: fakeGitHub().fetchImpl, out: s => out.push(s), err: s => out.push(s) });
   assert.equal(code, 0, out.join(''));
-  assert.match(out.join(''), /27 rows kept, 15 dropped; current community data z2815-[0-9a-f]{7}/);
+  assert.match(out.join(''), /27 rows kept, 17 dropped; current community data z2815-[0-9a-f]{7}/);
   const changed = async url => (url.includes('/QuestV2/') ? new Response('ID,UniqueBitFlag\n111,1\n112,2\n', { status: 200, headers: { 'content-type': 'text/csv', 'content-disposition': `attachment; filename="QuestV2.${new URL(url).searchParams.get('build')}.csv"` } }) : fakeWago(url));
   const again = [];
   assert.equal(await D.main(['sync', '--flavor', 'classic_era', '--force'], { env: { CLAUDE_WOW_HOME: home }, fetch: changed, out: s => again.push(s), err: s => again.push(s) }), 0, again.join(''));
