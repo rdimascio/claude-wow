@@ -67,8 +67,9 @@ function readTemplates(sql, ctx, drop) {
     for (const r of S.rows(sql, table, COLUMNS)) {
       const row = lootRow(r, ctx, drop);
       if (!row) continue;
-      if (!byEntry.has(r.entry)) byEntry.set(r.entry, { items: new Map(), refs: new Map() });
+      if (!byEntry.has(r.entry)) byEntry.set(r.entry, { items: new Map(), refs: new Map(), rows: 0 });
       const t = byEntry.get(r.entry);
+      t.rows++;
       if (row.ref) addTo(t.refs, row.ref, row.flags);
       else addTo(t.items, row.item, row.flags);
     }
@@ -108,7 +109,7 @@ function encounterChests(client, objects, spawnMaps, count) {
 
 function convert(sql, client, { npcs, nameOrDrop, drop }) {
   const loot = { unreferenced: {}, unresolved: {} };
-  const count = (kind, entity) => { loot[kind][entity] = (loot[kind][entity] || 0) + 1; };
+  const count = (kind, entity, n = 1) => { loot[kind][entity] = (loot[kind][entity] || 0) + n; };
   const itemRows = [...S.rows(sql, 'item_template', ['entry', 'name', 'Flags', 'DisenchantID'])];
   const ctx = {
     client,
@@ -179,7 +180,7 @@ function convert(sql, client, { npcs, nameOrDrop, drop }) {
   for (const entity of TEMPLATES) {
     const rows = [];
     for (const [id, t] of templates[entity]) {
-      if (!owned[entity].has(id)) { count('unreferenced', entity); continue; }
+      if (!owned[entity].has(id)) { count('unreferenced', entity, t.rows); continue; }
       const row = { id, items: [...t.items].map(([itemID, f]) => flagged(itemID, f)) };
       if (t.refs.size) row.refs = [...t.refs].map(([refID, f]) => flagged(refID, f));
       if (entity === 'disenchantloot') row.fromItems = disenchantSources.get(id).sort((a, b) => a - b);

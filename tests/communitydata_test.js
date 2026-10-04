@@ -382,6 +382,18 @@ test('community data goes stale only when the client tables it was built from ch
   assert.equal(GD.openStore({ dataDir, clientBuild: ERA_CLIENT }).community.stale, true, 'a change to the quest table does not');
 });
 
+test('a community sync converts again when the client item, zone or encounter table changes, and only then', async () => {
+  const dataDir = await eraData('lootHash');
+  await C.syncCommunity({ dataDir, fetch: fakeGitHub().fetchImpl });
+  const csv = (table, body) => async url => (url.includes(`/${table}/`) ? new Response(body, { status: 200, headers: { 'content-type': 'text/csv', 'content-disposition': `attachment; filename="${table}.${new URL(url).searchParams.get('build')}.csv"` } }) : fakeWago(url));
+  await D.sync({ dataDir, flavor: 'classic_era', force: true, fetch: csv('SkillLine', 'ID,DisplayName_lang,CategoryID,ParentSkillLineID\n9,Other Fixture Line,11,0\n') });
+  assert.equal((await C.syncCommunity({ dataDir, fetch: fakeGitHub().fetchImpl })).status, 'current', 'a table the conversion does not read changes nothing');
+  const areas = fs.readFileSync(path.join(ERA_FIXTURES, 'AreaTable.csv'), 'utf8').replace('"Era Fixture Vale"', '"Era Fixture Valley"');
+  await D.sync({ dataDir, flavor: 'classic_era', force: true, fetch: csv('AreaTable', areas) });
+  assert.equal(GD.openStore({ dataDir, clientBuild: ERA_CLIENT }).community.stale, false, 'positions stay current');
+  assert.equal((await C.syncCommunity({ dataDir, fetch: fakeGitHub().fetchImpl })).status, 'synced', 'but the loot joins are redone');
+});
+
 test('a store written by another converter shape is not read, and the next sync converts again', async () => {
   const dataDir = await eraData('shape');
   const r = await C.syncCommunity({ dataDir, fetch: fakeGitHub().fetchImpl });
@@ -416,7 +428,7 @@ test('community loot keeps the rows the server keeps, groups them by template an
   addEraEncounter(dataDir, MAJORDOMO);
   const r = await C.syncCommunity({ dataDir, fetch: fakeGitHub().fetchImpl });
   assert.deepEqual(r.manifest.loot, {
-    unreferenced: { creatureloot: 1, fishingloot: 1, containerloot: 2, disenchantloot: 1, referenceloot: 2 },
+    unreferenced: { creatureloot: 2, fishingloot: 1, containerloot: 2, disenchantloot: 1, referenceloot: 2 },
     unresolved: { referenceloot: 1, creatureloot: 1, objectloot: 1, encounterChest: 4 },
     referenceDepth: 2,
   });
@@ -452,14 +464,14 @@ test('wow_npc, wow_item and wow_instance answer who drops what with flags, uncon
   const giver = call(store, 'wow_npc', { id: 7001 });
   assert.deepEqual(giver.results[0].drops, { total: 4, items: [
     { id: 512, name: 'Era Fixture Cap', quality: 2 },
-    { id: 511, name: 'Era Fixture Hide', quality: 1, sharedTable: true },
-    { id: 514, name: 'Recipe: Era Blast', quality: 1, sharedTable: true },
+    { id: 511, name: 'Era Fixture Hide', quality: 1, viaReference: true },
+    { id: 514, name: 'Recipe: Era Blast', quality: 1, viaReference: true },
     { id: 513, name: 'Schematic: The Era Fixture', quality: 1, questOnly: true, conditional: true },
   ] }, 'a direct drop that a shared table also holds is direct; an item one path gives without a condition is unconditioned; client names; conditional rows after every unconditioned one');
   assert.deepEqual([giver.results[0].skinning, giver.results[0].pickpocket], [null, null]);
   assert.match(giver.notes.join(' '), /Drop sources come from community loot tables .* No chance, count or rate/);
   const wanderer = call(store, 'wow_npc', { id: 7002 }).results[0];
-  assert.deepEqual(wanderer.drops.items.map(i => [i.id, !!i.conditional, !!i.sharedTable]), [[512, false, false], [514, true, true]], 'a nested reference behind a conditional row is conditional');
+  assert.deepEqual(wanderer.drops.items.map(i => [i.id, !!i.conditional, !!i.viaReference]), [[512, false, false], [514, true, true]], 'a nested reference behind a conditional row is conditional');
   assert.deepEqual(ids(wanderer.skinning.items), [511]);
   assert.deepEqual(ids(wanderer.pickpocket.items), [512]);
   const item = id => call(store, 'wow_item', { id }).results[0].community;
@@ -471,16 +483,16 @@ test('wow_npc, wow_item and wow_instance answer who drops what with flags, uncon
   assert.deepEqual(ids(cap.disenchantsInto.items), [511]);
   assert.equal(cap.trust, 'community-db');
   const hide = item(511);
-  assert.deepEqual(hide.droppedBy.npcs, [{ kind: 'npc', id: 7001, name: 'Fixture Giver', sharedTable: true }]);
+  assert.deepEqual(hide.droppedBy.npcs, [{ kind: 'npc', id: 7001, name: 'Fixture Giver', viaReference: true }]);
   assert.deepEqual(ids(hide.skinnedFrom.npcs), [7002]);
   assert.deepEqual(hide.fishedIn.zones, [{ id: 7101, name: 'Era Fixture Vale' }]);
   assert.deepEqual(ids(hide.disenchantedFrom.items), [512]);
   assert.deepEqual(item(513).droppedBy.npcs, [{ kind: 'npc', id: 7001, name: 'Fixture Giver', questOnly: true, conditional: true }]);
   const recipe = item(514);
-  assert.deepEqual(recipe.droppedBy.npcs.map(n => [n.id, n.conditional, n.sharedTable]), [[7001, undefined, true], [7002, true, true]]);
+  assert.deepEqual(recipe.droppedBy.npcs.map(n => [n.id, n.conditional, n.viaReference]), [[7001, undefined, true], [7002, true, true]]);
   assert.deepEqual(recipe.objects.objects.map(o => [o.id, o.objectKind]), [[8004, 'fishinghole']]);
   assert.deepEqual(ids(recipe.contains.items), [512]);
-  const LOOT_KEYS = new Set(['total', 'items', 'npcs', 'objects', 'zones', 'id', 'name', 'quality', 'kind', 'objectKind', 'encounter', 'mapID', 'questOnly', 'conditional', 'sharedTable', 'droppedBy', 'skinnedFrom', 'pickpocketedFrom', 'fishedIn', 'inContainers', 'disenchantedFrom', 'contains', 'disenchantsInto', 'source', 'version', 'trust']);
+  const LOOT_KEYS = new Set(['total', 'items', 'npcs', 'objects', 'zones', 'id', 'name', 'quality', 'kind', 'objectKind', 'encounter', 'mapID', 'questOnly', 'conditional', 'viaReference', 'droppedBy', 'skinnedFrom', 'pickpocketedFrom', 'fishedIn', 'inContainers', 'disenchantedFrom', 'contains', 'disenchantsInto', 'source', 'version', 'trust']);
   const keys = (v, out = new Set()) => {
     if (Array.isArray(v)) v.forEach(x => keys(x, out));
     else if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) { out.add(k); keys(x, out); }
@@ -497,6 +509,9 @@ test('wow_npc, wow_item and wow_instance answer who drops what with flags, uncon
   assert.ok(both.results.length > 1);
   assert.ok(both.results.every(r => r.bossSets.every(s => s.bosses.every(b => !b.community || b.community.drops === undefined))), 'several matches list no drops');
   assert.match(both.notes.join(' '), /look one up by its ID/);
+  const paged = call(store, 'wow_npc', { id: 7001, offset: 2 }).results[0].drops;
+  assert.deepEqual([paged.total, paged.offset, ids(paged.items)], [4, 2, [514, 513]], 'offset pages through a loot list');
+  assert.equal(DM.callTool(store, 'wow_npc', { id: 7001, offset: -1 }).isError, true);
   const search = call(store, 'wow_npc', { name: 'fixture' });
   assert.match(search.notes.join(' '), /at most 10 items per loot list/);
   assert.equal(call(store, 'wow_sources', {}).results.find(r => r.source === 'cmangos').loot.referenceDepth, 2, 'wow_sources carries the loot counts');
@@ -559,7 +574,7 @@ test('on Forever loot answers drop items Forever lacks or names differently, NPC
   assert.match(giver.notes.join(' '), /Classic community loot tables .* not checked for this game/);
   const hide = call(store, 'wow_item', { id: 511 });
   assert.equal(hide.results[0].community, undefined);
-  assert.match(hide.notes.join(' '), /no item 511 under the name this game gives it/);
+  assert.match(hide.notes.join(' '), /Item 511 has another name in the 1.12 community data/);
   const cap = call(store, 'wow_item', { id: 512 }).results[0].community;
   assert.equal(cap.trust, 'community-db-unchecked-for-this-game');
   assert.deepEqual(ids(cap.droppedBy.npcs), [7001, 7002]);
@@ -580,7 +595,22 @@ test('on Forever loot answers drop items Forever lacks or names differently, NPC
   const original = fs.readFileSync(npcsFile, 'utf8');
   const giverAs = extra => original.split('\n').map(l => (l.startsWith('{"id":7001,') ? JSON.stringify({ ...JSON.parse(l), onMaps: [], spawns: [], gives: [], ends: [], ...extra }) : l)).join('\n');
   fs.writeFileSync(npcsFile, giverAs({}));
-  assert.deepEqual(ids(call(GD.openStore({ dataDir, clientBuild: FOREVER_CLIENT }), 'wow_item', { id: 513 }).results[0].community.droppedBy.npcs), [7001], 'an NPC named exactly like a Forever encounter is kept');
+  const named = GD.openStore({ dataDir, clientBuild: FOREVER_CLIENT });
+  assert.deepEqual(ids(call(named, 'wow_item', { id: 513 }).results[0].community.droppedBy.npcs), [7001], 'an NPC named exactly like a Forever encounter is kept');
+  assert.deepEqual(ids(call(named, 'wow_npc', { id: 7001 }).results), [7001], 'and wow_npc finds it, so the full loot list is reachable');
+  assert.deepEqual(ids(call(named, 'wow_npc', { name: 'Fixture Giver' }).results), [7001]);
   fs.writeFileSync(npcsFile, giverAs({ name: 'Fixture Muted' }));
-  assert.deepEqual(ids(call(GD.openStore({ dataDir, clientBuild: FOREVER_CLIENT }), 'wow_item', { id: 513 }).results[0].community.droppedBy.npcs), [], 'an NPC with no shared map, no Forever quest and no Forever encounter is left out');
+  const muted = GD.openStore({ dataDir, clientBuild: FOREVER_CLIENT });
+  assert.deepEqual(ids(call(muted, 'wow_item', { id: 513 }).results[0].community.droppedBy.npcs), [], 'an NPC with no shared map, no Forever quest and no Forever encounter is left out');
+  assert.equal(call(muted, 'wow_npc', { id: 7001 }).found, false);
+  const lootItemsFile = path.join(store.community.dir, 'lootitems.jsonl');
+  const lootItems = fs.readFileSync(lootItemsFile, 'utf8').trim().split('\n').filter(l => !l.startsWith('{"id":513,'));
+  fs.writeFileSync(lootItemsFile, lootItems.join('\n') + '\n');
+  const cmf = path.join(store.community.dir, 'manifest.json');
+  const cm = JSON.parse(fs.readFileSync(cmf, 'utf8'));
+  cm.entities.lootitems.rows = lootItems.length;
+  fs.writeFileSync(cmf, JSON.stringify(cm));
+  const unlisted = call(GD.openStore({ dataDir, clientBuild: FOREVER_CLIENT }), 'wow_item', { id: 513 });
+  assert.ok(unlisted.results[0].community, 'an item no loot list names is answered, not called renamed');
+  assert.doesNotMatch(unlisted.notes.join(' '), /another name/);
 });

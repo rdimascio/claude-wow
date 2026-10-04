@@ -54,7 +54,7 @@ Counts measured 2026-10-02 (client: wago.tools CSV for Era `1.15.9.70003` and Fo
 
 1. **Spell names and factions:** `SpellName`, `Spell` (rank text only), `Faction`; `wow_spell {id | name}`; `{faction:ID}` expands. The phrase index does not gain spell names in this step.
 2. **Instances and bosses:** `Map`, `DungeonEncounter`, Era `LFGDungeons` levels; `wow_instance {id | name}`.
-3. **Who drops what** (built 2026-10-04, PR "feat(data): who drops what"): the loot joins above, stored grouped by loot template (not expanded per NPC: the full expansion is 1,313,686 NPC-item pairs, 55 MB as flat JSONL), with a reverse index built on first use and its memory and latency measured; `wow_item.droppedBy`, `wow_npc.drops`, boss drops in `wow_instance`.
+3. **Who drops what** (built 2026-10-04, PR "feat(data): who drops what"): the loot joins above, stored grouped by loot template (not expanded per NPC: the full expansion is 1,312,579 NPC-item pairs (1,313,686 in revision 2's count), 55 MB as flat JSONL), with a reverse index built on first use and its memory and latency measured; `wow_item.droppedBy`, `wow_npc.drops`, boss drops in `wow_instance`.
 4. **Vendors, trainers, recipes:** `SpellEffect` (effect 36 only), `ItemEffect`; `soldBy`, `sells`, `teaches`, `taughtBy`, recipe sources.
 5. **Mounts, item sets, talents:** `ItemEffect` + `SpellEffect` aura 78, quest reward spells, `ItemSet`, `ItemSetSpell`, `Talent*`.
 6. **Quest details and attunements:** objectives as relations, rewards, typed chains, entrance requirements, keys.

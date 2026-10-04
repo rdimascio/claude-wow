@@ -127,7 +127,7 @@ CREATE TABLE `creature_loot_template` (
   `comments` varchar(300) DEFAULT '',
   PRIMARY KEY (`entry`,`item`)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8mb3;
-INSERT INTO `creature_loot_template` VALUES (7001,512,50,0,1,1,0,'direct'),(7001,513,-100,0,1,1,5,'quest only and conditional'),(7001,700,5,0,-700,1,0,'reference'),(7001,702,5,0,-702,1,0,'second reference'),(7002,512,0,1,1,1,0,'equal chance in a group'),(7002,701,10,0,-701,1,5,'conditional reference'),(7002,600,10,0,1,1,0,'not in the client'),(7002,998,10,0,1,1,0,'not in item_template'),(7002,513,0,0,1,1,0,'zero chance outside a group'),(7002,511,10,0,1,1,77,'missing condition'),(7002,703,10,0,-703,0,0,'never rolled'),(7002,704,10,0,-704,1,0,'missing reference'),(7002,705,-10,0,-705,1,0,'negative chance on a reference'),(7003,512,10,0,1,1,0,'junk owner');
+INSERT INTO `creature_loot_template` VALUES (7001,512,50,0,1,1,0,'direct'),(7001,513,-100,0,1,1,5,'quest only and conditional'),(7001,700,5,0,-700,1,0,'reference'),(7001,702,5,0,-702,1,0,'second reference'),(7002,512,0,1,1,1,0,'equal chance in a group'),(7002,701,10,0,-701,1,5,'conditional reference'),(7002,600,10,0,1,1,0,'not in the client'),(7002,998,10,0,1,1,0,'not in item_template'),(7002,513,0,0,1,1,0,'zero chance outside a group'),(7002,511,10,0,1,1,77,'missing condition'),(7002,703,10,0,-703,0,0,'never rolled'),(7002,704,10,0,-704,1,0,'missing reference'),(7002,705,-10,0,-705,1,0,'negative chance on a reference'),(7003,512,10,0,1,1,0,'junk owner'),(7003,511,10,0,1,1,0,'second row of an unreferenced template');
 DROP TABLE IF EXISTS `reference_loot_template`;
 CREATE TABLE `reference_loot_template` (
   `entry` mediumint unsigned NOT NULL DEFAULT '0',

@@ -71,15 +71,20 @@ function sharedMaps(era, game) {
 }
 
 const PLACEMENT_TABLES = Object.freeze(['UiMap', 'UiMapAssignment', 'QuestV2']);
+const LOOT_TABLES = Object.freeze(['ItemSparse', 'AreaTable', 'DungeonEncounter']);
+
+function tablesHash(manifest, names) {
+  const tables = (manifest && manifest.tables) || {};
+  return crypto.createHash('sha256').update(names.map(t => `${t}:${(tables[t] && tables[t].sha256) || 'absent'}`).join('\n')).digest('hex');
+}
 
 function placementHash(manifest) {
   const tables = (manifest && manifest.tables) || {};
-  if (!PLACEMENT_TABLES.every(t => tables[t] && tables[t].sha256)) return null;
-  return crypto.createHash('sha256').update(PLACEMENT_TABLES.map(t => `${t}:${tables[t].sha256}`).join('\n')).digest('hex');
+  return PLACEMENT_TABLES.every(t => tables[t] && tables[t].sha256) ? tablesHash(manifest, PLACEMENT_TABLES) : null;
 }
 
 function clientIdentity(store) {
-  return store && store.build ? { build: store.build, placementHash: placementHash(store.manifest) } : null;
+  return store && store.build ? { build: store.build, placementHash: placementHash(store.manifest), lootHash: tablesHash(store.manifest, LOOT_TABLES) } : null;
 }
 
 function openCommunity({ dataDir, flavor, client = null, gameStore = null }) {
@@ -334,7 +339,7 @@ async function syncCommunity(opts = {}) {
     const version = `${dump.revision}-${dump.sha.slice(0, 7)}`;
     const before = readCommunity(root);
     const identity = clientIdentity(client);
-    if (!opts.force && before && before.manifest.sha === dump.sha && before.manifest.client && before.manifest.client.placementHash && before.manifest.client.placementHash === identity.placementHash) {
+    if (!opts.force && before && before.manifest.sha === dump.sha && before.manifest.client && before.manifest.client.placementHash && before.manifest.client.placementHash === identity.placementHash && before.manifest.client.lootHash === identity.lootHash) {
       log(`community data is already at ${version} for client data ${client.build}; nothing to do (--force syncs it again)`);
       return { status: 'current', version, dir: before.dir, manifest: before.manifest };
     }
