@@ -69,6 +69,18 @@ function sharedMaps(era, game) {
   return same;
 }
 
+const PLACEMENT_TABLES = Object.freeze(['UiMap', 'UiMapAssignment', 'QuestV2']);
+
+function placementHash(manifest) {
+  const tables = (manifest && manifest.tables) || {};
+  if (!PLACEMENT_TABLES.every(t => tables[t] && tables[t].sha256)) return null;
+  return crypto.createHash('sha256').update(PLACEMENT_TABLES.map(t => `${t}:${tables[t].sha256}`).join('\n')).digest('hex');
+}
+
+function clientIdentity(store) {
+  return store && store.build ? { build: store.build, placementHash: placementHash(store.manifest) } : null;
+}
+
 function openCommunity({ dataDir, flavor, client = null, gameStore = null }) {
   if (!dataDir || (flavor !== FLAVOR && !CROSS_GAME.includes(flavor))) return null;
   const crossGame = flavor !== FLAVOR;
@@ -77,8 +89,8 @@ function openCommunity({ dataDir, flavor, client = null, gameStore = null }) {
   if (!current) return null;
   const made = current.manifest.client || {};
   const era = crossGame ? GD.openStore({ dataDir, flavor: FLAVOR }) : null;
-  const madeWith = crossGame ? (era.build ? { build: era.build, tableHash: era.manifest.tableHash || null } : null) : client;
-  const stale = !madeWith || made.build !== madeWith.build || made.tableHash !== madeWith.tableHash;
+  const madeWith = crossGame ? clientIdentity(era) : client;
+  const stale = !madeWith || !made.placementHash || made.placementHash !== madeWith.placementHash;
   const reader = GD.tableReader(current.dir, current.manifest, ENTITIES);
   const mapProblems = [];
   let shared;
@@ -319,8 +331,8 @@ async function syncCommunity(opts = {}) {
     const dump = pickDump(listing);
     const version = `${dump.revision}-${dump.sha.slice(0, 7)}`;
     const before = readCommunity(root);
-    const clientIdentity = { build: client.build, tableHash: client.manifest.tableHash || null };
-    if (!opts.force && before && before.manifest.sha === dump.sha && before.manifest.client && before.manifest.client.build === clientIdentity.build && before.manifest.client.tableHash === clientIdentity.tableHash) {
+    const identity = clientIdentity(client);
+    if (!opts.force && before && before.manifest.sha === dump.sha && before.manifest.client && before.manifest.client.placementHash && before.manifest.client.placementHash === identity.placementHash) {
       log(`community data is already at ${version} for client data ${client.build}; nothing to do (--force syncs it again)`);
       return { status: 'current', version, dir: before.dir, manifest: before.manifest };
     }
@@ -361,7 +373,7 @@ async function syncCommunity(opts = {}) {
         version,
         fetchedAt: new Date(now()).toISOString(),
         license: LICENSE_NOTE,
-        client: clientIdentity,
+        client: identity,
         rows: Object.values(entities).reduce((s, e) => s + e.rows, 0),
         dropped: Object.values(converted.droppedBy).reduce((s, n) => s + n, 0),
         droppedBy: converted.droppedBy,
@@ -379,4 +391,4 @@ async function syncCommunity(opts = {}) {
   }
 }
 
-module.exports = { FLAVOR, SOURCE, SHAPE, finishSpawns, sharedMaps, LISTING_URL, ENTITIES, MAX_SPAWNS, LICENSE_NOTE, communityRoot, readCommunity, openCommunity, gitBlobSha, pickDump, convert, syncCommunity };
+module.exports = { FLAVOR, SOURCE, SHAPE, placementHash, clientIdentity, finishSpawns, sharedMaps, LISTING_URL, ENTITIES, MAX_SPAWNS, LICENSE_NOTE, communityRoot, readCommunity, openCommunity, gitBlobSha, pickDump, convert, syncCommunity };

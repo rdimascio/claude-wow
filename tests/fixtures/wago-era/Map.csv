@@ -1,0 +1,7 @@
+ID,Directory,MapName_lang,InstanceType,ExpansionID,AreaTableID,ParentMapID,CosmeticParentMapID,MaxPlayers
+0,Azeroth,"Eastern Kingdoms",0,0,0,-1,-1,0
+13,test,"Test Dungeon",1,0,0,-1,-1,5
+33,fx1,"Fixture Keep",1,0,0,-1,-1,10
+409,fx2,"Fixture Core",2,0,0,-1,-1,40
+2784,fx3,"Fixture Canyon",1,0,0,-1,-1,0
+2785,fx4,"Fixture Canyon",1,0,0,-1,-1,5

@@ -5,7 +5,7 @@ const D = require('./datasync');
 
 const TRUST = Object.freeze({ clientData: 'client-data', buildUnchecked: 'client-data-build-unchecked', buildMismatch: 'unverified-build-mismatch', communityDb: 'community-db', communityOtherGame: 'community-db-unchecked-for-this-game', none: 'none' });
 const BUILD_CHECK = Object.freeze({ exact: 'exact', family: 'family', mismatch: 'build-mismatch', unknown: 'unknown', noData: 'no-data' });
-const ENTITIES = Object.freeze(['items', 'quests', 'zones', 'flightpaths', 'uimaps', 'uimapassignments', 'skilllines', 'skilllineabilities', 'spellreagents', 'spells', 'spellranks', 'factions']);
+const ENTITIES = Object.freeze(['items', 'quests', 'zones', 'flightpaths', 'uimaps', 'uimapassignments', 'skilllines', 'skilllineabilities', 'spellreagents', 'spells', 'spellranks', 'factions', 'instances', 'encounters', 'instancelevels']);
 const MAX_QUERY_LENGTH = 100;
 const REPLACED_PROBLEM = 'a newer sync replaced this data while it was in use; ask again';
 const CLIENT_BUILD_IN_CONTEXT = /^Game:[^\n]*\(client (\d+\.\d+\.\d+\.\d+)[,)]/m;
@@ -181,7 +181,10 @@ function openStore({ dataDir, flavor: chosen, clientBuild = '' } = {}) {
     source: manifest ? manifest.source || null : null,
     ...reader,
     get community() {
-      if (community === undefined) community = flavor ? require('./communitydata').openCommunity({ dataDir, flavor, client: build ? { build, tableHash: manifest.tableHash || null } : null, gameStore: this }) : null;
+      if (community === undefined) {
+        const C = require('./communitydata');
+        community = flavor ? C.openCommunity({ dataDir, flavor, client: C.clientIdentity(this), gameStore: this }) : null;
+      }
       return community;
     },
   };

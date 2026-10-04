@@ -127,7 +127,8 @@ test('sync: newest valid build, validated rows, drops counted, uiMap percent coo
   assert.equal(result.build, BUILD);
   assert.equal(result.dir, path.join(root, BUILD));
   assert.equal(wago.calls[0], 'https://wago.tools/api/builds');
-  assert.equal(wago.calls.length, 1 + D.TABLES.length);
+  assert.equal(wago.calls.length, 1 + D.TABLES.filter(t => !t.flavors || t.flavors.includes('forever')).length);
+  assert.ok(!wago.calls.some(u => u.includes('/LFGDungeons/')), 'the Era-only level table is not fetched for Forever');
   for (const url of wago.calls.slice(1)) assert.match(url, /\?build=1\.60\.1\.200$/);
 
   assert.equal(fs.readFileSync(path.join(root, 'current'), 'utf8'), `${BUILD}\n`);
@@ -156,14 +157,16 @@ test('sync: newest valid build, validated rows, drops counted, uiMap percent coo
     SpellName: [3, { badName: 1 }],
     Spell: [2, {}],
     Faction: [2, {}],
+    Map: [3, { development: 1 }],
+    DungeonEncounter: [5, { development: 2 }],
   });
-  assert.equal(m.rows, 27);
-  assert.equal(m.dropped, 16);
+  assert.equal(m.rows, 35);
+  assert.equal(m.dropped, 19);
   assert.equal(m.tablesVersion, D.TABLES_VERSION);
   assert.deepEqual(m.tables.TaxiNodes.notes, { zoneAmbiguous: 1, notOnAnyMap: 1 });
 
   const dir = path.join(root, BUILD);
-  assert.deepEqual(fs.readdirSync(dir).sort(), ['factions.jsonl', 'flightpaths.jsonl', 'items.jsonl', 'manifest.json', 'quests.jsonl', 'skilllineabilities.jsonl', 'skilllines.jsonl', 'spellranks.jsonl', 'spellreagents.jsonl', 'spells.jsonl', 'uimapassignments.jsonl', 'uimaps.jsonl', 'zones.jsonl']);
+  assert.deepEqual(fs.readdirSync(dir).sort(), ['encounters.jsonl', 'factions.jsonl', 'flightpaths.jsonl', 'instances.jsonl', 'items.jsonl', 'manifest.json', 'quests.jsonl', 'skilllineabilities.jsonl', 'skilllines.jsonl', 'spellranks.jsonl', 'spellreagents.jsonl', 'spells.jsonl', 'uimapassignments.jsonl', 'uimaps.jsonl', 'zones.jsonl']);
   const flights = readJsonl(path.join(dir, 'flightpaths.jsonl'));
   assert.deepEqual(flights.map(f => [f.id, f.name, f.map, f.zoneAmbiguous]), [
     [601, 'Fixture Town Roost', { uiMapID: 9001, x: 27.5, y: 25 }, true],
@@ -226,7 +229,7 @@ test('a build that is already current is not fetched again unless forced', async
   const forced = fakeWago();
   const f = await syncInto(dataDir, { build: BUILD, force: true, wago: forced });
   assert.equal(f.status, 'synced');
-  assert.equal(forced.calls.length, D.TABLES.length);
+  assert.equal(forced.calls.length, D.TABLES.filter(t => !t.flavors || t.flavors.includes('forever')).length, 'an Era-only table is never fetched for Forever');
   assert.equal(f.dir, path.join(root, `${BUILD}-1`));
   assert.deepEqual(D.readCurrent(root), { build: BUILD, dir: f.dir, manifest: f.manifest });
   assert.equal(fs.existsSync(marker), false);
@@ -426,7 +429,7 @@ test('claude-wow data sync writes under CLAUDE_WOW_HOME/data and reports counts'
   const out = [];
   const code = await D.main(['sync'], { env: { CLAUDE_WOW_HOME: home }, fetch: wago.fetchImpl, now: () => FIXED_NOW, out: s => out.push(s), err: s => out.push(s) });
   assert.equal(code, 0);
-  assert.match(out.join(''), /27 rows kept, 16 dropped; current build 1\.60\.1\.200/);
+  assert.match(out.join(''), /35 rows kept, 19 dropped; current build 1\.60\.1\.200/);
   assert.equal(fs.readFileSync(path.join(home, 'data', 'forever', 'current'), 'utf8'), `${BUILD}\n`);
 
   const usage = [];

@@ -12,6 +12,7 @@ const UI_MAP_TYPE_NAMES = ['cosmic', 'world', 'continent', 'zone', 'dungeon', 'm
 const ID_TEXT = /^\d{1,9}$/;
 const MAX_SHARED_IDS = 10;
 const MAX_OBJECT_SPAWNS = 5;
+const MAX_WORLD_NOTES = 5;
 const DEV_SPELL = /\((?:OLD|TEST|DND|NYI|PH|DEPRECATED)\)|\bQASpell\b|^zz/i;
 
 const noDataNote = store => `No game data is synced on this machine for this client, so nothing here is verified. The owner can run "${store.syncCommand || 'claude-wow data sync'}".`;
@@ -186,6 +187,52 @@ function spellRow(store, spell) {
       return { itemID: x.itemID, name: it ? it.name : null, count: x.count };
     }) : [],
   });
+}
+
+function classicInstanceMaps(cs) {
+  if (!cs) return null;
+  if (!cs.instanceMaps) {
+    cs.instanceMaps = new Set();
+    for (const npc of cs.rows('npcs')) for (const s of npc.spawns) if (!s.maps.length && GD.isId(s.mapID)) cs.instanceMaps.add(s.mapID);
+  }
+  return cs.instanceMaps;
+}
+
+function instanceEncounters(store, mapID) {
+  return store.group('encounters', 'mapID', r => (GD.isId(r.mapID) ? [r.mapID] : [])).get(mapID) || [];
+}
+
+function exactNpcs(cs, name) {
+  return cs ? cs.search('npcs', name).filter(h => h.rank === 0).map(h => h.row) : [];
+}
+
+function instanceRow(store, inst, matchedBoss) {
+  const cs = store.community;
+  const sets = new Map();
+  for (const e of [...instanceEncounters(store, inst.id)].sort((a, b) => a.orderIndex - b.orderIndex || a.id - b.id)) {
+    if (!sets.has(e.difficultyID)) sets.set(e.difficultyID, new Map());
+    const set = sets.get(e.difficultyID);
+    if (!set.has(e.name)) set.set(e.name, { id: e.id, name: e.name, ...(cs && cs.has('npcs') ? { community: bossCommunity(cs, e.name) } : {}) });
+  }
+  const levels = store.flavor === 'classic_era' && store.has('instancelevels') ? store.byId('instancelevels', inst.id) : null;
+  const classic = classicInstanceMaps(cs);
+  const row = cited(store, {
+    kind: 'instance',
+    id: inst.id,
+    name: inst.name,
+    type: inst.type,
+    maxPlayers: inst.maxPlayers > 0 ? inst.maxPlayers : null,
+    levels: levels ? { min: levels.minLevel, max: levels.maxLevel } : null,
+    bossSets: [...sets].map(([difficultyID, set]) => ({ difficultyID, bosses: [...set.values()] })),
+    ...(matchedBoss ? { matchedBoss } : {}),
+  });
+  if (cs && classic && classic.size) row.community = communityCited(cs, { inClassic112: classic.has(inst.id) });
+  return row;
+}
+
+function bossCommunity(cs, name) {
+  const npcs = exactNpcs(cs, name);
+  return communityCited(cs, { npcIn112: npcs.length > 0, outdoorSpawnIn112: npcs.some(npc => npc.spawns.some(s => s.maps.length > 0)) });
 }
 
 function sharedNameNotes(shown, hits, noun = 'items') {
@@ -438,6 +485,45 @@ const TOOLS = [
       const hits = store.search('spells', name);
       const shown = hits.slice(0, limit);
       return envelope(store, 'wow_spell', { name }, shown.map(h => spellRow(store, h.row)), { total: hits.length, notes: sharedNameNotes(shown, hits, 'spells') });
+    },
+  },
+  {
+    name: 'wow_instance',
+    description: 'Look up a dungeon or raid by ID (its map ID), by name, or by the name of one of its bosses, from the client tables: name, type (dungeon or raid), group size (null when the client has none), its bosses in order, and on Classic Era a level range when the client has a matching one. The client lists bosses in sets by difficulty ID, and a set can mix original and Season of Discovery bosses: bossSets keeps the sets apart. With community data (trust "community-db", on Forever "community-db-unchecked-for-this-game"), community.inClassic112 says whether a 1.12 NPC stands in the instance, and each boss has community.npcIn112 (an NPC with that exact name is in the 1.12 data) and community.outdoorSpawnIn112 (such an NPC also has a spawn on a world map). Neither identifies a world boss by itself: scripted bosses have no spawn rows, and some instance bosses share a name with an outdoor NPC. On Classic Era the client lists the world bosses only under Season of Discovery raids. No loot, entrances or attunements yet.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'integer', minimum: 1, description: 'Instance map ID' },
+        name: { type: 'string', maxLength: GD.MAX_QUERY_LENGTH, description: 'Instance or boss name, or part of it, any case' },
+        limit: { type: 'integer', minimum: 1, maximum: MAX_LIMIT },
+      },
+      additionalProperties: false,
+    },
+    run(store, args) {
+      requireOne(args, ['id', 'name']);
+      const real = inst => inst && instanceEncounters(store, inst.id).length > 0;
+      const id = idArg(args, 'id');
+      if (id) {
+        const inst = store.byId('instances', id);
+        return envelope(store, 'wow_instance', { id }, real(inst) ? [instanceRow(store, inst)] : []);
+      }
+      const name = nameArg(args, true);
+      const limit = limitArg(args);
+      const cs = store.community;
+      const results = store.search('instances', name).filter(h => real(h.row)).map(h => ({ inst: h.row, boss: null }));
+      const encounterHits = store.search('encounters', name);
+      const notes = [];
+      for (const h of encounterHits) {
+        const inst = store.byId('instances', h.row.mapID);
+        if (real(inst)) {
+          if (!results.some(r => r.inst.id === inst.id)) {
+            results.push({ inst, boss: { id: h.row.id, name: h.row.name } });
+          }
+        } else if (store.has('instances') && notes.length < MAX_WORLD_NOTES) {
+          notes.push(`${h.row.name} (encounter ${h.row.id}) is on map ${h.row.mapID}, which is not a dungeon or raid in this data.`);
+        }
+      }
+      return envelope(store, 'wow_instance', { name }, results.slice(0, limit).map(r => instanceRow(store, r.inst, r.boss)), { total: results.length, notes: [...new Set(notes)] });
     },
   },
   {
