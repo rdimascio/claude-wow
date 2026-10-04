@@ -54,7 +54,7 @@ async function install(client) {
     const dir = path.join(addons, name);
     ensure(path.join(dir, name + '.toc'), [
       '## Interface: ' + iface,
-      '## Title: Claude WoW slot ' + String(i).padStart(3, '0'),
+      '## Title: Azeroth Companion slot ' + String(i).padStart(3, '0'),
       '## Notes: Reply slot for Claude WoW. Load-on-demand; leave it enabled.',
       '## LoadOnDemand: 1',
       '## Dependencies: ClaudeWoW',

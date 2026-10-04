@@ -125,7 +125,7 @@ function clearProbes(addonDir, keep = '') {
 function runtimeTocText(tocInterface = TOC_INTERFACE) {
   return [
     '## Interface: ' + tocInterface,
-    '## Title: Claude WoW runtime',
+    '## Title: Azeroth Companion runtime',
     '## Notes: Files the Claude WoW bridge writes while it runs. Leave it enabled.',
     '## Dependencies: ' + ADDON,
     '',
