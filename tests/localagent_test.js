@@ -160,7 +160,7 @@ test('tools: the wowdata MCP server from --mcp-config is offered to the model, i
     const init = events.find(e => e.type === 'system');
     assert.deepEqual(init.mcp_servers, [{ name: 'wowdata', status: 'connected' }]);
     const parsed = feedAll(events);
-    assert.ok(parsed.progress.includes('wowdata: wow item'));
+    assert.ok(parsed.progress.includes('Looking up an item'), 'a wowdata call shows its loading line');
     assert.deepEqual(parsed.mcpDown, []);
     assert.equal(parsed.done.text, 'It is {item:6948}.');
   } finally {

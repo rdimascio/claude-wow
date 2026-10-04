@@ -15,6 +15,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const PD = require('./progressdata');
 const { describeToolUse, ruleFor, baseName, classifyDenial, deniedAgain, denialNotes } = require('./protocol');
 const R = require('./runtime'); // which node runs a JavaScript launcher
 
@@ -161,6 +162,7 @@ function claudeParser(opts = {}) {
   let usage = null; // the last assistant message's usage: what the next turn will carry
   let model = '';   // the model that wrote it, for pricing a result without modelUsage
   const refusals = new Map();
+  const wowdataCalls = new Map();
   const noteRefusal = (id, message, reasonType, replace) => {
     if (!id || (!replace && refusals.has(id))) return;
     refusals.set(String(id), { message: String(message || '').slice(0, DENIAL_MESSAGE_CHARS), reasonType: String(reasonType || '') });
@@ -178,11 +180,21 @@ function claudeParser(opts = {}) {
       } else if (ev.type === 'user' && ev.message && Array.isArray(ev.message.content)) {
         for (const block of ev.message.content) {
           if (block && block.type === 'tool_result' && block.is_error) noteRefusal(block.tool_use_id, toolResultText(block.content), '', false);
+          else if (block && block.type === 'tool_result' && wowdataCalls.has(block.tool_use_id)) {
+            const line = PD.resultLine(wowdataCalls.get(block.tool_use_id), toolResultText(block.content));
+            wowdataCalls.delete(block.tool_use_id);
+            if (line) out.progress.push(line);
+          }
         }
       }
       if (ev.type === 'assistant' && ev.message && Array.isArray(ev.message.content)) {
         for (const block of ev.message.content) {
-          if (block.type === 'tool_use') { out.progress.push(describeToolUse(block)); out.steps = (out.steps || 0) + 1; }
+          if (block.type === 'tool_use') {
+            const tool = PD.wowdataTool(block.name);
+            if (tool && block.id) wowdataCalls.set(block.id, tool);
+            out.progress.push(tool ? PD.loadingLine(tool) : describeToolUse(block));
+            out.steps = (out.steps || 0) + 1;
+          }
           else if (block.type === 'text' && block.text && block.text.trim()) out.progress.push(snippet(block.text));
         }
         const u = claudeUsage(ev.message.usage);

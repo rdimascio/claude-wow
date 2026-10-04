@@ -645,3 +645,33 @@ test('a plugin block sets the model and effort for its chats; a chat flag still 
   assert.equal(A.withPluginSettings(agentCfg, 'claude', { agents: { claude: { model: 'x y; rm' } } }).model, 'opus[1m]', 'a malformed value is ignored');
   assert.equal(A.withPluginSettings({}, 'hermes', { agents: { hermes: { effort: 'high' } } }).effort, undefined, 'an agent never gets a setting it cannot take');
 });
+
+test('a wowdata call shows a loading line, then a line built from its result rows, never from the arguments', () => {
+  const PD = require('../bridge/progressdata');
+  const p = A.claudeParser();
+  const call = (id, tool, input) => p.feed({ type: 'assistant', message: { content: [{ type: 'tool_use', id, name: `mcp__wowdata__${tool}`, input }] } }).progress;
+  const answer = (id, result, isError = false) => p.feed({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: id, is_error: isError, content: [{ type: 'text', text: JSON.stringify(result) }] }] } }).progress;
+  const cited = { source: 'wago.tools', build: '1.15.9.1', trust: 'client-data' };
+  assert.deepEqual(call('a', 'wow_instance', { name: 'Evil Typed Name' }), ['Looking up a dungeon or raid']);
+  const boss = (name, chest) => ({ name, community: chest ? { chest: { name: 'Cache' } } : {} });
+  const core = { found: true, total: 1, query: { id: 409 }, results: [{ ...cited, id: 409, name: 'Molten Core', bossSets: [{ bosses: [boss('A'), boss('B', true)] }, { bosses: [boss('A'), boss('B', true)] }] }] };
+  assert.deepEqual(answer('a', core), ['Molten Core: 2 bosses, 1 chest'], 'boss sets are counted by name, not added up');
+  call('b', 'wow_item', { id: 2243 });
+  const item = { found: true, total: 1, query: { id: 2243 }, results: [{ ...cited, id: 2243, name: 'Ignored Name', community: { droppedBy: { total: 359 }, skinnedFrom: { total: 0 }, objects: { total: 1 } } }] };
+  assert.deepEqual(answer('b', item), ['{item:2243} in 1.12 data: dropped by 359 NPCs, in 1 chest or node']);
+  call('c', 'wow_npc', { id: 11502 });
+  assert.deepEqual(answer('c', { found: true, total: 1, query: { id: 11502 }, results: [{ id: 11502, name: 'Ragnaros', trust: 'community-db', drops: { total: 106, items: [{ id: 17204 }] } }] }), ['NPC in 1.12 data: 106 drops, best {item:17204}'], 'an NPC name never reaches progress');
+  call('d', 'wow_where', { name: 'x' });
+  assert.deepEqual(answer('d', { found: true, total: 3, query: { name: 'x' }, results: [{ ...cited, trust: 'unverified-build-mismatch', name: 'Elwynn Forest' }] }), ['3 places'], 'a name from unverified rows is not shown');
+  call('e', 'wow_where', { name: 'x' });
+  assert.deepEqual(answer('e', { found: true, total: 3, query: { name: 'x' }, results: [{ ...cited, name: 'Bad {item:1}|cff' }] }), ['Bad item:1cff and 2 more'], 'token and escape characters are stripped from a data name');
+  call('f', 'wow_item', { id: 1 });
+  assert.deepEqual(answer('f', { found: false, results: [] }), ['Nothing found']);
+  call('g', 'wow_item', { id: 1 });
+  assert.deepEqual(answer('g', core, true), [], 'a result marked as an error adds no line, whatever its body');
+  assert.deepEqual(answer('h', core), [], 'a result for a call that was not wowdata adds no line');
+  assert.deepEqual(answer('a', core), [], 'a result is used once');
+  const other = p.feed({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 'z', name: 'mcp__other__wow_item', input: {} }] } }).progress;
+  assert.deepEqual(other, ['other: wow item'], 'another server keeps its plain line');
+  assert.ok(Object.values(PD.LOADING).every(l => l.length <= PD.MAX_LINE));
+});
