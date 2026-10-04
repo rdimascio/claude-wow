@@ -795,6 +795,7 @@ function noteAddonSession(job) {
 function publish(key, record, urgent) {
   const named = titles.get(key);
   if (named && !record.title) { record.title = named.title; record.titleFor = named.id; }
+  live.delete(key);
   live.set(key, record);
   keepReply(key, record);
   if (urgent) { if (publishTimer) { clearTimeout(publishTimer); publishTimer = null; } publishNow(); return; }

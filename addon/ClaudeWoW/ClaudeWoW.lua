@@ -1225,6 +1225,7 @@ local function PollActivity(chat)
 		a.last = GetTime()
 		moved = true
 	end
+	if moved then Q.NoteLife(chat) end
 	return moved
 end
 
@@ -1678,12 +1679,38 @@ local function ContextWarning(c)
 	end
 end
 
+Q.PENDING_QUIET_LIMIT = 35 * 60
+Q.PENDING_LOGIN_GRACE = 120
+
+function Q.NoteLife(c)
+	if not c or not c.pendingId then return end
+	run.life = run.life or {}
+	run.life[c.id] = { id = c.pendingId, at = time() }
+end
+
+function Q.LastLife(c)
+	run.life = run.life or {}
+	local life = run.life[c.id]
+	if life and life.id == c.pendingId then return life.at end
+	local at = time()
+	for i = #c.history, 1, -1 do
+		local m = c.history[i]
+		if m.id == c.pendingId and m.role == "user" then
+			at = tonumber(m.t) or at
+			break
+		end
+	end
+	run.life[c.id] = { id = c.pendingId, at = at }
+	return at
+end
+
 -- The bridge has read this record: whatever game context rode on it is now
 -- what the bridge knows, so later messages only carry it again if it changes.
 local function NoteAcked(rec)
 	rec.acked = true
 	ClaudeWoW.ChatLog.Acked(rec)
 	if rec.ctx ~= nil then run.contextSent = rec.ctx end
+	if not (rec.hello or rec.forget or rec.cancelOf or rec.dm) then Q.NoteLife(FindChat(rec.chat)) end
 end
 
 local function MarkAcked(id)
@@ -1744,11 +1771,15 @@ local function ApplyReplies(replies)
 				Finish(c, "system", "Bridge error: " .. tostring(r.text), denied)
 			elseif r.status == "working" then
 				if ClaudeWoWVoice then ClaudeWoWVoice.Started(r.id) end
+				if c.progress ~= r.text then Q.NoteLife(c) end
 				c.progress = r.text
 				run.steps = run.steps or {}
 				run.steps[c.id] = tonumber(r.steps)
 				Whisper.Progress(c, r.text)
 			end
+		elseif c and not c.pendingId and r.status == "done" and run.gaveUp and run.gaveUp[c.id] == r.id then
+			run.gaveUp[c.id] = nil
+			ClaudeWoW.LateReply(c, r)
 		end
 	end
 	return matched
@@ -2028,10 +2059,34 @@ local function PollLate(now)
 	end
 end
 
+function Q.GiveUp(c)
+	local id = c.pendingId
+	Whisper.StopProgress(c)
+	run.outbound[id] = nil
+	if run.act then run.act[c.id] = nil end
+	c.pendingId, c.progress = nil, nil
+	run.gaveUp = run.gaveUp or {}
+	run.gaveUp[c.id] = id
+	RefreshStrip()
+	if not AnyPending() then keyCatcher:Hide() end
+	if c.quiet then return ClaudeWoW.Render() end
+	Cli.Out(c, "No reply to #" .. id .. " arrived and nothing was heard about it for " .. math.floor(Q.PENDING_QUIET_LIMIT / 60)
+		.. " minutes, so this chat is free again. The bridge keeps the chat's session: send the message again, or ask for the last answer.")
+end
+
+function Q.GiveUpSilent()
+	if GetTime() - (run.startedAt or GetTime()) < Q.PENDING_LOGIN_GRACE then return end
+	local now = time()
+	for _, c in ipairs(db.chats) do
+		if c.pendingId and now - Q.LastLife(c) > Q.PENDING_QUIET_LIMIT then Q.GiveUp(c) end
+	end
+end
+
 local function Tick()
 	if not db then return end
 	local now = GetTime()
 	PollPresence()
+	Q.GiveUpSilent()
 	-- Without presence beats, the only evidence is a slot read; spend one every
 	-- IDLE_POLL_SECONDS while idle so the light still reflects reality (and stays
 	-- green while the bridge is up: BridgeState allows for this interval).
@@ -3054,6 +3109,15 @@ function Whisper.TabChat(eb)
 	return nil
 end
 
+function Whisper.SelectedTabChat(eb)
+	if not WhisperOn() or type(eb) ~= "table" or not eb.GetAttribute or eb:GetAttribute("chatType") ~= "WHISPER" then return nil end
+	local frame = type(FCFDock_GetSelectedWindow) == "function" and type(GENERAL_CHAT_DOCK) == "table" and Try(FCFDock_GetSelectedWindow, GENERAL_CHAT_DOCK) or SELECTED_DOCK_FRAME or SELECTED_CHAT_FRAME
+	local chat = type(frame) == "table" and frame.claudewowChatId and FindChat(frame.claudewowChatId)
+	if not chat or not run.whisperTabs or run.whisperTabs[chat.id] ~= frame then return nil end
+	if tostring(eb:GetAttribute("tellTarget") or ""):lower() ~= ChatAgentName(chat):lower() then return nil end
+	return chat
+end
+
 function Whisper.ChatForBox(eb)
 	if type(eb) ~= "table" or not eb.GetAttribute then return nil end
 	if eb:GetAttribute("chatType") ~= "WHISPER" then return nil end
@@ -3078,9 +3142,6 @@ function Whisper.Intercept(eb, layer)
 		return true
 	end
 	if db.activeChat ~= chat.id then ClaudeWoW.SwitchChat(chat.id) end
-	if chat.pendingId then
-		Whisper.System(chat, ChatAgentName(chat) .. " is still working on your last message; this one waits and is offered again when the reply lands (/claude cancel gives up on the last one)")
-	end
 	ClaudeWoW.Send(text)
 	return true
 end
@@ -3138,6 +3199,13 @@ function Whisper.Status()
 		.. ", /r: " .. (run.replyTarget or "the game's last whisper")
 end
 
+function Q.SayStillWaiting(c)
+	run.waitSaid = run.waitSaid or {}
+	if c.quiet or run.waitSaid[c.id] == c.pendingId then return end
+	run.waitSaid[c.id] = c.pendingId
+	Cli.Out(c, ChatAgentName(c) .. " is still working on #" .. c.pendingId .. ". What you type now waits as a draft and is offered again when the reply lands. /claude cancel frees this chat.")
+end
+
 -- opts.vision asks for a picture of the screen with this one message, whatever
 -- the setting ("/claude-wow look <question>").
 function ClaudeWoW.Send(text, allow, opts)
@@ -3147,6 +3215,7 @@ function ClaudeWoW.Send(text, allow, opts)
 	if c.pendingId then
 		-- Typing while waiting: keep the draft, and check for the reply.
 		if text ~= "" then c.draft = text end
+		Q.SayStillWaiting(c)
 		if db.settings.mode == "pixel" and not (run.slotsExhausted or run.slotsMissing) then
 			TryLoadSlot("manual")
 		else
@@ -6518,7 +6587,7 @@ function Cli.Say(c, text)
 end
 
 function Cli.Begin(editBox)
-	local tab = Whisper.TabChat(editBox)
+	local tab = Whisper.TabChat(editBox) or Whisper.SelectedTabChat(editBox)
 	local marks = {}
 	for _, ch in ipairs(db.chats) do marks[ch.id] = ch.history[#ch.history] or false end
 	run.cmd = { tab = tab, general = type(editBox) == "table" and not tab or nil, marks = marks }
@@ -7326,6 +7395,13 @@ function ClaudeWoW.Cancel(c)
 		SendCancel(c, cancelled)
 		RefreshStrip()
 		if not AnyPending() then keyCatcher:Hide() end
+	elseif c then
+		local waiting = {}
+		for i, ch in ipairs(db.chats) do
+			if ch.pendingId and not ch.quiet then table.insert(waiting, i .. ". " .. ch.name .. " (#" .. ch.pendingId .. ")") end
+		end
+		Cli.Out(c, "Nothing to cancel: " .. c.name .. " is not waiting for a reply. "
+			.. (#waiting > 0 and ("Waiting: " .. table.concat(waiting, ", ") .. ". Pick one with /claude chat <number>, then /claude cancel.") or "No chat is waiting."))
 	end
 	ClaudeWoW.Render()
 end

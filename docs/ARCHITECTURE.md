@@ -133,7 +133,7 @@ ClaudeWoW_SlotData = {
 }
 ```
 
-The addon loads a fresh slot on a schedule after each send (5, 10, 16, 24, 34, 46, 60, 80, 100, 130, 160, 200, 240, 300 s, then every 60 s) or immediately when the readiness signal fires. A slot poll matches replies by `(chat, id)` against each chat's pending message. `now` lets the addon know when the bridge last wrote anything (the two clocks are the same machine).
+The addon loads a fresh slot on a schedule after each send (5, 10, 16, 24, 34, 46, 60, 80, 100, 130, 160, 200, 240, 300 s, then every 60 s) or immediately when the readiness signal fires. A slot poll matches replies by `(chat, id)` against each chat's pending message. `now` lets the addon know when the bridge last wrote anything (the two clocks are the same machine). A slot file carries the newest 30 reply records per client; a new record moves its chat to the end of that list. The addon frees a pending chat after 35 minutes with no ack, heartbeat or new progress line for its message (2 minutes after login at the earliest), says so once in the chat, and still takes that message's reply if it comes later while the chat is free.
 
 The same content is written to `ClaudeWoW_Runtime/Inbox.lua`, which the game reads on `/reload` — the fallback path and the only path in `mode reload`.
 

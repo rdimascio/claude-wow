@@ -1546,7 +1546,7 @@ test('whisper tabs: on by default; the active chat is a tab at login, Enter ther
   const before = stripRecords(vm).length;
   enter('ChatFrame11EditBox', 'too soon');
   assert.equal(stripRecords(vm).length, before, 'no second record while one is pending');
-  assert.ok(tabLines(vm, 11).includes('still working on your last message'), 'told in the tab');
+  assert.ok(tabLines(vm, 11).includes('is still working on #'), 'told in the tab');
   assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].draft'), 'too soon');
   slotReply(vm, chatId, 'status = "done", text = "done", agent = "claude"');
   out = tabLines(vm, 11);
@@ -3054,5 +3054,218 @@ test('after deleting the chat that replied last, /r and the window go to the cha
   const rec = stripRecords(vm).find(r => r.text === 'from the first tab');
   assert.ok(rec, 'typed in the first chat\'s tab it reached the agent');
   assert.equal(rec.chat, firstId);
+  assert.equal(vm.num('STUB.serverSends'), 0);
+});
+
+const systemCount = (vm, n, needle) => vm.num(`(function() local k = 0 for _, m in ipairs(ClaudeWoWDB.chats[${n}].history) do if m.role == "system" and m.text:find(${JSON.stringify(needle)}, 1, true) then k = k + 1 end end return k end)()`);
+const lastOf = (vm, n, role) => vm.evaluate(`(function() local h = ClaudeWoWDB.chats[${n}].history; for i = #h, 1, -1 do if h[i].role == "${role}" then return h[i].text end end end)()`);
+const minutes = (vm, count, step = 60) => { for (let i = 0; i < count; i++) vm.run(`STUB.now = STUB.now + ${step}; STUB.Tick()`); };
+
+test('a pending chat that hears nothing for 35 minutes is freed once with one plain line, and a reply that comes later still lands once', () => {
+  const vm = newVM();
+  login(vm);
+  connect(vm);
+  vm.run('ClaudeWoW.Send("are you there")');
+  const chatId = vm.evaluate('ClaudeWoWDB.chats[1].id');
+  const id = vm.num('ClaudeWoWDB.chats[1].pendingId');
+  minutes(vm, 34);
+  assert.equal(vm.num('ClaudeWoWDB.chats[1].pendingId'), id, 'still waiting at 34 minutes');
+  assert.equal(systemCount(vm, 1, `No reply to #${id} `), 0);
+  minutes(vm, 2);
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].pendingId'), null, 'free after 35 minutes of silence');
+  assert.equal(systemCount(vm, 1, `No reply to #${id} `), 1);
+  assert.match(lastOf(vm, 1, 'system'), /nothing was heard about it for 35 minutes, so this chat is free again\. The bridge keeps the chat's session: send the message again/);
+  assert.equal(vm.evaluate('ClaudeWoWStrip.shown'), 'false', 'the message is off the strip');
+  minutes(vm, 60);
+  assert.equal(systemCount(vm, 1, `No reply to #${id} `), 1, 'said once');
+
+  nextSlot(vm, `{ now = time(), cwd = "", replies = { { chat = "${chatId}", id = ${id}, status = "done", text = "here at last", agent = "claude" } } }`);
+  minutes(vm, 2, 700);
+  assert.equal(lastOf(vm, 1, 'assistant'), 'here at last', 'the reply that came after the give-up still lands');
+  assert.equal(vm.num('(function() local k = 0 for _, m in ipairs(ClaudeWoWDB.chats[1].history) do if m.text == "here at last" then k = k + 1 end end return k end)()'), 1, 'once');
+
+  const assistantCount = text => vm.num(`(function() local k = 0 for _, m in ipairs(ClaudeWoWDB.chats[1].history) do if m.role == "assistant" and m.text == ${JSON.stringify(text)} then k = k + 1 end end return k end)()`);
+  vm.run('ClaudeWoW.Send("a normal one")');
+  const normal = vm.num('ClaudeWoWDB.chats[1].pendingId');
+  nextSlot(vm, `{ now = time(), cwd = "", replies = { { chat = "${chatId}", id = ${normal}, status = "done", text = "normal answer", agent = "claude" } } }`);
+  minutes(vm, 8, 10);
+  minutes(vm, 3, 700);
+  assert.equal(assistantCount('normal answer'), 1, 'a normal reply read again on idle polls is shown once');
+
+  vm.run('ClaudeWoW.Send("second")');
+  const second = vm.num('ClaudeWoWDB.chats[1].pendingId');
+  minutes(vm, 37);
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].pendingId'), null);
+  nextSlot(vm, `{ now = time(), cwd = "", replies = { { chat = "${chatId}", id = ${normal}, status = "done", text = "normal answer", agent = "claude" } } }`);
+  minutes(vm, 2, 700);
+  assert.equal(assistantCount('normal answer'), 1, 'only the reply to the message given up on is taken late');
+  nextSlot(vm, `{ now = time(), cwd = "", replies = { { chat = "${chatId}", id = ${second}, status = "error", text = "late error", agent = "claude" } } }`);
+  minutes(vm, 2, 700);
+  assert.equal(assistantCount('late error'), 0, 'a late error is not shown as a reply');
+  vm.run('ClaudeWoW.Send("third")');
+  const third = vm.num('ClaudeWoWDB.chats[1].pendingId');
+  nextSlot(vm, `{ now = time(), cwd = "", replies = { { chat = "${chatId}", id = ${second}, status = "done", text = "second answer", agent = "claude" } } }`);
+  minutes(vm, 3);
+  assert.equal(vm.num('ClaudeWoWDB.chats[1].pendingId'), third, 'an old reply never answers the new message');
+  assert.equal(assistantCount('second answer'), 0, 'and is not shown while the next one waits');
+
+  const quiet = vm.evaluate('ClaudeWoW.AddChat("Quiet", { cwd = "", plugin = "stream", quiet = true }).id');
+  vm.run(`ClaudeWoW.Send("track", nil, { chat = "${quiet}" })`);
+  const quietIndex = vm.num('#ClaudeWoWDB.chats');
+  assert.ok(vm.num(`ClaudeWoWDB.chats[${quietIndex}].pendingId`) > 0);
+  minutes(vm, 37);
+  assert.equal(vm.evaluate(`ClaudeWoWDB.chats[${quietIndex}].pendingId`), null, 'a quiet chat is freed too');
+  assert.equal(systemCount(vm, quietIndex, 'No reply to #'), 0, 'with no line in a chat nobody reads');
+});
+
+test('the bridge acking the message restarts the 35-minute clock; hellos acked meanwhile do not', () => {
+  const vm = newVM();
+  login(vm);
+  connect(vm);
+  const token = vm.evaluate('ClaudeWoWDB.session');
+  vm.run('ClaudeWoW.Send("slow to arrive")');
+  const id = vm.num('ClaudeWoWDB.chats[1].pendingId');
+  nextSlot(vm, `{ now = time(), cwd = "", replies = {}, acks = { { session = "${token}", id = ${id} } } }`);
+  vm.run('STUB.now = STUB.now + 90; STUB.Tick()');
+  nextSlot(vm, '{ now = time(), cwd = "", replies = {} }');
+  for (let k = 0; k < 7; k++) {
+    vm.run('ClaudeWoW.Connect(true)');
+    minutes(vm, 5);
+  }
+  assert.equal(vm.num('ClaudeWoWDB.chats[1].pendingId'), id, '35 minutes after the ack, not after the send');
+  minutes(vm, 1);
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].pendingId'), null, 'hello acks are no sign of the run');
+});
+
+test('heartbeats and new progress keep a pending chat waiting past 35 minutes; the same progress line read again does not', () => {
+  const vm = newVM();
+  launchArmed(vm);
+  nextSlot(vm, '{ now = time(), cwd = "", replies = {} }');
+  vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
+  vm.run('ClaudeWoW.Send("a long job")');
+  const chatId = vm.evaluate('ClaudeWoWDB.chats[1].id');
+  const id = vm.num('ClaudeWoWDB.chats[1].pendingId');
+  const slot = String(((id - 1) % 200) + 1).padStart(3, '0');
+  for (let k = 1; k <= 6; k++) {
+    vm.run(`STUB.sounds["${gamePath(`act/${slot}/${String(k).padStart(2, '0')}.wav`)}"] = false`);
+    minutes(vm, 10);
+  }
+  assert.equal(vm.num('ClaudeWoWDB.chats[1].pendingId'), id, 'an hour of heartbeats, still waiting');
+  vm.run('SlashCmdList.CLAUDE("diag")');
+  assert.match(lastSystem(vm), new RegExp(`: pending #${id}, heartbeat 6 beats`));
+  const working = text => nextSlot(vm, `{ now = time(), cwd = "", replies = { { chat = "${chatId}", id = ${id}, status = "working", text = "${text}" } } }`);
+  for (let k = 1; k <= 3; k++) {
+    working(`step ${k}`);
+    minutes(vm, 20);
+  }
+  assert.equal(vm.num('ClaudeWoWDB.chats[1].pendingId'), id, 'an hour of new progress lines, still waiting');
+  minutes(vm, 36);
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].pendingId'), null, 'the same progress line on every slot read is no sign of life');
+  assert.equal(systemCount(vm, 1, `No reply to #${id} `), 1);
+});
+
+test('at login a chat left pending by an earlier session waits for the hello\'s slot read, then is freed if nothing came; one whose reply finished meanwhile gets it', () => {
+  const vm = newVM();
+  vm.run(`ClaudeWoWDB = { session = "feedc0de", lastSeq = 369, chats = {
+    { id = "lead", name = "Every AI Lead", cwd = "", agent = "", plugin = "", unread = 0, pendingId = 361, history = { { role = "user", text = "lead the work", id = 361, t = time() - 2 * 86400 } } },
+    { id = "prs", name = "Open Pull Requests", cwd = "", agent = "", plugin = "", unread = 0, pendingId = 369, history = { { role = "user", text = "list the PRs", id = 369, t = time() - 9 * 3600 } } },
+  }, activeChat = "lead" }`);
+  login(vm);
+  vm.run('STUB.RunTimers()');
+  nextSlot(vm, '{ now = time(), cwd = "", replies = { { chat = "prs", id = 369, status = "done", text = "three open", agent = "claude", token = "feedc0de" } } }');
+  vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[2].pendingId'), null, 'the reply that finished while the game was away arrives on the hello\'s slot read');
+  assert.equal(lastOf(vm, 2, 'assistant'), 'three open');
+  assert.equal(vm.num('ClaudeWoWDB.chats[1].pendingId'), 361, 'no give-up inside the login grace');
+  minutes(vm, 1);
+  assert.equal(vm.num('ClaudeWoWDB.chats[1].pendingId'), 361);
+  minutes(vm, 2);
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].pendingId'), null, 'freed two minutes after login');
+  assert.equal(systemCount(vm, 1, 'No reply to #361 '), 1);
+  assert.equal(systemCount(vm, 2, 'No reply to #'), 0, 'the answered chat is not told anything');
+});
+
+test('typing into a pending chat says once per pending id that it is still working and keeps the text as a draft, in the window and in the tab', () => {
+  const vm = newVM();
+  login(vm);
+  connect(vm);
+  vm.run('ClaudeWoW.Send("first")');
+  const chatId = vm.evaluate('ClaudeWoWDB.chats[1].id');
+  const id = vm.num('ClaudeWoWDB.chats[1].pendingId');
+  vm.run('ClaudeWoW.Send("second")');
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].draft'), 'second');
+  assert.equal(systemCount(vm, 1, `is still working on #${id}.`), 1);
+  assert.match(lastOf(vm, 1, 'system'), /What you type now waits as a draft and is offered again when the reply lands\. \/claude cancel frees this chat\./);
+  vm.run('ClaudeWoW.Send("third")');
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].draft'), 'third');
+  assert.equal(systemCount(vm, 1, `is still working on #${id}.`), 1, 'once per pending id');
+  nextSlot(vm, `{ now = time(), cwd = "", replies = { { chat = "${chatId}", id = ${id}, status = "done", text = "ok", agent = "claude" } } }`);
+  minutes(vm, 8, 10);
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].pendingId'), null);
+  vm.run('ClaudeWoW.Send("fourth"); ClaudeWoW.Send("fifth")');
+  const next = vm.num('ClaudeWoWDB.chats[1].pendingId');
+  assert.equal(systemCount(vm, 1, `is still working on #${next}.`), 1, 'said again for the next pending id');
+  const quiet = vm.evaluate('ClaudeWoW.AddChat("Quiet", { cwd = "", plugin = "stream", quiet = true }).id');
+  vm.run(`ClaudeWoW.Send("track one", nil, { chat = "${quiet}" }); ClaudeWoW.Send("track two", nil, { chat = "${quiet}" })`);
+  assert.equal(systemCount(vm, 2, 'is still working on #'), 0, 'a quiet chat a plugin sends to again gets no line');
+
+  const tabs = dockVM();
+  connectAs(tabs, 'claude');
+  const lead = tabs.evaluate('ClaudeWoWDB.chats[1].id');
+  typeIn(tabs, 'ChatFrame11EditBox', 'from the tab');
+  const tabId = pendingOf(tabs, lead);
+  typeIn(tabs, 'ChatFrame11EditBox', 'more from the tab');
+  typeIn(tabs, 'ChatFrame11EditBox', 'and more');
+  const lines = tabLines(tabs, 11).split('\n').filter(l => l.includes(`is still working on #${tabId}.`));
+  assert.equal(lines.length, 1, 'one line in the tab: ' + tabLines(tabs, 11));
+  assert.equal(tabs.evaluate('ClaudeWoWDB.chats[1].draft'), 'and more');
+});
+
+test('/claude cancel typed in the shared chat box while a chat\'s whisper tab is selected cancels that chat, not the window\'s; a chat that is not waiting says so and names the ones that are', () => {
+  const vm = whisperVM();
+  const lead = vm.evaluate('ClaudeWoWDB.chats[1].id');
+  vm.run('ClaudeWoW.Send("lead the work")');
+  const leadId = pendingOf(vm, lead);
+  const leadName = chatName(vm, lead);
+  const quiet = vm.evaluate('ClaudeWoW.AddChat("Quiet", { cwd = "", plugin = "stream", quiet = true }).id');
+  vm.run(`ClaudeWoW.Send("track", nil, { chat = "${quiet}" })`);
+  assert.ok(pendingOf(vm, quiet) > 0);
+  vm.run('ClaudeWoW.NewChat("Two")');
+  assert.equal(vm.num('#ClaudeWoWDB.chats'), 3);
+  assert.notEqual(vm.evaluate('ClaudeWoWDB.activeChat'), lead);
+  const leadTab = tabOf(vm, lead);
+  assert.ok(leadTab, 'the waiting chat has a tab');
+  const target = vm.evaluate(`${leadTab}.chatTarget`);
+  assert.ok(target);
+
+  vm.run('SlashCmdList.CLAUDE("cancel")');
+  assert.equal(pendingOf(vm, lead), leadId, 'the window\'s chat is not the waiting one');
+  assert.equal(lastOf(vm, 3, 'system'), `Nothing to cancel: Two is not waiting for a reply. Waiting: 1. ${leadName} (#${leadId}). Pick one with /claude chat <number>, then /claude cancel.`);
+
+  const shared = (chatType, tell, selected = leadTab) => vm.run(`ChatFrame1EditBox:SetAttribute("chatType", "${chatType}"); ChatFrame1EditBox:SetAttribute("tellTarget", ${JSON.stringify(tell)}); SELECTED_DOCK_FRAME = ${selected}`);
+  shared('SAY', target);
+  typeIn(vm, 'ChatFrame1EditBox', '/claude cancel');
+  assert.equal(pendingOf(vm, lead), leadId, 'a box not in whisper mode is the game chat, not the tab');
+  shared('WHISPER', 'Bob');
+  typeIn(vm, 'ChatFrame1EditBox', '/claude cancel');
+  assert.equal(pendingOf(vm, lead), leadId, 'a whisper to a real player is not the tab');
+  shared('WHISPER', target, 'ChatFrame1');
+  typeIn(vm, 'ChatFrame1EditBox', '/claude cancel');
+  assert.equal(pendingOf(vm, lead), leadId, 'the General tab selected is not a chat tab');
+  shared('WHISPER', target, `{ claudewowChatId = "${lead}" }`);
+  typeIn(vm, 'ChatFrame1EditBox', '/claude cancel');
+  assert.equal(pendingOf(vm, lead), leadId, 'a frame that only claims the chat is not its tab');
+  vm.run('ClaudeWoWDB.settings.whisper = false');
+  shared('WHISPER', target);
+  typeIn(vm, 'ChatFrame1EditBox', '/claude cancel');
+  assert.equal(pendingOf(vm, lead), leadId, 'with whisper tabs off there is no tab to follow');
+  vm.run('ClaudeWoWDB.settings.whisper = true');
+  shared('WHISPER', target);
+  typeIn(vm, 'ChatFrame1EditBox', '/claude cancel');
+  assert.equal(vm.evaluate(`(function() for _, c in ipairs(ClaudeWoWDB.chats) do if c.id == "${lead}" then return c.pendingId end end end)()`), null, 'the selected tab\'s chat is cancelled');
+  assert.match(lastOf(vm, 1, 'system'), new RegExp(`^Gave up waiting on #${leadId}`));
+  shared('WHISPER', target);
+  typeIn(vm, 'ChatFrame1EditBox', '/claude cancel');
+  assert.equal(lastOf(vm, 1, 'system'), `Nothing to cancel: ${leadName} is not waiting for a reply. No chat is waiting.`);
   assert.equal(vm.num('STUB.serverSends'), 0);
 });

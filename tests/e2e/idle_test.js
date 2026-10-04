@@ -6,6 +6,7 @@ const os = require('os');
 const path = require('path');
 const I = require('../../bridge/idle');
 const V = require('../../bridge/vision');
+const CLI = require('../../bridge/clients');
 const { makeRoot, gameRunner } = require('./helpers');
 
 const ROOT = makeRoot('idle');
@@ -115,6 +116,49 @@ test('a reply that finished while the game was not reading reaches the game afte
     const reply = await h.client.waitFor(() => replyTo(h, id), { label: 'the reply in the game after the restart' });
     assert.equal(reply.role, 'assistant');
     assert.match(reply.text, /answer me/);
+  });
+});
+
+test('a reply that finished while the game was closed reaches the game at its next login, with no bridge restart', async () => {
+  await withGame({}, async h => {
+    await h.client.connect();
+    const id = h.client.lastSeq() + 1;
+    h.client.send('answer me while away [[sleep 2]]');
+    await h.client.waitFor(() => Object.keys(h.state().inflight || {}).length === 1, { label: 'the run in flight' });
+    assert.equal(h.client.activeChat().pendingId, id, 'the game closes while it waits');
+    h.client.quit();
+    await h.bridge.waitForLine(new RegExp(`#${id}@\\S+ done`));
+    h.client.launch();
+    h.client.start();
+    const reply = await h.client.waitFor(() => replyTo(h, id), { label: 'the reply in the game after the login' });
+    assert.equal(reply.role, 'assistant');
+    assert.match(reply.text, /answer me while away/);
+  });
+});
+
+test('a new reply in a chat the bridge first saw long ago is still in the slots when 30 newer chats have replies', async () => {
+  await withGame({}, async h => {
+    await h.client.connect();
+    const token = h.client.db().session;
+    const chat = h.client.activeChat().id;
+    const clientKey = CLI.keyOf(h.sb.client);
+    h.client.quit();
+    await h.bridge.stop();
+    const at = Date.now();
+    const kept = { [`${token}:${chat}`]: { at, record: { chat, id: 1, status: 'done', text: 'an old reply', cwd: '', client: clientKey } } };
+    for (let i = 1; i <= 30; i++) kept[`${token}:other${i}`] = { at, record: { chat: `other${i}`, id: 1000 + i, status: 'done', text: `other ${i}`, cwd: '', client: clientKey } };
+    fs.writeFileSync(h.sb.state, JSON.stringify({ ...h.state(), replies: kept }));
+    h.bridge.start();
+    await h.bridge.ready();
+    await h.bridge.waitForLine(/republishing 31 finished replies from before the restart/);
+    h.client.launch();
+    h.client.start();
+    await h.client.connect();
+    const id = h.client.lastSeq() + 1;
+    h.client.send('the chat seen first [[tag first-chat]]');
+    await h.bridge.waitForLine(new RegExp(`#${id}@\\S+ done`));
+    const reply = await h.client.waitFor(() => replyTo(h, id), { label: 'the reply in the chat the bridge saw first' });
+    assert.match(reply.text, /the chat seen first/);
   });
 });
 
