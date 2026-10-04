@@ -28,6 +28,7 @@ const H = require('./home');
 const R = require('./runtime');
 const P = require('./protocol'); // which transport a config starts the bridge on
 const REL = require('./releases');
+const UPD = require('./selfupdate');
 const CLI = require('./clients');
 
 const LABEL = 'io.claudewow.bridge';      // launchd label
@@ -556,6 +557,7 @@ function status(d, platform = process.platform, out = console.log, stateFile = H
   }
   const state = readState(stateFile);
   out(`  versions  : ${P.versionsSummary(state)}; ${P.installedSummary()}`);
+  out(`  update    : ${UPD.statusLine(UPD.readRecord(path.dirname(stateFile)))}`);
   clientLines(configFile, state).forEach((line, i) => out(`  ${i ? ' '.repeat(12) : 'clients   : '}${line}`));
   const log = fs.existsSync(serviceLogFile(d)) ? serviceLogFile(d) : H.resolve().log;
   out(`  log       : ${log}  (rotates at 5 MB, 5 kept)`);
