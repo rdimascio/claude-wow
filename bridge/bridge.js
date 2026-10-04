@@ -1135,7 +1135,7 @@ function dispatchMessage(job) {
     queued.set(key, job);
     noteQueued();
     saveState();
-    publishNow(false);
+    publishNow(true, { refresh: true });
     log(`#${job.id}${job.session ? '@' + job.session : ''} queued (${cur ? 'chat busy' : running.size + ' running'})`);
     return;
   }

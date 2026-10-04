@@ -3174,6 +3174,7 @@ test('at login a chat left pending by an earlier session waits for the hello\'s 
     { id = "prs", name = "Open Pull Requests", cwd = "", agent = "", plugin = "", unread = 0, pendingId = 369, history = { { role = "user", text = "list the PRs", id = 369, t = time() - 9 * 3600 } } },
   }, activeChat = "lead" }`);
   login(vm);
+  enterWorld(vm, true);
   vm.run('STUB.RunTimers()');
   nextSlot(vm, '{ now = time(), cwd = "", replies = { { chat = "prs", id = 369, status = "done", text = "three open", agent = "claude", token = "feedc0de" } } }');
   vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
@@ -3298,16 +3299,21 @@ const SAVE_DB = `local function ser(v)
   end
   return "{" .. table.concat(parts, ",") .. "}"
 end
-SAVED_DB = ser(ClaudeWoWDB)`;
+SAVED_DB = ser(ClaudeWoWDB)
+SAVED_FILES = ser({ sounds = STUB.sounds, armed = STUB.armed, index = STUB.index, deletionVisible = STUB.deletionVisible })`;
+
+const enterWorld = (vm, initial) => vm.run(`STUB.FireEvent("PLAYER_ENTERING_WORLD", ${initial}, ${!initial})`);
 
 function reloaded(vm, before = '') {
   vm.run(SAVE_DB);
   const saved = vm.evaluate('SAVED_DB');
+  const files = vm.evaluate('SAVED_FILES');
   const now = vm.evaluate('STUB.now');
   const epoch = vm.evaluate('STUB.epoch');
   const next = newVM();
-  next.run(`STUB.now = ${now}; STUB.epoch = ${epoch}; ClaudeWoWDB = ${saved}; ${before}`);
+  next.run(`STUB.now = ${now}; STUB.epoch = ${epoch}; ClaudeWoWDB = ${saved}; local f = ${files}; STUB.sounds = f.sounds or {}; STUB.armed = f.armed; STUB.index = f.index; STUB.deletionVisible = f.deletionVisible; ${before}`);
   login(next);
+  enterWorld(next, false);
   return next;
 }
 
@@ -3341,7 +3347,7 @@ test('a give-up survives /reload: the reply to that message still lands after it
   assert.equal(lastOf(inbox, 1, 'assistant'), 'from the inbox', 'reload mode reads it from Inbox.lua at the next load');
 });
 
-test('after a give-up the addon keeps reading slots for a few minutes even while presence beats keep the light green, then stops', () => {
+test('after a give-up a slot is read only when the bridge fires the message\'s sig file: none on a timer while presence keeps the light green', () => {
   const vm = newVM();
   const token = launchArmed(vm);
   let k = 1;
@@ -3360,11 +3366,64 @@ test('after a give-up the addon keeps reading slots for a few minutes even while
   assert.equal(vm.evaluate('ClaudeWoW.PresenceWorks()'), 'true', 'the light is green, so no idle slot poll comes');
   counted(`{ now = time(), cwd = "", replies = { { chat = "${chatId}", id = ${id}, status = "done", text = "late but here", agent = "claude" } }, ${presence} }`);
   vm.run('LOADS = 0');
-  for (let i = 0; i < 4; i++) { beat(); minutes(vm, 1, 15); }
-  assert.equal(lastOf(vm, 1, 'assistant'), 'late but here', 'a late poll brought it');
-  vm.run('LOADS = 0');
   for (let i = 0; i < 20; i++) { beat(); minutes(vm, 1, 30); }
-  assert.equal(vm.num('LOADS'), 0, 'no more slot loads once it landed');
+  assert.equal(vm.num('LOADS'), 0, 'no slot load spent on a timer');
+  assert.equal(lastOf(vm, 1, 'assistant'), null);
+  vm.run(`STUB.sounds["${gamePath(`sig/${String(((id - 1) % 200) + 1).padStart(3, '0')}.wav`)}"] = false`);
+  beat();
+  minutes(vm, 1, 5);
+  assert.equal(lastOf(vm, 1, 'assistant'), 'late but here', 'the sig file brought it');
+  assert.equal(vm.num('LOADS'), 1, 'one slot load');
+  for (let i = 0; i < 20; i++) { beat(); minutes(vm, 1, 30); }
+  assert.equal(vm.num('LOADS'), 1, 'and no more once it landed');
+});
+
+test('a sig file for a given-up message is read after a /reload too, once, even when it fired before the reload', () => {
+  let vm = newVM();
+  launchArmed(vm);
+  nextSlot(vm, '{ now = time(), cwd = "", replies = {} }');
+  vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
+  vm.run('ClaudeWoW.Send("are you there")');
+  const chatId = vm.evaluate('ClaudeWoWDB.chats[1].id');
+  const id = vm.num('ClaudeWoWDB.chats[1].pendingId');
+  minutes(vm, 36);
+  assert.equal(vm.num('ClaudeWoWDB.chats[1].gaveUp'), id);
+  vm.run(`STUB.sounds["${gamePath(`sig/${String(((id - 1) % 200) + 1).padStart(3, '0')}.wav`)}"] = false`);
+  vm = reloaded(vm);
+  vm.run(`STUB.onLoadAddOn = function(name) LOADS = (LOADS or 0) + 1; ClaudeWoW_SlotData = { now = time(), cwd = "", replies = {} } end`);
+  minutes(vm, 1, 5);
+  const afterFirst = vm.num('LOADS');
+  assert.ok(afterFirst >= 1, 'the fired sig is read once after the reload');
+  for (let i = 0; i < 10; i++) minutes(vm, 1, 30);
+  assert.equal(vm.num('LOADS'), afterFirst, 'a sig that stays fired is read once, not on every tick');
+  vm.run(`STUB.onLoadAddOn = function(name) LOADS = (LOADS or 0) + 1; ClaudeWoW_SlotData = ${doneSlot(chatId, id, 'after the reload, by sig')} end`);
+  vm.run(`STUB.sounds["${gamePath(`sig/${String(((id - 1) % 200) + 1).padStart(3, '0')}.wav`)}"] = true`);
+  minutes(vm, 1, 5);
+  vm.run(`STUB.sounds["${gamePath(`sig/${String(((id - 1) % 200) + 1).padStart(3, '0')}.wav`)}"] = false`);
+  minutes(vm, 1, 5);
+  assert.equal(lastOf(vm, 1, 'assistant'), 'after the reload, by sig', 'a sig fired again after the reload brings the reply');
+});
+
+test('heartbeats read before a /reload are not read again as new life after it', () => {
+  let vm = newVM();
+  launchArmed(vm);
+  nextSlot(vm, '{ now = time(), cwd = "", replies = {} }');
+  vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
+  vm.run('ClaudeWoW.Send("a job that died")');
+  const id = vm.num('ClaudeWoWDB.chats[1].pendingId');
+  const slot = String(((id - 1) % 200) + 1).padStart(3, '0');
+  for (let k = 1; k <= 5; k++) {
+    vm.run(`STUB.sounds["${gamePath(`act/${slot}/${String(k).padStart(2, '0')}.wav`)}"] = false`);
+    minutes(vm, 1);
+  }
+  minutes(vm, 25);
+  vm = reloaded(vm);
+  vm.run('SlashCmdList.CLAUDE("diag")');
+  assert.match(lastSystem(vm), new RegExp(`: pending #${id}, heartbeat 5 beats`), 'the counter picks up where it was');
+  minutes(vm, 6);
+  assert.equal(vm.num('ClaudeWoWDB.chats[1].pendingId'), id, '35 minutes after the last beat, not yet');
+  minutes(vm, 6);
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].pendingId'), null, 'the old beats gave it no extra time');
 });
 
 test('the last sign of life survives /reload, so time a message spent queued after its ack is not counted from the send', () => {
@@ -3410,6 +3469,14 @@ test('the bridge\'s run limit sets how long a silent chat waits; a missing or ba
     assert.equal(s.vm.evaluate('ClaudeWoWDB.chats[1].pendingId'), null, `the default 35 minutes for ${bad || 'no field (an older bridge)'}`);
   }
   assert.equal(silentFor('runLimit = 604800', 36).pending !== null, true, 'a week is still a limit');
+  const kept = silentFor('runLimit = 3600', 1);
+  kept.vm.run('STUB.onLoadAddOn = function() ClaudeWoW_SlotData = { now = time(), cwd = "", replies = {}, runLimit = 30 } end');
+  minutes(kept.vm, 63);
+  assert.equal(kept.vm.num('ClaudeWoWDB.chats[1].pendingId'), kept.id, 'a bad limit after a good one keeps the good one, not the default');
+  const stale = silentFor('runLimit = 3600', 0);
+  stale.vm.run('STUB.onLoadAddOn = function() ClaudeWoW_SlotData = { now = time() - 600, cwd = "", replies = {}, runLimit = 3600 } end');
+  minutes(stale.vm, 36);
+  assert.equal(stale.vm.evaluate('ClaudeWoWDB.chats[1].pendingId'), null, 'a limit from a slot written over 5 minutes ago is not used');
 });
 
 test('a message the bridge still lists as queued or running keeps its chat waiting; entries that do not match or carry a bad stamp do not', () => {
@@ -3420,6 +3487,17 @@ test('a message the bridge still lists as queued or running keeps its chat waiti
   assert.equal(silentFor((vm, id) => `alive = { { session = "${vm.evaluate('ClaudeWoWDB.session')}", id = "${id}", since = 0 } }`, 36).pending, null, 'an id that is not a number');
   assert.equal(silentFor((vm, id) => alive(vm, id).replace('since = 0', 'since = time() + 86400'), 36).pending, null, 'a run start after the write time');
   assert.equal(silentFor((vm, id) => alive(vm, id).replace(', since = 0', ''), 36).pending, null, 'no start field');
+  assert.equal(silentFor((vm, id) => alive(vm, id).replace('since = 0', 'since = tostring(time())'), 36).pending, null, 'a start that is a string');
+  assert.equal(silentFor(() => 'alive = "everything"', 36).pending, null, 'a list that is not a table');
+  assert.equal(silentFor(() => 'alive = { 5, "x" }', 36).pending, null, 'entries that are not tables');
+  const old = newVM();
+  login(old);
+  connect(old);
+  old.run('ClaudeWoW.Send("how long")');
+  const oldId = old.num('ClaudeWoWDB.chats[1].pendingId');
+  nextSlot(old, `{ now = time() - 600, cwd = "", replies = {}, ${alive(old, oldId)} }`);
+  minutes(old, 36);
+  assert.equal(old.evaluate('ClaudeWoWDB.chats[1].pendingId'), null, 'a slot written over 5 minutes ago is no sign of life');
   const noNow = newVM();
   login(noNow);
   connect(noNow);
@@ -3450,6 +3528,7 @@ test('in reload mode the auto refresh does not renew the login grace: a chat lef
     { id = "lead", name = "Every AI Lead", cwd = "", agent = "", plugin = "", unread = 0, pendingId = 361, history = { { role = "user", text = "lead the work", id = 361, t = time() - 86400 } } },
   }, activeChat = "lead" }`);
   login(vm);
+  enterWorld(vm, true);
   for (let i = 0; i < 5; i++) {
     minutes(vm, 1, 20);
     vm = reloaded(vm);
@@ -3461,6 +3540,17 @@ test('in reload mode the auto refresh does not renew the login grace: a chat lef
   }
   minutes(vm, 1, 5);
   assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].pendingId'), null, 'freed though a reload came every 20 seconds');
+
+  let slow = newVM();
+  slow.run(`ClaudeWoWDB = { session = "feedc0de", lastSeq = 361, chats = {
+    { id = "lead", name = "Every AI Lead", cwd = "", agent = "", plugin = "", unread = 0, pendingId = 361, history = { { role = "user", text = "lead the work", id = 361, t = time() - 86400 } } },
+  }, activeChat = "lead" }`);
+  login(slow);
+  enterWorld(slow, true);
+  slow.run('STUB.now = STUB.now + 300');
+  slow = reloaded(slow);
+  minutes(slow, 1, 5);
+  assert.equal(slow.evaluate('ClaudeWoWDB.chats[1].pendingId'), null, 'a reload that took five minutes is still a reload: no new grace');
 });
 
 test('wiping the only chat drops its give-up, so an old reply never lands in the empty chat', () => {
@@ -3496,7 +3586,19 @@ test('a give-up and a late reply give back the draft typed while waiting, like a
   assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].draft'), 'typed again', 'nowhere to show it yet: kept');
   vm.run('ClaudeWoW.Toggle(true)');
   nextSlot(vm, doneSlot(chatId, second, 'late answer'));
-  minutes(vm, 2, 15);
+  minutes(vm, 2, 700);
   assert.equal(lastOf(vm, 1, 'assistant'), 'late answer');
   assert.equal(vm.evaluate('ClaudeWoWInput:GetText()'), 'typed again', 'back in the box on the late reply');
+
+  vm.run('ClaudeWoWInput:SetText(""); ClaudeWoWDB.chats[1].draft = nil');
+  vm.run('ClaudeWoW.Send("third")');
+  const third = vm.num('ClaudeWoWDB.chats[1].pendingId');
+  vm.run('ClaudeWoW.Send("typed before the cancel")');
+  vm.run('SlashCmdList.CLAUDE("cancel")');
+  vm.run('ClaudeWoWInput:SetText("")');
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].draft'), 'typed before the cancel');
+  nextSlot(vm, `{ now = time(), cwd = "", replies = { { chat = "${chatId}", id = ${third}, status = "done", text = "after the cancel", agent = "claude", late = true } } }`);
+  minutes(vm, 2, 700);
+  assert.equal(lastOf(vm, 1, 'assistant'), 'after the cancel');
+  assert.equal(vm.evaluate('ClaudeWoWInput:GetText()'), 'typed before the cancel', 'back in the box on a reply the bridge marks late');
 });

@@ -1229,6 +1229,14 @@ local function PollActivity(chat)
 	return moved
 end
 
+function Q.ActivityAtLogin(chat)
+	local a = { next = 1, count = 0, startedAt = GetTime() }
+	while a.next <= ACT_MAX and Presence.Fired(ActPath(chat.pendingId, a.next)) do
+		a.next, a.count = a.next + 1, a.count + 1
+	end
+	return a
+end
+
 local function NotedBridge(at)
 	at = at or GetTime()
 	if not run.bridgeSeen or at > run.bridgeSeen then run.bridgeSeen = at end
@@ -1684,7 +1692,6 @@ Q.RUN_LIMIT_MIN = 60
 Q.RUN_LIMIT_MAX = 7 * 86400
 Q.PENDING_MARGIN = 5 * 60
 Q.PENDING_LOGIN_GRACE = 120
-Q.AWAY_SECONDS = 60
 
 function Q.QuietLimit()
 	return (run.runLimit or Q.RUN_LIMIT_DEFAULT) + Q.PENDING_MARGIN
@@ -1712,12 +1719,12 @@ function Q.LastLife(c)
 end
 
 function Q.ApplyRuns(data)
-	if type(data) ~= "table" then return end
+	if type(data) ~= "table" or type(data.now) ~= "number" or time() - data.now > Q.INBOX_FRESH_SECONDS then return end
 	local limit = data.runLimit
 	if type(limit) == "number" and limit == math.floor(limit) and limit >= Q.RUN_LIMIT_MIN and limit <= Q.RUN_LIMIT_MAX then run.runLimit = limit end
-	if type(data.alive) ~= "table" or type(data.now) ~= "number" then return end
+	if type(data.alive) ~= "table" then return end
 	for _, a in ipairs(data.alive) do
-		local since = type(a) == "table" and tonumber(a.since) or nil
+		local since = type(a) == "table" and type(a.since) == "number" and a.since or nil
 		if since and since <= data.now and a.session == db.session then
 			for _, c in ipairs(db.chats) do
 				if c.pendingId == a.id then Q.NoteLife(c, since > 0 and since or data.now) end
@@ -1772,6 +1779,7 @@ local function ApplyReplies(replies)
 			if r.status == "done" and r.id ~= c.pendingId and (tonumber(c.lateSeen) or 0) < (tonumber(r.id) or 0) then
 				c.lateSeen = r.id
 				ClaudeWoW.LateReply(c, r)
+				Q.OfferDraft(c)
 			end
 		elseif c and c.pendingId and r.id == c.pendingId then
 			matched = true
@@ -2093,27 +2101,36 @@ function Q.GiveUp(c)
 	if not AnyPending() then keyCatcher:Hide() end
 	if c.quiet then return ClaudeWoW.Render() end
 	c.gaveUp = id
-	run.lateWait = run.lateWait or {}
-	run.lateWait[c.id] = { id = id, since = GetTime(), step = 1 }
 	Cli.Out(c, "No reply to #" .. id .. " arrived and nothing was heard about it for " .. math.floor(Q.QuietLimit() / 60)
 		.. " minutes, so this chat is free again. If the reply comes later it still shows here. The bridge keeps the chat's session: send the message again, or ask for the last answer.")
 	Q.OfferDraft(c)
 end
 
-function Q.NoteLogin()
-	local now = time()
-	if now - (tonumber(db.aliveAt) or 0) > Q.AWAY_SECONDS then db.graceUntil = now + Q.PENDING_LOGIN_GRACE end
-	db.aliveAt = now
+function Q.NoteLogin(isInitialLogin)
+	if isInitialLogin == true then db.graceUntil = time() + Q.PENDING_LOGIN_GRACE end
 end
 
 function Q.GiveUpSilent()
 	local now = time()
-	db.aliveAt = now
 	if now < (tonumber(db.graceUntil) or 0) then return end
 	local limit = Q.QuietLimit()
 	for _, c in ipairs(db.chats) do
 		if c.pendingId and now - Q.LastLife(c) > limit then Q.GiveUp(c) end
 	end
+end
+
+function Q.LateSignal()
+	for _, c in ipairs(db.chats) do
+		local id = c.gaveUp
+		if id and run.staleSig and run.staleSig[id] and not CheckSignal("sig", id) then run.staleSig[id] = nil end
+		if id and FreshSignal("sig", id) then
+			run.staleSig = run.staleSig or {}
+			run.staleSig[id] = true
+			TryLoadSlot("late")
+			return true
+		end
+	end
+	return false
 end
 
 local function Tick()
@@ -2225,6 +2242,7 @@ local function Tick()
 		RefreshStrip()
 		ClaudeWoW.UpdateStatus()
 	end
+	if Q.LateSignal() then return end
 	if not AnyPending() then
 		PollLate(now)
 		return
@@ -4021,7 +4039,6 @@ function ClaudeWoW.DeleteChat(id)
 		wipe(c.history)
 		c.pendingId, c.progress, c.unread, c.draft = nil, nil, 0, nil
 		c.gaveUp, c.lifeAt = nil, nil
-		if run.lateWait then run.lateWait[c.id] = nil end
 		c.name = "Chat 1"
 		ClaudeWoW.Render()
 		ClaudeWoW.RenderChatList()
@@ -7835,8 +7852,11 @@ ev:RegisterEvent("UPDATE_MACROS")
 ev:RegisterEvent("SCREENSHOT_SUCCEEDED")
 ev:RegisterEvent("SCREENSHOT_FAILED")
 ev:RegisterEvent("PLAYER_LOGOUT")
+ev:RegisterEvent("PLAYER_ENTERING_WORLD")
 ev:SetScript("OnEvent", function(self, event, arg1)
-	if event == "ADDON_LOADED" then
+	if event == "PLAYER_ENTERING_WORLD" then
+		if db then Q.NoteLogin(arg1) end
+	elseif event == "ADDON_LOADED" then
 		if arg1 == ADDON_NAME then
 			InitDB()
 			-- The saved data is here: a screenshotFormat left behind by a crash
@@ -7855,7 +7875,6 @@ ev:SetScript("OnEvent", function(self, event, arg1)
 		if not db then InitDB() end
 		BuildUI()
 		run = { outbound = {}, startedAt = GetTime() }
-		Q.NoteLogin()
 		SelfTestSignals()
 		ProcessInbox()
 		SyncScreenshotMode()
@@ -7865,10 +7884,7 @@ ev:SetScript("OnEvent", function(self, event, arg1)
 			run.polls = 0
 			run.act = {}
 			for _, ch in ipairs(db.chats) do
-				if ch.pendingId then
-					-- Beats already written stay valid, so the counter catches up on its own.
-					run.act[ch.id] = { next = 1, count = 0, startedAt = GetTime() }
-				end
+				if ch.pendingId then run.act[ch.id] = Q.ActivityAtLogin(ch) end
 			end
 			ScheduleNextPoll()
 		end
