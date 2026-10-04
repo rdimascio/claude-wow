@@ -156,14 +156,17 @@ test('sync: newest valid build, validated rows, drops counted, uiMap percent coo
     SpellName: [3, { badName: 1 }],
     Spell: [2, {}],
     Faction: [2, {}],
+    Map: [3, { development: 1 }],
+    DungeonEncounter: [4, {}],
+    LFGDungeons: [2, { badLevelRange: 1, noInstanceWithThatName: 1 }],
   });
-  assert.equal(m.rows, 27);
-  assert.equal(m.dropped, 16);
+  assert.equal(m.rows, 36);
+  assert.equal(m.dropped, 19);
   assert.equal(m.tablesVersion, D.TABLES_VERSION);
   assert.deepEqual(m.tables.TaxiNodes.notes, { zoneAmbiguous: 1, notOnAnyMap: 1 });
 
   const dir = path.join(root, BUILD);
-  assert.deepEqual(fs.readdirSync(dir).sort(), ['factions.jsonl', 'flightpaths.jsonl', 'items.jsonl', 'manifest.json', 'quests.jsonl', 'skilllineabilities.jsonl', 'skilllines.jsonl', 'spellranks.jsonl', 'spellreagents.jsonl', 'spells.jsonl', 'uimapassignments.jsonl', 'uimaps.jsonl', 'zones.jsonl']);
+  assert.deepEqual(fs.readdirSync(dir).sort(), ['encounters.jsonl', 'factions.jsonl', 'flightpaths.jsonl', 'instancelevels.jsonl', 'instances.jsonl', 'items.jsonl', 'manifest.json', 'quests.jsonl', 'skilllineabilities.jsonl', 'skilllines.jsonl', 'spellranks.jsonl', 'spellreagents.jsonl', 'spells.jsonl', 'uimapassignments.jsonl', 'uimaps.jsonl', 'zones.jsonl']);
   const flights = readJsonl(path.join(dir, 'flightpaths.jsonl'));
   assert.deepEqual(flights.map(f => [f.id, f.name, f.map, f.zoneAmbiguous]), [
     [601, 'Fixture Town Roost', { uiMapID: 9001, x: 27.5, y: 25 }, true],
@@ -426,7 +429,7 @@ test('claude-wow data sync writes under CLAUDE_WOW_HOME/data and reports counts'
   const out = [];
   const code = await D.main(['sync'], { env: { CLAUDE_WOW_HOME: home }, fetch: wago.fetchImpl, now: () => FIXED_NOW, out: s => out.push(s), err: s => out.push(s) });
   assert.equal(code, 0);
-  assert.match(out.join(''), /27 rows kept, 16 dropped; current build 1\.60\.1\.200/);
+  assert.match(out.join(''), /36 rows kept, 19 dropped; current build 1\.60\.1\.200/);
   assert.equal(fs.readFileSync(path.join(home, 'data', 'forever', 'current'), 'utf8'), `${BUILD}\n`);
 
   const usage = [];

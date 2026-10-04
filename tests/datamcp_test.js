@@ -120,6 +120,19 @@ test('wow_spell names a spell and its rank from the client tables, with its skil
   assert.equal(call(GD.openStore({ dataDir, clientBuild: BUILD }), 'wow_spell', { id: 4001 }).results[0].reagents, null, 'an unavailable reagent table is not "no reagents"');
 });
 
+test('wow_instance finds dungeons and raids by name or boss, with bosses in order and client level ranges, and names world encounters', async () => {
+  const { dataDir } = await syncedHome('instance');
+  const store = GD.openStore({ dataDir, clientBuild: BUILD });
+  const keep = call(store, 'wow_instance', { id: 33 });
+  assert.equal(keep.trust, 'client-data');
+  assert.deepEqual(keep.results[0], { kind: 'instance', id: 33, name: 'Fixture Keep', type: 'dungeon', maxPlayers: 10, levels: { min: 18, max: 25 }, bosses: [{ id: 200, name: 'Fixture Gatekeeper' }, { id: 201, name: 'Fixture Warden' }], source: 'wago.tools', build: BUILD, trust: 'client-data' });
+  const byBoss = call(store, 'wow_instance', { name: 'firelord' });
+  assert.deepEqual(byBoss.results.map(r => [r.name, r.type, r.matchedBoss.name]), [['Fixture Core', 'raid', 'Fixture Firelord']]);
+  assert.equal(call(store, 'wow_instance', { id: 2784 }).results[0].levels, null, 'a level range with min above max is not shown');
+  assert.equal(call(store, 'wow_instance', { id: 13 }).found, false, 'a test map is not an instance');
+  assert.match(call(store, 'wow_instance', { name: 'roamer' }).notes.join(' '), /Fixture Roamer \(encounter 203\) is not in a dungeon or raid/);
+});
+
 test('wow_faction finds reputation factions only, with their parent, and its ID expands as a token', async () => {
   const { dataDir } = await syncedHome('faction');
   const store = GD.openStore({ dataDir, clientBuild: BUILD });
@@ -293,7 +306,7 @@ test('an older sync without the SkillLine table still answers, with no skill nam
   assert.equal(GR.createExpander(store).expand('{skill:40}').errors[0].reason, 'tableUnavailable');
 });
 
-test('MCP surface: initialize, tools/list (eight read-only tools), tools/call, errors and notifications', async () => {
+test('MCP surface: initialize, tools/list (nine read-only tools), tools/call, errors and notifications', async () => {
   const { dataDir } = await syncedHome('mcp');
   const store = GD.openStore({ dataDir, flavor: 'forever' });
   const out = [];
@@ -310,7 +323,7 @@ test('MCP surface: initialize, tools/list (eight read-only tools), tools/call, e
   assert.equal(out[0].result.protocolVersion, '2025-06-18');
   assert.deepEqual(out[0].result.serverInfo.name, 'wowdata');
   assert.deepEqual(out[0].result.capabilities, { tools: {} });
-  assert.deepEqual(out[1].result.tools.map(t => t.name), ['wow_item', 'wow_spell', 'wow_faction', 'wow_quest', 'wow_npc', 'wow_flights', 'wow_where', 'wow_sources']);
+  assert.deepEqual(out[1].result.tools.map(t => t.name), ['wow_item', 'wow_spell', 'wow_instance', 'wow_faction', 'wow_quest', 'wow_npc', 'wow_flights', 'wow_where', 'wow_sources']);
   for (const t of out[1].result.tools) {
     assert.equal(t.annotations.readOnlyHint, true, t.name);
     assert.equal(t.inputSchema.additionalProperties, false, t.name);

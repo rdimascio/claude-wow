@@ -26,6 +26,9 @@ const MANIFEST_FILE = 'manifest.json';
 const STRAY_SUFFIXES = ['.tmp', '.old'];
 const UI_MAP_TYPE_CONTINENT = 2;
 const UI_MAP_TYPE_ZONE = 3;
+const INSTANCE_TYPES = Object.freeze({ 1: 'dungeon', 2: 'raid' });
+const LFG_ZONE_TYPE = 4;
+const DEV_MAP = /\bTest\b|CashTest|<unused>|\bunused\b/i;
 const UNSAFE_TEXT = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}|]/u;
 const INTEGER_TEXT = /^-?\d+$/;
 const DECIMAL_TEXT = /^-?(\d+(\.\d*)?|\.\d+)(e[-+]?\d+)?$/i;
@@ -361,8 +364,48 @@ const TABLES = Object.freeze([
       return { id: idOf(row), name: nameOf(row, 'Name_lang'), parentFactionID: intOf(row, 'ParentFactionID') };
     },
   },
+  {
+    table: 'Map',
+    entity: 'instances',
+    optional: true,
+    columns: ['ID', 'MapName_lang', 'InstanceType', 'MaxPlayers'],
+    convert(row) {
+      const type = INSTANCE_TYPES[intOf(row, 'InstanceType')];
+      if (!type) throw new Skip();
+      const name = nameOf(row, 'MapName_lang');
+      if (DEV_MAP.test(name)) throw new Drop('development');
+      return { id: idOf(row), name, type, maxPlayers: intOf(row, 'MaxPlayers') };
+    },
+    accept(record, ctx) {
+      ctx.instanceNames.set(record.name, record.id);
+    },
+  },
+  {
+    table: 'DungeonEncounter',
+    entity: 'encounters',
+    optional: true,
+    columns: ['ID', 'Name_lang', 'MapID', 'DifficultyID', 'OrderIndex'],
+    convert(row) {
+      return { id: idOf(row), name: nameOf(row, 'Name_lang'), mapID: intOf(row, 'MapID'), difficultyID: intOf(row, 'DifficultyID'), orderIndex: intOf(row, 'OrderIndex') };
+    },
+  },
+  {
+    table: 'LFGDungeons',
+    entity: 'instancelevels',
+    optional: true,
+    columns: ['ID', 'Name_lang', 'MinLevel', 'MaxLevel', 'TypeID'],
+    convert(row, ctx) {
+      if (intOf(row, 'TypeID') === LFG_ZONE_TYPE) throw new Skip();
+      const mapID = ctx.instanceNames.get(nameOf(row, 'Name_lang'));
+      if (!mapID) throw new Drop('noInstanceWithThatName');
+      const minLevel = intOf(row, 'MinLevel');
+      const maxLevel = intOf(row, 'MaxLevel');
+      if (minLevel < 1 || maxLevel < minLevel) throw new Drop('badLevelRange');
+      return { id: mapID, minLevel, maxLevel };
+    },
+  },
 ]);
-const TABLES_VERSION = 2;
+const TABLES_VERSION = 3;
 
 function sha256(text) {
   return crypto.createHash('sha256').update(text).digest('hex');
@@ -629,6 +672,7 @@ async function sync(opts = {}) {
     try {
       const notes = {};
       const ctx = {
+        instanceNames: new Map(),
         uiMaps: new Map(),
         assignments: [],
         note(table, reason) { notes[table] = notes[table] || {}; notes[table][reason] = (notes[table][reason] || 0) + 1; },

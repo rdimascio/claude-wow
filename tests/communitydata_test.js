@@ -345,6 +345,14 @@ test('sharedMaps needs every rectangle of a map to be identical, counted pairwis
   assert.deepEqual([...C.sharedMaps(fake([rect(1, 5, 10), rect(2, 5, 10)]), fake([rect(1, 5, 10), rect(2, 5, 20)]))], [], 'two rectangles are not matched by one');
 });
 
+test('wow_instance says whether an instance is in the 1.12 world the community data describes', async () => {
+  const dataDir = await eraData('instances');
+  await C.syncCommunity({ dataDir, fetch: fakeGitHub().fetchImpl });
+  const store = GD.openStore({ dataDir, clientBuild: ERA_CLIENT });
+  assert.equal(call(store, 'wow_instance', { id: 33 }).results[0].inClassic112, true, 'a community spawn stands in it');
+  assert.equal(call(store, 'wow_instance', { id: 2784 }).results[0].inClassic112, false);
+});
+
 test('a store written by another converter shape is not read, and the next sync converts again', async () => {
   const dataDir = await eraData('shape');
   const r = await C.syncCommunity({ dataDir, fetch: fakeGitHub().fetchImpl });
