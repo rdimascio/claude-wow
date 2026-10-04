@@ -3,28 +3,11 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
-const { makeRoot, gameRunner } = require('./helpers');
+const { makeRoot, gameRunner, listAfter, fixtureFetch, FOREVER_BUILD: BUILD } = require('./helpers');
 const D = require('../../bridge/datasync');
 
 const ROOT = makeRoot('gamedata');
 const withGame = gameRunner(ROOT);
-const FIXTURES = path.join(__dirname, '..', 'fixtures', 'wago');
-const BUILD = '1.60.1.200';
-
-function fixtureFetch(url) {
-  const u = new URL(url);
-  const table = /^\/db2\/(\w+)\/csv$/.exec(u.pathname)[1];
-  const headers = { 'content-type': 'text/csv', 'content-disposition': `attachment; filename="${table}.${u.searchParams.get('build')}.csv"` };
-  return Promise.resolve(new Response(fs.readFileSync(path.join(FIXTURES, `${table}.csv`), 'utf8'), { status: 200, headers }));
-}
-
-const listAfter = (argv, flag) => {
-  const i = argv.indexOf(flag);
-  if (i < 0) return [];
-  const out = [];
-  for (let j = i + 1; j < argv.length && !String(argv[j]).startsWith('--'); j++) out.push(argv[j]);
-  return out;
-};
 
 test('ask runs get the wowdata server and its run-only rule; coding runs do not; config.json is untouched', async () => {
   let dataDir = '';
@@ -64,81 +47,5 @@ test('a wowdata server that fails to start is logged and named in the reply', as
     assert.match(failed.text, /game data server \(wowdata\) did not start \(failed\)/);
     const fine = await h.client.say('where is the vale roost');
     assert.doesNotMatch(fine.text, /did not start/);
-  });
-});
-
-const ERA_FIXTURES = path.join(__dirname, '..', 'fixtures', 'wago-era');
-const ERA_CLIENT = { version: '1.15.9', build: '70003', interface: 11509 };
-
-function eraFetch(url) {
-  const u = new URL(url);
-  if (u.pathname === '/api/builds') return Promise.resolve(new Response(fs.readFileSync(path.join(ERA_FIXTURES, 'builds.json'), 'utf8'), { status: 200, headers: { 'content-type': 'application/json' } }));
-  const table = /^\/db2\/(\w+)\/csv$/.exec(u.pathname)[1];
-  const headers = { 'content-type': 'text/csv', 'content-disposition': `attachment; filename="${table}.${u.searchParams.get('build')}.csv"` };
-  return Promise.resolve(new Response(fs.readFileSync(path.join(ERA_FIXTURES, `${table}.csv`), 'utf8'), { status: 200, headers }));
-}
-
-test('a Classic Era client gets the Classic Era data server, never the Forever one', async () => {
-  const beforeLaunch = async sb => {
-    const dataDir = path.join(sb.home, 'data');
-    await D.sync({ dataDir, build: BUILD, fetch: fixtureFetch });
-    await D.sync({ dataDir, flavor: 'classic_era', fetch: eraFetch });
-  };
-  await withGame({ plugin: 'ask', client: ERA_CLIENT, tocInterface: ERA_CLIENT.interface, beforeLaunch }, async h => {
-    await h.client.say('where is the vale roost');
-    const [askRun] = h.agentCalls();
-    const server = askRun.mcpConfig.mcpServers.wowdata;
-    assert.deepEqual(server.args.slice(-2), ['--client-build', '1.15.9.70003']);
-    await h.bridge.waitForLine(/wowdata 1\.15\.9\.300 classic_era/);
-  });
-});
-
-test('a Classic Era client with only Forever data synced runs without a data server and says which sync it needs', async () => {
-  const beforeLaunch = async sb => {
-    await D.sync({ dataDir: path.join(sb.home, 'data'), build: BUILD, fetch: fixtureFetch });
-  };
-  await withGame({ plugin: 'ask', client: ERA_CLIENT, tocInterface: ERA_CLIENT.interface, beforeLaunch }, async h => {
-    await h.client.say('hello');
-    await h.client.say('hello again');
-    for (const run of h.agentCalls()) {
-      assert.deepEqual(Object.keys(run.mcpConfig.mcpServers), ['wowgoals'], 'no Forever answers for an Era client');
-      assert.ok(!listAfter(run.argv, '--allowedTools').includes('mcp__wowdata'));
-    }
-    assert.equal(h.bridge.output.match(/wowdata: no synced game data for Classic Era under .*\(claude-wow data sync --flavor classic_era\)/g).length, 1);
-  });
-});
-
-test('with no synced data, ask runs go without the server and the bridge says why once', async () => {
-  await withGame({ plugin: 'ask' }, async h => {
-    await h.client.say('hello');
-    await h.client.say('hello again');
-    for (const run of h.agentCalls()) {
-      assert.deepEqual(Object.keys(run.mcpConfig.mcpServers), ['wowgoals']);
-      assert.ok(!listAfter(run.argv, '--allowedTools').includes('mcp__wowdata'));
-    }
-    assert.equal(h.bridge.output.match(/wowdata: no synced game data/g).length, 1);
-  });
-});
-
-test('a reply keeps a spell token the player linked earlier in the chat and shows an unlinked one as plain text, with a log line', async () => {
-  await withGame({ plugin: 'ask' }, async h => {
-    await h.client.say('is this good [Frostbolt]\n\n--- Linked from the game ---\n[Frostbolt] spell 116 [[reply ok]]');
-    const r = await h.client.say('and now [[reply cast {spell:116} not {spell:12294}, buy {item:999999}]]');
-    assert.equal(r.text, 'cast {spell:116} not spell 12294 (unverified), buy {item:999999}');
-    await h.bridge.waitForLine(/reply tokens: 1 spell token\(s\) not linked in this chat, shown as plain text: spell:12294$/m, { from: 0 });
-  });
-});
-
-test('progress shown while the agent works gets the same spell check as the reply', async () => {
-  await withGame({ plugin: 'ask' }, async h => {
-    await h.client.connect();
-    const id = h.client.lastSeq() + 1;
-    h.client.send('think first [[think use {spell:12294} now]] [[tools 1]] [[sleep 6]] [[reply done]]');
-    const progress = await h.client.waitFor(() => {
-      const c = h.client.activeChat();
-      return c && c.pendingId === id && typeof c.progress === 'string' && c.progress.includes('12294') && c.progress;
-    }, { timeoutMs: 30000, label: 'the working bubble with the agent text' });
-    assert.match(progress, /use spell 12294 \(unverified\) now/);
-    assert.doesNotMatch(progress, /\{spell:12294\}/);
   });
 });

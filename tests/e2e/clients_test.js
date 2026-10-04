@@ -2,51 +2,14 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
-const path = require('path');
-const P = require('../../bridge/protocol');
 const SIG = require('../../bridge/signals');
 const CLI = require('../../bridge/clients');
-const { WowClient } = require('../../dev/wow/client');
-const { makeRoot, gameRunner } = require('./helpers');
+const { makeRoot, gameRunner, TWO_CLIENTS: TWO, signalFiles, slotBodies, withEra } = require('./helpers');
 const PKG = require('../../package.json');
 
 const ROOT = makeRoot('clients');
 const VERSION_IN_DIAG = PKG.version.replace(/[.+]/g, '\\$&');
 const withGame = gameRunner(ROOT);
-const ERA = '_classic_era_';
-const ERA_CLIENT = { interface: 11509, version: '1.15.9', build: '70003' };
-const TWO = { extraClients: [ERA], tocInterface: P.TOC_INTERFACE };
-
-function signalFiles(addons) {
-  const root = SIG.runtimeRoot(addons);
-  const out = [];
-  const pending = ['ack', 'sig', 'act'].map(d => path.join(root, d));
-  while (pending.length) {
-    const dir = pending.pop();
-    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-      if (e.isDirectory()) pending.push(path.join(dir, e.name));
-      else out.push(path.relative(root, path.join(dir, e.name)));
-    }
-  }
-  return out.sort();
-}
-
-function slotBodies(addons) {
-  return fs.readdirSync(addons).filter(n => /^ClaudeWoW_S\d{3}$/.test(n)).map(n => fs.readFileSync(path.join(addons, n, 'Inbox.lua'), 'utf8'));
-}
-
-async function withEra(h, fn, opts = {}) {
-  const era = h.sb.clients.find(c => c.flavor === ERA);
-  const client = new WowClient({ ...h.sb, ...era }, { ...ERA_CLIENT, ...opts });
-  client.launch();
-  client.start();
-  try {
-    await fn(client, era);
-    assert.deepEqual(client.errors(), [], 'the Era addon raised no Lua errors');
-  } finally {
-    client.stop();
-  }
-}
 
 test('a message from client B is answered in B, and never spends a signal or lands a reply in client A', async () => {
   await withGame({ ...TWO, run: false }, async h => {
@@ -140,68 +103,3 @@ test('a reload-mode message from client B is read from B\'s SavedVariables and a
     });
   });
 });
-
-test('a reply kept across a restart is published again only in the client it answers, and a new addon session in the other client keeps it', async () => {
-  await withGame({ ...TWO, run: false }, async h => {
-    const forever = h.sb.clients[0];
-    await withEra(h, async (era, eraDirs) => {
-      await era.say('kept for era');
-      const eraKey = CLI.keyOf(eraDirs.client);
-      const keptForEra = () => Object.values(h.state().replies || {}).filter(e => e.record && e.record.client === eraKey && /kept for era/.test(e.record.text));
-      assert.equal(keptForEra().length, 1, 'the reply is kept in state.json with its client');
-      const eraInbox = SIG.runtimeInbox(eraDirs.addons);
-      const foreverInbox = SIG.runtimeInbox(forever.addons);
-      await h.bridge.stop();
-      fs.writeFileSync(eraInbox, '');
-      h.bridge.start();
-      await h.bridge.ready();
-      await h.bridge.waitForLine(/republishing \d+ finished repl(y|ies) from before the restart/);
-      await era.waitFor(() => /kept for era/.test(fs.readFileSync(eraInbox, 'utf8')), { timeoutMs: 20000, label: 'the kept reply in B\'s Inbox.lua again' });
-      assert.doesNotMatch(fs.readFileSync(foreverInbox, 'utf8'), /kept for era/, 'client A never gets B\'s kept reply');
-      for (const body of slotBodies(forever.addons)) assert.doesNotMatch(body, /kept for era/);
-      h.client.start();
-      await h.client.say('a new session in forever');
-      assert.equal(keptForEra().length, 1, 'a new addon session in A leaves B\'s kept reply alone');
-      assert.match(fs.readFileSync(eraInbox, 'utf8'), /kept for era/, 'and B still has it');
-    });
-  });
-});
-
-async function askFromA(h, era, text) {
-  era.slash('/claude config context on');
-  await era.say(`warm up before ${text}`);
-  await h.client.say(`@ask ${text}`);
-  const out = h.bridge.output;
-  const start = out.lastIndexOf('[ask] Claude starting');
-  assert.ok(start > 0, 'the ask run started');
-  const before = out.slice(0, start);
-  const lastContext = /\((_classic_\w+_)\) game context updated[^\n]*\n(?![\s\S]*game context updated)/.exec(before);
-  assert.ok(lastContext, 'both clients reported a context before the run');
-  const startLine = out.slice(start, out.indexOf('\n', start));
-  const between = before.slice(lastContext.index);
-  return { lastFrom: lastContext[1], granted: startLine.includes('[wowgoals for this run]'), refusal: /wowgoals: another client reported its game context after this one \(([^)]*)\)/.exec(between) };
-}
-
-for (const [name, afterAddonLoad, theirs] of [
-  ['another character', 'UnitName = function(unit) if unit == "player" then return "Erachar" end end', 'Erachar-TestRealm in _classic_era_'],
-  ['a character with the same name and realm', '', 'Testchar-TestRealm in _classic_era_'],
-]) {
-  test(`an ask run from client A gets goal tools only when A reported last, also when B reported ${name}`, async () => {
-    await withGame(TWO, async h => {
-      await h.client.connect();
-      await withEra(h, async era => {
-        await era.connect();
-        const r = await askFromA(h, era, `goal check ${name}`);
-        if (r.lastFrom === ERA) {
-          assert.equal(r.granted, false, 'B reported last, so A\'s run has no goal server');
-          assert.ok(r.refusal, 'and the bridge says why');
-          assert.equal(r.refusal[1], theirs);
-        } else {
-          assert.equal(r.lastFrom, '_classic_beta_');
-          assert.equal(r.granted, true, 'A reported last, so A\'s run keeps its goal tools');
-          assert.equal(r.refusal, null);
-        }
-      }, afterAddonLoad ? { afterAddonLoad } : {});
-    });
-  });
-}
