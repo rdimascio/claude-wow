@@ -52,18 +52,18 @@ function lootRow(r, ctx, drop) {
   if (r.mincountOrRef > 0) {
     if (!ctx.items112.has(r.item)) { drop('lootItemNotIn112'); return null; }
     if ((chance === 0 && r.groupid === 0) || (chance !== 0 && chance < MIN_CHANCE) || r.maxcount < r.mincountOrRef) { drop('lootRowInvalid'); return null; }
-    if (!ctx.client.byId('items', r.item)) { drop('lootItemNotInClient'); return null; }
+    if (!ctx.client.byId('items', r.item)) { drop('lootItemNotInClient'); return { rolls: true }; }
     return { item: r.item, flags: { questOnly: r.ChanceOrQuestChance < 0, conditional, shared: false } };
   }
   if (r.ChanceOrQuestChance < 0 || (chance === 0 && r.groupid === 0)) { drop('lootRowInvalid'); return null; }
-  if (r.maxcount === 0) { drop('referenceNeverRolled'); return null; }
+  if (r.maxcount === 0) { drop('referenceNeverRolled'); return { rolls: true }; }
   return { ref: -r.mincountOrRef, flags: { questOnly: false, conditional, shared: true } };
 }
 
 function groupsAlwaysFilled(rows) {
   const sums = new Map();
   for (const r of rows) {
-    if (r.group > 0 && r.chance > 0 && !r.flags.conditional && !r.flags.questOnly) sums.set(r.group, (sums.get(r.group) || 0) + r.chance);
+    if (r.group > 0 && r.chance > 0 && !r.conditional) sums.set(r.group, (sums.get(r.group) || 0) + r.chance);
   }
   return new Set([...sums].filter(([, sum]) => sum >= 100).map(([group]) => group));
 }
@@ -76,13 +76,14 @@ function readTemplates(sql, ctx, drop) {
       const row = lootRow(r, ctx, drop);
       if (!row) continue;
       if (!kept.has(r.entry)) kept.set(r.entry, []);
-      kept.get(r.entry).push({ ...row, group: r.groupid, chance: Math.abs(r.ChanceOrQuestChance) });
+      kept.get(r.entry).push({ ...row, group: r.groupid, chance: Math.abs(r.ChanceOrQuestChance), conditional: r.condition_id > 0 });
     }
     const byEntry = new Map();
     for (const [entry, rows] of kept) {
       const filled = groupsAlwaysFilled(rows);
       const t = { items: new Map(), refs: new Map(), rows: 0 };
       for (const row of rows) {
+        if (row.rolls) continue;
         if (row.chance === 0 && filled.has(row.group)) { drop('lootGroupNeverReached'); continue; }
         t.rows++;
         if (row.ref) addTo(t.refs, row.ref, row.flags);

@@ -167,7 +167,7 @@ CREATE TABLE `pickpocketing_loot_template` (
   `comments` varchar(300) DEFAULT '',
   PRIMARY KEY (`entry`,`item`)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8mb3;
-INSERT INTO `pickpocketing_loot_template` VALUES (7002,512,30,0,1,1,0,''),(7002,513,100,4,1,1,0,'always fills group 4'),(7002,514,0,4,1,1,0,'never reached in group 4');
+INSERT INTO `pickpocketing_loot_template` VALUES (7002,512,30,0,1,1,0,''),(7002,513,-100,4,1,1,0,'a quest row always fills group 4'),(7002,514,0,4,1,1,0,'never reached in group 4'),(7002,600,100,6,1,1,0,'a row the client lacks still fills group 6'),(7002,511,0,6,1,1,0,'never reached in group 6');
 DROP TABLE IF EXISTS `gameobject_loot_template`;
 CREATE TABLE `gameobject_loot_template` (
   `entry` mediumint unsigned NOT NULL DEFAULT '0',
