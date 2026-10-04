@@ -91,6 +91,7 @@ A `config.json` without a `plugins` block keeps working: the default applies. Ch
 | `killGraceMs` | `5000` | When the bridge ends a run (the timeout above, or its own stop on Ctrl+C / `claude-wow service stop`), how long the run's process group gets after `SIGTERM` before `SIGKILL`. Every child the bridge starts leads its own process group on macOS and Linux, so the agent and whatever it shelled out to go together; a child that ignores `SIGTERM` is still gone after this. Windows uses `taskkill /T /F` at once. |
 | `progressWriteMs` | `3000` | Minimum gap between progress writes to the slot files. Final replies are written immediately. |
 | `pollMs` | `750` | How often the bridge checks the SavedVariables file for a reload-path message. |
+| `deployHoldPollMs` | `1000` | While `claude-wow dev deploy` switches releases, the bridge holds new messages; this is how often it checks whether the deploy is done and the held messages can start. |
 
 ## Screen capture
 

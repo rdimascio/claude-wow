@@ -524,6 +524,33 @@ test('a sent message is encoded on the strip with the chat folder and goes to th
   assert.ok(vm.evaluate('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history].text').includes('C:\\proj'));
 });
 
+test('a reply tagged with another addon session token never answers a message with the same chat and id; an untagged one from an older bridge still does', () => {
+  const vm = newVM();
+  login(vm);
+  connect(vm);
+  vm.run('ClaudeWoW.Send("after the wipe")');
+  const chatId = vm.evaluate('ClaudeWoWDB.chats[1].id');
+  const id = vm.num('ClaudeWoWDB.chats[1].pendingId');
+  const token = vm.evaluate('ClaudeWoWDB.session');
+  const reply = (text, tag) => `{ now = time(), cwd = "", replies = { { chat = "${chatId}", id = ${id}, status = "done", text = "${text}", agent = "claude"${tag === undefined ? '' : `, token = "${tag}"`} } } }`;
+  const last = () => vm.evaluate('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history].text');
+  nextSlot(vm, reply('an old session reply', `${token}x`));
+  vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
+  assert.equal(vm.num('ClaudeWoWDB.chats[1].pendingId'), id, 'still waiting for its own reply');
+  assert.notEqual(last(), 'an old session reply');
+  nextSlot(vm, reply('the real reply', token));
+  vm.run('STUB.now = STUB.now + 30; STUB.Tick()');
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].pendingId'), null);
+  assert.equal(last(), 'the real reply');
+
+  vm.run('ClaudeWoW.Send("from an older bridge")');
+  const second = vm.num('ClaudeWoWDB.chats[1].pendingId');
+  nextSlot(vm, `{ now = time(), cwd = "", replies = { { chat = "${chatId}", id = ${second}, status = "done", text = "no token field", agent = "claude" } } }`);
+  vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].pendingId'), null, 'a missing token changes nothing');
+  assert.equal(last(), 'no token field');
+});
+
 test('a denied reply shows Allow, and Allow resends with the rules as flags', () => {
   const vm = newVM();
   login(vm);

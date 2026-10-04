@@ -1013,6 +1013,7 @@ function luaTable(globalName, records, opts = {}) {
     lines.push(`\t\t\tcwd = ${luaStr(r.cwd || '')},`);
     lines.push(`\t\t\tsession = ${luaStr(r.session || '')},`);
     lines.push(`\t\t\tagent = ${luaStr(r.agent || '')},`);
+    if (typeof r.token === 'string' && r.token) lines.push(`\t\t\ttoken = ${luaStr(r.token)},`);
     if (r.plugin) lines.push(`\t\t\tplugin = ${luaStr(r.plugin)},`);
     if (r.summary) lines.push(`\t\t\tsummary = ${luaStr(r.summary)},`);
     if (r.title) lines.push(`\t\t\ttitle = ${luaStr(r.title)},`);

@@ -27,6 +27,7 @@ const { spawn, spawnSync } = require('child_process');
 const H = require('./home');
 const R = require('./runtime');
 const P = require('./protocol'); // which transport a config starts the bridge on
+const REL = require('./releases');
 const CLI = require('./clients');
 
 const LABEL = 'io.claudewow.bridge';      // launchd label
@@ -300,11 +301,11 @@ function run(cmd, args, opts = {}) {
   return { ok: !r.error && r.status === 0, status: r.status, out: (r.stdout || '') + (r.stderr || ''), error: r.error };
 }
 
-function agentEnv() {
+function agentEnv(execDir = process.execPath ? path.dirname(process.execPath) : '') {
   // What the bridge needs from the login environment and would not get from launchd/systemd.
   const env = { PATH: process.env.PATH || '' };
-  if (process.execPath && !env.PATH.split(path.delimiter).includes(path.dirname(process.execPath))) {
-    env.PATH = path.dirname(process.execPath) + path.delimiter + env.PATH;
+  if (execDir && !env.PATH.split(path.delimiter).includes(execDir)) {
+    env.PATH = execDir + path.delimiter + env.PATH;
   }
   for (const k of ['HOME', 'DISPLAY', 'LANG', 'CLAUDE_WOW_HOME', 'CLAUDE_WOW_PROJECT', 'WOW_AI_PROJECT', 'CODEX_BIN', 'GROK_HOME']) if (process.env[k]) env[k] = process.env[k];
   return env;
@@ -314,13 +315,23 @@ function agentEnv() {
 // this node, bridge/supervisor.js, the repo (so bridge.js falls back to
 // defaultCwd rather than taking the repo as the project). From the binary:
 // the binary alone, in the home folder, which bridge.js treats the same way.
-function program(r = R.DEFAULT) {
-  const [node, args] = R.scriptCommand('supervisor', [], r);
-  return { node, script: args[0] || '', cwd: r.compiled ? H.resolve().dir : r.root };
+function releaseProgram(r, home) {
+  if (!r.compiled) return null;
+  const layout = REL.layout(home);
+  if (!REL.isInsideReleases(layout, r.execPath)) return null;
+  return { node: REL.currentBinary(layout), script: '', cwd: home };
 }
 
-function definition(platform, d, r = R.DEFAULT) {
-  const base = { ...program(r), env: agentEnv() };
+function program(r = R.DEFAULT, home = H.resolve().dir) {
+  const release = releaseProgram(r, home);
+  if (release) return release;
+  const [node, args] = R.scriptCommand('supervisor', [], r);
+  return { node, script: args[0] || '', cwd: r.compiled ? home : r.root };
+}
+
+function definition(platform, d, r = R.DEFAULT, home = H.resolve().dir) {
+  const prog = program(r, home);
+  const base = { ...prog, env: agentEnv(path.dirname(prog.node)) };
   if (platform === 'darwin') return launchdPlist({ ...base, logFile: launchdLogFile(d) });
   if (platform === 'win32') return startupVbs(base);
   return systemdUnit(base);
@@ -341,15 +352,17 @@ function preflight(d) {
 
 // macOS ---------------------------------------------------------------------
 const mac = {
-  target: () => `gui/${process.getuid()}/${LABEL}`,
-  loaded() { return run('launchctl', ['print', this.target()]).ok; },
+  exec: run,
+  uid: () => process.getuid(),
+  target() { return `gui/${this.uid()}/${LABEL}`; },
+  loaded() { return this.exec('launchctl', ['print', this.target()]).ok; },
   bootstrap(d) {
-    let r = run('launchctl', ['bootstrap', `gui/${process.getuid()}`, d.definition]);
-    if (!r.ok) r = run('launchctl', ['load', '-w', d.definition]); // pre-10.11 spelling
+    let r = this.exec('launchctl', ['bootstrap', `gui/${this.uid()}`, d.definition]);
+    if (!r.ok) r = this.exec('launchctl', ['load', '-w', d.definition]); // pre-10.11 spelling
     return r;
   },
   bootout() {
-    let r = run('launchctl', ['bootout', this.target()]);
+    let r = this.exec('launchctl', ['bootout', this.target()]);
     if (!r.ok && /not find|No such process|3: /.test(r.out)) r.ok = true; // was not loaded
     return r;
   },
@@ -385,7 +398,7 @@ const mac = {
   },
   start(d) {
     if (!fs.existsSync(d.definition)) throw new Error('the service is not installed. Run: claude-wow service install');
-    const r = this.loaded() ? run('launchctl', ['kickstart', this.target()]) : this.bootstrap(d);
+    const r = this.loaded() ? this.exec('launchctl', ['kickstart', this.target()]) : this.bootstrap(d);
     if (!r.ok) throw new Error(`launchctl could not start the service: ${r.out.trim()}`);
   },
   stop() {
@@ -394,11 +407,11 @@ const mac = {
   },
   restart(d) {
     if (!this.loaded()) return this.start(d);
-    const r = run('launchctl', ['kickstart', '-k', this.target()]);
+    const r = this.exec('launchctl', ['kickstart', '-k', this.target()]);
     if (!r.ok) throw new Error(`launchctl could not restart the service: ${r.out.trim()}`);
   },
   probe() {
-    const r = run('launchctl', ['print', this.target()]);
+    const r = this.exec('launchctl', ['print', this.target()]);
     return r.ok ? { loaded: true, ...parseLaunchctlPrint(r.out) } : { loaded: false, pid: 0, state: '' };
   },
   kind: 'macOS LaunchAgent ' + LABEL,
@@ -406,8 +419,9 @@ const mac = {
 
 // Linux ---------------------------------------------------------------------
 const linux = {
+  exec: run,
   sys(args) {
-    const r = run('systemctl', ['--user', ...args]);
+    const r = this.exec('systemctl', ['--user', ...args]);
     if (r.error && r.error.code === 'ENOENT') throw new Error('systemctl was not found. Without systemd, start the bridge from your session startup with: ' + programArgs(program()).join(' '));
     return r;
   },
@@ -625,7 +639,7 @@ function main(argv, { platform = process.platform, out = console.log, err = cons
 module.exports = {
   LABEL, UNIT, OLD_LABEL, OLD_UNIT, COMMANDS, LOG_MAX_BYTES, LOG_KEEP, HELP,
   dirs, oldDirs, backend, serviceLogFile, launchdLogFile, pidFile,
-  parseArgs, launchdPlist, systemdUnit, startupVbs, xmlEscape, program, definition,
+  parseArgs, launchdPlist, systemdUnit, startupVbs, xmlEscape, releaseProgram, program, definition,
   rotate, RotatingLog, writePid, readPid, clearPid, alive,
   parseLaunchctlPrint, formatUptime, lastLines, agentEnv,
   status, clientLines, main,
