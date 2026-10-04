@@ -597,6 +597,45 @@ test('skipRelease reads the version a rolled-back release carries, for dev rollb
   fs.rmSync(root, { recursive: true, force: true });
 });
 
+test('several clients: the game counts as closed only when every enabled client is provably closed', () => {
+  const closed = { running: false }, open = { running: true }, unknown = { running: null };
+  assert.equal(UPD.gameRunningOf([closed, closed]), false);
+  assert.equal(UPD.gameRunningOf([closed, open]), true);
+  assert.equal(UPD.gameRunningOf([closed, unknown]), null, 'one client the bridge cannot check means it cannot say the game is closed');
+  assert.equal(UPD.gameRunningOf([unknown, open]), true);
+  assert.equal(UPD.gameRunningOf([]), null, 'no client configured: cannot tell');
+  assert.equal(UPD.gameRunningOf(null), null);
+});
+
+test('the game check runs in the background: a sync read gives the last fresh answer, null while it is stale, and never runs two checks at once', async () => {
+  let now = 1000;
+  let calls = 0;
+  let answer = [{ running: false }];
+  let release;
+  const check = () => { calls++; return new Promise(res => { release = () => res(answer); }); };
+  const g = UPD.cachedGameCheck(check, { now: () => now, maxAgeMs: 10000 });
+  assert.equal(g.get(), null, 'nothing known yet');
+  assert.equal(g.get(), null);
+  assert.equal(calls, 1, 'one check at a time');
+  release();
+  await new Promise(res => setImmediate(res));
+  assert.equal(g.get(), false, 'the fresh answer: every client closed');
+  assert.equal(calls, 1, 'a fresh answer starts no new check');
+  now += 10001;
+  answer = [{ running: true }];
+  assert.equal(g.get(), null, 'a stale answer is not used');
+  assert.equal(calls, 2);
+  release();
+  await new Promise(res => setImmediate(res));
+  assert.equal(g.get(), true);
+  now += 10001;
+  const failing = UPD.cachedGameCheck(() => Promise.reject(new Error('ps failed')), { now: () => now });
+  failing.get();
+  await new Promise(res => setImmediate(res));
+  await new Promise(res => setImmediate(res));
+  assert.equal(failing.get(), null, 'a failed check means cannot tell, never closed');
+});
+
 test('checkDue: a day after a good check, an hour after a failed one, and at once with no record', () => {
   const now = 10 * UPD.DAY_MS;
   assert.equal(UPD.checkDue({}, now), true);

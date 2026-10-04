@@ -6,6 +6,7 @@ const { slotNumber, pad3, ADDON, RUNTIME_ADDON, latestAddonVersion, versionVerdi
 const GameFs = require('../../bridge/gamefs');
 const SIG = require('../../bridge/signals');
 const UPD = require('../../bridge/selfupdate');
+const CLI = require('../../bridge/clients');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const QUIET_LIMIT_MS = 10 * 60 * 1000;
@@ -96,8 +97,10 @@ function wowRunning(ctx) {
   return wowProcessLines(ctx).length > 0;
 }
 
-function wowProcess(ctx) {
-  const line = wowProcessLines(ctx)[0];
+function wowProcess(ctx, clientDir = '') {
+  const prefix = clientDir ? String(clientDir).replace(/[\\/]+$/, '') + '/' : '';
+  const lines = wowProcessLines(ctx);
+  const line = prefix && CLI.clientsOf(ctx.config).length > 1 ? lines.find(l => l.includes(prefix)) : lines[0];
   const pid = line ? Number(line.trim().split(/\s+/)[0]) : null;
   if (!pid) return null;
   const info = processInfo(ctx, pid);
@@ -332,13 +335,26 @@ function slotsAhead(lastSlot, slots, window) {
   return ahead;
 }
 
-function checkSignals(ctx) {
-  const addonDir = ctx.config.addonDir;
-  if (!addonDir) return finish('signals', 'Signal files', 'no addonDir in config', [warn('config.json has no addonDir.', 'The bridge cannot write reply slots or signal files without it.', 'Run "claude-wow setup".')]);
+function perClient(ctx, id, title, noClient, one) {
+  const clients = CLI.clientsOf(ctx.config);
+  if (!clients.length) return noClient();
+  const several = clients.length > 1;
+  const parts = [];
+  const issues = [];
+  for (const client of clients) {
+    const r = one(client, CLI.legacyStateFor(ctx.state, CLI.allClients(ctx.config), client.key));
+    parts.push(several ? `${client.label}: ${r.summary}` : r.summary);
+    for (const issue of r.issues) issues.push(several ? { ...issue, what: `${client.label}: ${issue.what}` } : issue);
+  }
+  return finish(id, title, parts.join('; '), issues);
+}
+
+function signalsOf(ctx, client) {
+  const addonDir = client.addonDir;
   const slots = Number(ctx.config.slots) || 200;
   const ack = wavSlots(ctx, path.join(SIG.runtimeRoot(addonDir), 'ack'));
   const sig = wavSlots(ctx, path.join(SIG.runtimeRoot(addonDir), 'sig'));
-  const lastSeq = parseLastSeq(ctx.sys.readText(ctx.config.savedVariablesFile || ''));
+  const lastSeq = parseLastSeq(ctx.sys.readText(client.savedVariablesFile || ''));
   const issues = [];
   const legacy = (ctx.sys.listDir(path.join(addonDir, ADDON)) || []).filter(name => SIG.RUNTIME_FOLDERS.includes(name));
   if (legacy.length) {
@@ -348,8 +364,8 @@ function checkSignals(ctx) {
   }
   const armed = `ack ${ack ? ack.length : 'missing'} armed .wav, sig ${sig ? sig.length : 'missing'} armed .wav`;
   if (lastSeq === null) {
-    issues.push(warn(`Cannot read db.lastSeq from ${ctx.config.savedVariablesFile || '(no savedVariablesFile)'}.`, 'Without it the slots ahead of the next message cannot be judged.', 'Log in once and /reload so WoW writes the SavedVariables file.'));
-    return finish('signals', 'Signal files', `${armed}, lastSeq unknown`, issues);
+    issues.push(warn(`Cannot read db.lastSeq from ${client.savedVariablesFile || '(no savedVariablesFile)'}.`, 'Without it the slots ahead of the next message cannot be judged.', 'Log in once and /reload so WoW writes the SavedVariables file.'));
+    return { summary: `${armed}, lastSeq unknown`, issues };
   }
   const lastSlot = slotNumber(Math.max(lastSeq, 1), slots);
   const toWrap = slots - (lastSeq % slots);
@@ -360,8 +376,13 @@ function checkSignals(ctx) {
       'An ack is a file the bridge deletes; a slot whose file is already gone cannot signal, so those messages wait for the slower slot polls.',
       'Restart the bridge on this version (it arms the next 50 slots on every message), then restart WoW so the game sees the armed files.'));
   }
-  const summary = `${armed}, lastSeq ${lastSeq} (slot ${pad3(lastSlot)}, ${toWrap} to wrap at ${slots})`;
-  return finish('signals', 'Signal files', summary, issues);
+  return { summary: `${armed}, lastSeq ${lastSeq} (slot ${pad3(lastSlot)}, ${toWrap} to wrap at ${slots})`, issues };
+}
+
+function checkSignals(ctx) {
+  return perClient(ctx, 'signals', 'Signal files',
+    () => finish('signals', 'Signal files', 'no client in config', [warn('config.json names no WoW client (no clients, no addonDir).', 'The bridge cannot write reply slots or signal files without it.', 'Run "claude-wow setup".')]),
+    client => signalsOf(ctx, client));
 }
 
 function signalFilesWithTimes(ctx, addonDir) {
@@ -380,16 +401,19 @@ function signalFilesWithTimes(ctx, addonDir) {
 }
 
 function checkPresence(ctx) {
-  const addonDir = ctx.config.addonDir;
-  if (!addonDir) return finish('presence', 'Presence files', 'no addonDir in config', []);
+  return perClient(ctx, 'presence', 'Presence files', () => finish('presence', 'Presence files', 'no client in config', []), (client, saved) => presenceOf(ctx, client, saved));
+}
+
+function presenceOf(ctx, client, saved) {
+  const addonDir = client.addonDir;
   const issues = [];
   const files = signalFilesWithTimes(ctx, addonDir);
   const legacy = files.filter(f => /^presence\/\d{4}\.wav$/i.test(f.rel));
-  const ring = SIG.presenceState(ctx.state.presence);
-  const test = ctx.state.presenceTest || {};
-  const wow = wowProcess(ctx);
-  const oldCounter = typeof ctx.state.presence === 'number';
-  const parts = [`${files.length} signal file(s)`, oldCounter ? `bridge state still has the old presence counter ${ctx.state.presence}` : `bridge on ring ${ring.ring} at ${ring.at}`];
+  const ring = SIG.presenceState(saved.presence);
+  const test = saved.presenceTest || {};
+  const wow = wowProcess(ctx, client.dir);
+  const oldCounter = typeof saved.presence === 'number';
+  const parts = [`${files.length} signal file(s)`, oldCounter ? `bridge state still has the old presence counter ${saved.presence}` : `bridge on ring ${ring.ring} at ${ring.at}`];
   if (wow && wow.startedAt !== null) {
     const late = files.filter(f => f.mtimeMs > wow.startedAt + LAUNCH_SLACK_MS).sort((a, b) => b.mtimeMs - a.mtimeMs);
     parts.push(`WoW started ${formatClock(wow.startedAt)}`, `${late.length} created after it`);
@@ -412,7 +436,7 @@ function checkPresence(ctx) {
       'Presence beats cannot reach this client, so the addon uses the slot-poll windows (stale after 12 minutes, down after 22).',
       `Nothing breaks. Note the late-created file result (${test.late || 'not checked'}) when you report it.`));
   }
-  return finish('presence', 'Presence files', parts.join(', '), issues);
+  return { summary: parts.join(', '), issues };
 }
 
 function tocInterface(text) {
@@ -454,8 +478,10 @@ function clientBuild(ctx, addonDir) {
 }
 
 function checkInterface(ctx) {
-  const addonDir = ctx.config.addonDir;
-  if (!addonDir) return finish('interface', 'Interface version', 'no addonDir in config', []);
+  return perClient(ctx, 'interface', 'Interface version', () => finish('interface', 'Interface version', 'no client in config', []), c => interfaceOf(ctx, c.addonDir));
+}
+
+function interfaceOf(ctx, addonDir) {
   const main = tocInterface(ctx.sys.readText(path.join(addonDir, 'ClaudeWoW', 'ClaudeWoW.toc')));
   const slot = tocInterface(ctx.sys.readText(path.join(addonDir, 'ClaudeWoW_S001', 'ClaudeWoW_S001.toc')));
   const client = clientBuild(ctx, addonDir);
@@ -474,7 +500,7 @@ function checkInterface(ctx) {
     issues.push(warn(`The client is ${client.version || ''} (interface ${client.interface}), ClaudeWoW.toc says ${main.join(',')}.`, 'An out-of-date toc makes WoW mark the addon out of date and skip it unless "load out of date addons" is on.', `Set tocInterface to ${client.interface} in config.json and run "claude-wow setup".`));
   }
   const summary = `ClaudeWoW.toc ${main ? main.join(',') : 'missing'}, S001 ${slot ? slot.join(',') : 'missing'}, client ${client ? `${client.interface} (${client.version || client.source})` : 'unknown'}`;
-  return finish('interface', 'Interface version', summary, issues);
+  return { summary, issues };
 }
 
 function lockedGameFiles(ctx, addonDir) {
@@ -494,9 +520,12 @@ function lockedGameFiles(ctx, addonDir) {
 }
 
 function checkPermissions(ctx) {
-  const addonDir = ctx.config.addonDir;
-  if (!addonDir) return finish('permissions', 'Game file permissions', 'no addonDir in config', []);
-  if (!GameFs.matchesGame(ctx.sys.platform)) return finish('permissions', 'Game file permissions', `not checked on ${ctx.sys.platform}`, []);
+  const none = () => finish('permissions', 'Game file permissions', 'no client in config', []);
+  if (CLI.clientsOf(ctx.config).length && !GameFs.matchesGame(ctx.sys.platform)) return finish('permissions', 'Game file permissions', `not checked on ${ctx.sys.platform}`, []);
+  return perClient(ctx, 'permissions', 'Game file permissions', none, c => permissionsOf(ctx, c.addonDir));
+}
+
+function permissionsOf(ctx, addonDir) {
   const { folders, checked, locked } = lockedGameFiles(ctx, addonDir);
   const issues = [];
   if (locked.length) {
@@ -505,7 +534,7 @@ function checkPermissions(ctx) {
       'Blizzard installs every game file as 0777; Battle.net error 2113 (permissions check failure) blocks updates and marks the game not playable when one is not.',
       'Run "claude-wow setup" (or "npm run slots"), which sets them to 0777, and restart the bridge on this version so new files are written 0777.'));
   }
-  return finish('permissions', 'Game file permissions', `${checked} entr${checked === 1 ? 'y' : 'ies'} in ${folders} addon folder(s), ${locked.length} not world-writable`, issues);
+  return { summary: `${checked} entr${checked === 1 ? 'y' : 'ies'} in ${folders} addon folder(s), ${locked.length} not world-writable`, issues };
 }
 
 function claudeProjectDir(home, cwd) {
@@ -531,16 +560,18 @@ function checkDisk(ctx) {
   const parts = [`home ${formatBytes(home.bytes)}`, `logs ${formatBytes(logs.bytes)}`];
   if (home.bytes > LIMITS.homeBytes) issues.push(warn(`${ctx.homePaths.dir} is ${formatBytes(home.bytes)}.`, 'tmp/ vision PNGs and transcripts grow without bound.', `Clear ${ctx.homePaths.tmp} while the bridge is idle.`));
   if (logs.bytes > LIMITS.logsBytes) issues.push(warn(`${ctx.serviceDirs.logs} is ${formatBytes(logs.bytes)}.`, 'Rotation keeps 5 x 5 MB; more means a log outside the rotation grows.', `Look for large files in ${ctx.serviceDirs.logs}.`));
-  if (ctx.config.addonDir) {
-    const shotsDir = Screens.screenshotDir(ctx.config);
+  const clients = CLI.clientsOf(ctx.config);
+  for (const client of clients) {
+    const tag = clients.length > 1 ? `${client.label} ` : '';
+    const shotsDir = client.screenshotDir;
     const names = ctx.sys.listDir(shotsDir) || [];
     const strips = names.filter(Screens.isScreenshotFile);
-    parts.push(`screenshots ${strips.length} strip-sized leftover(s) of ${names.length}`);
+    parts.push(`${tag}screenshots ${strips.length} strip-sized leftover(s) of ${names.length}`);
     if (strips.length > LIMITS.screenshotLeftovers) issues.push(warn(`${strips.length} WoWScrnShot files sit in ${shotsDir}.`, 'The bridge deletes strips after it decodes them; leftovers are strips it could not read.', `Check the log for "unreadable", then delete the old WoWScrnShot files in ${shotsDir}.`));
-    const presenceDir = SIG.presenceDir(ctx.config.addonDir);
+    const presenceDir = SIG.presenceDir(client.addonDir);
     const presence = ctx.sys.listDir(presenceDir);
     const wavs = dir => (ctx.sys.listDir(dir) || []).filter(n => /\.wav$/i.test(n)).length;
-    parts.push(`presence ${presence ? wavs(presenceDir) + SIG.RINGS.reduce((n, r) => n + wavs(path.join(presenceDir, r)), 0) : 'missing'} file(s)`);
+    parts.push(`${tag}presence ${presence ? wavs(presenceDir) + SIG.RINGS.reduce((n, r) => n + wavs(path.join(presenceDir, r)), 0) : 'missing'} file(s)`);
   }
   for (const s of sessionFiles(ctx)) {
     parts.push(`${s.chat} session ${s.bytes === null ? 'not found' : formatBytes(s.bytes)}`);
@@ -587,10 +618,39 @@ function checkVersions(ctx) {
   const issues = [];
   if (latest) {
     const v = versionVerdict(latest, { version: latest.bridge || '0.0.0', protoMin: latest.protoMin, protoMax: latest.protoMax });
-    if (v.refuse) issues.push(fail(v.text, 'The addon and the bridge speak different protocols, so the bridge answers every message with an error.', v.verdict === 'update-addon' ? 'Update the addon, then restart WoW.' : 'Update the bridge, then run "claude-wow service restart".'));
+    if (v.refuse) issues.push(fail(v.text, 'The addon and the bridge speak different protocols, so the bridge answers every message with an error.', v.verdict === 'update-addon' ? 'Update the addon, then type /reload in the game.' : 'Update the bridge, then run "claude-wow service restart".'));
   }
   const update = ctx.update ? `; update: ${UPD.statusLine(ctx.update)}` : '';
   return finish('versions', 'Versions', `${versionsSummary(ctx.state)}; ${installedSummary()}${update}`, issues);
+}
+
+function checkClients(ctx) {
+  const clients = CLI.clientsOf(ctx.config);
+  if (!clients.length) {
+    return finish('clients', 'Clients', 'none in config', [warn('config.json names no WoW client.', 'The bridge has no game folder to write replies into or read messages from.', 'Run "claude-wow setup".')]);
+  }
+  const issues = [];
+  const readText = file => ctx.sys.readText(file);
+  const diskOf = c => CLI.installedBuild(c, readText);
+  const builds = new Map();
+  for (const c of clients) {
+    if (!ctx.sys.stat(c.dir)) {
+      issues.push(fail(`${c.label}: the client folder ${c.dir} is gone.`, 'The bridge writes slots and reads strips there; nothing reaches that game.', 'Run "claude-wow setup" again, or set "enabled": false on that entry in config.json.'));
+      continue;
+    }
+    const disk = diskOf(c);
+    if (disk && disk.build) builds.set(c.label, disk.build);
+  }
+  const distinct = [...new Set(builds.values())];
+  if (distinct.length > 1) {
+    issues.push(warn(`The clients hold different addon builds: ${[...builds].map(([label, build]) => `${label} ${build}`).join(', ')}.`,
+      'One client kept an older copy; on 2026-10-02 a stale copy crashed at login.',
+      'Run "claude-wow setup", which installs the same build into every client in config.json.'));
+  }
+  if (Array.isArray(ctx.config.clients) && ctx.config.clients.length && CLI.LEGACY_KEYS.some(k => k in ctx.config)) {
+    issues.push(warn(`config.json has both "clients" and the old ${CLI.LEGACY_KEYS.filter(k => k in ctx.config).join(', ')}.`, 'The bridge reads only "clients"; the old keys are ignored and can mislead.', 'Run "claude-wow setup", which removes them.'));
+  }
+  return finish('clients', 'Clients', CLI.describe(clients, ctx.state, { now: ctx.now, diskOf }).join('; '), issues);
 }
 
 function allowsEdits(agentConfig) {
@@ -647,7 +707,7 @@ function checkCi(ctx) {
   return finish('ci', 'CI', `${repo.branch} latest run ${state} on ${String(latest.headSha).slice(0, 7)} (HEAD ${shortHead})`, issues);
 }
 
-const CHECKS = [checkService, checkDrift, checkLogs, checkSignals, checkPresence, checkInterface, checkVersions, checkPermissions, checkDisk, checkData, checkCost, checkConfig, checkCi];
+const CHECKS = [checkService, checkDrift, checkLogs, checkClients, checkSignals, checkPresence, checkInterface, checkVersions, checkPermissions, checkDisk, checkData, checkCost, checkConfig, checkCi];
 
 function runChecks(ctx, checks = CHECKS) {
   return checks.map(check => {
@@ -659,6 +719,6 @@ function runChecks(ctx, checks = CHECKS) {
 
 module.exports = {
   CHECKS, LIMITS, TROUBLE_PATTERN,
-  runChecks, checkService, checkDrift, checkLogs, checkSignals, checkPresence, checkInterface, checkVersions, checkPermissions, checkDisk, checkData, checkCost, checkConfig, checkCi,
+  runChecks, checkService, checkDrift, checkLogs, checkClients, checkSignals, checkPresence, checkInterface, checkVersions, checkPermissions, checkDisk, checkData, checkCost, checkConfig, checkCi,
   parseEtime, formatBytes, summarizeLog, parseLastSeq, slotsAhead, tocInterface, interfaceFromVersion, productForFlavor, parseBuildInfo, parseReflog, claudeProjectDir, allowsEdits,
 };

@@ -35,6 +35,7 @@ const HOMEBREW_PATH = /\/Cellar\/|\/opt\/homebrew\/|\/\.linuxbrew\//;
 const PROJECT_NAMES = ['claude-wow', 'wow-ai'];
 const SKIP_FILE = 'update-skip.json';
 const STALE_DOWNLOAD_MS = 6 * HOUR_MS;
+const GAME_CHECK_MAX_AGE_MS = 15000;
 const DOWNLOAD_NAME = /^\..+\.update-(\d+)-[0-9a-f]{8}(\.exe)?$/;
 const SUM_LINE =/^([0-9a-fA-F]{64})\s+\*?(\S.*?)\s*$/;
 
@@ -516,6 +517,33 @@ function restartVerdict({ record, version, idle = { idle: true, reason: '' }, la
   return { restart: false, pending: true, code: 'active', why: `${game ? 'the game is running and ' : ''}the last message or reply was ${seconds(quietMs)} ago; it restarts after ${seconds(idleMs)} of quiet or when the game closes` };
 }
 
+function gameRunningOf(states) {
+  if (!Array.isArray(states) || !states.length) return null;
+  if (states.some(s => s && s.running === true)) return true;
+  return states.every(s => s && s.running === false) ? false : null;
+}
+
+function cachedGameCheck(check, { now = Date.now, maxAgeMs = GAME_CHECK_MAX_AGE_MS } = {}) {
+  let value = null;
+  let at = 0;
+  let pending = null;
+  function refresh() {
+    if (pending) return pending;
+    let started;
+    try { started = Promise.resolve(check()); } catch (e) { started = Promise.reject(e); }
+    pending = started
+      .then(states => { value = gameRunningOf(states); }, () => { value = null; })
+      .then(() => { at = now(); pending = null; });
+    return pending;
+  }
+  function get() {
+    const fresh = at > 0 && now() - at < maxAgeMs;
+    if (!fresh) refresh();
+    return fresh ? value : null;
+  }
+  return { get, refresh };
+}
+
 function createUpdater(deps) {
   const {
     home, cfg = {}, log = () => {}, version = ownVersion(), idle = () => ({ idle: true, reason: '' }), lastActivityAt = () => 0,
@@ -654,5 +682,5 @@ module.exports = {
   apiBase, parseSemver, normalizeVersion, compareSemver, assetName, installKind, launchPath, releasesLayout,
   get, latestRelease, parseSums, downloadTo, probeBinary, swapIn, replaceFile, cleanupAside, unpublishedRelease,
   recordFile, readRecord, writeRecord, effectiveVersion, runUpdate, checkAndRecord, checkDue, idleMsFrom,
-  restartVerdict, createUpdater, statusLine, main,
+  restartVerdict, createUpdater, statusLine, main, gameRunningOf, cachedGameCheck, GAME_CHECK_MAX_AGE_MS,
 };

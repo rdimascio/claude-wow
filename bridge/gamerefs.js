@@ -33,7 +33,7 @@ const WORD_SPLIT = /[^a-z0-9']+/;
 const NUMBER_WORD = /^\d+(?:st|nd|rd|th|x|g|s|c|k)?$/;
 const POSSESSIVE = /'s$/;
 const TOKEN_TEXT_MAX = 400;
-const TOKEN_FORMS = '{item:ID}, {skill:ID} or {map:ID,x,y}';
+const TOKEN_FORMS = '{item:ID}, {skill:ID}, {faction:ID} or {map:ID,x,y}';
 const REASON = Object.freeze({
   noData: 'noData',
   buildMismatch: 'buildMismatch',
@@ -90,7 +90,7 @@ function resolveMap(store, args) {
   return { id: row.id, name: row.name, point: { x, y, trust: MODEL_TRUST }, text: row.name };
 }
 
-const RESOLVERS = Object.freeze({ item: resolveNamed('items'), skill: resolveNamed('skilllines'), map: resolveMap });
+const RESOLVERS = Object.freeze({ item: resolveNamed('items'), skill: resolveNamed('skilllines'), faction: resolveNamed('factions'), map: resolveMap });
 
 function storeProblem(store) {
   if (!store) return REASON.noData;

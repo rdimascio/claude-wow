@@ -1,0 +1,4 @@
+ID,Name_lang,Description_lang,ReputationIndex,ParentFactionID
+76,"Fixture Brotherhood","",1,0
+77,"Fixture Cartel","",2,76
+78,"Fixture Monsters","",-1,0

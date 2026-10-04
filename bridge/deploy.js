@@ -10,6 +10,7 @@ const REL = require('./releases');
 const I = require('./idle');
 const SVC = require('./service');
 const UPD = require('./selfupdate');
+const CLI = require('./clients');
 
 const DEFAULT_REF = 'origin/main';
 const SUPPORTED_PLATFORMS = ['darwin', 'linux'];
@@ -35,8 +36,8 @@ const HELP = `claude-wow dev <command>
 
 Releases live in <home>/releases/<version>-<sha>/claude-wow and <home>/current points at one
 (<home> is ~/.claude-wow, or CLAUDE_WOW_HOME). One deploy or rollback at a time (<home>/deploy.lock,
-for this machine only). The idle wait, the restart (claude-wow service restart) and setup for the
-configured client run only when the service runs <home>/current/claude-wow and the release changes.
+for this machine only). The idle wait, the restart (claude-wow service restart) and setup for every
+enabled client in config.json run only when the service runs <home>/current/claude-wow and the release changes.
 See docs/MIGRATE-PROD-INSTALL.md.`;
 
 function parseArgs(argv) {
@@ -173,11 +174,11 @@ function restartService(ctx) {
 function configuredClients(configFile) {
   let cfg;
   try { cfg = JSON.parse(fs.readFileSync(configFile, 'utf8')); } catch { return []; }
-  const addonDir = typeof cfg.addonDir === 'string' ? cfg.addonDir : '';
-  if (!addonDir) return [];
-  const interfaceDir = path.dirname(addonDir);
-  if (path.basename(addonDir).toLowerCase() !== 'addons' || path.basename(interfaceDir).toLowerCase() !== 'interface') return [];
-  return [path.dirname(interfaceDir)];
+  const inAddOnsFolder = c => {
+    const interfaceDir = path.dirname(c.addonDir);
+    return path.basename(c.addonDir).toLowerCase() === 'addons' && path.basename(interfaceDir).toLowerCase() === 'interface';
+  };
+  return CLI.clientsOf(cfg).filter(inAddOnsFolder).map(c => c.dir);
 }
 
 function gameLines(output) {
@@ -195,20 +196,15 @@ function gameLines(output) {
 function runSetup(l, ctx) {
   const clients = configuredClients(l.config);
   if (!clients.length) {
-    ctx.out(`setup   : no client in ${l.config} (addonDir); run: ${REL.currentBinary(l)} setup --wow "<client folder>"`);
+    ctx.out(`setup   : no enabled client in ${l.config} (clients); run: ${REL.currentBinary(l)} setup --wow "<client folder>"`);
     return true;
   }
-  let ok = true;
-  const game = [];
-  for (const client of clients) {
-    ctx.out(`setup   : ${client}`);
-    const r = ctx.run(REL.currentBinary(l), ['setup', '--wow', client]);
-    if (r.out.trim()) ctx.out(r.out.replace(/\s+$/, ''));
-    if (!r.ok) { ok = false; ctx.err(`claude-wow dev: setup failed for ${client}; the release is switched, fix what setup said and run: ${REL.currentBinary(l)} setup --wow "${client}"`); }
-    game.push(...gameLines(r.out));
-  }
-  for (const line of game) ctx.out(`in game : ${line}`);
-  return ok;
+  for (const client of clients) ctx.out(`setup   : ${client}`);
+  const r = ctx.run(REL.currentBinary(l), ['setup']);
+  if (r.out.trim()) ctx.out(r.out.replace(/\s+$/, ''));
+  if (!r.ok) ctx.err(`claude-wow dev: setup failed; the release is switched, fix what setup said and run: ${REL.currentBinary(l)} setup`);
+  for (const line of gameLines(r.out)) ctx.out(`in game : ${line}`);
+  return r.ok;
 }
 
 function afterSwitch(l, ctx, flip) {
