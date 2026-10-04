@@ -37,6 +37,7 @@ jobs:
         if: github.event_name == 'push' && github.ref_type == 'tag'
         env:
           HAS_CF_API_TOKEN: ${{ secrets.CF_API_TOKEN != '' }}
+          HAS_WAGO_API_TOKEN: ${{ secrets.WAGO_API_TOKEN != '' }}
         run: |
           pkg=$(node -p "require('./package.json').version")
           status=0
@@ -54,6 +55,9 @@ jobs:
           fi
           if ! grep -Eq '^## X-Wago-ID: *[A-Za-z0-9]+' addon/ClaudeWoW/ClaudeWoW.toc; then
             echo "::warning file=addon/ClaudeWoW/ClaudeWoW.toc::ClaudeWoW.toc has no '## X-Wago-ID' line; this release does not go to Wago."
+          elif [ "$HAS_WAGO_API_TOKEN" != true ]; then
+            echo "::error::ClaudeWoW.toc has a '## X-Wago-ID' line but the WAGO_API_TOKEN secret is not set, so the packager would skip Wago. Add it in the repository settings and tag again."
+            status=1
           fi
           exit "$status"
 
@@ -61,7 +65,7 @@ jobs:
     needs: version
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -73,7 +77,6 @@ jobs:
         env:
           CF_API_TOKEN: ${{ github.event_name == 'push' && github.ref_type == 'tag' && secrets.CF_API_TOKEN || '' }}
           WAGO_API_TOKEN: ${{ github.event_name == 'push' && github.ref_type == 'tag' && secrets.WAGO_API_TOKEN || '' }}
-          GITHUB_OAUTH: ${{ github.event_name == 'push' && github.ref_type == 'tag' && secrets.GITHUB_TOKEN || '' }}
       - name: the zip holds only the ClaudeWoW folder, with its toc
         run: |
           zip=$(ls .release/*.zip)
@@ -120,13 +123,33 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
           name: claude-wow-binaries
           path: dist
-      - name: the downloaded binaries still match SHA256SUMS
-        working-directory: dist
-        run: sha256sum --check --strict SHA256SUMS
-      - run: gh release upload "$GITHUB_REF_NAME" dist/* --clobber --repo "$GITHUB_REPOSITORY"
+      - uses: actions/download-artifact@v4
+        with:
+          name: addon-zip
+          path: addon-zip
+      - name: the downloaded binaries still match SHA256SUMS, and there is one addon zip
+        run: |
+          (cd dist && sha256sum --check --strict SHA256SUMS)
+          test "$(ls dist | wc -l)" -eq 5
+          test "$(ls addon-zip/*.zip | wc -l)" -eq 1
+      - name: the release notes are the CHANGELOG section for this version
+        run: |
+          version=${GITHUB_REF_NAME#v}
+          awk -v heading="## [$version]" 'index($0, heading) == 1 { found = 1; next } found && /^## \[/ { exit } found { print }' CHANGELOG.md > release-notes.md
+          cat release-notes.md
+          grep -q '[^[:space:]]' release-notes.md
+      - name: create the GitHub release with the addon zip, the four binaries and SHA256SUMS
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version=${GITHUB_REF_NAME#v}
+          prerelease_flag=
+          case "$version" in *-*) prerelease_flag=--prerelease ;; esac
+          gh release create "$GITHUB_REF_NAME" --verify-tag --repo "$GITHUB_REPOSITORY" --title "Claude WoW $version" --notes-file release-notes.md $prerelease_flag addon-zip/*.zip dist/*

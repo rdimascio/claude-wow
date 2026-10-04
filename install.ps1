@@ -8,7 +8,7 @@
 #   $env:CLAUDE_WOW_PROJECT = "C:\code\my-game"                          # the default folder the agents work in
 #   $env:CLAUDE_WOW_SERVICE = "yes"  (or "no")                           # start at login without asking (or never ask)
 #   $env:CLAUDE_WOW_SOURCE = "1"     no prebuilt binary: clone the repo and run it with Node.js 22.2+
-#   $env:CLAUDE_WOW_RELEASE = "..."  which release's binary (default latest, then the newest pre-release)
+#   $env:CLAUDE_WOW_RELEASE = "..."  which release's binary (default latest, then the newest release of any kind)
 #   $env:CLAUDE_WOW_DIR = "..."      where it goes, default $env:LOCALAPPDATA\Programs\claude-wow
 #   $env:CLAUDE_WOW_REF = "..."      which version of the source, from source (default main)
 #
@@ -172,7 +172,11 @@ function Get-Source {
 }
 
 Step '1/4 The bridge'
-if (-not (Get-Binary)) { Get-Source }
+if ($FromSource) { Get-Source }
+elseif (-not (Get-Binary)) {
+  if ($Release -ne 'latest') { Fail "release $Release has no claude-wow binary for this machine, or it could not be downloaded; a pinned release never falls back to another release or to the source" "Check that $Repo/releases/tag/$Release exists and has claude-wow-windows-x64.exe, and check the network. Or clear `$env:CLAUDE_WOW_RELEASE for the newest release, or set `$env:CLAUDE_WOW_SOURCE = `"1`" to run $Ref with Node.js." }
+  Get-Source
+}
 
 # ---- 2. The command on the PATH ---------------------------------------------
 Step '2/4 The claude-wow command'

@@ -12,7 +12,7 @@
 #   --service           install the background service without asking
 #   --no-service        don't install or ask
 #   --from-source       no prebuilt binary: clone the repo and run it with Node.js 22.2+ (or CLAUDE_WOW_SOURCE=1)
-#   --release <tag>     which release's binary (default latest, then the newest pre-release; or CLAUDE_WOW_RELEASE)
+#   --release <tag>     which release's binary (default latest, then the newest release of any kind; or CLAUDE_WOW_RELEASE)
 #   --dir <folder>      where the source goes, from source (default ~/.claude-wow/app; or CLAUDE_WOW_DIR)
 #   --ref <branch|tag>  which version of the source, from source (default main; or CLAUDE_WOW_REF)
 #
@@ -302,7 +302,13 @@ main() {
   [ "$(id -u 2>/dev/null || echo 1000)" -ne 0 ] || fail "do not run this as root" "Run it as the user who plays the game; nothing here needs sudo."
 
   step "1/3 The bridge"
-  if [ -n "$SOURCE" ] || ! get_binary; then get_source; fi
+  if [ -n "$SOURCE" ]; then
+    get_source
+  elif ! get_binary; then
+    [ "$RELEASE" = latest ] || fail "release $RELEASE has no claude-wow binary for this machine, or it could not be downloaded; a pinned release never falls back to another release or to the source" \
+      "Check that $REPO_URL/releases/tag/$RELEASE exists and has a binary for this machine, and check the network. Or drop --release (CLAUDE_WOW_RELEASE) for the newest release, or add --from-source to run $REF with Node.js."
+    get_source
+  fi
   on_path
   migrate_old_install
 

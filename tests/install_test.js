@@ -57,6 +57,8 @@ test('install.sh: the binary route names the release asset build.js produces for
   assert.match(src, /get_source/, 'falls back to the source');
 });
 
+const INSTALLER_TOOLS_WITHOUT_NODE = ['uname', 'mktemp', 'rm', 'sed', 'head', 'chmod', 'mkdir', 'mv', 'cut', 'grep', 'sha256sum', 'shasum', 'id', 'cat', 'cp', 'ls', 'tr'];
+
 function fakeReleaseHost(newestTag) {
   const asset = spawnSync('sh', [SH, '--binary-asset'], { encoding: 'utf8' }).stdout.trim();
   const root = fs.mkdtempSync(path.join(require('os').tmpdir(), 'claude-wow-install-'));
@@ -86,7 +88,11 @@ function fakeReleaseHost(newestTag) {
     'esac',
     '',
   ].join('\n'), { mode: 0o755 });
-  const env = { PATH: `${fakeBin}:${binDir}:/usr/bin:/bin`, HOME: home, SHELL: '/bin/sh', CLAUDE_WOW_BIN: binDir, CLAUDE_WOW_REPO: 'https://github.com/rdimascio/claude-wow' };
+  for (const tool of INSTALLER_TOOLS_WITHOUT_NODE) {
+    const found = spawnSync('/bin/sh', ['-c', `command -v ${tool}`], { encoding: 'utf8' }).stdout.trim();
+    if (found.startsWith('/')) fs.symlinkSync(found, path.join(fakeBin, tool));
+  }
+  const env = { PATH: `${fakeBin}:${binDir}`, HOME: home, SHELL: '/bin/sh', CLAUDE_WOW_BIN: binDir, CLAUDE_WOW_REPO: 'https://github.com/rdimascio/claude-wow' };
   return { asset, root, binDir, log, env };
 }
 
@@ -107,22 +113,46 @@ test('install.sh: with no stable release, latest falls back to the newest releas
   } finally { fs.rmSync(h.root, { recursive: true, force: true }); }
 });
 
-test('install.sh: no release at all, or an explicit --release, takes the source route without asking the API', { skip: !hasAsset && 'no prebuilt binary for this platform' }, () => {
+test('install.sh: with no release at all, latest takes the source route', { skip: !hasAsset && 'no prebuilt binary for this platform' }, () => {
   const none = fakeReleaseHost(null);
   try {
     const r = spawnSync('/bin/sh', [SH, '--no-service'], { encoding: 'utf8', env: none.env });
     assert.equal(r.status, 1);
     assert.match(r.stdout, /no binary at .*releases\/latest\/download/);
+    assert.match(r.stdout, /installing from source/);
     assert.match(r.stderr, /Node\.js is not installed/);
   } finally { fs.rmSync(none.root, { recursive: true, force: true }); }
-  const pinned = fakeReleaseHost('v0.5.0-beta.1');
+});
+
+test('install.sh: a pinned --release that cannot be downloaded fails and never falls back to another release or the source', { skip: !hasAsset && 'no prebuilt binary for this platform' }, () => {
+  for (const pin of [['--release', 'v0.4.0'], []]) {
+    const pinned = fakeReleaseHost('v0.5.0-beta.1');
+    try {
+      const env = pin.length ? pinned.env : { ...pinned.env, CLAUDE_WOW_RELEASE: 'v0.4.0' };
+      const r = spawnSync('/bin/sh', [SH, '--no-service', ...pin], { encoding: 'utf8', env });
+      assert.equal(r.status, 1, r.stdout + r.stderr);
+      assert.match(r.stderr, /install failed: release v0\.4\.0 has no claude-wow binary for this machine/);
+      assert.match(r.stderr, /a pinned release never falls back/);
+      assert.doesNotMatch(r.stdout, /installing from source/);
+      assert.doesNotMatch(r.stderr, /Node\.js is not installed/);
+      assert.ok(!fs.existsSync(path.join(pinned.binDir, 'claude-wow')), 'nothing installed');
+      const urls = fs.readFileSync(pinned.log, 'utf8');
+      assert.ok(!/api\.github\.com/.test(urls), 'no lookup of another release');
+      assert.match(urls, /releases\/download\/v0\.4\.0\//);
+    } finally { fs.rmSync(pinned.root, { recursive: true, force: true }); }
+  }
+});
+
+test('install.sh: a pinned --release that exists installs that release', { skip: !hasAsset && 'no prebuilt binary for this platform' }, () => {
+  const h = fakeReleaseHost('v0.5.0-beta.1');
   try {
-    const r = spawnSync('/bin/sh', [SH, '--no-service', '--release', 'v0.4.0'], { encoding: 'utf8', env: pinned.env });
-    assert.equal(r.status, 1);
-    const urls = fs.readFileSync(pinned.log, 'utf8');
-    assert.ok(!/api\.github\.com/.test(urls), 'a pinned release never falls back');
-    assert.match(urls, /releases\/download\/v0\.4\.0\//);
-  } finally { fs.rmSync(pinned.root, { recursive: true, force: true }); }
+    const r = spawnSync('/bin/sh', [SH, '--no-service', '--release', 'v0.5.0-beta.1'], { encoding: 'utf8', env: h.env });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.match(r.stdout, /checksum OK/);
+    const urls = fs.readFileSync(h.log, 'utf8').trim().split('\n');
+    assert.equal(urls[0], `https://github.com/rdimascio/claude-wow/releases/download/v0.5.0-beta.1/${h.asset}`);
+    assert.ok(!urls.some(u => u.includes('api.github.com')));
+  } finally { fs.rmSync(h.root, { recursive: true, force: true }); }
 });
 
 test('install.ps1 parses, and its Node gate matches the shell one', { skip: !pwsh && 'no PowerShell here' }, () => {
@@ -161,6 +191,8 @@ test('the installers put the code under the home folder, name the claude-wow com
   assert.match(ps, /Get-Source/, 'falls back to the source');
   assert.match(ps, /\$newest = if \(\$Release -eq 'latest'\) \{ Get-NewestReleaseTag \}/, 'only latest falls back to the newest release');
   assert.match(ps, /\/releases\?per_page=1"/, 'the newest release, pre-releases included');
+  assert.match(ps, /elseif \(-not \(Get-Binary\)\) \{\n  if \(\$Release -ne 'latest'\) \{ Fail "release \$Release has no claude-wow binary/, 'a pinned release fails before the source route');
+  assert.doesNotMatch(ps + sh, /newest pre-release/, 'the fallback takes the newest release of any kind');
   assert.match(ps, /Programs\\claude-wow'/);
   assert.match(ps, /\$OldDir = Join-Path \$env:LOCALAPPDATA 'Programs\\wow-ai'/);
   assert.match(ps, /'config\.json', 'state\.json', 'transcripts\.json'/);
