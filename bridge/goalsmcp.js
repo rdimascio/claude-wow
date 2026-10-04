@@ -77,14 +77,19 @@ function deniedBy(denied, rule, platform = process.platform) {
   });
 }
 
-function createRunGrants({ call, character = () => '', log = () => {} } = {}) {
+function createRunGrants({ call, character = () => '', log = () => {}, tools = TOOL_NAMES, serverName = SERVER_NAME, toolsLabel = 'goal' } = {}) {
   const runs = new Map();
+  const checksCharacter = typeof character === 'function';
 
-  function grant(label) {
+  function grant(label, ctx) {
     const id = crypto.randomBytes(16).toString('hex');
     const token = crypto.randomBytes(32).toString('hex');
-    runs.set(id, { id, token, label: String(label || ''), character: String(character() || ''), used: false, conn: null });
+    runs.set(id, { id, token, label: String(label || ''), character: checksCharacter ? String(character() || '') : '', used: false, conn: null, ctx: ctx || null });
     return { id, token };
+  }
+
+  function has(id) {
+    return runs.has(String(id || ''));
   }
 
   function revoke(id) {
@@ -114,7 +119,7 @@ function createRunGrants({ call, character = () => '', log = () => {} } = {}) {
   function detach(run, conn) {
     if (!run || run.conn !== conn) return;
     run.conn = null;
-    if (runs.get(run.id) === run) log(`${run.label} ${SERVER_NAME} connection dropped; the run's goal tools are off until it ends`);
+    if (runs.get(run.id) === run) log(`${run.label} ${serverName} connection dropped; the run's ${toolsLabel} tools are off until it ends`);
   }
 
   async function onCall(run, msg) {
@@ -124,29 +129,52 @@ function createRunGrants({ call, character = () => '', log = () => {} } = {}) {
       log(`${run.label} ${tool} refused: the in-game run that held the grant has ended`);
       return answer(false, `${tool} was refused: the in-game run that held it has ended.`);
     }
-    const now = String(character() || '');
-    if (!run.character || !now || now !== run.character) {
+    const now = checksCharacter ? String(character() || '') : '';
+    if (checksCharacter && (!run.character || !now || now !== run.character)) {
       log(`${run.label} ${tool} refused: the run was granted for ${run.character || 'no character'}, the game now reports ${now || 'no character'}`);
       return answer(false, `${tool} was refused: this run was started for ${run.character || 'no reported character'}, and the game now reports ${now || 'no character'}.`);
     }
-    if (!TOOL_NAMES.includes(tool)) {
+    if (!tools.includes(tool)) {
       log(`${run.label} ${tool} refused: not given to in-game runs`);
       return answer(false, `${tool} is not given to in-game runs.`);
     }
     const args = msg.args && typeof msg.args === 'object' && !Array.isArray(msg.args) ? msg.args : {};
     let result;
-    try { result = await call(tool, args); } catch (e) { result = { ok: false, text: `${tool} failed: ${e && e.message ? e.message : e}` }; }
+    try { result = await call(tool, args, run.ctx); } catch (e) { result = { ok: false, text: `${tool} failed: ${e && e.message ? e.message : e}` }; }
     const ok = !!(result && result.ok);
     log(`${run.label} ${tool} from the in-game run: ${ok ? 'ok' : 'refused'}`);
     return answer(ok, String((result && result.text) || ''));
   }
 
-  return { grant, revoke, revokeAll, hello, detach, onCall, get size() { return runs.size; } };
+  return { grant, has, revoke, revokeAll, hello, detach, onCall, get size() { return runs.size; } };
 }
 
-function launchConfig({ runId, token, socket, runtime } = {}) {
+function joinGrants(list) {
+  const owner = new WeakMap();
+  const holder = id => list.find(g => g.has(id)) || null;
+  return {
+    hello(msg, conn) {
+      const g = holder(msg && msg.run);
+      if (!g) return { why: 'no valid run grant' };
+      const r = g.hello(msg, conn);
+      if (r.run) owner.set(r.run, g);
+      return r;
+    },
+    detach(run, conn) {
+      const g = owner.get(run);
+      if (g) g.detach(run, conn);
+    },
+    onCall(run, msg) {
+      const g = owner.get(run);
+      if (g) return g.onCall(run, msg);
+      return Promise.resolve({ type: RESULT, call: msg && msg.call, ok: false, text: 'The run grant behind this connection is unknown.' });
+    },
+  };
+}
+
+function launchConfig({ runId, token, socket, runtime, script = SCRIPT, extraArgs = [] } = {}) {
   const R = require('./runtime');
-  const [command, args] = R.scriptCommand(SCRIPT, ['--socket', socket, '--run', runId], runtime);
+  const [command, args] = R.scriptCommand(script, ['--socket', socket, '--run', runId, ...extraArgs], runtime);
   return { server: { type: 'stdio', command, args, env: { [TOKEN_ENV]: token }, alwaysLoad: true } };
 }
 
@@ -156,6 +184,13 @@ function mcpConfig(servers) {
 }
 
 function createServer(opts) {
+  const spec = opts.spec || {};
+  const serverName = spec.name || SERVER_NAME;
+  const toolsLabel = spec.label || 'goal';
+  const toolNames = spec.tools || TOOL_NAMES;
+  const schemas = spec.schemas || toolSchemas;
+  const instructions = spec.instructions || INSTRUCTIONS;
+  const offText = spec.offText || DROPPED_TEXT;
   const out = opts.stdout;
   const socket = opts.socket || '';
   const runId = opts.runId || '';
@@ -223,7 +258,7 @@ function createServer(opts) {
       if (sock === s) sock = null;
       verified = false;
       dropped = true;
-      failAll(DROPPED_TEXT);
+      failAll(offText);
     });
     return true;
   }
@@ -232,13 +267,13 @@ function createServer(opts) {
     if (!granted()) return false;
     if (open()) return true;
     dropped = true;
-    log('cannot reach the claude-wow bridge socket (missing or not private); the goal tools are off for this run');
+    log(`cannot reach the claude-wow bridge socket (missing or not private); the ${toolsLabel} tools are off for this run`);
     return false;
   }
 
   function askBridge(tool, args) {
-    if (!granted()) return Promise.resolve({ ok: false, text: `${SERVER_NAME} was started without a run grant from the bridge, so ${tool} did nothing.` });
-    if (dropped) return Promise.resolve({ ok: false, text: DROPPED_TEXT });
+    if (!granted()) return Promise.resolve({ ok: false, text: `${serverName} was started without a run grant from the bridge, so ${tool} did nothing.` });
+    if (dropped) return Promise.resolve({ ok: false, text: offText });
     const id = nextCall++;
     return new Promise(resolve => {
       const timer = setTimeout(() => settle(id, { ok: false, text: `The claude-wow bridge did not answer ${tool} in time.` }), timeoutMs);
@@ -252,13 +287,13 @@ function createServer(opts) {
   async function onRequest(msg) {
     const { method, params } = msg;
     if (method === 'initialize') {
-      return { protocolVersion: pickProtocol(params && params.protocolVersion), capabilities: { tools: {} }, serverInfo: { name: SERVER_NAME, version: version() }, instructions: INSTRUCTIONS };
+      return { protocolVersion: pickProtocol(params && params.protocolVersion), capabilities: { tools: {} }, serverInfo: { name: serverName, version: version() }, instructions };
     }
     if (method === 'ping') return {};
-    if (method === 'tools/list') return { tools: toolSchemas() };
+    if (method === 'tools/list') return { tools: schemas() };
     if (method === 'tools/call') {
       const tool = params && params.name;
-      if (!TOOL_NAMES.includes(tool)) return { content: [{ type: 'text', text: `Unknown tool: ${String(tool).slice(0, 60)}` }], isError: true };
+      if (!toolNames.includes(tool)) return { content: [{ type: 'text', text: `Unknown tool: ${String(tool).slice(0, 60)}` }], isError: true };
       const args = params.arguments && typeof params.arguments === 'object' && !Array.isArray(params.arguments) ? params.arguments : {};
       const r = await askBridge(tool, args);
       return { content: [{ type: 'text', text: r.text || (r.ok ? 'done' : 'refused') }], isError: !r.ok };
@@ -278,7 +313,7 @@ function createServer(opts) {
   }
 
   function stop() {
-    failAll('The wowgoals server is shutting down.');
+    failAll(`The ${serverName} server is shutting down.`);
     if (sock) sock.destroy();
   }
 
@@ -314,7 +349,7 @@ function main(argv, deps = {}) {
 module.exports = {
   SERVER_NAME, SCRIPT, HELLO, CALL, RESULT, TOKEN_ENV, INSTRUCTIONS,
   TOOL_NAMES, LIVE_SESSION_ONLY, RUN_RULES, SERVER_RULE, DENIED_WITH_TOOLS, DENIED_WITHOUT_TOOLS, FILE_SEARCH_TOOLS,
-  fullToolName, isRunToolRule, deniedBy, toolSchemas, createRunGrants, launchConfig, mcpConfig, createServer, parseArgs, main,
+  fullToolName, isRunToolRule, deniedBy, toolSchemas, createRunGrants, joinGrants, launchConfig, mcpConfig, createServer, parseArgs, main,
 };
 
 if (require.main === module) main(process.argv.slice(2));
