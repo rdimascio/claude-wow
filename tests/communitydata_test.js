@@ -102,7 +102,7 @@ test('a community sync converts NPCs, spawns, quests and givers into their own s
   const r = await C.syncCommunity({ dataDir, fetch: gh.fetchImpl });
   assert.equal(r.status, 'synced');
   assert.equal(r.version, `z2815-${gh.entry.sha.slice(0, 7)}`);
-  assert.deepEqual(r.manifest.droppedBy, { junk: 5, relationWithoutQuest: 1, lootItemNotInClient: 1, lootItemNotIn112: 1, lootRowInvalid: 2, lootConditionMissing: 1, referenceNeverRolled: 1 });
+  assert.deepEqual(r.manifest.droppedBy, { junk: 5, relationWithoutQuest: 1, lootItemNotInClient: 1, lootItemNotIn112: 1, lootRowInvalid: 2, lootConditionMissing: 1, referenceNeverRolled: 1, lootGroupNeverReached: 1 });
   assert.equal(r.manifest.trust, 'community-db');
   assert.equal(r.manifest.client.build, '1.15.9.300');
   assert.equal(path.dirname(r.dir), path.join(dataDir, 'classic_era', 'community'));
@@ -197,7 +197,7 @@ test('data sync --source community is Classic Era only and goes through the CLI'
   const out = [];
   const code = await D.main(['sync', '--flavor', 'classic_era', '--source', 'community'], { env: { CLAUDE_WOW_HOME: home }, fetch: fakeGitHub().fetchImpl, out: s => out.push(s), err: s => out.push(s) });
   assert.equal(code, 0, out.join(''));
-  assert.match(out.join(''), /27 rows kept, 12 dropped; current community data z2815-[0-9a-f]{7}/);
+  assert.match(out.join(''), /27 rows kept, 13 dropped; current community data z2815-[0-9a-f]{7}/);
   const changed = async url => (url.includes('/QuestV2/') ? new Response('ID,UniqueBitFlag\n111,1\n112,2\n', { status: 200, headers: { 'content-type': 'text/csv', 'content-disposition': `attachment; filename="QuestV2.${new URL(url).searchParams.get('build')}.csv"` } }) : fakeWago(url));
   const again = [];
   assert.equal(await D.main(['sync', '--flavor', 'classic_era', '--force'], { env: { CLAUDE_WOW_HOME: home }, fetch: changed, out: s => again.push(s), err: s => again.push(s) }), 0, again.join(''));
@@ -429,7 +429,7 @@ test('community loot keeps the rows the server keeps, groups them by template an
   const r = await C.syncCommunity({ dataDir, fetch: fakeGitHub().fetchImpl });
   assert.deepEqual(r.manifest.loot, {
     unreferenced: { creatureloot: 2, fishingloot: 1, containerloot: 2, disenchantloot: 1, referenceloot: 2 },
-    unresolved: { referenceloot: 1, creatureloot: 1, objectloot: 1, encounterChest: 4 },
+    unresolved: { referenceloot: 1, creatureloot: 1, objectloot: 1, containerloot: 1, encounterChest: 4 },
     referenceDepth: 2,
   });
   const cs = GD.openStore({ dataDir, clientBuild: ERA_CLIENT }).community;
@@ -472,8 +472,8 @@ test('wow_npc, wow_item and wow_instance answer who drops what with flags, uncon
   assert.match(giver.notes.join(' '), /Drop sources come from community loot tables .* No chance, count or rate/);
   const wanderer = call(store, 'wow_npc', { id: 7002 }).results[0];
   assert.deepEqual(wanderer.drops.items.map(i => [i.id, !!i.conditional, !!i.viaReference]), [[512, false, false], [514, true, true]], 'a nested reference behind a conditional row is conditional');
-  assert.deepEqual(ids(wanderer.skinning.items), [511]);
-  assert.deepEqual(ids(wanderer.pickpocket.items), [512]);
+  assert.deepEqual(ids(wanderer.skinning.items), [511, 513, 512], 'a conditional 100% row does not always fill its group');
+  assert.deepEqual(ids(wanderer.pickpocket.items), [512, 513], 'an equal-chance row in a group a 100% row always fills never drops');
   const item = id => call(store, 'wow_item', { id }).results[0].community;
   const cap = item(512);
   assert.deepEqual(cap.droppedBy, { total: 2, npcs: [{ kind: 'npc', id: 7001, name: 'Fixture Giver' }, { kind: 'npc', id: 7002, name: 'Fixture Wanderer' }] });
@@ -541,8 +541,11 @@ test('the reverse loot index is built once per store and only on first use', asy
   const store = GD.openStore({ dataDir, clientBuild: ERA_CLIENT });
   call(store, 'wow_npc', { id: 7001 });
   assert.equal(store.community.loaded().includes('lootitems'), true);
-  const first = L.lootIndex(store.community);
+  assert.equal(L.hasIndex(store.community), false, 'an NPC lookup does not build the reverse index');
   call(store, 'wow_item', { id: 512 });
+  assert.equal(L.hasIndex(store.community), true, 'the first item lookup builds it');
+  const first = L.lootIndex(store.community);
+  call(store, 'wow_item', { id: 514 });
   assert.equal(L.lootIndex(store.community), first);
   assert.notEqual(L.lootIndex(GD.openStore({ dataDir, clientBuild: ERA_CLIENT }).community), first, 'a new store builds its own');
 });
@@ -561,6 +564,16 @@ test('a dump whose references nest deeper than two levels or loop, or whose crea
   const noTable = SQL.replace('CREATE TABLE `skinning_loot_template`', 'CREATE TABLE `skinning_other`');
   await assert.rejects(C.syncCommunity({ dataDir, fetch: fakeGitHub({ gz: zlib.gzipSync(Buffer.from(noTable)) }).fetchImpl }), /table skinning_loot_template is missing/);
   assert.equal(C.readCommunity(C.communityRoot(dataDir)), null);
+  for (const entity of ['items', 'zones', 'encounters']) {
+    const era = D.readCurrent(path.join(dataDir, 'classic_era'));
+    const manifestFile = path.join(era.dir, 'manifest.json');
+    const good = fs.readFileSync(manifestFile, 'utf8');
+    const m = JSON.parse(good);
+    m.entities[entity].rows += 1;
+    fs.writeFileSync(manifestFile, JSON.stringify(m));
+    await assert.rejects(C.syncCommunity({ dataDir, fetch: fakeGitHub().fetchImpl }), /client tables are needed first/, `an unreadable ${entity} table refuses the sync`);
+    fs.writeFileSync(manifestFile, good);
+  }
 });
 
 test('on Forever loot answers drop items Forever lacks or names differently, NPCs it cannot back, and chests of encounters it does not have', async () => {

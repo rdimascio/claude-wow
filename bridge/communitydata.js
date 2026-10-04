@@ -323,8 +323,9 @@ async function syncCommunity(opts = {}) {
   if (!opts.dataDir) throw new D.SyncError('no data folder given');
   if (typeof fetchImpl !== 'function') throw new D.SyncError('no fetch function given');
   const client = GD.openStore({ dataDir: opts.dataDir, flavor: FLAVOR });
-  if (!client.build || !['uimaps', 'uimapassignments', 'quests'].every(e => client.has(e))) {
-    throw new D.SyncError(`the Classic Era client tables are needed first (map positions and quest IDs come from them): run "${D.syncCommand(FLAVOR)}"`);
+  const needed = ['uimaps', 'uimapassignments', 'quests', 'items', 'zones', ...((client.manifest && client.manifest.entities && client.manifest.entities.encounters) ? ['encounters'] : [])];
+  if (!client.build || !needed.every(e => client.has(e))) {
+    throw new D.SyncError(`the Classic Era client tables are needed first (map positions, quest IDs, items, zones and encounters come from them): run "${D.syncCommand(FLAVOR)}"`);
   }
   const root = communityRoot(opts.dataDir);
   const lock = D.acquireLock(root, now, opts.pidAlive);

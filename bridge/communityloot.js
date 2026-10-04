@@ -60,18 +60,35 @@ function lootRow(r, ctx, drop) {
   return { ref: -r.mincountOrRef, flags: { questOnly: false, conditional, shared: true } };
 }
 
+function groupsAlwaysFilled(rows) {
+  const sums = new Map();
+  for (const r of rows) {
+    if (r.group > 0 && r.chance > 0 && !r.flags.conditional && !r.flags.questOnly) sums.set(r.group, (sums.get(r.group) || 0) + r.chance);
+  }
+  return new Set([...sums].filter(([, sum]) => sum >= 100).map(([group]) => group));
+}
+
 function readTemplates(sql, ctx, drop) {
   const templates = {};
   for (const [entity, table] of Object.entries(TABLES)) {
-    const byEntry = new Map();
+    const kept = new Map();
     for (const r of S.rows(sql, table, COLUMNS)) {
       const row = lootRow(r, ctx, drop);
       if (!row) continue;
-      if (!byEntry.has(r.entry)) byEntry.set(r.entry, { items: new Map(), refs: new Map(), rows: 0 });
-      const t = byEntry.get(r.entry);
-      t.rows++;
-      if (row.ref) addTo(t.refs, row.ref, row.flags);
-      else addTo(t.items, row.item, row.flags);
+      if (!kept.has(r.entry)) kept.set(r.entry, []);
+      kept.get(r.entry).push({ ...row, group: r.groupid, chance: Math.abs(r.ChanceOrQuestChance) });
+    }
+    const byEntry = new Map();
+    for (const [entry, rows] of kept) {
+      const filled = groupsAlwaysFilled(rows);
+      const t = { items: new Map(), refs: new Map(), rows: 0 };
+      for (const row of rows) {
+        if (row.chance === 0 && filled.has(row.group)) { drop('lootGroupNeverReached'); continue; }
+        t.rows++;
+        if (row.ref) addTo(t.refs, row.ref, row.flags);
+        else addTo(t.items, row.item, row.flags);
+      }
+      byEntry.set(entry, t);
     }
     templates[entity] = byEntry;
   }
@@ -110,7 +127,7 @@ function encounterChests(client, objects, spawnMaps, count) {
 function convert(sql, client, { npcs, nameOrDrop, drop }) {
   const loot = { unreferenced: {}, unresolved: {} };
   const count = (kind, entity, n = 1) => { loot[kind][entity] = (loot[kind][entity] || 0) + n; };
-  const itemRows = [...S.rows(sql, 'item_template', ['entry', 'name', 'Flags', 'DisenchantID'])];
+  const itemRows = [...S.rows(sql, 'item_template', ['entry', 'name', 'Flags', 'DisenchantID', 'maxMoneyLoot'])];
   const ctx = {
     client,
     conditions: new Set([...S.rows(sql, 'conditions', ['condition_entry'])].map(r => r.condition_entry)),
@@ -153,7 +170,9 @@ function convert(sql, client, { npcs, nameOrDrop, drop }) {
     if (client.byId('zones', id)) own('fishingloot', id);
   }
   for (const it of ctx.items112.values()) {
-    if ((it.Flags & ITEM_HAS_LOOT) && templates.containerloot.has(it.entry) && client.byId('items', it.entry)) own('containerloot', it.entry);
+    if (!(it.Flags & ITEM_HAS_LOOT) || !client.byId('items', it.entry)) continue;
+    if (templates.containerloot.has(it.entry)) own('containerloot', it.entry);
+    else if (!(it.maxMoneyLoot > 0)) count('unresolved', 'containerloot');
   }
   const disenchantSources = new Map();
   for (const it of ctx.items112.values()) {
@@ -220,6 +239,10 @@ function lootIndex(cs) {
   return indexes.get(cs);
 }
 
+function hasIndex(cs) {
+  return indexes.has(cs);
+}
+
 function hasLoot(cs) {
   return !!cs && ENTITIES.every(e => cs.has(e));
 }
@@ -254,4 +277,4 @@ function itemsOf(cs, entity, templateID) {
   return out;
 }
 
-module.exports = { TABLES, TEMPLATES, OWNED, ENTITIES, NPC_LOOT, ENCOUNTER_CHESTS, MAX_REFERENCE_DEPTH, convert, hasLoot, lootIndex, sourcesOf, itemsOf };
+module.exports = { TABLES, TEMPLATES, OWNED, ENTITIES, NPC_LOOT, ENCOUNTER_CHESTS, MAX_REFERENCE_DEPTH, convert, hasLoot, hasIndex, lootIndex, sourcesOf, itemsOf };

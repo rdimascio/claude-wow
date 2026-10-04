@@ -112,9 +112,10 @@ CREATE TABLE `item_template` (
   `entry` mediumint unsigned NOT NULL DEFAULT '0',
   `name` varchar(255) NOT NULL DEFAULT '',
   `Flags` int unsigned NOT NULL DEFAULT '0',
-  `DisenchantID` mediumint unsigned NOT NULL DEFAULT '0'
+  `DisenchantID` mediumint unsigned NOT NULL DEFAULT '0',
+  `maxMoneyLoot` int unsigned NOT NULL DEFAULT '0'
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8mb3;
-INSERT INTO `item_template` VALUES (511,'Era Fixture Hide (1.12)',0,0),(512,'Era Fixture Cap',0,61),(513,'Schematic: The Era Fixture',0,0),(514,'Recipe: Era Blast',4,0),(600,'Fixture Item The Client Lacks',0,0),(601,'Fixture Bag The Client Lacks',4,0);
+INSERT INTO `item_template` VALUES (511,'Era Fixture Hide (1.12)',4,0,0),(512,'Era Fixture Cap',4,61,10),(513,'Schematic: The Era Fixture',0,0,0),(514,'Recipe: Era Blast',4,0,0),(600,'Fixture Item The Client Lacks',0,0,0),(601,'Fixture Bag The Client Lacks',4,0,0);
 DROP TABLE IF EXISTS `creature_loot_template`;
 CREATE TABLE `creature_loot_template` (
   `entry` mediumint unsigned NOT NULL DEFAULT '0',
@@ -153,7 +154,7 @@ CREATE TABLE `skinning_loot_template` (
   `comments` varchar(300) DEFAULT '',
   PRIMARY KEY (`entry`,`item`)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8mb3;
-INSERT INTO `skinning_loot_template` VALUES (7002,511,100,0,1,2,0,'');
+INSERT INTO `skinning_loot_template` VALUES (7002,511,100,0,1,2,0,''),(7002,512,100,5,1,1,5,'conditional, so group 5 is not always filled'),(7002,513,0,5,1,1,0,'reached when the condition fails');
 DROP TABLE IF EXISTS `pickpocketing_loot_template`;
 CREATE TABLE `pickpocketing_loot_template` (
   `entry` mediumint unsigned NOT NULL DEFAULT '0',
@@ -166,7 +167,7 @@ CREATE TABLE `pickpocketing_loot_template` (
   `comments` varchar(300) DEFAULT '',
   PRIMARY KEY (`entry`,`item`)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8mb3;
-INSERT INTO `pickpocketing_loot_template` VALUES (7002,512,30,0,1,1,0,'');
+INSERT INTO `pickpocketing_loot_template` VALUES (7002,512,30,0,1,1,0,''),(7002,513,100,4,1,1,0,'always fills group 4'),(7002,514,0,4,1,1,0,'never reached in group 4');
 DROP TABLE IF EXISTS `gameobject_loot_template`;
 CREATE TABLE `gameobject_loot_template` (
   `entry` mediumint unsigned NOT NULL DEFAULT '0',
