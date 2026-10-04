@@ -212,7 +212,7 @@ function instanceRow(store, inst, matchedBoss) {
   for (const e of [...instanceEncounters(store, inst.id)].sort((a, b) => a.orderIndex - b.orderIndex || a.id - b.id)) {
     if (!sets.has(e.difficultyID)) sets.set(e.difficultyID, new Map());
     const set = sets.get(e.difficultyID);
-    if (!set.has(e.name)) set.set(e.name, { id: e.id, name: e.name, ...(cs ? { communityNpc: exactNpcs(cs, e.name).length > 0 } : {}) });
+    if (!set.has(e.name)) set.set(e.name, { id: e.id, name: e.name, ...(cs && cs.has('npcs') ? { community: bossCommunity(cs, e.name) } : {}) });
   }
   const levels = store.flavor === 'classic_era' && store.has('instancelevels') ? store.byId('instancelevels', inst.id) : null;
   const classic = classicInstanceMaps(cs);
@@ -230,8 +230,9 @@ function instanceRow(store, inst, matchedBoss) {
   return row;
 }
 
-function bossOutdoors(cs, name) {
-  return exactNpcs(cs, name).some(npc => npc.spawns.some(s => s.maps.length > 0));
+function bossCommunity(cs, name) {
+  const npcs = exactNpcs(cs, name);
+  return communityCited(cs, { npcIn112: npcs.length > 0, outdoorSpawnIn112: npcs.some(npc => npc.spawns.some(s => s.maps.length > 0)) });
 }
 
 function sharedNameNotes(shown, hits, noun = 'items') {
@@ -488,7 +489,7 @@ const TOOLS = [
   },
   {
     name: 'wow_instance',
-    description: 'Look up a dungeon or raid by ID (its map ID), by name, or by the name of one of its bosses, from the client tables: name, type (dungeon or raid), group size (null when the client has none), its bosses in order, and on Classic Era a level range when the client has a matching one. The client lists bosses in sets by difficulty ID, and a set can mix original and Season of Discovery bosses: bossSets keeps the sets apart. With Classic Era community data (trust "community-db"), community.inClassic112 says whether a 1.12 NPC stands in the instance, each boss has communityNpc (an NPC with that exact name is in the 1.12 data), and a boss that also stands outdoors in 1.12 has community.outdoorsIn112: on Classic Era the world bosses (Lord Kazzak, Azuregos, the dragons of Nightmare) are listed only under Season of Discovery raids, so say they are world bosses there. No loot, entrances or attunements yet.',
+    description: 'Look up a dungeon or raid by ID (its map ID), by name, or by the name of one of its bosses, from the client tables: name, type (dungeon or raid), group size (null when the client has none), its bosses in order, and on Classic Era a level range when the client has a matching one. The client lists bosses in sets by difficulty ID, and a set can mix original and Season of Discovery bosses: bossSets keeps the sets apart. With community data (trust "community-db", on Forever "community-db-unchecked-for-this-game"), community.inClassic112 says whether a 1.12 NPC stands in the instance, and each boss has community.npcIn112 (an NPC with that exact name is in the 1.12 data) and community.outdoorSpawnIn112 (such an NPC also has a spawn on a world map). Neither identifies a world boss by itself: scripted bosses have no spawn rows, and some instance bosses share a name with an outdoor NPC. On Classic Era the client lists the world bosses only under Season of Discovery raids. No loot, entrances or attunements yet.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -516,9 +517,7 @@ const TOOLS = [
         const inst = store.byId('instances', h.row.mapID);
         if (real(inst)) {
           if (!results.some(r => r.inst.id === inst.id)) {
-            const boss = { id: h.row.id, name: h.row.name };
-            if (cs && bossOutdoors(cs, h.row.name)) boss.community = communityCited(cs, { outdoorsIn112: true });
-            results.push({ inst, boss });
+            results.push({ inst, boss: { id: h.row.id, name: h.row.name } });
           }
         } else if (store.has('instances') && notes.length < MAX_WORLD_NOTES) {
           notes.push(`${h.row.name} (encounter ${h.row.id}) is on map ${h.row.mapID}, which is not a dungeon or raid in this data.`);

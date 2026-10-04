@@ -306,6 +306,7 @@ test('on Forever the Classic community data shows only quests the Forever client
   assert.equal(call(store, 'wow_npc', { id: 7004 }).found, false, 'an NPC with no shared map and no Forever quest is not shown');
   assert.equal(call(store, 'wow_npc', { name: "O'Brien" }).found, false);
   assert.equal(C.openCommunity({ dataDir, flavor: 'tbc' }), null);
+  assert.equal(call(store, 'wow_instance', { id: 33 }).results[0].bossSets[0].bosses[0].community.trust, 'community-db-unchecked-for-this-game', 'on Forever the boss flags carry the other-game trust');
 });
 
 test('on Forever, missing or other Classic Era data hides every community position and says which sync fixes it', async () => {
@@ -353,12 +354,20 @@ test('on Classic Era wow_instance adds client level ranges and community flags: 
   assert.deepEqual(keep.levels, { min: 18, max: 25 });
   assert.deepEqual([keep.community.inClassic112, keep.community.trust, keep.community.source], [true, 'community-db', 'cmangos'], 'a community spawn stands in it');
   assert.equal(keep.trust, 'client-data');
-  assert.equal(keep.bossSets[0].bosses[0].communityNpc, false, 'Fixture Gatekeeper is no 1.12 NPC');
+  assert.deepEqual([keep.bossSets[0].bosses[0].community.npcIn112, keep.bossSets[0].bosses[0].community.outdoorSpawnIn112, keep.bossSets[0].bosses[0].community.trust], [false, false, 'community-db'], 'Fixture Gatekeeper is no 1.12 NPC');
   assert.deepEqual(D.readCurrent(path.join(dataDir, 'classic_era')).manifest.tables.LFGDungeons.droppedBy, { ambiguousInstanceName: 1, badLevelRange: 1, noInstanceWithThatName: 1 });
   const canyon = call(store, 'wow_instance', { name: 'fixture giver' }).results[0];
   assert.deepEqual([canyon.id, canyon.maxPlayers, canyon.levels, canyon.community.inClassic112], [2784, null, null, false], 'two maps share the name, so neither gets a level range');
-  assert.equal(canyon.bossSets[0].bosses[0].communityNpc, true);
-  assert.deepEqual([canyon.matchedBoss.community.outdoorsIn112, canyon.matchedBoss.community.trust], [true, 'community-db']);
+  assert.deepEqual([canyon.bossSets[0].bosses[0].community.npcIn112, canyon.bossSets[0].bosses[0].community.outdoorSpawnIn112], [true, true]);
+  assert.equal(canyon.matchedBoss.community, undefined, 'the boss flags live on the boss rows, the same on every lookup');
+  assert.deepEqual(call(store, 'wow_instance', { id: 2784 }).results[0].bossSets[0].bosses[0].community.outdoorSpawnIn112, true, 'a lookup by ID says the same');
+  const cs = store.community;
+  const manifestFile = path.join(cs.dir, 'manifest.json');
+  const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
+  fs.writeFileSync(manifestFile, JSON.stringify({ ...manifest, entities: { ...manifest.entities, npcs: { ...manifest.entities.npcs, rows: 99 } } }));
+  const broken = call(GD.openStore({ dataDir, clientBuild: ERA_CLIENT }), 'wow_instance', { id: 33 });
+  assert.equal(broken.results[0].bossSets[0].bosses[0].community, undefined, 'an unreadable NPC table says nothing about the bosses');
+  assert.ok(broken.unavailable.includes('npcs'));
 });
 
 test('community data goes stale only when the client tables it was built from change', async () => {
