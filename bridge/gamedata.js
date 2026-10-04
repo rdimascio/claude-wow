@@ -181,7 +181,10 @@ function openStore({ dataDir, flavor: chosen, clientBuild = '' } = {}) {
     source: manifest ? manifest.source || null : null,
     ...reader,
     get community() {
-      if (community === undefined) community = flavor ? require('./communitydata').openCommunity({ dataDir, flavor, client: build ? { build, tableHash: manifest.tableHash || null } : null, gameStore: this }) : null;
+      if (community === undefined) {
+        const C = require('./communitydata');
+        community = flavor ? C.openCommunity({ dataDir, flavor, client: C.clientIdentity(this), gameStore: this }) : null;
+      }
       return community;
     },
   };

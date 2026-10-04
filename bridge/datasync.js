@@ -29,6 +29,7 @@ const UI_MAP_TYPE_ZONE = 3;
 const INSTANCE_TYPES = Object.freeze({ 1: 'dungeon', 2: 'raid' });
 const LFG_ZONE_TYPE = 4;
 const DEV_MAP = /\bTest\b|CashTest|<unused>|\bunused\b/i;
+const DEV_ENCOUNTER = /^Test|\bTest\b|No Longer in Use|<unused>/i;
 const UNSAFE_TEXT = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}|]/u;
 const INTEGER_TEXT = /^-?\d+$/;
 const DECIMAL_TEXT = /^-?(\d+(\.\d*)?|\.\d+)(e[-+]?\d+)?$/i;
@@ -377,7 +378,7 @@ const TABLES = Object.freeze([
       return { id: idOf(row), name, type, maxPlayers: intOf(row, 'MaxPlayers') };
     },
     accept(record, ctx) {
-      ctx.instanceNames.set(record.name, record.id);
+      ctx.instanceNames.set(record.name, ctx.instanceNames.has(record.name) ? null : record.id);
     },
   },
   {
@@ -386,17 +387,22 @@ const TABLES = Object.freeze([
     optional: true,
     columns: ['ID', 'Name_lang', 'MapID', 'DifficultyID', 'OrderIndex'],
     convert(row) {
-      return { id: idOf(row), name: nameOf(row, 'Name_lang'), mapID: intOf(row, 'MapID'), difficultyID: intOf(row, 'DifficultyID'), orderIndex: intOf(row, 'OrderIndex') };
+      const name = nameOf(row, 'Name_lang');
+      if (DEV_ENCOUNTER.test(name)) throw new Drop('development');
+      return { id: idOf(row), name, mapID: intOf(row, 'MapID'), difficultyID: intOf(row, 'DifficultyID'), orderIndex: intOf(row, 'OrderIndex') };
     },
   },
   {
     table: 'LFGDungeons',
     entity: 'instancelevels',
     optional: true,
+    flavors: ['classic_era'],
     columns: ['ID', 'Name_lang', 'MinLevel', 'MaxLevel', 'TypeID'],
     convert(row, ctx) {
       if (intOf(row, 'TypeID') === LFG_ZONE_TYPE) throw new Skip();
-      const mapID = ctx.instanceNames.get(nameOf(row, 'Name_lang'));
+      const name = nameOf(row, 'Name_lang');
+      if (ctx.instanceNames.get(name) === null) throw new Drop('ambiguousInstanceName');
+      const mapID = ctx.instanceNames.get(name);
       if (!mapID) throw new Drop('noInstanceWithThatName');
       const minLevel = intOf(row, 'MinLevel');
       const maxLevel = intOf(row, 'MaxLevel');
@@ -680,6 +686,7 @@ async function sync(opts = {}) {
       const tables = {};
       const entities = {};
       for (const spec of TABLES) {
+        if (spec.flavors && !spec.flavors.includes(flavorName)) continue;
         const url = tableUrl(spec.table, build);
         log(`fetch ${url}`);
         let text;
@@ -789,7 +796,7 @@ async function main(argv, deps = {}) {
     if (result.status === 'synced') out(`${result.manifest.rows} rows kept, ${result.manifest.dropped} dropped; current build ${result.build} (${result.manifest.flavor}) in ${result.dir}\n`);
     const C = require('./communitydata');
     const community = result.manifest.flavor === C.FLAVOR ? C.readCommunity(C.communityRoot(home.data)) : null;
-    if (community && (community.manifest.client || {}).tableHash !== result.manifest.tableHash) out(`community data ${community.version} was built with other client data, so its positions are hidden until you run "claude-wow data sync --flavor classic_era --source community"\n`);
+    if (community && (community.manifest.client || {}).placementHash !== C.placementHash(result.manifest)) out(`community data ${community.version} was built with other client data, so its positions are hidden until you run "claude-wow data sync --flavor classic_era --source community"\n`);
     return 0;
   } catch (e) {
     err(`data sync failed: ${e && e.message ? e.message : String(e)}\n`);

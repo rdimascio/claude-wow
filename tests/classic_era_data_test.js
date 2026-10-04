@@ -77,9 +77,9 @@ test('claude-wow data sync --flavor classic_era fetches the newest 1.15.9 wow_cl
   assert.equal(current.build, ERA_BUILD);
   assert.equal(fs.existsSync(path.join(home, 'data', 'forever')), false, 'the Forever folder is left alone');
   const m = current.manifest;
-  assert.deepEqual([m.flavor, m.product, m.buildFamily, m.dropped], ['classic_era', 'wow_classic_era', '1.15.9', 1]);
+  assert.deepEqual([m.flavor, m.product, m.buildFamily, m.dropped], ['classic_era', 'wow_classic_era', '1.15.9', 4]);
   assert.deepEqual(Object.fromEntries(Object.entries(m.entities).map(([k, v]) => [k, v.rows])), {
-    uimaps: 2, uimapassignments: 2, zones: 1, flightpaths: 1, quests: 1, items: 4, skilllines: 3, skilllineabilities: 6, spellreagents: 1, instances: 3, encounters: 4,
+    uimaps: 2, uimapassignments: 2, zones: 1, flightpaths: 1, quests: 1, items: 4, skilllines: 3, skilllineabilities: 6, spellreagents: 1, instances: 4, encounters: 2, instancelevels: 1,
   });
   const items = fs.readFileSync(path.join(current.dir, 'items.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l));
   assert.deepEqual(items[1], { id: ERA_CAP, name: 'Era Fixture Cap', quality: 2, itemLevel: 18, requiredLevel: 13, inventoryType: 1, sellPrice: 210, buyPrice: 1050, startQuestID: 0 });

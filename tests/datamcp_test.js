@@ -120,17 +120,19 @@ test('wow_spell names a spell and its rank from the client tables, with its skil
   assert.equal(call(GD.openStore({ dataDir, clientBuild: BUILD }), 'wow_spell', { id: 4001 }).results[0].reagents, null, 'an unavailable reagent table is not "no reagents"');
 });
 
-test('wow_instance finds dungeons and raids by name or boss, with bosses in order and client level ranges, and names world encounters', async () => {
+test('wow_instance finds dungeons and raids by name or boss, keeps boss sets apart, and hides maps without bosses', async () => {
   const { dataDir } = await syncedHome('instance');
   const store = GD.openStore({ dataDir, clientBuild: BUILD });
   const keep = call(store, 'wow_instance', { id: 33 });
   assert.equal(keep.trust, 'client-data');
-  assert.deepEqual(keep.results[0], { kind: 'instance', id: 33, name: 'Fixture Keep', type: 'dungeon', maxPlayers: 10, levels: { min: 18, max: 25 }, bosses: [{ id: 200, name: 'Fixture Gatekeeper' }, { id: 201, name: 'Fixture Warden' }], source: 'wago.tools', build: BUILD, trust: 'client-data' });
+  assert.deepEqual(keep.unavailable, [], 'Forever has no level table and does not say it is missing');
+  assert.deepEqual(keep.results[0], { kind: 'instance', id: 33, name: 'Fixture Keep', type: 'dungeon', maxPlayers: 10, levels: null, bossSets: [{ difficultyID: 0, bosses: [{ id: 200, name: 'Fixture Gatekeeper' }, { id: 201, name: 'Fixture Warden' }] }, { difficultyID: 7, bosses: [{ id: 204, name: 'Fixture Wardens' }] }], source: 'wago.tools', build: BUILD, trust: 'client-data' });
   const byBoss = call(store, 'wow_instance', { name: 'firelord' });
   assert.deepEqual(byBoss.results.map(r => [r.name, r.type, r.matchedBoss.name]), [['Fixture Core', 'raid', 'Fixture Firelord']]);
-  assert.equal(call(store, 'wow_instance', { id: 2784 }).results[0].levels, null, 'a level range with min above max is not shown');
+  assert.equal(call(store, 'wow_instance', { id: 2784 }).found, false, 'a map whose only boss is a development encounter is hidden');
+  assert.equal(call(store, 'wow_instance', { name: 'testwerk' }).found, false);
   assert.equal(call(store, 'wow_instance', { id: 13 }).found, false, 'a test map is not an instance');
-  assert.match(call(store, 'wow_instance', { name: 'roamer' }).notes.join(' '), /Fixture Roamer \(encounter 203\) is not in a dungeon or raid/);
+  assert.deepEqual(call(store, 'wow_instance', { name: 'roamer' }).notes, ['Fixture Roamer (encounter 203) is on map 0, which is not a dungeon or raid in this data.']);
 });
 
 test('wow_faction finds reputation factions only, with their parent, and its ID expands as a token', async () => {

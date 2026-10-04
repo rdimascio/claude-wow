@@ -252,7 +252,7 @@ test('community positions computed with other client data are left out, and a da
   const r = await C.syncCommunity({ dataDir, fetch: fakeGitHub().fetchImpl });
   const manifestFile = path.join(r.dir, 'manifest.json');
   const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
-  fs.writeFileSync(manifestFile, JSON.stringify({ ...manifest, client: { ...manifest.client, tableHash: 'other' } }));
+  fs.writeFileSync(manifestFile, JSON.stringify({ ...manifest, client: { ...manifest.client, placementHash: 'other' } }));
   const store = GD.openStore({ dataDir, clientBuild: ERA_CLIENT });
   assert.equal(store.community.stale, true);
   const npc = call(store, 'wow_npc', { id: 7001 });
@@ -315,7 +315,7 @@ test('on Forever, missing or other Classic Era data hides every community positi
   foreverFromEra(dataDir);
   const manifestFile = path.join(r.dir, 'manifest.json');
   const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
-  fs.writeFileSync(manifestFile, JSON.stringify({ ...manifest, client: { ...manifest.client, tableHash: 'older' } }));
+  fs.writeFileSync(manifestFile, JSON.stringify({ ...manifest, client: { ...manifest.client, placementHash: 'older' } }));
   const stale = GD.openStore({ dataDir, clientBuild: FOREVER_CLIENT });
   assert.deepEqual([...stale.community.sameMaps()], []);
   const staleNpc = call(stale, 'wow_npc', { id: 7001 });
@@ -345,12 +345,30 @@ test('sharedMaps needs every rectangle of a map to be identical, counted pairwis
   assert.deepEqual([...C.sharedMaps(fake([rect(1, 5, 10), rect(2, 5, 10)]), fake([rect(1, 5, 10), rect(2, 5, 20)]))], [], 'two rectangles are not matched by one');
 });
 
-test('wow_instance says whether an instance is in the 1.12 world the community data describes', async () => {
+test('on Classic Era wow_instance adds client level ranges and community flags: instance in 1.12, boss named like a 1.12 NPC, boss outdoors', async () => {
   const dataDir = await eraData('instances');
   await C.syncCommunity({ dataDir, fetch: fakeGitHub().fetchImpl });
   const store = GD.openStore({ dataDir, clientBuild: ERA_CLIENT });
-  assert.equal(call(store, 'wow_instance', { id: 33 }).results[0].inClassic112, true, 'a community spawn stands in it');
-  assert.equal(call(store, 'wow_instance', { id: 2784 }).results[0].inClassic112, false);
+  const keep = call(store, 'wow_instance', { id: 33 }).results[0];
+  assert.deepEqual(keep.levels, { min: 18, max: 25 });
+  assert.deepEqual([keep.community.inClassic112, keep.community.trust, keep.community.source], [true, 'community-db', 'cmangos'], 'a community spawn stands in it');
+  assert.equal(keep.trust, 'client-data');
+  assert.equal(keep.bossSets[0].bosses[0].communityNpc, false, 'Fixture Gatekeeper is no 1.12 NPC');
+  assert.deepEqual(D.readCurrent(path.join(dataDir, 'classic_era')).manifest.tables.LFGDungeons.droppedBy, { ambiguousInstanceName: 1, badLevelRange: 1, noInstanceWithThatName: 1 });
+  const canyon = call(store, 'wow_instance', { name: 'fixture giver' }).results[0];
+  assert.deepEqual([canyon.id, canyon.maxPlayers, canyon.levels, canyon.community.inClassic112], [2784, null, null, false], 'two maps share the name, so neither gets a level range');
+  assert.equal(canyon.bossSets[0].bosses[0].communityNpc, true);
+  assert.deepEqual([canyon.matchedBoss.community.outdoorsIn112, canyon.matchedBoss.community.trust], [true, 'community-db']);
+});
+
+test('community data goes stale only when the client tables it was built from change', async () => {
+  const dataDir = await eraData('placement');
+  await C.syncCommunity({ dataDir, fetch: fakeGitHub().fetchImpl });
+  const csv = (table, body) => async url => (url.includes(`/${table}/`) ? new Response(body, { status: 200, headers: { 'content-type': 'text/csv', 'content-disposition': `attachment; filename="${table}.${new URL(url).searchParams.get('build')}.csv"` } }) : fakeWago(url));
+  await D.sync({ dataDir, flavor: 'classic_era', force: true, fetch: csv('SkillLine', 'ID,DisplayName_lang,CategoryID,ParentSkillLineID\n9,Other Fixture Line,11,0\n') });
+  assert.equal(GD.openStore({ dataDir, clientBuild: ERA_CLIENT }).community.stale, false, 'a change to a table the community data does not read keeps it current');
+  await D.sync({ dataDir, flavor: 'classic_era', force: true, fetch: csv('QuestV2', 'ID,UniqueBitFlag\n111,1\n112,2\n') });
+  assert.equal(GD.openStore({ dataDir, clientBuild: ERA_CLIENT }).community.stale, true, 'a change to the quest table does not');
 });
 
 test('a store written by another converter shape is not read, and the next sync converts again', async () => {

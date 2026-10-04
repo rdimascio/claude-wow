@@ -1,5 +1,3 @@
 Name_lang,ID,MapID,DifficultyID,OrderIndex,CompleteWorldStateID,Bit,Flags,SpellIconFileID,Faction
-"Fixture Warden",201,33,0,1,0,0,0,0,-1
 "Fixture Gatekeeper",200,33,0,0,0,0,0,0,-1
-"Fixture Firelord",202,409,0,9,0,0,0,0,-1
-"Fixture Roamer",203,0,0,0,0,0,0,0,-1
+"Fixture Giver",210,2784,0,0,0,0,0,0,-1
