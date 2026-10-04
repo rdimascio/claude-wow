@@ -1980,15 +1980,21 @@ function noteChatLogWrite(client, bytes) {
   saveState();
   publishNow();
 }
-function cleanChatLog(r, why) {
+function cleanBlockedTeller(r) {
+  if (!r.tellCleanBlocked) r.tellCleanBlocked = CL.reasonTeller(reason => log(`chat log clean${fromLabel(r.client)}: cannot tell whether the game is running (${reason}), so ${path.basename(r.client.chatLogFile)} is left as it is. Said once per reason`));
+  return r.tellCleanBlocked;
+}
+async function cleanChatLog(r, why) {
   if (!CHAT_LOG.clean) return;
   const file = r.client.chatLogFile;
   let out;
-  try { out = CL.cleanWhenClosed(file, r.client.dir); } catch (e) { log(`chat log clean (${why}): failed (${e.message})`); return; }
+  try { out = await CL.cleanWhenClosed(file, r.client.dir); } catch (e) { log(`chat log clean (${why}${fromLabel(r.client)}): failed (${e.message})`); return; }
+  if (!out.cleaned) cleanBlockedTeller(r)(out);
   if (!out.cleaned || !out.removed) return;
   if (r.chatLogWatch) r.chatLogWatch.resync();
-  if (out.grewMeanwhile) {
-    log(`chat log clean (${why}${fromLabel(r.client)}): ${path.basename(file)} grew while it was cleaned, so it was left at full length: bytes ${out.keptUpTo} to ${out.before} are stale copies of older lines, starting inside a line. Nothing the game wrote is lost`);
+  if (out.grewMeanwhile || out.staleVerdict) {
+    const cause = out.grewMeanwhile ? 'grew while it was cleaned' : 'took more than 3 s to clean after the process check';
+    log(`chat log clean (${why}${fromLabel(r.client)}): ${path.basename(file)} ${cause}, so it was left at full length: bytes ${out.keptUpTo} to ${out.before} are stale copies of older lines, starting inside a line. Nothing the game wrote is lost`);
     return;
   }
   log(`chat log clean (${why}${fromLabel(r.client)}): the game is closed; removed ${out.removed} transport line(s) from ${path.basename(file)}, ${out.before} -> ${out.after} bytes`);
@@ -2008,13 +2014,11 @@ function startChatLogWatch(r) {
   r.chatLogWatch = CL.watchChatLog(file, frame => handleLogFrame(frame, r), { log, pollMs: CHAT_LOG.pollMs, onWrite: bytes => noteChatLogWrite(r.client, bytes), key: chatLogKey(), onRefused: noteRefusedFrame });
   log(`chat log transport: watching ${file} (lines of ${CHAT_LOG.line}, filler ${chatLogSlot(r.client).filler} bytes${CHAT_LOG.show ? ', lines shown in chat' : ''}); screenshots stay as the retry path`);
   if (!CHAT_LOG.clean) return;
-  if (process.platform !== 'darwin') {
-    log(`chat log transport: WARNING, the bridge cannot tell on ${process.platform} whether the game is running, so it never removes its lines from ${path.basename(file)}: the file grows by about ${Math.round(chatLogSlot(r.client).filler / 1000)} KB per message. The transport is measured on macOS only.`);
-    return;
-  }
-  cleanChatLog(r, 'startup');
-  const cleaner = setInterval(() => cleanChatLog(r, 'periodic'), SWEEP_MS);
-  if (cleaner.unref) cleaner.unref();
+  r.chatLogCleaner = CL.scheduleCleaning({
+    clean: why => cleanChatLog(r, why),
+    everyMs: SWEEP_MS,
+    warn: () => log(`chat log transport${inLabel(r.client)}: WARNING, the bridge cannot tell on ${process.platform} whether the game is running, so it never removes its lines from ${path.basename(file)}: the file grows by about ${Math.round(chatLogSlot(r.client).filler / 1000)} KB per message. Cleaning works on macOS, Windows and Linux only.`),
+  });
 }
 
 function agentLine(id) {

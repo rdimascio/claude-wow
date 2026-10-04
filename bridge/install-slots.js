@@ -39,7 +39,7 @@ function ensure(file, content, counts, { replaceWhenDifferent = false } = {}) {
   counts.made++;
 }
 
-function install(client) {
+async function install(client) {
   const addons = client.addonDir;
   const iface = client.tocInterface;
   const tag = clients.length > 1 ? `${client.label}: ` : '';
@@ -78,7 +78,7 @@ function install(client) {
   console.log(`${tag}presence: ring ${runtime.presence.state.ring} at ${runtime.presence.state.at} of ${PRESENCE}, the other ring armed`);
   if (runtime.legacyRemoved) console.log(`${tag}migrate: removed ${runtime.legacyRemoved} old signal folder(s) from ${path.join(addons, P.ADDON)}; ${SIG.RESTART_NOTE}`);
   if (counts.made > 0 || counts.updated > 0 || runtime.armed > 0) {
-    const running = CL.clientRunning(client.dir);
+    const running = await CL.clientRunning(client.dir);
     const who = clients.length > 1 ? client.label : 'WoW';
     if (running === true) console.log(`${tag}restart: ${who} is running now. Fully quit and relaunch it so it sees the new files: the game only sees files that existed when it started.`);
     else if (running === false) console.log(`${tag}restart: ${who} is not running; it sees the new files at its next launch.`);
@@ -86,5 +86,12 @@ function install(client) {
   }
 }
 
-for (const client of clients) install(client);
-if (failed) process.exit(1);
+async function installAll() {
+  for (const client of clients) await install(client);
+  if (failed) process.exit(1);
+}
+
+installAll().catch(e => {
+  console.error(`install-slots: ${e && e.message ? e.message : e}`);
+  process.exit(1);
+});
