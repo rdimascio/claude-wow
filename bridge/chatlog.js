@@ -1,6 +1,5 @@
 'use strict';
 const fs = require('fs');
-const path = require('path');
 const { clientState, clientRunning, cleanSupported } = require('./clientproc');
 
 const TAG = 'CWX1';
@@ -119,11 +118,6 @@ function stripOurLines(file, chunkBytes = STRIP_CHUNK_BYTES, { notAfter = Infini
   }
 }
 
-function clientFolder(cfg) {
-  const addonDir = String((cfg && cfg.addonDir) || '').replace(/[\\/]+$/, '');
-  return addonDir ? path.dirname(path.dirname(addonDir)) : '';
-}
-
 function scheduleCleaning({ platform = process.platform, clean, everyMs, warn, every = setInterval }) {
   if (!cleanSupported(platform)) {
     warn();
@@ -166,12 +160,6 @@ function reasonTeller(log, max = MAX_TOLD_REASONS) {
     log(result.reason);
     return true;
   };
-}
-
-function chatLogFile(cfg) {
-  const addonDir = String((cfg && cfg.addonDir) || '').replace(/[\\/]+$/, '');
-  if (!addonDir) return '';
-  return path.join(path.dirname(path.dirname(addonDir)), 'Logs', 'WoWChatLog.txt');
 }
 
 function parseLine(line, key) {
@@ -308,4 +296,4 @@ function watchChatLog(file, onFrame, opts = {}) {
   return { close: () => clearInterval(timer), check, resync };
 }
 
-module.exports = { TAG, DEFAULTS, options, ensureKey, chatLogFile, parseLine, decodeFrame, createAssembler, watchChatLog, noteWrite, bufferSize, calibratedFiller, stripOurLines, clientFolder, clientState, clientRunning, cleanSupported, scheduleCleaning, cleanWhenClosed, reasonTeller };
+module.exports = { TAG, DEFAULTS, options, ensureKey, parseLine, decodeFrame, createAssembler, watchChatLog, noteWrite, bufferSize, calibratedFiller, stripOurLines, clientState, clientRunning, cleanSupported, scheduleCleaning, cleanWhenClosed, reasonTeller };

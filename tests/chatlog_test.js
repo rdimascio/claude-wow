@@ -373,8 +373,6 @@ test('capture.chatLog options: off by default, bounded, and named in the slot fi
   assert.equal(CL.options(undefined).enabled, false);
   assert.deepEqual(CL.options(true), { enabled: true, line: 900, filler: 50000, show: false, clean: true, pollMs: 250 });
   assert.deepEqual(CL.options({ enabled: true, line: 5, filler: 999999, show: true }), { enabled: true, line: 900, filler: 50000, show: true, clean: true, pollMs: 250 });
-  assert.equal(CL.chatLogFile({ addonDir: '/g/_classic_beta_/Interface/AddOns/' }), path.join('/g/_classic_beta_', 'Logs', 'WoWChatLog.txt'));
-  assert.equal(CL.chatLogFile({}), '');
   const off = P.luaTable('ClaudeWoW_SlotData', [], { transport: 'screenshot', chatlog: CL.options(undefined) });
   assert.ok(!off.includes('chatlog'));
   const on = P.luaTable('ClaudeWoW_SlotData', [], { transport: 'screenshot', chatlog: Object.assign(CL.options({ enabled: true, line: 240, filler: 8192, show: true }), { key: KEY }) });
@@ -431,7 +429,6 @@ test('the chat log is cleaned only while the game is closed: transport lines go,
     assert.equal(fs.readFileSync(file, 'latin1'), keep1 + keep2);
     assert.equal(fs.statSync(file).ino, inode);
     assert.equal((await CL.cleanWhenClosed(path.join(dir, 'missing.txt'), folder, { platform: 'darwin', listProcesses: closed })).why, 'no file');
-    assert.equal(CL.clientFolder({ addonDir: path.join(folder, 'Interface', 'AddOns') }), folder);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

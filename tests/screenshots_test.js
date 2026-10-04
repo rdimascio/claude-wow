@@ -10,15 +10,6 @@ const os = require('os');
 const path = require('path');
 const S = require('../bridge/screenshots');
 
-test('the Screenshots folder is the client root next to Interface/AddOns, or an explicit override', () => {
-  const client = path.join(os.tmpdir(), 'World of Warcraft', '_classic_beta_');
-  const addonDir = path.join(client, 'Interface', 'AddOns');
-  assert.equal(S.screenshotDir({ addonDir }), path.join(client, 'Screenshots'));
-  assert.equal(S.screenshotDir({ addonDir: addonDir + path.sep }), path.join(client, 'Screenshots'), 'a trailing separator does not matter');
-  assert.equal(S.screenshotDir({ addonDir, capture: { screenshotDir: path.join(os.tmpdir(), 'shots') } }), path.join(os.tmpdir(), 'shots'));
-  assert.equal(S.screenshotDir({}), '', 'no addonDir, no folder');
-});
-
 test('only the client\'s own screenshot names in PNG or TGA count', () => {
   assert.ok(S.isScreenshotFile('WoWScrnShot_092826_103651.png'));
   assert.ok(S.isScreenshotFile('WoWScrnShot_092826_103651.tga'));

@@ -58,7 +58,7 @@ local run = { outbound = {} }
 -- Whisper tabs (the section after the game context). Declared up here because
 -- Send, ApplyReplies and Finish use it and come first in the file.
 local Whisper = {}
-local Cli = { DIM_DEFAULT = 0.35, Links = {} }
+local Cli = { DIM_DEFAULT = 0.35, Links = {}, CONTEXT_WARN_DEFAULT = 300000, CONTEXT_WARN_OLD = 100000 }
 
 -- Shared window backdrop. Declared up here because ShowCopy (rendering section)
 -- uses it too: a later `local` would be invisible there and resolve to a nil global.
@@ -347,10 +347,10 @@ local function InitDB()
 	if s.autoRefresh == nil then s.autoRefresh = true end
 	if s.signal == nil then s.signal = true end
 	if s.context == nil then s.context = true end -- tell the agent about the character, zone, etc.
-	-- Context growth: say so once when a chat's context passes this many tokens
-	-- (/claude-wow context <n>; 0 = never). 100k is half of Claude's 200k window
-	-- and where a fresh chat lands after about eight messages.
-	if s.contextWarn == nil then s.contextWarn = 100000 end
+	if not s.contextWarnV2 then
+		s.contextWarnV2 = true
+		if s.contextWarn == nil or s.contextWarn == Cli.CONTEXT_WARN_OLD then s.contextWarn = Cli.CONTEXT_WARN_DEFAULT end
+	end
 	-- How much of each reply to print in the game chat. "summary" (the agent's
 	-- closing TL;DR lines) replaced "full" as the default; an install that still
 	-- has the old default saved moves over once, any other choice is kept.
@@ -1520,22 +1520,46 @@ local function SelfTestSignals()
 	end
 end
 
+function Cli.WorkCount(chat)
+	local steps = run.steps and run.steps[chat.id] or 0
+	if steps > 0 then return steps .. (steps == 1 and " step" or " steps") end
+	local a = run.act and run.act[chat.id]
+	if a and not a.unreliable and a.count > 0 then return a.count .. (a.count == 1 and " action" or " actions") end
+	return nil
+end
+
 local function ActivityLine(chat)
 	local a = run.act and run.act[chat.id]
 	local now = GetTime()
 	local started = (a and a.startedAt) or run.sentAt or now
-	local s = "running " .. FmtDur(now - started)
-	if a and not a.unreliable then
-		s = s .. " - " .. a.count .. (a.count == 1 and " action" or " actions")
-		if a.last then
-			local quiet = now - a.last
-			s = s .. ", last " .. FmtDur(quiet) .. " ago"
-			if quiet > 120 then s = s .. " (quiet for a while - stuck? /claude cancel)" end
-		elseif now - started > 60 then
-			s = s .. ", no activity seen yet"
-		end
+	local parts = { FmtDur(now - started) }
+	local count = Cli.WorkCount(chat)
+	if count then table.insert(parts, count) end
+	local s = table.concat(parts, " " .. SEG.DOT .. " ")
+	if a and not a.unreliable and a.last then
+		local quiet = now - a.last
+		if quiet > 120 then s = s .. " " .. SEG.DOT .. " quiet for " .. FmtDur(quiet) .. ", stuck? /claude cancel" end
+	elseif not count and now - started > 60 then
+		s = s .. " " .. SEG.DOT .. " no activity seen yet"
 	end
 	return s
+end
+
+Cli.STEPS_SHOWN = 6
+
+function Cli.StepLines(chat)
+	local lines = {}
+	for line in tostring(chat.progress or ""):gmatch("[^\n]+") do
+		line = Trim(line)
+		if line ~= "" then table.insert(lines, line) end
+	end
+	local total = (run.steps and run.steps[chat.id]) or #lines
+	local first = math.max(1, #lines - Cli.STEPS_SHOWN + 1)
+	local out = {}
+	local hidden = math.max(0, total - (#lines - first + 1))
+	if hidden > 0 then table.insert(out, "+" .. hidden .. " earlier") end
+	for i = first, #lines do table.insert(out, SEG.DOT .. " " .. lines[i]) end
+	return out, lines[#lines]
 end
 
 local function FreeSlot()
@@ -1721,6 +1745,8 @@ local function ApplyReplies(replies)
 			elseif r.status == "working" then
 				if ClaudeWoWVoice then ClaudeWoWVoice.Started(r.id) end
 				c.progress = r.text
+				run.steps = run.steps or {}
+				run.steps[c.id] = tonumber(r.steps)
 				Whisper.Progress(c, r.text)
 			end
 		end
@@ -1775,16 +1801,89 @@ local function ImportRestore(r)
 	end
 end
 
-ClaudeWoW.Version = { PROTO = 1, SEMVER = "0.4.0", PATTERN = "^%d+%.%d+%.%d+[%w%.%-+]*$" }
+ClaudeWoW.Version = { PROTO = 1, SEMVER = "0.5.0-beta.1", PATTERN = "^%d+%.%d+%.%d+[%w%.%-+]*$" }
+
+function ClaudeWoW.Version.Meta(key)
+	local read = C_AddOns and C_AddOns.GetAddOnMetadata
+	if type(read) ~= "function" then return "" end
+	local ok, v = pcall(read, "ClaudeWoW", key)
+	return ok and type(v) == "string" and v or ""
+end
 
 function ClaudeWoW.Version.Own()
 	local V = ClaudeWoW.Version
-	local read = C_AddOns and C_AddOns.GetAddOnMetadata
-	if type(read) == "function" then
-		local ok, v = pcall(read, "ClaudeWoW", "Version")
-		if ok and type(v) == "string" and #v <= 40 and v:match(V.PATTERN) then return v end
-	end
+	local v = V.Meta("Version")
+	if #v <= 40 and v:match(V.PATTERN) then return v end
 	return V.SEMVER
+end
+
+ClaudeWoW.Version.LOADED = { version = ClaudeWoW.Version.Meta("Version"), build = ClaudeWoW.Version.Meta("X-Build"), at = time() }
+
+function ClaudeWoW.Version.ApplyDisk(d, stamp)
+	local V = ClaudeWoW.Version
+	if type(d) ~= "table" then return end
+	local at = tonumber(stamp)
+	if not at or time() - at > Q.INBOX_FRESH_SECONDS then return end
+	V.CheckFolders()
+	if at < V.LOADED.at then return end
+	if type(d.version) ~= "string" or #d.version > 40 or not d.version:match(V.PATTERN) then return end
+	local build = type(d.build) == "string" and #d.build == 12 and d.build:match("^[0-9a-f]+$") and d.build or ""
+	run.addonDisk = { version = d.version, build = build }
+	local L = V.LOADED
+	if L.version == "" or (d.version == L.version and build == L.build) then return end
+	local text = "New addon files are installed (" .. d.version .. (build ~= "" and (", build " .. build) or "") .. "). Type /reload to load them."
+	if run.reloadTold ~= text then
+		run.reloadTold = text
+		TellPlayer(text)
+	end
+end
+
+ClaudeWoW.Version.CLIENTS_MAX = 8
+
+function ClaudeWoW.Version.ApplyClients(list, stamp)
+	local V = ClaudeWoW.Version
+	if type(list) ~= "table" then return end
+	local at = tonumber(stamp)
+	if not at or time() - at > Q.INBOX_FRESH_SECONDS then return end
+	local out = {}
+	for i = 1, math.min(#list, V.CLIENTS_MAX) do
+		local c = list[i]
+		if type(c) == "table" and type(c.name) == "string" and #c.name <= 40 and c.name:match("^[%w_ %.%-]+$") then
+			local heard = tonumber(c.heard)
+			table.insert(out, {
+				name = c.name,
+				version = type(c.version) == "string" and #c.version <= 40 and c.version:match(V.PATTERN) and c.version or "",
+				build = type(c.build) == "string" and #c.build == 12 and c.build:match("^[0-9a-f]+$") and c.build or "",
+				heard = heard and heard > 0 and heard == math.floor(heard) and heard or 0,
+				here = c.here == true,
+				last = c.last == true,
+			})
+		end
+	end
+	run.bridgeClients = out
+end
+
+function ClaudeWoW.Version.ClientsStatus()
+	local list = run.bridgeClients
+	if not list then return "clients: not reported (an older bridge, or not heard yet)" end
+	if #list == 0 then return "clients: none in the bridge's config.json" end
+	local parts = {}
+	for _, c in ipairs(list) do
+		local files = c.version ~= "" and (c.version .. (c.build ~= "" and (" build " .. c.build) or "")) or "no addon installed"
+		local heard = c.heard > 0 and ("heard " .. FmtDur(math.max(0, time() - c.heard)) .. " ago") or "not heard yet"
+		table.insert(parts, c.name .. (c.here and " (this client)" or "") .. ": " .. files .. ", " .. heard .. (c.last and ", spoke last" or ""))
+	end
+	return "clients: " .. table.concat(parts, "; ")
+end
+
+function ClaudeWoW.Version.CheckFolders()
+	local info = C_AddOns and C_AddOns.GetAddOnInfo
+	if run.restartTold or type(info) ~= "function" then return end
+	local ok, _, _, _, _, reason = pcall(info, "ClaudeWoW_Runtime")
+	if ok and reason == "MISSING" then
+		run.restartTold = true
+		TellPlayer("The ClaudeWoW_Runtime folder was installed after the game started. Fully quit and restart the game to load it; /reload is not enough.")
+	end
 end
 
 function ClaudeWoW.Version.Compare(a, b)
@@ -1806,7 +1905,7 @@ function ClaudeWoW.Version.Verdict(b)
 	local mine = version .. ", protocol " .. V.PROTO
 	local theirs = b.version .. ", protocol " .. range
 	if V.PROTO < b.protoMin then
-		return "update-addon", "This addon (" .. mine .. ") is too old for the bridge (" .. theirs .. "). The bridge refuses messages until you update the addon: update the addon in the CurseForge app or run claude-wow setup, then restart WoW."
+		return "update-addon", "This addon (" .. mine .. ") is too old for the bridge (" .. theirs .. "). The bridge refuses messages until you update the addon: update the addon in the CurseForge app or run claude-wow setup, then type /reload."
 	end
 	if V.PROTO > b.protoMax then
 		return "update-bridge", "The bridge (" .. theirs .. ") is too old for this addon (" .. mine .. "). The bridge refuses messages until you update it: run brew upgrade claude-wow or the installer again, then claude-wow service restart."
@@ -1843,7 +1942,9 @@ function ClaudeWoW.Version.Status()
 	local V = ClaudeWoW.Version
 	local b = run.bridgeVersion
 	local bridge = b and (b.version .. " (protocol " .. (b.protoMin == b.protoMax and b.protoMin or (b.protoMin .. " to " .. b.protoMax)) .. ")") or "not reported (an older bridge, or not heard yet)"
+	local function files(f) return f.version ~= "" and (f.version .. (f.build ~= "" and (" build " .. f.build) or "")) or "unknown" end
 	return "versions: addon " .. V.Own() .. " (protocol " .. V.PROTO .. "), bridge " .. bridge .. ", verdict: " .. (run.versionVerdict or "unknown")
+		.. "; addon files loaded: " .. files(V.LOADED) .. ", on disk: " .. (run.addonDisk and files(run.addonDisk) or "not reported")
 end
 
 local function TryLoadSlot(why)
@@ -1892,6 +1993,8 @@ local function TryLoadSlot(why)
 		if acked then RefreshStrip() end
 		Presence.Check(data.presence, data.now)
 		ClaudeWoW.Version.Apply(data.bridge, data.now)
+		ClaudeWoW.Version.ApplyDisk(data.addonDisk, data.now)
+		ClaudeWoW.Version.ApplyClients(data.clients, data.now)
 	end
 	local matched = ApplyReplies(type(data) == "table" and data.replies or nil)
 	if type(data) == "table" and data.restore then ImportRestore(data.restore) end
@@ -2068,6 +2171,8 @@ local function ProcessInbox()
 	ClaudeWoW.ApplySessions(inbox.sessions, inbox.now)
 	ApplyTransport(inbox)
 	ClaudeWoW.Version.Apply(inbox.bridge, inbox.now)
+	ClaudeWoW.Version.ApplyDisk(inbox.addonDisk, inbox.now)
+	ClaudeWoW.Version.ApplyClients(inbox.clients, inbox.now)
 	ApplyReplies(inbox.replies)
 	if inbox.restore then ImportRestore(inbox.restore) end
 	if inbox.map and ClaudeWoWMap then ClaudeWoWMap.Sync(inbox.map) end
@@ -2788,9 +2893,11 @@ function Whisper.ProgressText(chat)
 	local started = (a and a.startedAt) or (run.whisperSentAt and run.whisperSentAt[chat.id]) or GetTime()
 	local elapsed = math.floor((GetTime() - started) / WL.ELAPSED_STEP) * WL.ELAPSED_STEP
 	local parts = { FmtElapsed(elapsed) }
-	if a and not a.unreliable and a.count > 0 then table.insert(parts, a.count .. (a.count == 1 and " action" or " actions")) end
+	local count = Cli.WorkCount(chat)
+	if count then table.insert(parts, count) end
 	local text = ChatAgentName(chat) .. " is working... " .. table.concat(parts, " " .. SEG.DOT .. " ")
-	local p = Trim(Flat(chat.progress or ""))
+	local _, latest = Cli.StepLines(chat)
+	local p = Trim(Flat(latest or ""))
 	if p ~= "" then
 		if #p > WL.PROGRESS_MAX then p = p:sub(1, WL.PROGRESS_MAX) .. "..." end
 		text = text .. " - " .. p
@@ -3118,6 +3225,7 @@ function ClaudeWoW.Send(text, allow, opts)
 	c.pendingId = id
 	c.draft = nil
 	c.progress = nil
+	if run.steps then run.steps[c.id] = nil end
 	if not c.quiet then
 		AddHistory(c, "user", text, id)
 		if wantsTitle then
@@ -3377,7 +3485,6 @@ function ClaudeWoW.SwitchChat(id)
 		prev.draft = typed ~= "" and typed or nil
 	end
 	db.activeChat = c.id
-	c.opened = time()
 	c.unread = 0
 	ui.chatPage = nil
 	if ui.input then
@@ -3396,8 +3503,9 @@ function ClaudeWoW.AddChat(name, fields)
 	return c
 end
 
-function ClaudeWoW.NewChat(name)
+function ClaudeWoW.NewChat(name, prepare)
 	local c = AddChat(name and name ~= "" and name or nil)
+	if prepare then prepare(c) end
 	ClaudeWoW.SwitchChat(c.id)
 	Cli.Show(c)
 	return c
@@ -3805,20 +3913,14 @@ function ClaudeWoW.DeleteChat(id)
 		return
 	end
 	table.remove(db.chats, idx)
+	local heldReply = run.replyTarget and run.replyNames and run.replyNames[run.replyTarget:lower()] == c.id
+	if run.lastReplyChat == c.id then run.lastReplyChat = nil end
 	if db.activeChat == c.id then
-		local nextChat = db.chats[math.min(idx, #db.chats)]
-		if nextChat.quiet then
-			for _, ch in ipairs(db.chats) do
-				if not ch.quiet then
-					nextChat = ch
-					break
-				end
-			end
-		end
-		ClaudeWoW.SwitchChat(nextChat.id)
+		ClaudeWoW.SwitchChat(Cli.LatestChat().id)
 	else
 		ClaudeWoW.RenderChatList()
 	end
+	if heldReply then Whisper.OfferReply(Cli.LatestChat()) end
 end
 
 -- The trash can on a chat row asks first; /claude-wow delete does not.
@@ -4010,7 +4112,7 @@ function ClaudeWoW.UpdateStatus()
 	if not ui.status then return end
 	local c = ActiveChat()
 	local mode = db.settings.mode
-	local s
+	local s, working
 	if c and c.pendingId then
 		local id = c.pendingId
 		local elapsed = run.sentAt and (GetTime() - run.sentAt) or 0
@@ -4022,8 +4124,9 @@ function ClaudeWoW.UpdateStatus()
 				s = "Slot pool used up this session - next keypress reloads to free it"
 			elseif run.pixelFailed then
 				s = "Bridge didn't see #" .. id .. " after " .. STRIP_TRIES .. " tries - next keypress switches to the reload path (or /claude reload)"
-			elseif c.progress or (run.act and run.act[c.id] and run.act[c.id].count > 0) then
+			elseif c.progress or Cli.WorkCount(c) then
 				s = ChatAgentName(c) .. " is working on #" .. id .. " - " .. ActivityLine(c)
+				working = true
 			elseif rec and not rec.acked then
 				s = "Sending #" .. id .. (rec.tries and rec.tries > 1 and (" (try " .. rec.tries .. "/" .. STRIP_TRIES .. ")") or "") .. "..."
 				local state = ClaudeWoW.BridgeState()
@@ -4061,6 +4164,7 @@ function ClaudeWoW.UpdateStatus()
 	end
 	ui.status:SetText(ui.native and Q.ShortStatus(c, s) or s)
 	run.statusText = s
+	run.statusWorking = working
 	ClaudeWoW.UpdateDot()
 	ClaudeWoW.UpdateConnect()
 	if ui.title then
@@ -4301,10 +4405,10 @@ function ClaudeWoW.Render()
 			Place(m.role, picker and m.head or m.text, m.t and date("%H:%M", m.t) or "", false, denied, m.agent, m.macros, m.newChat, picker)
 		end
 		if c.pendingId then
-			local p = c.progress
-			local head = "working... " .. ActivityLine(c)
-			if run.statusText and run.statusText ~= "" then head = head .. "\n" .. run.statusText end
-			Place("assistant", (p and p ~= "") and (head .. "\n\n" .. p) or head, "", true, nil, ChatAgent(c))
+			local head = "Working " .. SEG.DOT .. " " .. ActivityLine(c)
+			if run.statusText and run.statusText ~= "" and not run.statusWorking then head = head .. "\n" .. run.statusText end
+			local steps = Cli.StepLines(c)
+			Place("assistant", #steps > 0 and (head .. "\n\n" .. table.concat(steps, "\n")) or head, "", true, nil, ChatAgent(c))
 		elseif #c.history == 0 then
 			if run.restoring then
 				Place("system", "Connecting to the bridge and restoring your chats...", "", true)
@@ -5386,25 +5490,21 @@ function ClaudeWoW.RenderQuestList()
 end
 
 function Q.LastActive(c)
-	local opened = tonumber(c.opened)
 	for i = #(c.history or {}), 1, -1 do
 		local t = tonumber(c.history[i].t)
-		if t then return math.max(t, opened or 0) end
+		if t then return t end
 	end
-	return opened
+	return tonumber(c.created) or 0
 end
 
 function Q.NewestFirst(chats)
 	local sorted, rank = {}, {}
 	for i, c in ipairs(chats) do
-		local active = Q.LastActive(c)
-		local tier = (c.id == db.activeChat and not active) and 3 or (active and 2 or 1)
-		rank[c] = { tier = tier, t = active or tonumber(c.created) or 0, i = i }
+		rank[c] = { t = Q.LastActive(c), i = i }
 		table.insert(sorted, c)
 	end
 	table.sort(sorted, function(a, b)
 		local ra, rb = rank[a], rank[b]
-		if ra.tier ~= rb.tier then return ra.tier > rb.tier end
 		if ra.t ~= rb.t then return ra.t > rb.t end
 		return ra.i > rb.i
 	end)
@@ -6823,6 +6923,14 @@ function Cli.LastActivity(ch)
 	return (last and last.t) or ch.created or 0
 end
 
+function Cli.LatestChat()
+	local best
+	for _, ch in ipairs(db.chats) do
+		if not ch.quiet and (not best or Cli.LastActivity(ch) > Cli.LastActivity(best)) then best = ch end
+	end
+	return best or db.chats[1]
+end
+
 Cli.PICKER_ROWS = 8
 Cli.TITLE_MAX = 48
 Cli.BADGES = {
@@ -7142,17 +7250,17 @@ function ClaudeWoW.RunCli(o)
 		Cli.RunResume(o)
 		return
 	end
-	local c
+	local c, notes
 	if o.continue or (o.flags > 0 and o.text == "" and not Cli.HasSetters(o)) then
 		c = ActiveChat()
 		if o.continue and type(o.name) == "string" then
 			c.name = o.name:sub(1, 24)
 			Whisper.Retitle(c)
 		end
+		notes = Cli.ApplyChatFlags(c, o)
 	else
-		c = ClaudeWoW.NewChat(type(o.name) == "string" and o.name:sub(1, 24) or nil)
+		c = ClaudeWoW.NewChat(type(o.name) == "string" and o.name:sub(1, 24) or nil, function(fresh) notes = Cli.ApplyChatFlags(fresh, o) end)
 	end
-	local notes = Cli.ApplyChatFlags(c, o)
 	if #notes > 0 then Cli.Out(c, table.concat(notes, "\n")) end
 	if o.text ~= "" then
 		ClaudeWoW.Send(o.text, nil, { chat = c.id })
@@ -7530,6 +7638,7 @@ RunCommand = function(cmd, rest)
 			select(5, ClaudeWoW.BridgeState()),
 			"mode: " .. s.mode .. ", session token: " .. tostring(db.session),
 			ClaudeWoW.Version.Status(),
+			ClaudeWoW.Version.ClientsStatus(),
 			Whisper.Status(),
 			"transport: " .. tostring(s.transport or "pixel") .. (s.transport == "screenshot" and type(Screenshot) ~= "function" and " (Screenshot() missing: strip stays up, and the bridge is told to fall back to the pixel capture)" or "")
 				.. (s.transport == "pixel" and s.transportNote and (" (bridge: " .. s.transportNote .. ")") or "")

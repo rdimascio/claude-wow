@@ -61,6 +61,7 @@ const GD = require('./gamedata');
 const DSYNC = require('./datasync');
 const GR = require('./gamerefs');
 const RT = require('./replytokens');
+const CLI = require('./clients');
 
 // The plugins this bridge has (docs/PLATFORM.md). Registration order is the
 // order match() is asked in, and the first one is the default unless
@@ -232,9 +233,7 @@ if (!chosen.transport) {
 }
 let TRANSPORT = chosen.transport;
 let TRANSPORT_SOURCE = chosen.source; // 'config' | 'default' | 'fallback'
-const SCREENSHOT_DIR = S.screenshotDir(cfg);
 const CHAT_LOG = CL.options(cap.chatLog);
-const CHAT_LOG_FILE = CL.chatLogFile(cfg);
 // Vision: a chat that turned it on (/claude-wow vision on, flag "v") gets the rest
 // of the screenshot, strip cropped off and scaled to vision.maxWidth, attached
 // to its run as an image. Screenshot transport only: the pixel capture never
@@ -246,14 +245,15 @@ const LEVELS = P.screenshotLevels(cap.screenshotLevels);
 // ... and which strip the addon draws there: codec 2 (2 px cells, four levels,
 // the default) or 1 (the capture scripts' 4 px cells). The decoder reads both.
 const STRIP_CODEC = P.stripCodec(cap.screenshotCodec);
-// The game-side files. A config.json written for one of the addon's old names
-// (WoWClaude, WoWAI) still works: the paths are derived from addonDir instead.
-const INBOX_FILE = cfg.inboxFile && !P.OLD_ADDON_PATH.test(cfg.inboxFile) && !P.SHIPPED_INBOX_PATH.test(cfg.inboxFile) ? cfg.inboxFile : SIG.runtimeInbox(cfg.addonDir || '');
-const SAVED_VARS = String(cfg.savedVariablesFile || '').replace(P.OLD_SAVED_FILE, P.ADDON + '.lua');
+const CLIENTS = CLI.clientsOf(cfg);
+const CLIENT_RT = new Map(CLIENTS.map(c => [c.key, { client: c, lastMtime: 0, shotHint: null, shotWatch: null, chatLogWatch: null, sweepMemo: new Map(), acks: [], warnedNoAddon: false, diskCache: { key: '', info: null } }]));
+const inLabel = client => (CLIENTS.length > 1 && client ? ` (${client.label})` : '');
+const fromLabel = client => (CLIENTS.length > 1 && client ? ` from ${client.label}` : '');
 
 let state = Object.keys(stateEarly).length ? stateEarly : { lastId: 0, sessions: {}, handled: {} };
 if (!state.handled) state.handled = {};
 if (!state.sessions) state.sessions = {};
+const adoptedLegacyState = CLI.adoptLegacyState(state, CLI.allClients(cfg));
 // Older versions stored handled[session] as "highest id so far"; expand to a map.
 for (const [k, v] of Object.entries(state.handled)) {
   if (typeof v === 'number') {
@@ -280,6 +280,7 @@ let transcripts = readJson(TRANSCRIPT_FILE, { chats: {}, tokens: {} });
 if (!transcripts.chats) transcripts.chats = {};
 if (!transcripts.tokens) transcripts.tokens = {};
 if (P.pruneStale(state, transcripts)) { saveState(); saveTranscripts(); }
+else if (adoptedLegacyState) saveState();
 let pendingRestore = null;
 
 function saveTranscripts() {
@@ -298,6 +299,7 @@ function noteMessage(job, role, text) {
   if (job.name) c.name = job.name;
   if (job.cwd) c.cwd = job.cwd;
   if (job.plugin) c.plugin = job.plugin;
+  if (job.client) c.client = job.client;
   const m = { role, text: String(text ?? '').slice(0, 4000), id: job.id, t: Math.floor(Date.now() / 1000) };
   if (role === 'assistant' && job.agent) m.agent = job.agent;
   c.messages.push(m);
@@ -312,17 +314,34 @@ const RESTORE_TEXT_MAX = 2000;
 
 // First message from an addon session token we haven't seen: its saved data is
 // fresh (or reset), so offer everything we know once, in the next publish.
+function rtOf(key) {
+  return CLIENT_RT.get(key) || null;
+}
+
+function defaultClient() {
+  return CLI.lastSpoke(state, CLIENTS) || CLIENTS[0] || null;
+}
+
+function clientFor(job) {
+  const r = job && rtOf(job.client);
+  return r ? r.client : null;
+}
+
+function restoreFor(client) {
+  return pendingRestore && (!pendingRestore.client || pendingRestore.client === client.key) ? pendingRestore : null;
+}
+
 function maybeOfferRestore(job) {
   if (!job.session || transcripts.tokens[job.session]) return;
   transcripts.tokens[job.session] = Date.now();
   const chats = Object.values(transcripts.chats)
-    .filter(c => c.id !== job.chat && c.messages.length)
+    .filter(c => c.id !== job.chat && c.messages.length && (!c.client || c.client === job.client))
     .sort((a, b) => (b.updated || 0) - (a.updated || 0))
     .slice(0, RESTORE_CHATS)
     .map(c => ({ id: c.id, name: c.name, cwd: c.cwd, plugin: c.plugin || 'claude-code', ...P.usageFields(state.sessionUsage && state.sessionUsage['chat:' + c.id]), messages: c.messages.slice(-RESTORE_MESSAGES).map(m => ({ ...m, text: m.text.slice(0, RESTORE_TEXT_MAX) })) }));
   saveTranscripts();
   if (chats.length) {
-    pendingRestore = { token: job.session, chats };
+    pendingRestore = { token: job.session, chats, client: job.client || '' };
     log(`new addon session ${job.session}: offering ${chats.length} chat(s) to restore`);
   }
 }
@@ -346,7 +365,6 @@ function forgetChat(job) {
   log(`#${job.id}${job.session ? '@' + job.session : ''} forgot chat ${job.chat}${had ? '' : ' (nothing stored)'}`);
 }
 
-let lastMtime = 0;
 const running = new Map(); // chatKey -> { job, child }
 const queued = new Map();  // chatKey -> job waiting for that chat (or for a free parallel slot)
 const live = new Map();    // chatKey -> latest record shown to the game
@@ -533,11 +551,22 @@ function takeWidgetCommands(job, text) {
   return { text: blocks.text, note: all.length ? `ui: ${all.join('; ')}` : '' };
 }
 
-let acksSent = [];
 const BRIDGE_INFO = P.bridgeInfo();
 
-// Slot file / Inbox.lua body: see protocol.luaTable.
-function slotFile(globalName, records, urgent = true) {
+function addonOnDisk(client) {
+  const r = rtOf(client.key);
+  const toc = path.join(client.addonDir, P.ADDON, P.ADDON + '.toc');
+  try {
+    const st = fs.statSync(toc);
+    const key = `${st.mtimeMs}:${st.size}:${st.ino}`;
+    if (r.diskCache.key !== key) r.diskCache = { key, info: P.addonDiskInfo(fs.readFileSync(toc, 'utf8')) };
+    return r.diskCache.info;
+  } catch {
+    return null;
+  }
+}
+
+function sharedSlotFields(urgent) {
   const map = mapShare.inSlots({ urgent, size: mapLuaSize(), progressMax: MAP_PROGRESS_MAX }) ? state.map : null;
   const widgets = Date.now() < widgetShareUntil && (urgent || widgetSourceBytes() <= WIDGET_PROGRESS_MAX) ? state.widgets : null;
   const transportNote = TRANSPORT_SOURCE === 'fallback' ? P.transportNote(state.transportFallback) : '';
@@ -551,7 +580,13 @@ function slotFile(globalName, records, urgent = true) {
   if (TELEMETRY_ON) {
     try { gsLua = telemetry.luaGs(); } catch (e) { log(`telemetry: slot field gs left out (${e && e.message ? e.message : e})`); }
   }
-  return P.luaTable(globalName, records, { live: liveInfo, sessions: sessionList(), cwd: DEFAULT_CWD, restore: pendingRestore, agent: DEFAULT_AGENT, agents: A.agentIds(), plugin: DEFAULT_PLUGIN, plugins: registry.ids(), map, widgets, transport: TRANSPORT, levels: LEVELS, codec: STRIP_CODEC, chatlog: chatLogSlot(), acks: P.recentAcks(acksSent), transportNote, achievementsLua, goalsLua, dmLua, gsLua, presence: presenceInfo(), bridge: BRIDGE_INFO });
+  return { live: liveInfo, sessions: sessionList(), cwd: DEFAULT_CWD, agent: DEFAULT_AGENT, agents: A.agentIds(), plugin: DEFAULT_PLUGIN, plugins: registry.ids(), map, widgets, transport: TRANSPORT, levels: LEVELS, codec: STRIP_CODEC, transportNote, achievementsLua, goalsLua, dmLua, gsLua, bridge: BRIDGE_INFO };
+}
+
+function slotFile(globalName, records, shared, client) {
+  const r = rtOf(client.key);
+  const clients = CLI.slotClients(CLIENTS, state, client.key, { diskOf: addonOnDisk });
+  return P.luaTable(globalName, records, { ...shared, restore: restoreFor(client), chatlog: chatLogSlot(client), acks: P.recentAcks(r.acks), presence: presenceInfo(client), addonDisk: addonOnDisk(client), clients });
 }
 
 function recentClaudeSessions() {
@@ -632,45 +667,56 @@ function fallbackToPixel(reason, job) {
   log(`  switching from the screenshot transport to the pixel capture (deprecated; it needs ${process.platform === 'win32' ? 'capture.ps1' : 'python3 and ' + (process.platform === 'darwin' ? 'the Screen Recording and Automation permissions' : 'an X11 session')}).`);
   if (chosen.source === 'config') log(`  capture.mode is "screenshot" in ${CONFIG_FILE}, so every start tries the screenshot transport first and falls back again when the addon reports this; set it to "pixel" to skip the wait.`);
   else log(`  remembered in ${STATE_FILE}: the next start goes straight to the pixel transport. To choose for good, set capture.mode in ${CONFIG_FILE} to "pixel" (no more note) or "screenshot" (try again).`);
-  if (shotWatch) { shotWatch.close(); shotWatch = null; }
-  if (chatLogWatch) { chatLogWatch.close(); chatLogWatch = null; }
+  for (const r of CLIENT_RT.values()) {
+    if (r.shotWatch) { r.shotWatch.close(); r.shotWatch = null; }
+    if (r.chatLogWatch) { r.chatLogWatch.close(); r.chatLogWatch = null; }
+  }
   publishNow(); // the slot files now say "pixel", with the note; the addon follows on its next slot read
   if (cap.enabled && !exitWhenIdle) startCapture();
 }
 
-function addonInstalled() {
-  return fs.existsSync(path.join(cfg.addonDir, 'ClaudeWoW', 'ClaudeWoW.toc'));
+function addonInstalled(client) {
+  return fs.existsSync(path.join(client.addonDir, 'ClaudeWoW', 'ClaudeWoW.toc'));
 }
 
-function slotsInstalled() {
-  return fs.existsSync(path.join(cfg.addonDir, 'ClaudeWoW_S001', 'Inbox.lua'));
+function slotsInstalled(client) {
+  return fs.existsSync(path.join(client.addonDir, 'ClaudeWoW_S001', 'Inbox.lua'));
 }
 
 // The game will load *some* unused slot next, so every slot gets the full picture.
 // A missing addon folder (not installed yet, or the game folder moved) must not
 // take the bridge down: capture and agent runs keep working, and the game just
 // won't see replies until `node setup.js` has run and WoW was restarted.
-let warnedNoAddon = false;
+function publishClient(r, records, shared) {
+  const c = r.client;
+  try {
+    G.atomicWrite(c.inboxFile, slotFile('ClaudeWoW_Inbox', records, shared, c));
+  } catch (e) {
+    if (!r.warnedNoAddon) {
+      r.warnedNoAddon = true;
+      log(`publish: cannot write ${c.inboxFile} (${e.code || e.message}); addon not installed in ${c.label}? run: node setup.js, then restart WoW`);
+    }
+    return false;
+  }
+  if (!slotsInstalled(c)) return false;
+  const body = slotFile('ClaudeWoW_SlotData', records, shared, c);
+  for (let i = 1; i <= SLOTS; i++) {
+    try { G.atomicWrite(path.join(c.addonDir, 'ClaudeWoW_S' + pad3(i), 'Inbox.lua'), body); } catch {}
+  }
+  return true;
+}
+
 function publishNow(urgent = true, { refresh = false } = {}) {
   lastPublish = Date.now();
-  const records = [...live.values()].slice(-30);
-  try {
-    G.atomicWrite(INBOX_FILE, slotFile('ClaudeWoW_Inbox', records, urgent));
-  } catch (e) {
-    if (!warnedNoAddon) {
-      warnedNoAddon = true;
-      log(`publish: cannot write ${INBOX_FILE} (${e.code || e.message}); addon not installed? run: node setup.js, then restart WoW`);
-    }
-    return;
-  }
-  if (!slotsInstalled()) return;
-  const body = slotFile('ClaudeWoW_SlotData', records, urgent);
-  for (let i = 1; i <= SLOTS; i++) {
-    try { G.atomicWrite(path.join(cfg.addonDir, 'ClaudeWoW_S' + pad3(i), 'Inbox.lua'), body); } catch {}
+  const all = [...live.values()];
+  const shared = sharedSlotFields(urgent);
+  let restoreSent = false;
+  for (const r of CLIENT_RT.values()) {
+    if (publishClient(r, CLI.recordsFor(all, r.client.key), shared) && restoreFor(r.client)) restoreSent = true;
   }
   // The restore bundle is large; it rides along once and is then dropped.
   // (The game keeps loading fresh slots until it has read one carrying it.)
-  if (pendingRestore && !refresh) { pendingRestore.published = (pendingRestore.published || 0) + 1; if (pendingRestore.published >= 3) pendingRestore = null; }
+  if (pendingRestore && !refresh && restoreSent) { pendingRestore.published = (pendingRestore.published || 0) + 1; if (pendingRestore.published >= 3) pendingRestore = null; }
 }
 
 // Final results publish immediately; progress is throttled. `key` is the chat
@@ -690,91 +736,112 @@ function setSignalFile(file, on) {
   else SIG.arm(file);
 }
 
-function signal(kind, id, on) {
-  setSignalFile(SIG.signalFile(cfg.addonDir, kind, slotNumber(id)), on);
+function signal(client, kind, id, on) {
+  if (!client) return;
+  setSignalFile(SIG.signalFile(client.addonDir, kind, slotNumber(id)), on);
 }
 
 function ackJob(job) {
-  acksSent = P.noteAck(acksSent, job);
-  signal('ack', job.id, true);
+  const r = rtOf(job.client);
+  if (r) r.acks = P.noteAck(r.acks, job);
+  signal(clientFor(job), 'ack', job.id, true);
 }
 
-function pendingIds() {
-  const ids = [...running.values()].map(r => r.job.id).concat([...queued.values()].map(j => j.id));
-  for (const r of live.values()) if (r && r.status === 'working') ids.push(r.id);
+function pendingIds(client) {
+  const mine = job => job && job.client === client.key;
+  const ids = [...running.values()].filter(r => mine(r.job)).map(r => r.job.id).concat([...queued.values()].filter(mine).map(j => j.id));
+  for (const r of live.values()) if (r && r.status === 'working' && r.client === client.key) ids.push(r.id);
   return ids;
 }
 
-function clearSignalsAhead(id) {
-  if (!Number.isFinite(id)) return;
-  for (const slot of P.slotsToClearAhead(id, SLOTS, pendingIds())) SIG.armSlot(cfg.addonDir, slot, ACT_MAX);
+function clearSignalsAhead(client, id) {
+  if (!client || !Number.isFinite(id)) return;
+  for (const slot of P.slotsToClearAhead(id, SLOTS, pendingIds(client))) SIG.armSlot(client.addonDir, slot, ACT_MAX);
 }
 
 const ACT_MAX = cfg.actMax || SIG.DEFAULT_ACT_MAX;
-function actFile(id, k) {
-  return SIG.actFile(cfg.addonDir, slotNumber(id), k);
+function actFile(client, id, k) {
+  return SIG.actFile(client.addonDir, slotNumber(id), k);
 }
-function resetBeats(id) {
-  for (let k = 1; k <= ACT_MAX; k++) setSignalFile(actFile(id, k), false);
+function resetBeats(job) {
+  const client = clientFor(job);
+  if (!client) return;
+  for (let k = 1; k <= ACT_MAX; k++) setSignalFile(actFile(client, job.id, k), false);
 }
 function beat(job) {
   job.beats = (job.beats || 0) + 1;
-  if (job.beats > ACT_MAX) return;
-  setSignalFile(actFile(job.id, job.beats), true);
+  const client = clientFor(job);
+  if (job.beats > ACT_MAX || !client) return;
+  setSignalFile(actFile(client, job.id, job.beats), true);
 }
 
 const PRESENCE_MAX = cfg.presenceMax || SIG.DEFAULT_PRESENCE_MAX;
 const PRESENCE_INTERVAL_MS = cfg.presenceIntervalMs || 30000;
-function presenceReady() {
-  return fs.existsSync(SIG.presenceDir(cfg.addonDir));
+const clientStateOf = client => CLI.clientState(state, client.key);
+function presenceReady(client) {
+  return fs.existsSync(SIG.presenceDir(client.addonDir));
 }
-function migrateRuntime() {
-  if (!cfg.addonDir || !addonInstalled() || !SIG.needsMigration(cfg.addonDir)) return;
+function migrateRuntime(client) {
+  if (!addonInstalled(client) || !SIG.needsMigration(client.addonDir)) return;
+  const cs = clientStateOf(client);
   let r;
   try {
-    r = SIG.prepareRuntime(cfg.addonDir, { slots: SLOTS, actMax: ACT_MAX, presence: state.presence, presenceMax: PRESENCE_MAX, tocInterface: cfg.tocInterface || P.TOC_INTERFACE });
+    r = SIG.prepareRuntime(client.addonDir, { slots: SLOTS, actMax: ACT_MAX, presence: cs.presence, presenceMax: PRESENCE_MAX, tocInterface: client.tocInterface });
   } catch (e) {
-    log(`migrate: cannot create ${SIG.runtimeRoot(cfg.addonDir)} (${e.code || e.message}); run: node setup.js`);
+    log(`migrate: cannot create ${SIG.runtimeRoot(client.addonDir)} (${e.code || e.message}); run: node setup.js`);
     return;
   }
-  state.presence = r.presence.state;
+  cs.presence = r.presence.state;
   saveState();
-  log(`migrate: created ${SIG.runtimeRoot(cfg.addonDir)} (${r.armed} signal file(s) armed); ${SIG.RESTART_NOTE}. The ${r.legacy} old folder(s) in ${path.join(cfg.addonDir, P.ADDON)} stay until setup or "npm run slots" removes them, because deleting them under a running game reads as every signal firing at once.`);
+  log(`migrate: created ${SIG.runtimeRoot(client.addonDir)} (${r.armed} signal file(s) armed); ${SIG.RESTART_NOTE}. The ${r.legacy} old folder(s) in ${path.join(client.addonDir, P.ADDON)} stay until setup or "npm run slots" removes them, because deleting them under a running game reads as every signal firing at once.`);
 }
-function preparePresence() {
-  if (!presenceReady()) return;
-  const r = SIG.preparePresence(cfg.addonDir, state.presence, PRESENCE_MAX);
-  state.presence = r.state;
+function preparePresence(client) {
+  if (!presenceReady(client)) return;
+  const cs = clientStateOf(client);
+  const r = SIG.preparePresence(client.addonDir, cs.presence, PRESENCE_MAX);
+  cs.presence = r.state;
   saveState();
-  log(`presence: ring ${r.state.ring} at ${r.state.at} of ${PRESENCE_MAX}${r.made ? `, armed ${r.made} file(s)` : ''}${r.removed ? `, removed ${r.removed} stale file(s)` : ''}`);
+  log(`presence${inLabel(client)}: ring ${r.state.ring} at ${r.state.at} of ${PRESENCE_MAX}${r.made ? `, armed ${r.made} file(s)` : ''}${r.removed ? `, removed ${r.removed} stale file(s)` : ''}`);
 }
-function presenceBeat() {
-  if (!presenceReady()) return;
-  state.presence = SIG.presenceState(state.presence);
-  const r = SIG.beat(cfg.addonDir, state.presence, PRESENCE_MAX);
-  if (r.switched) log(`presence: ring ${r.switched} spent and armed again for the next game launch; beating on ring ${r.ring}`);
+function presenceBeatClient(client) {
+  if (!presenceReady(client)) return false;
+  const cs = clientStateOf(client);
+  cs.presence = SIG.presenceState(cs.presence);
+  const r = SIG.beat(client.addonDir, cs.presence, PRESENCE_MAX);
+  if (r.switched) log(`presence${inLabel(client)}: ring ${r.switched} spent and armed again for the next game launch; beating on ring ${r.ring}`);
+  return true;
+}
+function presenceBeat(only) {
+  let beaten = 0;
+  for (const c of only ? [only] : CLIENTS) if (presenceBeatClient(c)) beaten++;
+  if (!beaten) return;
   saveState();
   if (Date.now() - lastPublish >= PRESENCE_INTERVAL_MS) publishNow(false, { refresh: true });
 }
-function presenceInfo() {
-  if (!presenceReady()) return null;
-  const p = SIG.presenceState(state.presence);
+function presenceInfo(client) {
+  if (!presenceReady(client)) return null;
+  const p = SIG.presenceState(clientStateOf(client).presence);
   return { scheme: SIG.SCHEME, ring: p.ring, at: p.at, n: PRESENCE_MAX, probe: p.probe };
 }
 function noteSignalReport(job) {
   if (!job.presenceTest && !job.lateCreate) return;
-  const prev = state.presenceTest || {};
+  const client = clientFor(job);
+  if (!client) return;
+  const cs = clientStateOf(client);
+  const prev = cs.presenceTest || {};
   const next = { result: job.presenceTest || prev.result || '', late: job.lateCreate || prev.late || '' };
   if (next.result === prev.result && next.late === prev.late) return;
-  state.presenceTest = { ...next, at: new Date().toISOString(), session: job.session || '' };
+  cs.presenceTest = { ...next, at: new Date().toISOString(), session: job.session || '' };
   saveState();
-  log(`${tagOf(job)} signal self-test from the game: deleting a launch-time file ${next.result === 'passed' ? 'reads as missing (presence beats work)' : next.result === 'failed' ? 'does NOT read as missing (the addon uses slot polls only)' : 'not decided yet'}; a file created after launch is ${next.late || 'not checked yet'}`);
+  log(`${tagOf(job)} signal self-test from the game${inLabel(client)}: deleting a launch-time file ${next.result === 'passed' ? 'reads as missing (presence beats work)' : next.result === 'failed' ? 'does NOT read as missing (the addon uses slot polls only)' : 'not decided yet'}; a file created after launch is ${next.late || 'not checked yet'}`);
 }
 function placeProbe(job) {
-  if (!job.probe || !presenceReady()) return;
-  SIG.placeProbe(cfg.addonDir, job.probe);
-  if (!fs.existsSync(SIG.probeFile(cfg.addonDir, job.probe))) return;
-  state.presence = { ...SIG.presenceState(state.presence), probe: job.probe };
+  const client = clientFor(job);
+  if (!job.probe || !client || !presenceReady(client)) return;
+  SIG.placeProbe(client.addonDir, job.probe);
+  if (!fs.existsSync(SIG.probeFile(client.addonDir, job.probe))) return;
+  const cs = clientStateOf(client);
+  cs.presence = { ...SIG.presenceState(cs.presence), probe: job.probe };
 }
 
 // ---------------------------------------------------------------------------
@@ -782,10 +849,12 @@ function placeProbe(job) {
 // ---------------------------------------------------------------------------
 
 // The reload path: the addon writes its outbox into SavedVariables on /reload.
-function readOutbox() {
+function readOutbox(client) {
   let src;
-  try { src = fs.readFileSync(SAVED_VARS, 'utf8'); } catch { return null; }
-  return P.parseOutbox(src);
+  try { src = fs.readFileSync(client.savedVariablesFile, 'utf8'); } catch { return null; }
+  const job = P.parseOutbox(src);
+  if (job) job.client = client.key;
+  return job;
 }
 
 // The addon sends the player's in-game context (character, location, ...) with
@@ -795,22 +864,34 @@ function readOutbox() {
 // rules and the primer into the system prompt (protocol.systemPrompt).
 function setContext(job) {
   const text = String(job.ctx || '').replace(/\r/g, '').trim().slice(0, 2000);
+  const client = clientFor(job);
+  const cs = client ? clientStateOf(client) : null;
   const prev = (state.context && state.context.text) || '';
-  if (text === prev) { noteContextHeard(); return; }
+  const ownsShared = !state.context || (state.context.client || '') === (job.client || '');
+  const sharedChanges = text ? text !== prev || !ownsShared : !!state.context && ownsShared;
+  const ownChanges = cs ? text !== ((cs.context && cs.context.text) || '') || cs.context === undefined : sharedChanges;
+  if (!sharedChanges && !ownChanges) { noteContextHeard(); return; }
   const heardAt = Date.now();
-  state.context = text ? { text, at: heardAt, receivedAt: heardAt, session: job.session || '' } : null;
+  const made = () => (text ? { text, at: heardAt, receivedAt: heardAt, session: job.session || '', client: job.client || '' } : null);
+  if (sharedChanges) state.context = made();
+  if (cs) cs.context = made();
   saveState();
   const who = (text.split('\n').find(l => /^Character:/i.test(l)) || text.split('\n')[0] || '').slice(0, 100);
-  log(`#${job.id}${job.session ? '@' + job.session : ''} game context ${text ? 'updated: ' + who : 'cleared'}`);
+  log(`#${job.id}${job.session ? '@' + job.session : ''}${inLabel(client)} game context ${text ? 'updated: ' + who : 'cleared'}`);
 }
 
 function noteContextHeard() {
   if (state.context) state.context.receivedAt = Date.now();
 }
 
-function gameContext() {
+function contextTextFor(job) {
+  const client = clientFor(job);
+  return CLI.contextText(state, client ? client.key : '');
+}
+
+function gameContext(job) {
   if (cfg.gameContext === false) return '';
-  return (state.context && state.context.text) || '';
+  return contextTextFor(job);
 }
 
 const loggedDataChecks = new Set();
@@ -820,15 +901,15 @@ function noGameDataLine(clientBuild) {
   if (!flavor) return `wowdata: client ${clientBuild} is neither Forever (1.60.*) nor Classic Era (1.15.*); ask runs go without game data`;
   return `wowdata: no synced game data for ${DSYNC.FLAVORS[flavor].label} under ${HOME.data}; ask runs go without it (${DSYNC.syncCommand(flavor)})`;
 }
-function gameDataServer(tag) {
+function gameDataServer(tag, job) {
+  const clientBuild = GD.clientBuildOf(contextTextFor(job));
   let server = null;
   try {
-    server = DM.launchConfig({ dataDir: HOME.data, clientBuild: GD.clientBuildOf((state.context && state.context.text) || '') });
+    server = DM.launchConfig({ dataDir: HOME.data, clientBuild });
   } catch (e) {
     log(`${tag} wowdata unavailable: ${e.message}`);
     return null;
   }
-  const clientBuild = GD.clientBuildOf((state.context && state.context.text) || '');
   const check = server ? `${server.flavor}:${server.build}:${server.clientBuild}:${server.buildCheck}` : `none:${clientBuild}`;
   if (!loggedDataChecks.has(check)) {
     loggedDataChecks.add(check);
@@ -882,7 +963,9 @@ function allowRules(agentId, rules) {
 // ---------------------------------------------------------------------------
 
 function submit(job) {
+  const client = clientFor(job);
   if (TL.isTelemetry(job)) {
+    if (client) CLI.noteHeard(state, client.key);
     if (!TELEMETRY_ON) return;
     let applied = null;
     try { applied = telemetry.submit(job); } catch (e) { log(`telemetry: gs #${job.id} not applied (${e && e.message ? e.message : e})`); }
@@ -895,10 +978,12 @@ function submit(job) {
   if (job.shot) fallbackToPixel(job.shot, job); // even for a message already handled: the report stands
   noteSignalReport(job);
   if (alreadyHandled(job)) {
-    acksSent = P.noteAck(acksSent, job);
+    const r = rtOf(job.client);
+    if (r) r.acks = P.noteAck(r.acks, job);
     return;
   }
-  clearSignalsAhead(job.id);
+  if (client) CLI.noteHeard(state, client.key, { id: job.id });
+  clearSignalsAhead(client, job.id);
   if (CAMPAIGN.isDmRecord(job)) {
     markHandled(job);
     saveState();
@@ -937,7 +1022,7 @@ function submit(job) {
     noteHelloVersions(job);
     mapShare.onHello(job);
     placeProbe(job);
-    presenceBeat();
+    if (client) presenceBeat(client);
     saveState();
     ackJob(job);
     maybeOfferRestore(job);
@@ -945,7 +1030,7 @@ function submit(job) {
     mapShare.touch();
     widgetShareUntil = Date.now() + WIDGET_SHARE_MS;
     publishNow();
-    log(`hello from session ${job.session}${pendingRestore ? ' (restore offered)' : ''}`);
+    log(`hello from session ${job.session}${inLabel(client)}${pendingRestore ? ' (restore offered)' : ''}`);
     return;
   }
   const key = chatKey(job);
@@ -1013,8 +1098,8 @@ const tagOf = job => `#${job.id}${job.session ? '@' + job.session : ''}`;
 // else the default), and hand it over.
 function runJob(job) {
   const tag = tagOf(job);
-  signal('sig', job.id, false);
-  resetBeats(job.id);
+  signal(clientFor(job), 'sig', job.id, false);
+  resetBeats(job);
   ackJob(job);
   if (job.addonVersion || job.addonProto) noteHelloVersions(job);
   const refusal = P.addonRefusal(state, job, BRIDGE_INFO);
@@ -1066,9 +1151,9 @@ const core = {
   fail: (job, text) => finish(job, 'error', text),
   reply: (job, text, denied) => finish(job, 'done', text, undefined, denied),
   late: (job, text) => lateReply(job, text),
-  progress: (job, text) => publish(chatKey(job), { chat: job.chat, id: job.id, status: 'working', text, cwd: job.cwd, session: '', agent: job.agent || '', plugin: job.plugin || '' }, true),
+  progress: (job, text) => publish(chatKey(job), { chat: job.chat, id: job.id, status: 'working', text, cwd: job.cwd, session: '', agent: job.agent || '', plugin: job.plugin || '', client: job.client }, true),
   accept: (job) => { maybeOfferRestore(job); noteMessage(job, 'user', job.text); },
-  gameContext: () => gameContext(),
+  gameContext: job => gameContext(job),
   publish: () => publishNow(),
   get home() { return HOME.dir; },
   get timeoutMs() { return cfg.timeoutMs || 1800000; },
@@ -1081,7 +1166,7 @@ const core = {
     if (CAMPAIGN.TOOL_NAMES.includes(tool)) return campaignStore.call(tool, args);
     return goalStore.call(tool, args);
   },
-  gameData: () => GR.openFor(HOME.data, (state.context && state.context.text) || ''),
+  gameData: job => GR.openFor(HOME.data, contextTextFor(job)),
   get runGrants() { return runGrants; },
   agentPids: () => [...running.values()].map(r => r.child).concat(T.titleChildren()).filter(Boolean).map(c => c.pid),
 };
@@ -1155,7 +1240,7 @@ function checkedReply(job, reply) {
 function lateReply(job, raw) {
   const { text, summary } = checkedReply(job, P.splitSummary(String(raw || '')));
   noteMessage(job, 'assistant', text);
-  publish(`${chatKey(job)}#late`, { chat: job.chat, id: job.id, status: 'done', late: true, text, summary, cwd: job.cwd, agent: job.agent || '', plugin: job.plugin || '' }, true);
+  publish(`${chatKey(job)}#late`, { chat: job.chat, id: job.id, status: 'done', late: true, text, summary, cwd: job.cwd, agent: job.agent || '', plugin: job.plugin || '', client: job.client }, true);
   mapShare.onReplyPublished();
   log(`${tagOf(job)} late reply delivered (${text.length} chars)`);
 }
@@ -1212,11 +1297,18 @@ function noRunTools(tag, why) {
   log(`${tag} ${GM.SERVER_NAME}: ${why}, so in-game runs go without the goal, order and campaign tools`);
   return '';
 }
-function runToolsSocket(tag) {
+function runToolsSocket(tag, job) {
   const lp = livePlugin();
   const socket = lp && typeof lp.runEndpoint === 'function' ? lp.runEndpoint() : '';
   if (!socket) return noRunTools(tag, 'the live socket is not listening (plugins.live.enabled, or --once)');
   if (!runGrantCharacter()) return noRunTools(tag, 'the game context names no character');
+  const client = clientFor(job);
+  const theirs = CLI.foreignContext(state, client ? client.key : '', text => (GOALS.characterOf(text) || {}).key || '');
+  if (theirs) {
+    const from = rtOf(state.context.client) ? rtOf(state.context.client).client.label : 'another client';
+    log(`${tag} ${GM.SERVER_NAME}: another client reported its game context after this one (${theirs} in ${from}), so this run goes without the goal, order and campaign tools`);
+    return '';
+  }
   return socket;
 }
 function runGrantCharacter() {
@@ -1268,7 +1360,7 @@ function runAgent(job, opts = {}) {
   const agent = A.AGENTS[agentId];
   const chosen = chatSettings(job);
   const claudeRun = agentId === 'claude';
-  const runToolSocket = claudeRun && opts.runTools ? runToolsSocket(tag) : '';
+  const runToolSocket = claudeRun && opts.runTools ? runToolsSocket(tag, job) : '';
   const runDenied = inGameDeniedTools({ claudeRun, plugin, withRunTools: !!runToolSocket });
   const grantForGood = P.splitGrants(inGameGrantable(job.allow, runDenied));
   const grantOnce = P.splitGrants(inGameGrantable(job.allowOnce, runDenied));
@@ -1279,7 +1371,7 @@ function runAgent(job, opts = {}) {
   if (grantOnce.rules.length) {
     log(`${tag} allowed for this run only (${agentId}): ${grantOnce.rules.join(', ')}`);
   }
-  const dataServer = opts.gameData && agentId === 'claude' ? gameDataServer(tag) : null;
+  const dataServer = opts.gameData && agentId === 'claude' ? gameDataServer(tag, job) : null;
   const runOnlyRules = [...grantOnce.rules, ...(dataServer ? dataServer.rules : []), ...(runToolSocket ? GM.RUN_RULES : [])];
   const baseCfg = A.withPluginSettings(A.agentConfig(cfg, agentId), agentId, core.options(plugin.id));
   const acfg = A.withChatSettings(P.withRunDeniedRules(P.withRunOnlyRules(baseCfg, runOnlyRules), runDenied), agentId, chosen);
@@ -1315,7 +1407,7 @@ function runAgent(job, opts = {}) {
     log(`${tag} plugin changed (${prevPlugin} -> ${plugin.id}): new session`);
     delete state.sessions[skey]; delete state.sessions[key];
   }
-  const rulesHash = P.systemRulesHash(gameContext(), { tools: plugin.tools, surfaces: plugin.surfaces, voice: plugin.voice });
+  const rulesHash = P.systemRulesHash(gameContext(job), { tools: plugin.tools, surfaces: plugin.surfaces, voice: plugin.voice });
   if (agentId === 'claude' && state.sessions[skey] && P.rulesChanged(state, skey, rulesHash)) {
     log(`${tag} system prompt rules changed (${state.sessionRules[skey]} -> ${rulesHash}): new session`);
     delete state.sessions[skey]; delete state.sessions[key];
@@ -1342,7 +1434,7 @@ function runAgent(job, opts = {}) {
 
   // The stable system prompt (the same bytes on every run of this chat) and the
   // message, which carries what changes: the situation and the vision note.
-  const ctx = gameContext();
+  const ctx = gameContext(job);
   const system = P.systemPrompt(ctx, primer(), { tools: plugin.tools, surfaces: plugin.surfaces, voice: plugin.voice });
   const systemShort = P.systemPrompt(ctx, '', { surfaces: plugin.surfaces, voice: plugin.voice });
   const prompt = P.messagePrompt(job.text, ctx, { image });
@@ -1394,7 +1486,7 @@ function runAgent(job, opts = {}) {
   const child = PR.spawnChild(cmd.file, args, { cwd, env, windowsHide: true, stdio: [input.stdin !== undefined ? 'pipe' : 'ignore', 'pipe', 'pipe'] });
   running.set(key, { job, child });
   noteInflight(key, job, child, agent.name, path.basename(args.find(a => /\.[cm]?js$/.test(String(a))) || cmd.file));
-  publish(key, { chat: job.chat, id: job.id, status: 'working', text: resume ? 'thinking...' : 'starting a new session...', cwd: job.cwd, session: resume, agent: agentId, plugin: plugin.id }, true);
+  publish(key, { chat: job.chat, id: job.id, status: 'working', text: resume ? 'thinking...' : 'starting a new session...', cwd: job.cwd, session: resume, agent: agentId, plugin: plugin.id, client: job.client }, true);
   if (input.stdin !== undefined) { child.stdin.on('error', () => {}); child.stdin.end(input.stdin); }
   if (job.title) nameChat(job, key);
 
@@ -1413,11 +1505,12 @@ function runAgent(job, opts = {}) {
   let stdoutText = '';
   let parserError = false;
 
+  let steps = 0;
   const pushProgress = (line) => {
     progress.push(line);
     while (progress.length > 10) progress.shift();
     beat(job);
-    publish(key, { chat: job.chat, id: job.id, status: 'working', text: checkedProgress(job, progress.join('\n')), cwd: job.cwd, session: sessionId, agent: agentId, plugin: plugin.id }, false);
+    publish(key, { chat: job.chat, id: job.id, status: 'working', text: checkedProgress(job, progress.join('\n')), steps, cwd: job.cwd, session: sessionId, agent: agentId, plugin: plugin.id, client: job.client }, false);
   };
   const noteMcpDown = (servers) => {
     log(`${tag} MCP server(s) not connected: ${servers.map(s => `${s.name} (${s.status})`).join(', ')}`);
@@ -1458,6 +1551,7 @@ function runAgent(job, opts = {}) {
     }
     if (r.session) sessionId = r.session;
     if (r.usage) usage = r.usage;
+    if (Number.isInteger(r.steps) && r.steps > 0) steps += r.steps;
     for (const p of r.progress) pushProgress(p);
     for (const d of r.denied) denied.add(d);
     if (Array.isArray(r.deniedAgain)) for (const d of r.deniedAgain) deniedAgain.add(d);
@@ -1574,7 +1668,7 @@ function chatSettings(job) {
 }
 
 function noteInflight(key, job, child, agentName, marker) {
-  (state.inflight = state.inflight || {})[key] = { id: job.id, chat: job.chat, session: job.session, cwd: job.cwd, pid: child && child.pid, agent: agentName, marker, startedAt: Date.now() };
+  (state.inflight = state.inflight || {})[key] = { id: job.id, chat: job.chat, session: job.session, cwd: job.cwd, client: job.client || '', pid: child && child.pid, agent: agentName, marker, startedAt: Date.now() };
   saveState();
 }
 
@@ -1588,9 +1682,11 @@ function recoverInflight() {
     const since = new Date(run.startedAt || Date.now()).toISOString().slice(11, 19);
     const text = `The bridge stopped unexpectedly while ${run.agent || 'the agent'} was working on this message (started ${since} UTC), so its reply is lost. Send it again. The reason is in ${LOG_FILE}.`;
     P.markHandled(state, { session: run.session, chat: run.chat, id: run.id });
-    live.set(key, { chat: run.chat, id: run.id, status: 'error', text, cwd: run.cwd });
-    ackJob({ session: run.session, id: run.id });
-    signal('sig', run.id, true);
+    const client = rtOf(run.client) ? rtOf(run.client).client : defaultClient();
+    const orphan = { session: run.session, id: run.id, client: client ? client.key : '' };
+    live.set(key, { chat: run.chat, id: run.id, status: 'error', text, cwd: run.cwd, client: orphan.client });
+    ackJob(orphan);
+    signal(client, 'sig', run.id, true);
     log(`#${run.id}@${run.session || ''} was running when the previous bridge stopped; told the game it is lost`);
   }
   state.inflight = {};
@@ -1669,9 +1765,9 @@ function finish(job, status, text, session, denied) {
   noteMessage(job, status === 'done' ? 'assistant' : 'system', status === 'done' ? shown.text : 'Bridge error: ' + text);
   awardAchievements(job, status);
   const usage = P.usageFields(job.usage);
-  publish(chatKey(job), { chat: job.chat, id: job.id, status, text: shown.text, summary: shown.summary, cwd: job.cwd, session, denied, macros, agent: job.agent || '', plugin: job.plugin || '', lateOk: status === 'error' && !!job.lateOk, ...usage }, true);
+  publish(chatKey(job), { chat: job.chat, id: job.id, status, text: shown.text, summary: shown.summary, cwd: job.cwd, session, denied, macros, agent: job.agent || '', plugin: job.plugin || '', lateOk: status === 'error' && !!job.lateOk, ...usage, client: job.client }, true);
   mapShare.onReplyPublished();
-  signal('sig', job.id, true);
+  signal(clientFor(job), 'sig', job.id, true);
   tellPluginFinished(plugin, job, { status, text, summary });
   const growth = usage.turns ? `, turn ${usage.turns}${usage.ctx ? ', ctx ' + P.tokensLabel(usage.ctx) + (usage.window ? ' of ' + P.tokensLabel(usage.window) : '') : ''}${usage.cost !== undefined ? ', ~$' + usage.cost.toFixed(2) + ' API so far' : ''}` : '';
   log(`#${job.id}${job.session ? '@' + job.session : ''} ${status} (${text.length} chars${summary ? ', summary ' + summary.length : ', no summary'}${growth})`);
@@ -1684,12 +1780,19 @@ function finish(job, status, text, session, denied) {
 // ---------------------------------------------------------------------------
 
 function pollSavedVariables() {
-  let st;
-  try { st = fs.statSync(SAVED_VARS); } catch { return; }
-  if (st.mtimeMs === lastMtime) return;
-  lastMtime = st.mtimeMs;
-  const job = readOutbox();
-  if (job) submit(job);
+  for (const r of CLIENT_RT.values()) {
+    let st;
+    try { st = fs.statSync(r.client.savedVariablesFile); } catch { continue; }
+    if (st.mtimeMs === r.lastMtime) continue;
+    r.lastMtime = st.mtimeMs;
+    const job = readOutbox(r.client);
+    if (job) submit(job);
+  }
+}
+
+const PIXEL_CLIENT = CLIENTS[0] || null;
+function pixelProcessName() {
+  return PIXEL_CLIENT ? PIXEL_CLIENT.processName : cap.processName;
 }
 
 // Windows: capture.ps1 (GDI). macOS: capture_mac.py (CoreGraphics, screencapture fallback). Elsewhere: capture_x11.py (Wine/X11).
@@ -1698,18 +1801,18 @@ function captureCommand() {
   if (process.platform === 'win32') {
     return ['powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', AS.file('bridge/capture.ps1'),
       '-Cell', String(cap.cellPx), '-Cells', String(cap.cellsPerRow), '-MaxRows', String(cap.maxRows),
-      '-IntervalMs', String(cap.intervalMs), '-ProcessName', cap.processName]];
+      '-IntervalMs', String(cap.intervalMs), '-ProcessName', pixelProcessName()]];
   }
   if (process.platform === 'darwin') {
     const args = [AS.file('bridge/capture_mac.py'),
       '--cell', String(cap.cellPx), '--cells', String(cap.cellsPerRow), '--max-rows', String(cap.maxRows),
-      '--interval-ms', String(cap.intervalMs), '--process-name', cap.processName];
+      '--interval-ms', String(cap.intervalMs), '--process-name', pixelProcessName()];
     if (cap.windowName) args.push('--window-name', cap.windowName);
     return [cap.python || 'python3', args];
   }
   const args = [AS.file('bridge/capture_x11.py'),
     '--cell', String(cap.cellPx), '--cells', String(cap.cellsPerRow), '--max-rows', String(cap.maxRows),
-    '--interval-ms', String(cap.intervalMs), '--process-name', cap.processName];
+    '--interval-ms', String(cap.intervalMs), '--process-name', pixelProcessName()];
   if (cap.windowName) args.push('--window-name', cap.windowName);
   if (cap.keepComposited) args.push('--keep-composited');
   return [cap.python || 'python3', args];
@@ -1730,7 +1833,7 @@ function startCapture() {
     if (ev.warn) { log('capture:', ev.warn + hint); return; }
     if (ev.error) { log('capture error:', ev.error + hint); return; }
     if (typeof ev.id === 'number') {
-      const jobs = jobsFromStrip(ev.id, ev.text);
+      const jobs = jobsFromStrip(ev.id, ev.text).map(job => ({ ...job, client: PIXEL_CLIENT ? PIXEL_CLIENT.key : '' }));
       log(`strip #${ev.id}: ${jobs.length} message(s)`);
       for (const job of jobs) submit(job);
     }
@@ -1756,23 +1859,22 @@ const stripOptions = () => ({ cell: cap.cellPx, cells: cap.cellsPerRow, maxRows:
 const stripGeometry = () => (STRIP_CODEC === 2
   ? `${D.DENSE.cells}x${D.DENSE.maxRows} cells of ${D.DENSE.cell}px, levels ${P.denseLevels(cap.screenshotLevels).join('/')}`
   : `${cap.cellsPerRow}x${cap.maxRows} cells of ${cap.cellPx}px, levels ${LEVELS.off}/${LEVELS.on}, threshold ${LEVELS.threshold}`);
-let shotHint = null;
-function handleScreenshot(file) {
+function handleScreenshot(file, r) {
   let buf;
   try { buf = fs.readFileSync(file); } catch (e) { log(`screenshot: cannot read ${path.basename(file)} (${e.message})`); return; }
   let img;
   try { img = D.readImage(buf); } catch (e) { log(`screenshot: ${path.basename(file)} unreadable (${e.message}); left alone`); return; }
-  const { msg, offset } = D.findStrip(img, stripOptions(), shotHint);
+  const { msg, offset } = D.findStrip(img, stripOptions(), r.shotHint);
   if (!msg) {
     log(`screenshot: ${path.basename(file)} (${img.width}x${img.height} ${img.format}) holds no strip; left alone`);
     return;
   }
-  shotHint = offset;
+  r.shotHint = offset;
   if (msg.error) {
     log(`screenshot: strip in ${path.basename(file)} rejected: ${msg.error}` + (msg.error === 'checksum' ? ' (is the strip drawn at 1 UI unit per pixel?)' : ''));
   } else {
-    const jobs = jobsFromStrip(msg.id, msg.text).map(job => ({ ...job, via: 'screenshot' }));
-    log(`strip #${msg.id} (screenshot ${path.basename(file)}, ${img.width}x${img.height} ${img.format}, codec ${msg.codec}, ${msg.rows} row(s)): ${jobs.length} message(s)`);
+    const jobs = jobsFromStrip(msg.id, msg.text).map(job => ({ ...job, via: 'screenshot', client: r.client.key }));
+    log(`strip #${msg.id} (screenshot ${path.basename(file)}${fromLabel(r.client)}, ${img.width}x${img.height} ${img.format}, codec ${msg.codec}, ${msg.rows} row(s)): ${jobs.length} message(s)`);
     // Vision: the frame below the strip is the game as the player saw it. Cut
     // it out once for the messages that asked, before the file goes (not for a
     // retried shot of a message already handled or under way: no orphan file).
@@ -1822,39 +1924,38 @@ pruneVisionFiles(0); // leftovers from a bridge that died mid-run
 // leaves every other file, i.e. the player's own screenshots, alone. A file
 // younger than a minute is the watcher's business, not the sweep's.
 const SWEEP_MS = 5 * 60 * 1000;
-const sweepMemo = new Map();
-function holdsStrip(buf) {
-  const img = D.readImage(buf);
-  return !!D.findStrip(img, stripOptions(), shotHint).msg;
-}
-function sweepScreenshots(why) {
-  const r = S.sweepOrphans(SCREENSHOT_DIR, holdsStrip, { memo: sweepMemo, log, minAgeMs: why === 'startup' ? 2000 : 60000 });
-  if (r.removed.length || r.more) {
-    log(`screenshot sweep (${why}): removed ${r.removed.length} leftover strip screenshot(s), ${(r.bytes / 1048576).toFixed(1)} MB` +
-      (r.kept ? `; ${r.kept} without a strip left alone` : '') + (r.more ? '; more next time' : ''));
+function sweepScreenshots(r, why) {
+  const holdsStrip = buf => !!D.findStrip(D.readImage(buf), stripOptions(), r.shotHint).msg;
+  const out = S.sweepOrphans(r.client.screenshotDir, holdsStrip, { memo: r.sweepMemo, log, minAgeMs: why === 'startup' ? 2000 : 60000 });
+  if (out.removed.length || out.more) {
+    log(`screenshot sweep (${why}${fromLabel(r.client)}): removed ${out.removed.length} leftover strip screenshot(s), ${(out.bytes / 1048576).toFixed(1)} MB` +
+      (out.kept ? `; ${out.kept} without a strip left alone` : '') + (out.more ? '; more next time' : ''));
   }
 }
 
-let shotWatch = null; // the folder watcher, closed by fallbackToPixel
-function startScreenshotWatch() {
-  if (TRANSPORT !== 'screenshot') return; // fell back while waiting for the folder
-  if (!SCREENSHOT_DIR) { log('screenshot transport: no addonDir in config.json, so no Screenshots folder to watch'); return; }
-  if (!fs.existsSync(SCREENSHOT_DIR)) {
+function startScreenshotWatch(r) {
+  if (TRANSPORT !== 'screenshot' || shuttingDown) return;
+  const dir = r.client.screenshotDir;
+  if (!fs.existsSync(dir)) {
     // The client creates it on the first screenshot; look again in a while.
-    log(`screenshot transport: ${SCREENSHOT_DIR} does not exist yet; retrying in 10 s`);
-    setTimeout(startScreenshotWatch, 10000);
+    if (!r.waitingForShots) log(`screenshot transport: ${dir} does not exist yet; looking again every 10 s`);
+    r.waitingForShots = true;
+    setTimeout(() => startScreenshotWatch(r), 10000);
     return;
   }
-  shotWatch = S.watchScreenshots(SCREENSHOT_DIR, handleScreenshot, { log });
-  log(`screenshot transport: watching ${SCREENSHOT_DIR} (strip codec ${STRIP_CODEC}: ${stripGeometry()})`);
-  sweepScreenshots('startup');
-  const sweeper = setInterval(() => sweepScreenshots('periodic'), SWEEP_MS);
+  r.shotWatch = S.watchScreenshots(dir, file => handleScreenshot(file, r), { log });
+  log(`screenshot transport: watching ${dir} (strip codec ${STRIP_CODEC}: ${stripGeometry()})`);
+  sweepScreenshots(r, 'startup');
+  const sweeper = setInterval(() => sweepScreenshots(r, 'periodic'), SWEEP_MS);
   if (sweeper.unref) sweeper.unref();
 }
 
-let chatLogWatch = null;
-function chatLogSlot() {
-  const measured = CL.calibratedFiller(Array.isArray(state.chatLogWrites) ? state.chatLogWrites : [], CHAT_LOG.filler);
+function chatLogWritesOf(client) {
+  const w = clientStateOf(client).chatLogWrites;
+  return Array.isArray(w) ? w : [];
+}
+function chatLogSlot(client) {
+  const measured = CL.calibratedFiller(chatLogWritesOf(client), CHAT_LOG.filler);
   return { enabled: CHAT_LOG.enabled && measured.usable, line: CHAT_LOG.line, filler: measured.filler, show: CHAT_LOG.show, bufferSize: measured.size, key: CHAT_LOG.enabled ? chatLogKey() : '' };
 }
 let refusedFrameToldAt = 0;
@@ -1868,51 +1969,55 @@ function chatLogKey() {
   if (made.created) saveState();
   return made.key;
 }
-function noteChatLogWrite(bytes) {
-  const before = chatLogSlot();
-  state.chatLogWrites = CL.noteWrite(Array.isArray(state.chatLogWrites) ? state.chatLogWrites : [], bytes);
-  const after = chatLogSlot();
+function noteChatLogWrite(client, bytes) {
+  const before = chatLogSlot(client);
+  clientStateOf(client).chatLogWrites = CL.noteWrite(chatLogWritesOf(client), bytes);
+  const after = chatLogSlot(client);
   if (after.filler === before.filler && after.enabled === before.enabled) return;
   log(after.enabled
-    ? `chat log transport: the client writes its chat log every ${after.bufferSize} bytes; padding is now ${after.filler} bytes (was ${before.filler})`
-    : `chat log transport: the client writes its chat log every ${after.bufferSize} bytes, more than the padding limit; off until that changes, messages go by screenshot`);
+    ? `chat log transport${inLabel(client)}: the client writes its chat log every ${after.bufferSize} bytes; padding is now ${after.filler} bytes (was ${before.filler})`
+    : `chat log transport${inLabel(client)}: the client writes its chat log every ${after.bufferSize} bytes, more than the padding limit; off until that changes, messages go by screenshot`);
   saveState();
   publishNow();
 }
-const tellCleanBlocked = CL.reasonTeller(reason => log(`chat log clean: cannot tell whether the game is running (${reason}), so ${path.basename(CHAT_LOG_FILE)} is left as it is. Said once per reason`));
-async function cleanChatLog(why) {
-  if (!CHAT_LOG.clean) return;
-  let r;
-  try { r = await CL.cleanWhenClosed(CHAT_LOG_FILE, CL.clientFolder(cfg)); } catch (e) { log(`chat log clean (${why}): failed (${e.message})`); return; }
-  if (!r.cleaned) tellCleanBlocked(r);
-  if (!r.cleaned || !r.removed) return;
-  if (chatLogWatch) chatLogWatch.resync();
-  if (r.grewMeanwhile || r.staleVerdict) {
-    const cause = r.grewMeanwhile ? 'grew while it was cleaned' : 'took more than 3 s to clean after the process check';
-    log(`chat log clean (${why}): ${path.basename(CHAT_LOG_FILE)} ${cause}, so it was left at full length: bytes ${r.keptUpTo} to ${r.before} are stale copies of older lines, starting inside a line. Nothing the game wrote is lost`);
-    return;
-  }
-  log(`chat log clean (${why}): the game is closed; removed ${r.removed} transport line(s) from ${path.basename(CHAT_LOG_FILE)}, ${r.before} -> ${r.after} bytes`);
+function cleanBlockedTeller(r) {
+  if (!r.tellCleanBlocked) r.tellCleanBlocked = CL.reasonTeller(reason => log(`chat log clean${fromLabel(r.client)}: cannot tell whether the game is running (${reason}), so ${path.basename(r.client.chatLogFile)} is left as it is. Said once per reason`));
+  return r.tellCleanBlocked;
 }
-function handleLogFrame(frame) {
-  if (frame.error) {
-    log(`chat log: frame #${frame.lineId} (${frame.chunks} line(s)) rejected: ${frame.error}`);
+async function cleanChatLog(r, why) {
+  if (!CHAT_LOG.clean) return;
+  const file = r.client.chatLogFile;
+  let out;
+  try { out = await CL.cleanWhenClosed(file, r.client.dir); } catch (e) { log(`chat log clean (${why}${fromLabel(r.client)}): failed (${e.message})`); return; }
+  if (!out.cleaned) cleanBlockedTeller(r)(out);
+  if (!out.cleaned || !out.removed) return;
+  if (r.chatLogWatch) r.chatLogWatch.resync();
+  if (out.grewMeanwhile || out.staleVerdict) {
+    const cause = out.grewMeanwhile ? 'grew while it was cleaned' : 'took more than 3 s to clean after the process check';
+    log(`chat log clean (${why}${fromLabel(r.client)}): ${path.basename(file)} ${cause}, so it was left at full length: bytes ${out.keptUpTo} to ${out.before} are stale copies of older lines, starting inside a line. Nothing the game wrote is lost`);
     return;
   }
-  const jobs = jobsFromStrip(frame.id, frame.text).map(job => ({ ...job, via: 'chatlog' }));
-  log(`strip #${frame.id} (chat log, ${frame.chunks} line(s)): ${jobs.length} message(s)`);
+  log(`chat log clean (${why}${fromLabel(r.client)}): the game is closed; removed ${out.removed} transport line(s) from ${path.basename(file)}, ${out.before} -> ${out.after} bytes`);
+}
+function handleLogFrame(frame, r) {
+  if (frame.error) {
+    log(`chat log: frame #${frame.lineId} (${frame.chunks} line(s))${fromLabel(r.client)} rejected: ${frame.error}`);
+    return;
+  }
+  const jobs = jobsFromStrip(frame.id, frame.text).map(job => ({ ...job, via: 'chatlog', client: r.client.key }));
+  log(`strip #${frame.id} (chat log${fromLabel(r.client)}, ${frame.chunks} line(s)): ${jobs.length} message(s)`);
   for (const job of jobs) submit(job);
 }
-function startChatLogWatch() {
+function startChatLogWatch(r) {
   if (TRANSPORT !== 'screenshot' || !CHAT_LOG.enabled) return;
-  if (!CHAT_LOG_FILE) { log('chat log transport: no addonDir in config.json, so no Logs folder to watch'); return; }
-  chatLogWatch = CL.watchChatLog(CHAT_LOG_FILE, handleLogFrame, { log, pollMs: CHAT_LOG.pollMs, onWrite: noteChatLogWrite, key: chatLogKey(), onRefused: noteRefusedFrame });
-  log(`chat log transport: watching ${CHAT_LOG_FILE} (lines of ${CHAT_LOG.line}, filler ${chatLogSlot().filler} bytes${CHAT_LOG.show ? ', lines shown in chat' : ''}); screenshots stay as the retry path`);
+  const file = r.client.chatLogFile;
+  r.chatLogWatch = CL.watchChatLog(file, frame => handleLogFrame(frame, r), { log, pollMs: CHAT_LOG.pollMs, onWrite: bytes => noteChatLogWrite(r.client, bytes), key: chatLogKey(), onRefused: noteRefusedFrame });
+  log(`chat log transport: watching ${file} (lines of ${CHAT_LOG.line}, filler ${chatLogSlot(r.client).filler} bytes${CHAT_LOG.show ? ', lines shown in chat' : ''}); screenshots stay as the retry path`);
   if (!CHAT_LOG.clean) return;
-  CL.scheduleCleaning({
-    clean: cleanChatLog,
+  r.chatLogCleaner = CL.scheduleCleaning({
+    clean: why => cleanChatLog(r, why),
     everyMs: SWEEP_MS,
-    warn: () => log(`chat log transport: WARNING, the bridge cannot tell on ${process.platform} whether the game is running, so it never removes its lines from ${path.basename(CHAT_LOG_FILE)}: the file grows by about ${Math.round(chatLogSlot().filler / 1000)} KB per message. Cleaning works on macOS, Windows and Linux only.`),
+    warn: () => log(`chat log transport${inLabel(r.client)}: WARNING, the bridge cannot tell on ${process.platform} whether the game is running, so it never removes its lines from ${path.basename(file)}: the file grows by about ${Math.round(chatLogSlot(r.client).filler / 1000)} KB per message. Cleaning works on macOS, Windows and Linux only.`),
   });
 }
 
@@ -1930,14 +2035,17 @@ function banner() {
   console.log(`  runtime  : ${R.describe()}`);
   console.log(`  home     : ${HOME.dir}  (${HOME.source === 'legacy' ? 'the layout from before CLAUDE_WOW_HOME; run setup to move it to ' + H.defaultDir() : HOME.source}; config, state, transcripts, log)`);
   console.log(`  folder   : ${DEFAULT_CWD}  (${DEFAULT_CWD_SOURCE}; chats can override with /claude cd)`);
-  console.log(`  addons   : ${cfg.addonDir}`);
-  console.log(`  addon    : ${addonInstalled() ? 'installed' : 'NOT INSTALLED - run: node setup.js, then restart WoW'}`);
-  console.log(`  slots    : ${slotsInstalled() ? SLOTS + ' installed' : 'NOT INSTALLED - run: node setup.js (or node bridge/install-slots.js), then restart WoW'}`);
-  console.log(`  capture  : ${!cap.enabled ? 'off' : TRANSPORT === 'screenshot' ? 'screenshot transport' + (TRANSPORT_SOURCE === 'default' ? ' (the default; no screen capture, no permissions, no python)' : ' (capture.mode in config.json)') + ': ' + SCREENSHOT_DIR + ', strip codec ' + STRIP_CODEC + ': ' + stripGeometry() : 'pixel transport, DEPRECATED (' + (TRANSPORT_SOURCE === 'fallback' ? 'FALLBACK: ' + P.transportNote(state.transportFallback) : 'capture.mode in config.json; kept only until Screenshot() is confirmed on Windows and Linux/Wine') + '): screen capture of ' + cap.processName + ', ' + cap.cellsPerRow + 'x' + cap.maxRows + ' cells of ' + cap.cellPx + 'px'}`);
-  console.log(`  chat log : ${TRANSPORT === 'screenshot' && CHAT_LOG.enabled ? CHAT_LOG_FILE + ' (capture.chatLog; the first try of each message, with the screenshot as the retry)' : 'off (capture.chatLog in config.json; experimental)'}`);
+  if (!CLIENTS.length) console.log('  clients  : NONE - config.json names no WoW client; run: node setup.js');
+  for (const c of CLIENTS) {
+    console.log(`  client   : ${c.label}  ${c.dir}`);
+    console.log(`    addon  : ${addonInstalled(c) ? 'installed' : 'NOT INSTALLED - run: node setup.js, then restart WoW'}`);
+    console.log(`    slots  : ${slotsInstalled(c) ? SLOTS + ' installed' : 'NOT INSTALLED - run: node setup.js (or node bridge/install-slots.js), then restart WoW'}`);
+    console.log(`    reload : ${c.savedVariablesFile || 'no account yet (log in once, then run setup again)'}`);
+  }
+  console.log(`  capture  : ${!cap.enabled ? 'off' : TRANSPORT === 'screenshot' ? 'screenshot transport' + (TRANSPORT_SOURCE === 'default' ? ' (the default; no screen capture, no permissions, no python)' : ' (capture.mode in config.json)') + ': ' + CLIENTS.map(c => c.screenshotDir).join(', ') + ', strip codec ' + STRIP_CODEC + ': ' + stripGeometry() : 'pixel transport, DEPRECATED (' + (TRANSPORT_SOURCE === 'fallback' ? 'FALLBACK: ' + P.transportNote(state.transportFallback) : 'capture.mode in config.json; kept only until Screenshot() is confirmed on Windows and Linux/Wine') + '): screen capture of ' + pixelProcessName() + (CLIENTS.length > 1 ? ' (' + PIXEL_CLIENT.label + ' only)' : '') + ', ' + cap.cellsPerRow + 'x' + cap.maxRows + ' cells of ' + cap.cellPx + 'px'}`);
+  console.log(`  chat log : ${TRANSPORT === 'screenshot' && CHAT_LOG.enabled ? CLIENTS.map(c => c.chatLogFile).join(', ') + ' (capture.chatLog; the first try of each message, with the screenshot as the retry)' : 'off (capture.chatLog in config.json; experimental)'}`);
   console.log(`  vision   : ${TRANSPORT === 'screenshot' ? 'per chat (/claude config vision on, or /claude look <question>); the game view goes out up to ' + vis.maxWidth + 'px wide' : 'needs capture.mode "screenshot" (the pixel capture never sees more than the strip)'}`);
   console.log(`  parallel : up to ${MAX_PARALLEL} chats at once`);
-  console.log(`  fallback : ${SAVED_VARS}`);
   console.log(`  plugins  : ${registry.all().map(p => p.id + (p.id === DEFAULT_PLUGIN ? ' (default)' : '')).join(', ')}  (a chat with a folder uses claude-code, one without the default; /claude config plugin overrides)`);
   for (const p of registry.all()) if (typeof p.banner === 'function') console.log(`  ${p.id.padEnd(9)}: ${p.banner(core.options(p.id))}`);
   console.log(`  agent    : ${DEFAULT_AGENT} (default; chats pick their own with /claude --agent)`);
@@ -1952,7 +2060,7 @@ function banner() {
 banner();
 if (!once) startPlugins();
 if (inject !== null) {
-  const job = { id: state.lastId + 1, session: '', chat: '', text: inject, cwd: '', newSession: false, via: 'inject', agent: injectAgent || '' };
+  const job = { id: state.lastId + 1, session: '', chat: '', text: inject, cwd: '', newSession: false, via: 'inject', agent: injectAgent || '', client: defaultClient() ? defaultClient().key : '' };
   if (injectPlugin) job.plugin = injectPlugin;
   if (injectImage) {
     // The whole file is the screen (no strip to crop): what vision does in game, without the game.
@@ -1971,18 +2079,23 @@ if (inject !== null) {
     if (running.size === 0) { console.log('nothing pending'); process.exit(0); }
   } else {
     setInterval(pollSavedVariables, cfg.pollMs || 750);
-    migrateRuntime();
-    if (Number.isFinite(state.lastId)) clearSignalsAhead(state.lastId);
-    preparePresence();
+    for (const c of CLIENTS) {
+      migrateRuntime(c);
+      const lastId = Number(clientStateOf(c).lastId);
+      clearSignalsAhead(c, Number.isFinite(lastId) && lastId > 0 ? lastId : c.key === (CLI.allClients(cfg)[0] || {}).key ? state.lastId : NaN);
+      preparePresence(c);
+    }
     presenceBeat();
-    setInterval(presenceBeat, PRESENCE_INTERVAL_MS);
+    setInterval(() => presenceBeat(), PRESENCE_INTERVAL_MS);
     // Fresh slot files right away, so the addon's first slot read tells it which
     // transport this bridge listens on (its hello can't reach a screenshot-mode
     // bridge until it knows to take a screenshot).
     publishNow();
     if (cap.enabled && TRANSPORT === 'screenshot') {
-      startScreenshotWatch();
-      startChatLogWatch();
+      for (const r of CLIENT_RT.values()) {
+        startScreenshotWatch(r);
+        startChatLogWatch(r);
+      }
     } else if (cap.enabled) {
       if (TRANSPORT_SOURCE === 'fallback') log(`transport: ${P.transportNote(state.transportFallback)}`);
       startCapture();

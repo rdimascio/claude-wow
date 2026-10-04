@@ -411,23 +411,25 @@ test('clicking a link in a reply opens the link, not the copy box; clicking the 
   assert.equal(vm.num('STUB.copies'), 1, 'a click on plain text still opens the copy box');
 });
 
-test('the chat list orders by last activity: the open empty chat, then chats by their last message, then other empty chats', () => {
+test('the chat list orders by the last message, a new chat by its start, and opening a chat never moves it', () => {
   const vm = nativeVM();
   vm.run(`
-    for _, c in ipairs(ClaudeWoWDB.chats) do c.cwd = "" c.history = {} c.created = 100 c.opened = nil end
+    for _, c in ipairs(ClaudeWoWDB.chats) do c.cwd = "" c.history = {} c.created = 100 end
     ClaudeWoW.NewChat("Old talk"); ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history = { { role = "user", t = 500, text = "a" } }; ClaudeWoWDB.chats[#ClaudeWoWDB.chats].created = 50
     ClaudeWoW.NewChat("Fresh talk"); ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history = { { role = "user", t = 900, text = "b" }, { role = "assistant", text = "no time" } }; ClaudeWoWDB.chats[#ClaudeWoWDB.chats].created = 60
     ClaudeWoW.NewChat("Blank later"); ClaudeWoWDB.chats[#ClaudeWoWDB.chats].created = 950
-    for _, c in ipairs(ClaudeWoWDB.chats) do c.opened = nil end
-    ClaudeWoW.NewChat("Open blank")
-    ClaudeWoWDB.chats[#ClaudeWoWDB.chats].opened = nil
+    ClaudeWoW.NewChat("Blank early"); ClaudeWoWDB.chats[#ClaudeWoWDB.chats].created = 200
+    ClaudeWoW.NewChat("New chat"); ClaudeWoWDB.chats[#ClaudeWoWDB.chats].created = 2000
     ClaudeWoW.Render()
   `);
-  let order = shownRows(vm).split('|');
-  assert.deepEqual(order.slice(0, 4), ['Open blank', 'Fresh talk', 'Old talk', 'Blank later']);
-  vm.run('for _, c in ipairs(ClaudeWoWDB.chats) do if c.name == "Old talk" then ClaudeWoW.SwitchChat(c.id) end end');
-  order = shownRows(vm).split('|');
-  assert.equal(order[0], 'Old talk', 'opening a chat makes it the most recently active');
+  const order = shownRows(vm).split('|');
+  assert.deepEqual(order.slice(0, 5), ['New chat', 'Blank later', 'Fresh talk', 'Old talk', 'Blank early']);
+  for (const name of ['Old talk', 'Blank early', 'Fresh talk']) {
+    vm.run(`for _, c in ipairs(ClaudeWoWDB.chats) do if c.name == "${name}" then ClaudeWoW.SwitchChat(c.id) end end`);
+    assert.deepEqual(shownRows(vm).split('|'), order, `opening ${name} leaves every row where it was`);
+  }
+  vm.run('for _, c in ipairs(ClaudeWoWDB.chats) do if c.name == "Old talk" then table.insert(c.history, { role = "user", t = 3000, text = "new" }) end end; ClaudeWoW.RenderChatList()');
+  assert.equal(shownRows(vm).split('|')[0], 'Old talk', 'a new message moves the chat to the top');
 });
 
 test('general chats sit under Chats, project chats under their project, and the dropdown under the input switches the project', () => {
@@ -449,7 +451,7 @@ test('general chats sit under Chats, project chats under their project, and the 
   assert.equal(vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].cwd'), '');
 });
 
-test('the chat list shows the newest chat first and scrolls to the active chat only when it changes', () => {
+test('the chat list shows the newest chat first, keeps its order when a chat is opened, and scrolls only to bring an opened chat into view', () => {
   const vm = nativeVM();
   vm.run('for i = 1, 20 do ClaudeWoW.NewChat() end');
   vm.run('ClaudeWoW.UI.questList.scroll.height = 200; ClaudeWoW.Render()');
@@ -459,9 +461,14 @@ test('the chat list shows the newest chat first and scrolls to the active chat o
   assert.equal(scroll(), 0, 'the new chat is already in view at the top');
   vm.run('ClaudeWoW.UI.questList.scroll:SetVerticalScroll(300); ClaudeWoW.Render()');
   assert.equal(scroll(), 300, 'a render with the same active chat keeps the player\'s scroll');
-  vm.run('STUB.now = STUB.now + 10; ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[1].id)');
-  assert.equal(firstRow(), vm.evaluate('ClaudeWoWDB.chats[1].id'), 'the chat just opened moves to the top');
-  assert.equal(scroll(), 0, 'and the list scrolls up to it');
+  vm.run('ClaudeWoW.UI.questList.scroll:SetVerticalScroll(0); STUB.now = STUB.now + 10; ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[1].id)');
+  assert.equal(firstRow(), vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].id'), 'opening the oldest chat does not move it to the top');
+  assert.ok(scroll() > 0, 'the list scrolls down to the opened chat instead');
+  const kept = scroll();
+  const inView = vm.evaluate(`(function() for _, r in ipairs(ClaudeWoW.UI.questList.rows) do if r.shown and not r.active and -r.y >= ${kept} and -r.y + r.height <= ${kept} + 200 then return r.chatId end end end)()`);
+  assert.ok(inView, 'another chat row is in view');
+  vm.run(`STUB.now = STUB.now + 10; ClaudeWoW.SwitchChat("${inView}")`);
+  assert.equal(scroll(), kept, 'opening a chat already in view does not scroll');
 });
 
 test('the window is built from Blizzard frame templates where the client has them: portrait, title bar, close button, parchment and a quest-log chat list', () => {
