@@ -316,7 +316,7 @@ test('status names every client in config.json with its installed build and whic
   assert.ok(none.includes('  clients   : no config.json (claude-wow setup)'));
 });
 
-function fakeLaunchd({ teardownPolls = 3, bootstrapBroken = false } = {}) {
+function fakeLaunchd({ teardownPolls = 3, bootstrapBroken = false, bootstrapRaces = false } = {}) {
   const state = { loaded: true, tearingDown: 0, calls: [], sleeps: 0 };
   const exec = (cmd, args) => {
     assert.equal(cmd, 'launchctl');
@@ -333,6 +333,7 @@ function fakeLaunchd({ teardownPolls = 3, bootstrapBroken = false } = {}) {
       return { ok: true, status: 0, out: '' };
     }
     if (sub === 'bootstrap') {
+      if (bootstrapRaces) { state.loaded = true; return { ok: false, status: 37, out: 'Bootstrap failed: 37: Operation already in progress\n' }; }
       if (bootstrapBroken || state.loaded || state.tearingDown > 0) return { ok: false, status: 5, out: 'Bootstrap failed: 5: Input/output error\n' };
       state.loaded = true;
       return { ok: true, status: 0, out: '' };
@@ -360,6 +361,17 @@ test('install over a loaded LaunchAgent waits for bootout to finish, then ends l
   assert.ok(state.calls.indexOf('bootout') < state.calls.indexOf('bootstrap'));
   assert.ok(!state.calls.includes('load'), 'no bootstrap ran while launchd was still tearing the old job down');
   assert.match(fs.readFileSync(d.definition, 'utf8'), /<key>Label<\/key>\s*<string>io\.claudewow\.bridge<\/string>/);
+});
+
+test('install that bootstraps an agent launchd already loaded returns at once instead of retrying', () => {
+  const dir = scratch('macinstallrace');
+  const d = { logs: path.join(dir, 'logs'), run: path.join(dir, 'run'), definition: path.join(dir, 'LaunchAgents', `${S.LABEL}.plist`) };
+  const { b, state } = fakeLaunchd({ bootstrapRaces: true });
+  state.loaded = false;
+  b.install(d);
+  assert.equal(state.loaded, true);
+  assert.equal(state.calls.filter(c => c === 'bootstrap').length, 1);
+  assert.equal(state.sleeps, 0);
 });
 
 test('install fails loudly when launchd will not load the agent, even if the legacy load exits 0', () => {

@@ -378,7 +378,7 @@ const mac = {
     let r = { ok: false, out: '' };
     for (let i = 0; i < this.settleTries; i++) {
       r = this.bootstrap(d);
-      if (r.ok && this.loaded()) return r;
+      if (this.loaded()) return { ok: true, out: r.out };
       this.sleep(this.settleMs);
     }
     if (this.loaded()) return { ok: true, out: r.out };
