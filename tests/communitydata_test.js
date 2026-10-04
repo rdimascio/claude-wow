@@ -512,6 +512,7 @@ test('wow_npc, wow_item and wow_instance answer who drops what with flags, uncon
   const paged = call(store, 'wow_npc', { id: 7001, offset: 2 }).results[0].drops;
   assert.deepEqual([paged.total, paged.offset, ids(paged.items)], [4, 2, [514, 513]], 'offset pages through a loot list');
   assert.equal(DM.callTool(store, 'wow_npc', { id: 7001, offset: -1 }).isError, true);
+  assert.match(DM.callTool(store, 'wow_npc', { name: 'fixture', offset: 2 }).content[0].text, /offset needs id/, 'a search never pretends to page');
   const search = call(store, 'wow_npc', { name: 'fixture' });
   assert.match(search.notes.join(' '), /at most 10 items per loot list/);
   assert.equal(call(store, 'wow_sources', {}).results.find(r => r.source === 'cmangos').loot.referenceDepth, 2, 'wow_sources carries the loot counts');

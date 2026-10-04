@@ -744,10 +744,11 @@ const TOOLS = [
       const id = idArg(args, 'id');
       const uiMapID = idArg(args, 'uiMapID');
       const notes = communityNotes(store);
+      const offset = offsetArg(args);
+      if (offset && !id) throw new InputError('offset needs id');
       if (id) {
         const found = cs ? cs.byId('npcs', id) : null;
         const npc = found && npcShown(store, cs, found) ? found : null;
-        const offset = offsetArg(args);
         return communityEnvelope(store, 'wow_npc', { id, uiMapID, ...(offset ? { offset } : {}) }, npc ? [npcRow(store, cs, npc, uiMapID, MAX_DROPS, offset)] : [], { notes: npc && L.hasLoot(cs) ? [...notes, lootNote(cs), `Each loot list shows up to ${MAX_DROPS} items, unconditioned first; when total is larger, ask again with offset to see the rest.`] : notes });
       }
       const name = nameArg(args, true);
