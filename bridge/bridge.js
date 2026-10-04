@@ -83,6 +83,7 @@ const VOTES = require('./votes');
 const OB = require('./observed');
 const OT = require('./observedtools');
 const MH = require('./maphold');
+const REL = require('./releases');
 
 const HERE = __dirname;
 // Config, state, transcripts, log and scratch live in the home folder (home.js:
@@ -91,6 +92,8 @@ const HOME = H.resolve();
 const CONFIG_FILE = HOME.config;
 const STATE_FILE = HOME.state;
 const LOG_FILE = HOME.log;
+const DEPLOY_LOCK_FILE = REL.layout(HOME.dir).lock;
+const DEPLOY_HOLD_POLL_MS = 1000;
 const TMP_DIR = HOME.tmp; // prompt files for agents that read the prompt from disk
 
 const argv = process.argv.slice(2);
@@ -442,6 +445,7 @@ function shutdown(sig) {
   if (shuttingDown) return;
   shuttingDown = true;
   try { runGrants.revokeAll(); } catch {}
+  forgetUnstartedWork();
   stopPlugins();
   let voteClosing = Promise.resolve();
   try { voteClosing = VOTES.settleWithin(voteBox.stop(), VOTES.SHUTDOWN_PUSH_WAIT_MS); } catch {}
@@ -708,7 +712,7 @@ function publishClient(r, records, shared) {
 
 function publishNow(urgent = true, { refresh = false } = {}) {
   lastPublish = Date.now();
-  const all = [...live.values()];
+  const all = [...live.entries()].map(([key, record]) => ({ ...record, token: addonSessionOfKey(key) }));
   const shared = sharedSlotFields(urgent);
   let restoreSent = false;
   for (const r of CLIENT_RT.values()) {
@@ -719,12 +723,77 @@ function publishNow(urgent = true, { refresh = false } = {}) {
   if (pendingRestore && !refresh && restoreSent) { pendingRestore.published = (pendingRestore.published || 0) + 1; if (pendingRestore.published >= 3) pendingRestore = null; }
 }
 
+const REPLIES_KEPT = 10;
+const REPLY_KEEP_MS = 24 * 60 * 60 * 1000;
+const FINAL_STATUSES = new Set(['done', 'error']);
+
+function keepReply(key, record) {
+  const kept = state.replies && typeof state.replies === 'object' ? state.replies : {};
+  const had = Object.prototype.hasOwnProperty.call(kept, key);
+  delete kept[key];
+  if (FINAL_STATUSES.has(record.status)) kept[key] = { at: Date.now(), record };
+  else if (!had) return;
+  const keys = Object.keys(kept);
+  for (const old of keys.slice(0, Math.max(0, keys.length - REPLIES_KEPT))) delete kept[old];
+  if (Object.keys(kept).length) state.replies = kept;
+  else delete state.replies;
+  try { saveState(); } catch (e) { log(`could not save the latest reply to state.json (${e.message})`); }
+}
+
+function restoreReplies() {
+  const kept = state.replies && typeof state.replies === 'object' ? state.replies : {};
+  const now = Date.now();
+  const fresh = {};
+  for (const [key, entry] of Object.entries(kept)) {
+    const r = entry && entry.record;
+    if (!r || typeof r !== 'object' || !FINAL_STATUSES.has(r.status) || !Number.isInteger(r.id) || !(now - entry.at < REPLY_KEEP_MS)) continue;
+    if (!rtOf(r.client)) {
+      const fallback = defaultClient();
+      if (!fallback) continue;
+      r.client = fallback.key;
+    }
+    fresh[key] = entry;
+    live.set(key, r);
+  }
+  const restored = Object.keys(fresh).length;
+  if (restored !== Object.keys(kept).length) {
+    if (restored) state.replies = fresh;
+    else delete state.replies;
+    saveState();
+  }
+  if (restored) log(`republishing ${restored} finished repl${restored === 1 ? 'y' : 'ies'} from before the restart, so a reply the game has not read yet is not lost`);
+}
+
+function addonSessionOfKey(key) {
+  return String(key).split(':')[0];
+}
+function noteAddonSession(job) {
+  const r = rtOf(job.client);
+  const token = typeof job.session === 'string' ? job.session : '';
+  if (!r || !token || token === r.addonSession) return;
+  r.addonSession = token;
+  const clientKey = r.client.key;
+  const staleFor = (key, record) => !!record && record.client === clientKey && addonSessionOfKey(key) !== token;
+  const droppedKeys = new Set();
+  for (const [key, record] of [...live.entries()]) if (staleFor(key, record)) { live.delete(key); droppedKeys.add(key); }
+  const kept = state.replies && typeof state.replies === 'object' ? state.replies : null;
+  if (kept) {
+    for (const [key, entry] of Object.entries(kept)) if (staleFor(key, entry && entry.record)) { delete kept[key]; droppedKeys.add(key); }
+    if (!Object.keys(kept).length) delete state.replies;
+  }
+  const dropped = droppedKeys.size;
+  if (!dropped) return;
+  try { saveState(); } catch (e) { log(`could not save state.json after dropping old replies (${e.message})`); }
+  log(`addon session ${token}${inLabel(r.client)}: dropped ${dropped} repl${dropped === 1 ? 'y' : 'ies'} kept for another addon session, so an old reply cannot answer a new message with the same id`);
+}
+
 // Final results publish immediately; progress is throttled. `key` is the chat
 // (record.session is the agent's session id, a different thing).
 function publish(key, record, urgent) {
   const named = titles.get(key);
   if (named && !record.title) { record.title = named.title; record.titleFor = named.id; }
   live.set(key, record);
+  keepReply(key, record);
   if (urgent) { if (publishTimer) { clearTimeout(publishTimer); publishTimer = null; } publishNow(); return; }
   const wait = (cfg.progressWriteMs || 3000) - (Date.now() - lastPublish);
   if (wait <= 0) publishNow(false);
@@ -982,6 +1051,7 @@ function submit(job) {
     if (r) r.acks = P.noteAck(r.acks, job);
     return;
   }
+  noteAddonSession(job);
   if (client) CLI.noteHeard(state, client.key, { id: job.id });
   clearSignalsAhead(client, job.id);
   if (CAMPAIGN.isDmRecord(job)) {
@@ -1033,13 +1103,23 @@ function submit(job) {
     log(`hello from session ${job.session}${inLabel(client)}${pendingRestore ? ' (restore offered)' : ''}`);
     return;
   }
+  if (inFlight(job)) return;
+  if (holdForDeploy(job)) return;
+  dispatchMessage(job);
+}
+
+function dispatchMessage(job) {
+  dropHeld(job);
   const key = chatKey(job);
   const cur = running.get(key);
   if (cur && cur.job.id === job.id) return;
   const q = queued.get(key);
   if (q && q.id === job.id) return;
+  if (state.handling && state.handling[handlingKey(job)]) return;
   if (cur || running.size >= MAX_PARALLEL) {
     queued.set(key, job);
+    noteQueued();
+    saveState();
     log(`#${job.id}${job.session ? '@' + job.session : ''} queued (${cur ? 'chat busy' : running.size + ' running'})`);
     return;
   }
@@ -1058,12 +1138,20 @@ function cancelRun(job) {
   const q = queued.get(key);
   if (q && q.id === job.cancel) {
     queued.delete(key);
+    noteQueued();
     markHandled(q);
     saveState();
     log(`${tagOf(q)} cancelled from the game before it started`);
     return;
   }
+  const wasHeld = dropHeld({ ...job, id: job.cancel });
   const cur = running.get(key);
+  if (wasHeld && !(cur && cur.job.id === job.cancel)) {
+    markHandled(wasHeld);
+    saveState();
+    log(`${tagOf(wasHeld)} cancelled from the game while it was held for a deploy`);
+    return;
+  }
   if (cur && cur.job.id === job.cancel) {
     cur.job.cancelled = true;
     log(`${tagOf(cur.job)} cancelled from the game; ending it and everything it started`);
@@ -1087,7 +1175,112 @@ function drainQueue() {
     if (running.size >= MAX_PARALLEL) break;
     if (running.has(key)) continue;
     queued.delete(key);
+    noteQueued();
+    saveState();
     runJob(job);
+  }
+}
+
+function noteQueued() {
+  const waiting = [...queued.values()].map(j => ({ id: j.id, chat: j.chat, session: j.session }));
+  if (waiting.length) state.queued = waiting;
+  else delete state.queued;
+}
+
+function forgetUnstartedWork() {
+  queued.clear();
+  held.clear();
+  if (heldTimer) { clearInterval(heldTimer); heldTimer = null; }
+  noteQueued();
+  delete state.handling;
+  try { saveState(); } catch (e) { log(`could not save state.json while stopping (${e.message})`); }
+}
+
+const HELD_KEPT = 20;
+const HELD_KEEP_MS = 60 * 60 * 1000;
+
+function noteHeld() {
+  const all = [...held.values()];
+  const unsaved = all.slice(0, Math.max(0, all.length - HELD_KEPT));
+  if (unsaved.length) log(`${unsaved.length} held message(s) (${unsaved.map(entry => tagOf(entry.job)).join(', ')}) are not saved to state.json: only the newest ${HELD_KEPT} are; they still run when the deploy ends unless the bridge restarts first`);
+  const entries = all.slice(-HELD_KEPT).map(entry => ({ at: entry.at, job: entry.job }));
+  if (entries.length) state.held = entries;
+  else delete state.held;
+  try { saveState(); } catch (e) { log(`could not save the held messages to state.json (${e.message})`); }
+}
+
+function plainJob(job) {
+  try { return JSON.parse(JSON.stringify(job)); } catch { return null; }
+}
+
+function resubmitHeld() {
+  const saved = Array.isArray(state.held) ? state.held : [];
+  delete state.held;
+  const now = Date.now();
+  const seen = new Set();
+  for (const entry of saved) {
+    const job = entry && entry.job;
+    if (!job || typeof job !== 'object' || !Number.isInteger(job.id) || job.id <= 0 || !(now - entry.at < HELD_KEEP_MS)) continue;
+    const key = handlingKey(job);
+    if (seen.has(key) || alreadyHandled(job)) continue;
+    seen.add(key);
+    log(`${tagOf(job)} was held for a deploy when the previous bridge stopped; submitting it again`);
+    if (inFlight(job) || holdForDeploy(job, entry.at)) continue;
+    dispatchMessage(job);
+  }
+}
+
+const handlingKey = (job, suffix = '') => `${chatKey(job)}#${job.id}${suffix}`;
+
+function noteHandling(key, job) {
+  (state.handling = state.handling || {})[key] = { id: job.id, chat: job.chat, session: job.session, plugin: job.plugin || '', since: Date.now() };
+  saveState();
+}
+
+function dropHandling(key) {
+  if (!state.handling || !state.handling[key]) return false;
+  delete state.handling[key];
+  if (!Object.keys(state.handling).length) delete state.handling;
+  return true;
+}
+
+const held = new Map();
+let heldTimer = null;
+
+function holdForDeploy(job, since = Date.now()) {
+  const holder = REL.switchingHolder(DEPLOY_LOCK_FILE);
+  if (!holder) return false;
+  const key = handlingKey(job);
+  if (!held.has(key)) {
+    log(`${tagOf(job)} held: a deploy (pid ${holder.pid}) is switching releases; it starts when the deploy ends`);
+    const copy = plainJob(job);
+    held.set(key, { at: since, job: copy || job });
+    noteHeld();
+  }
+  if (!heldTimer) heldTimer = setInterval(releaseHeld, Number(cfg.deployHoldPollMs) > 0 ? Number(cfg.deployHoldPollMs) : DEPLOY_HOLD_POLL_MS);
+  return true;
+}
+
+function dropHeld(job) {
+  const key = handlingKey(job);
+  const entry = held.get(key);
+  if (!entry) return null;
+  held.delete(key);
+  noteHeld();
+  return entry.job;
+}
+
+function releaseHeld() {
+  if (shuttingDown || REL.switchingHolder(DEPLOY_LOCK_FILE)) return;
+  clearInterval(heldTimer);
+  heldTimer = null;
+  const jobs = [...held.values()].map(entry => entry.job);
+  held.clear();
+  noteHeld();
+  for (const job of jobs) {
+    if (alreadyHandled(job)) continue;
+    log(`${tagOf(job)} released: the deploy ended`);
+    dispatchMessage(job);
   }
 }
 
@@ -1133,6 +1326,7 @@ function runJob(job) {
     log(`${tag} ${r.plugin.id}: ${e && e.stack ? e.stack : e}`);
     finish(job, 'error', `The ${r.plugin.id} plugin failed: ${e && e.message ? e.message : e}`);
   };
+  noteHandling(handlingKey(job), job);
   let handled;
   try { handled = r.plugin.handle(job, core); } catch (e) { failed(e); return; }
   if (handled && typeof handled.then === 'function') handled.then(null, failed);
@@ -1673,8 +1867,15 @@ function noteInflight(key, job, child, agentName, marker) {
 }
 
 function recoverInflight() {
+  const staleQueue = state.queued !== undefined || state.handling !== undefined || state.held !== undefined;
+  delete state.queued;
+  delete state.handling;
   const lost = Object.entries(state.inflight || {});
-  if (!lost.length) return;
+  if (!lost.length) {
+    resubmitHeld();
+    if (staleQueue) saveState();
+    return;
+  }
   for (const [key, run] of lost) {
     if (process.platform !== 'win32' && isSameProcess(run.pid, run.startedAt, run.marker)) {
       try { process.kill(-run.pid, 'SIGKILL'); log(`#${run.id}: ended the orphaned ${run.agent || 'agent'} process group ${run.pid} left by the previous bridge`); } catch {}
@@ -1684,12 +1885,16 @@ function recoverInflight() {
     P.markHandled(state, { session: run.session, chat: run.chat, id: run.id });
     const client = rtOf(run.client) ? rtOf(run.client).client : defaultClient();
     const orphan = { session: run.session, id: run.id, client: client ? client.key : '' };
-    live.set(key, { chat: run.chat, id: run.id, status: 'error', text, cwd: run.cwd, client: orphan.client });
+    const lostRecord = { chat: run.chat, id: run.id, status: 'error', text, cwd: run.cwd, client: orphan.client };
+    live.set(key, lostRecord);
+    keepReply(key, lostRecord);
     ackJob(orphan);
     signal(client, 'sig', run.id, true);
     log(`#${run.id}@${run.session || ''} was running when the previous bridge stopped; told the game it is lost`);
   }
   state.inflight = {};
+  saveState();
+  resubmitHeld();
   saveState();
 }
 
@@ -1726,7 +1931,12 @@ function tellPluginFinished(plugin, job, outcome) {
   const failed = e => log(`${tagOf(job)} ${plugin.id}: finished hook failed (${e && e.message ? e.message : e})`);
   try {
     const pending = plugin.finished(job, outcome, core);
-    if (pending && typeof pending.then === 'function') pending.then(null, failed);
+    if (pending && typeof pending.then === 'function') {
+      const key = handlingKey(job, ':finished');
+      noteHandling(key, job);
+      const settled = () => { if (dropHandling(key)) saveState(); };
+      pending.then(settled, e => { settled(); failed(e); });
+    }
   } catch (e) { failed(e); }
 }
 
@@ -1742,6 +1952,7 @@ function finish(job, status, text, session, denied) {
   job.finished = true;
   running.delete(chatKey(job));
   if (state.inflight) delete state.inflight[chatKey(job)];
+  dropHandling(handlingKey(job));
   markHandled(job);
   saveState();
   // A finished reply ends with the "TL;DR:" block the system prompt asks for:
@@ -1905,11 +2116,23 @@ function attachGameView(img, cropTop, jobs, source) {
   log(`vision: ${source} -> ${view.width}x${view.height} png, ${Math.round(png.length / 1024)} KB, for ${jobs.map(j => '#' + j.id).join(', ')}`);
 }
 
+function heldVisionFiles() {
+  const saved = Array.isArray(state.held) ? state.held : [];
+  const files = new Set();
+  for (const entry of [...held.values(), ...saved]) {
+    const file = entry && entry.job && entry.job.image && entry.job.image.file;
+    if (typeof file === 'string' && file) files.add(path.resolve(file));
+  }
+  return files;
+}
+
 // Keep the newest `keep` vision files in bridge/tmp; 0 sweeps them all (startup).
 function pruneVisionFiles(keep) {
   let names = [];
   try { names = fs.readdirSync(TMP_DIR).filter(V.isVisionFile); } catch { return; }
-  const files = names.map(name => { const f = path.join(TMP_DIR, name); let m = 0; try { m = fs.statSync(f).mtimeMs; } catch {} return { f, m }; })
+  const waiting = heldVisionFiles();
+  const files = names.map(name => path.join(TMP_DIR, name)).filter(f => !waiting.has(path.resolve(f)))
+    .map(f => { let m = 0; try { m = fs.statSync(f).mtimeMs; } catch {} return { f, m }; })
     .sort((a, b) => b.m - a.m);
   for (const { f } of files.slice(keep)) { try { fs.unlinkSync(f); } catch {} }
 }
@@ -2073,7 +2296,10 @@ if (inject !== null) {
   }
   submit(job);
 } else {
-  if (!once) recoverInflight();
+  if (!once) {
+    restoreReplies();
+    recoverInflight();
+  }
   pollSavedVariables();
   if (once) {
     if (running.size === 0) { console.log('nothing pending'); process.exit(0); }
