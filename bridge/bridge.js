@@ -593,7 +593,7 @@ function sharedSlotFields(urgent) {
 function slotFile(globalName, records, shared, client) {
   const r = rtOf(client.key);
   const clients = CLI.slotClients(CLIENTS, state, client.key, { diskOf: addonOnDisk });
-  return P.luaTable(globalName, records, { ...shared, restore: restoreFor(client), chatlog: chatLogSlot(client), acks: P.recentAcks(r.acks), presence: presenceInfo(client), addonDisk: addonOnDisk(client), clients });
+  return P.luaTable(globalName, records, { ...shared, restore: restoreFor(client), chatlog: chatLogSlot(client), acks: P.recentAcks(r.acks), presence: presenceInfo(client), addonDisk: addonOnDisk(client), clients, runLimit: RUN_LIMIT_SECONDS, alive: aliveRuns(client) });
 }
 
 function recentClaudeSessions() {
@@ -818,6 +818,16 @@ function ackJob(job) {
   const r = rtOf(job.client);
   if (r) r.acks = P.noteAck(r.acks, job);
   signal(clientFor(job), 'ack', job.id, true);
+}
+
+const RUN_LIMIT_SECONDS = Math.floor((cfg.timeoutMs || 1800000) / 1000);
+
+function aliveRuns(client) {
+  const mine = job => job && job.client === client.key && Number.isInteger(job.id);
+  const runs = [...running.values()].filter(r => mine(r.job)).map(r => ({ session: r.job.session, id: r.job.id, since: Math.floor(r.startedAt / 1000) }));
+  for (const job of queued.values()) if (mine(job)) runs.push({ session: job.session, id: job.id, since: 0 });
+  for (const entry of held.values()) if (mine(entry.job)) runs.push({ session: entry.job.session, id: entry.job.id, since: 0 });
+  return runs;
 }
 
 function pendingIds(client) {
@@ -1125,6 +1135,7 @@ function dispatchMessage(job) {
     queued.set(key, job);
     noteQueued();
     saveState();
+    publishNow(false);
     log(`#${job.id}${job.session ? '@' + job.session : ''} queued (${cur ? 'chat busy' : running.size + ' running'})`);
     return;
   }
@@ -1684,7 +1695,7 @@ function runAgent(job, opts = {}) {
   log(`${tag} (${job.via}) [${plugin.id}] ${agent.name} starting in ${cwd}${picked ? ' [' + picked + ']' : ''}${resume ? ' (resume ' + resume.slice(0, 8) + ')' : ' (new session)'}${ctx ? ' [game context]' : ''}${image ? ` [screen ${image.width}x${image.height}, ${Math.round(image.bytes / 1024)} KB]` : ''}${running.size ? ' [' + (running.size + 1) + ' running]' : ''}`);
   const startedAt = Date.now(); // a fresh session's clock starts here (the footer's elapsed time)
   const child = PR.spawnChild(cmd.file, args, { cwd, env, windowsHide: true, stdio: [input.stdin !== undefined ? 'pipe' : 'ignore', 'pipe', 'pipe'] });
-  running.set(key, { job, child });
+  running.set(key, { job, child, startedAt });
   noteInflight(key, job, child, agent.name, path.basename(args.find(a => /\.[cm]?js$/.test(String(a))) || cmd.file));
   publish(key, { chat: job.chat, id: job.id, status: 'working', text: resume ? 'thinking...' : 'starting a new session...', cwd: job.cwd, session: resume, agent: agentId, plugin: plugin.id, client: job.client }, true);
   if (input.stdin !== undefined) { child.stdin.on('error', () => {}); child.stdin.end(input.stdin); }

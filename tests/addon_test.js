@@ -3074,7 +3074,7 @@ test('a pending chat that hears nothing for 35 minutes is freed once with one pl
   minutes(vm, 2);
   assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].pendingId'), null, 'free after 35 minutes of silence');
   assert.equal(systemCount(vm, 1, `No reply to #${id} `), 1);
-  assert.match(lastOf(vm, 1, 'system'), /nothing was heard about it for 35 minutes, so this chat is free again\. The bridge keeps the chat's session: send the message again/);
+  assert.match(lastOf(vm, 1, 'system'), /nothing was heard about it for 35 minutes, so this chat is free again\. If the reply comes later it still shows here\. The bridge keeps the chat's session: send the message again/);
   assert.equal(vm.evaluate('ClaudeWoWStrip.shown'), 'false', 'the message is off the strip');
   minutes(vm, 60);
   assert.equal(systemCount(vm, 1, `No reply to #${id} `), 1, 'said once');
@@ -3107,7 +3107,10 @@ test('a pending chat that hears nothing for 35 minutes is freed once with one pl
   nextSlot(vm, `{ now = time(), cwd = "", replies = { { chat = "${chatId}", id = ${second}, status = "done", text = "second answer", agent = "claude" } } }`);
   minutes(vm, 3);
   assert.equal(vm.num('ClaudeWoWDB.chats[1].pendingId'), third, 'an old reply never answers the new message');
-  assert.equal(assistantCount('second answer'), 0, 'and is not shown while the next one waits');
+  assert.equal(assistantCount('second answer'), 1, 'a send after the give-up does not drop the late reply: it lands once, as a reply to #' + second);
+  assert.equal(vm.num(`(function() for _, m in ipairs(ClaudeWoWDB.chats[1].history) do if m.text == "second answer" then return m.id end end end)()`), second);
+  minutes(vm, 3);
+  assert.equal(assistantCount('second answer'), 1);
 
   const quiet = vm.evaluate('ClaudeWoW.AddChat("Quiet", { cwd = "", plugin = "stream", quiet = true }).id');
   vm.run(`ClaudeWoW.Send("track", nil, { chat = "${quiet}" })`);
@@ -3192,6 +3195,8 @@ test('typing into a pending chat says once per pending id that it is still worki
   vm.run('ClaudeWoW.Send("first")');
   const chatId = vm.evaluate('ClaudeWoWDB.chats[1].id');
   const id = vm.num('ClaudeWoWDB.chats[1].pendingId');
+  vm.run('ClaudeWoW.Send("")');
+  assert.equal(systemCount(vm, 1, `is still working on #${id}.`), 0, 'Enter on an empty box only checks for the reply');
   vm.run('ClaudeWoW.Send("second")');
   assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].draft'), 'second');
   assert.equal(systemCount(vm, 1, `is still working on #${id}.`), 1);
@@ -3249,9 +3254,12 @@ test('/claude cancel typed in the shared chat box while a chat\'s whisper tab is
   shared('WHISPER', 'Bob');
   typeIn(vm, 'ChatFrame1EditBox', '/claude cancel');
   assert.equal(pendingOf(vm, lead), leadId, 'a whisper to a real player is not the tab');
-  shared('WHISPER', target, 'ChatFrame1');
+  const twoTab = tabOf(vm, vm.evaluate('ClaudeWoWDB.activeChat'));
+  assert.ok(twoTab && twoTab !== leadTab, 'the other chat has its own tab');
+  shared('WHISPER', target, twoTab);
   typeIn(vm, 'ChatFrame1EditBox', '/claude cancel');
-  assert.equal(pendingOf(vm, lead), leadId, 'the General tab selected is not a chat tab');
+  assert.equal(pendingOf(vm, lead), leadId, 'with another chat\'s tab selected, the waiting chat is not cancelled though the box whispers the same agent');
+  assert.match(lastOf(vm, 3, 'system'), /^Nothing to cancel: Two is not waiting/);
   shared('WHISPER', target, `{ claudewowChatId = "${lead}" }`);
   typeIn(vm, 'ChatFrame1EditBox', '/claude cancel');
   assert.equal(pendingOf(vm, lead), leadId, 'a frame that only claims the chat is not its tab');
@@ -3267,5 +3275,228 @@ test('/claude cancel typed in the shared chat box while a chat\'s whisper tab is
   shared('WHISPER', target);
   typeIn(vm, 'ChatFrame1EditBox', '/claude cancel');
   assert.equal(lastOf(vm, 1, 'system'), `Nothing to cancel: ${leadName} is not waiting for a reply. No chat is waiting.`);
+
+  vm.run(`ClaudeWoW.Send("again", nil, { chat = "${lead}" })`);
+  const again = pendingOf(vm, lead);
+  assert.ok(again > leadId);
+  vm.run(`ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[3].id)`);
+  const replyName = `${target} [${chatName(vm, lead)}]`;
+  shared('WHISPER', replyName);
+  typeIn(vm, 'ChatFrame1EditBox', '/claude cancel');
+  assert.equal(vm.evaluate(`(function() for _, c in ipairs(ClaudeWoWDB.chats) do if c.id == "${lead}" then return c.pendingId end end end)()`), null, 'a box that /r set to "agent [chat]" still cancels the selected tab\'s chat');
   assert.equal(vm.num('STUB.serverSends'), 0);
+});
+
+const SAVE_DB = `local function ser(v)
+  local t = type(v)
+  if t == "string" then return string.format("%q", v) end
+  if t == "number" or t == "boolean" then return tostring(v) end
+  if t ~= "table" then return "nil" end
+  local parts = {}
+  for k, x in pairs(v) do
+    if type(x) ~= "function" and type(x) ~= "userdata" then parts[#parts + 1] = "[" .. ser(k) .. "]=" .. ser(x) end
+  end
+  return "{" .. table.concat(parts, ",") .. "}"
+end
+SAVED_DB = ser(ClaudeWoWDB)`;
+
+function reloaded(vm, before = '') {
+  vm.run(SAVE_DB);
+  const saved = vm.evaluate('SAVED_DB');
+  const now = vm.evaluate('STUB.now');
+  const epoch = vm.evaluate('STUB.epoch');
+  const next = newVM();
+  next.run(`STUB.now = ${now}; STUB.epoch = ${epoch}; ClaudeWoWDB = ${saved}; ${before}`);
+  login(next);
+  return next;
+}
+
+function givenUp(seed = '') {
+  const vm = newVM();
+  if (seed) vm.run(seed);
+  login(vm);
+  if (vm.evaluate('ClaudeWoWDB.settings.mode') === 'pixel') connect(vm);
+  vm.run('ClaudeWoW.Send("are you there")');
+  const chatId = vm.evaluate('ClaudeWoWDB.chats[1].id');
+  const id = vm.num('ClaudeWoWDB.chats[1].pendingId');
+  minutes(vm, 36);
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].pendingId'), null, 'given up');
+  return { vm, chatId, id };
+}
+
+const doneSlot = (chatId, id, text) => `{ now = time(), cwd = "", replies = { { chat = "${chatId}", id = ${id}, status = "done", text = "${text}", agent = "claude" } } }`;
+
+test('a give-up survives /reload: the reply to that message still lands after it, from the hello\'s slot read or from Inbox.lua in reload mode', () => {
+  const pixel = givenUp();
+  assert.equal(pixel.vm.num('ClaudeWoWDB.chats[1].gaveUp'), pixel.id, 'the promise is on the chat, in the saved data');
+  const after = reloaded(pixel.vm);
+  after.run('STUB.RunTimers()');
+  nextSlot(after, doneSlot(pixel.chatId, pixel.id, 'after the reload'));
+  after.run('STUB.now = STUB.now + 6; STUB.Tick()');
+  assert.equal(lastOf(after, 1, 'assistant'), 'after the reload');
+  assert.equal(after.evaluate('ClaudeWoWDB.chats[1].gaveUp'), null, 'kept until it is kept');
+
+  const reload = givenUp('ClaudeWoWDB = { settings = { mode = "reload" } }');
+  const inbox = reloaded(reload.vm, `ClaudeWoW_Inbox = ${doneSlot(reload.chatId, reload.id, 'from the inbox')}`);
+  assert.equal(lastOf(inbox, 1, 'assistant'), 'from the inbox', 'reload mode reads it from Inbox.lua at the next load');
+});
+
+test('after a give-up the addon keeps reading slots for a few minutes even while presence beats keep the light green, then stops', () => {
+  const vm = newVM();
+  const token = launchArmed(vm);
+  let k = 1;
+  const beat = () => { k += 1; vm.run(`STUB.sounds["${gamePath(`presence/a/${String(k).padStart(4, '0')}.wav`)}"] = false`); };
+  const counted = body => vm.run(`STUB.onLoadAddOn = function(name) LOADS = (LOADS or 0) + 1; ClaudeWoW_SlotData = ${body} end`);
+  const presence = `signals = "armed", presence = { ring = "a", at = 1, n = 2000, probe = "${token}" }`;
+  vm.run(`STUB.sounds["${gamePath('presence/a/0001.wav')}"] = false; STUB.sounds["${gamePath('ctl/probe-' + token + '.wav')}"] = true`);
+  counted(`{ now = time(), cwd = "", replies = {}, ${presence} }`);
+  vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
+  assert.equal(vm.evaluate('ClaudeWoW.PresenceWorks()'), 'true');
+  vm.run('ClaudeWoW.Send("are you there")');
+  const chatId = vm.evaluate('ClaudeWoWDB.chats[1].id');
+  const id = vm.num('ClaudeWoWDB.chats[1].pendingId');
+  for (let i = 0; i < 36; i++) { beat(); minutes(vm, 1); }
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].pendingId'), null);
+  assert.equal(vm.evaluate('ClaudeWoW.PresenceWorks()'), 'true', 'the light is green, so no idle slot poll comes');
+  counted(`{ now = time(), cwd = "", replies = { { chat = "${chatId}", id = ${id}, status = "done", text = "late but here", agent = "claude" } }, ${presence} }`);
+  vm.run('LOADS = 0');
+  for (let i = 0; i < 4; i++) { beat(); minutes(vm, 1, 15); }
+  assert.equal(lastOf(vm, 1, 'assistant'), 'late but here', 'a late poll brought it');
+  vm.run('LOADS = 0');
+  for (let i = 0; i < 20; i++) { beat(); minutes(vm, 1, 30); }
+  assert.equal(vm.num('LOADS'), 0, 'no more slot loads once it landed');
+});
+
+test('the last sign of life survives /reload, so time a message spent queued after its ack is not counted from the send', () => {
+  let vm = newVM();
+  login(vm);
+  connect(vm);
+  vm.run('ClaudeWoW.Send("long queue")');
+  const chatId = vm.evaluate('ClaudeWoWDB.chats[1].id');
+  const id = vm.num('ClaudeWoWDB.chats[1].pendingId');
+  minutes(vm, 20);
+  nextSlot(vm, `{ now = time(), cwd = "", replies = { { chat = "${chatId}", id = ${id}, status = "working", text = "started at last" } } }`);
+  minutes(vm, 2);
+  vm = reloaded(vm);
+  vm.run('STUB.RunTimers()');
+  nextSlot(vm, '{ now = time(), cwd = "", replies = {} }');
+  minutes(vm, 30);
+  assert.equal(vm.num('ClaudeWoWDB.chats[1].pendingId'), id, '52 minutes after the send, 32 after the progress line');
+  minutes(vm, 5);
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].pendingId'), null);
+});
+
+function silentFor(slotFields, mins) {
+  const vm = newVM();
+  login(vm);
+  connect(vm);
+  vm.run('ClaudeWoW.Send("how long")');
+  const id = vm.num('ClaudeWoWDB.chats[1].pendingId');
+  const fields = typeof slotFields === 'function' ? slotFields(vm, id) : slotFields;
+  nextSlot(vm, `{ now = time(), cwd = "", replies = {}${fields ? ', ' + fields : ''} }`);
+  minutes(vm, mins);
+  return { vm, id, pending: vm.evaluate('ClaudeWoWDB.chats[1].pendingId') };
+}
+
+test('the bridge\'s run limit sets how long a silent chat waits; a missing or bad limit keeps the 30-minute default', () => {
+  assert.equal(silentFor('runLimit = 3600', 64).pending !== null, true, 'a 60-minute limit waits past 35 minutes');
+  const freed = silentFor('runLimit = 3600', 66);
+  assert.equal(freed.pending, null);
+  assert.match(lastOf(freed.vm, 1, 'system'), /nothing was heard about it for 65 minutes/);
+  for (const bad of ['', 'runLimit = "3600"', 'runLimit = 30', 'runLimit = 0', 'runLimit = -3600', 'runLimit = 3600.5', 'runLimit = 700000']) {
+    const s = silentFor(bad, 34);
+    assert.equal(s.pending, String(s.id), `still waiting at 34 minutes for ${bad || 'no field (an older bridge)'}`);
+    minutes(s.vm, 2);
+    assert.equal(s.vm.evaluate('ClaudeWoWDB.chats[1].pendingId'), null, `the default 35 minutes for ${bad || 'no field (an older bridge)'}`);
+  }
+  assert.equal(silentFor('runLimit = 604800', 36).pending !== null, true, 'a week is still a limit');
+});
+
+test('a message the bridge still lists as queued or running keeps its chat waiting; entries that do not match or carry a bad stamp do not', () => {
+  const alive = (vm, id, extra = '') => `alive = { { session = "${vm.evaluate('ClaudeWoWDB.session')}", id = ${id}, since = 0${extra} } }`;
+  assert.equal(silentFor((vm, id) => alive(vm, id), 60).pending !== null, true, 'queued: every fresh slot read is a sign of life');
+  assert.equal(silentFor((vm, id) => `alive = { { session = "other", id = ${id}, since = 0 } }`, 36).pending, null, 'another addon session');
+  assert.equal(silentFor((vm, id) => alive(vm, id + 1), 36).pending, null, 'another message');
+  assert.equal(silentFor((vm, id) => `alive = { { session = "${vm.evaluate('ClaudeWoWDB.session')}", id = "${id}", since = 0 } }`, 36).pending, null, 'an id that is not a number');
+  assert.equal(silentFor((vm, id) => alive(vm, id).replace('since = 0', 'since = time() + 86400'), 36).pending, null, 'a run start after the write time');
+  assert.equal(silentFor((vm, id) => alive(vm, id).replace(', since = 0', ''), 36).pending, null, 'no start field');
+  const noNow = newVM();
+  login(noNow);
+  connect(noNow);
+  noNow.run('ClaudeWoW.Send("how long")');
+  const id = noNow.num('ClaudeWoWDB.chats[1].pendingId');
+  nextSlot(noNow, `{ cwd = "", replies = {}, ${alive(noNow, id)} }`);
+  minutes(noNow, 36);
+  assert.equal(noNow.evaluate('ClaudeWoWDB.chats[1].pendingId'), null, 'a slot without a write time');
+
+  const vm = newVM();
+  login(vm);
+  connect(vm);
+  vm.run('ClaudeWoW.Send("queued, then run")');
+  const queued = vm.num('ClaudeWoWDB.chats[1].pendingId');
+  minutes(vm, 20);
+  nextSlot(vm, `{ now = time(), cwd = "", replies = {}, ${alive(vm, queued).replace('since = 0', 'since = time() - 600')} }`);
+  minutes(vm, 1);
+  nextSlot(vm, '{ now = time(), cwd = "", replies = {} }');
+  minutes(vm, 23);
+  assert.equal(vm.num('ClaudeWoWDB.chats[1].pendingId'), queued, 'running: the run start counts, 44 minutes after the send');
+  minutes(vm, 3);
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].pendingId'), null, 'and the limit runs from the start, not from the slot write');
+});
+
+test('in reload mode the auto refresh does not renew the login grace: a chat left pending by an earlier session is freed about two minutes after the first login', () => {
+  let vm = newVM();
+  vm.run(`ClaudeWoWDB = { session = "feedc0de", lastSeq = 361, settings = { mode = "reload" }, chats = {
+    { id = "lead", name = "Every AI Lead", cwd = "", agent = "", plugin = "", unread = 0, pendingId = 361, history = { { role = "user", text = "lead the work", id = 361, t = time() - 86400 } } },
+  }, activeChat = "lead" }`);
+  login(vm);
+  for (let i = 0; i < 5; i++) {
+    minutes(vm, 1, 20);
+    vm = reloaded(vm);
+  }
+  assert.equal(vm.num('ClaudeWoWDB.chats[1].pendingId'), 361, 'inside the grace');
+  for (let i = 0; i < 4; i++) {
+    minutes(vm, 1, 20);
+    vm = reloaded(vm);
+  }
+  minutes(vm, 1, 5);
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].pendingId'), null, 'freed though a reload came every 20 seconds');
+});
+
+test('wiping the only chat drops its give-up, so an old reply never lands in the empty chat', () => {
+  const { vm, chatId, id } = givenUp();
+  vm.run(`ClaudeWoW.DeleteChat("${chatId}")`);
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].id'), chatId, 'the wipe keeps the chat id');
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].gaveUp'), null);
+  nextSlot(vm, doneSlot(chatId, id, 'from before the wipe'));
+  minutes(vm, 3, 700);
+  assert.equal(lastOf(vm, 1, 'assistant'), null);
+});
+
+test('a give-up and a late reply give back the draft typed while waiting, like a reply does', () => {
+  const vm = newVM();
+  login(vm);
+  connect(vm);
+  vm.run('ClaudeWoW.Toggle(true)');
+  vm.run('ClaudeWoW.Send("first")');
+  vm.run('ClaudeWoW.Send("typed while waiting")');
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].draft'), 'typed while waiting');
+  vm.run('ClaudeWoWInput:SetText("")');
+  minutes(vm, 36);
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].pendingId'), null);
+  assert.equal(vm.evaluate('ClaudeWoWInput:GetText()'), 'typed while waiting', 'back in the box on the give-up');
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].draft'), null);
+
+  const chatId = vm.evaluate('ClaudeWoWDB.chats[1].id');
+  vm.run('ClaudeWoWInput:SetText(""); ClaudeWoW.Toggle(false)');
+  vm.run('ClaudeWoW.Send("second")');
+  const second = vm.num('ClaudeWoWDB.chats[1].pendingId');
+  vm.run('ClaudeWoW.Send("typed again")');
+  minutes(vm, 36);
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].draft'), 'typed again', 'nowhere to show it yet: kept');
+  vm.run('ClaudeWoW.Toggle(true)');
+  nextSlot(vm, doneSlot(chatId, second, 'late answer'));
+  minutes(vm, 2, 15);
+  assert.equal(lastOf(vm, 1, 'assistant'), 'late answer');
+  assert.equal(vm.evaluate('ClaudeWoWInput:GetText()'), 'typed again', 'back in the box on the late reply');
 });
