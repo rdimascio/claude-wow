@@ -8,6 +8,8 @@ Before any of them you need:
 - **Nothing else, on route 1 or 2**: the bridge ships as one self-contained binary for macOS (arm64, x64), Linux (x64) and Windows (x64), with its runtime inside. Route 3, and route 1 where there is no binary for your machine, run the checkout and need **Node.js 22.2 or newer** (`node -v`: [nodejs.org](https://nodejs.org), `brew install node`, `winget install OpenJS.NodeJS.LTS`) or [Bun](https://bun.sh).
 - **At least one agent CLI**, installed and logged in: `claude`, `codex`, `grok`, `agy` or `hermes` (see [AGENTS.md](AGENTS.md)). One is enough; the bridge lists what it found.
 
+The addon can also come from an addon manager (the CurseForge app, WoWUp) or from the addon zip on the GitHub release. Every route below still needs the bridge and `claude-wow setup`, and setup writes the addon that ships with the bridge into `Interface/AddOns/ClaudeWoW` either way. The README's [Install](../README.md#install) section is the short version for players.
+
 Platform notes that are not about installing (which display mode, screen-capture permissions, Wine and X11) stay in [INSTALL-WINDOWS.md](INSTALL-WINDOWS.md) and [INSTALL-LINUX.md](INSTALL-LINUX.md), and in the README's macOS section.
 
 ## Route 1: the one-line installer (recommended)
@@ -24,7 +26,7 @@ Windows, in PowerShell:
 irm https://raw.githubusercontent.com/rdimascio/claude-wow/main/install.ps1 | iex
 ```
 
-(Those URLs serve the scripts at the root of this repository once this branch is on `main`; until then, download `install.sh` / `install.ps1` from the branch and run them the same way.)
+(Until a release with binaries exists, the installer finds no binary to download and installs from source, which needs Node.js 22.2 or newer.)
 
 The script downloads the `claude-wow` binary for your machine from the project's GitHub releases into `~/.local/bin` (Windows: `%LocalAppData%\Programs\claude-wow\bin`, put on your user PATH), checks it against the release's `SHA256SUMS`, runs it once, runs the game-side setup (config, state and logs go to `~/.claude-wow`), and asks whether to run the bridge in the background from now on. Nothing else is installed: the binary is the bridge, setup and the service commands with their runtime inside. Where there is no binary for your machine (another platform, or no release yet), or with `--from-source` (`$env:CLAUDE_WOW_SOURCE = "1"` on Windows), it installs from source instead: checks for Node.js 22.2+, downloads the code (git if you have it, otherwise the archive) into `~/.claude-wow/app` (Windows: `%LocalAppData%\Programs\claude-wow`) and writes a `claude-wow` shim that runs it with node. An install under the project's old name (`~/.wow-ai`, the `wow-ai` command and service) is carried over; see [Coming from wow-ai](#coming-from-wow-ai). It never asks for sudo or administrator rights, it is safe to run again (that is how you update), and if something is missing it stops and says what to do.
 
@@ -53,12 +55,14 @@ When it finishes: fully quit and relaunch WoW, enable *Claude WoW* on the AddOns
 
 ```sh
 brew tap rdimascio/claude-wow
-brew install claude-wow             # the release binary: no Node.js (--HEAD: the checkout, run with Homebrew's node)
+brew install --HEAD claude-wow      # the checkout, run with Homebrew's node
 claude-wow setup                    # the game side: addon, config, slot pool
 claude-wow service install          # optional: background service
 ```
 
-Homebrew installs the bridge and the `claude-wow` command: the self-contained binary for your Mac from the tagged release (until the first release exists, only `--HEAD` installs). It cannot put an addon into the game folder or read your WoW account, so `claude-wow setup` is a separate, required step. The keg holds only code: your config, the agents' sessions, transcripts and logs live in `~/.claude-wow` (`CLAUDE_WOW_HOME`, see [CONFIGURATION.md](CONFIGURATION.md#where-the-bridge-keeps-its-files)), so `brew upgrade` keeps them; `claude-wow service restart` afterwards picks up the new code. The formula is in [`homebrew/`](../homebrew/README.md).
+Until the first stable release fills in the formula's checksums, only `--HEAD` works: it installs the checkout and runs it with Homebrew's node. After that release, `brew install claude-wow` installs the binary.
+
+Homebrew installs the bridge and the `claude-wow` command: the self-contained binary for your Mac from the tagged release, or the checkout with `--HEAD`. It cannot put an addon into the game folder or read your WoW account, so `claude-wow setup` is a separate, required step. The keg holds only code: your config, the agents' sessions, transcripts and logs live in `~/.claude-wow` (`CLAUDE_WOW_HOME`, see [CONFIGURATION.md](CONFIGURATION.md#where-the-bridge-keeps-its-files)), so `brew upgrade` keeps them; `claude-wow service restart` afterwards picks up the new code. The formula is in [`homebrew/`](../homebrew/README.md).
 
 ## Route 3: by hand (git)
 
