@@ -71,6 +71,14 @@ A `config.json` from before agents existed kept Claude's settings at the top lev
 | `plugins.default` | `"ask"` | The plugin for chats that are not bound to one (`plugin=` flag): `ask` (general in-game chat) or `claude-code` (an agent session in a folder). The bridge refuses to start on a name it does not have; `--help` lists them. |
 | `plugins.<id>.agents.<agent>.model`, `.effort` | unset | The model and effort that plugin's chats run with, over `agents.<agent>`. A chat's own `--model` / `--effort` still wins. Example: `"ask": { "agents": { "claude": { "model": "claude-sonnet-5-5", "effort": "medium" } } }` keeps quick in-game questions off a max-effort Opus default. Only `model` and `effort` are read; other keys are ignored. |
 | `plugins.ask.cwd` | `""` | The scratch folder the `ask` plugin runs the agent in (it has no project). Empty = the per-user application data folder (`~/Library/Application Support/claude-wow/ask` on macOS, `%LOCALAPPDATA%\claude-wow\ask` on Windows, `~/.local/share/claude-wow/ask` on Linux), created on demand. |
+| `plugins.claude-code.factory.enabled` | `false` | `true` turns coding chats into a dispatcher into the software factory (below). Off: a coding chat is the full Claude Code session it always was. |
+| `plugins.claude-code.factory.skills` | the 9 factory skills | The only skills a dispatcher may start: `every-ai-lead`, `babysit-prs`, `babysit-pr`, `merge-train`, `implementation-engineer`, `adversarial-review`, `factory-intake`, `fresh-eyes`, `review-prs`. Names are lowercase letters, digits, `-`, `_` and `:`; others are dropped. |
+| `plugins.claude-code.factory.model`, `.effort` | `"opus"`, unset | The model and effort of a skill run. They do not inherit `agents.claude.model` or `.effort`. |
+| `plugins.claude-code.factory.models` | `{}` | Per skill: `"skill": "model"` or `"skill": { "model": "...", "effort": "..." }`, over `factory.model` and `factory.effort`. |
+| `plugins.claude-code.factory.permissionMode` | `agents.claude.permissionMode` | The permission mode of a skill run. |
+| `plugins.claude-code.factory.allowedTools` | `[]` | Rules a skill run gets on top of `agents.claude.allowedTools` (for example `Bash(gh:*)`). The dispatcher chat never gets them. |
+| `plugins.claude-code.factory.maxRunning` | `2` | How many skill runs may go at once; a dispatch past it is refused. |
+| `plugins.claude-code.factory.timeoutMs` | `7200000` | A skill run that takes longer is ended and reported failed. |
 
 | `plugins.live.enabled` | `true` | `false` keeps the bridge from opening the live-session socket (`live.sock` in the home folder). |
 | `plugins.live.waitMs` | `3000` | How long a message on a `live` chat waits for a Claude Code session to connect before the chat is told there is none. |
@@ -78,6 +86,40 @@ A `config.json` from before agents existed kept Claude's settings at the top lev
 | `plugins.live.permissionTimeoutMs` | `120000` | How long a permission prompt relayed as a roll waits before it is denied. See [LIVE-SESSION.md](LIVE-SESSION.md). |
 
 A `config.json` without a `plugins` block keeps working: the default applies. Chats made before plugins existed are bound to `claude-code` by the addon, so they behave as before whatever the default is.
+
+### The factory dispatcher
+
+With `plugins.claude-code.factory.enabled`, a coding chat does not work on the code itself. Its run gets a `wowfactory` MCP server for that run only, on the live socket like `wowgoals` (so `plugins.live.enabled` must stay on), with two tools:
+
+- `factory_dispatch({ skill, args })` starts `claude -p` in the chat's folder, with `/<skill> <args>` on stdin and the skill's model from `factory.models`. The run is the bridge's child: it is in its own process group, and stop, crash and restart end it. Its stream goes to `~/.claude-wow/factory/logs/<id>.log`. The last 50 runs are kept in `~/.claude-wow/factory/runs.json`.
+- `factory_status({ runId? })` says running, done, failed, killed or lost, how long, the cost (`total_cost_usd` of the result), the first lines of the result and every PR URL in it.
+
+The dispatcher run is denied `Edit`, `Write`, `MultiEdit`, `NotebookEdit`, `Bash`, `Skill`, `Agent` and `Task`, whatever `agents.claude.allowedTools` says, and its prompt tells it to dispatch one skill, ask one short question back, or answer a status question. A skill must run in its own session: a skill invoked with the Skill tool runs on the model of the session that calls it, so a cheap dispatcher model cannot call it itself.
+
+When a run ends, the bridge sends its result to the chat that started it as a late reply. The addon reads it the next time it reads its slots: when the player sends any message, or at the 10-minute idle check in pixel mode. It is not pushed while the addon is idle. Until then, `factory_status` has it. Two runs that end before the addon reads its slots share one late slot per chat, so only the newer one shows; `factory_status` has both. A run that the bridge ended when it stopped is recorded as `killed` and sends nothing.
+
+Add this to the `plugins` block of `~/.claude-wow/config.json`, then restart the bridge:
+
+```json
+"claude-code": {
+  "agents": { "claude": { "model": "claude-haiku-4-5-20251001", "effort": "low" } },
+  "factory": {
+    "enabled": true,
+    "skills": ["every-ai-lead", "babysit-prs", "babysit-pr", "merge-train", "implementation-engineer", "adversarial-review", "factory-intake", "fresh-eyes", "review-prs"],
+    "model": "opus",
+    "effort": "high",
+    "models": {
+      "adversarial-review": { "model": "opus", "effort": "max" },
+      "fresh-eyes": { "model": "opus", "effort": "max" }
+    },
+    "allowedTools": ["Bash(gh:*)", "Bash(gt:*)"],
+    "maxRunning": 2,
+    "timeoutMs": 7200000
+  }
+}
+```
+
+The first line runs the dispatcher chat on Haiku 4.5 at low effort; without it the chat inherits `agents.claude.model`. A skill run is headless: a tool its skill needs and the rules do not allow is denied, and the denial is in its log.
 
 ## Runs
 
