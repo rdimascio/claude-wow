@@ -65,6 +65,7 @@ const RT = require('./replytokens');
 const UPD = require('./selfupdate');
 const IDLE = require('./idle');
 const CLI = require('./clients');
+const SW = require('./slotwindow');
 
 // The plugins this bridge has (docs/PLATFORM.md). Registration order is the
 // order match() is asked in, and the first one is the default unless
@@ -718,7 +719,7 @@ function publishClient(r, records, shared) {
 
 function publishNow(urgent = true, { refresh = false } = {}) {
   lastPublish = Date.now();
-  const all = [...live.entries()].map(([key, record]) => ({ ...record, token: addonSessionOfKey(key) }));
+  const all = SW.windowRecords(live, addonSessionOfKey);
   const shared = sharedSlotFields(urgent);
   let restoreSent = false;
   for (const r of CLIENT_RT.values()) {
@@ -726,7 +727,7 @@ function publishNow(urgent = true, { refresh = false } = {}) {
   }
   // The restore bundle is large; it rides along once and is then dropped.
   // (The game keeps loading fresh slots until it has read one carrying it.)
-  if (pendingRestore && !refresh && restoreSent) { pendingRestore.published = (pendingRestore.published || 0) + 1; if (pendingRestore.published >= 3) pendingRestore = null; }
+  pendingRestore = SW.restoreAfterPublish(pendingRestore, { refresh, restoreSent });
 }
 
 const REPLIES_KEPT = 10;
@@ -798,8 +799,7 @@ function noteAddonSession(job) {
 function publish(key, record, urgent) {
   const named = titles.get(key);
   if (named && !record.title) { record.title = named.title; record.titleFor = named.id; }
-  live.delete(key);
-  live.set(key, record);
+  SW.place(live, key, record);
   keepReply(key, record);
   if (urgent) { if (publishTimer) { clearTimeout(publishTimer); publishTimer = null; } publishNow(); return; }
   const wait = (cfg.progressWriteMs || 3000) - (Date.now() - lastPublish);
@@ -1138,7 +1138,7 @@ function dispatchMessage(job) {
     queued.set(key, job);
     noteQueued();
     saveState();
-    publishNow(true, { refresh: true });
+    SW.republishQueued(publishNow);
     log(`#${job.id}${job.session ? '@' + job.session : ''} queued (${cur ? 'chat busy' : running.size + ' running'})`);
     return;
   }
