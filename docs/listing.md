@@ -29,7 +29,7 @@ Check the category names against the CurseForge form when you create the project
 
 - A **Claude** tab in your chat dock. Type a message there and it goes to your agent, never to the game server. The reply comes back as a whisper.
 - Several chats at once. Each chat is its own agent session with its own agent (Claude Code, Codex, Grok Build, Antigravity or Hermes), and each chat can have its own folder.
-- Live progress while the agent works: time and the file it is editing, plus the number of actions on Forever. Hermes shows no progress: its reply comes when it is done, and the run still stops at the bridge's time limit (30 minutes by default).
+- Live progress while the agent works: time and the file it is editing, plus the number of actions on Forever. With Hermes you see the time and a "Hermes is working (no live progress)" line, but no file or action count: its reply comes when it is done, and the run still stops at the bridge's time limit (30 minutes by default).
 - The agent knows your character, level, zone, professions and quest log (you can turn this off). Shift-click items, spells and quests into a message.
 - Routes and marks on your world map, with an arrow that walks you from stop to stop.
 - Ready-made macros: ask for one and click **Create macro** to save it.

@@ -53,12 +53,14 @@ When it finishes: fully quit and relaunch WoW, enable *Claude WoW* on the AddOns
 
 ```sh
 brew tap rdimascio/claude-wow
-brew install claude-wow             # the release binary: no Node.js (--HEAD: the checkout, run with Homebrew's node)
+brew install --HEAD claude-wow      # the checkout, run with Homebrew's node
 claude-wow setup                    # the game side: addon, config, slot pool
 claude-wow service install          # optional: background service
 ```
 
-Homebrew installs the bridge and the `claude-wow` command: the self-contained binary for your Mac from the tagged release (until the first release exists, only `--HEAD` installs). It cannot put an addon into the game folder or read your WoW account, so `claude-wow setup` is a separate, required step. The keg holds only code: your config, the agents' sessions, transcripts and logs live in `~/.claude-wow` (`CLAUDE_WOW_HOME`, see [CONFIGURATION.md](CONFIGURATION.md#where-the-bridge-keeps-its-files)), so `brew upgrade` keeps them; `claude-wow service restart` afterwards picks up the new code. The formula is in [`homebrew/`](../homebrew/README.md).
+Until the first stable release fills in the formula's checksums, only `--HEAD` works: it installs the checkout and runs it with Homebrew's node. After that release, `brew install claude-wow` installs the binary.
+
+Homebrew installs the bridge and the `claude-wow` command: the self-contained binary for your Mac from the tagged release, or the checkout with `--HEAD`. It cannot put an addon into the game folder or read your WoW account, so `claude-wow setup` is a separate, required step. The keg holds only code: your config, the agents' sessions, transcripts and logs live in `~/.claude-wow` (`CLAUDE_WOW_HOME`, see [CONFIGURATION.md](CONFIGURATION.md#where-the-bridge-keeps-its-files)), so `brew upgrade` keeps them; `claude-wow service restart` afterwards picks up the new code. The formula is in [`homebrew/`](../homebrew/README.md).
 
 ## Route 3: by hand (git)
 
