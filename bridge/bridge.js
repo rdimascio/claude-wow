@@ -58,6 +58,7 @@ const G = require('./gamefs');
 const SIG = require('./signals');
 const DM = require('./datamcp');
 const GM = require('./goalsmcp');
+const FB = require('./feedback');
 const FACTORY = require('./factory');
 const GD = require('./gamedata');
 const DSYNC = require('./datasync');
@@ -79,6 +80,7 @@ registry.register(require('./plugins/claude-code'));
 registry.register(require('./plugins/roast'));
 registry.register(require('./plugins/stream'));
 registry.register(require('./plugins/live'));
+registry.register(require('./plugins/dev'));
 const LP = require('./liveproto');
 const T = require('./titles');
 const GOALS = require('./goals');
@@ -310,6 +312,7 @@ function noteMessage(job, role, text) {
   if (job.client) c.client = job.client;
   const m = { role, text: String(text ?? '').slice(0, 4000), id: job.id, t: Math.floor(Date.now() / 1000) };
   if (role === 'assistant' && job.agent) m.agent = job.agent;
+  if (job.plugin) m.plugin = job.plugin;
   c.messages.push(m);
   while (c.messages.length > 200) c.messages.shift();
   c.updated = Date.now();
@@ -1403,8 +1406,56 @@ const core = {
   gameData: job => GR.openFor(HOME.data, contextTextFor(job)),
   get runGrants() { return joinedGrants; },
   get factory() { return factory; },
+  get logFile() { return LOG_FILE; },
+  beat: job => beat(job),
+  resolveCwd: job => P.resolveCwd(job.cwd, DEFAULT_CWD),
+  clientOf: job => clientFor(job),
+  get feedback() { return feedbackStore; },
+  lastRun: job => (state.lastRuns && state.lastRuns[sessKey(job)]) || null,
+  lastTurn: (job, replyId) => lastTurn(job, replyId),
+  setDevNote: (job, text) => { devNotes.set(chatKey(job), { text: String(text || ''), at: Date.now() }); },
   agentPids: () => [...running.values()].map(r => r.child).concat(T.titleChildren(), factory.children()).filter(Boolean).map(c => c.pid),
 };
+
+const feedbackStore = FB.createStore(HOME.dir);
+const devNotes = new Map();
+const DEV_NOTE_TTL_MS = 30 * 60000;
+const LAST_RUNS_MAX = 100;
+const RUN_TOOLS_KEPT = 12;
+const RUN_STDERR_KEPT = 800;
+
+function takeDevNote(job) {
+  const key = chatKey(job);
+  const note = devNotes.get(key);
+  devNotes.delete(key);
+  return note && Date.now() - note.at < DEV_NOTE_TTL_MS ? note.text : '';
+}
+
+function lastTurn(job, replyId) {
+  const c = job.chat && transcripts.chats[job.chat];
+  if (!c) return null;
+  const answers = c.messages.filter(m => m.role === 'assistant' && m.plugin !== 'dev' && (replyId === null || replyId === undefined || m.id === replyId));
+  const answer = answers[answers.length - 1];
+  if (!answer) return null;
+  const asked = c.messages.filter(m => m.role === 'user' && m.id === answer.id).pop();
+  return {
+    id: answer.id,
+    plugin: answer.plugin || c.plugin || '',
+    agent: answer.agent || '',
+    session: (state.sessions && state.sessions[sessKey(job)]) || '',
+    prompt: asked ? asked.text : '',
+    reply: answer.text,
+  };
+}
+
+function noteRun(job, run) {
+  const runs = state.lastRuns = state.lastRuns || {};
+  const key = sessKey(job);
+  delete runs[key];
+  runs[key] = run;
+  const keys = Object.keys(runs);
+  for (const k of keys.slice(0, Math.max(0, keys.length - LAST_RUNS_MAX))) delete runs[k];
+}
 
 const runGrants = GM.createRunGrants({
   call: (tool, args) => core.goals(tool, args),
@@ -1717,7 +1768,8 @@ function runAgent(job, opts = {}) {
   const ctx = gameContext(job);
   const system = P.systemPrompt(ctx, primer(), { tools: pluginTools, surfaces: plugin.surfaces, voice: plugin.voice });
   const systemShort = P.systemPrompt(ctx, '', { surfaces: plugin.surfaces, voice: plugin.voice });
-  const prompt = P.messagePrompt(job.text, ctx, { image });
+  const devNote = takeDevNote(job);
+  const prompt = P.messagePrompt(devNote ? `${devNote}\n\n${job.text}` : job.text, ctx, { image });
   const promptFile = path.join(TMP_DIR, `prompt-${job.id}-${Date.now().toString(36)}.txt`);
   const input = agent.input({ prompt, system, systemShort, resume, cfg: acfg, images });
   if (input.promptFile !== undefined) {
@@ -1779,6 +1831,7 @@ function runAgent(job, opts = {}) {
   const parser = agent.parser({ cwd, granted, isDir: isDirectory, neverOffer: [...IN_GAME_NEVER_GRANTED, ...(acfg.deniedTools || [])], neverOfferIf: neverOffered(acfg.deniedTools || []) });
   job.activity = ACH.createRunLog(agentId);
   const progress = [];
+  const toolTrail = [];
   let sessionId = resume || '';
   let result = null;       // { text, error } once the agent has produced its reply
   let usage = null;        // the last { context, output, window? } the parser saw (agents.js)
@@ -1794,6 +1847,8 @@ function runAgent(job, opts = {}) {
   const pushProgress = (line) => {
     progress.push(line);
     while (progress.length > 10) progress.shift();
+    toolTrail.push(String(line).slice(0, 200));
+    while (toolTrail.length > RUN_TOOLS_KEPT) toolTrail.shift();
     beat(job);
     publish(key, { chat: job.chat, id: job.id, status: 'working', text: checkedProgress(job, progress.join('\n')), steps, cwd: job.cwd, session: sessionId, agent: agentId, plugin: plugin.id, client: job.client }, false);
   };
@@ -1926,6 +1981,14 @@ function runAgent(job, opts = {}) {
     }
     if (deniedAgain.size) log(`${tag} blocked again on ${[...deniedAgain].join(', ')} although already allowed: not offered again`);
     const extra = notes.length ? `\n\n[bridge] ${notes.join('\n\n[bridge] ')}` : '';
+    const usageNow = P.usageFields(job.usage);
+    noteRun(job, {
+      at: Date.now(), ms: Date.now() - startedAt, code,
+      status: result && !result.error ? 'done' : result ? 'error' : job.cancelled ? 'cancelled' : job.timedOut ? 'timed out' : shuttingDown ? 'bridge stopped' : 'no result',
+      agent: agentId, model: acfg.model || '', effort: acfg.effort || '', cwd, session: sessionId, resumed: !!resume,
+      steps, tools: [...toolTrail], denied: [...denied], stderr: stderr.trim().slice(-RUN_STDERR_KEPT),
+      turns: usageNow.turns, ctx: usageNow.ctx, cost: usageNow.cost,
+    });
     if (result && !result.error) {
       const body = String(result.text || '').trim() || (notes.length ? '' : `(${agent.name} finished without a reply)`);
       finish(job, 'done', (body + extra).trim(), sessionId, [...denied]);

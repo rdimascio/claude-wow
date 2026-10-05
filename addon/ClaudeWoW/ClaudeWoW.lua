@@ -3322,7 +3322,7 @@ function ClaudeWoW.Send(text, allow, opts)
 		return
 	end
 	if text == "" then return end
-	text = Cli.ProjectTag(c, text)
+	if not (opts and opts.verbatim) then text = Cli.ProjectTag(c, text) end
 	if not ClaudeWoW.IsConnected() then
 		if ui.input then ui.input:SetText(text) end
 		run.sendOnConnect = { chat = c.id, text = text, allow = allow, opts = opts }
@@ -3363,7 +3363,7 @@ function ClaudeWoW.Send(text, allow, opts)
 		end
 	end
 	local optionTokens = Cli.ChatOptionTokens(c, opts and opts.onceDirs)
-	local wantsTitle = c.name:match("^Chat %d+$") and not HasUserMessage(c)
+	local wantsTitle = c.name:match("^Chat %d+$") and not HasUserMessage(c) and not (opts and opts.verbatim)
 	if wantsTitle then table.insert(optionTokens, "t") end
 	for _, t in ipairs(optionTokens) do table.insert(tokens, t) end
 	local flags = table.concat(tokens, ";")
@@ -6737,6 +6737,10 @@ HELP = table.concat({
 	"/claude copy                       open the last reply in a selectable box for Ctrl+C",
 	"/claude reset                      the next message in this chat starts a fresh session",
 	"/claude cancel                     stop waiting on this chat's reply",
+	"/claude dev [command]              dev tools for this chat's folder, run by the bridge: status, diff, log, run, test, doctor, errors, feedback (/claude dev help)",
+	"/claude wrong [note]               mark the last reply in this chat as wrong; it lands in the bridge's feedback list",
+	"/claude bug <text>                 report a bug, with the addon's state and Lua errors attached",
+	"/claude errors                     the Lua errors the addon caught this UI session",
 	"/claude resend                     show the strip again if the bridge missed it",
 	"/claude reload                     reload now (also frees the slot pool)",
 	"/claude slots                      how many reply slots are still free this session",
@@ -6769,6 +6773,7 @@ end
 local COMMAND_ARGS = {
 	mini = 0, min = 0, hide = 0, quit = 0, help = 0, clear = 0, delete = 0, reset = 0, copy = 0,
 	cancel = 0, resend = 0, reload = 0, refresh = 0, slots = 0, diag = { [""] = true, copy = true },
+	dev = true, wrong = true, bug = true, errors = 0,
 	context = function(rest) return rest == "" or rest == "on" or rest == "off" or ParseTokens(rest) ~= nil end,
 	ctx = function(rest) return rest == "" or rest == "on" or rest == "off" or ParseTokens(rest) ~= nil end,
 	mode = { [""] = true, pixel = true, reload = true },
@@ -6802,6 +6807,7 @@ Cli.CLAUDE_VERBS = {
 	help = true, diag = true, cancel = true, copy = true, clear = true, rename = true, delete = true,
 	cd = true, hide = true, quit = true, mini = true, min = true, reload = true, refresh = true,
 	resend = true, slots = true, look = true, reset = true, probe = true, orders = true,
+	dev = true, wrong = true, bug = true, errors = true,
 }
 
 Cli.CONFIG_KEYS = {
@@ -7616,6 +7622,30 @@ function ClaudeWoW.ResumePick(n)
 	Cli.RunResume({ resume = tostring(n), text = "", addDir = {}, flags = 1 })
 end
 
+Cli.DEV_PLUGIN = "dev"
+Cli.DEV_ERRORS_MARK = "\n--- addon errors ---\n"
+Cli.DEV_ATTACH_MAX = 1400
+
+function Cli.DevCommand(c, cmd, rest)
+	if not c then return end
+	if not (run.bridgePlugins and Contains(run.bridgePlugins, Cli.DEV_PLUGIN)) then
+		Cli.Say(c, "The bridge has not said it has dev tools: it is older than this addon, or it has not answered since you logged in. Update it (claude-wow update), send any message, then try again.")
+		return
+	end
+	local body = cmd == "dev" and (rest ~= "" and rest or "help") or (cmd .. (rest ~= "" and (" " .. rest) or ""))
+	local verb = (body:match("^(%S+)") or ""):lower()
+	if verb == "bug" and rest == "" then
+		Cli.Say(c, "Say what went wrong: /claude bug <text>.")
+		return
+	end
+	if (verb == "errors" or verb == "bug") and ClaudeWoWDev then
+		local attached = ClaudeWoWDev.Attachment(Cli.DEV_ATTACH_MAX)
+		if verb == "bug" then attached = ClaudeWoWDev.State() .. (attached ~= "" and ("\n" .. attached) or "") end
+		if attached ~= "" then body = body .. Cli.DEV_ERRORS_MARK .. attached end
+	end
+	ClaudeWoW.Send("@" .. Cli.DEV_PLUGIN .. " " .. body, nil, { chat = c.id, verbatim = true })
+end
+
 function ClaudeWoW.RunCli(o)
 	if o.help then
 		Cli.Say(ActiveChat(), HELP)
@@ -8079,6 +8109,10 @@ RunCommand = function(cmd, rest)
 		if rest:lower() == "copy" then ClaudeWoW.ShowCopy(report) end
 	elseif cmd == "cancel" then
 		ClaudeWoW.Cancel(c)
+	elseif cmd == "dev" or cmd == "wrong" or cmd == "bug" then
+		Cli.DevCommand(c, cmd, rest)
+	elseif cmd == "errors" then
+		Cli.Say(c, ClaudeWoWDev and ClaudeWoWDev.Report() or "Dev.lua is not loaded. Restart the game client once to load new addon files.")
 	elseif cmd == "clear" then
 		wipe(c.history)
 		ClaudeWoW.Render()

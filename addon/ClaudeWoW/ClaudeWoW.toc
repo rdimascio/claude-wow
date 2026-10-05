@@ -6,6 +6,7 @@
 ## SavedVariables: ClaudeWoWDB, ClaudeWoWMapDB, ClaudeWoWWidgetDB
 ## OptionalDeps: ClaudeWoW_Nodes
 
+Dev.lua
 Codec.lua
 Inbox.lua
 ClaudeWoW.lua
