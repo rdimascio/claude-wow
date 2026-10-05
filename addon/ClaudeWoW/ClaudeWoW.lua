@@ -1691,11 +1691,9 @@ local function ContextWarning(c)
 	if c.ctxWarned then return end
 	c.ctxWarned = true
 	local size = FmtTokens(c.ctx) .. " tokens"
-	local text = "This chat's context is " .. size .. (c.window and (" of " .. FmtTokens(c.window)) or "") .. " after " .. (c.turns or "?") .. " turns, past the " .. FmtTokens(limit) .. " mark. "
-		.. "Every message you send here re-reads all " .. size .. " before it starts on your question, so each reply costs more than the last and is slower to start, and it only grows.\n"
-		.. (c.cost and string.format("At API list prices this session comes to %s$%.2f so far (a comparison, not a bill). ", SEG.APPROX, c.cost) or "")
-		.. "Start a new chat to reset it: the New chat button below, or /claude. You lose " .. ChatAgentName(c) .. "'s memory of this conversation; this transcript stays here.\n"
-		.. "Said once per crossing. /claude config context <n> moves the mark, /claude config context 0 turns it off."
+	local text = "This chat's context is " .. size .. (c.window and (" of " .. FmtTokens(c.window)) or "") .. " after " .. (c.turns or "?") .. " turn" .. ((c.turns or 0) == 1 and "" or "s") .. ", past the " .. FmtTokens(limit) .. " mark: every message re-reads all of it, so replies cost more and start slower.\n"
+		.. "New chat starts " .. ChatAgentName(c) .. " fresh; this transcript stays here.\n"
+		.. "/claude config context <n> moves the mark, 0 turns it off."
 	AddHistory(c, "system", text)
 	c.history[#c.history].newChat = true
 	-- Where the reply itself went: the whisper tab if the chat has one, else the game chat.
@@ -2855,9 +2853,9 @@ end
 
 function Whisper.Welcome(chat, frame)
 	local folder = FolderName(ChatFolder(chat))
-	local where = folder ~= "" and ("coding in " .. Display(folder)) or "general chat"
+	local where = folder ~= "" and (" in " .. Display(folder)) or ", general chat"
 	local r, g, b = Whisper.SystemColor()
-	WhisperWrite(frame, ChatAgentName(chat) .. " - " .. where .. ". Type here and press Enter to talk; /claude help lists the commands; " .. Link("open", chat.id, "workspace") .. " opens the full window.", r, g, b)
+	WhisperWrite(frame, ChatAgentName(chat) .. where .. ". Type to talk; " .. Link("open", chat.id, "workspace") .. " opens the full window.", r, g, b)
 	if db.settings.whisperNews then
 		db.settings.whisperNews = nil
 		WhisperWrite(frame, "New: chats live in whisper tabs like this one by default. /claude config ui whisper off goes back to the window and the game chat.", r, g, b)
@@ -4346,7 +4344,7 @@ function ClaudeWoW.UpdateStatus()
 	ClaudeWoW.UpdateDot()
 	ClaudeWoW.UpdateConnect()
 	if ui.title then
-		local t = c and Display(c.name) or "Claude WoW"
+		local t = c and Display(c.name) or "Claude"
 		if ui.chatTitle then
 			t = Q.PANEL_TITLE
 		else
@@ -4716,7 +4714,7 @@ function ClaudeWoW.UpdateMini()
 	elseif unread > 0 then
 		t = "|cff55ff55" .. unread .. (unread == 1 and " new reply" or " new replies") .. "|r"
 	else
-		t = "|cff999999idle|r"
+		t = "|cff999999Ready|r"
 	end
 	ui.miniBadge:SetText(t)
 	if ui.miniPulse then
@@ -5887,7 +5885,7 @@ function ClaudeWoW.RefreshTitleBar()
 	local label = ui.chatTitle
 	if not label then return end
 	local c = ActiveChat()
-	label:SetText(c and Display(c.name) or "Claude WoW")
+	label:SetText(c and Display(c.name) or "Claude")
 end
 
 function Q.TitleBarTooltip(bar)
@@ -6156,8 +6154,8 @@ local function BuildUI()
 	mini:SetScript("OnClick", function() ClaudeWoW.Minimize(true) end)
 	mini:SetScript("OnEnter", function(self)
 		GameTooltip:SetOwner(self, "ANCHOR_LEFT")
-		GameTooltip:SetText("Minimize to the small bar  (Esc)")
-		GameTooltip:AddLine("The agent keeps working; the bar shows when a reply lands.", 0.8, 0.8, 0.8, true)
+		GameTooltip:SetText("Minimize (Esc)")
+		GameTooltip:AddLine("The agent keeps working. The small bar shows when a reply lands.", 0.8, 0.8, 0.8, true)
 		GameTooltip:Show()
 	end)
 	mini:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -6543,7 +6541,7 @@ local function BuildUI()
 
 	local mlabel = m:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 	mlabel:SetPoint("LEFT", miniDotHolder, "RIGHT", 6, 0)
-	mlabel:SetText("Claude WoW")
+	mlabel:SetText("Claude")
 
 	local badge = m:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	badge:SetPoint("LEFT", mlabel, "RIGHT", 8, 0)
@@ -6581,7 +6579,7 @@ local function BuildUI()
 	mclose:SetScript("OnLeave", function() GameTooltip:Hide() end)
 	m:SetScript("OnEnter", function(self)
 		GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
-		GameTooltip:SetText("Claude WoW")
+		GameTooltip:SetText("Claude")
 		GameTooltip:AddLine("Click: open the workspace (full transcripts, chats, settings). Drag: move.", 0.8, 0.8, 0.8, true)
 		GameTooltip:AddLine((ui.dot and ui.dot.tip) or "Bridge status unknown", 0.6, 0.6, 0.6, true)
 		GameTooltip:Show()
