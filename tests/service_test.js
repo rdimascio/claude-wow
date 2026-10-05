@@ -364,3 +364,193 @@ test('install fails loudly when launchd will not load the agent, even if the leg
   assert.throws(() => b.install(d), /launchctl could not load .*Bootstrap failed: 5/);
   assert.equal(state.loaded, false);
 });
+
+function fakeWindows({ alivePids = [], processes = {}, queryFails = false, killStatus = 0 } = {}) {
+  const state = { queries: [], kills: [], launches: [] };
+  const exec = (cmd, args) => {
+    assert.equal(cmd, 'powershell.exe');
+    const script = args[args.length - 1];
+    if (script.includes('taskkill')) {
+      const pid = Number(/taskkill\.exe \/PID (\d+)/.exec(script)[1]);
+      state.kills.push({ pid, script });
+      return { ok: killStatus === 0, status: killStatus, out: '' };
+    }
+    const pid = Number(/ProcessId=(\d+)/.exec(script)[1]);
+    state.queries.push(pid);
+    if (queryFails) return { ok: false, status: 1, out: 'Get-CimInstance : Access denied' };
+    const proc = processes[pid];
+    return { ok: true, status: 0, out: proc ? JSON.stringify(proc) + '\r\n' : '' };
+  };
+  const b = Object.assign(Object.create(S.backend('win32')), {
+    exec,
+    alive: pid => alivePids.includes(pid),
+    program: () => ({ node: 'C:\\n\\node.exe', script: 'C:\\cw\\bridge\\supervisor.js', cwd: 'C:\\cw' }),
+    launch: (node, args) => {
+      state.launches.push([node, ...args]);
+    },
+  });
+  return { b, state };
+}
+
+function winDirs(name, record) {
+  const dir = scratch(name);
+  const d = { run: dir, logs: dir, definition: path.join(dir, 'Startup', 'Claude WoW bridge.vbs') };
+  if (record) fs.writeFileSync(S.pidFile(d), JSON.stringify(record));
+  return d;
+}
+
+const STARTED = 1_700_000_000_000;
+const SUPERVISOR = { created: STARTED - 400, command: '"C:\\n\\node.exe" "C:\\cw\\bridge\\supervisor.js"' };
+
+test('Windows: a pid file whose pid now belongs to another program is stale, so stop kills nothing and start launches', () => {
+  const record = { pid: 4242, bridgePid: 4243, started: STARTED, mode: 'service' };
+  const reused = { created: STARTED + 3_600_000, command: '"C:\\Program Files\\Editor\\editor.exe"' };
+  const stopD = winDirs('win-stale-stop', record);
+  const { b, state } = fakeWindows({ alivePids: [4242], processes: { 4242: reused } });
+  b.stop(stopD);
+  assert.deepEqual(state.kills, [], 'no taskkill for a pid Windows gave to another program');
+  assert.equal(S.readPid(stopD), null, 'the stale record is discarded');
+
+  const startD = winDirs('win-stale-start', record);
+  b.start(startD);
+  assert.equal(state.launches.length, 1, 'start does not mistake the reused pid for a running service');
+  assert.equal(S.readPid(startD), null);
+
+  const probeD = winDirs('win-stale-probe', record);
+  assert.deepEqual(b.probe(probeD), { loaded: false, pid: 0, state: 'stopped' });
+
+  const oldD = winDirs('win-stale-old', record);
+  fs.mkdirSync(path.dirname(oldD.definition), { recursive: true });
+  fs.writeFileSync(oldD.definition, 'x');
+  assert.equal(b.removeOld(oldD), true);
+  assert.deepEqual(state.kills, [], "the old name's pid file is checked the same way");
+  assert.equal(S.readPid(oldD), null);
+});
+
+test('Windows: a node process created after the record is stale even when its command line looks like the supervisor', () => {
+  const record = { pid: 4242, started: STARTED, mode: 'service' };
+  const d = winDirs('win-late-node', record);
+  const { b, state } = fakeWindows({ alivePids: [4242], processes: { 4242: { ...SUPERVISOR, created: STARTED + S.CLOCK_SLACK_MS + 1 } } });
+  b.stop(d);
+  assert.deepEqual(state.kills, []);
+});
+
+test('Windows: the recorded supervisor is stopped with a kill that holds its handle and checks its start time again', () => {
+  const record = { pid: 4242, bridgePid: 4243, started: STARTED, mode: 'service' };
+  const d = winDirs('win-match', record);
+  const { b, state } = fakeWindows({ alivePids: [4242], processes: { 4242: SUPERVISOR } });
+  assert.deepEqual(b.probe(d), { loaded: true, pid: 4242, state: 'running' });
+  b.start(d);
+  assert.equal(state.launches.length, 0, 'a verified supervisor is already running');
+  b.stop(d);
+  assert.equal(state.kills.length, 1);
+  assert.match(state.kills[0].script, /\$null = \$p\.Handle/);
+  assert.ok(state.kills[0].script.includes(`-gt ${STARTED + S.CLOCK_SLACK_MS}`), state.kills[0].script);
+  assert.equal(S.readPid(d), null);
+});
+
+test('Windows: when the kill finds another process behind the pid it is not an error; another taskkill failure is', () => {
+  const record = { pid: 4242, started: STARTED, mode: 'service' };
+  const changed = fakeWindows({ alivePids: [4242], processes: { 4242: SUPERVISOR }, killStatus: 3 });
+  const d = winDirs('win-kill-changed', record);
+  changed.b.stop(d);
+  assert.equal(S.readPid(d), null);
+  const broken = fakeWindows({ alivePids: [4242], processes: { 4242: SUPERVISOR }, killStatus: 1 });
+  const d2 = winDirs('win-kill-broken', record);
+  assert.throws(() => broken.b.stop(d2), /taskkill could not stop the supervisor \(pid 4242\)/);
+  assert.equal(S.readPid(d2).pid, 4242, 'the record stays while the supervisor may still run');
+});
+
+test('Windows: when the identity cannot be read, stop and start fail closed and keep the record', () => {
+  const record = { pid: 4242, started: STARTED, mode: 'service' };
+  const d = winDirs('win-unknown', record);
+  const { b, state } = fakeWindows({ alivePids: [4242], queryFails: true });
+  assert.throws(() => b.stop(d), /could not confirm that pid 4242 is the bridge supervisor/);
+  assert.throws(() => b.start(d), /could not confirm/);
+  assert.deepEqual(state.kills, []);
+  assert.deepEqual(state.launches, []);
+  assert.equal(S.readPid(d).pid, 4242);
+  assert.deepEqual(b.probe(d), { loaded: false, pid: 0, state: 'unverified' });
+});
+
+test('Windows: a record without a start time or with a hidden command line is never trusted', () => {
+  const d = winDirs('win-legacy', { pid: 4242, mode: 'service' });
+  const { b, state } = fakeWindows({ alivePids: [4242], processes: { 4242: SUPERVISOR } });
+  assert.throws(() => b.stop(d), /could not confirm/);
+  assert.deepEqual(state.kills, []);
+  const hidden = fakeWindows({ alivePids: [4242], processes: { 4242: { created: SUPERVISOR.created, command: '' } } });
+  const d2 = winDirs('win-hidden', { pid: 4242, started: STARTED, mode: 'service' });
+  assert.throws(() => hidden.b.stop(d2), /could not confirm/);
+  assert.deepEqual(hidden.state.kills, []);
+});
+
+test('Windows: a dead pid or a pid file that is not a number runs no command and is discarded', () => {
+  const { b, state } = fakeWindows({ alivePids: [] });
+  const d = winDirs('win-dead', { pid: 4242, started: STARTED, mode: 'service' });
+  b.stop(d);
+  assert.equal(S.readPid(d), null);
+  const d2 = winDirs('win-junk', { pid: '4242; Stop-Computer', started: STARTED, mode: 'service' });
+  b.start(d2);
+  assert.deepEqual(state.queries, []);
+  assert.deepEqual(state.kills, []);
+  assert.equal(state.launches.length, 1);
+  assert.throws(() => S.winProcessQuery('1; Stop-Computer'), /not a pid/);
+  assert.throws(() => S.winVerifiedKill({ pid: 1 }), /no verified supervisor/);
+});
+
+test('Windows identity parsing: empty output is gone, junk is unknown, a match needs an early creation time and a supervisor command line', () => {
+  assert.deepEqual(S.parseWinProcess(''), { state: 'gone' });
+  assert.deepEqual(S.parseWinProcess('WARNING: something'), { state: 'unknown' });
+  assert.deepEqual(S.parseWinProcess('{"created":5,"command":null}'), { state: 'found', created: 5, command: '' });
+  const record = { pid: 1, started: STARTED };
+  assert.equal(S.supervisorIdentity(record, { state: 'found', ...SUPERVISOR }), 'match');
+  assert.equal(S.supervisorIdentity(record, { state: 'found', created: STARTED, command: 'C:\\Users\\p\\bin\\claude-wow.exe' }), 'match');
+  assert.equal(S.supervisorIdentity(record, { state: 'found', created: STARTED, command: 'C:\\n\\node.exe C:\\other\\server.js' }), 'stale');
+  assert.equal(S.supervisorIdentity(record, { state: 'found', created: STARTED + S.CLOCK_SLACK_MS + 1, command: SUPERVISOR.command }), 'stale');
+  assert.equal(S.supervisorIdentity({ pid: 1 }, { state: 'found', ...SUPERVISOR }), 'unknown');
+  assert.equal(S.supervisorIdentity(record, { state: 'gone' }), 'gone');
+});
+
+test('Windows status: a reused pid is not reported as the running supervisor', () => {
+  const record = { pid: 4242, bridgePid: 4243, started: STARTED, mode: 'service' };
+  const d = winDirs('win-status', record);
+  fs.writeFileSync(path.join(d.logs, 'bridge.log'), '');
+  const reused = fakeWindows({ alivePids: [4242, 4243], processes: { 4242: { created: STARTED + 60_000, command: 'editor.exe' } } });
+  const lines = [];
+  const code = S.status(d, 'win32', l => lines.push(l), path.join(d.run, 'state.json'), path.join(d.run, 'config.json'), reused.b);
+  assert.equal(code, 3);
+  assert.ok(lines.includes('  running   : no'), lines.join('\n'));
+  const unknown = fakeWindows({ alivePids: [4242], queryFails: true });
+  const lines2 = [];
+  S.status(d, 'win32', l => lines2.push(l), path.join(d.run, 'state.json'), path.join(d.run, 'config.json'), unknown.b);
+  assert.ok(
+    lines2.some(l => /running   : unknown, pid 4242/.test(l)),
+    lines2.join('\n'),
+  );
+});
+
+test('Windows status: an installed service is verified once, so a pid reused between two checks is never reported as running', () => {
+  const record = { pid: 4242, bridgePid: 4243, started: STARTED, mode: 'service' };
+  const d = winDirs('win-status-installed', record);
+  fs.mkdirSync(path.dirname(d.definition), { recursive: true });
+  fs.writeFileSync(d.definition, 'x');
+  fs.writeFileSync(path.join(d.logs, 'bridge.log'), '');
+  const answers = [SUPERVISOR, { created: STARTED + 60_000, command: 'editor.exe' }];
+  const { b, state } = fakeWindows({
+    alivePids: [4242, 4243],
+    processes: {
+      get 4242() {
+        return answers[Math.min(state.queries.length - 1, 1)];
+      },
+    },
+  });
+  const lines = [];
+  const code = S.status(d, 'win32', l => lines.push(l), path.join(d.run, 'state.json'), path.join(d.run, 'config.json'), b);
+  assert.equal(state.queries.length, 1, 'one identity query per status');
+  assert.equal(code, 0);
+  assert.ok(
+    lines.some(l => /running   : yes, as the service: supervisor pid 4242/.test(l)),
+    lines.join('\n'),
+  );
+  assert.ok(!lines.some(l => /no pid file yet/.test(l)), lines.join('\n'));
+});
