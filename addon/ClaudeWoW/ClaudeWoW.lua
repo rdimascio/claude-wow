@@ -4494,6 +4494,7 @@ local function GetBubble(i)
 	b.accent:SetPoint("BOTTOMLEFT", b, "BOTTOMLEFT", 0, 0)
 	b.accent:SetWidth(3)
 	local onParchment = ui.parchment ~= nil
+	if onParchment then b.accent:Hide() end
 	b.who = b:CreateFontString(nil, "OVERLAY", onParchment and Q.FontObject("QuestTitleFont", Q.FontObject("QuestFontNormalSmall", "GameFontNormalSmall")) or "GameFontNormalSmall")
 	b.who:SetPoint("TOPLEFT", b, "TOPLEFT", 10, -6)
 	b.who:SetJustifyH("LEFT")
@@ -4533,9 +4534,17 @@ local function GetBubble(i)
 	return b
 end
 
+function Q.UpdatePlaceholder()
+	local placeholder, input = ui.placeholder, ui.input
+	if not placeholder or not input then return end
+	placeholder:SetText("Message " .. ChatAgentName(ActiveChat()) .. ". Enter sends; /claude help lists commands.")
+	if (input:GetText() or "") == "" and not input:HasFocus() then placeholder:Show() else placeholder:Hide() end
+end
+
 function ClaudeWoW.Render()
 	local c = ActiveChat()
 	Cli.UpdateProjectButton()
+	Q.UpdatePlaceholder()
 	if ui.content and c then
 		local width = ui.scroll:GetWidth()
 		if not width or width < 80 then width = 400 end
@@ -4771,7 +4780,7 @@ function ClaudeWoW.UpdateMini()
 	elseif unread > 0 then
 		t = "|cff55ff55" .. unread .. (unread == 1 and " new reply" or " new replies") .. "|r"
 	else
-		t = "|cff999999Ready|r"
+		t = "|cffccccccReady|r"
 	end
 	ui.miniBadge:SetText(t)
 	if ui.miniPulse then
@@ -5072,6 +5081,8 @@ Q.COUNT_W = 92
 Q.GOLD_ICON = "|TInterface\\MoneyFrame\\UI-GoldIcon:12:12:0:-1|t"
 Q.STATUS_HIT_W = 260
 Q.CTX_BAR_W, Q.CTX_BAR_H = 120, 13
+Q.CTX_TICK_W = 2
+Q.CTX_WARN_LEVEL = 3
 Q.CTX_DEFAULT_WINDOW = 200000
 Q.CTX_LEVELS = {
 	{ upTo = 0.50, color = { 0.10, 0.75, 0.10 } },
@@ -5105,6 +5116,10 @@ function Q.ContextBar(f)
 		border:SetBackdrop({ edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", edgeSize = 8 })
 		border:SetBackdropBorderColor(0.6, 0.6, 0.6, 1)
 	end
+	bar.tick = bar:CreateTexture(nil, "OVERLAY")
+	bar.tick:SetColorTexture(1, 0.95, 0.8, 0.9)
+	bar.tick:SetSize(Q.CTX_TICK_W, Q.CTX_BAR_H)
+	bar.tick:Hide()
 	bar.text = bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	bar.text:SetPoint("CENTER", bar, "CENTER", 0, 0)
 	bar:EnableMouse(true)
@@ -5130,6 +5145,16 @@ function Q.UpdateContextBar(c)
 	local window = Q.ContextWindow(c)
 	local fraction = c.ctx / window
 	local color = Q.ContextColor(fraction)
+	local warn = tonumber(db.settings.contextWarn) or 0
+	local warnLevel = Q.CTX_LEVELS[Q.CTX_WARN_LEVEL]
+	if warn > 0 and c.ctx >= warn and fraction <= warnLevel.upTo then color = warnLevel.color end
+	if warn > 0 and warn < window then
+		bar.tick:ClearAllPoints()
+		bar.tick:SetPoint("TOP", bar, "TOPLEFT", bar:GetWidth() * warn / window, 0)
+		bar.tick:Show()
+	else
+		bar.tick:Hide()
+	end
 	bar:SetValue(math.min(fraction, 1))
 	bar:SetStatusBarColor(color[1], color[2], color[3])
 	bar.fraction = fraction
@@ -5572,8 +5597,7 @@ function Q.PreviewsOn()
 	return db.settings.chatPreviews ~= false
 end
 
-function Q.ChatObjectives(c)
-	if c.pendingId then return { "Working: " .. ActivityLine(c) } end
+function Q.LastMessage(c)
 	local last, count = nil, 0
 	for _, m in ipairs(c.history) do
 		if m.role == "user" or m.role == "assistant" then
@@ -5581,13 +5605,25 @@ function Q.ChatObjectives(c)
 			count = count + 1
 		end
 	end
-	if not last then return { "No messages yet" } end
+	return last, count
+end
+
+function Q.WhenShort(t)
+	return (Q.WhenLabel(t):gsub("^%a+ ", ""))
+end
+
+function Q.MessageSummary(last, count)
+	if not last then return "No messages yet" end
+	return count .. (count == 1 and " message" or " messages") .. (last.t and (", last " .. Q.WhenLabel(last.t)) or "")
+end
+
+function Q.ChatObjectives(c)
+	if c.pendingId then return { "Working: " .. ActivityLine(c) } end
+	local last = Q.LastMessage(c)
+	if not last then return {} end
 	local who = last.role == "user" and "You" or ReplyAgentName(c, last.agent)
 	local first = tostring(last.text or ""):match("^%s*([^\n]*)") or ""
-	return {
-		who .. ": " .. first,
-		count .. (count == 1 and " message" or " messages") .. (last.t and (", last " .. Q.WhenLabel(last.t)) or ""),
-	}
+	return { who .. ": " .. first }
 end
 
 function Q.PoiState(poi, glyphKey, number, selected)
@@ -5679,9 +5715,12 @@ function Q.QuestRow(i)
 	r.poi:SetPoint("TOPLEFT", r, "TOPLEFT", 6, -4)
 	r.del = Q.DeleteButton(r)
 	r.del:SetPoint("TOPRIGHT", r, "TOPRIGHT", -2, -Q.ROW_TOP + 2)
+	r.when = r:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+	r.when:SetPoint("TOPRIGHT", r, "TOPRIGHT", -22, -Q.ROW_TOP)
+	r.when:SetJustifyH("RIGHT")
 	r.title = r:CreateFontString(nil, "OVERLAY", Q.FontObject("GameFontNormalLeft", "GameFontNormalSmall"))
 	r.title:SetPoint("TOPLEFT", r, "TOPLEFT", Q.ROW_TITLE_X, -Q.ROW_TOP)
-	r.title:SetPoint("RIGHT", r, "RIGHT", -22, 0)
+	r.title:SetPoint("RIGHT", r.when, "LEFT", -4, 0)
 	r.title:SetJustifyH("LEFT")
 	r.title:SetWordWrap(false)
 	r.label = r.title
@@ -5689,31 +5728,45 @@ function Q.QuestRow(i)
 	r:SetScript("OnEnter", function(self)
 		self.del:Show()
 		Q.RowColors(self, true)
+		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+		GameTooltip:SetText(self.fullTitle or "", 1, 1, 1, 1, true)
+		GameTooltip:AddLine(self.summary or "", 0.8, 0.8, 0.8)
+		GameTooltip:Show()
 	end)
 	r:SetScript("OnLeave", function(self)
 		if not Try(self.del.IsMouseOver, self.del) then self.del:Hide() end
 		Q.RowColors(self, false)
+		GameTooltip:Hide()
 	end)
 	q.rows[i] = r
 	return r
 end
 
+Q.TITLE_EMPTY = { 0.5, 0.5, 0.5 }
+
 function Q.FillRow(r, c, index, width)
 	local active = c.id == db.activeChat
 	local unread = c.unread or 0
+	local previews = Q.PreviewsOn()
+	local last, count = Q.LastMessage(c)
 	r.chatId = c.id
 	r.poi.chatId = c.id
 	r.active = active
 	r:SetWidth(width)
 	r.glow:SetShown(active)
 	local title = Display(c.name)
+	r.fullTitle = title
+	r.summary = Q.MessageSummary(last, count)
 	if c.agent and c.agent ~= "" then title = title .. " |cff9d9d9d" .. AgentName(c.agent) .. "|r" end
 	if unread > 0 then title = title .. " (" .. unread .. ")" end
 	r.title:SetText(title)
-	r.titleColor = active and { 1, 1, 1 } or Q.TitleColor(c)
+	r.when:SetText(last and last.t and Q.WhenShort(last.t) or "")
+	local titleColor = Q.TitleColor(c)
+	if previews and not last and titleColor == Q.TITLE_IDLE then titleColor = Q.TITLE_EMPTY end
+	r.titleColor = active and { 1, 1, 1 } or titleColor
 	local glyph = (c.pendingId and (active and "workingSelected" or "working")) or (unread > 0 and "reply") or nil
 	Q.PoiState(r.poi, glyph, tostring(index), active)
-	local lines = Q.PreviewsOn() and Q.ChatObjectives(c) or {}
+	local lines = previews and Q.ChatObjectives(c) or {}
 	local textW = width - Q.ROW_TITLE_X - 22
 	local titleH = Try(r.title.GetStringHeight, r.title) or 14
 	if titleH < 1 then titleH = 14 end
@@ -6466,6 +6519,17 @@ local function BuildUI()
 	end)
 	inputBg:SetScript("OnMouseDown", function() input:SetFocus() end)
 	ui.input = input
+
+	local placeholder = inputBg:CreateFontString(nil, "OVERLAY", "GameFontDisable")
+	placeholder:SetPoint("TOPLEFT", inScroll, "TOPLEFT", 0, 0)
+	placeholder:SetPoint("RIGHT", inScroll, "RIGHT", 0, 0)
+	placeholder:SetJustifyH("LEFT")
+	placeholder:SetWordWrap(false)
+	ui.placeholder = placeholder
+	input:HookScript("OnTextChanged", function() Q.UpdatePlaceholder() end)
+	input:HookScript("OnEditFocusGained", function() Q.UpdatePlaceholder() end)
+	input:HookScript("OnEditFocusLost", function() Q.UpdatePlaceholder() end)
+	Q.UpdatePlaceholder()
 
 	local projectHost = ui.titleBar or inputBg
 	local projectButton = CreateFrame("Button", "ClaudeWoWProjectButton", projectHost)
