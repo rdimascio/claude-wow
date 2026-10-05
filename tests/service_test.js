@@ -540,3 +540,19 @@ test('Windows status: a reused pid is not reported as the running supervisor', (
   S.status(d, 'win32', l => lines2.push(l), path.join(d.run, 'state.json'), path.join(d.run, 'config.json'), unknown.b);
   assert.ok(lines2.some(l => /running   : unknown, pid 4242/.test(l)), lines2.join('\n'));
 });
+
+test('Windows status: an installed service is verified once, so a pid reused between two checks is never reported as running', () => {
+  const record = { pid: 4242, bridgePid: 4243, started: STARTED, mode: 'service' };
+  const d = winDirs('win-status-installed', record);
+  fs.mkdirSync(path.dirname(d.definition), { recursive: true });
+  fs.writeFileSync(d.definition, 'x');
+  fs.writeFileSync(path.join(d.logs, 'bridge.log'), '');
+  const answers = [SUPERVISOR, { created: STARTED + 60_000, command: 'editor.exe' }];
+  const { b, state } = fakeWindows({ alivePids: [4242, 4243], processes: { get 4242() { return answers[Math.min(state.queries.length - 1, 1)]; } } });
+  const lines = [];
+  const code = S.status(d, 'win32', l => lines.push(l), path.join(d.run, 'state.json'), path.join(d.run, 'config.json'), b);
+  assert.equal(state.queries.length, 1, 'one identity query per status');
+  assert.equal(code, 0);
+  assert.ok(lines.some(l => /running   : yes, as the service: supervisor pid 4242/.test(l)), lines.join('\n'));
+  assert.ok(!lines.some(l => /no pid file yet/.test(l)), lines.join('\n'));
+});

@@ -598,9 +598,9 @@ const win = {
   },
   stop(d) { this.stopRecorded(d); },
   restart(d) { this.stop(d); this.start(d); },
-  probe(d) {
-    const p = readPid(d);
-    const identity = p && p.mode === 'service' ? this.verify(p) : 'gone';
+  probe(d, known = null) {
+    const p = known ? known.record : readPid(d);
+    const identity = p && p.mode === 'service' ? (known ? known.identity : this.verify(p)) : 'gone';
     const running = identity === 'match';
     return { loaded: running, pid: running ? p.pid : 0, state: running ? 'running' : identity === 'unknown' ? 'unverified' : 'stopped' };
   },
@@ -625,9 +625,9 @@ function clientLines(configFile, state) {
 
 function status(d, platform = process.platform, out = console.log, stateFile = H.resolve().state, configFile = H.resolve().config, b = backend(platform)) {
   const installed = fs.existsSync(d.definition);
-  const probe = installed ? b.probe(d) : { loaded: false, pid: 0, state: '' };
   const p = readPid(d);
   const identity = p && b.verify ? b.verify(p) : null;
+  const probe = installed ? b.probe(d, b.verify ? { record: p, identity } : null) : { loaded: false, pid: 0, state: '' };
   const supervisorAlive = !!(p && (identity ? identity === 'match' : alive(p.pid)));
   const bridgeAlive = !!(p && alive(p.bridgePid));
   out(`claude-wow service (${b.kind})`);
