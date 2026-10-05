@@ -2391,6 +2391,10 @@ function startSelfUpdate() {
 }
 
 banner();
+for (const id of A.agentIds()) {
+  const note = A.costCapNote(id, A.agentConfig(cfg, id));
+  if (note) log(note);
+}
 if (!once) startPlugins();
 if (inject !== null) {
   const job = { id: state.lastId + 1, session: '', chat: '', text: inject, cwd: '', newSession: false, via: 'inject', agent: injectAgent || '', client: defaultClient() ? defaultClient().key : '' };

@@ -46,6 +46,7 @@
         "Bash(dir:*)"
       ],
       "deniedTools": [],
+      "maxCostUsd": null,
       "extraArgs": []
     },
     "codex": {
