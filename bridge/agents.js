@@ -248,7 +248,7 @@ function claudeParser(opts = {}) {
           if (again.length) out.deniedAgain = [...new Set(again.map(e => e.rule))];
           out.notes.push(...denialNotes('Claude', fresh, again));
         }
-        out.done = { text, error: !!ev.is_error };
+        out.done = { text, error: !!ev.is_error && ev.subtype !== BUDGET_STOP };
       }
       return out;
     },

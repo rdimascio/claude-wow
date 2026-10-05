@@ -656,7 +656,7 @@ test('agents.claude.maxCostUsd: a positive number becomes --max-budget-usd; anyt
 
 test('Claude budget stop from a real stream: the reply says the message hit the cost cap, in one plain sentence', () => {
   const out = replayClaude('claude-budget-stop.jsonl');
-  assert.deepEqual(out.done, { text: 'Stopped: this message hit the $0.01 cost cap.', error: true });
+  assert.deepEqual(out.done, { text: 'Stopped: this message hit the $0.01 cost cap.', error: false }, 'a cap the player set is a reply, not a bridge error');
   const stop = { type: 'result', subtype: 'error_max_budget_usd', is_error: true, terminal_reason: 'budget_exhausted' };
   assert.equal(A.claudeParser().feed({ ...stop, errors: ['Reached maximum budget ($0.1)'] }).done.text, 'Stopped: this message hit the $0.10 cost cap.');
   assert.equal(A.claudeParser().feed({ ...stop, errors: ['Reached maximum budget ($0.125)'] }).done.text, 'Stopped: this message hit the $0.125 cost cap.');
