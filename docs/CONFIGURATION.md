@@ -65,7 +65,7 @@ Keys under `agents.claude`, `agents.codex`, `agents.grok`, `agents.agy` and `age
 
 ### Your own MCP servers
 
-The `mcp` block declares MCP servers for chat runs in one place. With no `mcp` key, or an empty one, runs are exactly as before: Claude loads its own servers from `~/.claude.json`, `.mcp.json` and plugins, and nothing else changes. Only Claude runs read it for now.
+The `mcp` block declares MCP servers for chat runs in one place. With no `mcp` key, or an empty one, runs are exactly as before: Claude loads its own servers from `~/.claude.json`, `.mcp.json` and plugins, and nothing else changes. Claude and Codex runs read it ([AGENTS.md](AGENTS.md#codex) has the Codex form); `mcp.strict` is Claude only.
 
 ```json
 "mcp": {

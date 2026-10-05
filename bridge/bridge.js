@@ -2130,6 +2130,7 @@ function runAgent(job, opts = {}) {
   const agent = A.AGENTS[agentId];
   const chosen = chatSettings(job);
   const claudeRun = agentId === 'claude';
+  const codexRun = agentId === 'codex';
   const runToolSocket = claudeRun && opts.runTools ? runToolsSocket(tag, job) : '';
   const runDenied = [...inGameDeniedTools({ claudeRun, plugin, withRunTools: !!runToolSocket }), ...(Array.isArray(opts.deniedTools) ? opts.deniedTools : [])];
   const factoryConf = claudeRun && opts.factory && opts.factory.enabled ? opts.factory : null;
@@ -2144,7 +2145,10 @@ function runAgent(job, opts = {}) {
   if (grantOnce.rules.length) {
     log(`${tag} allowed for this run only (${agentId}): ${grantOnce.rules.join(', ')}`);
   }
-  const dataServer = opts.gameData && (claudeRun || agent.mcp) ? gameDataServer(tag, job) : null;
+  const dataServer = opts.gameData && (claudeRun || codexRun || agent.mcp) ? gameDataServer(tag, job) : null;
+  const codexMcp = codexRun
+    ? [...(dataServer ? [{ name: DM.SERVER_NAME, server: dataServer.server }] : []), ...MC.forCodex(USER_MCP, { skip: CODEX_OWN_MCP })]
+    : [];
   const runOnlyRules = [
     ...grantOnce.rules,
     ...(dataServer ? dataServer.rules : []),
@@ -2248,12 +2252,14 @@ function runAgent(job, opts = {}) {
     ? FACTORY.launchConfig({ runId: factoryGrant.id, token: factoryGrant.token, socket: factoryToolSocket, skills: factoryConf.skills }).server
     : null;
   if (factoryGrant) factoryChats.set(key, job);
-  const mcpJson = GM.mcpConfig({
-    ...(userMcp ? userMcp.servers : {}),
-    [DM.SERVER_NAME]: dataServer && dataServer.server,
-    [GM.SERVER_NAME]: runServer,
-    [FACTORY.SERVER_NAME]: factoryServer,
-  });
+  const mcpJson = codexRun
+    ? ''
+    : GM.mcpConfig({
+        ...(userMcp ? userMcp.servers : {}),
+        [DM.SERVER_NAME]: dataServer && dataServer.server,
+        [GM.SERVER_NAME]: runServer,
+        [FACTORY.SERVER_NAME]: factoryServer,
+      });
   const mcpConfigFile = mcpJson ? path.join(MCP_CONFIG_DIR, `mcp-${job.id}-${crypto.randomBytes(8).toString('hex')}.json`) : '';
   if (mcpConfigFile) {
     try {
@@ -2286,6 +2292,7 @@ function runAgent(job, opts = {}) {
       timeoutMs: cfg.timeoutMs,
       mcpConfig: mcpConfigFile,
       strictMcpConfig: !!(userMcp && userMcp.strict),
+      codexMcpArgs: MC.codexArgs(codexMcp),
     }),
   ];
   const env = agent.env({ ...process.env });
@@ -2319,6 +2326,12 @@ function runAgent(job, opts = {}) {
     runGrant && GM.SERVER_NAME + ' for this run',
     factoryGrant && FACTORY.SERVER_NAME + ' for this run',
     userMcp && userMcp.names.length && 'mcp ' + userMcp.names.join(' '),
+    codexMcp.some(e => e.name !== DM.SERVER_NAME) &&
+      'mcp ' +
+        codexMcp
+          .filter(e => e.name !== DM.SERVER_NAME)
+          .map(e => e.name)
+          .join(' '),
     userMcp && userMcp.strict && 'strict mcp',
   ]
     .filter(Boolean)
@@ -3289,11 +3302,17 @@ function startSelfUpdate() {
 }
 
 const USER_MCP = MC.parse(cfg.mcp, { reserved: [DM.SERVER_NAME, GM.SERVER_NAME, FACTORY.SERVER_NAME], log, env: process.env });
+const CODEX_OWN_MCP = USER_MCP ? MC.codexOwnServers().filter(n => USER_MCP.servers.some(s => s.name === n && s.default)) : [];
 banner();
+for (const n of CODEX_OWN_MCP)
+  log(
+    `mcp.servers.${n}: ~/.codex/config.toml has a server of the same name, and Codex would merge the two (its url, auth and env with this one), so Codex runs leave this server out; rename one of them`,
+  );
 if (USER_MCP && (USER_MCP.servers.length || USER_MCP.strict)) {
   log(`mcp: ${MC.summary(USER_MCP)}`);
   if (USER_MCP.strict) {
     const own = MC.claudeOwnServers({ cwd: DEFAULT_CWD });
+    log('mcp.strict: Codex has no strict mode, so Codex runs still load the servers in ~/.codex/config.toml');
     log(
       `mcp.strict: Claude runs stop loading ${own.length ? 'at least these servers of your own: ' + own.join(', ') : 'the servers of your own (none found in ~/.claude.json, .mcp.json or plugins)'}, and claude.ai connectors`,
     );

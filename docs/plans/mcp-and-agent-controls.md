@@ -53,10 +53,12 @@ Claude:
 - `--strict-mcp-config` only when `mcp.strict: true`. On startup with strict on, log the servers in `~/.claude.json` / `.mcp.json` / plugins that will stop loading.
 
 Codex:
-- Flip the three gates (`runToolsSocket`, `factoryToolSocket`, `dataServer`) to also accept `agentId === 'codex'`.
+- Flip the `dataServer` gate to also accept `agentId === 'codex'`. Step 3 held the `runToolsSocket` and `factoryToolSocket` flips: a run with goal tools must have no shell (`Bash` denied, LIVE-SESSION.md), and the dispatcher must have no `Edit`/`Write`/`Bash`; Codex ignores deny rules, so both need an owner decision first.
+- Every server needs `default_tools_approval_mode="approve"` (measured on codex 0.159: `exec` refuses MCP calls otherwise).
 - Each enabled server: `-c mcp_servers.<name>.command="…"`, `.args=[…]`, `.env_vars=[…]`, `.url="…"`, `.bearer_token_env_var="…"`, `.enabled_tools=[…]`, `.disabled_tools=[…]`. All values emitted as TOML string literals (escape `"` and `\`); no shell is involved (`procs.js` spawns without one).
 - `wowgoals`: `disabled_tools` = every rule from `LP.GOAL_WRITE_TOOLS` and `GM.DENIED_WITH_TOOLS`. `CLAUDE_WOW_RUN_TOKEN` goes into the spawned env and is listed in `env_vars`, never on argv.
-- Servers the player turned off that also exist in `~/.codex/config.toml`: emit `-c mcp_servers.<name>.enabled=false`, because `-c` merges and omission does not remove.
+- Servers the player turned off that also exist in `~/.codex/config.toml`: emit `-c mcp_servers.<name>.enabled=false`, because `-c` merges and omission does not remove. Deferred to step 4 (per-chat on/off); step 3 emits `enabled=true` for each server it loads, so a `config.toml` `enabled = false` does not win.
+- Env var names of loaded servers go into `-c shell_environment_policy.exclude`, so the run's shell cannot read the secrets (measured on codex 0.159).
 - Sandbox mode is unchanged; it governs shell commands, not MCP calls.
 - Grok, agy, hermes: no MCP; the chat gets the existing unsupported-setting note.
 
