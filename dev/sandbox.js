@@ -13,6 +13,30 @@ const ACCOUNT = 'DEV#1';
 const CLIENT_INTERFACE = '16001';
 const PRIMARY_FLAVOR = '_classic_beta_';
 const FLAVOR_RE = /^_[a-z_]+_$/;
+const WINDOWS_SYSTEM_ENV = [
+  'windir',
+  'SystemDrive',
+  'PATHEXT',
+  'PSModulePath',
+  'ProgramFiles',
+  'ProgramFiles(x86)',
+  'ProgramW6432',
+  'CommonProgramFiles',
+  'CommonProgramFiles(x86)',
+  'CommonProgramW6432',
+  'ProgramData',
+  'ALLUSERSPROFILE',
+  'PUBLIC',
+  'OS',
+  'NUMBER_OF_PROCESSORS',
+  'PROCESSOR_ARCHITECTURE',
+  'PROCESSOR_IDENTIFIER',
+  'USERNAME',
+  'USERDOMAIN',
+  'COMPUTERNAME',
+];
+
+const FAKE_AGENT = path.join(REPO, 'dev', 'fake-claude.js');
 
 const LIVE_PLIST = 'io.claudewow.bridge.plist';
 
@@ -136,7 +160,7 @@ function buildConfig(L, opts = {}) {
   }
   cfg.capture = Object.assign({}, cfg.capture, { enabled: true, mode: 'screenshot', processName: 'World of Warcraft' }, opts.capture || {});
   cfg.plugins = Object.assign({}, cfg.plugins, { default: opts.plugin || 'claude-code', ask: { cwd: path.join(L.dir, 'ask') } });
-  const claude = Object.assign({}, cfg.agents.claude, { path: opts.agentPath || path.join(REPO, 'dev', 'fake-claude.js') });
+  const claude = Object.assign({}, cfg.agents.claude, { path: opts.agentPath ?? FAKE_AGENT });
   cfg.agents = Object.assign({}, cfg.agents, { claude });
   cfg.agent = 'claude';
   if (opts.primerFile !== undefined) cfg.primerFile = opts.primerFile;
@@ -152,6 +176,7 @@ function copyAddonTo(addons) {
   const dest = path.join(addons, 'ClaudeWoW');
   fs.mkdirSync(dest, { recursive: true });
   const names = fs.readdirSync(src);
+  for (const stale of fs.readdirSync(dest)) if (!names.includes(stale)) fs.rmSync(assertSafe(path.join(dest, stale)), { recursive: true, force: true });
   const build = P.addonBuild(names.map(name => ({ name, data: fs.readFileSync(path.join(src, name)) })));
   for (const f of names) {
     if (f === 'ClaudeWoW.toc') fs.writeFileSync(path.join(dest, f), P.tocWithBuild(fs.readFileSync(path.join(src, f), 'utf8'), build));
@@ -167,7 +192,7 @@ function installAddon(L, env) {
 }
 
 function envFor(L, extra = {}) {
-  const keep = ['PATH', 'LANG', 'TMPDIR', 'SystemRoot', 'TEMP', 'TMP', 'COMSPEC'];
+  const keep = ['PATH', 'LANG', 'TMPDIR', 'SystemRoot', 'TEMP', 'TMP', 'COMSPEC', ...WINDOWS_SYSTEM_ENV];
   const env = {};
   for (const k of keep) if (process.env[k] !== undefined) env[k] = process.env[k];
   return Object.assign(
@@ -211,8 +236,13 @@ function open(name = 'default', opts = {}) {
   const recorded = JSON.parse(fs.readFileSync(path.join(dir, 'sandbox.json'), 'utf8'));
   const L = layout(dir, (recorded.opts && recorded.opts.extraClients) || []);
   const cfg = withInertStream(JSON.parse(fs.readFileSync(L.config, 'utf8')));
+  const claude = cfg.agents && cfg.agents.claude;
+  const madeForRealAgent = recorded.opts && recorded.opts.agentPath === '';
+  if (claude && claude.path === '' && madeForRealAgent && opts.agentPath === undefined) claude.path = FAKE_AGENT;
   fs.writeFileSync(assertSafe(L.config), JSON.stringify(cfg, null, 2) + '\n');
-  return { ...L, name, cfg, env: envFor(L, opts.env) };
+  const env = envFor(L, opts.env);
+  const installed = opts.keepAddon ? null : installAddon(L, env);
+  return { ...L, name, cfg, env, installed };
 }
 
 function writeConfig(sb, patch) {
@@ -233,6 +263,7 @@ function spendSignals(sb, kinds, slots) {
 module.exports = {
   REPO,
   DEFAULT_ROOT,
+  FAKE_AGENT,
   ACCOUNT,
   CLIENT_INTERFACE,
   PRIMARY_FLAVOR,

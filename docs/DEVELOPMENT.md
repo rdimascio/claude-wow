@@ -8,7 +8,7 @@ a live install.
 
 | Command | What it does |
 |---|---|
-| `npm run dev` | Starts a sandbox, a real bridge, and a headless game client. Type messages; watch replies. `:help` lists the console commands. |
+| `npm run dev` | Starts a sandbox, a real bridge, and a headless game client. Type messages; watch replies. `:help` lists the console commands. On an existing sandbox it copies the current `addon/ClaudeWoW` and re-runs install-slots first, and keeps SavedVariables, transcripts, config and the sandbox project. |
 | `npm run dev -- --fresh` | The same, from a clean sandbox. |
 | `npm run dev -- --speed 8` | The game clock runs 8× faster, so the addon's 40 s retries and 120 s give-ups happen in seconds. |
 | `npm run dev -- --real-agent` | Uses your real `claude` CLI in the sandbox project, with your real `HOME` so it can log in. It uses your plan quota and writes its session files to `~/.claude`. |
@@ -53,7 +53,12 @@ AddOns/ClaudeWoW_S###/Inbox.lua ◄── bridge/bridge.js (a real process) ◄�
   - `PlaySoundFile` is true only when the `.wav` file exists now and existed
     when the client launched: the client snapshots every file under
     `Interface/AddOns` at launch (not at `/reload`), so a file created later
-    reads as missing, as it does in the real client. Client option
+    reads as missing, as it does in the real client. `LoadAddOn` and the
+    addon's own `.toc` files use the same snapshot: a `.lua` file created
+    after launch is not loaded, even after `/reload`, while a launch-time
+    file that the bridge rewrites reads its new contents. `ClaudeWoW` itself
+    goes through the `DISABLED` and `INTERFACE_VERSION` checks; when it does
+    not load, its SavedVariables are neither read nor written. Client option
     `deletionVisible: false` makes a deleted launch-time file still read as
     present (the case the addon's presence self-test must catch);
     `fileIndex: 'live'` turns the snapshot off.
