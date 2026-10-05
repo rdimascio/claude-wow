@@ -1286,9 +1286,14 @@ const WIDGET_DENIED_NAMES = [
   'CreateMacro', 'EditMacro', 'DeleteMacro',
   'SetBinding', 'SetBindingClick', 'SetBindingSpell', 'SetBindingItem', 'SetBindingMacro', 'SaveBindings',
   'SetCVar', 'ConsoleExec', 'ReloadUI', 'Logout', 'Quit', 'ForceQuit',
-  'LoadAddOn', 'EnableAddOn', 'DisableAddOn', 'SlashCmdList', 'hooksecurefunc',
+  'LoadAddOn', 'EnableAddOn', 'DisableAddOn', 'SlashCmdList', 'hooksecurefunc', 'securecall', 'securecallfunction', 'secureexecuterange',
   'loadstring', 'load', 'getfenv', 'setfenv', 'getglobal', 'setglobal', 'rawget', 'rawset', 'debug',
   'CombatLogGetCurrentEventInfo',
+];
+const WIDGET_TEMPLATES = [
+  'BackdropTemplate', 'TooltipBackdropTemplate', 'TooltipBorderedFrameTemplate', 'BasicFrameTemplate', 'BasicFrameTemplateWithInset',
+  'InsetFrameTemplate', 'UIPanelButtonTemplate', 'UIPanelCloseButton', 'UICheckButtonTemplate', 'InputBoxTemplate',
+  'OptionsSliderTemplate', 'UIPanelScrollFrameTemplate', 'GameTooltipTemplate',
 ];
 const WIDGET_RESTRICTED_EVENTS = [
   'COMBAT_LOG_EVENT', 'COMBAT_LOG_EVENT_UNFILTERED', 'COMBAT_LOG_APPLY_FILTER_SETTINGS', 'COMBAT_LOG_REFILTER_ENTRIES',
@@ -1303,7 +1308,7 @@ const WIDGET_DENIED_PATTERNS = [
 
 const WIDGET_HINT = [
   'When the player asks for a small UI element (a DPS meter, a timer bar for their buffs, a tracker), hand it over as a live widget: the addon loads it at once, without /reload, and keeps it across logins. End the reply with a fenced block whose language tag is wowui followed by the widget name (letters, digits, _ . -, at most 32) and optionally title="<shown title>"; the block holds the widget\'s Lua 5.1 source. Or append {"op":"set","name":"<name>","title":"<title>","source":"<lua>"} as one JSON line to the file named by the CLAUDE_WOW_UI_FILE environment variable.',
-  `The source runs once as a function body: "local ui = ..." gives ui.name, ui.frame (a container frame: parent your frames to it, or pass no parent), ui.db (a table saved between sessions, e.g. for a position), and ui.print(text). Use documented addon APIs only: CreateFrame (no Secure templates), events, OnUpdate, C_Timer, Unit* functions, C_UnitAuras, UNIT_COMBAT for damage and heals on a unit. The combat log (COMBAT_LOG_EVENT_UNFILTERED, CombatLogGetCurrentEventInfo) is for the Blizzard UI only in this client: registering it shows the player a blocked-action error, so a widget that names it is refused. Widgets are display-only: no casting, targeting, movement, items, chat or addon messages, macros, bindings, CVars, loadstring/setfenv/debug, and no ClaudeWoW* globals; a widget that names any of these is refused. At most ${WIDGET_LIMITS.sourceBytes} bytes.`,
+  `The source runs once as a function body: "local ui = ..." gives ui.name, ui.frame (a container frame: parent your frames to it, or pass no parent), ui.db (a table saved between sessions, e.g. for a position), and ui.print(text). Only display APIs exist in a widget: CreateFrame (frames get no global name; templates only ${WIDGET_TEMPLATES.join(', ')}), events, OnUpdate, C_Timer, Unit* functions, read-only getters such as GetTime and GetSpellCooldown, the Get/Is functions of C_ namespaces such as C_UnitAuras, GameTooltip, font objects such as GameFontNormal, copies of RAID_CLASS_COLORS and Enum, and the Lua math, string and table libraries; UNIT_COMBAT gives damage and heals on a unit. UIParent is ui.frame, and Blizzard frames and every other global are nil. The combat log (COMBAT_LOG_EVENT_UNFILTERED, CombatLogGetCurrentEventInfo) is for the Blizzard UI only in this client: registering it shows the player a blocked-action error, so a widget that names it is refused. Widgets are display-only: no casting, targeting, movement, items, chat or addon messages, macros, bindings, CVars, loadstring/setfenv/debug/securecall, and no ClaudeWoW* globals; a widget that names any of these is refused. At most ${WIDGET_LIMITS.sourceBytes} bytes.`,
   'The same name replaces the widget. To remove one, write a wowui block with the name followed by the word remove and an empty body, or append {"op":"remove","name":"<name>"}. Explain outside the block what it shows; the player lists and removes widgets with /claude config ui.',
 ];
 
@@ -1423,6 +1428,6 @@ module.exports = {
   luaStr, luaTable, luaSession, SILENT_WAV, TRANSPORTS, DEFAULT_TRANSPORT, transportName, chooseTransport, FALLBACK_REASONS, transportFallback, transportNote, DEFAULT_LEVELS, screenshotLevels, STRIP_CODECS, DEFAULT_STRIP_CODEC, stripCodec, denseLevels,
   MAP_LIMITS, validateMapCommand, newMap, applyMapCommands, extractMapBlocks, parseMapFile, luaMap,
   MACRO_LIMITS, extractMacros, stripMacroBlocks, luaMacros,
-  WIDGET_LIMITS, WIDGET_DENIED_NAMES, WIDGET_RESTRICTED_EVENTS, deniedWidgetCalls, validateWidgetCommand, newWidgetSet, applyWidgetCommands,
+  WIDGET_LIMITS, WIDGET_DENIED_NAMES, WIDGET_RESTRICTED_EVENTS, WIDGET_TEMPLATES, deniedWidgetCalls, validateWidgetCommand, newWidgetSet, applyWidgetCommands,
   extractWidgetBlocks, parseWidgetFile, luaWidgets, widgetRevision,
 };

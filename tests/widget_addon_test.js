@@ -18,6 +18,20 @@ C_Timer.NewTicker = function(delay, fn)
   STUB.lastTicker = handle
   return handle
 end
+function Methods.SetFontObject(self, font) self.font = font end
+function securecall(fn, ...) if type(fn) == "string" then fn = _G[fn] end return fn(...) end
+function RunScript(code) assert((loadstring or load)(code))() end
+function AbandonSkill(index) ABANDONED_SKILL = index end
+DEFAULT_CHAT_FRAME = CreateFrame("Frame", "ChatFrame1", UIParent)
+DEFAULT_CHAT_FRAME.editBox = CreateFrame("EditBox", "ChatFrame1EditBox", DEFAULT_CHAT_FRAME)
+DEFAULT_CHAT_FRAME.editBox:SetScript("OnEnterPressed", function(self) CHAT_LINE_SENT = self:GetText() end)
+C_Fake = { GetThing = function() return 7 end, DropThing = function() FAKE_DROPPED = true end }
+C_UnitAuras = { GetAuraDataByIndex = function(unit, index) if unit == "player" and index == 1 then return { name = "Mark", applications = 2 } end end }
+RAID_CLASS_COLORS = { HUNTER = { r = 0.67, g = 0.83, b = 0.45, colorStr = "ffabd473" } }
+GameFontNormal = CreateFrame("Font", "GameFontNormal")
+GameFontNormal.GetObjectType = function() return "Font" end
+function GameTooltip.SetOwner(self, owner, anchor) self.owner, self.anchor = owner, anchor end
+function GameTooltip.AddLine(self, line) self.lines = self.lines or {}; table.insert(self.lines, line) end
 `;
 
 function newVM(savedVariables = '') {
@@ -151,4 +165,117 @@ test('widgets in Inbox.lua reach the widget module on the reload path', () => {
   const vm = newVM();
   vm.run(inbox + '\nSTUB.FireEvent("PLAYER_LOGIN")');
   assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("clock")'), 'running');
+});
+
+function savedWidgets(widgets) {
+  const items = widgets.map(([name, source]) => `{ name = "${name}", title = "${name}", rev = "${P.widgetRevision(source)}", source = ${P.luaStr(source)} }`);
+  return `ClaudeWoWWidgetDB = { removed = {}, data = {}, set = { epoch = "e1", version = 1, items = { ${items.join(', ')} } } }`;
+}
+
+test('a saved widget cannot reach code outside the sandbox', () => {
+  const vm = newVM(savedWidgets([
+    ['securecall', 'local ui = ...\nsecurecall("Run" .. "Script", "WIDGET_ESCAPED = true")'],
+    ['indirect', 'local ui = ...\nlocal name = "secure" .. "call"\n_G[name]("Run" .. "Script", "WIDGET_ESCAPED = true")'],
+    ['editbox', 'local ui = ...\nlocal eb = DEFAULT_CHAT_FRAME.editBox\neb:SetText("/run WIDGET_ESCAPED = true")\neb:GetScript("OnEnterPressed")(eb)'],
+    ['unlisted', 'local ui = ...\nlocal abandon = _G["Abandon" .. "Skill"]\nassert(abandon == nil, "AbandonSkill leaked")\nabandon(1)'],
+    ['namespace', 'local ui = ...\nassert(C_Fake.GetThing() == 7)\nC_Fake["Drop" .. "Thing"]()'],
+    ['climber', [
+      'local ui = ...',
+      'local f = CreateFrame("Frame")',
+      'assert(f:GetParent() == ui.frame, "own parent")',
+      'assert(ui.frame:GetParent() == nil, "climbed to UIParent")',
+      'assert(select("#", UIParent:GetChildren()) >= 1)',
+      'for _, child in ipairs({ UIParent:GetChildren() }) do assert(child:GetName() ~= "ChatFrame1", "reached the chat frame") end',
+      'assert(GameTooltip.GetParent == nil, "tooltip exposes more than the display methods")',
+      'assert(getmetatable("") == nil, "string metatable leaked")',
+      'f:RegisterEvent("PLAYER_TARGET_CHANGED")',
+      'f:SetScript("OnEvent", function(self) ui.db.climbed = tostring(self:GetParent():GetParent()) ui.db.self = tostring(self == f) end)',
+    ].join('\n')],
+  ]));
+  for (const name of ['securecall', 'indirect']) {
+    assert.equal(vm.evaluate(`ClaudeWoWWidgets.Status("${name}")`), 'failed', name);
+    assert.match(vm.evaluate(`select(2, ClaudeWoWWidgets.Status("${name}"))`), /securecall is not allowed in a widget/);
+  }
+  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("editbox")'), 'failed');
+  assert.match(vm.evaluate('select(2, ClaudeWoWWidgets.Status("editbox"))'), /DEFAULT_CHAT_FRAME/);
+  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("unlisted")'), 'failed');
+  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("namespace")'), 'failed');
+  assert.match(vm.evaluate('select(2, ClaudeWoWWidgets.Status("namespace"))'), /C_Fake.DropThing is not allowed in a widget/);
+  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("climber")'), 'running', vm.evaluate('select(2, ClaudeWoWWidgets.Status("climber"))'));
+  vm.run('STUB.FireEvent("PLAYER_TARGET_CHANGED")');
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.climber.climbed'), 'nil');
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.climber.self'), 'true');
+  assert.equal(vm.evaluate('WIDGET_ESCAPED'), null);
+  assert.equal(vm.evaluate('CHAT_LINE_SENT'), null);
+  assert.equal(vm.evaluate('ABANDONED_SKILL'), null);
+  assert.equal(vm.evaluate('FAKE_DROPPED'), null);
+});
+
+test('a widget gets the display APIs the prompt promises', () => {
+  const source = [
+    'local ui = ...',
+    'local button = CreateFrame("Button", "SendChatMessageButton", UIParent, "UIPanelButtonTemplate")',
+    'button:SetPoint("CENTER", UIParent, "CENTER", 0, -120)',
+    'local text = button:CreateFontString(nil, "OVERLAY")',
+    'text:SetFontObject(GameFontNormal)',
+    'local aura = C_UnitAuras.GetAuraDataByIndex("player", 1)',
+    'local color = RAID_CLASS_COLORS[select(2, UnitClass("player"))]',
+    'text:SetText(string.format("%s x%d %s %d", aura.name, aura.applications, RAID_CLASS_COLORS.HUNTER.colorStr, math.floor(UnitLevel("player") / 2)))',
+    'color.colorStr = "changed"',
+    'button:SetScript("OnEnter", function(self) GameTooltip:SetOwner(self, "ANCHOR_TOP") GameTooltip:AddLine(text:GetText()) GameTooltip:Show() end)',
+    'local ticks = 0',
+    'C_Timer.NewTicker(1, function(handle) ticks = ticks + 1 if ticks >= 2 then handle:Cancel() end ui.db.ticks = ticks end)',
+  ].join('\n');
+  const vm = newVM(savedWidgets([['panel', source]]));
+  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("panel")'), 'running', vm.evaluate('select(2, ClaudeWoWWidgets.Status("panel"))'));
+  const button = '(function() for i = #STUB.frames, 1, -1 do local f = STUB.frames[i] if f.template == "UIPanelButtonTemplate" then return f end end end)()';
+  assert.equal(vm.evaluate(`#${button}.children`), '1');
+  assert.equal(vm.evaluate(`${button}.name`), null, 'a widget frame never takes a global name');
+  assert.equal(vm.evaluate('SendChatMessageButton'), null);
+  assert.equal(vm.evaluate(`${button}.children[1].text`), 'Mark x2 ffabd473 11');
+  assert.equal(vm.evaluate(`${button}.children[1].font == GameFontNormal`), 'true');
+  assert.equal(vm.evaluate(`${button}.rel == ${button}.parent`), 'true');
+  assert.equal(vm.evaluate('RAID_CLASS_COLORS.HUNTER.colorStr'), 'ffabd473', 'the widget changed only its own copy');
+  vm.run(`local b = ${button}; b.scripts.OnEnter(b)`);
+  assert.equal(vm.evaluate(`GameTooltip.owner == ${button}`), 'true');
+  assert.equal(vm.evaluate('GameTooltip.lines[1]'), 'Mark x2 ffabd473 11');
+  vm.run('STUB.Tick(); STUB.Tick(); STUB.Tick()');
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.panel.ticks'), '3');
+  assert.equal(vm.evaluate('STUB.lastTicker.cancelled'), 'true');
+});
+
+test('templates outside the display list are refused', () => {
+  const vm = newVM(savedWidgets([['chatbox', 'local ui = ...\nCreateFrame("EditBox", nil, nil, "ChatFrameEditBoxTemplate")']]));
+  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("chatbox")'), 'failed');
+  assert.match(vm.evaluate('select(2, ClaudeWoWWidgets.Status("chatbox"))'), /ChatFrameEditBoxTemplate is not an allowed widget template/);
+});
+
+test('a removed widget stops the event handlers on its container, and a rerun does not stack them', () => {
+  const counter = [
+    'local ui = ...',
+    'ui.frame:RegisterEvent("PLAYER_TARGET_CHANGED")',
+    'ui.frame:SetScript("OnEvent", function(self) ui.db.count = (ui.db.count or 0) + 1 ui.db.self = tostring(self == ui.frame) end)',
+    'ui.frame:HookScript("OnEvent", function() ui.db.hooks = (ui.db.hooks or 0) + 1 end)',
+  ].join('\n');
+  const vm = newVM();
+  const listeners = '(function() local n = 0 for _, f in ipairs(STUB.frames) do if f.events.PLAYER_TARGET_CHANGED then n = n + 1 end end return n end)()';
+  const before = Number(vm.evaluate(listeners));
+  vm.run(widgetSet([['counter', counter], ['sneak', 'local ui = ...\nui.frame:RegisterEvent("COMBAT" .. "_LOG_EVENT_UNFILTERED")']]));
+  assert.match(vm.evaluate('select(2, ClaudeWoWWidgets.Status("sneak"))'), /COMBAT_LOG_EVENT_UNFILTERED is not allowed in a widget/);
+  assert.equal(vm.evaluate('#STUB.actionBlocked'), '0');
+  vm.run('STUB.FireEvent("PLAYER_TARGET_CHANGED")');
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.counter.count'), '1');
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.counter.hooks'), '1');
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.counter.self'), 'true');
+  vm.run('SlashCmdList.CLAUDE("config ui remove counter")');
+  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("counter")'), 'removed');
+  assert.equal(Number(vm.evaluate(listeners)), before, 'the container no longer listens');
+  vm.run('STUB.FireEvent("PLAYER_TARGET_CHANGED")');
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.counter.count'), '1');
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.counter.hooks'), '1');
+  vm.run('SlashCmdList.CLAUDE("config ui run counter"); SlashCmdList.CLAUDE("config ui run counter")');
+  assert.equal(Number(vm.evaluate(listeners)), before + 1);
+  vm.run('STUB.FireEvent("PLAYER_TARGET_CHANGED")');
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.counter.count'), '2');
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.counter.hooks'), '2');
 });

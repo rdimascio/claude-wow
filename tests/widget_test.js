@@ -44,6 +44,7 @@ test('validateWidgetCommand refuses protected calls, secure templates and the ad
   assert.match(refused('TargetUnit("target")'), /TargetUnit/);
   assert.match(refused('UseAction(1)'), /UseAction/);
   assert.match(refused('local f = loadstring("return 1")'), /loadstring/);
+  assert.match(refused('securecall("RunScript", "x = 1")'), /securecall/);
   assert.match(refused('CreateFrame("Button", nil, nil, "SecureActionButtonTemplate")'), /secure templates/);
   assert.match(refused('ClaudeWoWDB.chats = nil'), /ClaudeWoWDB/);
   assert.match(refused('SlashCmdList.CLAUDEWOW("hello")'), /SlashCmdList/);
@@ -111,6 +112,7 @@ test('the system prompt explains widgets to a plugin with the ui surface, in a g
   const ui = { surfaces: ['map', 'macro', 'ui'] };
   assert.match(P.systemPrompt('Character: Testchar', '', ui), /CLAUDE_WOW_UI_FILE/);
   assert.match(P.systemPrompt('Character: Testchar', '', ui), /wowui/);
+  assert.match(P.systemPrompt('Character: Testchar', '', ui), /templates only BackdropTemplate, .*GameTooltipTemplate\)/);
   assert.doesNotMatch(P.systemPrompt('Character: Testchar', '', { surfaces: ['map', 'macro'] }), /wowui/);
   assert.doesNotMatch(P.systemPrompt('', '', ui), /wowui/);
 });
@@ -143,6 +145,8 @@ test('the addon blocks the same names the bridge refuses', () => {
   const events = src.match(/local RESTRICTED_EVENTS = \{([\s\S]*?)\n\}/)[1];
   const luaEvents = [...events.matchAll(/"([^"]+)"/g)].map(m => m[1]);
   assert.deepEqual([...luaEvents].sort(), [...P.WIDGET_RESTRICTED_EVENTS].sort());
+  const templates = src.match(/local TEMPLATES = \{([\s\S]*?)\n\}/)[1];
+  assert.deepEqual([...templates.matchAll(/"([^"]+)"/g)].map(m => m[1]).sort(), [...P.WIDGET_TEMPLATES].sort(), 'the prompt names the templates the addon allows');
   const stub = fs.readFileSync(path.join(__dirname, 'wow_stub.lua'), 'utf8');
   const stubEvents = [...stub.match(/STUB\.RESTRICTED_EVENTS = \{([\s\S]*?)\n\}/)[1].matchAll(/(\w+) = true/g)].map(m => m[1]);
   assert.deepEqual(stubEvents.sort(), [...P.WIDGET_RESTRICTED_EVENTS].sort(), 'the test stub blocks the same events');
