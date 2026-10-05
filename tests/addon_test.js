@@ -2993,6 +2993,34 @@ test('/claude -r all with no handed-off session says how to hand off', () => {
   );
 });
 
+test('/claude discord refuses when the bridge has no Discord, and in a general chat; on a coding chat it sends the link flag once', () => {
+  const off = newVM();
+  login(off);
+  connectIn(off, '/Users/me/every');
+  off.run('ClaudeWoWDB.chats[1].cwd = "/Users/me/every"; ClaudeWoWDB.chats[1].plugin = "claude-code"');
+  off.run('SlashCmdList.CLAUDE("discord")');
+  assert.match(off.evaluate('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history].text'), /^Discord is not on in this bridge/);
+  assert.ok(!stripRecords(off).some(r => /discord=link/.test(r.flags || '')));
+
+  const vm = newVM();
+  login(vm);
+  vm.run('STUB.RunTimers()');
+  nextSlot(vm, '{ now = time(), cwd = "/Users/me/every", discord = true, replies = {} }');
+  vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
+  assert.equal(vm.evaluate('ClaudeWoW.IsConnected()'), 'true');
+  const last = () => vm.evaluate('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history].text');
+  vm.run('ClaudeWoWDB.chats[1].cwd = ""; ClaudeWoWDB.chats[1].plugin = "ask"');
+  vm.run('SlashCmdList.CLAUDE("discord")');
+  assert.match(last(), /^Only a coding chat can live in Discord/);
+
+  vm.run('ClaudeWoWDB.chats[1].cwd = "/Users/me/every"; ClaudeWoWDB.chats[1].plugin = "claude-code"');
+  vm.run('SlashCmdList.CLAUDE("discord")');
+  const sent = stripRecords(vm).filter(r => /discord=link/.test(r.flags || ''));
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].text, '/claude discord');
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].discordLinkPending'), null, 'the flag is one-shot');
+});
+
 test('mcp: the bridge list arrives in a slot, /claude mcp turns servers on and off per chat, and the wire carries mcp= only after a choice', () => {
   const vm = newVM();
   login(vm);

@@ -408,6 +408,7 @@ async function main() {
     mcpConfig: mcpConfigOf(argv),
     cwd: process.cwd(),
     pid: process.pid,
+    envNames: Object.keys(process.env),
   });
 
   if (d.auth) {

@@ -273,6 +273,28 @@ Environment: `CLAUDE_WOW_SERVICE=1` is set by the service definitions and tells 
 
 Exit codes: `0` normal, `1` the injected or one-shot job failed, `2` config missing, unreadable or naming an unknown agent, `75` stopped to run an installed update. The supervisor only restarts on codes other than `0` and `2`, and on `75` at once instead of after 3 s.
 
+## Discord sync
+
+A coding chat can live in a Discord thread too. A message in the thread runs the same Claude session as the game chat, and the reply and progress post to the thread. One owner, one private server.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `discord.enabled` | `false` | Turn Discord sync on. It also needs the three keys below and a bot token, or the bridge logs why it stays off. |
+| `discord.applicationId` | `""` | The Discord application id of your bot. |
+| `discord.channelId` | `""` | The text channel the bot works in. A message there starts a new coding chat in its own thread; messages in a linked thread continue that chat. |
+| `discord.userIds` | `[]` | The Discord user ids that may run Claude. Required: anyone else, any bot and any webhook is ignored and logged by user id. |
+| `discord.publicKey` | `""` | Optional; only the forwarded Gateway path is used. |
+
+The bot token comes from `CLAUDE_WOW_DISCORD_BOT_TOKEN`, else from `~/.claude-wow/discord.token` (make it mode 0600). It never goes in `config.json`. The bridge removes the variable from its own environment at start, and every agent run is denied `Read` on the token file. That does not stop a run allowed `Bash(node:*)` from reading it; keep the server private and the user list short. The bot needs the Message Content intent and these permissions: Send Messages, Send Messages in Threads, Create Public Threads, Manage Threads, Read Message History.
+
+- The bridge holds the Discord Gateway connection itself and forwards its events to a local endpoint on `127.0.0.1` with a random port and path, written to `~/.claude-wow/discord-webhook.json` (0600). Each event must carry the bot token, or it is refused.
+- In Discord: a message in `discord.channelId` starts a chat in the bridge's default folder. Start it with `#name` to pick a project by its repo label (an unknown name starts nothing). A Discord-started chat shows in game in the `/claude -r` list.
+- In game: `/claude discord` on a coding chat creates a thread, posts the last 5 messages as a recap, and links the two. Game replies then post to the thread too.
+- Replies go out in pieces of at most 1900 characters. `@everyone`, `@here` and user and role mentions are defused, and game tokens are stripped. A run that hits a denied tool says so and asks you to grant it in game.
+- A linked chat whose session started without game context (for example from Discord while the game was closed) keeps running without it, so starting the game does not start a new session.
+- Deleting a chat in game unlinks its thread and says so there.
+- What leaves the machine: reply and progress text, which can include file contents and paths. No game context, image or file is posted.
+
 ## Environment
 
 | Variable | Meaning |
@@ -280,6 +302,7 @@ Exit codes: `0` normal, `1` the injected or one-shot job failed, `2` config miss
 | `CLAUDE_WOW_HOME` | Where `config.json`, `state.json`, `transcripts.json`, `bridge.log`, `tmp/`, `mapjobs/`, `uijobs/`, `goals/` and `data/` live. Default `~/.claude-wow`; see [Where the bridge keeps its files](#where-the-bridge-keeps-its-files). |
 | `CLAUDE_WOW_PROJECT` | Default working folder, below `--project` and above the start folder in precedence. The old name `WOW_AI_PROJECT` is still read. |
 | `CLAUDE_WOW_UPDATE_API` | The GitHub API repository URL the update check reads `releases/latest` from. Default `https://api.github.com/repos/rdimascio/wow-ai`; set it for a fork. |
+| `CLAUDE_WOW_DISCORD_BOT_TOKEN` | The Discord bot token for [Discord sync](#discord-sync), over the token file. The bridge removes it from its environment at start, so agent runs never see it. The background service does not carry shell variables: use the token file there. |
 | `CLAUDE_WOW_SUPERVISED` | Set to `1` by the supervisor for the bridge it starts. Only a supervised bridge restarts itself for an update. |
 | `CLAUDE_WOW_MAC_BACKEND` | macOS pixel capture: `native`, `screencapture` or `auto` (`capture_mac.py --backend`). The old name `WOWAI_MAC_BACKEND` is still read. |
 | `CLAUDECODE` | Removed from Claude's environment so a bridge started from inside a Claude Code session can still launch `claude -p`. |

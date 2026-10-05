@@ -73,7 +73,7 @@ node setup.js --project ~/code/my-game     # or --wow "<client folder>" if it ca
 npm start                                  # the bridge, in this terminal
 ```
 
-This route needs Node.js 22.2+ or Bun (`bun setup.js`, `bun bridge/supervisor.js`); `npm install` is only for running the tests; the bridge has no runtime dependencies. `npm run build` makes the self-contained binaries the other routes install (see [CONTRIBUTING.md](../CONTRIBUTING.md#building-the-binary)). To have the `claude-wow` command from any folder, `npm link` in the repo (see [INSTALL-WINDOWS.md](INSTALL-WINDOWS.md) for what that does and the PowerShell execution-policy note), or write a two-line shim that runs `node <repo>/bridge/supervisor.js "$@"`.
+This route needs Node.js 22.2+ or Bun (`bun setup.js`, `bun bridge/supervisor.js`); run `npm install` once: it fetches the Chat SDK packages that Discord sync (`discord.enabled`) loads, and the test tools. `npm run build` makes the self-contained binaries the other routes install (see [CONTRIBUTING.md](../CONTRIBUTING.md#building-the-binary)). To have the `claude-wow` command from any folder, `npm link` in the repo (see [INSTALL-WINDOWS.md](INSTALL-WINDOWS.md) for what that does and the PowerShell execution-policy note), or write a two-line shim that runs `node <repo>/bridge/supervisor.js "$@"`.
 
 ## What setup does
 
