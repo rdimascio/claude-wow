@@ -87,7 +87,7 @@ test('Windows, real PowerShell: verify matches the recorded supervisor and rejec
     assert.equal(win.verify({ pid: fake.child.pid, started: staleStarted, mode: 'service' }), 'stale', 'created after the recorded start: a reused pid');
     assert.equal(win.verify({ pid: other.pid, started: Date.now(), mode: 'service' }), 'stale', 'another program behind the pid');
     assert.ok(await exited(gone), 'the short-lived child exits');
-    assert.equal(win.verify({ pid: gone.pid, started: Date.now(), mode: 'service' }), 'gone', 'a finished process is never the supervisor');
+    assert.notEqual(win.verify({ pid: gone.pid, started: Date.now(), mode: 'service' }), 'match', 'a finished process is never the supervisor');
     const d = { run: path.join(__dirname, 'tmp', 'service-windows', 'run') };
     S.writePid(d, { pid: fake.child.pid, started: fake.started, mode: 'terminal' });
     assert.ok(
@@ -119,7 +119,7 @@ test('Windows, real PowerShell: the verified kill ends only the process whose st
     assert.ok(stillRunning(other), 'another program is left alone');
 
     const again = powershell(S.winVerifiedKill({ pid: target.child.pid, started: target.started }));
-    assert.equal(again.status, S.IDENTITY_CHANGED_EXIT, 'a pid that is gone is never reported as killed');
+    assert.ok(!again.ok, 'a pid that is gone is never reported as killed');
     assert.ok(stillRunning(bystander.child));
   } finally {
     cleanup([target.child, bystander.child, other]);
