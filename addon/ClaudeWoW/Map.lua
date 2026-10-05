@@ -494,6 +494,8 @@ end
 
 function M.Sync(m)
 	if type(m) ~= "table" or type(m.layers) ~= "table" then return end
+	local me = ClaudeWoWOrders and ClaudeWoWOrders.CharacterKey()
+	if m.char ~= nil and m.char ~= me then return end
 	local cur = DB().map
 	if cur and cur.epoch == m.epoch and (tonumber(m.version) or 0) <= (tonumber(cur.version) or 0) then return end
 	local old = {}

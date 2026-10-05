@@ -53,6 +53,14 @@ const plugin = {
       return;
     }
     const conf = FACTORY.settings(core.options('claude-code'));
+    const command = FACTORY.slashCommand(core.factory, job.text, { key: P.chatKey(job), job, cwd, conf, label: core.tag(job) });
+    if (command) {
+      core.accept(job);
+      core.log(`${core.tag(job)} slash command ${String(job.text).trim().split(/\s/)[0].slice(0, 66)}: ${command.ok ? 'done' : 'refused'}`);
+      if (command.ok) core.reply(job, command.text);
+      else core.fail(job, command.text);
+      return;
+    }
     const dispatcher = conf.enabled ? { tools: FACTORY.dispatcherRules(conf), factory: conf, deniedTools: [...FACTORY.DISPATCHER_DENIED] } : {};
     core.runAgent(job, {
       ...dispatcher,
