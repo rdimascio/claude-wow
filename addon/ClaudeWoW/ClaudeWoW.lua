@@ -4486,6 +4486,7 @@ local function GetBubble(i)
 	b.accent:SetPoint("BOTTOMLEFT", b, "BOTTOMLEFT", 0, 0)
 	b.accent:SetWidth(3)
 	local onParchment = ui.parchment ~= nil
+	if onParchment then b.accent:Hide() end
 	b.who = b:CreateFontString(nil, "OVERLAY", onParchment and Q.FontObject("QuestTitleFont", Q.FontObject("QuestFontNormalSmall", "GameFontNormalSmall")) or "GameFontNormalSmall")
 	b.who:SetPoint("TOPLEFT", b, "TOPLEFT", 10, -6)
 	b.who:SetJustifyH("LEFT")
@@ -4525,9 +4526,17 @@ local function GetBubble(i)
 	return b
 end
 
+function Q.UpdatePlaceholder()
+	local placeholder, input = ui.placeholder, ui.input
+	if not placeholder or not input then return end
+	placeholder:SetText("Message " .. ChatAgentName(ActiveChat()) .. ". Enter sends; /claude help lists commands.")
+	if (input:GetText() or "") == "" and not input:HasFocus() then placeholder:Show() else placeholder:Hide() end
+end
+
 function ClaudeWoW.Render()
 	local c = ActiveChat()
 	Cli.UpdateProjectButton()
+	Q.UpdatePlaceholder()
 	if ui.content and c then
 		local width = ui.scroll:GetWidth()
 		if not width or width < 80 then width = 400 end
@@ -6458,6 +6467,17 @@ local function BuildUI()
 	end)
 	inputBg:SetScript("OnMouseDown", function() input:SetFocus() end)
 	ui.input = input
+
+	local placeholder = inputBg:CreateFontString(nil, "OVERLAY", "GameFontDisable")
+	placeholder:SetPoint("TOPLEFT", inScroll, "TOPLEFT", 0, 0)
+	placeholder:SetPoint("RIGHT", inScroll, "RIGHT", 0, 0)
+	placeholder:SetJustifyH("LEFT")
+	placeholder:SetWordWrap(false)
+	ui.placeholder = placeholder
+	input:HookScript("OnTextChanged", function() Q.UpdatePlaceholder() end)
+	input:HookScript("OnEditFocusGained", function() Q.UpdatePlaceholder() end)
+	input:HookScript("OnEditFocusLost", function() Q.UpdatePlaceholder() end)
+	Q.UpdatePlaceholder()
 
 	local projectHost = ui.titleBar or inputBg
 	local projectButton = CreateFrame("Button", "ClaudeWoWProjectButton", projectHost)

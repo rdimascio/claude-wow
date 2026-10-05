@@ -502,6 +502,19 @@ test('a reply names items and spells by token: the client turns each into a real
   assert.equal(vm.evaluate(`${b}.scripts.OnHyperlinkClick ~= nil`), 'true', 'the bubble handles link clicks');
 });
 
+test('a message on the parchment has no colored accent bar; the dark theme keeps it', () => {
+  const firstAccent = '(function() for _, b in ipairs(ClaudeWoW.UI.bubbles) do if b.shown then return b.accent.shown end end end)()';
+  const seed = 'local c = ClaudeWoWDB.chats[1]; ClaudeWoW.SwitchChat(c.id); c.history = { { role = "user", t = 1, text = "hi" }, { role = "assistant", t = 2, text = "hello" } }; ClaudeWoW.Render()';
+  const parchment = nativeVM();
+  parchment.run(seed);
+  assert.equal(parchment.evaluate(firstAccent), 'false', 'no web quote bar on the quest page');
+  const dark = newVM();
+  open(dark);
+  dark.run(seed);
+  assert.equal(dark.evaluate('ClaudeWoW.UI.parchment'), null);
+  assert.equal(dark.evaluate(firstAccent), 'true', 'the dark theme keeps its accent bar');
+});
+
 test('a quest token is a real quest link in parchment ink, and clicking it opens that quest in the quest log', () => {
   const vm = nativeVM();
   vm.run(`
@@ -944,6 +957,36 @@ test('typing in the input hands Blizzard\'s scrolling helpers the input\'s scrol
   vm.run('ClaudeWoWInput:GetScript("OnUpdate")(ClaudeWoWInput, 0.1)');
   assert.equal(vm.evaluate('STUB.textScroll == ClaudeWoWInputScroll'), 'true');
   assert.equal(vm.evaluate('STUB.updateScroll == ClaudeWoWInputScroll'), 'true');
+});
+
+test('an empty, unfocused input shows a hint naming the chat\'s agent; typing or focus hides it', () => {
+  const vm = newVM({ before: NATIVE_TEMPLATES + `
+    function ScrollingEdit_OnTextChanged(self, scrollFrame) STUB.textScroll = scrollFrame end` });
+  open(vm);
+  const hint = 'ClaudeWoW.UI.placeholder';
+  const fire = (name) => vm.run(`for _, fn in ipairs(ClaudeWoWInput.hooks.${name} or {}) do fn(ClaudeWoWInput) end`);
+  vm.run('ClaudeWoWDB.chats[1].agent = "claude"; ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[1].id); ClaudeWoWInput:ClearFocus(); ClaudeWoWInput:SetText(""); ClaudeWoW.Render()');
+  assert.equal(vm.evaluate(`${hint}.parent == ClaudeWoWInput:GetParent():GetParent()`), 'true', 'it sits on the input background, not on the scrolling edit box');
+  assert.equal(vm.evaluate(`${hint}.shown`), 'true');
+  assert.equal(vm.evaluate(`${hint}:GetText()`), 'Message Claude. Enter sends; /claude help lists commands.');
+  assert.equal(vm.evaluate('type(ClaudeWoWInput.scripts.OnTextChanged)'), 'function', 'the scrolling text handler is kept');
+
+  vm.run('ClaudeWoWInput:SetText("hi")');
+  fire('OnTextChanged');
+  assert.equal(vm.evaluate(`${hint}.shown`), 'false', 'typed text hides it');
+  vm.run('ClaudeWoWInput:SetText("")');
+  fire('OnTextChanged');
+  assert.equal(vm.evaluate(`${hint}.shown`), 'true', 'clearing the text shows it again');
+
+  vm.run('ClaudeWoWInput:SetFocus()');
+  fire('OnEditFocusGained');
+  assert.equal(vm.evaluate(`${hint}.shown`), 'false', 'focus hides it');
+  vm.run('ClaudeWoWInput:ClearFocus()');
+  fire('OnEditFocusLost');
+  assert.equal(vm.evaluate(`${hint}.shown`), 'true', 'losing focus with no text shows it');
+
+  vm.run('ClaudeWoW.NewChat(); ClaudeWoWDB.chats[2].agent = "codex"; ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[2].id); ClaudeWoWInput:ClearFocus(); ClaudeWoW.Render()');
+  assert.equal(vm.evaluate(`${hint}:GetText()`), 'Message Codex. Enter sends; /claude help lists commands.', 'the name follows the chat');
 });
 
 test('without the templates the window keeps its own backdrop', () => {
