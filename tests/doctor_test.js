@@ -265,7 +265,6 @@ test('logs: error-like lines in 24 h counted, older ones not; last strip and don
 });
 
 test('signals: acks are armed files, and a missing one ahead of the next message warns', () => {
-  assert.deepEqual(C.slotsAhead(199, 200, 3), [200, 1, 2]);
   assert.equal(C.parseLastSeq('x = { ["lastSeq"] = 68, }'), 68);
   const all = Array.from({ length: 200 }, (_, i) => i + 1);
   const spent = C.checkSignals(context(makeWorld('spent', { lastSeq: 190, ack: all.filter(s => s < 191 || s > 195) })));
@@ -278,6 +277,32 @@ test('signals: acks are armed files, and a missing one ahead of the next message
   const noSv = makeWorld('nosv');
   fs.rmSync(path.join(noSv.clientDir, 'WTF'), { recursive: true });
   assert.equal(C.checkSignals(context(noSv)).status, 'warn');
+});
+
+test('signals: with fewer than 100 slots only the half the bridge arms ahead is expected', () => {
+  const bridgeArmed = Array.from({ length: 30 }, (_, i) => i + 11);
+  const fresh = C.checkSignals(context(makeWorld('small-ring', { lastSeq: 70, ack: bridgeArmed, config: { slots: 60 } })));
+  assert.equal(fresh.status, 'ok');
+  assert.match(fresh.summary, /lastSeq 70 \(slot 010, 50 to wrap at 60\)/);
+  const spent = C.checkSignals(context(makeWorld('small-ring-spent', { lastSeq: 70, ack: bridgeArmed.filter(s => s !== 25), config: { slots: 60 } })));
+  assert.equal(spent.status, 'warn');
+  assert.match(spent.problems[0].what, /^1 ack file\(s\) ahead of lastSeq 70 are missing \(025\)/);
+  assert.match(spent.problems[0].fix, /arms the next 30 slots on every message/);
+  const tiny = C.checkSignals(context(makeWorld('tiny-ring', { lastSeq: 5, ack: [], config: { slots: 20 } })));
+  assert.match(tiny.problems[0].what, /^10 ack file\(s\) ahead of lastSeq 5 are missing \(006, 007, 008, 009, 010, \.\.\.\)/);
+});
+
+test('signals: the slot of a run still in flight is not expected armed, other missing slots still warn', () => {
+  const bridgeArmed = Array.from({ length: 30 }, (_, i) => i + 11).filter(s => s !== 25);
+  const running = { inflight: { 'sess:a': { id: 25, chat: 'a', session: 'sess', client: '' } } };
+  const kept = C.checkSignals(context(makeWorld('inflight-kept', { lastSeq: 70, ack: bridgeArmed, state: running, config: { slots: 60 } })));
+  assert.equal(kept.status, 'ok');
+  const other = C.checkSignals(
+    context(makeWorld('inflight-other', { lastSeq: 70, ack: bridgeArmed.filter(s => s !== 30), state: running, config: { slots: 60 } })),
+  );
+  assert.equal(other.status, 'warn');
+  assert.match(other.problems[0].what, /^1 ack file\(s\) ahead of lastSeq 70 are missing \(030\)/);
+  assert.match(other.problems[0].fix, /arms the next 29 slots on every message/);
 });
 
 test('signals: old signal folders left in the shipped ClaudeWoW folder warn, and the runtime ones count', () => {

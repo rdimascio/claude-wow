@@ -257,6 +257,10 @@ function permissionModeName(raw) {
 const PRESENCE_TEST_RESULTS = ['passed', 'failed'];
 const LATE_CREATE_RESULTS = ['seen', 'unseen'];
 
+const MCP_NAME_RE = /^[A-Za-z0-9]+(?:[-_][A-Za-z0-9]+)*$/;
+const MCP_CHAT_MAX = 8;
+const MCP_HEALTH = ['connected', 'failed', 'needs-auth', 'pending', 'unknown'];
+
 function parseFlags(flags) {
   const out = { newSession: false, hello: false, forget: false, context: false, vision: false, allow: [], agent: '' };
   for (const tok of String(flags || '').split(';')) {
@@ -308,6 +312,13 @@ function parseFlags(flags) {
         .filter(Boolean)
         .slice(0, ADD_DIRS_MAX);
       if (dirs.length) out.addDirs = dirs;
+    } else if (tok.startsWith('mcp=')) {
+      const names = tok
+        .slice(4)
+        .split(',')
+        .map(s => s.trim())
+        .filter(s => MCP_NAME_RE.test(s));
+      out.mcp = [...new Set(names)].slice(0, MCP_CHAT_MAX);
     } else if (tok.startsWith('resume=')) {
       const v = tok.slice(7).trim();
       if (RESUME_REF_RE.test(v)) out.resume = v;
@@ -542,7 +553,7 @@ function parseOutbox(src) {
   const opts = b.match(/\["opts"\]\s*=\s*"([0-9a-fA-F]*)"/);
   if (opts && opts[1]) {
     const f = parseFlags(fromHex(opts[1]));
-    for (const k of ['model', 'effort', 'permissionMode', 'addDirs', 'resume', 'liveTarget', 'addonVersion', 'addonProto'])
+    for (const k of ['model', 'effort', 'permissionMode', 'addDirs', 'mcp', 'resume', 'liveTarget', 'addonVersion', 'addonProto'])
       if (f[k] !== undefined) job[k] = f[k];
   }
   return job;
@@ -1181,6 +1192,12 @@ function luaTable(globalName, records, opts = {}) {
     const rows = opts.projects.filter(p => p && p.path).map(p => `{ path = ${luaStr(p.path)}, label = ${luaStr(p.label || '')} }`);
     lines.splice(lines.length - 1, 0, `\tprojects = { ${rows.join(', ')} },`);
   }
+  if (Array.isArray(opts.mcp)) {
+    const rows = opts.mcp
+      .filter(s => s && MCP_NAME_RE.test(String(s.name || '')))
+      .map(s => `{ name = ${luaStr(s.name)}, on = ${s.on ? 'true' : 'false'}, health = ${luaStr(MCP_HEALTH.includes(s.health) ? s.health : 'unknown')} }`);
+    lines.splice(lines.length - 1, 0, `\tmcp = { ${rows.join(', ')} },`);
+  }
   if (opts.home) lines.splice(lines.length - 1, 0, `\thome = ${luaStr(opts.home)},`);
   if (Array.isArray(opts.acks)) {
     const acks = opts.acks.filter(a => a && Number.isInteger(a.id) && a.id > 0);
@@ -1650,6 +1667,9 @@ const WIDGET_DENIED_NAMES = [
   'DisableAddOn',
   'SlashCmdList',
   'hooksecurefunc',
+  'securecall',
+  'securecallfunction',
+  'secureexecuterange',
   'loadstring',
   'load',
   'getfenv',
@@ -1660,6 +1680,21 @@ const WIDGET_DENIED_NAMES = [
   'rawset',
   'debug',
   'CombatLogGetCurrentEventInfo',
+];
+const WIDGET_TEMPLATES = [
+  'BackdropTemplate',
+  'TooltipBackdropTemplate',
+  'TooltipBorderedFrameTemplate',
+  'BasicFrameTemplate',
+  'BasicFrameTemplateWithInset',
+  'InsetFrameTemplate',
+  'UIPanelButtonTemplate',
+  'UIPanelCloseButton',
+  'UICheckButtonTemplate',
+  'InputBoxTemplate',
+  'OptionsSliderTemplate',
+  'UIPanelScrollFrameTemplate',
+  'GameTooltipTemplate',
 ];
 const WIDGET_RESTRICTED_EVENTS = [
   'COMBAT_LOG_EVENT',
@@ -1679,7 +1714,7 @@ const WIDGET_DENIED_PATTERNS = [
 
 const WIDGET_HINT = [
   'When the player asks for a small UI element (a DPS meter, a timer bar for their buffs, a tracker), hand it over as a live widget: the addon loads it at once, without /reload, and keeps it across logins. End the reply with a fenced block whose language tag is wowui followed by the widget name (letters, digits, _ . -, at most 32) and optionally title="<shown title>"; the block holds the widget\'s Lua 5.1 source. Or append {"op":"set","name":"<name>","title":"<title>","source":"<lua>"} as one JSON line to the file named by the CLAUDE_WOW_UI_FILE environment variable.',
-  `The source runs once as a function body: "local ui = ..." gives ui.name, ui.frame (a container frame: parent your frames to it, or pass no parent), ui.db (a table saved between sessions, e.g. for a position), and ui.print(text). Use documented addon APIs only: CreateFrame (no Secure templates), events, OnUpdate, C_Timer, Unit* functions, C_UnitAuras, UNIT_COMBAT for damage and heals on a unit. The combat log (COMBAT_LOG_EVENT_UNFILTERED, CombatLogGetCurrentEventInfo) is for the Blizzard UI only in this client: registering it shows the player a blocked-action error, so a widget that names it is refused. Widgets are display-only: no casting, targeting, movement, items, chat or addon messages, macros, bindings, CVars, loadstring/setfenv/debug, and no ClaudeWoW* globals; a widget that names any of these is refused. At most ${WIDGET_LIMITS.sourceBytes} bytes.`,
+  `The source runs once as a function body: "local ui = ..." gives ui.name, ui.frame (a container frame: parent your frames to it, or pass no parent), ui.db (a table saved between sessions, e.g. for a position), and ui.print(text). Only display APIs exist in a widget: CreateFrame (frames get no global name; templates only ${WIDGET_TEMPLATES.join(', ')}), events, OnUpdate, C_Timer, Unit* functions, read-only getters such as GetTime and GetSpellCooldown, the Get/Is functions of C_ namespaces such as C_UnitAuras, GameTooltip, font objects such as GameFontNormal, GameTooltipText and Tooltip_Med, copies of RAID_CLASS_COLORS and Enum, and the Lua math, string and table libraries; UNIT_COMBAT gives damage and heals on a unit. UIParent is ui.frame, and Blizzard frames and every other global are nil. A widget never takes the keyboard (no EnableKeyboard, SetFocus or SetPropagateKeyboardInput(false)), and ui.frame covers the screen so it never takes the mouse: call EnableMouse on a child frame. The combat log (COMBAT_LOG_EVENT_UNFILTERED, CombatLogGetCurrentEventInfo) is for the Blizzard UI only in this client: registering it shows the player a blocked-action error, so a widget that names it is refused. Widgets are display-only: no casting, targeting, movement, items, chat or addon messages, macros, bindings, CVars, loadstring/setfenv/debug/securecall, and no ClaudeWoW* globals; a widget that names any of these is refused. At most ${WIDGET_LIMITS.sourceBytes} bytes.`,
   'The same name replaces the widget. To remove one, write a wowui block with the name followed by the word remove and an empty body, or append {"op":"remove","name":"<name>"}. Explain outside the block what it shows; the player lists and removes widgets with /claude config ui.',
 ];
 
@@ -1937,6 +1972,7 @@ module.exports = {
   WIDGET_LIMITS,
   WIDGET_DENIED_NAMES,
   WIDGET_RESTRICTED_EVENTS,
+  WIDGET_TEMPLATES,
   deniedWidgetCalls,
   validateWidgetCommand,
   newWidgetSet,

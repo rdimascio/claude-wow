@@ -63,6 +63,33 @@ Keys under `agents.claude`, `agents.codex`, `agents.grok`, `agents.agy` and `age
 | `maxCostUsd` (claude only) | `null` | A cost cap in US dollars for each chat message, passed as `--max-budget-usd`. Claude Code checks it after each model call, so one call can go over it. The cap counts this message only, not the earlier turns of a resumed chat. When a run hits it, the reply is "Stopped: this message hit the $0.50 cost cap." `null` means no cap. Anything that is not a positive number is ignored, and the bridge logs one line at start; the start banner shows a cap that is on. Only `agents.claude` reads it: a `plugins.<id>.agents.claude` block ignores it. Factory skill runs are not capped. Measured on Claude Code 2.1.289. The other agents have no cost cap; the bridge logs one line when their block sets it. |
 | `networkAccess` (codex only) | `false` | `true` lets commands inside Codex's `workspace-write` sandbox reach the network (`-c sandbox_workspace_write.network_access=true`). |
 
+### Your own MCP servers
+
+The `mcp` block declares MCP servers for chat runs in one place. With no `mcp` key, or an empty one, runs are exactly as before: Claude loads its own servers from `~/.claude.json`, `.mcp.json` and plugins, and nothing else changes. Claude and Codex runs read it ([AGENTS.md](AGENTS.md#codex) has the Codex form); `mcp.strict` is Claude only.
+
+```json
+"mcp": {
+  "strict": false,
+  "servers": {
+    "github": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-github"], "envVars": ["GITHUB_TOKEN"], "allow": "*", "default": true },
+    "notion": { "type": "http", "url": "https://mcp.notion.com/mcp", "allow": { "claude": ["notion-search", "notion-fetch"], "codex": ["search", "fetch"] }, "default": true },
+    "linear": { "type": "http", "url": "https://mcp.linear.app/mcp", "bearerTokenEnvVar": "LINEAR_API_KEY", "allow": ["list_issues"], "default": false }
+  }
+}
+```
+
+| Key | Meaning |
+|---|---|
+| `mcp.servers.<name>` | One server. The name is letters and digits joined by single `-` or `_` (at most 64 characters), so its tools are `mcp__<name>__<tool>`. `wowdata`, `wowgoals` and `wowfactory` are the bridge's own and are refused. |
+| `command`, `args`, `envVars` | A stdio server. `envVars` lists environment variable **names**. The run's config gets `"env": { "NAME": "${NAME}" }`, and Claude fills in the value from the bridge's environment. A value is never written to argv, the per-run file, `config.json`, SavedVariables or the transport. A name that is not set when the bridge starts is logged once; Claude then passes the literal `${NAME}`. |
+| `type: "http"`, `url`, `bearerTokenEnvVar` | An HTTP server. `bearerTokenEnvVar` names the variable for `Authorization: Bearer ${NAME}`. For OAuth, log in once with `/mcp` in Claude Code and give the entry here the **same name** as that server: the login carries over, also with `mcp.strict` on. Under another name the run shows `needs-auth` (measured on Claude Code 2.1.289). The bridge stores no tokens. |
+| `alwaysLoad` | `true` loads the server's tools up front. Without it Claude Code may hide them behind tool search, and small models such as Haiku then fail to call them (see [LIVE-SESSION.md](LIVE-SESSION.md)). Default off. |
+| `allow` | The tools a run may use: `"*"` (the whole server), a list of tool names, or a list per agent (`{ "claude": [...], "codex": [...] }`), because tool names differ between clients. No `allow` allows nothing. The list holds even for a server with `default: false` that Claude loads from its own settings: a tool not in the list is never offered in the in-game roll and never saved by a Need (the bridge logs the denial instead), and older allow rules for that server in `agents.claude.allowedTools` that go beyond the list are left out of the run (logged once). Rules in your own Claude settings files still count. |
+| `default` | `true` puts the server in every chat run that has not chosen its own. `false` (the default) leaves it out. A chat chooses its own with the **MCP** button in its header or `/claude mcp on\|off <name>` (at most 8; `/claude mcp none` turns all off, `/claude mcp default` goes back), and the choice rides each message as `mcp=a,b`. A server a chat turned off is off even where Claude or Codex has one of the same name in its own settings: Claude runs get `--disallowedTools mcp__<name>`, Codex runs `enabled=false` for a name in `config.toml`. A chat that never chose changes nothing there. The bridge lists every server with its default and the health from the last Claude run that loaded it (`connected`, `failed`, `needs-auth`, `pending`; `unknown` before that and on Codex) in the slot data. An `allow` list holds whether a chat turned its server on or off. Factory skill runs get none of these servers and no `--strict-mcp-config`; only the `allow` lists trim their `allowedTools`. |
+| `mcp.strict` | `true` passes `--strict-mcp-config`, so Claude runs load only these servers and the bridge's own. At start the bridge logs at least the servers that stop loading (from `~/.claude.json`, the default folder's `.mcp.json`, and plugins enabled in your and the default folder's Claude settings) and claude.ai connectors; a chat in another folder can lose more. Default `false`. |
+
+A bad entry is skipped with one log line at start; the bridge still starts. Measured on Claude Code 2.1.289: `${NAME}` is expanded in `env`, `args` and `headers`; a server that cannot start shows as `failed` in the run's init status, and one that needs a login as `needs-auth`.
+
 ### The local agent
 
 `agents.local` runs chats on a model on your own PC, through any server that speaks the OpenAI chat completions API. It costs nothing per message. It is never the default: pick it per chat with `/claude --agent local`, or set `"agent": "local"`.
