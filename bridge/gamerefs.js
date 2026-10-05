@@ -150,27 +150,37 @@ function noFlavorText(store) {
 function storeProblemShort(reason, store) {
   if (reason === REASON.noData) return `${noDataText(store)}.`;
   if (reason === REASON.noFlavor) return noFlavorText(store);
-  if (reason === REASON.buildMismatch) return `The synced game data is build ${store.build}, which is not in the client's build family (client ${store.clientBuild}).`;
+  if (reason === REASON.buildMismatch)
+    return `The synced game data is build ${store.build}, which is not in the client's build family (client ${store.clientBuild}).`;
   return unknownBuildText(store);
 }
 
 function storeProblemText(reason, store) {
-  if (reason === REASON.noData) return `${noDataText(store)}, so no reference token can be checked. Until it is, only names the game itself reported may appear.`;
+  if (reason === REASON.noData)
+    return `${noDataText(store)}, so no reference token can be checked. Until it is, only names the game itself reported may appear.`;
   if (reason === REASON.noFlavor) return `${noFlavorText(store)} No reference token can be checked; only names the game itself reported may appear.`;
-  if (reason === REASON.buildMismatch) return `The synced game data is build ${store.build}, which is not in the client's build family (client ${store.clientBuild}). No reference token is expanded until the data matches the client (${syncHint(store)}).`;
+  if (reason === REASON.buildMismatch)
+    return `The synced game data is build ${store.build}, which is not in the client's build family (client ${store.clientBuild}). No reference token is expanded until the data matches the client (${syncHint(store)}).`;
   return `${unknownBuildText(store)} Send any message from the game, then try again.`;
 }
 
 function tokenErrorText(error, store) {
   const where = store && store.build ? ` for build ${store.build}` : '';
   switch (error.reason) {
-    case REASON.unknownId: return `${error.token}: that ${error.kind} ID is not in the ${(store && store.flavorLabel) || 'synced'} client data${where}. Look the ID up with the wowdata tools; never use an ID from memory or from another game version.`;
-    case REASON.tableUnavailable: return `${error.token}: the ${error.kind} table is missing or damaged in the synced data, so the ID cannot be checked.`;
-    case REASON.badToken: return `${error.token} is not a well-formed token. Use ${TOKEN_FORMS}, with whole-number IDs and x, y from 0 to 100.`;
-    case REASON.outOfRange: return `${error.token}: map coordinates run from 0 to 100.`;
-    case REASON.unsupportedKind: return `${error.token}: there is no verified source of ${error.kind} names yet, so leave that name out.`;
-    case REASON.unsafeName: return `${error.token}: the name in the data has characters that cannot be shown.`;
-    default: return `${error.token}: ${error.reason}.`;
+    case REASON.unknownId:
+      return `${error.token}: that ${error.kind} ID is not in the ${(store && store.flavorLabel) || 'synced'} client data${where}. Look the ID up with the wowdata tools; never use an ID from memory or from another game version.`;
+    case REASON.tableUnavailable:
+      return `${error.token}: the ${error.kind} table is missing or damaged in the synced data, so the ID cannot be checked.`;
+    case REASON.badToken:
+      return `${error.token} is not a well-formed token. Use ${TOKEN_FORMS}, with whole-number IDs and x, y from 0 to 100.`;
+    case REASON.outOfRange:
+      return `${error.token}: map coordinates run from 0 to 100.`;
+    case REASON.unsupportedKind:
+      return `${error.token}: there is no verified source of ${error.kind} names yet, so leave that name out.`;
+    case REASON.unsafeName:
+      return `${error.token}: the name in the data has characters that cannot be shown.`;
+    default:
+      return `${error.token}: ${error.reason}.`;
   }
 }
 
@@ -189,7 +199,10 @@ function gluedText(token) {
 }
 
 function displayWords(text) {
-  return String(text || '').replace(TYPOGRAPHIC_APOSTROPHE, "'").toLowerCase().split(WORD_SPLIT)
+  return String(text || '')
+    .replace(TYPOGRAPHIC_APOSTROPHE, "'")
+    .toLowerCase()
+    .split(WORD_SPLIT)
     .map(w => w.replace(/^'+|'+$/g, ''))
     .filter(Boolean);
 }
@@ -199,7 +212,13 @@ function refusedChar(text, charRe) {
 }
 
 function nameWordLists(names, charRe) {
-  const usable = (names || []).map(n => String(n || '').normalize('NFKC').trim()).filter(n => n && !refusedChar(n, charRe));
+  const usable = (names || [])
+    .map(n =>
+      String(n || '')
+        .normalize('NFKC')
+        .trim(),
+    )
+    .filter(n => n && !refusedChar(n, charRe));
   const lists = usable.map(n => displayWords(n)).filter(words => words.length);
   return lists.sort((a, b) => b.length - a.length);
 }
@@ -219,7 +238,10 @@ function refusedWords(text, names, plainWords, charRe) {
   const refused = [];
   for (let i = 0; i < words.length;) {
     const name = nameAt(words, i, lists);
-    if (name) { i += name.length; continue; }
+    if (name) {
+      i += name.length;
+      continue;
+    }
     if (!plainWord(words[i], plainWords) && !refused.includes(words[i])) refused.push(words[i]);
     i += 1;
   }
@@ -281,7 +303,8 @@ function dataPhrases(store) {
   const key = indexKey(store);
   if (phraseIndexes.has(key)) return { index: phraseIndexes.get(key), note: '' };
   const missing = [...Object.keys(PHRASE_SOURCES), 'items'].filter(entity => !store.has(entity));
-  if (missing.length) return { index: null, note: `The synced game data is missing or has a damaged ${missing.join(', ')} table (${syncHint(store)} --force).` };
+  if (missing.length)
+    return { index: null, note: `The synced game data is missing or has a damaged ${missing.join(', ')} table (${syncHint(store)} --force).` };
   const index = buildPhraseIndex(store);
   phraseIndexes.clear();
   phraseIndexes.set(key, index);
@@ -296,7 +319,10 @@ function refusedPhrases(text, tokens, known, index) {
   const allowed = new Set((known || []).flatMap(k => [phraseWords(k).join(' '), ...phraseRuns(phraseWords(k))]));
   const segments = [];
   let at = 0;
-  for (const t of tokens) { segments.push(text.slice(at, t.index)); at = t.index + t.token.length; }
+  for (const t of tokens) {
+    segments.push(text.slice(at, t.index));
+    at = t.index + t.token.length;
+  }
   segments.push(text.slice(at));
   const refused = [];
   for (const clause of segments.flatMap(clauses)) {
@@ -361,7 +387,26 @@ function refSummary(refs) {
 }
 
 module.exports = {
-  KNOWN_KINDS, REASON, PROBLEM, TOKEN_FORMS, TOKEN_TEXT_MAX, GAME_PHRASES,
-  parseRefs, withoutRefs, createExpander, storeProblem, errorsText, tokenHint, gluedText, phrasesText, phraseWords, openFor,
-  displayWords, refusedChar, refusedWords, refusedPhrases, checkText, refSummary,
+  KNOWN_KINDS,
+  REASON,
+  PROBLEM,
+  TOKEN_FORMS,
+  TOKEN_TEXT_MAX,
+  GAME_PHRASES,
+  parseRefs,
+  withoutRefs,
+  createExpander,
+  storeProblem,
+  errorsText,
+  tokenHint,
+  gluedText,
+  phrasesText,
+  phraseWords,
+  openFor,
+  displayWords,
+  refusedChar,
+  refusedWords,
+  refusedPhrases,
+  checkText,
+  refSummary,
 };

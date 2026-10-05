@@ -11,8 +11,11 @@ const path = require('node:path');
 const MAC = path.join(__dirname, '..', 'bridge', 'capture_mac.py');
 const PY = 'python3';
 let skip = false;
-try { execFileSync(PY, ['--version'], { stdio: 'ignore' }); }
-catch { skip = 'python3 is not installed'; }
+try {
+  execFileSync(PY, ['--version'], { stdio: 'ignore' });
+} catch {
+  skip = 'python3 is not installed';
+}
 
 // Ask the module itself, so the strings the bridge relies on are the ones tested.
 function pyEval(expr) {
@@ -28,16 +31,26 @@ print(json.dumps(${expr}))`;
 test('--check answers in JSON lines and never throws', { skip }, () => {
   const r = spawnSync(PY, [MAC, '--check'], { encoding: 'utf8' });
   assert.strictEqual(r.stderr.trim(), '', 'a traceback would mean an unhandled failure');
-  const rows = String(r.stdout).trim().split('\n').filter(Boolean).map(l => JSON.parse(l));
+  const rows = String(r.stdout)
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .map(l => JSON.parse(l));
   assert.ok(rows.length >= 1, 'at least the screen-recording verdict');
   for (const row of rows) {
     assert.ok(typeof row.check === 'string' && row.check, 'every row names the check');
     assert.strictEqual(typeof row.ok, 'boolean');
     if (!row.ok) assert.ok(row.hint, `a failed check must carry a hint: ${JSON.stringify(row)}`);
   }
-  assert.ok(rows.some(r2 => r2.check === 'screen-recording'), 'screen recording is always checked');
+  assert.ok(
+    rows.some(r2 => r2.check === 'screen-recording'),
+    'screen recording is always checked',
+  );
   // Exit code mirrors the verdicts, so setup.js and a human both get the answer.
-  assert.strictEqual(r.status === 0, rows.every(r2 => r2.ok));
+  assert.strictEqual(
+    r.status === 0,
+    rows.every(r2 => r2.ok),
+  );
 });
 
 test('a denied Screen Recording permission is named, not passed through raw', { skip }, () => {
@@ -79,7 +92,11 @@ test('--check names the backend and the forced fallback still answers well-forme
   // forces that same fallback. Either way this is the automatic-fallback path.
   const r = spawnSync(PY, [MAC, '--check', '--backend', 'screencapture'], { encoding: 'utf8' });
   assert.strictEqual(r.stderr.trim(), '', 'a traceback would mean an unhandled failure');
-  const rows = String(r.stdout).trim().split('\n').filter(Boolean).map(l => JSON.parse(l));
+  const rows = String(r.stdout)
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .map(l => JSON.parse(l));
   const backend = rows.find(r2 => r2.check === 'backend');
   assert.ok(backend, 'the backend row is always there');
   assert.strictEqual(backend.ok, true, 'the slow path is not a failure');
@@ -139,13 +156,21 @@ function bmp({ width, height, bpp, topDown, bitfields, pixel }) {
   buf.writeUInt16LE(1, 26);
   buf.writeUInt16LE(bpp, 28);
   buf.writeUInt32LE(bitfields ? 3 : 0, 30);
-  if (bitfields) { buf.writeUInt32LE(0x00FF0000, 54); buf.writeUInt32LE(0x0000FF00, 58); buf.writeUInt32LE(0x000000FF, 62); }
-  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
-    const [r, g, b] = pixel(x, y);
-    const row = topDown ? y : height - 1 - y;
-    const o = offset + row * stride + x * bytesPP;
-    buf[o] = b; buf[o + 1] = g; buf[o + 2] = r; if (bytesPP === 4) buf[o + 3] = 255;
+  if (bitfields) {
+    buf.writeUInt32LE(0x00ff0000, 54);
+    buf.writeUInt32LE(0x0000ff00, 58);
+    buf.writeUInt32LE(0x000000ff, 62);
   }
+  for (let y = 0; y < height; y++)
+    for (let x = 0; x < width; x++) {
+      const [r, g, b] = pixel(x, y);
+      const row = topDown ? y : height - 1 - y;
+      const o = offset + row * stride + x * bytesPP;
+      buf[o] = b;
+      buf[o + 1] = g;
+      buf[o + 2] = r;
+      if (bytesPP === 4) buf[o + 3] = 255;
+    }
   return buf;
 }
 
@@ -153,15 +178,17 @@ test('read_bmp reads what screencapture -t bmp writes, and the plain bottom-up k
   const fs = require('node:fs');
   const os = require('node:os');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'claudewow-bmp-'));
-  const pixel = (x, y) => [x * 40, y * 60, (x + y) * 10];   // distinct per channel and position
+  const pixel = (x, y) => [x * 40, y * 60, (x + y) * 10]; // distinct per channel and position
   const variants = [
-    ['v4-32-topdown', { width: 5, height: 3, bpp: 32, topDown: true, bitfields: true, pixel }],   // screencapture
+    ['v4-32-topdown', { width: 5, height: 3, bpp: 32, topDown: true, bitfields: true, pixel }], // screencapture
     ['v3-24-bottomup', { width: 5, height: 3, bpp: 24, topDown: false, bitfields: false, pixel }], // width 5 x 3 bytes = 15 -> padded rows
   ];
   for (const [name, spec] of variants) {
     const file = path.join(dir, name + '.bmp');
     fs.writeFileSync(file, bmp(spec));
-    const got = pyEval(`[list(m.read_bmp(${JSON.stringify(file)})[1:])] + [list(m.read_bmp(${JSON.stringify(file)})[0](x, y)) for y in range(3) for x in range(5)]`);
+    const got = pyEval(
+      `[list(m.read_bmp(${JSON.stringify(file)})[1:])] + [list(m.read_bmp(${JSON.stringify(file)})[0](x, y)) for y in range(3) for x in range(5)]`,
+    );
     assert.deepStrictEqual(got[0], [5, 3], name);
     let i = 1;
     for (let y = 0; y < 3; y++) for (let x = 0; x < 5; x++) assert.deepStrictEqual(got[i++], pixel(x, y), `${name} at ${x},${y}`);

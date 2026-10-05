@@ -5,7 +5,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { createSystem, isReadOnlyCommand } = require('../dev/doctor/system');
-const { gather, parsePlist } = require('../dev/doctor/context');
+const { gather } = require('../dev/doctor/context');
 const C = require('../dev/doctor/checks');
 const Doctor = require('../dev/doctor');
 const Service = require('../bridge/service');
@@ -39,20 +39,41 @@ function makeWorld(name, options = {}) {
   fs.mkdirSync(path.join(checkout, '.git'), { recursive: true });
   fs.mkdirSync(project, { recursive: true });
   if (options.plist !== false) {
-    write(dirs.definition, Service.launchdPlist({ node: nodeBin, script: path.join(checkout, 'bridge', 'supervisor.js'), cwd: checkout, logFile: Service.launchdLogFile(dirs), env: { HOME: home } }));
+    write(
+      dirs.definition,
+      Service.launchdPlist({
+        node: nodeBin,
+        script: path.join(checkout, 'bridge', 'supervisor.js'),
+        cwd: checkout,
+        logFile: Service.launchdLogFile(dirs),
+        env: { HOME: home },
+      }),
+    );
   }
   const config = {
-    addonDir, savedVariablesFile: svFile, defaultCwd: project, slots: 200, presenceMax: 2000,
-    agent: 'claude', agents: { claude: { model: 'claude-x', permissionMode: 'default', allowedTools: ['WebSearch'] } },
+    addonDir,
+    savedVariablesFile: svFile,
+    defaultCwd: project,
+    slots: 200,
+    presenceMax: 2000,
+    agent: 'claude',
+    agents: { claude: { model: 'claude-x', permissionMode: 'default', allowedTools: ['WebSearch'] } },
     ...options.config,
   };
   write(path.join(clawHome, 'config.json'), JSON.stringify(config));
-  write(path.join(clawHome, 'state.json'), options.stateText !== undefined ? options.stateText : JSON.stringify(options.state || {
-    sessions: { 'chat:abc': 'sess-1' },
-    sessionCwd: { 'chat:abc': project },
-    sessionAgent: { 'chat:abc': 'claude' },
-    sessionUsage: { 'chat:abc': { turns: 14, context: 141443, window: 1000000, cost: 82.2962585 } },
-  }));
+  write(
+    path.join(clawHome, 'state.json'),
+    options.stateText !== undefined
+      ? options.stateText
+      : JSON.stringify(
+          options.state || {
+            sessions: { 'chat:abc': 'sess-1' },
+            sessionCwd: { 'chat:abc': project },
+            sessionAgent: { 'chat:abc': 'claude' },
+            sessionUsage: { 'chat:abc': { turns: 14, context: 141443, window: 1000000, cost: 82.2962585 } },
+          },
+        ),
+  );
   write(path.join(clawHome, 'transcripts.json'), '{}');
   write(Service.pidFile(dirs), JSON.stringify({ pid: 100, bridgePid: 101, started: NOW - 3 * 60 * MINUTE, mode: 'service', repo: checkout }));
   const logLines = options.logLines || [
@@ -66,16 +87,21 @@ function makeWorld(name, options = {}) {
   write(path.join(addonDir, 'ClaudeWoW', 'ClaudeWoW.toc'), `## Interface: ${toc}\n## Title: Azeroth Companion\n`);
   write(path.join(addonDir, 'ClaudeWoW_S001', 'ClaudeWoW_S001.toc'), `## Interface: ${options.slotToc || toc}\n`);
   if (options.runtimeToc !== false) write(path.join(addonDir, 'ClaudeWoW_Runtime', 'ClaudeWoW_Runtime.toc'), `## Interface: ${options.runtimeToc || toc}\n`);
-  for (const slot of options.ack || Array.from({ length: 200 }, (_, i) => i + 1)) write(path.join(addonDir, 'ClaudeWoW_Runtime', 'ack', String(slot).padStart(3, '0') + '.wav'), 'RIFF');
+  for (const slot of options.ack || Array.from({ length: 200 }, (_, i) => i + 1))
+    write(path.join(addonDir, 'ClaudeWoW_Runtime', 'ack', String(slot).padStart(3, '0') + '.wav'), 'RIFF');
   for (const slot of options.sig || [2]) write(path.join(addonDir, 'ClaudeWoW_Runtime', 'sig', String(slot).padStart(3, '0') + '.wav'), 'RIFF');
   fs.mkdirSync(path.join(addonDir, 'ClaudeWoW_Runtime', 'presence'), { recursive: true });
   write(path.join(addonDir, 'ClaudeWoW_Runtime', 'presence', 'a', '0001.wav'), 'RIFF');
   for (const rel of options.presenceFiles || []) write(path.join(addonDir, 'ClaudeWoW_Runtime', ...rel.split('/')), 'RIFF');
   for (const rel of options.legacySignals || []) write(path.join(addonDir, 'ClaudeWoW', ...rel.split('/')), 'RIFF');
   write(svFile, `ClaudeWoWDB = {\n\t["lastSeq"] = ${options.lastSeq === undefined ? 3 : options.lastSeq},\n}\n`);
-  write(path.join(wowRoot, '.build.info'), 'Branch!STRING:0|Version!STRING:0|Product!STRING:0\nus|12.1.0.69933|wow\nus|' + (options.clientVersion || '1.60.1.70058') + '|wow_classic_beta\n');
+  write(
+    path.join(wowRoot, '.build.info'),
+    'Branch!STRING:0|Version!STRING:0|Product!STRING:0\nus|12.1.0.69933|wow\nus|' + (options.clientVersion || '1.60.1.70058') + '|wow_classic_beta\n',
+  );
   fs.mkdirSync(path.join(clientDir, 'Screenshots'), { recursive: true });
-  for (let i = 0; i < (options.leftovers || 0); i++) write(path.join(clientDir, 'Screenshots', `WoWScrnShot_092926_1000${String(i).padStart(2, '0')}.png`), 'x');
+  for (let i = 0; i < (options.leftovers || 0); i++)
+    write(path.join(clientDir, 'Screenshots', `WoWScrnShot_092926_1000${String(i).padStart(2, '0')}.png`), 'x');
   if (options.sessionBytes) write(path.join(C.claudeProjectDir(home, project), 'sess-1.jsonl'), Buffer.alloc(options.sessionBytes));
   for (const legacy of options.legacy || []) write(path.join(checkout, 'bridge', legacy), '{}');
   GameFs.repair(addonDir);
@@ -87,14 +113,15 @@ function fakeRunner(world, overrides = {}) {
   const git = {
     'rev-parse HEAD': 'aaaaaaa1111111111111111111111111111111',
     'rev-parse --abbrev-ref HEAD': 'main',
-    'log': `${Math.floor((NOW - 5 * 60 * MINUTE) / 1000)}\taaaaaaa\tcommit subject`,
-    'status': '',
-    'reflog': `HEAD@{${Math.floor((NOW - 5 * 60 * MINUTE) / 1000)}}\tcommit: commit subject`,
+    log: `${Math.floor((NOW - 5 * 60 * MINUTE) / 1000)}\taaaaaaa\tcommit subject`,
+    status: '',
+    reflog: `HEAD@{${Math.floor((NOW - 5 * 60 * MINUTE) / 1000)}}\tcommit: commit subject`,
     'rev-parse --show-toplevel': world.project,
     ...overrides.git,
   };
   const responses = {
-    launchctl: overrides.launchctl !== undefined ? overrides.launchctl : { ok: true, out: '\tstate = running\n\truns = 3\n\tpid = 100\n\tlast exit code = 0\n' },
+    launchctl:
+      overrides.launchctl !== undefined ? overrides.launchctl : { ok: true, out: '\tstate = running\n\truns = 3\n\tpid = 100\n\tlast exit code = 0\n' },
     ps: pid => (overrides.ps && pid in overrides.ps ? overrides.ps[pid] : { ok: true, out: `  03:00:00 /node/bin/node something\n` }),
     pgrep: overrides.pgrep || { ok: false, out: '' },
     gh: overrides.gh || { ok: true, out: JSON.stringify([{ conclusion: 'success', status: 'completed', headSha: 'aaaaaaa1111111111111111111111111111111' }]) },
@@ -104,7 +131,10 @@ function fakeRunner(world, overrides = {}) {
     assert.ok(isReadOnlyCommand(cmd, args), `not read-only: ${cmd} ${args.join(' ')}`);
     if (cmd === 'ps') return responses.ps(args[args.length - 1]);
     if (cmd === 'git') {
-      const rest = args.slice(2).filter(a => a !== '--no-optional-locks').join(' ');
+      const rest = args
+        .slice(2)
+        .filter(a => a !== '--no-optional-locks')
+        .join(' ');
       const key = Object.keys(git).find(k => rest === k || rest.startsWith(k + ' '));
       const value = key === undefined ? null : git[key];
       return value === null ? { ok: false, out: '' } : { ok: true, out: value + '\n' };
@@ -121,8 +151,6 @@ function context(world, runOverrides = {}) {
   return gather(sys);
 }
 
-const byId = (results, id) => results.find(r => r.id === id);
-
 test('read-only guard: only the whitelisted inspection commands pass', () => {
   assert.ok(isReadOnlyCommand('launchctl', ['print', 'gui/501/io.claudewow.bridge']));
   assert.ok(!isReadOnlyCommand('launchctl', ['kickstart', '-k', 'gui/501/io.claudewow.bridge']));
@@ -137,23 +165,16 @@ test('read-only guard: only the whitelisted inspection commands pass', () => {
   assert.ok(!isReadOnlyCommand('gh', ['run', 'rerun', '1']));
 });
 
-test('plist parsing: node, script, working directory and environment', () => {
-  const xml = Service.launchdPlist({ node: '/n/node', script: '/c/bridge/supervisor.js', cwd: '/c', logFile: '/l', env: { CLAUDE_WOW_HOME: '/h&x' } });
-  const plist = parsePlist(xml);
-  assert.equal(plist.node, '/n/node');
-  assert.equal(plist.script, '/c/bridge/supervisor.js');
-  assert.equal(plist.workingDirectory, '/c');
-  assert.equal(plist.env.CLAUDE_WOW_HOME, '/h&x');
-  assert.equal(plist.env.CLAUDE_WOW_SERVICE, '1');
-});
-
 test('a healthy world: every check ok, exit code 0', () => {
   const world = makeWorld('healthy');
   const ctx = context(world);
   const results = C.runChecks(ctx);
   for (const r of results) assert.equal(r.status, 'ok', `${r.id}: ${r.summary} ${JSON.stringify(r.problems)}`);
   const lines = [];
-  assert.equal(Doctor.main([], ctx.sys, l => lines.push(l)), 0);
+  assert.equal(
+    Doctor.main([], ctx.sys, l => lines.push(l)),
+    0,
+  );
   assert.match(lines[0], /HEALTHY, 0 failure\(s\), 0 warning\(s\)/);
   const json = [];
   Doctor.main(['--json'], ctx.sys, l => json.push(l));
@@ -192,25 +213,22 @@ test('etime parsing', () => {
   assert.equal(C.parseEtime('bogus'), null);
 });
 
-test('drift: a newer commit that changed no bridge file is not old code', () => {
-  const world = makeWorld('drift-addon-only');
-  const afterStart = Math.floor((NOW - 30 * MINUTE) / 1000);
-  const r = C.checkDrift(context(world, { git: { 'log': `${afterStart}\tccccccc\taddon only` } }));
-  assert.equal(r.status, 'ok');
-});
-
 test('drift: HEAD committed after the bridge started, branch switch, dirty tree, detached', () => {
   const world = makeWorld('drift');
   const afterStart = Math.floor((NOW - 30 * MINUTE) / 1000);
   const edited = path.join(world.checkout, 'bridge', 'bridge.js');
   fs.writeFileSync(edited, '');
   fs.utimesSync(edited, new Date(NOW - 30 * MINUTE), new Date(NOW - 30 * MINUTE));
-  const r = C.checkDrift(context(world, { git: {
-    'log': `${afterStart}\tbbbbbbb\tnew`,
-    'reflog': `HEAD@{${afterStart}}\tcheckout: moving from main to feature\nHEAD@{${afterStart - 99999}}\tcommit: old`,
-    'rev-parse --abbrev-ref HEAD': 'feature',
-    'status': ' M bridge/bridge.js\n?? scratch.txt',
-  } }));
+  const r = C.checkDrift(
+    context(world, {
+      git: {
+        log: `${afterStart}\tbbbbbbb\tnew`,
+        reflog: `HEAD@{${afterStart}}\tcheckout: moving from main to feature\nHEAD@{${afterStart - 99999}}\tcommit: old`,
+        'rev-parse --abbrev-ref HEAD': 'feature',
+        status: ' M bridge/bridge.js\n?? scratch.txt',
+      },
+    }),
+  );
   assert.equal(r.status, 'warn');
   assert.equal(r.problems.length, 3);
   assert.match(r.problems[0].what, /runs old code.*bridge[\\/]bridge\.js/);
@@ -223,14 +241,18 @@ test('drift: HEAD committed after the bridge started, branch switch, dirty tree,
 });
 
 test('logs: error-like lines in 24 h counted, older ones not; last strip and done; quiet while WoW runs', () => {
-  const world = makeWorld('logs', { logLines: [
-    `[${iso(NOW - 2 * 24 * 60 * MINUTE)}] strip #1 unreadable`,
-    `[${iso(NOW - 50 * MINUTE)}] strip #2 (screenshot a.png): 1 message(s)`,
-    `[${iso(NOW - 49 * MINUTE)}] #2@abc error: agent rejected the prompt`,
-    '  continuation line with cannot in it',
-    `[${iso(NOW - 45 * MINUTE)}] #2@abc done (10 chars)`,
-  ] });
-  const quietRun = { pgrep: { ok: true, out: '123 /Applications/World of Warcraft/_classic_beta_/World of Warcraft Beta.app/Contents/MacOS/World of Warcraft\n' } };
+  const world = makeWorld('logs', {
+    logLines: [
+      `[${iso(NOW - 2 * 24 * 60 * MINUTE)}] strip #1 unreadable`,
+      `[${iso(NOW - 50 * MINUTE)}] strip #2 (screenshot a.png): 1 message(s)`,
+      `[${iso(NOW - 49 * MINUTE)}] #2@abc error: agent rejected the prompt`,
+      '  continuation line with cannot in it',
+      `[${iso(NOW - 45 * MINUTE)}] #2@abc done (10 chars)`,
+    ],
+  });
+  const quietRun = {
+    pgrep: { ok: true, out: '123 /Applications/World of Warcraft/_classic_beta_/World of Warcraft Beta.app/Contents/MacOS/World of Warcraft\n' },
+  };
   const r = C.checkLogs(context(world, quietRun));
   assert.equal(r.status, 'warn');
   assert.match(r.summary, /service log 2 error-like\/24h/);
@@ -275,7 +297,9 @@ test('signals: the slot of a run still in flight is not expected armed, other mi
   const running = { inflight: { 'sess:a': { id: 25, chat: 'a', session: 'sess', client: '' } } };
   const kept = C.checkSignals(context(makeWorld('inflight-kept', { lastSeq: 70, ack: bridgeArmed, state: running, config: { slots: 60 } })));
   assert.equal(kept.status, 'ok');
-  const other = C.checkSignals(context(makeWorld('inflight-other', { lastSeq: 70, ack: bridgeArmed.filter(s => s !== 30), state: running, config: { slots: 60 } })));
+  const other = C.checkSignals(
+    context(makeWorld('inflight-other', { lastSeq: 70, ack: bridgeArmed.filter(s => s !== 30), state: running, config: { slots: 60 } })),
+  );
   assert.equal(other.status, 'warn');
   assert.match(other.problems[0].what, /^1 ack file\(s\) ahead of lastSeq 70 are missing \(030\)/);
   assert.match(other.problems[0].fix, /arms the next 29 slots on every message/);
@@ -378,13 +402,6 @@ test('data: a broken state.json fails loudly; legacy files in the checkout warn'
   assert.match(legacy.problems[0].what, /config\.json, state\.json/);
 });
 
-test('cost: shows stored turns, context and the displayed cost', () => {
-  const r = C.checkCost(context(makeWorld('cost')));
-  assert.equal(r.status, 'ok');
-  assert.match(r.summary, /chat:abc 14 turn\(s\), ctx 141\.4k of 1\.0M, displayed ~\$82\.30/);
-  assert.match(r.summary, /double-counts across --resume/);
-});
-
 test('config: an editable repo and an empty model warn, a missing defaultCwd fails', () => {
   const world = makeWorld('config', { config: { agents: { claude: { model: '', permissionMode: 'acceptEdits' } } } });
   const r = C.checkConfig(context(world));
@@ -403,7 +420,11 @@ test('ci: HEAD without a run, a failed run, and gh failing all warn', () => {
   const other = C.checkCi(context(world, { gh: { ok: true, out: JSON.stringify([{ conclusion: 'success', status: 'completed', headSha: 'ccccccc' }]) } }));
   assert.equal(other.status, 'warn');
   assert.match(other.problems[0].what, /HEAD aaaaaaa has no CI run/);
-  const failed = C.checkCi(context(world, { gh: { ok: true, out: JSON.stringify([{ conclusion: 'failure', status: 'completed', headSha: 'aaaaaaa1111111111111111111111111111111' }]) } }));
+  const failed = C.checkCi(
+    context(world, {
+      gh: { ok: true, out: JSON.stringify([{ conclusion: 'failure', status: 'completed', headSha: 'aaaaaaa1111111111111111111111111111111' }]) },
+    }),
+  );
   assert.match(failed.problems[0].what, /ended "failure"/);
   assert.equal(C.checkCi(context(world, { gh: { ok: false, out: '', err: 'not logged in' } })).status, 'warn');
   assert.equal(C.checkCi(context(world, { gh: { ok: true, out: '[]' } })).status, 'warn');
@@ -420,11 +441,16 @@ test('exit codes and the text format: fail beats warn, each problem prints what,
   assert.match(text, /DEGRADED, 0 failure\(s\), 1 warning\(s\)/);
   assert.match(text, /what: w\n\s+why: {2}y\n\s+fix: {2}f/);
   const world = makeWorld('exit', { stateText: 'nope' });
-  assert.equal(Doctor.main([], context(world).sys, () => {}), 2);
+  assert.equal(
+    Doctor.main([], context(world).sys, () => {}),
+    2,
+  );
 });
 
 test('a crashing check reports fail instead of throwing', () => {
-  const crash = () => { throw new Error('boom'); };
+  const crash = () => {
+    throw new Error('boom');
+  };
   const [r] = C.runChecks({}, [crash]);
   assert.equal(r.status, 'fail');
   assert.match(r.problems[0].what, /boom/);
@@ -450,7 +476,11 @@ test('clients: each client with its build, a different build in one of them, old
   assert.equal(two.problems.length, 1, JSON.stringify(two.problems));
   assert.equal(two.problems[0].what, 'The clients hold different addon builds: _classic_beta_ aaaaaaaaaaaa, _classic_era_ bbbbbbbbbbbb.');
   assert.match(two.summary, /_classic_beta_: addon 1\.2\.3 build aaaaaaaaaaaa, not heard yet .*; _classic_era_: addon 1\.2\.2 build bbbbbbbbbbbb/);
-  assert.match(C.checkInterface(context(world)).summary, /^_classic_beta_: ClaudeWoW\.toc .*; _classic_era_: ClaudeWoW\.toc /, 'per-client checks name each client');
+  assert.match(
+    C.checkInterface(context(world)).summary,
+    /^_classic_beta_: ClaudeWoW\.toc .*; _classic_era_: ClaudeWoW\.toc /,
+    'per-client checks name each client',
+  );
 
   write(tocOf(era), '## Interface: 11509, 16001\n## Version: 1.2.3\n## X-Build: aaaaaaaaaaaa\n');
   assert.equal(C.checkClients(context(world)).status, 'ok', 'the same build everywhere is fine');

@@ -31,13 +31,21 @@ function isInside(dir, root) {
 }
 
 function readFile(file) {
-  try { return fs.readFileSync(file, 'utf8'); } catch { return ''; }
+  try {
+    return fs.readFileSync(file, 'utf8');
+  } catch {
+    return '';
+  }
 }
 
 function gitDirOf(dir) {
   const dotGit = path.join(dir, '.git');
   let st;
-  try { st = fs.statSync(dotGit); } catch { return null; }
+  try {
+    st = fs.statSync(dotGit);
+  } catch {
+    return null;
+  }
   if (st.isDirectory()) return dotGit;
   const m = /^gitdir:\s*(.+)$/m.exec(readFile(dotGit));
   if (!m) return '';
@@ -51,8 +59,14 @@ function remoteUrls(config) {
   let remote = null;
   for (const line of String(config || '').split(/\r?\n/)) {
     const section = /^\s*\[\s*remote\s+"([^"]+)"\s*\]\s*$/.exec(line);
-    if (section) { remote = section[1]; continue; }
-    if (/^\s*\[/.test(line)) { remote = null; continue; }
+    if (section) {
+      remote = section[1];
+      continue;
+    }
+    if (/^\s*\[/.test(line)) {
+      remote = null;
+      continue;
+    }
     const url = remote && /^\s*url\s*=\s*(.+?)\s*$/.exec(line);
     if (url && !urls[remote]) urls[remote] = url[1];
   }
@@ -81,7 +95,9 @@ function repoLabel(cwd) {
 }
 
 function cleanLabel(text) {
-  const s = String(text || '').replace(/[^\w.\- ]+/g, '').trim();
+  const s = String(text || '')
+    .replace(/[^\w.\- ]+/g, '')
+    .trim();
   return s.length > LABEL_MAX ? s.slice(0, LABEL_MAX) : s;
 }
 
@@ -89,7 +105,9 @@ function labelFor(cwd, now = Date.now()) {
   const hit = labelCache.get(cwd);
   if (hit && now - hit.at < LABEL_TTL_MS) return hit.label;
   let label = '';
-  try { label = cleanLabel(repoLabel(cwd)); } catch {}
+  try {
+    label = cleanLabel(repoLabel(cwd));
+  } catch {}
   label = label || cleanLabel(path.basename(cwd)) || cwd;
   labelCache.set(cwd, { at: now, label });
   return label;
@@ -108,13 +126,21 @@ function recentClaudeProjects(claudeDir) {
   } catch {
     return [];
   } finally {
-    if (fd !== undefined) { try { fs.closeSync(fd); } catch {} }
+    if (fd !== undefined) {
+      try {
+        fs.closeSync(fd);
+      } catch {}
+    }
   }
   const latest = new Map();
   for (const line of text.split('\n')) {
     if (!line.includes('"project"')) continue;
     let ev;
-    try { ev = JSON.parse(line); } catch { continue; }
+    try {
+      ev = JSON.parse(line);
+    } catch {
+      continue;
+    }
     if (!ev || typeof ev.project !== 'string' || !ev.project) continue;
     const at = Number(ev.timestamp) || 0;
     if (at >= (latest.get(ev.project) || 0)) latest.set(ev.project, at);
@@ -123,10 +149,23 @@ function recentClaudeProjects(claudeDir) {
 }
 
 function isDirectory(p) {
-  try { return fs.statSync(p).isDirectory(); } catch { return false; }
+  try {
+    return fs.statSync(p).isDirectory();
+  } catch {
+    return false;
+  }
 }
 
-function knownProjects({ defaultCwd = '', chats = [], recent = [], exclude = [], tempRoots = [...TEMP_ROOTS, os.tmpdir()], home = os.homedir(), limit = PROJECTS_MAX, now = Date.now() } = {}) {
+function knownProjects({
+  defaultCwd = '',
+  chats = [],
+  recent = [],
+  exclude = [],
+  tempRoots = [...TEMP_ROOTS, os.tmpdir()],
+  home = os.homedir(),
+  limit = PROJECTS_MAX,
+  now = Date.now(),
+} = {}) {
   const skip = [...tempRoots, ...exclude].filter(Boolean).map(p => path.resolve(p));
   const homeDir = path.resolve(home);
   const seen = new Set();
@@ -142,10 +181,7 @@ function knownProjects({ defaultCwd = '', chats = [], recent = [], exclude = [],
   add(defaultCwd, 0, true);
   for (const c of chats) add(c.cwd, c.at, false);
   for (const r of recent) add(r.cwd, r.at, false);
-  const ordered = [
-    ...candidates.filter(c => c.pinned),
-    ...candidates.filter(c => !c.pinned).sort((a, b) => b.at - a.at),
-  ].slice(0, limit);
+  const ordered = [...candidates.filter(c => c.pinned), ...candidates.filter(c => !c.pinned).sort((a, b) => b.at - a.at)].slice(0, limit);
   const out = ordered.map(c => ({ path: c.cwd, label: labelFor(c.cwd, now) }));
   const groups = new Map();
   for (const p of out) groups.set(p.label, [...(groups.get(p.label) || []), p]);

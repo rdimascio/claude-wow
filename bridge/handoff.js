@@ -23,33 +23,58 @@ const IDLE = 'idle';
 const SESSION_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function oneLine(text, max) {
-  const s = String(text || '').replace(/\s+/g, ' ').trim();
+  const s = String(text || '')
+    .replace(/\s+/g, ' ')
+    .trim();
   return s.length > max ? s.slice(0, max - 3) + '...' : s;
 }
 
 function repoKey(dir, exec = execFileSync) {
   const abs = path.resolve(String(dir || '.'));
   try {
-    const out = exec('git', ['-C', abs, 'rev-parse', '--path-format=absolute', '--git-common-dir'], { encoding: 'utf8', timeout: GIT_TIMEOUT_MS, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    const out = exec('git', ['-C', abs, 'rev-parse', '--path-format=absolute', '--git-common-dir'], {
+      encoding: 'utf8',
+      timeout: GIT_TIMEOUT_MS,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
     if (out) return fs.realpathSync(out);
   } catch {}
-  try { return fs.realpathSync(abs); } catch { return abs; }
+  try {
+    return fs.realpathSync(abs);
+  } catch {
+    return abs;
+  }
 }
 
 function pidAlive(pid) {
-  try { process.kill(pid, 0); return true; } catch (e) { return !!e && e.code === 'EPERM'; }
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return !!e && e.code === 'EPERM';
+  }
 }
 
 function psField(pid, field, exec = execFileSync) {
   if (process.platform === 'win32') return null;
   try {
-    return exec('ps', ['-o', `${field}=`, '-p', String(pid)], { encoding: 'utf8', timeout: PS_TIMEOUT_MS, env: { ...process.env, TZ: 'UTC', LC_ALL: 'C' }, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
-  } catch { return null; }
+    return exec('ps', ['-o', `${field}=`, '-p', String(pid)], {
+      encoding: 'utf8',
+      timeout: PS_TIMEOUT_MS,
+      env: { ...process.env, TZ: 'UTC', LC_ALL: 'C' },
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+  } catch {
+    return null;
+  }
 }
 
 const startTimeOf = (pid, exec) => psField(pid, 'lstart', exec);
 
-const squash = s => String(s || '').replace(/\s+/g, ' ').trim();
+const squash = s =>
+  String(s || '')
+    .replace(/\s+/g, ' ')
+    .trim();
 
 function sameStart(a, b) {
   if (squash(a) === squash(b)) return true;
@@ -81,12 +106,20 @@ function ancestorsOf(pid, { parentOf = p => Number(psField(p, 'ppid')) } = {}) {
 function runningSessions(claudeDir, deps = {}) {
   const dir = path.join(claudeDir, 'sessions');
   let names = [];
-  try { names = fs.readdirSync(dir); } catch { return []; }
+  try {
+    names = fs.readdirSync(dir);
+  } catch {
+    return [];
+  }
   const out = [];
   for (const n of names) {
     if (!/^\d+\.json$/.test(n)) continue;
     let info;
-    try { info = JSON.parse(fs.readFileSync(path.join(dir, n), 'utf8')); } catch { continue; }
+    try {
+      info = JSON.parse(fs.readFileSync(path.join(dir, n), 'utf8'));
+    } catch {
+      continue;
+    }
     if (!info || typeof info !== 'object') continue;
     const pid = Number(info.pid || n.slice(0, -5));
     const id = String(info.sessionId || '');
@@ -95,8 +128,14 @@ function runningSessions(claudeDir, deps = {}) {
     const proc = processState({ pid, procStart: info.procStart }, deps);
     if (proc === 'gone') continue;
     out.push({
-      pid, id, cwd: String(info.cwd), name: oneLine(info.name || '', TITLE_MAX), startedAt: Number(info.startedAt) || 0,
-      procStart: String(info.procStart || ''), status: String(info.status || ''), verified: proc === 'same',
+      pid,
+      id,
+      cwd: String(info.cwd),
+      name: oneLine(info.name || '', TITLE_MAX),
+      startedAt: Number(info.startedAt) || 0,
+      procStart: String(info.procStart || ''),
+      status: String(info.status || ''),
+      verified: proc === 'same',
     });
   }
   return out.sort((a, b) => a.startedAt - b.startedAt);
@@ -105,30 +144,47 @@ function runningSessions(claudeDir, deps = {}) {
 function textOf(content) {
   if (typeof content === 'string') return content;
   if (!Array.isArray(content)) return '';
-  return content.filter(p => p && p.type === 'text' && typeof p.text === 'string').map(p => p.text).join('\n');
+  return content
+    .filter(p => p && p.type === 'text' && typeof p.text === 'string')
+    .map(p => p.text)
+    .join('\n');
 }
 
 function lastExchange(file) {
   let text = '';
-  try { text = SS.readTail(file, TAIL_BYTES); } catch { return { asked: '', answered: '' }; }
+  try {
+    text = SS.readTail(file, TAIL_BYTES);
+  } catch {
+    return { asked: '', answered: '' };
+  }
   let asked = '';
   let answered = '';
   for (const line of String(text || '').split('\n')) {
     const s = line.trim();
     if (!s || s[0] !== '{') continue;
     let ev;
-    try { ev = JSON.parse(s); } catch { continue; }
+    try {
+      ev = JSON.parse(s);
+    } catch {
+      continue;
+    }
     if (!ev || !ev.message || ev.isMeta || ev.isSidechain) continue;
     const body = textOf(ev.message.content).trim();
     if (!body) continue;
-    if (ev.type === 'user' && !body.startsWith('<')) { asked = body; answered = ''; }
-    else if (ev.type === 'assistant') answered = body;
+    if (ev.type === 'user' && !body.startsWith('<')) {
+      asked = body;
+      answered = '';
+    } else if (ev.type === 'assistant') answered = body;
   }
   return { asked: oneLine(asked, ASKED_MAX), answered: oneLine(answered, ANSWERED_MAX) };
 }
 
 function branchOf(cwd) {
-  try { return SS.gitBranch(cwd); } catch { return ''; }
+  try {
+    return SS.gitBranch(cwd);
+  } catch {
+    return '';
+  }
 }
 
 function selfPids(env, deps = {}) {
@@ -156,8 +212,17 @@ function buildHandoff({ claudeDir, folder, selfId = '', selfPidSet = new Set(), 
       const recap = file ? lastExchange(file) : { asked: '', answered: '' };
       const self = (!!selfId && s.id === selfId) || selfPidSet.has(s.pid);
       return {
-        id: s.id, pid: s.pid, procStart: s.procStart, status: s.status, verified: s.verified,
-        cwd: s.cwd, branch: branchOf(s.cwd), title: oneLine(title, TITLE_MAX), startedAt: s.startedAt, self, ...recap,
+        id: s.id,
+        pid: s.pid,
+        procStart: s.procStart,
+        status: s.status,
+        verified: s.verified,
+        cwd: s.cwd,
+        branch: branchOf(s.cwd),
+        title: oneLine(title, TITLE_MAX),
+        startedAt: s.startedAt,
+        self,
+        ...recap,
       };
     });
   return { at: now, repo: want, folder: path.resolve(folder), claudeDir: path.resolve(claudeDir), sessions };
@@ -178,15 +243,25 @@ function writeHandoff(homeDir, handoff) {
 
 function cleanEntry(s) {
   return {
-    id: String(s.id), cwd: s.cwd, branch: oneLine(s.branch, 80), title: oneLine(s.title, TITLE_MAX),
-    asked: oneLine(s.asked, ASKED_MAX), answered: oneLine(s.answered, ANSWERED_MAX), startedAt: Number(s.startedAt) || 0,
-    pid: Number.isInteger(s.pid) && s.pid > 0 ? s.pid : 0, procStart: typeof s.procStart === 'string' ? s.procStart : '',
+    id: String(s.id),
+    cwd: s.cwd,
+    branch: oneLine(s.branch, 80),
+    title: oneLine(s.title, TITLE_MAX),
+    asked: oneLine(s.asked, ASKED_MAX),
+    answered: oneLine(s.answered, ANSWERED_MAX),
+    startedAt: Number(s.startedAt) || 0,
+    pid: Number.isInteger(s.pid) && s.pid > 0 ? s.pid : 0,
+    procStart: typeof s.procStart === 'string' ? s.procStart : '',
   };
 }
 
 function readHandoff(homeDir, now = Date.now()) {
   let h;
-  try { h = JSON.parse(fs.readFileSync(fileIn(homeDir), 'utf8')); } catch { return null; }
+  try {
+    h = JSON.parse(fs.readFileSync(fileIn(homeDir), 'utf8'));
+  } catch {
+    return null;
+  }
   if (!h || typeof h !== 'object' || !Array.isArray(h.sessions)) return null;
   const at = Number(h.at);
   if (!Number.isFinite(at) || now - at > FRESH_MS || at - now > FRESH_MS) return null;
@@ -220,8 +295,15 @@ function slotEntries(handoff, { running = () => false } = {}) {
   if (!handoff) return [];
   return handoff.sessions.map(s => {
     const e = {
-      id: s.id, name: s.title || s.id.slice(0, 8), title: s.title, cwd: s.cwd, agent: 'claude', branch: s.branch,
-      at: Math.floor((s.startedAt || handoff.at) / 1000), handoff: true, recap: recapOf(s),
+      id: s.id,
+      name: s.title || s.id.slice(0, 8),
+      title: s.title,
+      cwd: s.cwd,
+      agent: 'claude',
+      branch: s.branch,
+      at: Math.floor((s.startedAt || handoff.at) / 1000),
+      handoff: true,
+      recap: recapOf(s),
     };
     if (running(s)) e.running = true;
     return e;
@@ -260,9 +342,13 @@ function describe(h, now = Date.now()) {
   if (!h.sessions.length) return `No running Claude Code session in ${h.folder} or its worktrees.`;
   const lines = [`${h.sessions.length} Claude Code session${h.sessions.length === 1 ? '' : 's'} in this repository:`];
   h.sessions.forEach((s, i) => {
-    const notes = [s.self && 'this session', s.status && s.status !== IDLE && s.status, s.pid && s.verified === false && 'start time not verified'].filter(Boolean);
+    const notes = [s.self && 'this session', s.status && s.status !== IDLE && s.status, s.pid && s.verified === false && 'start time not verified'].filter(
+      Boolean,
+    );
     lines.push(`${String(i + 1).padStart(2)}. ${s.title || '(untitled)'}${notes.length ? `  [${notes.join(', ')}]` : ''}`);
-    lines.push(`    ${s.id}${s.pid ? `  pid ${s.pid}` : '  (stopped earlier)'}  ${s.cwd}${s.branch ? ' @ ' + s.branch : ''}  started ${s.startedAt ? ago(now - s.startedAt) + ' ago' : '?'}`);
+    lines.push(
+      `    ${s.id}${s.pid ? `  pid ${s.pid}` : '  (stopped earlier)'}  ${s.cwd}${s.branch ? ' @ ' + s.branch : ''}  started ${s.startedAt ? ago(now - s.startedAt) + ' ago' : '?'}`,
+    );
     if (s.answered || s.asked) lines.push(`    ${oneLine(s.answered || s.asked, 110)}`);
   });
   return lines.join('\n');
@@ -278,7 +364,9 @@ function stoppable(s, { force = false, platform = process.platform } = {}) {
 
 function configuredClaudeDir(homeDir, env) {
   let cfg = {};
-  try { cfg = JSON.parse(fs.readFileSync(path.join(homeDir, 'config.json'), 'utf8')) || {}; } catch {}
+  try {
+    cfg = JSON.parse(fs.readFileSync(path.join(homeDir, 'config.json'), 'utf8')) || {};
+  } catch {}
   return SS.claudeDir(env, typeof cfg.claudeDir === 'string' ? cfg.claudeDir : '');
 }
 
@@ -287,8 +375,8 @@ const OPTIONS = ['--stop', '--force', '--json'];
 const USAGE = [
   'claude-wow handoff [folder] [--stop [--force]] [--json]',
   '',
-  'Lists the Claude Code sessions running in the folder\'s repository (its worktrees too),',
-  'with each one\'s last ask and answer, and saves the list in the home folder for the game.',
+  "Lists the Claude Code sessions running in the folder's repository (its worktrees too),",
+  "with each one's last ask and answer, and saves the list in the home folder for the game.",
   'In game, /claude -r all then opens one chat per session that is no longer running.',
   'Running it again adds to the list saved in the last 24 hours.',
   '',
@@ -298,14 +386,37 @@ const USAGE = [
   '  --json   print the saved list as JSON',
 ].join('\n');
 
-async function main(argv, { out = s => process.stdout.write(s + '\n'), err = s => process.stderr.write(s + '\n'), env = process.env, cwd = process.cwd(), home, deps = {}, platform = process.platform } = {}) {
-  if (argv.includes('--help') || argv.includes('-h')) { out(USAGE); return 0; }
+async function main(
+  argv,
+  {
+    out = s => process.stdout.write(s + '\n'),
+    err = s => process.stderr.write(s + '\n'),
+    env = process.env,
+    cwd = process.cwd(),
+    home,
+    deps = {},
+    platform = process.platform,
+  } = {},
+) {
+  if (argv.includes('--help') || argv.includes('-h')) {
+    out(USAGE);
+    return 0;
+  }
   const unknown = argv.filter(a => a.startsWith('-') && !OPTIONS.includes(a));
-  if (unknown.length) { err(`unknown option ${unknown[0]}\n\n${USAGE}`); return 2; }
+  if (unknown.length) {
+    err(`unknown option ${unknown[0]}\n\n${USAGE}`);
+    return 2;
+  }
   const folders = argv.filter(a => !a.startsWith('-'));
-  if (folders.length > 1) { err(`one folder at most\n\n${USAGE}`); return 2; }
+  if (folders.length > 1) {
+    err(`one folder at most\n\n${USAGE}`);
+    return 2;
+  }
   const folder = path.resolve(cwd, folders[0] || '.');
-  if (!fs.existsSync(folder)) { err(`no folder ${folder}`); return 2; }
+  if (!fs.existsSync(folder)) {
+    err(`no folder ${folder}`);
+    return 2;
+  }
   const homeDir = home || H.resolve().dir;
   const claudeDir = configuredClaudeDir(homeDir, env);
   const selfPidSet = deps.selfPids ? deps.selfPids : selfPids(env, deps);
@@ -334,7 +445,12 @@ async function main(argv, { out = s => process.stdout.write(s + '\n'), err = s =
       if (can.why) skipped.push(`${s.title || s.id} (pid ${s.pid}): ${can.why}`);
       continue;
     }
-    try { kill(s.pid, 'SIGTERM'); asked.push(s.pid); } catch (e) { skipped.push(`${s.title || s.id} (pid ${s.pid}): ${e.message}`); }
+    try {
+      kill(s.pid, 'SIGTERM');
+      asked.push(s.pid);
+    } catch (e) {
+      skipped.push(`${s.title || s.id} (pid ${s.pid}): ${e.message}`);
+    }
   }
   const left = await waitGone(asked, { timeoutMs: deps.stopWaitMs || STOP_WAIT_MS, alive: deps.alive || pidAlive });
   out(`Stopped ${asked.length - left.length} of ${live.filter(s => !s.self).length} session${live.length === 1 ? '' : 's'}.`);
@@ -346,7 +462,26 @@ async function main(argv, { out = s => process.stdout.write(s + '\n'), err = s =
 }
 
 module.exports = {
-  FILE_NAME, FRESH_MS, SESSIONS_MAX, USAGE,
-  repoKey, sameStart, processState, ancestorsOf, runningSessions, lastExchange, buildHandoff, writeHandoff, readHandoff, mergeEarlier,
-  slotEntries, withHandoff, recapOf, stillRunning, stoppable, describe, waitGone, main,
+  FILE_NAME,
+  FRESH_MS,
+  SESSIONS_MAX,
+  USAGE,
+  repoKey,
+  sameStart,
+  processState,
+  ancestorsOf,
+  runningSessions,
+  lastExchange,
+  buildHandoff,
+  writeHandoff,
+  readHandoff,
+  mergeEarlier,
+  slotEntries,
+  withHandoff,
+  recapOf,
+  stillRunning,
+  stoppable,
+  describe,
+  waitGone,
+  main,
 };

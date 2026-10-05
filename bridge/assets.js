@@ -53,7 +53,7 @@ const FILES = [
 const DIR_NAME = 'assets';
 
 let embedded = null; // rel -> where the embedded copy can be read (set by build/entry.js)
-let checked = '';    // the folder the embedded set was last written to, this process
+let checked = ''; // the folder the embedded set was last written to, this process
 
 function embed(table) {
   for (const rel of FILES) if (!table || !table[rel]) throw new Error(`${rel} is not embedded`);
@@ -69,7 +69,9 @@ function extract(dir, table = embedded) {
     const want = fs.readFileSync(table[rel]);
     const dest = path.join(dir, rel);
     let have = null;
-    try { have = fs.readFileSync(dest); } catch {}
+    try {
+      have = fs.readFileSync(dest);
+    } catch {}
     if (have && have.equals(want)) continue;
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     fs.writeFileSync(dest, want);
@@ -83,11 +85,16 @@ function extract(dir, table = embedded) {
 function root(home) {
   if (!embedded) return R.ROOT;
   const dir = path.join(home || H.resolve().dir, DIR_NAME);
-  if (checked !== dir) { extract(dir); checked = dir; }
+  if (checked !== dir) {
+    extract(dir);
+    checked = dir;
+  }
   return dir;
 }
 
-function file(rel, home) { return path.join(root(home), rel); }
+function file(rel, home) {
+  return path.join(root(home), rel);
+}
 const dir = file;
 const isEmbedded = () => !!embedded;
 function unembed() {

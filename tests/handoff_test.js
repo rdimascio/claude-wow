@@ -18,7 +18,11 @@ function tmpDir(t) {
 }
 
 function git(cwd, ...args) {
-  execFileSync('git', args, { cwd, stdio: 'ignore', env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } });
+  execFileSync('git', args, {
+    cwd,
+    stdio: 'ignore',
+    env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' },
+  });
 }
 
 function repoWithWorktree(root) {
@@ -38,7 +42,10 @@ function repoWithWorktree(root) {
 
 function pidFile(claudeDir, pid, fields) {
   fs.mkdirSync(path.join(claudeDir, 'sessions'), { recursive: true });
-  fs.writeFileSync(path.join(claudeDir, 'sessions', `${pid}.json`), JSON.stringify({ pid, kind: 'interactive', status: 'idle', procStart: 'Mon Oct  5 07:00:00 2026', ...fields }));
+  fs.writeFileSync(
+    path.join(claudeDir, 'sessions', `${pid}.json`),
+    JSON.stringify({ pid, kind: 'interactive', status: 'idle', procStart: 'Mon Oct  5 07:00:00 2026', ...fields }),
+  );
 }
 
 function transcript(claudeDir, id, cwd, events) {
@@ -69,7 +76,13 @@ test('runningSessions keeps live interactive sessions and drops dead, reused, pr
   fs.writeFileSync(path.join(claude, 'sessions', '108.abc.key'), 'x');
   const deps = { alive: pid => pid !== 106, startOf: pid => (pid === 105 ? 'Mon Oct  5 09:00:00 2026' : 'Mon Oct 5 07:18:58 2026') };
   const found = HO.runningSessions(claude, deps);
-  assert.deepEqual(found.map(s => [s.pid, s.verified]), [[102, false], [101, true]]);
+  assert.deepEqual(
+    found.map(s => [s.pid, s.verified]),
+    [
+      [102, false],
+      [101, true],
+    ],
+  );
 });
 
 test('processState: same, unverified when the start time cannot be read, gone when dead or started at another time', () => {
@@ -107,11 +120,21 @@ test('buildHandoff picks the sessions of one repository and its worktrees, with 
   pidFile(claude, 201, { sessionId: ID(1), cwd: repo, startedAt: 1 });
   pidFile(claude, 202, { sessionId: ID(2), cwd: wt, startedAt: 2 });
   pidFile(claude, 203, { sessionId: ID(3), cwd: other, startedAt: 3 });
-  transcript(claude, ID(2), wt, [{ type: 'ai-title', aiTitle: 'Worktree fix' }, { type: 'user', message: { content: 'go' } }, { type: 'assistant', message: { content: 'done' } }]);
+  transcript(claude, ID(2), wt, [
+    { type: 'ai-title', aiTitle: 'Worktree fix' },
+    { type: 'user', message: { content: 'go' } },
+    { type: 'assistant', message: { content: 'done' } },
+  ]);
   const h = HO.buildHandoff({ claudeDir: claude, folder: wt, selfId: ID(1), now: 5, deps: allAlive });
   assert.equal(h.claudeDir, claude);
   assert.equal(h.at, 5);
-  assert.deepEqual(h.sessions.map(s => [s.id, s.self, s.branch]), [[ID(1), true, 'main'], [ID(2), false, 'feat/x']]);
+  assert.deepEqual(
+    h.sessions.map(s => [s.id, s.self, s.branch]),
+    [
+      [ID(1), true, 'main'],
+      [ID(2), false, 'feat/x'],
+    ],
+  );
   assert.equal(h.sessions[1].title, 'Worktree fix');
   assert.equal(h.sessions[1].asked, 'go');
   assert.equal(h.sessions[1].answered, 'done');
@@ -131,24 +154,51 @@ test('readHandoff drops a stale or malformed file and bad entries', t => {
   assert.equal(HO.readHandoff(home, now), null);
   HO.writeHandoff(home, { at: now, sessions: [{ id: ID(1), cwd: '/r', title: 'x'.repeat(200) }, { id: 'bad', cwd: '/r' }, { id: ID(2) }, null] });
   const h = HO.readHandoff(home, now);
-  assert.deepEqual(h.sessions.map(s => s.id), [ID(1)]);
+  assert.deepEqual(
+    h.sessions.map(s => s.id),
+    [ID(1)],
+  );
   assert.equal(h.sessions[0].title.length, 60);
   if (process.platform !== 'win32') assert.equal(fs.statSync(path.join(home, HO.FILE_NAME)).mode & 0o777, 0o600);
 });
 
 test('withHandoff puts the handed-off sessions first, keeps what the bridge knows about them, and drops duplicates', () => {
-  const entries = HO.slotEntries({ at: 1000, sessions: [{ id: ID(1), cwd: '/r', title: 'One', asked: 'a', answered: 'b', startedAt: 0 }, { id: ID(2), cwd: '/r', title: 'Two', asked: '', answered: '', startedAt: 2000 }] });
-  assert.deepEqual(entries[0], { id: ID(1), name: 'One', title: 'One', cwd: '/r', agent: 'claude', branch: undefined, at: 1, handoff: true, recap: 'Last ask: a\nLast answer: b' });
-  const merged = [{ id: ID(3), name: 'other' }, { id: ID(2), name: 'Two', running: true, live: false }];
+  const entries = HO.slotEntries({
+    at: 1000,
+    sessions: [
+      { id: ID(1), cwd: '/r', title: 'One', asked: 'a', answered: 'b', startedAt: 0 },
+      { id: ID(2), cwd: '/r', title: 'Two', asked: '', answered: '', startedAt: 2000 },
+    ],
+  });
+  assert.deepEqual(entries[0], {
+    id: ID(1),
+    name: 'One',
+    title: 'One',
+    cwd: '/r',
+    agent: 'claude',
+    branch: undefined,
+    at: 1,
+    handoff: true,
+    recap: 'Last ask: a\nLast answer: b',
+  });
+  const merged = [
+    { id: ID(3), name: 'other' },
+    { id: ID(2), name: 'Two', running: true, live: false },
+  ];
   const out = HO.withHandoff(merged, entries);
-  assert.deepEqual(out.map(s => s.id), [ID(1), ID(2), ID(3)]);
+  assert.deepEqual(
+    out.map(s => s.id),
+    [ID(1), ID(2), ID(3)],
+  );
   assert.equal(out[1].running, true);
   assert.equal(out[1].handoff, true);
   assert.equal(HO.withHandoff(merged, []), merged);
 });
 
 test('the slot carries handoff and recap on a session row', () => {
-  const lua = P.luaTable('ClaudeWoW_SlotData', [], { sessions: [{ id: ID(1), name: 'One', cwd: '/r', agent: 'claude', at: 1, handoff: true, recap: 'Last ask: "x"\nLast answer: y' }] });
+  const lua = P.luaTable('ClaudeWoW_SlotData', [], {
+    sessions: [{ id: ID(1), name: 'One', cwd: '/r', agent: 'claude', at: 1, handoff: true, recap: 'Last ask: "x"\nLast answer: y' }],
+  });
   assert.match(lua, /handoff = true, recap = "Last ask: \\"x\\"\\nLast answer: y"/);
 });
 
@@ -161,16 +211,35 @@ function mainSetup(t, sessions) {
   const gone = new Set();
   const out = [];
   const deps = {
-    alive: pid => !gone.has(pid), startOf: () => START, selfPids: new Set(),
-    kill: (pid, sig) => { killed.push([pid, sig]); gone.add(pid); },
+    alive: pid => !gone.has(pid),
+    startOf: () => START,
+    selfPids: new Set(),
+    kill: (pid, sig) => {
+      killed.push([pid, sig]);
+      gone.add(pid);
+    },
     stopWaitMs: 300,
   };
-  const opts = { out: s => out.push(s), err: s => out.push(s), env: { CLAUDE_CONFIG_DIR: claude }, cwd: repo, home: path.join(root, 'home'), deps, platform: 'darwin' };
+  const opts = {
+    out: s => out.push(s),
+    err: s => out.push(s),
+    env: { CLAUDE_CONFIG_DIR: claude },
+    cwd: repo,
+    home: path.join(root, 'home'),
+    deps,
+    platform: 'darwin',
+  };
   return { root, repo, claude, killed, gone, out, deps, opts };
 }
 
 test('--stop ends idle verified sessions only: never its own, a busy one, a shell one, or one whose start time is unknown', async t => {
-  const m = mainSetup(t, [[301, 1], [302, 2], [303, 3, { status: 'busy' }], [304, 4, { status: 'shell' }], [305, 5, { procStart: undefined }]]);
+  const m = mainSetup(t, [
+    [301, 1],
+    [302, 2],
+    [303, 3, { status: 'busy' }],
+    [304, 4, { status: 'shell' }],
+    [305, 5, { procStart: undefined }],
+  ]);
   m.opts.env.CLAUDE_CODE_SESSION_ID = ID(1);
   const code = await HO.main(['--stop'], m.opts);
   assert.deepEqual(m.killed, [[302, 'SIGTERM']]);
@@ -186,7 +255,10 @@ test('--stop ends idle verified sessions only: never its own, a busy one, a shel
 });
 
 test('--stop --force ends busy sessions too, and a parent process counts as this session', async t => {
-  const m = mainSetup(t, [[401, 1, { status: 'busy' }], [402, 2]]);
+  const m = mainSetup(t, [
+    [401, 1, { status: 'busy' }],
+    [402, 2],
+  ]);
   m.deps.selfPids = new Set([402]);
   assert.equal(await HO.main(['--stop', '--force'], m.opts), 0);
   assert.deepEqual(m.killed, [[401, 'SIGTERM']]);
@@ -201,27 +273,53 @@ test('--stop on Windows ends nothing and says why', async t => {
 });
 
 test('a second run keeps the sessions the first one stopped', async t => {
-  const m = mainSetup(t, [[601, 1], [602, 2, { status: 'busy' }]]);
+  const m = mainSetup(t, [
+    [601, 1],
+    [602, 2, { status: 'busy' }],
+  ]);
   await HO.main(['--stop'], m.opts);
-  assert.deepEqual(m.killed.map(k => k[0]), [601]);
+  assert.deepEqual(
+    m.killed.map(k => k[0]),
+    [601],
+  );
   m.out.length = 0;
   fs.rmSync(path.join(m.claude, 'sessions', '601.json'));
-  fs.writeFileSync(path.join(m.claude, 'sessions', '602.json'), JSON.stringify({ pid: 602, kind: 'interactive', status: 'idle', procStart: START, sessionId: ID(2), cwd: m.repo }));
+  fs.writeFileSync(
+    path.join(m.claude, 'sessions', '602.json'),
+    JSON.stringify({ pid: 602, kind: 'interactive', status: 'idle', procStart: START, sessionId: ID(2), cwd: m.repo }),
+  );
   assert.equal(await HO.main(['--stop'], m.opts), 0);
-  assert.deepEqual(m.killed.map(k => k[0]), [601, 602]);
-  assert.deepEqual(HO.readHandoff(m.opts.home).sessions.map(s => s.id).sort(), [ID(1), ID(2)]);
+  assert.deepEqual(
+    m.killed.map(k => k[0]),
+    [601, 602],
+  );
+  assert.deepEqual(
+    HO.readHandoff(m.opts.home)
+      .sessions.map(s => s.id)
+      .sort(),
+    [ID(1), ID(2)],
+  );
   assert.match(m.out.join('\n'), /\(stopped earlier\)/);
 });
 
 test('mergeEarlier keeps only the same repository', () => {
   const fresh = { repo: '/a', sessions: [{ id: ID(1) }] };
-  assert.deepEqual(HO.mergeEarlier(fresh, { repo: '/a', sessions: [{ id: ID(1) }, { id: ID(2) }] }).sessions.map(s => s.id), [ID(1), ID(2)]);
+  assert.deepEqual(
+    HO.mergeEarlier(fresh, { repo: '/a', sessions: [{ id: ID(1) }, { id: ID(2) }] }).sessions.map(s => s.id),
+    [ID(1), ID(2)],
+  );
   assert.equal(HO.mergeEarlier(fresh, { repo: '/b', sessions: [{ id: ID(2) }] }), fresh);
   assert.equal(HO.mergeEarlier(fresh, null), fresh);
 });
 
 test('slotEntries marks a session whose process still runs, so the game does not open it', () => {
-  const h = { at: 1000, sessions: [{ id: ID(1), cwd: '/r', pid: 7, procStart: START }, { id: ID(2), cwd: '/r', pid: 0 }] };
+  const h = {
+    at: 1000,
+    sessions: [
+      { id: ID(1), cwd: '/r', pid: 7, procStart: START },
+      { id: ID(2), cwd: '/r', pid: 0 },
+    ],
+  };
   const entries = HO.slotEntries(h, { running: s => HO.stillRunning(s, { alive: p => p === 7, startOf: () => START }) });
   assert.equal(entries[0].running, true);
   assert.equal(entries[1].running, undefined);

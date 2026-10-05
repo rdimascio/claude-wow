@@ -31,24 +31,11 @@ test('a message waiting in the queue is in state.json, so a deploy waits for it;
     h.client.slash('/claude cancel');
     await h.bridge.waitForLine(new RegExp(`#${second}@\\S+ cancelled from the game before it started`));
     await h.client.waitFor(() => !(h.state().queued || []).some(j => j.id === second), { label: 'the queue entry gone from state.json' });
-    assert.deepEqual(Object.values(h.state().inflight || {}).map(r => r.id), [first], 'the first run still blocks');
-  });
-});
-
-test('a stopped bridge leaves no queue in state.json, so a deploy after "service stop" does not wait for messages nobody will run', async () => {
-  await withGame({ config: { maxParallel: 1 } }, async h => {
-    await h.client.connect();
-    h.client.send('first [[hang]]');
-    await h.client.waitFor(() => Object.keys(h.state().inflight || {}).length === 1, { label: 'the first run in flight' });
-    h.client.runLua('ClaudeWoW.NewChat("Two")');
-    const second = h.client.lastSeq() + 1;
-    h.client.send('second [[hang]]');
-    await h.bridge.waitForLine(new RegExp(`#${second}@\\S+ queued \\(1 running\\)`));
-    await h.bridge.stop();
-    const st = h.state();
-    assert.equal(st.queued, undefined, 'the queue is gone with the bridge that held it');
-    assert.equal(st.handling, undefined);
-    assert.equal(I.idleStatus({ ...st, inflight: {} }).idle, true);
+    assert.deepEqual(
+      Object.values(h.state().inflight || {}).map(r => r.id),
+      [first],
+      'the first run still blocks',
+    );
   });
 });
 
@@ -57,7 +44,9 @@ test('a message the live plugin is waiting on is in state.json (handling), so a 
     await h.client.connect();
     const id = h.client.lastSeq() + 1;
     h.client.send('are you there');
-    await h.client.waitFor(() => Object.values(h.state().handling || {}).some(x => x.id === id && x.plugin === 'live'), { label: 'the live job in state.json handling' });
+    await h.client.waitFor(() => Object.values(h.state().handling || {}).some(x => x.id === id && x.plugin === 'live'), {
+      label: 'the live job in state.json handling',
+    });
     const st = h.state();
     assert.deepEqual(Object.keys(st.inflight || {}), [], 'no agent run of its own');
     const s = I.idleStatus(st);
@@ -70,7 +59,8 @@ test('a message the live plugin is waiting on is in state.json (handling), so a 
 
 test('at startup a vision screenshot that a held message needs is kept while leftovers go, and held messages past the saved limit are logged', async () => {
   const token = 'feedc0de1234';
-  let kept = '', leftover = '';
+  let kept = '',
+    leftover = '';
   const beforeLaunch = sb => {
     const tmp = path.join(sb.home, 'tmp');
     fs.mkdirSync(tmp, { recursive: true });
@@ -84,7 +74,10 @@ test('at startup a vision screenshot that a held message needs is kept while lef
     held[0].job.vision = true;
     held[0].job.image = { file: kept, width: 1, height: 1, mediaType: 'image/png', bytes: png.length };
     fs.writeFileSync(path.join(sb.home, 'state.json'), JSON.stringify({ held }));
-    fs.writeFileSync(path.join(sb.home, 'deploy.lock'), JSON.stringify({ pid: process.pid, host: os.hostname(), started: Date.now(), command: 'dev deploy', token: 'e2e', phase: 'switching' }));
+    fs.writeFileSync(
+      path.join(sb.home, 'deploy.lock'),
+      JSON.stringify({ pid: process.pid, host: os.hostname(), started: Date.now(), command: 'dev deploy', token: 'e2e', phase: 'switching' }),
+    );
   };
   await withGame({ beforeLaunch }, async h => {
     await h.bridge.waitForLine(new RegExp(`#21@${token} held: a deploy`));

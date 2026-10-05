@@ -25,10 +25,17 @@ if (argv[0] === '--version' || argv[0] === '-v') {
 } else if (argv[0] === 'service') {
   process.exitCode = require('./service').main(argv.slice(1));
 } else if (argv[0] === 'dev') {
-  require('./deploy').main(argv.slice(1)).then((code) => { process.exitCode = code; }, (e) => {
-    process.stderr.write(`claude-wow dev failed: ${e && e.message ? e.message : String(e)}\n`);
-    process.exitCode = 1;
-  });
+  require('./deploy')
+    .main(argv.slice(1))
+    .then(
+      code => {
+        process.exitCode = code;
+      },
+      e => {
+        process.stderr.write(`claude-wow dev failed: ${e && e.message ? e.message : String(e)}\n`);
+        process.exitCode = 1;
+      },
+    );
 } else if (argv[0] === 'setup' && R.compiled) {
   // The binary has setup.js inside it: run it here rather than spawn ourselves.
   process.argv.splice(2, 1);
@@ -45,10 +52,17 @@ if (argv[0] === '--version' || argv[0] === '-v') {
   process.argv.splice(2, 1);
   require('./install-slots');
 } else if (argv[0] === 'data') {
-  require('./datasync').main(argv.slice(1)).then((code) => { process.exitCode = code; }, (e) => {
-    process.stderr.write(`data sync failed: ${e && e.message ? e.message : String(e)}\n`);
-    process.exitCode = 1;
-  });
+  require('./datasync')
+    .main(argv.slice(1))
+    .then(
+      code => {
+        process.exitCode = code;
+      },
+      e => {
+        process.stderr.write(`data sync failed: ${e && e.message ? e.message : String(e)}\n`);
+        process.exitCode = 1;
+      },
+    );
 } else if (argv[0] === 'data-mcp') {
   require('./datamcp').main(argv.slice(1));
 } else if (argv[0] === 'goals-mcp') {
@@ -58,22 +72,39 @@ if (argv[0] === '--version' || argv[0] === '-v') {
 } else if (argv[0] === 'local-agent') {
   require('./localagent').main(argv.slice(1));
 } else if (argv[0] === 'handoff') {
-  require('./handoff').main(argv.slice(1)).then((code) => { process.exitCode = code; }, (e) => {
-    process.stderr.write(`claude-wow handoff failed: ${e && e.message ? e.message : String(e)}\n`);
-    process.exitCode = 1;
-  });
+  require('./handoff')
+    .main(argv.slice(1))
+    .then(
+      code => {
+        process.exitCode = code;
+      },
+      e => {
+        process.stderr.write(`claude-wow handoff failed: ${e && e.message ? e.message : String(e)}\n`);
+        process.exitCode = 1;
+      },
+    );
 } else if (argv[0] === 'events') {
   const code = require('./events').main(argv.slice(1));
   if (code !== null) process.exitCode = code;
 } else if (argv[0] === 'report') {
   process.exitCode = require('./report').main(argv.slice(1));
 } else if (argv[0] === 'update') {
-  require('./selfupdate').main(argv.slice(1)).then((code) => { process.exitCode = code; }, (e) => {
-    process.stderr.write(`claude-wow update failed: ${e && e.message ? e.message : String(e)}\n`);
-    process.exitCode = 1;
-  });
+  require('./selfupdate')
+    .main(argv.slice(1))
+    .then(
+      code => {
+        process.exitCode = code;
+      },
+      e => {
+        process.stderr.write(`claude-wow update failed: ${e && e.message ? e.message : String(e)}\n`);
+        process.exitCode = 1;
+      },
+    );
 } else {
-  if (argv.includes('--help') || argv.includes('-h')) console.log('claude-wow setup [...]   game-side install (setup.js)\nclaude-wow service <cmd> background service (install, uninstall, start, stop, restart, status, logs)\nclaude-wow update [--check]  install the latest release binary now (the bridge also checks once a day)\nclaude-wow dev <cmd>    releases for a developer machine (deploy [ref|worktree], rollback, status; docs/MIGRATE-PROD-INSTALL.md)\nclaude-wow bridge [...]  the bridge alone in this process, without the restarts\nclaude-wow channel      the live-session channel server Claude Code starts (docs/LIVE-SESSION.md)\nclaude-wow data sync    fetch client tables from wago.tools into the home folder (--flavor forever or classic_era)\nclaude-wow data-mcp     the read-only wowdata MCP server the bridge gives ask runs\nclaude-wow goals-mcp    the per-run wowgoals MCP server the bridge gives ask runs\nclaude-wow factory-mcp  the per-run wowfactory MCP server the bridge gives dispatcher coding runs\nclaude-wow local-agent  the local agent: a chat answered by an OpenAI-compatible server such as llama-server\nclaude-wow handoff [folder] [--stop]  hand the Claude Code sessions running in a repository to the game (/claude -r all)\nclaude-wow events [--follow] [--min N]  game events from the telemetry, one JSON line each\nclaude-wow report [--day [YYYY-MM-DD]]  a day of game events, orders and goal progress, from the goals folder\n');
+  if (argv.includes('--help') || argv.includes('-h'))
+    console.log(
+      'claude-wow setup [...]   game-side install (setup.js)\nclaude-wow service <cmd> background service (install, uninstall, start, stop, restart, status, logs)\nclaude-wow update [--check]  install the latest release binary now (the bridge also checks once a day)\nclaude-wow dev <cmd>    releases for a developer machine (deploy [ref|worktree], rollback, status; docs/MIGRATE-PROD-INSTALL.md)\nclaude-wow bridge [...]  the bridge alone in this process, without the restarts\nclaude-wow channel      the live-session channel server Claude Code starts (docs/LIVE-SESSION.md)\nclaude-wow data sync    fetch client tables from wago.tools into the home folder (--flavor forever or classic_era)\nclaude-wow data-mcp     the read-only wowdata MCP server the bridge gives ask runs\nclaude-wow goals-mcp    the per-run wowgoals MCP server the bridge gives ask runs\nclaude-wow factory-mcp  the per-run wowfactory MCP server the bridge gives dispatcher coding runs\nclaude-wow local-agent  the local agent: a chat answered by an OpenAI-compatible server such as llama-server\nclaude-wow handoff [folder] [--stop]  hand the Claude Code sessions running in a repository to the game (/claude -r all)\nclaude-wow events [--follow] [--min N]  game events from the telemetry, one JSON line each\nclaude-wow report [--day [YYYY-MM-DD]]  a day of game events, orders and goal progress, from the goals folder\n',
+    );
   supervise();
 }
 
@@ -100,8 +131,14 @@ function supervise() {
       child.stdout.on('data', d => out.write(d));
       child.stderr.on('data', d => out.write(d));
     }
-    svc.writePid(dirs, { pid: process.pid, bridgePid: child.pid, started, mode: SERVICE ? 'service' : 'terminal', repo: R.compiled ? process.execPath : R.ROOT });
-    child.on('exit', (code) => {
+    svc.writePid(dirs, {
+      pid: process.pid,
+      bridgePid: child.pid,
+      started,
+      mode: SERVICE ? 'service' : 'terminal',
+      repo: R.compiled ? process.execPath : R.ROOT,
+    });
+    child.on('exit', code => {
       child = null;
       if (stopping) return;
       if ((code === 2 || code === 3) && SERVICE) {
@@ -109,7 +146,10 @@ function supervise() {
         setTimeout(start, 60000);
         return;
       }
-      if (code === 2 || code === 3 || code === 0) { svc.clearPid(dirs); process.exit(code); }
+      if (code === 2 || code === 3 || code === 0) {
+        svc.clearPid(dirs);
+        process.exit(code);
+      }
       if (code === UPD.UPDATE_EXIT_CODE) {
         say(`\nbridge stopped for an update; starting ${UPD.launchPath()} again`);
         setImmediate(start);
@@ -123,13 +163,28 @@ function supervise() {
   function stop() {
     if (stopping) return;
     stopping = true;
-    const gone = () => { svc.clearPid(dirs); process.exit(0); };
+    const gone = () => {
+      svc.clearPid(dirs);
+      process.exit(0);
+    };
     if (!child) return gone();
     // SIGTERM; the bridge ends its own children (SIGTERM, then SIGKILL after
     // its killGraceMs) and exits. Wait for that, within reason, then make sure.
-    const hard = setTimeout(() => { try { child.kill('SIGKILL'); } catch {} }, 10000);
-    child.once('exit', () => { clearTimeout(hard); gone(); });
-    try { child.kill(); } catch { clearTimeout(hard); gone(); }
+    const hard = setTimeout(() => {
+      try {
+        child.kill('SIGKILL');
+      } catch {}
+    }, 10000);
+    child.once('exit', () => {
+      clearTimeout(hard);
+      gone();
+    });
+    try {
+      child.kill();
+    } catch {
+      clearTimeout(hard);
+      gone();
+    }
   }
 
   process.on('SIGINT', stop);

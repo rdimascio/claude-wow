@@ -1,0 +1,8 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "printWidth": 160,
+  "singleQuote": true,
+  "arrowParens": "avoid",
+  "trailingComma": "all",
+  "ignorePatterns": ["addon/**", "docs/**", "tests/fixtures/**", "*.md", "*.json", "*.yml", "*.yaml", "*.toml", "dist/**", ".claude/**", ".codex/**"]
+}

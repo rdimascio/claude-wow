@@ -10,7 +10,12 @@ const ROOT = makeRoot('devtools');
 const withGame = gameRunner(ROOT);
 
 function gitProject(sb) {
-  const git = (...args) => execFileSync('git', args, { cwd: sb.project, stdio: 'ignore', env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } });
+  const git = (...args) =>
+    execFileSync('git', args, {
+      cwd: sb.project,
+      stdio: 'ignore',
+      env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' },
+    });
   git('init', '-q', '-b', 'main');
   git('add', '.');
   git('commit', '-q', '-m', 'first commit');
@@ -18,10 +23,13 @@ function gitProject(sb) {
 }
 
 function answerTo(h, id, label) {
-  return h.client.waitFor(() => {
-    const c = h.client.activeChat();
-    return c && !c.pendingId && (c.history || []).find(m => m.id === id && m.role !== 'user');
-  }, { timeoutMs: 60000, label });
+  return h.client.waitFor(
+    () => {
+      const c = h.client.activeChat();
+      return c && !c.pendingId && (c.history || []).find(m => m.id === id && m.role !== 'user');
+    },
+    { timeoutMs: 60000, label },
+  );
 }
 
 async function slash(h, line) {
@@ -75,7 +83,11 @@ test('/claude wrong files the last agent reply in feedback.jsonl, and /claude de
     assert.match(reply.text, /tame a bear/);
     const marked = await slash(h, '/claude wrong that is a hunter quest');
     assert.match(marked.text, /^Marked as wrong: #1\./);
-    const items = fs.readFileSync(path.join(h.sb.home, 'feedback.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l));
+    const items = fs
+      .readFileSync(path.join(h.sb.home, 'feedback.jsonl'), 'utf8')
+      .trim()
+      .split('\n')
+      .map(l => JSON.parse(l));
     assert.equal(items.length, 1);
     assert.equal(items[0].note, 'that is a hunter quest');
     assert.match(items[0].prompt, /how do I tame a bear/);
@@ -91,7 +103,15 @@ const OLD = 'f02436b8-8a5f-4c05-823e-bef25f88ff7b';
 function seedSession(sb) {
   const dir = path.join(sb.user, '.claude', 'projects', SS.projectSlug(sb.project));
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, `${OLD}.jsonl`), [{ type: 'user', cwd: sb.project, sessionId: OLD }, { type: 'ai-title', aiTitle: 'Fix the build', sessionId: OLD }].map(l => JSON.stringify(l)).join('\n') + '\n');
+  fs.writeFileSync(
+    path.join(dir, `${OLD}.jsonl`),
+    [
+      { type: 'user', cwd: sb.project, sessionId: OLD },
+      { type: 'ai-title', aiTitle: 'Fix the build', sessionId: OLD },
+    ]
+      .map(l => JSON.stringify(l))
+      .join('\n') + '\n',
+  );
   fs.writeFileSync(path.join(sb.agentState, `${OLD}.json`), JSON.stringify({ id: OLD, turns: 4, total: {}, created: Date.now() - 3600000 }));
 }
 

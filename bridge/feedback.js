@@ -16,13 +16,19 @@ function clip(text, max) {
 }
 
 function oneLine(text, max = LINE_PREVIEW) {
-  const s = String(text || '').replace(/\s+/g, ' ').trim();
+  const s = String(text || '')
+    .replace(/\s+/g, ' ')
+    .trim();
   return s.length > max ? s.slice(0, max - 3) + '...' : s;
 }
 
 function readItems(file) {
   let text = '';
-  try { text = fs.readFileSync(file, 'utf8'); } catch { return []; }
+  try {
+    text = fs.readFileSync(file, 'utf8');
+  } catch {
+    return [];
+  }
   const items = [];
   for (const line of text.split('\n')) {
     if (!line.trim()) continue;
@@ -94,7 +100,9 @@ function createStore(dir, { now = Date.now } = {}) {
 }
 
 function describe(item, { full = false } = {}) {
-  const head = `#${item.n} ${item.kind}${item.status === 'closed' ? ' (closed)' : ''}, ${String(item.at || '').slice(0, 16).replace('T', ' ')} UTC, ${item.plugin || 'chat'}${item.chatName ? ' "' + oneLine(item.chatName, 40) + '"' : ''}`;
+  const head = `#${item.n} ${item.kind}${item.status === 'closed' ? ' (closed)' : ''}, ${String(item.at || '')
+    .slice(0, 16)
+    .replace('T', ' ')} UTC, ${item.plugin || 'chat'}${item.chatName ? ' "' + oneLine(item.chatName, 40) + '"' : ''}`;
   if (!full) return `${head}: ${oneLine(item.note || item.reply || item.prompt || '(no text)')}`;
   const lines = [head];
   if (item.note) lines.push(`note: ${item.note}`);
@@ -109,7 +117,9 @@ function describe(item, { full = false } = {}) {
 function fixBrief(item) {
   return [
     `[Feedback item #${item.n} from ${FILE_NAME} in the claude-wow home folder, handed to you by the player]`,
-    item.kind === 'bug' ? 'The player reported this bug in the claude-wow bridge or addon.' : 'The player marked this reply as wrong. Find out why the bridge, the addon or the prompt produced it, and fix the cause in this repository.',
+    item.kind === 'bug'
+      ? 'The player reported this bug in the claude-wow bridge or addon.'
+      : 'The player marked this reply as wrong. Find out why the bridge, the addon or the prompt produced it, and fix the cause in this repository.',
     describe(item, { full: true }),
   ].join('\n');
 }
