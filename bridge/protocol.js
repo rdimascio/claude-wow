@@ -749,10 +749,11 @@ function denialNotes(agentName, fresh, again) {
   const rules = (fresh || []).filter(e => e.kind !== 'folder');
   const folders = (fresh || []).filter(e => e.kind === 'folder');
   if (rules.length) {
-    notes.push(`${who} needed ${rules.length} action(s) that aren't allowed yet:\n  ${rules.map(e => e.what).join('\n  ')}\nUse the Allow button below to permit them and let it continue.`);
+    const actions = rules.length === 1 ? '1 action that is' : `${rules.length} actions that are`;
+    notes.push(`${who} needed ${actions} not allowed yet:\n  ${rules.map(e => e.what).join('\n  ')}\nAllow ${rules.length === 1 ? 'it' : 'them'} from this chat to let it continue.`);
   }
   if (folders.length) {
-    notes.push(`${who} was blocked outside this chat's folders:\n  ${folders.map(e => `${e.what} (folder ${e.folder})`).join('\n  ')}\nAn allowlist rule cannot open a folder. Allow it below to add the folder to this chat (like /claude --add-dir) and let it continue.`);
+    notes.push(`${who} was blocked outside this chat's folders:\n  ${folders.map(e => `${e.what} (folder ${e.folder})`).join('\n  ')}\nAn allowlist rule cannot open a folder. Allow it from this chat to add the folder (like /claude --add-dir) and let it continue.`);
   }
   const seen = new Set();
   for (const e of again || []) {

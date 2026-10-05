@@ -193,7 +193,8 @@ test('Claude stream: tool calls and text become progress, the result carries the
   r = p.feed({ type: 'result', session_id: 'sess-1', is_error: false, result: 'Done.', permission_denials: [{ tool_name: 'Bash', tool_input: { command: 'cargo build' } }, { tool_name: 'WebSearch' }] });
   assert.deepEqual(r.done, { text: 'Done.', error: false });
   assert.deepEqual(r.denied, ['Bash(cargo:*)', 'WebSearch']);
-  assert.ok(r.notes[0].includes('2 action(s)') && r.notes[0].includes('Bash: cargo build'));
+  assert.ok(r.notes[0].includes('needed 2 actions that are not allowed yet') && r.notes[0].includes('Bash: cargo build'));
+  assert.ok(r.notes[0].endsWith('\nAllow them from this chat to let it continue.'), r.notes[0]);
   const err = A.claudeParser().feed({ type: 'result', is_error: true, result: 'boom' });
   assert.deepEqual(err.done, { text: 'boom', error: true });
 });
@@ -220,7 +221,8 @@ test('Claude denials from real streams: a command without a rule is offered as a
   const r = replayClaude('claude-denied-rule.jsonl');
   assert.deepEqual(r.denied, ['Bash(curl:*)']);
   assert.equal(r.notes.length, 1);
-  assert.match(r.notes[0], /^Claude needed 1 action\(s\) that aren't allowed yet:\n {2}Bash: curl -sI https:\/\/example\.com -o \/dev\/null\n/);
+  assert.match(r.notes[0], /^Claude needed 1 action that is not allowed yet:\n {2}Bash: curl -sI https:\/\/example\.com -o \/dev\/null\n/);
+  assert.ok(r.notes[0].endsWith('\nAllow it from this chat to let it continue.'), r.notes[0]);
 });
 
 test('Claude denials from real streams: a path outside the working folders is offered as the folder, even when the rule is allowed', () => {
@@ -389,7 +391,7 @@ test('Grok stream as Grok Build 1.0.41 prints it: tool inputs, a classifier refu
   const blocked = p.feed({ type: 'tool_call_update', toolCallId: 'c5', status: 'failed', content: [{ type: 'content', content: { type: 'text', text: 'Tool `run_terminal_command` was not executed: Auto mode blocked this action (rm of a named non-scratch file is irreversible deletion and must wait). Take a safer approach that stays within what the user asked for; do not retry this exact action.' } }], rawOutput: null });
   assert.deepEqual(blocked.denied, ['Bash(rm:*)']);
   assert.ok(blocked.notes[0].startsWith('Grok was not allowed to: $ rm victim.txt\nAuto mode blocked this action'), blocked.notes[0]);
-  assert.ok(blocked.notes[0].endsWith('Use the Allow button below to permit it and let it continue.'));
+  assert.ok(blocked.notes[0].endsWith('Allow it from this chat to let it continue.'));
   // A deny rule.
   p.feed({ type: 'tool_call', toolCallId: 'c6', title: 'run_terminal_command', kind: 'execute', toolName: 'run_terminal_command', rawInput: { command: 'touch probe-deny.txt' } });
   const denied = p.feed({ type: 'tool_call_update', toolCallId: 'c6', status: 'failed', content: [{ type: 'content', content: { type: 'text', text: 'Tool `run_terminal_command` was not executed: Denied by permission policy: deny rule on bash matching "touch *"' } }] });
