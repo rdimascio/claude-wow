@@ -1072,7 +1072,7 @@ RefreshStrip = function()
 					rec.shot = "log"
 					rec.logged = true
 					rec.loggedAt = GetTime()
-					if (rec.forget or rec.cancelOf or rec.dm or rec.openUrl) and not run.helloPollAt and not run.ackPollAt then
+					if (rec.forget or rec.cancelOf or rec.dm) and not run.helloPollAt and not run.ackPollAt then
 						run.ackPollAt = GetTime() + ClaudeWoW.ChatLog.ACK_POLL_SECONDS
 					end
 				end
@@ -1170,7 +1170,9 @@ local function ApplyTransport(data)
 	db.settings.chatlog = logSpec
 	SyncScreenshotMode()
 	-- Whatever is still unacknowledged goes out again the new way.
-	for _, rec in pairs(run.outbound) do rec.shot = nil end
+	for _, rec in pairs(run.outbound) do
+		if not rec.openUrl then rec.shot = nil end
+	end
 	RefreshStrip()
 	ClaudeWoW.UpdateStatus()
 end
@@ -2079,6 +2081,7 @@ local function TryLoadSlot(why)
 		ClaudeWoW.ApplySessions(data.sessions, data.now)
 		ClaudeWoW.ApplyProjects(data.projects, data.home)
 		local acked = ClaudeWoW.ApplyAcks(data.acks)
+		Q.ApplyOpenResults(data.acks)
 		ApplyTransport(data)
 		if acked then RefreshStrip() end
 		Presence.Check(data.presence, data.now)
@@ -2212,6 +2215,7 @@ local function Tick()
 		run.dmPollAt = nil
 		TryLoadSlot("dm")
 	end
+	Q.TickOpen(now)
 	if run.restoring and now - run.restoring > 25 then
 		run.restoring = nil
 		ClaudeWoW.Render()
@@ -2225,6 +2229,7 @@ local function Tick()
 			if (rec.text or "") ~= "" and not rec.openUrl and ClaudeWoWVoice then ClaudeWoWVoice.Started(id) end
 			if rec.hello and run.lateProbe and not run.lateProbe.result then run.helloPollAt = now + 1 end
 			if rec.dm and not (run.ackPollAt and not PresenceWorks()) then run.dmPollAt = now + 1 end
+			if rec.openUrl then Q.OpenAcked(id, now) end
 		end
 		-- A hello only needs the bridge to have been seen; it never escalates.
 		-- A forget is the same, but the bridge must have been seen a moment after
@@ -2238,15 +2243,17 @@ local function Tick()
 			if rec.forget then db.forget[rec.forget] = nil end
 			run.outbound[id] = nil
 			changed = true
+		elseif rec.openUrl then
+			if now - (rec.clickedAt or rec.sentAt) >= Q.OPEN_URL_EXPIRE_SECONDS then
+				run.outbound[id] = nil
+				changed = true
+			end
 		elseif rec.shot == "log" and now - (rec.loggedAt or rec.sentAt) >= ClaudeWoW.ChatLog.RetrySeconds() then
 			rec.tries = (rec.tries or 1) + 1
 			rec.sentAt = now
 			rec.shot = nil
 			changed = true
 		elseif rec.hello and now - rec.sentAt >= 20 then
-			run.outbound[id] = nil
-			changed = true
-		elseif rec.openUrl and now - rec.sentAt >= STRIP_SECONDS then
 			run.outbound[id] = nil
 			changed = true
 		elseif now - rec.sentAt >= STRIP_SECONDS then
@@ -3475,7 +3482,49 @@ function ClaudeWoW.SendDmNext(charKey)
 end
 
 Q.OPEN_URL_MAX = 2048
-Q.OPEN_URL_GAP_SECONDS = 2
+Q.OPEN_URL_GAP_SECONDS = 5
+Q.OPEN_URL_EXPIRE_SECONDS = 40
+Q.OPEN_URL_POLLS = { 4, 12, 25 }
+
+function Q.OpenRefused(url, why)
+	if UIErrorsFrame then UIErrorsFrame:AddMessage("Link not opened: " .. why .. ". Copy it from the box.", 1, 0.3, 0.3, 1) end
+	ClaudeWoW.ShowCopy(url)
+end
+
+function Q.ApplyOpenResults(acks)
+	local w = run.openWait
+	if not w or type(acks) ~= "table" or not db then return end
+	for _, a in ipairs(acks) do
+		if type(a) == "table" and a.session == db.session and a.id == w.id and (a.open == "ok" or a.open == "refused") then
+			run.openWait = nil
+			if a.open == "refused" then Q.OpenRefused(w.url, type(a.why) == "string" and a.why ~= "" and a.why or "the bridge refused it") end
+			return
+		end
+	end
+end
+
+function Q.OpenAcked(id, now)
+	local w = run.openWait
+	if w and w.id == id then w.pollAt = now + 1 end
+end
+
+function Q.TickOpen(now)
+	local w = run.openWait
+	if not w then return end
+	if now - w.at >= Q.OPEN_URL_EXPIRE_SECONDS then
+		run.openWait = nil
+		Q.OpenRefused(w.url, "no answer from the bridge")
+		return
+	end
+	local offset = Q.OPEN_URL_POLLS[w.step]
+	if w.pollAt and now >= w.pollAt then
+		w.pollAt = nil
+		TryLoadSlot("open")
+	elseif offset and now - w.at >= offset then
+		w.step = w.step + 1
+		TryLoadSlot("open")
+	end
+end
 
 function Q.OpenableUrl(url)
 	if type(url) ~= "string" or #url > Q.OPEN_URL_MAX then return false end
@@ -3513,13 +3562,15 @@ function ClaudeWoW.OpenUrl(url)
 	local c = Q.ChatForUrl(url)
 	if not c then return "unknown" end
 	local now = GetTime()
+	if run.openWait then return "busy" end
 	for _, rec in pairs(run.outbound) do
-		if rec.openUrl and not rec.acked then return "busy" end
+		if rec.openUrl then return "busy" end
 	end
-	if run.openUrlAt and now - run.openUrlAt < Q.OPEN_URL_GAP_SECONDS then return "busy" end
+	if run.openUrlAt and now - run.openUrlAt < Q.OPEN_URL_GAP_SECONDS then return "wait" end
 	run.openUrlAt = now
 	db.lastSeq = db.lastSeq + 1
-	run.outbound[db.lastSeq] = { chat = c.id, cwd = "", flags = "kind=url", name = "", text = url, sentAt = now, openUrl = true }
+	run.outbound[db.lastSeq] = { chat = c.id, cwd = "", flags = "kind=url", name = "", text = url, sentAt = now, clickedAt = now, openUrl = true }
+	run.openWait = { id = db.lastSeq, url = url, at = now, step = 1 }
 	NoteStaleSignals(db.lastSeq)
 	RefreshStrip()
 	return "sent"
@@ -5029,7 +5080,11 @@ function Cli.Links.url(arg, button)
 	local result = ClaudeWoW.OpenUrl(arg)
 	if result == "sent" then
 		if UIErrorsFrame then UIErrorsFrame:AddMessage("Opening in your browser", 1, 0.82, 0, 1) end
-	elseif result ~= "busy" then
+	elseif result == "busy" then
+		if UIErrorsFrame then UIErrorsFrame:AddMessage("Still opening the last link", 1, 0.82, 0, 1) end
+	elseif result == "wait" then
+		if UIErrorsFrame then UIErrorsFrame:AddMessage("Wait a moment before the next link", 1, 0.82, 0, 1) end
+	else
 		ClaudeWoW.ShowCopy(arg)
 	end
 end

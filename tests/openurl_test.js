@@ -90,7 +90,7 @@ test('linksIn finds the links the addon draws: bare, in markdown, without traili
   assert.deepEqual(OU.linksIn(undefined), []);
 });
 
-test('noteLinks keeps each link once, newest last, at most 200 a chat; agentLinks reads only replies', () => {
+test('noteLinks keeps each link once, newest last, at most 200 a chat; agentLinks reads only that list', () => {
   const chat = { messages: [] };
   OU.noteLinks(chat, ['a https://a.example/1 b', 'https://a.example/2', undefined]);
   OU.noteLinks(chat, ['again https://a.example/1']);
@@ -106,8 +106,23 @@ test('noteLinks keeps each link once, newest last, at most 200 a chat; agentLink
       { role: 'assistant', text: `here: ${PR}` },
     ],
   });
-  assert.deepEqual([...known].sort(), ['https://github.com/o/r/pull/7', 'https://kept.example/']);
+  assert.deepEqual([...known], ['https://kept.example/'], 'stored message text never counts: it may be cut or written by a plugin');
   assert.equal(OU.agentLinks(null).size, 0);
+});
+
+test('a chat id another client takes over loses the links of the first client', () => {
+  const chat = { id: 'c1', client: 'k1', links: [PR] };
+  OU.claimChat(chat, 'k1');
+  assert.deepEqual(chat.links, [PR]);
+  OU.claimChat(chat, '');
+  assert.deepEqual(chat.links, [PR]);
+  assert.equal(chat.client, 'k1');
+  OU.claimChat(chat, 'k2');
+  assert.deepEqual(chat.links, []);
+  assert.equal(chat.client, 'k2');
+  const fresh = { id: 'c2', links: [PR] };
+  OU.claimChat(fresh, 'k1');
+  assert.deepEqual(fresh.links, [PR], 'a chat from before clients were recorded keeps its links');
 });
 
 function opener(over = {}) {
@@ -127,7 +142,11 @@ function opener(over = {}) {
   return { o, calls, logs, advance: ms => (t += ms) };
 }
 
-const chatWith = (text, extra = {}) => ({ id: 'c1', messages: [{ role: 'assistant', text }], ...extra });
+const chatWith = (text, extra = {}) => {
+  const chat = { id: 'c1', messages: [{ role: 'assistant', text }], ...extra };
+  OU.noteLinks(chat, [text]);
+  return chat;
+};
 const job = (text, extra = {}) => ({ kind: 'url', chat: 'c1', session: 's', id: 5, text, via: 'pixel', client: 'k1', ...extra });
 
 test('an agent link opens with no shell: open on macOS, xdg-open on Linux, rundll32 on Windows', () => {
@@ -162,15 +181,18 @@ test('a link the bridge never sent in that chat is refused and nothing is spawne
   const refusals = [
     ['in the player message only', job('https://evil.example/'), { id: 'c1', messages: [{ role: 'user', text: 'https://evil.example/' }] }],
     ['in a bridge error only', job('https://evil.example/'), { id: 'c1', messages: [{ role: 'system', text: 'https://evil.example/' }] }],
+    [
+      'in stored reply text but not in the links list',
+      job('https://evil.example/'),
+      { id: 'c1', messages: [{ role: 'assistant', text: 'https://evil.example/' }], links: [] },
+    ],
+    ['a link of chat A on a record for chat B', job(PR, { chat: 'c2' }), { id: 'c2', links: ['https://b.example/'] }],
     ['only a prefix of a reply link', job('https://github.com/o/r'), chatWith(PR)],
     ['a reply link with more after it', job(PR + '/files'), chatWith(PR)],
     ['a link from another chat', job(PR, { chat: 'c2' }), undefined],
     ['no chat on the record', job(PR, { chat: '' }), chatWith(PR)],
     ['the chat belongs to another client', job(PR, { client: 'k2' }), chatWith(PR, { client: 'k1' })],
     ['a record from the reload outbox', job(PR, { via: 'reload' }), chatWith(PR)],
-    ['a hostile link that is in a reply', job('file:///etc/passwd'), chatWith('file:///etc/passwd')],
-    ['a javascript link in a reply', job('javascript:alert(1)'), chatWith('javascript:alert(1)')],
-    ['a link with a newline', job(`${PR}\n-x`), chatWith(`${PR}\n-x`)],
   ];
   for (const [name, j, chat] of refusals) {
     const { o, calls } = opener();
@@ -178,6 +200,27 @@ test('a link the bridge never sent in that chat is refused and nothing is spawne
     assert.equal(r.opened, false, name);
     assert.match(r.text, /^open link refused \(/, name);
     assert.equal(calls.length, 0, `${name}: nothing spawned`);
+  }
+});
+
+test('a link that passes the provenance check but not checkUrl is refused for the checkUrl reason, before anything else', () => {
+  const hostile = [
+    'file:///etc/passwd',
+    'javascript:alert(1)',
+    'steam://run/440',
+    '-https://example.com',
+    `${PR}\n-x`,
+    'https://example.com/a b',
+    'https://user:pw@example.com/',
+    'https://example.com/' + 'a'.repeat(2100),
+  ];
+  for (const raw of hostile) {
+    const { o, calls } = opener();
+    const r = o.request(job(raw), { id: 'c1', links: [raw] });
+    assert.equal(r.opened, false, JSON.stringify(raw));
+    assert.equal(r.why, OU.checkUrl(raw).why, JSON.stringify(raw));
+    assert.notEqual(r.why, 'not a link from a reply in this chat');
+    assert.equal(calls.length, 0);
   }
 });
 
@@ -190,7 +233,7 @@ test('the refusal log line shows the input as one escaped, cut line', () => {
 
 test('a link from the transcript links list counts, also after the message text was cut', () => {
   const { o, calls } = opener();
-  const chat = { id: 'c1', messages: [{ role: 'assistant', text: 'short' }], links: [PR] };
+  const chat = { id: 'c1', messages: [{ role: 'assistant', text: PR.slice(0, 20) }], links: [PR] };
   assert.equal(o.request(job(PR), chat).opened, true);
   assert.equal(calls.length, 1);
 });
@@ -274,6 +317,18 @@ test('isOpenRecord matches only kind=url, which parseFlags reads off the strip',
   assert.equal(j.kind, OU.KIND);
   assert.equal(j.text, PR);
   assert.equal(P.parseOutbox('["outbox"] = { ["id"] = 3, ["text"] = "", ["kind"] = "url" }').kind, undefined, 'the reload outbox never carries a kind');
+});
+
+test('the ack carries the open result for the addon: ok, or refused with a short reason', () => {
+  let acks = P.noteAck([], { session: 's', id: 4 }, 1000, { open: 'refused', why: 'rate limit: ' + 'x'.repeat(200) });
+  acks = P.noteAck(acks, { session: 's', id: 5 }, 1000, { open: 'ok' });
+  acks = P.noteAck(acks, { session: 's', id: 6 }, 1000);
+  acks = P.noteAck(acks, { session: 's', id: 4 }, 2000);
+  const lua = P.luaTable('ClaudeWoW_SlotData', [], { acks, now: 2000 });
+  assert.match(lua, /\{ session = "s", id = 4, open = "refused", why = "rate limit: x{68}" \}/, 'a repeated ack keeps its result: ' + lua);
+  assert.match(lua, /\{ session = "s", id = 5, open = "ok" \}/);
+  assert.match(lua, /\{ session = "s", id = 6 \}/);
+  assert.doesNotMatch(P.luaTable('X', [], { acks: [{ session: 's', id: 7, at: 1, open: 'maybe', why: 'x' }] }), /open|why/);
 });
 
 test('the slot file offers the capability only when the bridge can open links', () => {

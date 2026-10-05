@@ -102,12 +102,22 @@ function markHandled(state, job, now = Date.now()) {
 const RECENT_ACKS_MAX = 24;
 const RECENT_ACK_MS = 10 * 60 * 1000;
 
-function noteAck(acks, job, now = Date.now()) {
+const OPEN_RESULTS = ['ok', 'refused'];
+
+function noteAck(acks, job, now = Date.now(), result = null) {
   const id = Number(job && job.id);
   if (!Number.isInteger(id) || id <= 0) return acks;
   const session = String((job && job.session) || '');
-  const kept = acks.filter(a => now - a.at < RECENT_ACK_MS && !(a.id === id && a.session === session));
-  return [...kept, { session, id, at: now }].slice(-RECENT_ACKS_MAX);
+  const same = a => a.id === id && a.session === session;
+  const prev = acks.find(same);
+  const entry = { session, id, at: now };
+  const open = result && OPEN_RESULTS.includes(result.open) ? result : prev && prev.open ? prev : null;
+  if (open) {
+    entry.open = open.open;
+    if (open.open === 'refused') entry.why = String(open.why || '').slice(0, 80);
+  }
+  const kept = acks.filter(a => now - a.at < RECENT_ACK_MS && !same(a));
+  return [...kept, entry].slice(-RECENT_ACKS_MAX);
 }
 
 function recentAcks(acks, now = Date.now()) {
@@ -1185,7 +1195,13 @@ function luaTable(globalName, records, opts = {}) {
   if (opts.home) lines.splice(lines.length - 1, 0, `\thome = ${luaStr(opts.home)},`);
   if (Array.isArray(opts.acks)) {
     const acks = opts.acks.filter(a => a && Number.isInteger(a.id) && a.id > 0);
-    lines.splice(lines.length - 1, 0, `\tacks = { ${acks.map(a => `{ session = ${luaStr(a.session || '')}, id = ${a.id} }`).join(', ')} },`);
+    const ackLua = a => {
+      const f = [`session = ${luaStr(a.session || '')}`, `id = ${a.id}`];
+      if (OPEN_RESULTS.includes(a.open)) f.push(`open = ${luaStr(a.open)}`);
+      if (a.open === 'refused' && a.why) f.push(`why = ${luaStr(String(a.why).slice(0, 80))}`);
+      return `{ ${f.join(', ')} }`;
+    };
+    lines.splice(lines.length - 1, 0, `\tacks = { ${acks.map(ackLua).join(', ')} },`);
   }
   if (Number.isInteger(opts.runLimit) && opts.runLimit > 0) lines.splice(lines.length - 1, 0, `\trunLimit = ${opts.runLimit},`);
   if (Array.isArray(opts.alive)) {
