@@ -1003,3 +1003,34 @@ test("an empty, unfocused input shows a hint naming the chat's agent; typing or 
   );
   assert.equal(vm.evaluate(`${hint}:GetText()`), 'Message Codex. Enter sends; /claude help lists commands.', 'the name follows the chat');
 });
+
+const MCP_LIST =
+  '{ { name = "notion", on = true, health = "connected", at = 1 }, { name = "github", on = true, health = "needs-auth", at = 1 }, { name = "linear", on = false, health = "unknown", at = 0 } }';
+const menuItems = vm =>
+  vm.evaluate('(function() local t = {} for _, it in ipairs(STUB.menu.items) do table.insert(t, it.text) end return table.concat(t, "|") end)()');
+
+test('the MCP button in the header shows the chat servers on, opens a checkbox menu with health, and sits left of the project button', () => {
+  const vm = nativeVM();
+  vm.run('ClaudeWoW.Render()');
+  assert.equal(vm.evaluate('ClaudeWoWMcpButton:IsShown()'), 'false', 'no list from the bridge: no button');
+  assert.equal(vm.evaluate('ClaudeWoW.UI.chatTitle.rel == ClaudeWoWProjectButton'), 'true');
+  vm.run(`ClaudeWoW.ApplyMcp(${MCP_LIST}); ClaudeWoW.Render()`);
+  assert.equal(vm.evaluate('ClaudeWoWMcpButton:IsShown()'), 'true');
+  assert.equal(vm.evaluate('ClaudeWoWMcpButton.text:GetText()'), 'MCP |cffff99332/3|r', 'orange: a server that is on needs a login');
+  assert.equal(vm.evaluate('ClaudeWoWMcpButton.rel == ClaudeWoWProjectButton'), 'true');
+  assert.equal(vm.evaluate('ClaudeWoW.UI.chatTitle.rel == ClaudeWoWMcpButton'), 'true', 'the title stops before the MCP button');
+
+  vm.run('ClaudeWoWMcpButton.scripts.OnClick(ClaudeWoWMcpButton)');
+  assert.equal(menuItems(vm), "MCP servers|notion  |cff33cc33ok|r|github  |cffff9933needs login|r|linear  |cff999999not seen yet|r|Use the bridge's defaults");
+  vm.run('STUB.Pick("github  |cffff9933needs login|r")');
+  assert.equal(vm.evaluate('table.concat(ClaudeWoWDB.chats[#ClaudeWoWDB.chats].mcp, ",")'), 'notion');
+  assert.equal(vm.evaluate('ClaudeWoWMcpButton.text:GetText()'), 'MCP |cffffffff1/3|r');
+  vm.run('ClaudeWoWMcpButton.scripts.OnClick(ClaudeWoWMcpButton); STUB.Pick("Use the bridge\'s defaults")');
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].mcp == nil'), 'true');
+
+  vm.run('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].agent = "grok"; ClaudeWoW.Render()');
+  assert.equal(vm.evaluate('ClaudeWoWMcpButton.text:GetText()'), 'MCP |cff9999992/3|r', 'grey on an agent without MCP');
+  vm.run('ClaudeWoW.ApplyMcp({}); ClaudeWoW.Render()');
+  assert.equal(vm.evaluate('ClaudeWoWMcpButton:IsShown()'), 'false', 'an empty list hides it');
+  assert.equal(vm.evaluate('ClaudeWoW.UI.chatTitle.rel == ClaudeWoWProjectButton'), 'true');
+});

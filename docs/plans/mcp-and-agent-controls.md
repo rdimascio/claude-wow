@@ -100,5 +100,5 @@ Each step is done only when measured on the real CLI, not just `dev/fake-claude.
 1. Cost cap (`--max-budget-usd`). Smallest, independent.
 2. Config schema + Claude translation (allow, deny, `${VAR}`, opt-in strict). Test: a denied `mcp__notion__create_page` is never offered in a roll.
 3. Codex translation + gate flips. Tests: `wowgoals` write tools appear in `disabled_tools`; a numeric-looking value stays a TOML string; no secret value appears in argv.
-4. Slot advertisement, `mcp=` token through strip and reload outbox, `/claude mcp`, health snapshots.
+4. Slot advertisement, `mcp=` token through strip and reload outbox, `/claude mcp`, health snapshots. Built with a header button (owner's choice, 2026-10-05): **MCP n/m** left of the project button, a `MenuUtil` checkbox menu (`Blizzard_Menu` exists on Era 1.15.9 too). Health is kept per server name, not per agent; Codex reports none, so it shows `unknown`. `SETTING_FLAGS.mcp` makes another agent's run say it ignored the choice.
 5. Mid-run approval (after step 0 measurement).

@@ -326,3 +326,55 @@ test('mcp.servers end to end: servers reach --mcp-config with ${VAR} only, stric
   assert.ok(!(first.stdout + first.stderr + second.stdout + second.stderr).includes(secret));
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test('per-chat MCP end to end: the chat choice from the reload outbox picks the servers, and the run health reaches the slot files', () => {
+  const dir = scratch('mcp-chat');
+  const { home, saved, project, cfg, addons } = fakeInstall(dir);
+  const argvFile = path.join(dir, 'argv.json');
+  const init = {
+    type: 'system',
+    subtype: 'init',
+    session_id: 'sess-1',
+    mcp_servers: [
+      { name: 'linear', status: 'needs-auth', source: 'dynamic' },
+      { name: 'mobbin', status: 'connected', source: 'user' },
+    ],
+  };
+  const done = { type: 'result', result: 'pong', session_id: 'sess-1' };
+  fs.writeFileSync(
+    cfg.agents.claude.path,
+    `require('fs').writeFileSync(${JSON.stringify(argvFile)}, JSON.stringify(process.argv.slice(2)));\nprocess.stdout.write(${JSON.stringify(JSON.stringify(init) + '\n' + JSON.stringify(done) + '\n')});\n`,
+  );
+  fs.writeFileSync(
+    path.join(home, 'config.json'),
+    JSON.stringify({
+      ...cfg,
+      mcp: {
+        servers: {
+          notion: { type: 'http', url: 'https://mcp.notion.com/mcp', allow: '*', default: true },
+          linear: { type: 'http', url: 'https://mcp.linear.app/mcp', allow: ['list_issues'] },
+        },
+      },
+    }),
+  );
+  const hex = s => Buffer.from(s, 'utf8').toString('hex');
+  const opts = hex(`mcp=${hex('linear')}`);
+  fs.writeFileSync(
+    saved,
+    `ClaudeWoWDB = {\n["outbox"] = {\n["id"] = 31,\n["session"] = "sess1",\n["chat"] = "chat1",\n["text"] = "${hex('ping')}",\n["cwd"] = "",\n["opts"] = "${opts}",\n["t"] = 1,\n},\n}\n`,
+  );
+  const r = runOnce(home, project);
+  assert.equal(r.status, 0, r.out);
+  assert.match(r.out, /#31@sess1 .* \[mcp linear\]/, r.out);
+  const argv = JSON.parse(fs.readFileSync(argvFile, 'utf8'));
+  const allowed = argv.slice(argv.indexOf('--allowedTools') + 1);
+  assert.ok(allowed.includes('mcp__linear__list_issues') && !allowed.includes('mcp__notion'), allowed.join(' '));
+  const slot = fs.readFileSync(path.join(addons, 'ClaudeWoW_S001', 'Inbox.lua'), 'utf8');
+  assert.match(
+    slot,
+    /^\tmcp = \{ \{ name = "notion", on = true, health = "unknown", at = 0 \}, \{ name = "linear", on = false, health = "needs-auth", at = \d{10} \} \},$/m,
+    slot,
+  );
+  assert.ok(!slot.includes('mobbin'), 'a server outside mcp.servers is not listed');
+  fs.rmSync(dir, { recursive: true, force: true });
+});

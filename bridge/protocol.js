@@ -257,6 +257,10 @@ function permissionModeName(raw) {
 const PRESENCE_TEST_RESULTS = ['passed', 'failed'];
 const LATE_CREATE_RESULTS = ['seen', 'unseen'];
 
+const MCP_NAME_RE = /^[A-Za-z0-9]+(?:[-_][A-Za-z0-9]+)*$/;
+const MCP_CHAT_MAX = 8;
+const MCP_HEALTH = ['connected', 'failed', 'needs-auth', 'pending', 'unknown'];
+
 function parseFlags(flags) {
   const out = { newSession: false, hello: false, forget: false, context: false, vision: false, allow: [], agent: '' };
   for (const tok of String(flags || '').split(';')) {
@@ -308,6 +312,12 @@ function parseFlags(flags) {
         .filter(Boolean)
         .slice(0, ADD_DIRS_MAX);
       if (dirs.length) out.addDirs = dirs;
+    } else if (tok.startsWith('mcp=')) {
+      const names = fromHex(tok.slice(4).trim())
+        .split('\x1F')
+        .map(s => s.trim())
+        .filter(s => MCP_NAME_RE.test(s));
+      out.mcp = [...new Set(names)].slice(0, MCP_CHAT_MAX);
     } else if (tok.startsWith('resume=')) {
       const v = tok.slice(7).trim();
       if (RESUME_REF_RE.test(v)) out.resume = v;
@@ -542,7 +552,7 @@ function parseOutbox(src) {
   const opts = b.match(/\["opts"\]\s*=\s*"([0-9a-fA-F]*)"/);
   if (opts && opts[1]) {
     const f = parseFlags(fromHex(opts[1]));
-    for (const k of ['model', 'effort', 'permissionMode', 'addDirs', 'resume', 'liveTarget', 'addonVersion', 'addonProto'])
+    for (const k of ['model', 'effort', 'permissionMode', 'addDirs', 'mcp', 'resume', 'liveTarget', 'addonVersion', 'addonProto'])
       if (f[k] !== undefined) job[k] = f[k];
   }
   return job;
@@ -1180,6 +1190,15 @@ function luaTable(globalName, records, opts = {}) {
   if (Array.isArray(opts.projects)) {
     const rows = opts.projects.filter(p => p && p.path).map(p => `{ path = ${luaStr(p.path)}, label = ${luaStr(p.label || '')} }`);
     lines.splice(lines.length - 1, 0, `\tprojects = { ${rows.join(', ')} },`);
+  }
+  if (Array.isArray(opts.mcp)) {
+    const rows = opts.mcp
+      .filter(s => s && MCP_NAME_RE.test(String(s.name || '')))
+      .map(
+        s =>
+          `{ name = ${luaStr(s.name)}, on = ${s.on ? 'true' : 'false'}, health = ${luaStr(MCP_HEALTH.includes(s.health) ? s.health : 'unknown')}, at = ${Number.isInteger(s.at) && s.at > 0 ? s.at : 0} }`,
+      );
+    lines.splice(lines.length - 1, 0, `\tmcp = { ${rows.join(', ')} },`);
   }
   if (opts.home) lines.splice(lines.length - 1, 0, `\thome = ${luaStr(opts.home)},`);
   if (Array.isArray(opts.acks)) {

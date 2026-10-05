@@ -120,9 +120,11 @@ function serverOf(rule) {
   return m ? { server: m[1], tool: m[2] === undefined ? '' : m[2] } : null;
 }
 
-function forClaude(mcp) {
+const chosen = (s, on) => (Array.isArray(on) ? on.includes(s.name) : s.default);
+
+function forClaude(mcp, { on } = {}) {
   if (!mcp) return null;
-  const loaded = mcp.servers.filter(s => s.default);
+  const loaded = mcp.servers.filter(s => chosen(s, on));
   const allowed = new Map(mcp.servers.map(s => [s.name, s.allow.claude]));
   const allowRules = loaded.flatMap(s => s.allow.claude.map(t => toolRule(s.name, t)));
   const blocks = rule => {
@@ -212,10 +214,10 @@ function codexOwnServers({ home = os.homedir(), codexHome = process.env.CODEX_HO
   return [...names];
 }
 
-function forCodex(mcp, { skip = [] } = {}) {
+function forCodex(mcp, { skip = [], on } = {}) {
   if (!mcp) return [];
   return mcp.servers
-    .filter(s => s.default && !skip.includes(s.name))
+    .filter(s => chosen(s, on) && !skip.includes(s.name))
     .map(s => ({
       name: s.name,
       server: s.server,

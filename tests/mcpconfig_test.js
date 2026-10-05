@@ -347,3 +347,58 @@ test('Codex: a server named like one in ~/.codex/config.toml is left out, since 
     ['github', 'linear'],
   );
 });
+
+test('per chat: mcp= names the servers a chat turned on, an empty value turns all off, and a bad name is dropped', () => {
+  const hex = s => Buffer.from(s, 'utf8').toString('hex');
+  assert.equal(P.parseFlags('agent=claude').mcp, undefined, 'no token: the config defaults');
+  assert.deepEqual(P.parseFlags('mcp=').mcp, [], 'an explicit empty set');
+  assert.deepEqual(P.parseFlags(`mcp=${hex('notion\x1Fgithub\x1Fnotion\x1Fbad name\x1Fa__b')}`).mcp, ['notion', 'github']);
+  assert.deepEqual(P.parseFlags(`mcp=${hex(Array.from({ length: 12 }, (_, i) => `s${i}`).join('\x1F'))}`).mcp.length, 8);
+  const outbox = `ClaudeWoWDB = {\n["outbox"] = {\n["id"] = 3,\n["session"] = "s",\n["chat"] = "c",\n["text"] = "${hex('hi')}",\n["cwd"] = "",\n["opts"] = "${hex(`mcp=${hex('github')}`)}",\n["t"] = 1,\n},\n}\n`;
+  assert.deepEqual(P.parseOutbox(outbox).mcp, ['github'], 'reload mode carries it too');
+
+  const mcp = parsed(SAMPLE).mcp;
+  assert.deepEqual(MC.forClaude(mcp, { on: ['notion', 'quiet'] }).names, ['notion', 'quiet'], 'a chat can turn on a server that is off by default');
+  assert.deepEqual(MC.forClaude(mcp, { on: [] }).names, []);
+  assert.equal(MC.forClaude(mcp, { on: [] }).blocks('mcp__notion__notion-create-pages'), true, 'an allow list still holds for a server the chat turned off');
+  assert.deepEqual(MC.forClaude(mcp).names, ['github', 'notion', 'linear']);
+  assert.deepEqual(
+    MC.forCodex(mcp, { on: ['quiet', 'github'] }).map(e => e.name),
+    ['github', 'quiet'],
+  );
+  assert.deepEqual(A.unsupportedSettings('grok', { mcp: ['notion'] }), ['mcp notion']);
+  assert.deepEqual(A.unsupportedSettings('claude', { mcp: ['notion'] }), []);
+  assert.deepEqual(A.unsupportedSettings('codex', { mcp: ['notion'] }), []);
+});
+
+test('slot field mcp: each server with its default and last health; a bad name or health never reaches Lua', () => {
+  const lua = P.luaTable('X', [], {
+    mcp: [
+      { name: 'notion', on: true, health: 'connected', at: 1700000000 },
+      { name: 'linear', on: false, health: 'weird', at: 1.5 },
+      { name: 'bad name"', on: true, health: 'connected', at: 1 },
+    ],
+  });
+  assert.match(
+    lua,
+    /^\tmcp = \{ \{ name = "notion", on = true, health = "connected", at = 1700000000 \}, \{ name = "linear", on = false, health = "unknown", at = 0 \} \},$/m,
+  );
+  assert.match(P.luaTable('X', [], { mcp: [] }), /^\tmcp = \{ {2}\},$/m, 'a new bridge with no servers says so');
+  assert.ok(!/mcp =/.test(P.luaTable('X', [], {})));
+});
+
+test('health: the Claude init event reports every server with its status', () => {
+  const r = A.claudeParser().feed({
+    type: 'system',
+    subtype: 'init',
+    mcp_servers: [{ name: 'notion', status: 'connected' }, { name: 'linear', status: 'needs-auth' }, { status: 'failed' }],
+  });
+  assert.deepEqual(r.mcpStatus, [
+    { name: 'notion', status: 'connected' },
+    { name: 'linear', status: 'needs-auth' },
+  ]);
+  assert.deepEqual(r.mcpDown, [
+    { name: 'linear', status: 'needs-auth' },
+    { name: '?', status: 'failed' },
+  ]);
+});
