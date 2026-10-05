@@ -119,11 +119,30 @@ test('a dispatch runs the skill as its own claude -p run: prompt on stdin, the s
     assert.equal(r.done.length, 1, 'the bridge is told once');
     assert.equal(r.done[0].ctx.key, 'chat-1');
     const status = r.factory.status({ runId: id });
-    assert.match(status.text, new RegExp(`Factory run ${id} \\(/babysit-pr 12 .*\\) done after \\d+s, \\$\\d+\\.\\d\\d, model claude-opus-5-5\\.`));
+    assert.match(status.text, new RegExp(`^/babysit-pr 12 .*: done after \\d+s, \\$\\d+\\.\\d\\d\\. Factory run ${id}, model claude-opus-5-5\\.`));
     assert.match(r.factory.status({}).text, new RegExp(id));
     assert.match(fs.readFileSync(run.log, 'utf8'), /"type":"result"/, 'the log holds the run');
     assert.equal(fs.statSync(run.log).mode & 0o777, POSIX ? 0o600 : fs.statSync(run.log).mode & 0o777);
   } finally { r.cleanup(); }
+});
+
+test('the run summary is plain text for the game window: no Markdown marks, and a long one ends at a sentence', () => {
+  const said = [
+    '## Result',
+    'I merged **2 of the 3** approved AI PRs into `internal`. See [the PR](https://github.com/a/b/pull/1).',
+    '* **#18579** (batch of 9 fixes): **not merged.** Its `sensitive-read-audit.test.ts:65` check fails.',
+    '- __#18610__: merged.',
+  ].join('\n');
+  assert.equal(F.summaryOf(said), [
+    'Result',
+    'I merged 2 of the 3 approved AI PRs into internal. See the PR https://github.com/a/b/pull/1.',
+    '- #18579 (batch of 9 fixes): not merged. Its sensitive-read-audit.test.ts:65 check fails.',
+    '- #18610: merged.',
+  ].join('\n'));
+  const long = Array.from({ length: 40 }, (_, i) => `Sentence number ${i} is here.`).join(' ');
+  const cut = F.summaryOf(long);
+  assert.ok(cut.length <= 904, cut.length);
+  assert.match(cut, /is here\. \.\.\.$/);
 });
 
 test('refusals: a skill outside the allowlist, a skill-like injection, an off factory, a missing claude and too many runs start nothing', async () => {
