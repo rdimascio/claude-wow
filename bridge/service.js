@@ -404,15 +404,25 @@ function definition(platform, d, r = R.DEFAULT, home = H.resolve().dir) {
   return systemdUnit(base);
 }
 
-function preflight(d) {
+function terminalIdentity(p, b) {
+  if (b.verify) return b.verify(p);
+  return alive(p.pid) ? 'match' : 'gone';
+}
+
+function preflight(d, platform = process.platform, b = backend(platform)) {
   const problems = [];
   const home = H.resolve();
   if (!fs.existsSync(home.config)) {
     problems.push(`${home.config} is missing: run "claude-wow setup" (node setup.js) first, or the service would just restart in a loop.`);
   }
   const p = readPid(d);
-  if (p && p.mode === 'terminal' && alive(p.pid)) {
+  const identity = p && p.mode === 'terminal' ? terminalIdentity(p, b) : 'gone';
+  if (identity === 'match') {
     problems.push(`a bridge is already running in a terminal (pid ${p.pid}). Stop it with Ctrl+C first; two bridges fight over the slot files.`);
+  } else if (identity === 'unknown') {
+    problems.push(
+      `could not confirm whether pid ${p.pid} is a bridge running in a terminal. If it is, stop it with Ctrl+C; if it is not, delete ${pidFile(d)}. Then retry.`,
+    );
   }
   return problems;
 }
@@ -850,7 +860,7 @@ function main(argv, { platform = process.platform, out = console.log, err = cons
   try {
     switch (cmd) {
       case 'install': {
-        const problems = preflight(d);
+        const problems = preflight(d, platform, b);
         if (problems.length) {
           for (const p of problems) err(`claude-wow service: ${p}`);
           return 1;
@@ -927,6 +937,7 @@ module.exports = {
   releaseProgram,
   program,
   definition,
+  preflight,
   rotate,
   RotatingLog,
   writePid,
