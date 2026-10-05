@@ -642,3 +642,26 @@ test('helpers: the enabled clients from clients[] or a legacy addonDir, the game
   assert.equal(await D.main(['deploy'], w.ctx), 2);
   assert.match(w.err.join('\n'), /macOS and Linux only/);
 });
+
+test('a build installs the runtime dependencies first when the source folder has no node_modules, and not when it has them', () => {
+  const src = fs.mkdtempSync(path.join(require('os').tmpdir(), 'cw-build-deps-'));
+  const out = path.join(src, 'out');
+  fs.mkdirSync(out);
+  const calls = [];
+  const run = (cmd, args, opts) => {
+    calls.push({ cmd: path.basename(cmd), args, cwd: opts && opts.cwd });
+    if (args.some(a => String(a).endsWith('build.js'))) fs.writeFileSync(path.join(out, 'claude-wow-test'), '');
+    return { ok: true, out: '' };
+  };
+  D.bunBuild(src, out, run);
+  assert.match(calls[0].cmd, /^npm(\.cmd)?$/);
+  assert.deepEqual(calls[0].args, ['ci', '--omit=dev']);
+  assert.equal(calls[0].cwd, src);
+  fs.rmSync(path.join(out, 'claude-wow-test'));
+  fs.mkdirSync(path.join(src, 'node_modules'));
+  calls.length = 0;
+  D.bunBuild(src, out, run);
+  assert.ok(!calls.some(c => /^npm/.test(c.cmd)), 'a folder that already has node_modules is built as it is');
+  assert.throws(() => D.bunBuild(path.join(src, 'empty'), out, () => ({ ok: false, out: 'boom' })), /npm ci --omit=dev failed/);
+  fs.rmSync(src, { recursive: true, force: true });
+});
