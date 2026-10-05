@@ -163,24 +163,17 @@ function H.ShowWindow()
 	return "window"
 end
 
-local function InCombat()
-	return type(InCombatLockdown) == "function" and InCombatLockdown() == true
-end
-
 function H.Open()
-	if H.Register() and not InCombat() then
-		if H.window then H.window:Hide() end
-		if H.category and type(Settings.OpenToCategory) == "function" then
-			if pcall(Settings.OpenToCategory, CategoryID(H.category)) then return "settings" end
-		elseif H.legacy and type(InterfaceOptionsFrame_OpenToCategory) == "function" then
-			local ok = pcall(InterfaceOptionsFrame_OpenToCategory, H.panel)
-			if ok then
-				pcall(InterfaceOptionsFrame_OpenToCategory, H.panel)
-				return "interface"
-			end
-		end
+	if not H.Register() then return H.ShowWindow() end
+	if H.category then
+		if type(Settings.OpenToCategory) == "function" and pcall(Settings.OpenToCategory, CategoryID(H.category)) then return "settings" end
+		return nil
 	end
-	return H.ShowWindow()
+	if type(InterfaceOptionsFrame_OpenToCategory) == "function" and pcall(InterfaceOptionsFrame_OpenToCategory, H.panel) then
+		pcall(InterfaceOptionsFrame_OpenToCategory, H.panel)
+		return "interface"
+	end
+	return nil
 end
 
 local events = CreateFrame("Frame")
