@@ -71,6 +71,7 @@ AddOns/ClaudeWoW_S###/Inbox.lua ◄── bridge/bridge.js (a real process) ◄�
 | Directive | Effect |
 |---|---|
 | `[[sleep 5]]` | Answers after 5 s. |
+| `[[map skins]]` | Appends a one-point route named `skins` to the run's `CLAUDE_WOW_MAP_FILE`, after any sleep. |
 | `[[tools 3]]` | Emits 3 tool calls first (heartbeats in game). |
 | `[[hang]]` | Never answers. |
 | `[[crash]]` | Exits after start with no result. |

@@ -120,14 +120,45 @@ function serverOf(rule) {
   return m ? { server: m[1], tool: m[2] === undefined ? '' : m[2] } : null;
 }
 
-const chosen = (s, on) => (Array.isArray(on) ? on.includes(s.name) : s.default);
+const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
+const CHOICE_MAX = 16;
+const ALL_OFF = '-*';
 
-function forClaude(mcp, { on } = {}) {
+const serverId = name =>
+  String(name || '')
+    .replace(/[^A-Za-z0-9_-]/g, '_')
+    .slice(0, 64);
+
+function parseChoice(value) {
+  const choice = { allOff: false, on: [], off: [] };
+  for (const raw of String(value || '')
+    .split(',')
+    .map(t => t.trim())
+    .filter(Boolean)
+    .slice(0, CHOICE_MAX + 1)) {
+    if (raw === ALL_OFF) {
+      choice.allOff = true;
+      continue;
+    }
+    const sign = raw[0] === '-' ? '-' : '+';
+    const id = raw[0] === '-' || raw[0] === '+' ? raw.slice(1) : raw;
+    if (!ID_RE.test(id)) continue;
+    (sign === '-' ? choice.off : choice.on).push(id);
+  }
+  choice.on = [...new Set(choice.on)];
+  choice.off = [...new Set(choice.off.filter(id => !choice.on.includes(id)))];
+  return choice;
+}
+
+const explicitOff = (choice, id) => !!choice && (choice.off.includes(id) || (choice.allOff && !choice.on.includes(id)));
+const isOn = (choice, id, dflt) => (choice && choice.on.includes(id) ? true : explicitOff(choice, id) ? false : dflt);
+
+function forClaude(mcp, { choice } = {}) {
   if (!mcp) return null;
-  const loaded = mcp.servers.filter(s => chosen(s, on));
+  const loaded = mcp.servers.filter(s => isOn(choice, s.name, s.default));
   const allowed = new Map(mcp.servers.map(s => [s.name, s.allow.claude]));
   const allowRules = loaded.flatMap(s => s.allow.claude.map(t => toolRule(s.name, t)));
-  const off = Array.isArray(on) ? mcp.servers.filter(s => !on.includes(s.name)).map(s => s.name) : [];
+  const off = mcp.servers.filter(s => explicitOff(choice, s.name)).map(s => s.name);
   const blocks = rule => {
     const r = serverOf(rule);
     if (!r || !allowed.has(r.server)) return false;
@@ -142,6 +173,17 @@ function forClaude(mcp, { on } = {}) {
     offRules: off.map(n => `mcp__${n}`),
     strict: mcp.strict,
     blocks,
+  };
+}
+
+function discoveredOff(choice, ids, configured = []) {
+  const off = [...new Set(ids)].filter(id => !configured.includes(id) && explicitOff(choice, id));
+  return {
+    rules: off.map(id => `mcp__${id}`),
+    blocks: rule => {
+      const r = serverOf(rule);
+      return !!r && off.includes(r.server);
+    },
   };
 }
 
@@ -217,11 +259,12 @@ function codexOwnServers({ home = os.homedir(), codexHome = process.env.CODEX_HO
   return [...names];
 }
 
-function forCodex(mcp, { skip = [], on } = {}) {
-  if (!mcp) return [];
-  const turnedOff = Array.isArray(on) ? skip.filter(n => !on.includes(n) && mcp.servers.some(s => s.name === n)).map(name => ({ name, off: true })) : [];
-  return mcp.servers
-    .filter(s => chosen(s, on) && !skip.includes(s.name))
+function forCodex(mcp, { choice, own = [] } = {}) {
+  const configured = mcp ? mcp.servers : [];
+  const turnedOff = own.filter(n => ID_RE.test(n) && explicitOff(choice, n)).map(name => ({ name, off: true }));
+  const turnedOn = own.filter(n => ID_RE.test(n) && choice && choice.on.includes(n)).map(name => ({ name, on: true }));
+  return configured
+    .filter(s => isOn(choice, s.name, s.default) && !own.includes(s.name))
     .map(s => ({
       name: s.name,
       server: s.server,
@@ -229,7 +272,7 @@ function forCodex(mcp, { skip = [], on } = {}) {
       bearerTokenEnvVar: s.bearerTokenEnvVar || '',
       enabledTools: s.allow.codex.includes(ALL_TOOLS) ? null : s.allow.codex,
     }))
-    .concat(turnedOff);
+    .concat(turnedOff, turnedOn);
 }
 
 const tomlString = v => JSON.stringify(String(v).replace(/[\ud800-\udfff]/gu, '\ufffd')).replace(/\u007f/g, '\\u007f');
@@ -240,8 +283,8 @@ function codexArgs(entries) {
   for (const e of entries || []) {
     const key = `mcp_servers.${e.name}`;
     const set = (k, v) => out.push('-c', `${key}.${k}=${v}`);
-    if (e.off) {
-      set('enabled', 'false');
+    if (e.off || e.on) {
+      set('enabled', e.on ? 'true' : 'false');
       continue;
     }
     if (e.server.type === 'http') {
@@ -267,4 +310,75 @@ function summary(mcp) {
   return `${names.length ? names.join(', ') : 'no servers'}${mcp.strict ? '; strict: Claude runs load only these and the bridge servers' : ''}`;
 }
 
-module.exports = { parse, forClaude, forCodex, codexArgs, codexOwnServers, scopeAllowed, claudeOwnServers, summary, serverOf, ALL_TOOLS };
+const SOURCES = ['config', 'claude', 'claude.ai', 'plugin', 'codex'];
+
+function describe(name) {
+  const n = String(name || '');
+  const ai = /^claude\.ai (.+)$/.exec(n);
+  if (ai) return { label: ai[1], src: 'claude.ai' };
+  const plugin = /^plugin:([^:]+):(.+)$/.exec(n);
+  if (plugin) return { label: plugin[2] === plugin[1].toLowerCase() ? plugin[1] : `${plugin[2]} (${plugin[1]})`, src: 'plugin' };
+  return { label: n, src: 'claude' };
+}
+
+const SEEN_MAX = 64;
+
+const CWD_SOURCES = ['project', 'local'];
+
+function noteSeen(seen, servers, { cwd = '', now = Date.now() } = {}) {
+  const reported = (servers || []).filter(s => s && typeof s.name === 'string' && ID_RE.test(serverId(s.name)));
+  if (reported.some(s => s.source !== 'dynamic')) for (const [id, e] of Object.entries(seen)) if (!e.dynamic && (!e.cwd || e.cwd === cwd)) delete seen[id];
+  for (const s of reported) {
+    const scope = s.source === 'dynamic' ? { dynamic: true } : CWD_SOURCES.includes(s.source) ? { cwd } : {};
+    seen[serverId(s.name)] = { ...describe(s.name), status: String(s.status || 'unknown'), at: now, ...scope };
+  }
+  const ids = Object.keys(seen);
+  if (ids.length > SEEN_MAX)
+    ids
+      .sort((a, b) => seen[a].at - seen[b].at)
+      .slice(0, ids.length - SEEN_MAX)
+      .forEach(id => delete seen[id]);
+  return seen;
+}
+
+function seedSeen(seen, own, { cwd = '', now = 0 } = {}) {
+  for (const entry of own || []) {
+    const [kind] = entry.split(':');
+    const name = kind === 'plugin' ? entry : entry.slice(kind.length + 1);
+    const id = serverId(name);
+    if (ID_RE.test(id) && !seen[id]) seen[id] = { ...describe(name), status: 'unknown', at: now, ...(CWD_SOURCES.includes(kind) ? { cwd } : {}) };
+  }
+  return seen;
+}
+
+function catalog({ mcp, seen = {}, codexOwn = [], reserved = [] }) {
+  const out = [];
+  const add = (id, label, src, on, health) => {
+    if (!ID_RE.test(id) || reserved.includes(id) || out.some(e => e.id === id)) return;
+    out.push({ id, label, src, on, health });
+  };
+  for (const s of mcp ? mcp.servers : []) add(s.name, s.name, 'config', s.default, (seen[s.name] || {}).status || 'unknown');
+  const found = Object.entries(seen).sort((a, b) => a[1].label.localeCompare(b[1].label));
+  for (const [id, e] of found) if (!e.dynamic) add(id, e.label, e.src, true, e.status);
+  for (const n of codexOwn) add(n, n, 'codex', true, 'unknown');
+  return out;
+}
+
+module.exports = {
+  parseChoice,
+  discoveredOff,
+  noteSeen,
+  seedSeen,
+  catalog,
+  SOURCES,
+  parse,
+  forClaude,
+  forCodex,
+  codexArgs,
+  codexOwnServers,
+  scopeAllowed,
+  claudeOwnServers,
+  summary,
+  serverOf,
+  ALL_TOOLS,
+};

@@ -356,6 +356,47 @@ local function AddChat(name, cwd)
 	return c
 end
 
+function Q.IsCharacterChat(c)
+	return not c.quiet and (c.cwd or "") == "" and Cli.ChatPlugin(c) ~= "claude-code"
+end
+
+function Q.LoadCharacterChats(data, own)
+	own = type(own) == "table" and own or {}
+	local seen = {}
+	for _, c in ipairs(data.chats) do seen[c.id] = true end
+	for _, c in ipairs(type(own.chats) == "table" and own.chats or {}) do
+		if type(c) == "table" and c.id and not seen[c.id] then
+			table.insert(data.chats, c)
+			seen[c.id] = true
+		end
+	end
+	if own.activeChat and seen[own.activeChat] then data.activeChat = own.activeChat end
+	return { chats = {}, restored = own.restored }
+end
+
+function Q.StashCharacterChats(data, own)
+	local shared, mine = {}, {}
+	for _, c in ipairs(data.chats) do
+		table.insert(Q.IsCharacterChat(c) and mine or shared, c)
+	end
+	data.chats = shared
+	return { chats = mine, activeChat = data.activeChat, restored = type(own) == "table" and own.restored or nil }
+end
+
+function Q.CharacterKey()
+	return ClaudeWoWOrders and ClaudeWoWOrders.CharacterKey() or nil
+end
+
+function Q.CharacterFlag()
+	local key = Q.CharacterKey()
+	return key and ("char=" .. ToHex(key)) or nil
+end
+
+function Q.ResetChats(data)
+	data.chats = {}
+	data.activeChat, data.history, data.pendingId, data.unread, data.draft, data.restored = nil, nil, nil, nil, nil, nil
+end
+
 function Q.ListedChats()
 	local listed = {}
 	for _, c in ipairs(db.chats) do
@@ -421,6 +462,10 @@ local function InitDB()
 	if not db.session then
 		db.session = string.format("%x%04x%04x", time() % 0xFFFFFF, math.random(0, 0xFFFF), math.random(0, 0xFFFF))
 	end
+	if not s.chatsPerCharacterV1 then
+		s.chatsPerCharacterV1 = true
+		Q.ResetChats(db)
+	end
 	if not db.chats then
 		-- Migrate the single-chat layout into the first chat.
 		db.chats = {}
@@ -438,6 +483,7 @@ local function InitDB()
 		db.activeChat = c.id
 		db.history, db.pendingId, db.unread, db.draft = nil, nil, nil, nil
 	end
+	ClaudeWoWCharDB = Q.LoadCharacterChats(db, ClaudeWoWCharDB)
 	if #db.chats == 0 then AddChat() end
 	if not FindChat(db.activeChat) then db.activeChat = db.chats[1].id end
 	-- Chats from before agents had names: replies were stored with role "claude".
@@ -505,6 +551,34 @@ local function AddHistory(chat, role, text, id, denied, agent, macros)
 	while #chat.history > MAX_HISTORY do
 		table.remove(chat.history, 1)
 	end
+end
+
+function ClaudeWoW.ApplyMirror(list)
+	if type(list) ~= "table" then return end
+	local changed = false
+	for _, e in ipairs(list) do
+		local c = type(e) == "table" and type(e.chat) == "string" and FindChat(e.chat) or nil
+		local seq = c and tonumber(e.seq)
+		if seq and seq > (c.mirrorSeq or 0) then
+			local first = (c.mirrorSeq or 0) + 1
+			if c.mirrorSeq and seq > first then
+				AddHistory(c, "system", (seq - first) .. " earlier message(s) are in Discord.")
+			end
+			local text = tostring(e.text or "")
+			if e.role == "user" then
+				AddHistory(c, "user", "(Discord) " .. text)
+			elseif e.role == "assistant" then
+				local denied = type(e.denied) == "table" and #e.denied > 0 and e.denied or nil
+				AddHistory(c, "assistant", text, nil, denied, e.agent ~= "" and e.agent or nil)
+			else
+				AddHistory(c, "system", text)
+			end
+			c.mirrorSeq = seq
+			if db.activeChat ~= c.id then c.unread = (c.unread or 0) + 1 end
+			changed = true
+		end
+	end
+	if changed then ClaudeWoW.Render() end
 end
 
 local function SlotName(i)
@@ -1868,8 +1942,9 @@ end
 -- The bridge keeps every chat's transcript. After the client wipes our saved data,
 -- it sends them back once, addressed to our new session token.
 local function ImportRestore(r)
-	if type(r) ~= "table" or r.token ~= db.session or db.restored then return end
-	db.restored = true
+	if type(r) ~= "table" or r.token ~= db.session or ClaudeWoWCharDB.restored then return end
+	if type(r.char) == "string" and r.char ~= "" and r.char ~= Q.CharacterKey() then return end
+	ClaudeWoWCharDB.restored = true
 	local added = 0
 	local current = ActiveChat()
 	for _, rc in ipairs(r.chats or {}) do
@@ -2100,7 +2175,9 @@ local function TryLoadSlot(why)
 		ClaudeWoW.ApplyLive(data.live)
 		ClaudeWoW.ApplySessions(data.sessions, data.now)
 		ClaudeWoW.ApplyProjects(data.projects, data.home)
+		ClaudeWoW.ApplySkills(data.skills)
 		run.bridgeDiscord = data.discord == true
+		ClaudeWoW.ApplyMirror(data.mirror)
 		ClaudeWoW.ApplyMcp(data.mcp)
 		local acked = ClaudeWoW.ApplyAcks(data.acks)
 		ApplyTransport(data)
@@ -2329,7 +2406,9 @@ local function ProcessInbox()
 	ClaudeWoW.ApplyLive(inbox.live)
 	ClaudeWoW.ApplySessions(inbox.sessions, inbox.now)
 	ClaudeWoW.ApplyProjects(inbox.projects, inbox.home)
+	ClaudeWoW.ApplySkills(inbox.skills)
 	run.bridgeDiscord = inbox.discord == true
+	ClaudeWoW.ApplyMirror(inbox.mirror)
 	ClaudeWoW.ApplyMcp((tonumber(inbox.now) or 0) >= time() - Q.INBOX_FRESH_SECONDS and inbox.mcp or nil)
 	ApplyTransport(inbox)
 	ClaudeWoW.Version.Apply(inbox.bridge, inbox.now)
@@ -3400,7 +3479,7 @@ function ClaudeWoW.Send(text, allow, opts)
 	if wantsTitle then table.insert(optionTokens, "t") end
 	for _, t in ipairs(optionTokens) do table.insert(tokens, t) end
 	local flags = table.concat(tokens, ";")
-	local outboxTokens = { "ver=" .. ClaudeWoW.Version.Own(), "proto=" .. ClaudeWoW.Version.PROTO }
+	local outboxTokens = { "ver=" .. ClaudeWoW.Version.Own(), "proto=" .. ClaudeWoW.Version.PROTO, Q.CharacterFlag() }
 	for _, t in ipairs(optionTokens) do table.insert(outboxTokens, t) end
 	local newSession = (c.resetNext and not verbatim) and true or nil
 	if not verbatim then c.resetNext = nil end
@@ -3515,6 +3594,7 @@ function ClaudeWoW.SayHello()
 	local c = ActiveChat()
 	local ctx = db.settings.context and ClaudeWoW.GameContext() or ""
 	local flags = "h;ver=" .. ClaudeWoW.Version.Own() .. ";proto=" .. ClaudeWoW.Version.PROTO
+	if Q.CharacterFlag() then flags = flags .. ";" .. Q.CharacterFlag() end
 	if Presence.Channel() and not (run.lateProbe and run.lateProbe.result) then
 		run.lateProbe = run.lateProbe or { token = string.format("%06x%04x", time() % 16777216, math.floor(now * 1000) % 65536) }
 		flags = flags .. ";probe=" .. run.lateProbe.token
@@ -3525,7 +3605,7 @@ function ClaudeWoW.SayHello()
 	-- Deletions the bridge never confirmed ride along with the hello.
 	for id in pairs(db.forget) do SendForget(id) end
 	-- Fresh saved data: show "restoring" instead of an empty panel until we hear back.
-	if not db.restored then
+	if not ClaudeWoWCharDB.restored then
 		local empty = true
 		for _, ch in ipairs(db.chats) do
 			if #ch.history > 0 then empty = false end
@@ -3731,6 +3811,106 @@ end
 Cli.PROJECTS_MAX = 20
 Cli.NO_PROJECT = "No project"
 
+Cli.SKILL_BUILTINS = { "runs", "stop" }
+Cli.skillCommands = {}
+
+function Cli.IsCodingChat(c)
+	if not c then return false end
+	local plugin = Cli.ChatPlugin(c)
+	if plugin == "" then plugin = run.bridgePlugin or "" end
+	return plugin == "claude-code"
+end
+
+function Cli.SlashNames()
+	local names = {}
+	if #(run.bridgeSkills or {}) == 0 then return names end
+	for _, s in ipairs(Cli.SKILL_BUILTINS) do table.insert(names, s) end
+	for _, s in ipairs(run.bridgeSkills) do
+		if not Contains(names, s) then table.insert(names, s) end
+	end
+	return names
+end
+
+function Cli.SlashTaken(cmd)
+	for _, list in ipairs({ SlashCmdList or {}, SecureCmdList or {} }) do
+		for key in pairs(list) do
+			for i = 1, 20 do
+				local v = _G["SLASH_" .. key .. i]
+				if v == nil then break end
+				if type(v) == "string" and v:lower() == cmd then return true end
+			end
+		end
+	end
+	return false
+end
+
+function Cli.RunSkillCommand(name, msg, editBox)
+	if not db then return end
+	if not Contains(Cli.SlashNames(), name) then
+		TellPlayer("/" .. name .. " is not a factory skill on this bridge right now.")
+		return
+	end
+	local chat = editBox and Whisper.ChatForBox(editBox) or nil
+	if not Cli.IsCodingChat(chat) then chat = ActiveChat() end
+	if not Cli.IsCodingChat(chat) then
+		TellPlayer("/" .. name .. " runs in a coding chat. Pick a project for this chat first (/claude --project <name>).")
+		return
+	end
+	if db.activeChat ~= chat.id then ClaudeWoW.SwitchChat(chat.id) end
+	local args = Trim(tostring(msg or ""))
+	ClaudeWoW.Send("/" .. name .. (args ~= "" and (" " .. args) or ""))
+end
+
+function Cli.RegisterSkillCommand(name)
+	if Cli.skillCommands[name] ~= nil or type(SlashCmdList) ~= "table" then return end
+	local cmd = "/" .. name
+	if Cli.SlashTaken(cmd) then
+		Cli.skillCommands[name] = false
+		return
+	end
+	local key = "CLAUDEWOW_SKILL_" .. name:upper():gsub("[^%w]", "_")
+	_G["SLASH_" .. key .. "1"] = cmd
+	SlashCmdList[key] = function(msg, editBox) Cli.RunSkillCommand(name, msg, editBox) end
+	Cli.skillCommands[name] = true
+end
+
+function ClaudeWoW.ApplySkills(list)
+	local skills = {}
+	for _, s in ipairs(type(list) == "table" and list or {}) do
+		if type(s) == "string" and #s <= 64 and s:match("^[%l%d][%l%d:_%-]*$") then table.insert(skills, s) end
+	end
+	run.bridgeSkills = skills
+	for _, s in ipairs(Cli.SlashNames()) do Cli.RegisterSkillCommand(s) end
+end
+
+function Cli.CompleteSlash(box)
+	local typed = tostring(box:GetText() or ""):match("^/([%w:_%-]*)$")
+	local c = ActiveChat()
+	if not typed or not Cli.IsCodingChat(c) then return end
+	local names = Cli.SlashNames()
+	if #names == 0 then return end
+	typed = typed:lower()
+	local hits = {}
+	for _, n in ipairs(names) do
+		if n:sub(1, #typed) == typed then table.insert(hits, n) end
+	end
+	if #hits == 0 then
+		Cli.Out(c, "No command starts with /" .. typed .. ". Commands: /" .. table.concat(names, ", /"))
+		return
+	end
+	local prefix = hits[1]
+	for _, n in ipairs(hits) do
+		while n:sub(1, #prefix) ~= prefix do prefix = prefix:sub(1, -2) end
+	end
+	if #hits == 1 then prefix = prefix .. " " end
+	if #prefix > #typed then
+		box:SetText("/" .. prefix)
+		box:SetCursorPosition(#prefix + 1)
+	else
+		Cli.Out(c, "Commands: /" .. table.concat(hits, ", /"))
+	end
+end
+
 function Cli.ProjectOf(c)
 	if not c then return "" end
 	if c.cwd and c.cwd ~= "" then return c.cwd end
@@ -3888,8 +4068,8 @@ function Cli.ProjectButtonTooltip(b)
 	GameTooltip:Show()
 end
 
-Cli.MCP_MAX = 8
-Cli.MCP_LIST_MAX = 32
+Cli.MCP_MAX = 16
+Cli.MCP_LIST_MAX = 64
 Cli.MCP_AGENTS = { claude = true, codex = true }
 Cli.MCP_HEALTH = {
 	connected = { "ok", "33cc33" },
@@ -3898,6 +4078,13 @@ Cli.MCP_HEALTH = {
 	pending = { "starting", "999999" },
 	unknown = { "not seen yet", "999999" },
 }
+Cli.MCP_SOURCES = {
+	{ "config", "From config.json" },
+	{ "claude", "Your Claude servers" },
+	{ "plugin", "Claude plugins" },
+	{ "claude.ai", "claude.ai connectors" },
+	{ "codex", "Your Codex servers" },
+}
 
 function ClaudeWoW.ApplyMcp(list)
 	if type(list) ~= "table" then
@@ -3905,15 +4092,27 @@ function ClaudeWoW.ApplyMcp(list)
 		Cli.UpdateMcpButton()
 		return
 	end
+	local known = {}
+	for _, src in ipairs(Cli.MCP_SOURCES) do known[src[1]] = true end
 	local out = {}
 	for _, s in ipairs(list) do
 		if #out >= Cli.MCP_LIST_MAX then break end
-		if type(s) == "table" and type(s.name) == "string" and #s.name <= 64 and s.name:match("^[%w][%w_%-]*$") then
+		if type(s) == "table" and type(s.id) == "string" and #s.id <= 64 and s.id:match("^[%w_%-]+$") and known[s.src] then
+			local label = type(s.label) == "string" and s.label:gsub("[%c|]", ""):sub(1, 64) or ""
 			local health = (type(s.health) == "string" and Cli.MCP_HEALTH[s.health]) and s.health or "unknown"
-			table.insert(out, { name = s.name, on = s.on == true, health = health })
+			table.insert(out, { id = s.id, label = label ~= "" and label or s.id, src = s.src, on = s.on == true, health = health })
 		end
 	end
 	run.bridgeMcp = out
+	for _, c in ipairs(db and db.chats or {}) do
+		if type(c.mcp) == "table" then
+			local set = {}
+			for _, id in ipairs(c.mcp) do
+				if type(id) == "string" then set[id] = true end
+			end
+			c.mcp, c.mcpSet, c.mcpAllOff = nil, next(set) and set or nil, true
+		end
+	end
 	Cli.UpdateMcpButton()
 end
 
@@ -3923,13 +4122,29 @@ function Cli.McpUnsupported(c)
 end
 
 function Cli.McpOn(c, s)
-	if c and type(c.mcp) == "table" then return Contains(c.mcp, s.name) end
+	if c and type(c.mcpSet) == "table" and c.mcpSet[s.id] ~= nil then return c.mcpSet[s.id] end
+	if c and c.mcpAllOff then return false end
 	return s.on
 end
 
+function Cli.McpChoiceParts(c)
+	local parts = {}
+	if not c then return parts end
+	if c.mcpAllOff then table.insert(parts, "-*") end
+	local ids = {}
+	for _, s in ipairs(run.bridgeMcp or {}) do
+		if type(c.mcpSet) == "table" and c.mcpSet[s.id] ~= nil then table.insert(ids, s.id) end
+	end
+	table.sort(ids)
+	for _, id in ipairs(ids) do table.insert(parts, (c.mcpSet[id] and "+" or "-") .. id) end
+	return parts
+end
+
 function Cli.McpToken(c)
-	if not (c and type(c.mcp) == "table" and run.bridgeMcp) then return "" end
-	return "mcp=" .. table.concat(c.mcp, ",")
+	if not (c and run.bridgeMcp) then return "" end
+	local parts = Cli.McpChoiceParts(c)
+	if #parts == 0 then return "" end
+	return "mcp=" .. table.concat(parts, ",")
 end
 
 function Cli.McpCounts(c)
@@ -3950,41 +4165,82 @@ function Cli.McpMissing()
 		if not ClaudeWoW.IsConnected() then return "not connected to the bridge yet." end
 		return "this bridge sends no MCP server list. Update the bridge (claude-wow update) and reconnect."
 	end
-	if #run.bridgeMcp == 0 then return "the bridge has no MCP servers. Add them under mcp.servers in its config.json." end
+	if #run.bridgeMcp == 0 then return "the bridge sees no MCP servers: none in your Claude or Codex setup, or in mcp.servers in its config.json." end
+end
+
+function Cli.McpFind(name)
+	name = tostring(name or "")
+	for _, s in ipairs(run.bridgeMcp or {}) do
+		if s.id == name then return s end
+	end
+	local want = name:lower()
+	for _, field in ipairs({ "id", "label" }) do
+		local hits, ids = {}, {}
+		for _, s in ipairs(run.bridgeMcp or {}) do
+			if s[field]:lower() == want then
+				table.insert(hits, s)
+				table.insert(ids, s.id)
+			end
+		end
+		if #hits > 1 then return nil, "more than one server is called " .. name .. "; name one of " .. table.concat(ids, ", ") .. "." end
+		if hits[1] then return hits[1] end
+	end
 end
 
 function Cli.SetMcp(c, name, on)
 	local missing = Cli.McpMissing()
 	if missing then return nil, missing end
-	local found, set = false, {}
-	for _, s in ipairs(run.bridgeMcp) do
-		local want = Cli.McpOn(c, s)
-		if s.name == name then
-			found, want = true, on
-		end
-		if want then table.insert(set, s.name) end
+	local s, ambiguous = Cli.McpFind(name)
+	if ambiguous then return nil, ambiguous end
+	if not s then return nil, "no MCP server named \"" .. tostring(name) .. "\" (servers: " .. Cli.McpNames() .. ")." end
+	local set = {}
+	for id, v in pairs(c.mcpSet or {}) do set[id] = v end
+	local plain = s.on
+	if c.mcpAllOff then plain = false end
+	if on == plain and on then set[s.id] = nil else set[s.id] = on end
+	local count = 0
+	for _ in pairs(set) do count = count + 1 end
+	local before = c.mcpSet
+	c.mcpSet = set
+	if count > Cli.MCP_MAX then
+		c.mcpSet = before
+		return nil, "this chat already changes " .. Cli.MCP_MAX .. " servers. Use /claude mcp none, then turn on the ones you want, or /claude mcp default."
 	end
-	if not found then return nil, "no MCP server named \"" .. name .. "\" (servers: " .. Cli.McpNames() .. ")." end
-	if #set > Cli.MCP_MAX then return nil, "a chat can use at most " .. Cli.MCP_MAX .. " MCP servers. Turn them all off with /claude mcp none, then turn on the ones you want." end
-	c.mcp = set
-	return name .. " is " .. (on and "on" or "off") .. " for this chat."
+	if next(set) == nil then c.mcpSet = nil end
+	return s.label .. " is " .. (on and "on" or "off") .. " for this chat."
 end
 
 function Cli.McpNames()
 	local names = {}
-	for _, s in ipairs(run.bridgeMcp or {}) do table.insert(names, s.name) end
+	for _, s in ipairs(run.bridgeMcp or {}) do table.insert(names, s.label) end
 	return #names > 0 and table.concat(names, ", ") or "none"
+end
+
+function Cli.McpGroups()
+	local groups = {}
+	for _, src in ipairs(Cli.MCP_SOURCES) do
+		local rows = {}
+		for _, s in ipairs(run.bridgeMcp or {}) do
+			if s.src == src[1] then table.insert(rows, s) end
+		end
+		if #rows > 0 then table.insert(groups, { title = src[2], rows = rows }) end
+	end
+	return groups
 end
 
 function Cli.McpReport(c)
 	local missing = Cli.McpMissing()
 	if missing then return "MCP: " .. missing end
-	local lines = { "MCP servers for this chat" .. (type(c.mcp) == "table" and "" or " (the bridge's defaults)") .. ":" }
-	for _, s in ipairs(run.bridgeMcp) do
-		table.insert(lines, "  " .. (Cli.McpOn(c, s) and "on   " or "off  ") .. s.name .. "  " .. Cli.McpHealthText(s))
+	local custom = c.mcpAllOff or type(c.mcpSet) == "table"
+	local lines = { "MCP servers for this chat" .. (custom and "" or " (the defaults)") .. ":" }
+	for _, g in ipairs(Cli.McpGroups()) do
+		table.insert(lines, g.title .. ":")
+		for _, s in ipairs(g.rows) do
+			table.insert(lines, "  " .. (Cli.McpOn(c, s) and "on   " or "off  ") .. s.label .. "  " .. Cli.McpHealthText(s))
+		end
 	end
 	if Cli.McpUnsupported(c) then table.insert(lines, ChatAgentName(c) .. " does not use MCP servers; this list applies to Claude and Codex chats.") end
-	table.insert(lines, "/claude mcp on|off <name> changes one; /claude mcp none turns all off; /claude mcp default goes back to the bridge's defaults.")
+	table.insert(lines, "/claude mcp on|off <name> changes one; /claude mcp none turns all off; /claude mcp default goes back to the defaults.")
 	return table.concat(lines, "\n")
 end
 
@@ -3995,14 +4251,14 @@ function Cli.McpCommand(c, rest)
 	if word == "" then
 		Cli.Say(c, Cli.McpReport(c))
 	elseif word == "default" then
-		c.mcp = nil
-		Cli.Out(c, "MCP: this chat uses the bridge's default servers again.")
+		c.mcpSet, c.mcpAllOff = nil, nil
+		Cli.Out(c, "MCP: this chat uses the default servers again.")
 	elseif word == "none" then
 		local missing = Cli.McpMissing()
-		if not missing then c.mcp = {} end
+		if not missing then c.mcpSet, c.mcpAllOff = nil, true end
 		Cli.Out(c, "MCP: " .. (missing or "every server is off for this chat."))
 	else
-		local verb, name = rest:match("^(%S+)%s+(%S+)$")
+		local verb, name = rest:match("^(%S+)%s+(.+)$")
 		local note, err = Cli.SetMcp(c, name, verb:lower() == "on")
 		Cli.Out(c, "MCP: " .. (err or note))
 	end
@@ -4011,7 +4267,7 @@ end
 function Cli.IsMcpCommand(rest)
 	rest = Trim(rest or ""):lower()
 	if rest == "" or rest == "default" or rest == "none" then return true end
-	local verb, name = rest:match("^(%S+)%s+(%S+)$")
+	local verb, name = rest:match("^(%S+)%s+(.+)$")
 	return (verb == "on" or verb == "off") and name ~= nil
 end
 
@@ -4020,17 +4276,19 @@ function Cli.McpMenu(anchor)
 	if not c then return end
 	if not Cli.McpMissing() and type(MenuUtil) == "table" and type(MenuUtil.CreateContextMenu) == "function" then
 		local shown = pcall(MenuUtil.CreateContextMenu, anchor, function(_, root)
-			root:CreateTitle("MCP servers")
-			for _, s in ipairs(run.bridgeMcp) do
-				root:CreateCheckbox(s.name .. "  " .. Cli.McpHealthText(s), function() return Cli.McpOn(c, s) end, function()
-					local _, err = Cli.SetMcp(c, s.name, not Cli.McpOn(c, s))
-					if err then Cli.Out(c, "MCP: " .. err) end
-					ClaudeWoW.Render()
-				end)
+			for _, g in ipairs(Cli.McpGroups()) do
+				root:CreateTitle(g.title)
+				for _, s in ipairs(g.rows) do
+					root:CreateCheckbox(s.label .. "  " .. Cli.McpHealthText(s), function() return Cli.McpOn(c, s) end, function()
+						local _, err = Cli.SetMcp(c, s.id, not Cli.McpOn(c, s))
+						if err then Cli.Out(c, "MCP: " .. err) end
+						ClaudeWoW.Render()
+					end)
+				end
 			end
 			root:CreateDivider()
 			root:CreateButton("Turn all off", function() Cli.McpCommand(c, "none") end)
-			root:CreateButton("Use the bridge's defaults", function() Cli.McpCommand(c, "default") end)
+			root:CreateButton("Use the defaults", function() Cli.McpCommand(c, "default") end)
 		end)
 		if shown then return end
 	end
@@ -4065,11 +4323,15 @@ function Cli.McpButtonTooltip(b)
 	local c = ActiveChat()
 	GameTooltip:SetOwner(b, ui.chatTitle and "ANCHOR_BOTTOMRIGHT" or "ANCHOR_TOP")
 	GameTooltip:SetText("MCP servers")
+	local on, total = Cli.McpCounts(c)
+	GameTooltip:AddLine(on .. " of " .. total .. " on for this chat. Your own Claude and Codex servers are on unless you turn them off here.", 0.8, 0.8, 0.8, true)
+	local warn = {}
 	for _, s in ipairs(run.bridgeMcp or {}) do
-		GameTooltip:AddDoubleLine((Cli.McpOn(c, s) and "on   " or "off  ") .. s.name, Cli.McpHealthText(s), 1, 1, 1)
+		if Cli.McpOn(c, s) and (s.health == "failed" or s.health == "needs-auth") then table.insert(warn, s.label .. ": " .. Cli.McpHealthText(s)) end
 	end
+	for _, line in ipairs(warn) do GameTooltip:AddLine(line, 1, 1, 1) end
 	if c and Cli.McpUnsupported(c) then GameTooltip:AddLine(ChatAgentName(c) .. " does not use MCP servers.", 1, 0.6, 0.2, true) end
-	GameTooltip:AddLine("Click to turn servers on or off for this chat. Health is from the last Claude run that loaded them.", 0.8, 0.8, 0.8, true)
+	GameTooltip:AddLine("Click to turn servers on or off for this chat.", 0.8, 0.8, 0.8, true)
 	GameTooltip:Show()
 end
 
@@ -6722,6 +6984,7 @@ local function BuildUI()
 	input:SetSize(500, 40)
 	input:SetScript("OnEnterPressed", function() ClaudeWoW.SendFromInput() end)
 	input:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+	input:SetScript("OnTabPressed", function(self) Cli.CompleteSlash(self) end)
 	if plainInput then
 		input:SetScript("OnCursorChanged", ScrollingEdit_OnCursorChanged)
 		input:SetScript("OnTextChanged", function(self) ScrollingEdit_OnTextChanged(self, inScroll) end)
@@ -7652,6 +7915,7 @@ function Cli.SessionEntries()
 					kind = kind, id = e.id, name = (chat and not e.running) and chat.name or title, alias = alias,
 					cwd = e.cwd, branch = e.branch, agent = e.agent, plugin = e.plugin, at = e.at,
 					live = e.live, running = e.running, restart = e.restart, chat = chat and chat.id or nil,
+					bridgeChat = (not chat and e.chat ~= "") and e.chat or nil,
 					handoff = e.handoff, recap = e.recap,
 				}
 				table.insert(kind == "live" and live or (kind == "deaf" and deaf or rest), entry)
@@ -7829,6 +8093,7 @@ function Cli.AttachTo(e)
 	end
 	local name = (e.name ~= "" and e.name or e.id:sub(1, 8)):sub(1, 24)
 	c = AddChat(name, "")
+	if not e.live and type(e.bridgeChat) == "string" and e.bridgeChat:match("^[%w]+$") and not FindChat(e.bridgeChat) then c.id = e.bridgeChat end
 	c.plugin = ""
 	c.agent = ""
 	if e.live then
@@ -8516,7 +8781,10 @@ ev:SetScript("OnEvent", function(self, event, arg1)
 		ScreenshotDone(false, true)
 	elseif event == "PLAYER_LOGOUT" then
 		-- The player's screenshot format goes back before the client saves its CVars.
-		if db then ScreenshotCVarsOff() end
+		if db then
+			ScreenshotCVarsOff()
+			ClaudeWoWCharDB = Q.StashCharacterChats(db, ClaudeWoWCharDB)
+		end
 	elseif event == "PLAYER_LOGIN" then
 		if not db then InitDB() end
 		BuildUI()

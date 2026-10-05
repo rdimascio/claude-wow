@@ -33,6 +33,9 @@ const STATUS_LIST = 5;
 const SKILL_RE = /^[a-z0-9][a-z0-9:_-]{0,63}$/;
 const SETTING_RE = /^[A-Za-z0-9._:[\]-]{1,80}$/;
 const RUN_ID_RE = /^[0-9a-f]{8}$/;
+const SLASH_RE = /^\/([a-z0-9][a-z0-9:_-]{0,63})(?:\s+([\s\S]*))?$/;
+const SLASH_BUILTINS = Object.freeze(['runs', 'stop']);
+const SLOT_SKILLS_MAX = 24;
 const ARGS_MAX = 2000;
 const SUMMARY_LINES = 40;
 const SUMMARY_CHARS = 4000;
@@ -233,6 +236,7 @@ function createFactory({
   const runsFile = path.join(dir, 'runs.json');
   const logsDir = path.join(dir, 'logs');
   const live = new Map();
+  const stoppers = new Map();
   let runs = [];
   let stopping = false;
 
@@ -361,6 +365,11 @@ function createFactory({
     save();
     let ended = false;
     let stopReason = '';
+    let stoppedBy = '';
+    stoppers.set(id, why => {
+      stoppedBy = why;
+      killTree(child);
+    });
     const timer = setTimeout(() => {
       stopReason = `It was stopped after ${duration(conf.timeoutMs)}, the limit set by plugins.claude-code.factory.timeoutMs.`;
       log(`factory: run ${id} timed out; ending it`);
@@ -372,6 +381,7 @@ function createFactory({
       ended = true;
       clearTimeout(timer);
       live.delete(id);
+      stoppers.delete(id);
       let text = '';
       try {
         text = fs.readFileSync(logFile, 'utf8');
@@ -387,6 +397,9 @@ function createFactory({
       if (stopping) {
         run.status = 'killed';
         run.why = 'The bridge was stopped while it ran.';
+      } else if (stoppedBy) {
+        run.status = 'stopped';
+        run.why = stoppedBy;
       } else if (stopReason) {
         run.status = 'failed';
         run.why = stopReason;
@@ -421,6 +434,7 @@ function createFactory({
     );
     return {
       ok: true,
+      id,
       text: `Started factory run ${id}: /${skill}${args ? ' ' + args : ''} in ${cwd} on model ${picked.model}. The result comes back to this chat when it ends; factory_status ${id} shows it before then.`,
     };
   }
@@ -434,6 +448,17 @@ function createFactory({
     if (!runs.length) return { ok: true, text: 'No factory runs yet.' };
     const latest = runs.slice(-STATUS_LIST).reverse();
     return { ok: true, text: latest.map(r => describe(r, now())).join('\n\n') };
+  }
+
+  function cancel(input) {
+    const id = String((input && input.runId) || '').trim();
+    const run = RUN_ID_RE.test(id) ? find(id) : null;
+    if (!run) return refuse(`There is no factory run ${id.slice(0, 20) || '(no id given)'}. /runs lists them.`);
+    const stopper = stoppers.get(id);
+    if (!stopper) return refuse(`Factory run ${id} is not running; it is ${run.status}.`);
+    log(`factory: run ${id} stopped from the game`);
+    stopper('It was stopped from the game.');
+    return { ok: true, text: `Stopping factory run ${id} (/${run.skill}). Its result comes back here when it has ended.` };
   }
 
   function call(tool, args, ctx) {
@@ -451,7 +476,32 @@ function createFactory({
   }
 
   load();
-  return { dispatch, status, call, children, stop, runs: () => runs.map(r => ({ ...r })) };
+  return { dispatch, status, cancel, call, children, stop, runs: () => runs.map(r => ({ ...r })) };
+}
+
+function parseSlash(text) {
+  const m = SLASH_RE.exec(String(text || '').trim());
+  return m ? { name: m[1], args: cleanArgs(m[2]) } : null;
+}
+
+function slashCommand(factory, text, ctx) {
+  const conf = ctx && ctx.conf;
+  const cmd = parseSlash(text);
+  if (!cmd || !conf || !conf.enabled) return null;
+  if (cmd.name === 'runs') return factory.status({ runId: cmd.args.split(' ')[0] });
+  if (cmd.name === 'stop') return factory.cancel({ runId: cmd.args.split(' ')[0] });
+  if (!conf.skills.includes(cmd.name)) return null;
+  const started = factory.dispatch({ skill: cmd.name, args: cmd.args }, ctx);
+  if (!started.ok) return started;
+  const run = factory.runs().find(r => r.id === started.id);
+  return {
+    ok: true,
+    text: `Started /${cmd.name}${cmd.args ? ' ' + cmd.args : ''} as factory run ${started.id} on ${run ? run.model : 'its model'}. The result comes back here when it ends; /runs ${started.id} shows it before then, and /stop ${started.id} ends it.`,
+  };
+}
+
+function slotSkills(conf) {
+  return conf && conf.enabled ? conf.skills.slice(0, SLOT_SKILLS_MAX) : [];
 }
 
 function parseArgs(argv) {
@@ -520,6 +570,10 @@ module.exports = {
   DEFAULT_TIMEOUT_MS,
   RUN_SYSTEM,
   KEEP_RUNS,
+  SLASH_BUILTINS,
+  parseSlash,
+  slashCommand,
+  slotSkills,
   fullToolName,
   settings,
   modelFor,

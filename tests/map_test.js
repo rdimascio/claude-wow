@@ -111,3 +111,29 @@ test('slot files carry the map as a Lua table the addon can read', () => {
   assert.equal(got, 'ep0ch|1|quests|Route "one"|true|2|1429|48.92|41.61|1. accept "Wolves"\\ ok|quest|explore');
   assert.ok(!P.luaTable('X', [], { now: 1 }).includes('map ='));
 });
+
+test('mapOf keeps one map per character key, tags it, and keeps a map for an unknown character untagged', () => {
+  const MH = require('../bridge/maphold');
+  const state = {};
+  const bone = MH.mapOf(state, 'Bone-Realm', P.newMap);
+  P.applyMapCommands(bone, [{ op: 'set', layer: 'route', ordered: true, points: [pt(10, 20)] }]);
+  const helen = MH.mapOf(state, 'Helen-Realm', P.newMap);
+  assert.notEqual(helen, bone);
+  assert.equal(helen.char, 'Helen-Realm');
+  assert.deepEqual(helen.layers, {}, 'an alt starts with an empty map');
+  assert.notEqual(helen.epoch, bone.epoch, 'with its own epoch');
+  assert.equal(MH.mapOf(state, 'Bone-Realm', P.newMap), bone, 'the same character gets the same map back');
+  assert.ok(bone.layers.route);
+  assert.equal(MH.mapOf(state, '', P.newMap).char, undefined, 'no character, no tag');
+  assert.match(P.luaMap(bone), /char = "Bone-Realm",/, 'the slot Lua names the character');
+  assert.doesNotMatch(P.luaMap(MH.mapOf(state, '', P.newMap)), /char =/);
+});
+
+test('the map share starts on a restart only when some character has layers', () => {
+  const MH = require('../bridge/maphold');
+  const now = () => 1000;
+  assert.equal(MH.createMapShare({ state: { maps: { a: P.newMap() } }, shareMs: 50, now }).shareUntil(), 0);
+  const drawn = P.newMap();
+  P.applyMapCommands(drawn, [{ op: 'set', layer: 'route', points: [pt(1, 2)] }]);
+  assert.equal(MH.createMapShare({ state: { maps: { a: P.newMap(), b: drawn } }, shareMs: 50, now }).shareUntil(), 1050);
+});
