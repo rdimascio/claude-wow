@@ -357,10 +357,11 @@ function saveTranscripts() {
 const forgotten = new Set();
 
 function noteMessage(job, role, text, agentTexts = []) {
-  if (!job.chat) return;
+  if (!job.chat || !P.CHAT_ID_RE.test(job.chat)) return;
   if (role === 'user') forgotten.delete(job.chat);
   else if (forgotten.has(job.chat)) return;
-  const c = (transcripts.chats[job.chat] = transcripts.chats[job.chat] || { id: job.chat, name: '', cwd: job.cwd, messages: [] });
+  if (!Object.hasOwn(transcripts.chats, job.chat)) transcripts.chats[job.chat] = { id: job.chat, name: '', cwd: job.cwd, messages: [] };
+  const c = transcripts.chats[job.chat];
   if (job.name) c.name = job.name;
   if (job.cwd) c.cwd = job.cwd;
   if (job.plugin) c.plugin = job.plugin;
@@ -1107,6 +1108,18 @@ function signal(client, kind, id, on) {
   setSignalFile(SIG.signalFile(client.addonDir, kind, slotNumber(id)), on);
 }
 
+function openLink(job) {
+  const chat = P.CHAT_ID_RE.test(String(job.chat)) ? OU.chatFor(transcripts.chats, job.chat) : null;
+  const answer = result => {
+    log(`${tagOf(job)} ${result.text}`);
+    ackJob(job, result.opened ? { open: 'ok' } : { open: 'refused', why: result.why });
+    publishNow();
+  };
+  Promise.resolve()
+    .then(() => linkOpener.request(job, chat))
+    .then(answer, e => answer({ opened: false, why: 'the bridge failed', text: `open link failed (${e && e.message ? e.message : e})` }));
+}
+
 function ackJob(job, result) {
   const r = rtOf(job.client);
   if (r) r.acks = P.noteAck(r.acks, job, Date.now(), result);
@@ -1426,15 +1439,7 @@ function submit(job) {
   if (OU.isOpenRecord(job)) {
     markHandled(job);
     saveState();
-    let result;
-    try {
-      result = linkOpener.request(job, transcripts.chats[job.chat]);
-    } catch (e) {
-      result = { opened: false, why: 'the bridge failed', text: `open link failed (${e && e.message ? e.message : e})` };
-    }
-    log(`${tagOf(job)} ${result.text}`);
-    ackJob(job, result.opened ? { open: 'ok' } : { open: 'refused', why: result.why });
-    publishNow();
+    openLink(job);
     return;
   }
   if (job.ctx !== undefined) setContext(job);

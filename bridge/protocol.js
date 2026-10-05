@@ -502,10 +502,13 @@ function addonDiskInfo(tocText) {
 // `cwd` is left as typed; the bridge resolves it against its default folder.
 // The ctx field is only there when the flags say "c" (older addons never set
 // it), so a separator inside the text can't be mistaken for it.
+const CHAT_ID_RE = /^[0-9a-zA-Z]*$/;
+
 function jobsFromStrip(headerId, payload) {
   const jobs = [];
   for (const rec of String(payload).split('\x1E')) {
     const p = rec.split('\x1F');
+    if (p.length >= 6 && !CHAT_ID_RE.test(p[1])) continue;
     if (p.length >= 7 && /^\d+$/.test(p[2])) {
       const flags = parseFlags(p[4]);
       const withCtx = flags.context && p.length >= 8;
@@ -1860,6 +1863,7 @@ function luaWidgets(set) {
 }
 
 module.exports = {
+  CHAT_ID_RE,
   ADDON,
   RUNTIME_ADDON,
   SHIPPED_INBOX_PATH,
