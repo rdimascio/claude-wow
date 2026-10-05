@@ -111,6 +111,75 @@ test('the workspace window steps aside when a Blizzard panel opens, and goes hom
   vm.run('HideUIPanel(CharacterFrame)');
 });
 
+test('a loot window in the panel slot moves to the right of the workspace window, as beside a Blizzard panel, and the window stays home', () => {
+  const vm = newVM({ before: `
+    LootFrame = CreateFrame("Frame", "LootFrame", UIParent)
+    LootFrame:SetSize(200, 400)
+    UIParent:SetAttribute("PANEl_SPACING_X", 32)
+    function STUB.LootInSlot() LootFrame:ClearAllPoints(); LootFrame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 16, -116) end
+    STUB.LootInSlot()` });
+  open(vm);
+  const home = rect(vm);
+
+  vm.run('ShowUIPanel(LootFrame)');
+  settle(vm);
+  assert.deepEqual(rect(vm), home, 'the window does not move down');
+  assert.deepEqual(panelRect(vm, 'LootFrame'), { left: home.right + 32, right: home.right + 232, top: home.top, bottom: home.top - 400 }, 'the loot window sits right of it, on the same line');
+  assert.equal(vm.evaluate('ClaudeWoWWindow.state.dodged'), 'false');
+
+  vm.run('STUB.combat = true; STUB.LootInSlot(); ClaudeWoWWindow.Relayout()');
+  assert.equal(vm.num('LootFrame:GetLeft()'), home.right + 32, 'it works in combat too');
+  vm.run('STUB.combat = false; HideUIPanel(LootFrame)');
+  settle(vm);
+
+  vm.run('STUB.LootInSlot(); LootFrame:Show()');
+  frames(vm, 8);
+  settle(vm);
+  assert.equal(vm.num('LootFrame:GetLeft()'), home.right + 32, 'a loot window shown without the panel manager is caught by the poll');
+  assert.deepEqual(rect(vm), home);
+  vm.run('LootFrame:Hide()');
+  frames(vm, 8);
+  settle(vm);
+
+  vm.run('LootFrame.protected = true; STUB.combat = true; STUB.LootInSlot(); ShowUIPanel(LootFrame)');
+  settle(vm);
+  assert.equal(vm.num('LootFrame:GetLeft()'), 16, 'a protected loot frame is never moved');
+  assert.equal(vm.evaluate('STUB.blocked[1]'), null, 'not even in combat');
+  assert.ok(!overlaps(rect(vm), panelRect(vm, 'LootFrame')), 'the window steps aside from it instead');
+  vm.run('STUB.combat = false; HideUIPanel(LootFrame); LootFrame.protected = nil');
+  settle(vm);
+
+  vm.run('LootFrame:ClearAllPoints(); LootFrame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 300, -200); ShowUIPanel(LootFrame)');
+  settle(vm);
+  assert.equal(vm.num('LootFrame:GetLeft()'), 300, 'a loot window another addon put elsewhere is left there');
+  assert.ok(!overlaps(rect(vm), panelRect(vm, 'LootFrame')), 'and the window steps aside from it');
+  vm.run('HideUIPanel(LootFrame)');
+  settle(vm);
+  vm.run('LootFrame:ClearAllPoints(); LootFrame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 16, -500); ShowUIPanel(LootFrame)');
+  settle(vm);
+  assert.equal(vm.num('LootFrame:GetLeft()'), 16, 'one at the slot\'s x but lower down is left there too');
+  vm.run('HideUIPanel(LootFrame)');
+  settle(vm);
+
+  vm.run('UIParent:SetSize(1000, 1080); STUB.LootInSlot(); ShowUIPanel(LootFrame)');
+  settle(vm);
+  assert.ok(!overlaps(rect(vm), panelRect(vm, 'LootFrame')), 'no room on the right: the window steps aside as before');
+  vm.run('HideUIPanel(LootFrame); UIParent:SetSize(1920, 1080)');
+  settle(vm);
+
+  vm.run('ContainerFrameCombinedBags.rect = { left = 900, right = 1600, top = 1000, bottom = 500 }; ShowUIPanel(ContainerFrameCombinedBags); STUB.LootInSlot(); ShowUIPanel(LootFrame)');
+  settle(vm);
+  assert.ok(!overlaps(panelRect(vm, 'LootFrame'), panelRect(vm, 'ContainerFrameCombinedBags')), 'the loot window is never moved onto another open panel');
+  assert.ok(!overlaps(rect(vm), panelRect(vm, 'LootFrame')), 'the window steps aside instead');
+  vm.run('HideUIPanel(LootFrame); HideUIPanel(ContainerFrameCombinedBags); ContainerFrameCombinedBags.rect = { left = 1200, right = 1900, top = 700, bottom = 200 }');
+  settle(vm);
+
+  vm.run('STUB.cvars.lootUnderMouse = "1"; LootFrame:ClearAllPoints(); LootFrame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", 300, 800); ShowUIPanel(LootFrame)');
+  settle(vm);
+  assert.equal(vm.num('LootFrame:GetLeft()'), 300, 'loot at the mouse is left where the game put it');
+  assert.ok(!overlaps(rect(vm), panelRect(vm, 'LootFrame')), 'and the window steps aside from it');
+});
+
 test('full-screen frames hide the window and bring it back; autohide off keeps it; the player\'s own close is kept', () => {
   const vm = newVM();
   open(vm);
