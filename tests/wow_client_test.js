@@ -27,16 +27,22 @@ function withAddonFile(sb, name, body, fn) {
   const file = path.join(sb.addons, 'ClaudeWoW', name);
   const before = fs.existsSync(file) ? fs.readFileSync(file) : null;
   fs.writeFileSync(file, body);
-  try { return fn(); } finally {
-    if (before) fs.writeFileSync(file, before); else fs.rmSync(file, { force: true });
+  try {
+    return fn();
+  } finally {
+    if (before) fs.writeFileSync(file, before);
+    else fs.rmSync(file, { force: true });
   }
 }
 
 function withSaved(sb, body, fn) {
   const before = fs.existsSync(sb.saved) ? fs.readFileSync(sb.saved) : null;
   fs.writeFileSync(sb.saved, body);
-  try { return fn(); } finally {
-    if (before) fs.writeFileSync(sb.saved, before); else fs.rmSync(sb.saved, { force: true });
+  try {
+    return fn();
+  } finally {
+    if (before) fs.writeFileSync(sb.saved, before);
+    else fs.rmSync(sb.saved, { force: true });
   }
 }
 
@@ -160,36 +166,52 @@ test('a ClaudeWoW whose TOC lists a missing file fails the launch and names the 
 test('gameRunner fails a test whose addon raised a Lua error before a reload', async () => {
   const withGame = gameRunner(ROOT);
   sandbox();
-  await assert.rejects(withGame({ ...SHARED_GAME, run: false }, async h => {
-    h.client.runLua(failOnEvent('DEV_TEST_EVENT', 'event broke'));
-    h.client.runLua('DEV.Fire("DEV_TEST_EVENT")');
-    h.client.reload();
-  }), /the addon raised Lua errors:[\s\S]*event broke/);
+  await assert.rejects(
+    withGame({ ...SHARED_GAME, run: false }, async h => {
+      h.client.runLua(failOnEvent('DEV_TEST_EVENT', 'event broke'));
+      h.client.runLua('DEV.Fire("DEV_TEST_EVENT")');
+      h.client.reload();
+    }),
+    /the addon raised Lua errors:[\s\S]*event broke/,
+  );
 });
 
 test('gameRunner fails a test whose client step threw', async () => {
   const withGame = gameRunner(ROOT);
   sandbox();
-  await assert.rejects(withGame({ ...SHARED_GAME, client: { frameMs: 10 } }, async h => {
-    h.client.runLua('DEV.RunFrame = function() error("frame broke") end');
-    await until(() => h.client.fatal, 'the step to fail');
-  }), /frame broke/);
+  await assert.rejects(
+    withGame({ ...SHARED_GAME, client: { frameMs: 10 } }, async h => {
+      h.client.runLua('DEV.RunFrame = function() error("frame broke") end');
+      await until(() => h.client.fatal, 'the step to fail');
+    }),
+    /frame broke/,
+  );
 });
 
 test('withEra fails a test whose Era addon raised a Lua error before a reload', async () => {
   const sb = sandbox();
-  await assert.rejects(withEra({ sb }, async client => {
-    client.runLua(failOnEvent('PLAYER_LOGOUT', 'logout broke'));
-    client.reload();
-  }), /the Era addon raised Lua errors:[\s\S]*logout broke/);
+  await assert.rejects(
+    withEra({ sb }, async client => {
+      client.runLua(failOnEvent('PLAYER_LOGOUT', 'logout broke'));
+      client.reload();
+    }),
+    /the Era addon raised Lua errors:[\s\S]*logout broke/,
+  );
 });
 
 test('withEra fails a test whose Era client step threw', async () => {
   const sb = sandbox();
-  await assert.rejects(withEra({ sb }, async client => {
-    client.runLua('DEV.RunFrame = function() error("frame broke") end');
-    await until(() => client.fatal, 'the step to fail');
-  }, { frameMs: 10 }), /frame broke/);
+  await assert.rejects(
+    withEra(
+      { sb },
+      async client => {
+        client.runLua('DEV.RunFrame = function() error("frame broke") end');
+        await until(() => client.fatal, 'the step to fail');
+      },
+      { frameMs: 10 },
+    ),
+    /frame broke/,
+  );
 });
 
 test.after(() => {

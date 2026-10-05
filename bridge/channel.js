@@ -16,12 +16,18 @@ function pickProtocol(requested) {
 }
 
 function version() {
-  try { return require('../package.json').version; } catch { return '0.0.0'; }
+  try {
+    return require('../package.json').version;
+  } catch {
+    return '0.0.0';
+  }
 }
 
 async function parentListens(ppid, { commandLine = LP.commandLine, platform } = {}) {
   let line = null;
-  try { line = await commandLine(ppid, { platform }); } catch {}
+  try {
+    line = await commandLine(ppid, { platform });
+  } catch {}
   const unreadable = !line;
   return unreadable || LP.sessionListens(line);
 }
@@ -52,15 +58,27 @@ function createChannel(opts) {
   let toolsListed = false;
   let waitingForReady = false;
   let readyTimer = null;
-  let listening = typeof opts.listening === 'boolean' ? opts.listening : (opts.listening ? null : true);
-  const listeningKnown = listening === null
-    ? Promise.resolve(opts.listening).then(v => !!v, () => true).then(v => { listening = v; return v; })
-    : Promise.resolve(listening);
+  let listening = typeof opts.listening === 'boolean' ? opts.listening : opts.listening ? null : true;
+  const listeningKnown =
+    listening === null
+      ? Promise.resolve(opts.listening)
+          .then(
+            v => !!v,
+            () => true,
+          )
+          .then(v => {
+            listening = v;
+            return v;
+          })
+      : Promise.resolve(listening);
 
   function maybeReady() {
     if (!waitingForReady || !initialized || !toolsListed || listening !== true) return;
     waitingForReady = false;
-    if (readyTimer) { clearTimeout(readyTimer); readyTimer = null; }
+    if (readyTimer) {
+      clearTimeout(readyTimer);
+      readyTimer = null;
+    }
     connect();
   }
 
@@ -74,10 +92,15 @@ function createChannel(opts) {
     maybeReady();
   });
 
-  function send(msg) { out.write(JSON.stringify(msg) + '\n'); }
+  function send(msg) {
+    out.write(JSON.stringify(msg) + '\n');
+  }
 
   function notify(msg) {
-    if (!initialized) { early.push(msg); return; }
+    if (!initialized) {
+      early.push(msg);
+      return;
+    }
     send(msg);
   }
 
@@ -88,7 +111,10 @@ function createChannel(opts) {
   }
 
   function failCalls(why) {
-    for (const [, c] of calls) { clearTimeout(c.timer); c.resolve({ ok: false, text: why }); }
+    for (const [, c] of calls) {
+      clearTimeout(c.timer);
+      c.resolve({ ok: false, text: why });
+    }
     calls.clear();
   }
 
@@ -118,24 +144,47 @@ function createChannel(opts) {
 
   function scheduleRetry() {
     if (stopped || retryTimer) return;
-    retryTimer = setTimeout(() => { retryTimer = null; connect(); }, retryMs);
+    retryTimer = setTimeout(() => {
+      retryTimer = null;
+      connect();
+    }, retryMs);
     if (retryTimer.unref) retryTimer.unref();
   }
 
   function connect() {
     if (stopped || sock || listening !== true) return;
     const addr = LP.endpoint(home, platform);
-    if (platform !== 'win32' && !opts.skipPermissionCheck && !LP.socketOwnerOnly(addr)) { scheduleRetry(); return; }
+    if (platform !== 'win32' && !opts.skipPermissionCheck && !LP.socketOwnerOnly(addr)) {
+      scheduleRetry();
+      return;
+    }
     const token = LP.readToken(home);
-    if (!token) { scheduleRetry(); return; }
+    if (!token) {
+      scheduleRetry();
+      return;
+    }
     const s = connectTo(addr);
     sock = s;
     verified = false;
     myNonce = LP.nonce();
     s.on('connect', () => {
-      s.write(LP.encode({ type: 'hello', name, cwd, pid: process.pid, ppid: parentPid, session: claudeSession, nonce: myNonce, proof: LP.proof(token, 'client', myNonce) }));
+      s.write(
+        LP.encode({
+          type: 'hello',
+          name,
+          cwd,
+          pid: process.pid,
+          ppid: parentPid,
+          session: claudeSession,
+          nonce: myNonce,
+          proof: LP.proof(token, 'client', myNonce),
+        }),
+      );
     });
-    s.on('data', LP.lineReader(onBridge, () => s.destroy()));
+    s.on(
+      'data',
+      LP.lineReader(onBridge, () => s.destroy()),
+    );
     s.on('error', () => {});
     s.on('close', () => {
       if (sock === s) sock = null;
@@ -149,7 +198,10 @@ function createChannel(opts) {
   function askBridge(msg, texts) {
     const call = nextCall++;
     return new Promise(resolve => {
-      const timer = setTimeout(() => { calls.delete(call); resolve({ ok: false, text: texts.timeout }); }, replyTimeoutMs);
+      const timer = setTimeout(() => {
+        calls.delete(call);
+        resolve({ ok: false, text: texts.timeout });
+      }, replyTimeoutMs);
       if (timer.unref) timer.unref();
       calls.set(call, { resolve, timer });
       if (!toBridge({ ...msg, call })) {
@@ -164,17 +216,23 @@ function createChannel(opts) {
     const chatId = String((args && args.chat_id) || '').trim();
     const text = String((args && args.text) || '').trim();
     if (!chatId || !text) return Promise.resolve({ ok: false, text: 'wow_reply needs chat_id and text.' });
-    return askBridge({ type: 'reply', chat_id: chatId, message_id: String((args && args.message_id) || ''), text }, {
-      timeout: 'The claude-wow bridge did not confirm the reply in time.',
-      offline: 'The claude-wow bridge is not connected, so the reply was not delivered. Is the bridge running?',
-    });
+    return askBridge(
+      { type: 'reply', chat_id: chatId, message_id: String((args && args.message_id) || ''), text },
+      {
+        timeout: 'The claude-wow bridge did not confirm the reply in time.',
+        offline: 'The claude-wow bridge is not connected, so the reply was not delivered. Is the bridge running?',
+      },
+    );
   }
 
   function goalCall(tool, args) {
-    return askBridge({ type: 'goal_call', tool, args: args && typeof args === 'object' ? args : {} }, {
-      timeout: `The claude-wow bridge did not answer ${tool} in time.`,
-      offline: `The claude-wow bridge is not connected, so ${tool} did nothing. Is the bridge running?`,
-    });
+    return askBridge(
+      { type: 'goal_call', tool, args: args && typeof args === 'object' ? args : {} },
+      {
+        timeout: `The claude-wow bridge did not answer ${tool} in time.`,
+        offline: `The claude-wow bridge is not connected, so ${tool} did nothing. Is the bridge running?`,
+      },
+    );
   }
 
   async function onRequest(msg) {
@@ -215,7 +273,10 @@ function createChannel(opts) {
       initialized = true;
       while (early.length) send(early.shift());
       if (waitingForReady && !readyTimer) {
-        readyTimer = setTimeout(() => { toolsListed = true; maybeReady(); }, toolsListWaitMs);
+        readyTimer = setTimeout(() => {
+          toolsListed = true;
+          maybeReady();
+        }, toolsListWaitMs);
         if (readyTimer.unref) readyTimer.unref();
       }
       maybeReady();
@@ -224,31 +285,64 @@ function createChannel(opts) {
     if (msg.method === 'notifications/claude/channel/permission_request') {
       const p = msg.params || {};
       if (!LP.PERMISSION_ID_RE.test(String(p.request_id || ''))) return;
-      toBridge({ type: 'permission_request', request_id: p.request_id, tool_name: String(p.tool_name || ''), description: String(p.description || ''), input_preview: String(p.input_preview || '') });
+      toBridge({
+        type: 'permission_request',
+        request_id: p.request_id,
+        tool_name: String(p.tool_name || ''),
+        description: String(p.description || ''),
+        input_preview: String(p.input_preview || ''),
+      });
     }
   }
 
   function handle(msg) {
     if (!msg || msg.jsonrpc !== '2.0' || typeof msg.method !== 'string') return;
-    if (msg.id === undefined || msg.id === null) { onNotification(msg); return; }
+    if (msg.id === undefined || msg.id === null) {
+      onNotification(msg);
+      return;
+    }
     onRequest(msg).then(
       result => send({ jsonrpc: '2.0', id: msg.id, result }),
       err => send({ jsonrpc: '2.0', id: msg.id, error: { code: err.code || -32603, message: err.message } }),
     );
   }
 
-  function feed(chunk) { reader(chunk); }
+  function feed(chunk) {
+    reader(chunk);
+  }
   const reader = LP.lineReader(handle);
 
   function stop() {
     stopped = true;
-    if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
-    if (readyTimer) { clearTimeout(readyTimer); readyTimer = null; }
+    if (retryTimer) {
+      clearTimeout(retryTimer);
+      retryTimer = null;
+    }
+    if (readyTimer) {
+      clearTimeout(readyTimer);
+      readyTimer = null;
+    }
     failCalls('The channel is shutting down.');
     if (sock) sock.destroy();
   }
 
-  return { feed, connect, connectWhenReady, stop, handle, get verified() { return verified; }, get initialized() { return initialized; }, get listening() { return listening; }, listeningKnown };
+  return {
+    feed,
+    connect,
+    connectWhenReady,
+    stop,
+    handle,
+    get verified() {
+      return verified;
+    },
+    get initialized() {
+      return initialized;
+    },
+    get listening() {
+      return listening;
+    },
+    listeningKnown,
+  };
 }
 
 function main() {
@@ -264,9 +358,18 @@ function main() {
     log: line => process.stderr.write(`[claude-wow channel] ${line}\n`),
   });
   process.stdin.on('data', ch.feed);
-  process.stdin.on('end', () => { ch.stop(); process.exit(0); });
-  process.on('SIGTERM', () => { ch.stop(); process.exit(0); });
-  process.on('SIGINT', () => { ch.stop(); process.exit(0); });
+  process.stdin.on('end', () => {
+    ch.stop();
+    process.exit(0);
+  });
+  process.on('SIGTERM', () => {
+    ch.stop();
+    process.exit(0);
+  });
+  process.on('SIGINT', () => {
+    ch.stop();
+    process.exit(0);
+  });
   ch.connectWhenReady();
 }
 

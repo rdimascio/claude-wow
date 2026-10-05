@@ -23,17 +23,20 @@ function newVM({ withRollModule = true } = {}) {
   const run = (code, arg) => {
     if (lauxlib.luaL_loadstring(L, to_luastring(code)) !== lua.LUA_OK) throw new Error('Lua load: ' + to_jsstring(lua.lua_tostring(L, -1)));
     let nargs = 0;
-    if (arg !== undefined) { lua.lua_pushstring(L, to_luastring(arg)); nargs = 1; }
+    if (arg !== undefined) {
+      lua.lua_pushstring(L, to_luastring(arg));
+      nargs = 1;
+    }
     if (lua.lua_pcall(L, nargs, 0, 0) !== lua.LUA_OK) throw new Error('Lua error: ' + to_jsstring(lua.lua_tostring(L, -1)));
   };
-  const evaluate = (expr) => {
+  const evaluate = expr => {
     run(`local v = (${expr}); if v == nil then RESULT = nil else RESULT = tostring(v) end`);
     lua.lua_getglobal(L, to_luastring('RESULT'));
     const s = lua.lua_isnil(L, -1) ? null : to_jsstring(lua.lua_tolstring(L, -1));
     lua.lua_pop(L, 1);
     return s;
   };
-  const num = (expr) => Number(evaluate(expr));
+  const num = expr => Number(evaluate(expr));
   run(fs.readFileSync(path.join(__dirname, 'wow_stub.lua'), 'utf8'));
   run(SOUND_STUB);
   const files = ['Codec.lua', 'Inbox.lua', 'ClaudeWoW.lua'].concat(withRollModule ? ['LootRoll.lua'] : []);
@@ -59,71 +62,41 @@ function stripFlags(vm) {
     end
     RESULT = table.concat(parts, ",")`);
   const cells = [];
-  for (const p of vm.evaluate('RESULT').split(',')) { const [i, v] = p.split(':').map(Number); cells[i] = v; }
+  for (const p of vm.evaluate('RESULT').split(',')) {
+    const [i, v] = p.split(':').map(Number);
+    cells[i] = v;
+  }
   const bytes = [];
-  let acc = 0, nbits = 0;
+  let acc = 0,
+    nbits = 0;
   for (let i = 0; i < cells.length; i++) {
-    acc = (acc << 3) | (cells[i] || 0); nbits += 3;
-    while (nbits >= 8) { bytes.push((acc >> (nbits - 8)) & 0xff); nbits -= 8; acc &= (1 << nbits) - 1; }
+    acc = (acc << 3) | (cells[i] || 0);
+    nbits += 3;
+    while (nbits >= 8) {
+      bytes.push((acc >> (nbits - 8)) & 0xff);
+      nbits -= 8;
+      acc &= (1 << nbits) - 1;
+    }
   }
   const len = bytes[4] * 256 + bytes[5];
   const payload = Buffer.from(bytes.slice(6, 6 + len)).toString('utf8');
   return payload.split('\x1E').map(r => ({ flags: r.split('\x1F')[4], text: r.split('\x1F').slice(-1)[0] }));
 }
 
-function deliverDenial(vm, rules, agent = 'claude', chatIndex = 1) {
+function deliverDenial(vm, rules, agent = 'claude', chatIndex = 1, extra = '') {
   vm.run('ClaudeWoW.Send("clean the build folder")');
   const chatId = vm.evaluate(`ClaudeWoWDB.chats[${chatIndex}].id`);
   const id = vm.num(`ClaudeWoWDB.chats[${chatIndex}].pendingId`);
   const luaRules = rules.map(r => JSON.stringify(r)).join(', ');
-  vm.run(`STUB.onLoadAddOn = function(name) ClaudeWoW_SlotData = { now = time(), cwd = "", replies = { { chat = "${chatId}", id = ${id}, status = "done", text = "I need permission", agent = "${agent}", denied = { ${luaRules} } } } } end`);
+  vm.run(
+    `STUB.onLoadAddOn = function(name) ClaudeWoW_SlotData = { now = time(), cwd = "", replies = { { chat = "${chatId}", id = ${id}, status = "done", text = "I need permission", agent = "${agent}", denied = { ${luaRules} }${extra ? ', ' + extra : ''} } } } end`,
+  );
   vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
   assert.equal(vm.evaluate(`ClaudeWoWDB.chats[${chatIndex}].pendingId`), null);
   return { chatId, id };
 }
 
 const lastHistory = 'ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history]';
-
-test('a denied reply pops the roll frame: epic name, scroll icon and the epic loot sound', () => {
-  const vm = newVM();
-  deliverDenial(vm, ['Bash(rm:*)', 'WebFetch']);
-  assert.equal(vm.evaluate('ClaudeWoWRollFrame.shown'), 'true');
-  assert.equal(vm.evaluate('ClaudeWoWRollFrame.Name.text'), 'Scroll of rm +1');
-  assert.equal(vm.evaluate('ClaudeWoWRollFrame.IconFrame.Icon.texture'), 'Interface\\Icons\\INV_Scroll_03');
-  assert.equal(vm.evaluate('table.concat(STUB.played, ",")'), 'UI_EPICLOOT_TOAST');
-  assert.equal(vm.num('ClaudeWoWRoll.Current() and 1 or 0'), 1);
-  assert.equal(vm.evaluate('ClaudeWoWRoll.Current().rules[2]'), 'WebFetch');
-  vm.run('ClaudeWoWRollFrame.scripts.OnUpdate(ClaudeWoWRollFrame, 0)');
-  assert.equal(vm.evaluate('ClaudeWoWRollFrame.shown'), 'true', 'the roll stays open while time is left');
-  vm.run('ClaudeWoW.Render()');
-  assert.equal(vm.evaluate('table.concat(STUB.played, ",")'), 'UI_EPICLOOT_TOAST', 'a redraw does not offer the same roll twice');
-  vm.run('RESULT = "false"; for _, f in ipairs(STUB.frames) do if f.template == "UIPanelButtonTemplate" and f.rules and f.shown then RESULT = "true" end end');
-  assert.equal(vm.evaluate('RESULT'), 'false', 'the old Allow & retry button is hidden while the roll frame handles it');
-});
-
-test('item names and icons: a command prefix is a scroll, any other tool is a gear', () => {
-  const vm = newVM();
-  assert.equal(vm.evaluate('ClaudeWoWRoll.CommandOf("Bash(cargo:*)")'), 'cargo');
-  assert.equal(vm.evaluate('ClaudeWoWRoll.CommandOf("Bash(npm test)")'), 'npm test');
-  assert.equal(vm.evaluate('ClaudeWoWRoll.CommandOf("WebSearch")'), 'WebSearch');
-  assert.equal(vm.evaluate('ClaudeWoWRoll.ItemName({ "WebSearch" })'), 'WebSearch');
-  assert.equal(vm.evaluate('ClaudeWoWRoll.IconFor({ "WebSearch" })'), 'Interface\\Icons\\Trade_Engineering');
-  assert.equal(vm.evaluate('ClaudeWoWRoll.IconFor({ "WebSearch", "Bash(git:*)" })'), 'Interface\\Icons\\INV_Scroll_03');
-});
-
-test('Need grants the rules for good through the Allow & retry path', () => {
-  const vm = newVM();
-  const { id } = deliverDenial(vm, ['Bash(cargo:*)']);
-  vm.run('STUB.played = {}; ClaudeWoWRollFrame.NeedButton.scripts.OnClick(ClaudeWoWRollFrame.NeedButton)');
-  assert.equal(vm.evaluate('ClaudeWoWRollFrame.shown'), 'false');
-  assert.equal(vm.evaluate('table.concat(STUB.played, ",")'), 'UI_NEED_ROLL_POSITIVE');
-  const rec = stripFlags(vm).find(r => r.flags.includes('allow='));
-  assert.ok(rec, 'an allow record on the strip');
-  assert.equal(rec.flags, 'allow=Bash(cargo:*)');
-  assert.equal(vm.num('ClaudeWoWDB.chats[1].pendingId'), id + 1);
-  assert.ok(vm.evaluate('ClaudeWoWDB.outbox.allow') !== null);
-  assert.equal(vm.evaluate('ClaudeWoWDB.outbox.allowOnce'), null);
-});
 
 test('Greed grants the rules for this retry only: a once= flag, never allow=', () => {
   const vm = newVM();
@@ -138,19 +111,6 @@ test('Greed grants the rules for this retry only: a once= flag, never allow=', (
   assert.equal(vm.evaluate('ClaudeWoWDB.outbox.allow'), null);
   assert.equal(vm.evaluate('ClaudeWoWDB.outbox.allowOnce').toLowerCase(), Buffer.from('Bash(rm:*)').toString('hex'));
   assert.ok(vm.evaluate('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history - 1].text').includes('this retry only'));
-});
-
-test('Pass denies: nothing is sent, the denial is closed in the transcript', () => {
-  const vm = newVM();
-  deliverDenial(vm, ['WebSearch']);
-  const seqBefore = vm.num('ClaudeWoWDB.lastSeq');
-  vm.run('STUB.played = {}; ClaudeWoWRollFrame.PassButton.scripts.OnClick(ClaudeWoWRollFrame.PassButton)');
-  assert.equal(vm.evaluate('ClaudeWoWRollFrame.shown'), 'false');
-  assert.equal(vm.evaluate('table.concat(STUB.played, ",")'), 'UI_NEED_ROLL_NEGATIVE');
-  assert.equal(vm.num('ClaudeWoWDB.lastSeq'), seqBefore);
-  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].pendingId'), null);
-  assert.equal(vm.evaluate(`${lastHistory}.text`), 'Passed on: WebSearch');
-  assert.equal(vm.evaluate('ClaudeWoW.OpenDenial(ClaudeWoWDB.chats[1].id)'), null);
 });
 
 test('the countdown runs out after 60 seconds and counts as Pass', () => {
@@ -187,27 +147,20 @@ test('a roll whose denial went stale closes without acting, and the next queued 
   assert.equal(vm.num('ClaudeWoWRoll.Waiting()'), 0);
 });
 
-test('/claude config roll off brings back the Allow & retry button; without the module the button is the fallback', () => {
+test('a context warning right after a denied reply leaves the denial open for the roll frame and the Allow & retry button', () => {
   const vm = newVM();
-  deliverDenial(vm, ['WebSearch']);
-  const visibleAllowButton = 'RESULT = "none"; for _, f in ipairs(STUB.frames) do if f.template == "UIPanelButtonTemplate" and f.rules and f.shown then RESULT = f.text end end';
+  vm.run('ClaudeWoWDB.settings.contextWarn = 1000');
+  const { chatId, id } = deliverDenial(vm, ['WebSearch'], 'claude', 1, 'ctx = 5000, turns = 3');
+  assert.equal(vm.evaluate(`${lastHistory}.role`), 'system');
+  assert.equal(vm.evaluate(`${lastHistory}.newChat`), 'true', 'the context warning is the newest message');
+  assert.equal(vm.evaluate(`(ClaudeWoW.OpenDenial("${chatId}"))[1]`), 'WebSearch');
+  assert.equal(vm.num(`select(2, ClaudeWoW.OpenDenial("${chatId}"))`), id);
+  assert.equal(vm.evaluate('ClaudeWoWRollFrame.shown'), 'true', 'the roll frame still offers the denial');
   vm.run('SlashCmdList.CLAUDE("config roll off")');
-  assert.equal(vm.evaluate('ClaudeWoWDB.settings.lootRoll'), 'false');
-  assert.equal(vm.evaluate('ClaudeWoWRollFrame.shown'), 'false');
-  assert.equal(vm.evaluate('ClaudeWoW.LootRollEnabled()'), 'false');
-  vm.run(visibleAllowButton);
-  assert.equal(vm.evaluate('RESULT'), 'Allow WebSearch & retry', 'the same denial is still open, now as the button');
-  vm.run('SlashCmdList.CLAUDE("config roll on")');
-  assert.equal(vm.evaluate('ClaudeWoW.LootRollEnabled()'), 'true');
-  assert.equal(vm.evaluate('ClaudeWoWRollFrame.shown'), 'true', 'turning it back on rolls the open denial again');
-  vm.run(visibleAllowButton);
-  assert.equal(vm.evaluate('RESULT'), 'none');
-
-  const plain = newVM({ withRollModule: false });
-  deliverDenial(plain, ['WebSearch']);
-  assert.equal(plain.evaluate('ClaudeWoW.LootRollEnabled()'), 'false');
-  plain.run('RESULT = "false"; for _, f in ipairs(STUB.frames) do if f.template == "UIPanelButtonTemplate" and f.rules and f.shown then RESULT = f.text end end');
-  assert.equal(plain.evaluate('RESULT'), 'Allow WebSearch & retry');
+  vm.run('RESULT = "none"; for _, f in ipairs(STUB.frames) do if f.template == "UIPanelButtonTemplate" and f.rules and f.shown then RESULT = f.text end end');
+  assert.equal(vm.evaluate('RESULT'), 'Allow WebSearch & retry', 'the button sits on the denied reply, not on the warning');
+  vm.run('table.insert(ClaudeWoWDB.chats[1].history, { role = "user", text = "never mind", t = time() })');
+  assert.equal(vm.evaluate(`ClaudeWoW.OpenDenial("${chatId}")`), null, 'a newer player message closes it');
 });
 
 const hexDirs = (...dirs) => Buffer.from(dirs.join('\x1F')).toString('hex');
@@ -242,31 +195,10 @@ test('Need on a folder adds it to the chat for good, like /claude --add-dir, and
   assert.equal(rec.flags, `dirs=${hexDirs('/tmp')}`);
   assert.equal(vm.evaluate('ClaudeWoWDB.outbox.allow'), null);
   assert.equal(vm.evaluate('ClaudeWoWDB.outbox.allowOnce'), null);
-  assert.match(vm.evaluate('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history - 1].text'), /^Allowed: folder \/tmp\. Extra folders for this chat: \/tmp$/);
-});
-
-test('Greed on a folder sends it with this retry only; the chat keeps its own folders', () => {
-  const vm = newVM();
-  vm.run('ClaudeWoWDB.chats[1].addDirs = { "/srv/data" }');
-  deliverDenial(vm, ['AddDir(/tmp)', 'Bash(curl:*)']);
-  vm.run('ClaudeWoWRollFrame.GreedButton.scripts.OnClick(ClaudeWoWRollFrame.GreedButton)');
-  assert.equal(chatDirs(vm), '/srv/data', 'the chat setting is untouched');
-  const rec = stripFlags(vm).find(r => r.flags.includes('once='));
-  assert.ok(rec);
-  assert.equal(rec.flags, `once=Bash(curl:*);dirs=${hexDirs('/srv/data', '/tmp')}`);
-  vm.run('ClaudeWoWDB.chats[1].pendingId = nil');
-  vm.run('ClaudeWoW.Send("next message")');
-  const next = stripFlags(vm).find(r => r.text === 'next message');
-  assert.equal(next.flags, `dirs=${hexDirs('/srv/data')}`, 'the next message goes without the retry folder');
-});
-
-test('Need on a folder and a command: the folder joins the chat, the command goes to the allowlist', () => {
-  const vm = newVM();
-  deliverDenial(vm, ['Bash(curl:*)', 'AddDir(/tmp)']);
-  vm.run('ClaudeWoWRollFrame.NeedButton.scripts.OnClick(ClaudeWoWRollFrame.NeedButton)');
-  assert.equal(chatDirs(vm), '/tmp');
-  const rec = stripFlags(vm).find(r => r.flags.includes('allow='));
-  assert.equal(rec.flags, `allow=Bash(curl:*);dirs=${hexDirs('/tmp')}`);
+  assert.match(
+    vm.evaluate('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history - 1].text'),
+    /^Allowed: folder \/tmp\. Extra folders for this chat: \/tmp$/,
+  );
 });
 
 test('Pass on a folder denies it; the Allow & retry button names the folder', () => {

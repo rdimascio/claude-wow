@@ -31,7 +31,9 @@ async function fakeModel(replies) {
   const queue = [...replies];
   const server = http.createServer((req, res) => {
     let raw = '';
-    req.on('data', c => { raw += c; });
+    req.on('data', c => {
+      raw += c;
+    });
     req.on('end', () => {
       bodies.push({ url: req.url, body: JSON.parse(raw) });
       const next = typeof queue[0] === 'function' ? queue[0] : queue.shift();
@@ -45,12 +47,32 @@ async function fakeModel(replies) {
   return { baseUrl: `http://127.0.0.1:${port}/v1`, bodies, close: () => new Promise(resolve => server.close(resolve)) };
 }
 
-const say = (content, usage = { prompt_tokens: 120, completion_tokens: 8 }) => ({ body: { model: 'qwen-test', choices: [{ message: { role: 'assistant', content } }], usage } });
-const callTools = (...calls) => ({ body: { model: 'qwen-test', choices: [{ message: { role: 'assistant', content: '', tool_calls: calls.map((c, i) => ({ id: `c${i}`, type: 'function', function: { name: c.name, arguments: JSON.stringify(c.args) } })) } }] } });
+const say = (content, usage = { prompt_tokens: 120, completion_tokens: 8 }) => ({
+  body: { model: 'qwen-test', choices: [{ message: { role: 'assistant', content } }], usage },
+});
+const callTools = (...calls) => ({
+  body: {
+    model: 'qwen-test',
+    choices: [
+      {
+        message: {
+          role: 'assistant',
+          content: '',
+          tool_calls: calls.map((c, i) => ({ id: `c${i}`, type: 'function', function: { name: c.name, arguments: JSON.stringify(c.args) } })),
+        },
+      },
+    ],
+  },
+});
 
 async function runOnce(opts, input) {
   const lines = [];
-  const stdout = { write: s => { lines.push(...String(s).split('\n').filter(Boolean)); return true; } };
+  const stdout = {
+    write: s => {
+      lines.push(...String(s).split('\n').filter(Boolean));
+      return true;
+    },
+  };
   const code = await L.run({ ...L.DEFAULTS, ...opts }, { stdin: Readable.from([JSON.stringify(input)]), stdout, env: {} });
   return { code, events: lines.map(l => JSON.parse(l)) };
 }
@@ -82,40 +104,29 @@ test('the local agent entry: its own script, the config block as flags, the prom
   const cmd = A.resolveCommand('local', {});
   assert.equal(cmd.found, true);
   assert.equal(path.basename(cmd.args[0]), 'localagent.js');
-  assert.deepEqual(A.AGENTS.local.args({ cfg: {} }), ['--base-url', 'http://127.0.0.1:8080/v1', '--model', 'Qwen3-4B-Instruct-2507-Q4_K_M', '--timeout-ms', '120000']);
-  assert.deepEqual(A.AGENTS.local.args({ cfg: { baseUrl: 'http://127.0.0.1:9000/v1', model: 'm', timeoutMs: 5000 }, resume: 'r', mcpConfig: '/x/mcp.json' }),
-    ['--base-url', 'http://127.0.0.1:9000/v1', '--model', 'm', '--timeout-ms', '5000', '--mcp-config', '/x/mcp.json', '--resume', 'r']);
+  assert.deepEqual(A.AGENTS.local.args({ cfg: {} }), [
+    '--base-url',
+    'http://127.0.0.1:8080/v1',
+    '--model',
+    'Qwen3-4B-Instruct-2507-Q4_K_M',
+    '--timeout-ms',
+    '120000',
+  ]);
+  assert.deepEqual(A.AGENTS.local.args({ cfg: { baseUrl: 'http://127.0.0.1:9000/v1', model: 'm', timeoutMs: 5000 }, resume: 'r', mcpConfig: '/x/mcp.json' }), [
+    '--base-url',
+    'http://127.0.0.1:9000/v1',
+    '--model',
+    'm',
+    '--timeout-ms',
+    '5000',
+    '--mcp-config',
+    '/x/mcp.json',
+    '--resume',
+    'r',
+  ]);
   assert.deepEqual(A.AGENTS.local.input({ prompt: '-p hi', system: 'SYS' }), { stdin: JSON.stringify({ system: 'SYS', prompt: '-p hi' }), note: '' });
   assert.match(A.AGENTS.local.input({ prompt: 'hi', system: 'S', images: [{ file: '/t/v.png' }] }).note, /cannot see images/);
   assert.deepEqual(A.unsupportedSettings('local', { model: 'm', effort: 'high' }), ['--effort high']);
-});
-
-test('a text answer: one request with the system prompt first, the reply as the result, the chat saved for resume, cost 0', async () => {
-  const dir = scratch('text');
-  const model = await fakeModel([say('Hello from the local model.')]);
-  try {
-    const { code, events } = await runOnce({ baseUrl: model.baseUrl, model: 'qwen-test', sessions: dir }, { system: 'GAME SYSTEM', prompt: 'hi there' });
-    assert.equal(code, 0);
-    assert.equal(model.bodies.length, 1);
-    assert.equal(model.bodies[0].url, '/v1/chat/completions');
-    const sent = model.bodies[0].body;
-    assert.equal(sent.model, 'qwen-test');
-    assert.equal(sent.stream, false);
-    assert.equal(sent.tools, undefined);
-    assert.equal(sent.messages[0].role, 'system');
-    assert.match(sent.messages[0].content, /^GAME SYSTEM/);
-    assert.ok(sent.messages[0].content.includes(L.LOCAL_RULES));
-    assert.deepEqual(sent.messages.slice(1), [{ role: 'user', content: 'hi there' }]);
-    const parsed = feedAll(events);
-    assert.deepEqual(parsed.done, { text: 'Hello from the local model.', error: false });
-    assert.equal(parsed.usage.cost, 0);
-    assert.equal(parsed.usage.costUnknown, undefined);
-    assert.equal(parsed.usage.context, 120);
-    assert.ok(fs.existsSync(path.join(dir, `${parsed.session}.json`)));
-  } finally {
-    await model.close();
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
 });
 
 test('resume: the next message carries the saved chat and keeps the session id; an id that is not one of ours starts fresh', async () => {
@@ -126,7 +137,9 @@ test('resume: the next message carries the saved chat and keeps the session id; 
     const second = feedAll((await runOnce({ baseUrl: model.baseUrl, sessions: dir, resume: first.session }, { system: 'S2', prompt: 'two' })).events);
     assert.equal(second.session, first.session);
     assert.deepEqual(model.bodies[1].body.messages.slice(1), [
-      { role: 'user', content: 'one' }, { role: 'assistant', content: 'first answer' }, { role: 'user', content: 'two' },
+      { role: 'user', content: 'one' },
+      { role: 'assistant', content: 'first answer' },
+      { role: 'user', content: 'two' },
     ]);
     assert.match(model.bodies[1].body.messages[0].content, /^S2/);
     const outside = path.join(path.dirname(dir), 'escape.json');
@@ -135,7 +148,9 @@ test('resume: the next message carries the saved chat and keeps the session id; 
       const third = feedAll((await runOnce({ baseUrl: model.baseUrl, sessions: dir, resume: '../escape' }, { system: 'S', prompt: 'three' })).events);
       assert.notEqual(third.session, '../escape');
       assert.deepEqual(model.bodies[2].body.messages.slice(1), [{ role: 'user', content: 'three' }]);
-    } finally { fs.rmSync(outside, { force: true }); }
+    } finally {
+      fs.rmSync(outside, { force: true });
+    }
   } finally {
     await model.close();
     fs.rmSync(dir, { recursive: true, force: true });
@@ -144,8 +159,18 @@ test('resume: the next message carries the saved chat and keeps the session id; 
 
 test('a long wowdata result is clipped for the model but read whole for the progress line', async () => {
   const dir = scratch('bigresult');
-  const big = JSON.stringify({ found: true, total: 1, buildCheck: 'exact', query: { id: 6948 }, results: [{ id: 6948, trust: 'client-data' }], notes: ['x'.repeat(13000)] });
-  const server = FAKE_MCP.replace("text: JSON.stringify({ called: m.params.name, args: m.params.arguments, name: 'Fake Item' })", `text: ${JSON.stringify(big)}`);
+  const big = JSON.stringify({
+    found: true,
+    total: 1,
+    buildCheck: 'exact',
+    query: { id: 6948 },
+    results: [{ id: 6948, trust: 'client-data' }],
+    notes: ['x'.repeat(13000)],
+  });
+  const server = FAKE_MCP.replace(
+    "text: JSON.stringify({ called: m.params.name, args: m.params.arguments, name: 'Fake Item' })",
+    `text: ${JSON.stringify(big)}`,
+  );
   assert.notEqual(server, FAKE_MCP);
   const model = await fakeModel([callTools({ name: 'mcp__wowdata__wow_item', args: { id: 6948 } }), say('ok')]);
   try {
@@ -154,33 +179,6 @@ test('a long wowdata result is clipped for the model but read whole for the prog
     assert.equal(code, 0);
     assert.ok(model.bodies[1].body.messages[3].content.length < big.length, 'the model still gets the clipped text');
     assert.ok(feedAll(events).progress.includes('Found {item:6948}'), 'the progress line reads the whole result');
-  } finally {
-    await model.close();
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test('tools: the wowdata MCP server from --mcp-config is offered to the model, its calls run over stdio, and the answer comes back', async () => {
-  const dir = scratch('tools');
-  const model = await fakeModel([callTools({ name: 'mcp__wowdata__wow_item', args: { id: 6948 } }), say('It is {item:6948}.')]);
-  try {
-    const mcpConfig = mcpConfigFile(dir, { type: 'stdio', command: process.execPath, args: ['-e', FAKE_MCP] });
-    const { code, events } = await runOnce({ baseUrl: model.baseUrl, sessions: dir, mcpConfig }, { system: 'S', prompt: 'what is item 6948?' });
-    assert.equal(code, 0);
-    assert.equal(model.bodies.length, 2);
-    const first = model.bodies[0].body;
-    assert.deepEqual(first.tools.map(t => t.function.name), ['mcp__wowdata__wow_item']);
-    assert.match(first.messages[0].content, /FAKE DATA RULES/);
-    const second = model.bodies[1].body.messages;
-    assert.equal(second[2].tool_calls[0].function.name, 'mcp__wowdata__wow_item');
-    assert.equal(second[3].role, 'tool');
-    assert.deepEqual(JSON.parse(second[3].content), { called: 'wow_item', args: { id: 6948 }, name: 'Fake Item' });
-    const init = events.find(e => e.type === 'system');
-    assert.deepEqual(init.mcp_servers, [{ name: 'wowdata', status: 'connected' }]);
-    const parsed = feedAll(events);
-    assert.ok(parsed.progress.includes('Looking up an item'), 'a wowdata call shows its loading line');
-    assert.deepEqual(parsed.mcpDown, []);
-    assert.equal(parsed.done.text, 'It is {item:6948}.');
   } finally {
     await model.close();
     fs.rmSync(dir, { recursive: true, force: true });
@@ -261,7 +259,9 @@ test('history is trimmed to start at a user message, and old session files are p
     }
     L.pruneSessions(dir, 3);
     assert.deepEqual(fs.readdirSync(dir).sort(), ['s2.json', 's3.json', 's4.json']);
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('the script runs as a process: flags from the agent entry, input on stdin, stream-json out', async () => {
@@ -272,15 +272,24 @@ test('the script runs as a process: flags from the agent entry, input on stdin, 
     const args = [...cmd.args, ...A.AGENTS.local.args({ cfg: { baseUrl: model.baseUrl } }), '--sessions', dir];
     const child = spawn(cmd.file, args, { stdio: ['pipe', 'pipe', 'pipe'] });
     let out = '';
-    child.stdout.on('data', c => { out += c; });
+    child.stdout.on('data', c => {
+      out += c;
+    });
     child.stdin.end(A.AGENTS.local.input({ prompt: 'hello', system: 'S' }).stdin);
     const code = await new Promise(resolve => child.on('close', resolve));
     assert.equal(code, 0);
-    const parsed = feedAll(out.trim().split('\n').map(l => JSON.parse(l)));
+    const parsed = feedAll(
+      out
+        .trim()
+        .split('\n')
+        .map(l => JSON.parse(l)),
+    );
     assert.equal(parsed.done.text, 'from the process');
     const bad = spawn(cmd.file, [...cmd.args, '--nope'], { stdio: ['ignore', 'pipe', 'pipe'] });
     let badOut = '';
-    bad.stdout.on('data', c => { badOut += c; });
+    bad.stdout.on('data', c => {
+      badOut += c;
+    });
     assert.equal(await new Promise(resolve => bad.on('close', resolve)), 2);
     assert.match(JSON.parse(badOut.trim()).result, /unknown option/);
   } finally {

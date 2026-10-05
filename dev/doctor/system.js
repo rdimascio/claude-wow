@@ -29,23 +29,38 @@ function isReadOnlyCommand(cmd, args) {
 
 function spawnReadOnly(cmd, args, opts = {}) {
   if (!isReadOnlyCommand(cmd, args)) throw new Error(`doctor refuses to run a command that is not on its read-only list: ${cmd} ${args.join(' ')}`);
-  const result = spawnSync(cmd, args, { encoding: 'utf8', timeout: 15000, ...opts, env: { ...process.env, GIT_OPTIONAL_LOCKS: '0', ...(opts.env || {}) } });
-  return { ok: !result.error && result.status === 0, status: result.status, out: result.stdout || '', err: (result.stderr || '') + (result.error ? String(result.error.message) : '') };
+  const result = spawnSync(cmd, args, { encoding: 'utf8', timeout: 15000, ...opts, env: { ...process.env, GIT_OPTIONAL_LOCKS: '0', ...opts.env } });
+  return {
+    ok: !result.error && result.status === 0,
+    status: result.status,
+    out: result.stdout || '',
+    err: (result.stderr || '') + (result.error ? String(result.error.message) : ''),
+  };
 }
 
 function readText(file) {
-  try { return fs.readFileSync(file, 'utf8'); } catch { return null; }
+  try {
+    return fs.readFileSync(file, 'utf8');
+  } catch {
+    return null;
+  }
 }
 
 function statPath(file) {
   try {
     const st = fs.statSync(file);
     return { size: st.size, mtimeMs: st.mtimeMs, isDir: st.isDirectory(), isFile: st.isFile(), mode: st.mode };
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 function listDir(dir) {
-  try { return fs.readdirSync(dir); } catch { return null; }
+  try {
+    return fs.readdirSync(dir);
+  } catch {
+    return null;
+  }
 }
 
 function treeSize(dir, maxEntries = 200000) {
@@ -55,12 +70,19 @@ function treeSize(dir, maxEntries = 200000) {
   while (pending.length && files < maxEntries) {
     const current = pending.pop();
     let entries;
-    try { entries = fs.readdirSync(current, { withFileTypes: true }); } catch { continue; }
+    try {
+      entries = fs.readdirSync(current, { withFileTypes: true });
+    } catch {
+      continue;
+    }
     for (const entry of entries) {
       const full = path.join(current, entry.name);
       if (entry.isDirectory()) pending.push(full);
       else if (entry.isFile()) {
-        try { bytes += fs.statSync(full).size; files++; } catch {}
+        try {
+          bytes += fs.statSync(full).size;
+          files++;
+        } catch {}
       }
     }
   }
@@ -77,8 +99,13 @@ function tailText(file, maxBytes = 1024 * 1024) {
     fs.readSync(fd, buffer, 0, buffer.length, start);
     const text = buffer.toString('utf8');
     return start > 0 ? text.slice(text.indexOf('\n') + 1) : text;
-  } catch { return null; } finally {
-    if (fd !== undefined) try { fs.closeSync(fd); } catch {}
+  } catch {
+    return null;
+  } finally {
+    if (fd !== undefined)
+      try {
+        fs.closeSync(fd);
+      } catch {}
   }
 }
 

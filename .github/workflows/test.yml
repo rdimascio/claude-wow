@@ -1,70 +1,154 @@
-name: test
+name: ci
 
 on:
   push:
+    branches: [main]
   pull_request:
+  merge_group:
+  workflow_dispatch:
+    inputs:
+      fuzz_episodes:
+        description: Fuzz episodes per OS
+        default: '40'
+  schedule:
+    - cron: '17 6 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  NODE_VERSION: '22'
+  BUN_VERSION: '1.4.2'
 
 jobs:
-  test:
-    # Windows: the codec round-trip runs the real capture.ps1 decoder.
-    # Linux and macOS: it runs both python decoders, capture_x11.py and
-    # capture_mac.py (python3 is on every runner, and --test-image needs only the
-    # stdlib). macOS is in the matrix because that is where capture_mac.py ships.
-    # Every OS runs the suite on Node (npm test) and on Bun (npm run test:bun):
-    # Node stays the fallback runtime, Bun is what the shipped binary is built
-    # with (build.js). Node is on the Bun rows too, for npm ci (the Lua VM the
-    # addon tests use is an npm package).
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npx oxlint --deny-warnings
+      - run: npx oxfmt --check
+      - run: node tests/order_check.js
+
+  unit:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest, macos-latest]
-        runtime: [node, bun]
+        include:
+          - { os: ubuntu-latest, runtime: node }
+          - { os: ubuntu-latest, runtime: bun }
+          - { os: macos-latest, runtime: bun }
+          - { os: windows-latest, runtime: bun }
+          - { os: windows-latest, runtime: node }
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          node-version: 22
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         if: matrix.runtime == 'bun'
         with:
-          bun-version: 1.4.2
-      - run: npm ci
-      - run: npm test
-        if: matrix.runtime == 'node'
-      - run: npm run test:bun
-        if: matrix.runtime == 'bun'
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: npm ci --ignore-scripts
+      - if: matrix.runtime == 'node' && matrix.os == 'ubuntu-latest'
+        run: npm run test:coverage
+      - if: matrix.runtime == 'node' && matrix.os != 'ubuntu-latest'
+        run: npm test
+      - if: matrix.runtime == 'bun'
+        run: npm run test:bun
 
   e2e:
-    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        include:
+          - { os: ubuntu-latest, shard: 1, of: 2, fileTimeout: 180000 }
+          - { os: ubuntu-latest, shard: 2, of: 2, fileTimeout: 180000 }
+          - { os: macos-latest, shard: 1, of: 2, fileTimeout: 180000 }
+          - { os: macos-latest, shard: 2, of: 2, fileTimeout: 180000 }
+          - { os: windows-latest, shard: 1, of: 4, fileTimeout: 400000 }
+          - { os: windows-latest, shard: 2, of: 4, fileTimeout: 400000 }
+          - { os: windows-latest, shard: 3, of: 4, fileTimeout: 400000 }
+          - { os: windows-latest, shard: 4, of: 4, fileTimeout: 400000 }
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    env:
+      CLAUDE_WOW_FUZZ_EPISODES: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          node-version: 22
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
-      - run: npm ci
-      - run: npm run test:e2e
+      - run: npm ci --ignore-scripts
+      - run: node --test --test-shard=${{ matrix.shard }}/${{ matrix.of }} --test-concurrency=2 --test-timeout=${{ matrix.fileTimeout }} --test-reporter=spec "tests/e2e/*_test.js"
+
+  fuzz:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    env:
+      CLAUDE_WOW_FUZZ_EPISODES: ${{ inputs.fuzz_episodes || '40' }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: node --test --test-timeout=1500000 --test-reporter=spec tests/e2e/fuzz_test.js
 
   build:
-    # The binaries (build.js): all four targets compile from one Linux runner
-    # (Bun cross-compiles), and the one for that runner starts. They are kept
-    # as an artifact of the run; a release attaches them with SHA256SUMS.
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          bun-version: 1.4.2
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
       - run: bun build.js
       - run: ./dist/claude-wow-linux-x64 service help
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: claude-wow-binaries
           path: dist/
+          if-no-files-found: error
+
+  gate:
+    if: always()
+    needs: [lint, unit, e2e, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: every required job passed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "$RESULTS"
+          for r in $RESULTS; do test "$r" = success; done

@@ -21,7 +21,9 @@
 const ID_RE = /^[a-z][a-z0-9-]*$/;
 
 function normalizeId(id) {
-  return String(id || '').trim().toLowerCase();
+  return String(id || '')
+    .trim()
+    .toLowerCase();
 }
 
 // A plugin with every optional field filled in, or an Error explaining what is wrong.
@@ -94,7 +96,11 @@ function createRegistry() {
     }
     for (const p of plugins.values()) {
       let hit = false;
-      try { hit = !!p.match(job); } catch { hit = false; }
+      try {
+        hit = !!p.match(job);
+      } catch {
+        hit = false;
+      }
       if (hit) return { plugin: p, why: 'matched' };
     }
     return { plugin: plugins.get(dflt), why: 'default' };
