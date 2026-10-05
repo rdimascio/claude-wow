@@ -2329,7 +2329,7 @@ function agentLine(id) {
   if (!cmd.found) return `not found - ${cmd.note}`;
   const where = cmd.args.length ? `${cmd.file} ${cmd.args.join(' ')}` : cmd.file;
   const rules = Array.isArray(acfg.allowedTools) ? acfg.allowedTools.length : 0;
-  return `${where}  [${acfg.permissionMode || 'acceptEdits'}${id === 'codex' ? '' : ', ' + rules + ' allowed tool rules'}${acfg.model ? ', model ' + acfg.model : ''}]`;
+  return `${where}  [${acfg.permissionMode || 'acceptEdits'}${id === 'codex' ? '' : ', ' + rules + ' allowed tool rules'}${acfg.model ? ', model ' + acfg.model : ''}${id === 'claude' && A.costCap(acfg.maxCostUsd) !== null ? ', cost cap $' + acfg.maxCostUsd + ' per message' : ''}]`;
 }
 
 function banner() {

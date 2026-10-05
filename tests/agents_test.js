@@ -660,6 +660,7 @@ test('Claude budget stop from a real stream: the reply says the message hit the 
   const stop = { type: 'result', subtype: 'error_max_budget_usd', is_error: true, terminal_reason: 'budget_exhausted' };
   assert.equal(A.claudeParser().feed({ ...stop, errors: ['Reached maximum budget ($0.1)'] }).done.text, 'Stopped: this message hit the $0.10 cost cap.');
   assert.equal(A.claudeParser().feed({ ...stop, errors: ['Reached maximum budget ($0.125)'] }).done.text, 'Stopped: this message hit the $0.125 cost cap.');
+  assert.equal(A.claudeParser().feed({ ...stop, errors: ['Reached maximum budget ($1e-7)'] }).done.text, 'Stopped: this message hit the $1e-7 cost cap.');
   assert.equal(A.claudeParser().feed(stop).done.text, 'Stopped: this message hit the cost cap.');
   const other = A.claudeParser().feed({ type: 'result', subtype: 'error_max_turns', is_error: true, errors: ['Reached maximum turns ($5)'] });
   assert.equal(other.done.text, 'Claude Code ended with an error (error_max_turns) and no message.');

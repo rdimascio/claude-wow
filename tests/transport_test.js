@@ -183,6 +183,7 @@ test('agents.claude.maxCostUsd end to end: the run gets --max-budget-usd, a key 
   assert.equal(r.status, 1, 'a --once run that ends in an error reply exits 1');
   assert.match(r.out, /Codex has no cost cap, so agents\.codex\.maxCostUsd is ignored\./, r.out);
   assert.ok(!/agents\.claude\.maxCostUsd/.test(r.out), 'a valid cap is not logged as a problem');
+  assert.match(r.out, /^ {2}claude {3}: .*, cost cap \$0\.5 per message\]$/m, r.out);
   const argv = JSON.parse(fs.readFileSync(argvFile, 'utf8'));
   assert.equal(argv[argv.indexOf('--max-budget-usd') + 1], '0.5');
   assert.match(r.out, /#9@sess1 error \(/, r.out);

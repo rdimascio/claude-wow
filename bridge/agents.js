@@ -162,14 +162,14 @@ const BUDGET_STOP = 'error_max_budget_usd';
 
 function budgetStopText(ev) {
   const said = (Array.isArray(ev.errors) ? ev.errors : []).map(String).join(' ');
-  const m = /\$(\d+(?:\.\d+)?)/.exec(said);
+  const m = /\$([^\s)]+)/.exec(said);
   const usd = m ? Number(m[1]) : NaN;
   const amount = !Number.isFinite(usd) ? '' : Number(usd.toFixed(2)) === usd ? `$${usd.toFixed(2)} ` : `$${usd} `;
   return `Stopped: this message hit the ${amount}cost cap.`;
 }
 
 function costCap(v) {
-  return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : null;
+  return Number.isFinite(v) && v > 0 ? v : null;
 }
 
 function costCapNote(id, acfg) {
@@ -908,7 +908,7 @@ function resolveCommand(id, cfg = {}) {
 }
 
 module.exports = {
-  AGENTS, DEFAULT_AGENT, SETTING_FLAGS, READ_ONLY_MODES, unsupportedSettings, costCapNote, withChatSettings, withPluginSettings, PLUGIN_SETTINGS, addDirs, agentIds, normalizeAgent, displayName, agentConfig,
+  AGENTS, DEFAULT_AGENT, SETTING_FLAGS, READ_ONLY_MODES, unsupportedSettings, costCap, costCapNote, withChatSettings, withPluginSettings, PLUGIN_SETTINGS, addDirs, agentIds, normalizeAgent, displayName, agentConfig,
   grokRules, snippet, contextBlock, imagePaths, IMAGE_CAPTION,
   claudeParser, codexParser, grokParser, agyParser, hermesParser, localParser, LOCAL_DEFAULTS, codexItemLine, grokCall, grokRefusal, shellInner, claudeUsage, claudeWindow, claudeCost, claudeRate, CLAUDE_RATES,
   resolveCommand, unwrapShim, nativeNextTo,
