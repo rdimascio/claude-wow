@@ -53,3 +53,23 @@ test('/claude -r all turns a handoff list into one chat per session, and the fir
     assert.equal(call.cwd, fs.realpathSync(h.sb.project));
   });
 });
+
+test('/claude -r all leaves a handed-off session closed while its process still runs', { skip: process.platform === 'win32' }, async () => {
+  const { execFileSync } = require('child_process');
+  const procStart = execFileSync('ps', ['-o', 'lstart=', '-p', String(process.pid)], { encoding: 'utf8', env: { ...process.env, TZ: 'UTC', LC_ALL: 'C' } }).trim();
+  const seedRunning = sb => {
+    seed(sb);
+    const h = JSON.parse(fs.readFileSync(path.join(sb.home, HO.FILE_NAME), 'utf8'));
+    h.sessions[1] = { ...h.sessions[1], pid: process.pid, procStart };
+    HO.writeHandoff(sb.home, h);
+  };
+  await withGame({ beforeLaunch: seedRunning }, async h => {
+    await h.client.connect();
+    const before = h.client.db().chats.length;
+    h.client.slash('/claude -r all');
+    await h.client.waitFor(() => h.client.db().chats.length === before + 1, { label: 'one handoff chat' });
+    const chats = h.client.db().chats.slice(before);
+    assert.equal(chats[0].resumeId, A);
+    assert.ok(chats[0].history.some(m => /Still running in a terminal, so not opened .*Cost cap/.test(m.text)));
+  });
+});

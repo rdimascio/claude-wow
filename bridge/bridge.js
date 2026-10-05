@@ -636,7 +636,8 @@ function projectList() {
   return list;
 }
 
-let handoffCache = { key: '', handoff: null, entries: [] };
+const HANDOFF_CHECK_MS = 15000;
+let handoffCache = { key: '', handoff: null, checkedAt: 0, entries: [] };
 function handoffEntries(now = Date.now()) {
   let st;
   try { st = fs.statSync(path.join(HOME.dir, HO.FILE_NAME)); } catch { return []; }
@@ -644,10 +645,19 @@ function handoffEntries(now = Date.now()) {
   if (key !== handoffCache.key) {
     let handoff = null;
     try { handoff = HO.readHandoff(HOME.dir, now); } catch (e) { log(`handoff: cannot read ${HO.FILE_NAME} (${e.message})`); }
-    handoffCache = { key, handoff, entries: HO.slotEntries(handoff) };
+    if (handoff && handoff.claudeDir && path.resolve(handoff.claudeDir) !== path.resolve(CLAUDE_DIR)) {
+      log(`handoff: ${HO.FILE_NAME} lists sessions from ${handoff.claudeDir}, but this bridge resumes sessions from ${CLAUDE_DIR}; set claudeDir in config.json or CLAUDE_CONFIG_DIR so they match`);
+    }
+    handoffCache = { key, handoff, checkedAt: 0, entries: [] };
   }
   const h = handoffCache.handoff;
-  return h && now - h.at <= HO.FRESH_MS ? handoffCache.entries : [];
+  if (!h || now - h.at > HO.FRESH_MS) return [];
+  if (now - handoffCache.checkedAt >= HANDOFF_CHECK_MS) {
+    try { handoffCache.entries = HO.slotEntries(h, { running: s => HO.stillRunning(s) }); }
+    catch (e) { log(`handoff: ${e.message}`); handoffCache.entries = []; }
+    handoffCache.checkedAt = now;
+  }
+  return handoffCache.entries;
 }
 
 function sessionList() {

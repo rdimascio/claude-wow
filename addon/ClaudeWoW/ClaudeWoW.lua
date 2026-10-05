@@ -7632,6 +7632,7 @@ end
 
 function Cli.ResumeAll()
 	local from = ActiveChat()
+	if db.settings.mode == "pixel" and not (run.slotsExhausted or run.slotsMissing) then TryLoadSlot("manual") end
 	local opened, busy, already = {}, {}, {}
 	for _, e in ipairs(Cli.SessionEntries()) do
 		if e.handoff then
@@ -7646,7 +7647,7 @@ function Cli.ResumeAll()
 		end
 	end
 	if #opened + #busy + #already == 0 then
-		Cli.Say(from, "No sessions were handed off. In a terminal, run: claude-wow handoff <repository folder> --stop. Then /claude -r all again.")
+		Cli.Say(from, "No sessions were handed off. In a terminal, run: claude-wow handoff <repository folder> --stop. Then /claude -r all again (the list can take a few seconds to reach the game).")
 		return
 	end
 	local lines = {}
@@ -7661,8 +7662,7 @@ function Cli.ResumeAll()
 		for _, e in ipairs(busy) do table.insert(names, Display(e.name)) end
 		table.insert(lines, "Still running in a terminal, so not opened (resuming both would fork them): " .. table.concat(names, ", ") .. ". Quit them, then /claude -r all again.")
 	end
-	local target = opened[1] or from
-	Cli.Say(target, table.concat(lines, "\n"))
+	Cli.Say(opened[#opened] or from, table.concat(lines, "\n"))
 end
 
 function ClaudeWoW.ResumePick(n)
