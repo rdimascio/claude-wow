@@ -351,6 +351,47 @@ test('on Classic Era the window keeps only the atlases that client draws, and pl
   }
 });
 
+const rowOf = (index) => `(function() for _, r in ipairs(ClaudeWoW.UI.questList.rows) do if r.shown and r.chatId == ClaudeWoWDB.chats[${index}].id then return r end end end)()`;
+const titleColorOf = (vm, index) => vm.evaluate(`(function() local c = ${rowOf(index)}.titleColor return c[1] .. "," .. c[2] .. "," .. c[3] end)()`);
+
+test('on Classic Era a working chat whose glyph atlas is refused shows its number on the disc, not a blank', () => {
+  const vm = newVM({ before: NATIVE_TEMPLATES + '\nfunction GetBuildInfo() return "1.15.9", "70003", "Sep 1 2026", 11509, "", " " end' });
+  open(vm);
+  vm.run('ClaudeWoW.NewChat(); ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[2].id); ClaudeWoWDB.chats[1].pendingId = 99; ClaudeWoW.Render()');
+  assert.equal(vm.evaluate('ClaudeWoW.UI.art.working'), 'false', 'Era has no working glyph atlas');
+  const poi = `${rowOf(1)}.poi`;
+  assert.equal(vm.evaluate(`${poi}.glyph.shown`), 'false');
+  assert.equal(vm.evaluate(`${poi}.number.shown`), 'true', 'the number stands in for the refused glyph');
+  assert.match(vm.evaluate(`${poi}.number.text`), /^\d+$/);
+
+  const forever = nativeVM();
+  forever.run('ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[3].id); ClaudeWoWDB.chats[1].pendingId = 99; ClaudeWoW.Render()');
+  assert.equal(forever.evaluate(`${rowOf(1)}.poi.glyph.shown`), 'true', 'where the atlas exists the glyph shows');
+  assert.equal(forever.evaluate(`${rowOf(1)}.poi.number.shown`), 'false');
+});
+
+test('a chat whose newest reply waits on a permission gets the needs-you title color; working outranks it, it outranks an unread reply', () => {
+  const vm = nativeVM();
+  vm.run('ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[3].id)');
+  const idle = titleColorOf(vm, 1);
+  vm.run('ClaudeWoWDB.chats[2].unread = 1; ClaudeWoW.Render()');
+  const reply = titleColorOf(vm, 2);
+  assert.notEqual(reply, idle);
+  vm.run(`local h = ClaudeWoWDB.chats[1].history
+    table.insert(h, { role = "user", text = "clean up", t = time() })
+    table.insert(h, { role = "assistant", text = "I need permission", t = time(), denied = { "Bash(rm:*)" } })
+    table.insert(h, { role = "system", text = "This chat's context is large.", t = time() })
+    ClaudeWoW.Render()`);
+  const needsYou = titleColorOf(vm, 1);
+  assert.equal(needsYou, '1,0.4,0.1', 'a trailing system message does not hide the open denial');
+  vm.run('ClaudeWoWDB.chats[1].unread = 2; ClaudeWoW.Render()');
+  assert.equal(titleColorOf(vm, 1), needsYou, 'needs you outranks an unread reply');
+  vm.run('ClaudeWoWDB.chats[1].pendingId = 99; ClaudeWoW.Render()');
+  assert.notEqual(titleColorOf(vm, 1), needsYou, 'working outranks needs you');
+  vm.run('ClaudeWoWDB.chats[1].pendingId = nil; ClaudeWoWDB.chats[1].unread = 0; table.insert(ClaudeWoWDB.chats[1].history, { role = "user", text = "never mind", t = time() }); ClaudeWoW.Render()');
+  assert.equal(titleColorOf(vm, 1), idle, 'a newer message from the player closes the denial');
+});
+
 test('on Classic Era, where the quest parchment atlas is missing, the transcript uses the Vanilla quest panel parchment', () => {
   const vm = newVM({ before: NATIVE_TEMPLATES + `
     function GetBuildInfo() return "1.15.9", "70003", "Sep 1 2026", 11509 end
@@ -384,7 +425,7 @@ test('a reply names items and spells by token: the client turns each into a real
   assert.ok(body.includes('|Hspell:1752|h[Sinister Strike]|h'), body);
   assert.ok(body.includes('|cff5c5248item 999999|r'), 'an ID the client does not have shows plainly, with no invented name, in parchment ink');
   assert.ok(body.includes('|cff2e1f0f|Hitem:2589'), 'a white item name is drawn dark enough to read on the parchment');
-  assert.ok(body.includes('|cff00577a|Hspell:1752'), 'and so is a spell link');
+  assert.ok(body.includes('|cff1c4f9c|Hspell:1752'), 'and so is a spell link');
   assert.equal(vm.evaluate('STUB.itemLoads[1]'), '999999', 'and the client is asked to load it');
   assert.ok(body.includes('\u2022 spare'), 'a "- " line becomes a bullet');
   assert.ok(!body.includes('|cffff0000'), 'color codes the agent typed are neutralized');
@@ -480,7 +521,7 @@ test('a coding reply reads cleanly: bold, code and headings are styled, fences d
   assert.ok(!body.includes('**') && !body.includes('`') && !body.includes('## '), 'no raw markdown marks: ' + body);
   assert.ok(body.includes('|cff5c1a00Merge train|r'), 'a heading is emphasized');
   assert.ok(body.includes('|cff5c1a002 of the 3|r'), 'bold is emphasized');
-  assert.ok(body.includes('|cff1f4a5ainternal|r'), 'inline code has its own ink');
+  assert.ok(body.includes('|cff7a2e0einternal|r'), 'inline code has its own ink');
   assert.ok(body.includes('gh pr merge 18610') && !body.includes('bash'), 'fence lines are dropped, the code stays');
   assert.ok(body.includes('|Haddon:claudewow:url:https://linear.app/every/issue/PRD-8708/pandl-month|h[the ticket]|h'), 'a markdown link keeps its label');
   assert.ok(body.includes('|Haddon:claudewow:url:https://github.com/every-io/every/pull/18632|h[PR #18632]|h|r.'), 'a bare PR URL is a short link, its full stop kept outside');
@@ -489,6 +530,46 @@ test('a coding reply reads cleanly: bold, code and headings are styled, fences d
   assert.equal((body.match(/\|Haddon:claudewow:url:/g) || []).length, 4, 'each URL becomes exactly one link');
   vm.run('STUB.bubble.scripts.OnHyperlinkClick(STUB.bubble, "addon:claudewow:url:https://github.com/every-io/every/pull/18632", "[PR #18632]", "LeftButton")');
   assert.equal(vm.evaluate('STUB.copied[1]'), 'https://github.com/every-io/every/pull/18632', 'a click opens the copy box with the full URL');
+});
+
+const parchmentInkReply = 'use `internal` and see https://github.com/o/r/pull/5 and {spell:1752}';
+const shownBody = '(function() for _, b in ipairs(ClaudeWoW.UI.bubbles) do if b.shown then return b.body:GetText() end end end)()';
+const renderInkReply = (vm) => vm.run(`
+  C_Spell = { GetSpellLink = function(id) if id == 1752 then return "|cff71d5ff|Hspell:1752|h[Sinister Strike]|h|r" end end }
+  local c = ClaudeWoWDB.chats[1]
+  ClaudeWoW.SwitchChat(c.id)
+  c.history = { { role = "assistant", t = 1, text = "${parchmentInkReply}" } }
+  ClaudeWoW.Render()
+`);
+
+test('on the parchment, inline code is dark red-brown and links are dark blue, and a shift-clicked link goes back to its game color', () => {
+  const vm = nativeVM();
+  renderInkReply(vm);
+  const body = vm.evaluate(shownBody);
+  assert.ok(body.includes('|cff7a2e0einternal|r'), 'inline code is dark red-brown: ' + body);
+  assert.ok(body.includes('|cff1c4f9c|Haddon:claudewow:url:https://github.com/o/r/pull/5|h[PR #5]|h|r'), 'a URL link is dark blue: ' + body);
+  assert.ok(body.includes('|cff1c4f9c|Hspell:1752|h[Sinister Strike]|h|r'), 'a spell link uses the same dark blue: ' + body);
+  assert.ok(!body.includes('ff1f4a5a') && !body.includes('ff00577a') && !body.includes('ff71d5ff'), 'no teal ink is left: ' + body);
+  vm.run(`
+    STUB.texts = {}
+    SetItemRef = function(link, text) table.insert(STUB.texts, text) end
+    IsModifiedClick = function() return true end
+    local b = (function() for _, b in ipairs(ClaudeWoW.UI.bubbles) do if b.shown then return b end end end)()
+    b.scripts.OnHyperlinkClick(b, "spell:1752", "|cff1c4f9c|Hspell:1752|h[Sinister Strike]|h|r", "LeftButton")
+    IsModifiedClick = function() return false end
+  `);
+  assert.equal(vm.evaluate('STUB.texts[1]'), '|cff71d5ff|Hspell:1752|h[Sinister Strike]|h|r', 'the chat box gets the game link color');
+});
+
+test('the dark theme keeps its light code and link ink', () => {
+  const vm = newVM();
+  open(vm);
+  renderInkReply(vm);
+  assert.equal(vm.evaluate('ClaudeWoW.UI.parchment'), null, 'this window has no parchment');
+  const body = vm.evaluate(shownBody);
+  assert.ok(body.includes('|cffa8c8d8internal|r'), 'inline code keeps its light ink: ' + body);
+  assert.ok(body.includes('|cff71d5ff|Haddon:claudewow:url:https://github.com/o/r/pull/5|h[PR #5]|h|r'), 'a URL link keeps the game link color: ' + body);
+  assert.ok(body.includes('|cff71d5ff|Hspell:1752|h[Sinister Strike]|h|r'), 'and so does a spell link: ' + body);
 });
 
 test('code fences keep their lines exactly, and URLs keep their whole path but not the marks or punctuation around them', () => {
@@ -516,13 +597,13 @@ test('code fences keep their lines exactly, and URLs keep their whole path but n
   const body = vm.evaluate('STUB.bubble.body:GetText()');
   assert.ok(body.includes('# install deps\necho `pwd` **x** https://a.com {item:2589}\n\n- not a bullet'), 'fenced lines, tokens and blank lines stay exactly as written: ' + body);
   assert.ok(body.includes('|Haddon:claudewow:url:https://github.com/o/r/pull/99|h[PR #99]|h') && !body.includes('pull/99**'), 'bold marks stay outside the URL');
-  assert.ok(body.split('\n').some(l => l.startsWith('|cff5c1a00|cff00577a|Haddon:claudewow:url:https://github.com/o/r/pull/99|h')), 'and are drawn as bold around the link: ' + body);
+  assert.ok(body.split('\n').some(l => l.startsWith('|cff5c1a00|cff1c4f9c|Haddon:claudewow:url:https://github.com/o/r/pull/99|h')), 'and are drawn as bold around the link: ' + body);
   assert.ok(body.includes('url:https://github.com/o/r/blob/main/app/(auth)/page.tsx|h'), 'balanced parentheses stay in the path');
   assert.ok(body.includes('url:https://b.com/x|h') && body.includes('|r).'), 'a closing parenthesis and full stop stay outside');
   assert.ok(body.includes('open https://... later') && !body.includes('url:https://|h'), 'a bare scheme is not a link');
   assert.ok(body.includes('url:https://en.wikipedia.org/wiki/Foo_(bar)|h'), 'a URL that ends in a balanced parenthesis keeps it');
   assert.ok(body.includes('|h[bold label]|h'), 'marks inside a link label are dropped');
-  assert.ok(body.includes('(see |cff00577a|Haddon:claudewow:url:https://github.com/o/r/pull/7|h[PR]|h|r)'), 'a markdown link in parentheses leaves the outer one outside');
+  assert.ok(body.includes('(see |cff1c4f9c|Haddon:claudewow:url:https://github.com/o/r/pull/7|h[PR]|h|r)'), 'a markdown link in parentheses leaves the outer one outside');
 });
 
 test('clicking a link in a reply opens the link, not the copy box; clicking the text around it still opens the copy box', () => {
@@ -567,7 +648,7 @@ test('the chat list orders by the last message, a new chat by its start, and ope
   assert.equal(shownRows(vm).split('|')[0], 'Old talk', 'a new message moves the chat to the top');
 });
 
-test('general chats sit under Chats, project chats under their project, and the dropdown under the input switches the project', () => {
+test('general chats sit under Chats, project chats under their project, and the project button in the header switches the project', () => {
   const vm = nativeVM();
   vm.run('ClaudeWoW.NewChat("Best rogue race")');
   vm.run('ClaudeWoW.Render()');
@@ -584,6 +665,48 @@ test('general chats sit under Chats, project chats under their project, and the 
   assert.match(vm.evaluate('ClaudeWoWProjectButton.text:GetText()'), /wow-ai/);
   vm.run('ClaudeWoWProjectButton.scripts.OnClick(ClaudeWoWProjectButton); STUB.Pick("No project")');
   assert.equal(vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].cwd'), '');
+});
+
+test('the project button sits at the right end of the header band, and the chat title stops before it', () => {
+  const vm = nativeVM();
+  assert.equal(vm.evaluate('ClaudeWoWProjectButton:GetParent() == ClaudeWoWTitleBar'), 'true');
+  assert.equal(vm.evaluate('ClaudeWoWProjectButton.point .. " " .. ClaudeWoWProjectButton.relPoint'), 'RIGHT RIGHT');
+  assert.equal(vm.evaluate('ClaudeWoWProjectButton.rel == ClaudeWoWTitleBar'), 'true');
+  assert.equal(vm.evaluate('ClaudeWoW.UI.chatTitle.rel == ClaudeWoWProjectButton'), 'true', 'the title truncates before it reaches the button');
+  assert.equal(vm.evaluate('ClaudeWoW.UI.chatTitle.point .. " " .. ClaudeWoW.UI.chatTitle.relPoint .. " " .. ClaudeWoW.UI.chatTitle.x'), 'RIGHT LEFT -8');
+  vm.run('STUB.renames = 0; local real = ClaudeWoW.RenamePrompt; ClaudeWoW.RenamePrompt = function(...) STUB.renames = STUB.renames + 1 return real(...) end');
+  vm.run('ClaudeWoWProjectButton.scripts.OnClick(ClaudeWoWProjectButton, "LeftButton")');
+  assert.equal(vm.num('STUB.renames'), 0, 'a click on the project button opens the project menu, not the rename prompt');
+  assert.match(vm.evaluate('STUB.menu.items[1].text'), /^Project$/);
+});
+
+test('a long project label truncates inside a bounded button, shows in full in the tooltip, and the bound follows the window size', () => {
+  const vm = nativeVM();
+  vm.run('ClaudeWoW.SetFolder("~/a-very-long-project-folder-name-for-the-header", ClaudeWoWDB.chats[#ClaudeWoWDB.chats])');
+  vm.run('ClaudeWoWProjectButton.text.GetStringWidth = function() return 400 end; ClaudeWoWTitleBar.width = 400; ClaudeWoW.Render()');
+  assert.equal(vm.num('ClaudeWoWProjectButton:GetWidth()'), 200, 'half the header band at most');
+  assert.equal(vm.num('ClaudeWoWProjectButton.text:GetWidth()'), 192, 'the label is cut to the button');
+  vm.run('ClaudeWoWTitleBar.width = 188; for _, fn in ipairs(ClaudeWoWTitleBar.hooks.OnSizeChanged) do fn(ClaudeWoWTitleBar) end');
+  assert.equal(vm.num('ClaudeWoWProjectButton:GetWidth()'), 94, 'a narrow window narrows the button');
+  vm.run('ClaudeWoWTitleBar.width = 2000; for _, fn in ipairs(ClaudeWoWTitleBar.hooks.OnSizeChanged) do fn(ClaudeWoWTitleBar) end');
+  assert.equal(vm.num('ClaudeWoWProjectButton:GetWidth()'), 240, 'a wide window still caps the button');
+  vm.run('ClaudeWoWProjectButton.scripts.OnEnter(ClaudeWoWProjectButton)');
+  assert.equal(vm.evaluate('GameTooltip:GetText()'), 'Project: a-very-long-project-folder-name-for-the-header');
+  vm.run('ClaudeWoWProjectButton.text.GetStringWidth = function() return 40 end; ClaudeWoW.Render()');
+  assert.equal(vm.num('ClaudeWoWProjectButton:GetWidth()'), 60, 'a short label keeps the minimum width');
+});
+
+test('without native frames the project button stays in the composer and never runs past the box edge', () => {
+  const vm = newVM();
+  open(vm);
+  vm.run('ClaudeWoW.SetFolder("~/a-very-long-project-folder-name-for-the-composer", ClaudeWoWDB.chats[1]); ClaudeWoW.Render()');
+  assert.equal(vm.evaluate('ClaudeWoW.UI.chatTitle'), null);
+  assert.equal(vm.evaluate('ClaudeWoWProjectButton.point'), 'BOTTOMRIGHT');
+  vm.run('ClaudeWoWProjectButton.text.GetStringWidth = function() return 1000 end; ClaudeWoW.Render()');
+  const box = vm.num('ClaudeWoWProjectButton:GetParent():GetWidth()');
+  assert.ok(vm.num('ClaudeWoWProjectButton:GetWidth()') <= box - 16, 'the button fits inside the composer');
+  assert.ok(vm.num('ClaudeWoWProjectButton:GetRight()') <= vm.num('ClaudeWoWProjectButton:GetParent():GetRight()'));
+  assert.ok(vm.num('ClaudeWoWProjectButton:GetLeft()') >= vm.num('ClaudeWoWProjectButton:GetParent():GetLeft()'));
 });
 
 test('the chat list shows the newest chat first, keeps its order when a chat is opened, and scrolls only to bring an opened chat into view', () => {
@@ -660,7 +783,7 @@ test('the window is built from Blizzard frame templates where the client has the
   assert.equal(vm.evaluate('ClaudeWoWMini.shown'), 'true');
 });
 
-test('the black bar shows the chat title across its whole width, with folder, agent and plugin in its tooltip', () => {
+test('the black bar shows the chat title up to the project button, with folder, agent and plugin in its tooltip', () => {
   const vm = nativeVM();
   vm.run('ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[2].id)');
   assert.equal(vm.evaluate('ClaudeWoW.UI.chatTitle:GetText()'), 'Fix the bridge');

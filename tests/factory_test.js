@@ -142,8 +142,38 @@ test('the run summary is plain text for the game window: no Markdown marks, and 
   ].join('\n'));
   const long = Array.from({ length: 200 }, (_, i) => `Sentence number ${i} is here.`).join(' ');
   const cut = F.summaryOf(long);
-  assert.ok(cut.length <= 4004, cut.length);
-  assert.match(cut, /is here\. \.\.\.$/);
+  assert.ok(cut.length <= 4000, cut.length);
+  assert.match(cut, /is here\.$/, 'a cut summary ends at a whole sentence, with no bare marker');
+  assert.equal(F.summarize(long).cut, true);
+  assert.equal(F.summarize(said).cut, false);
+});
+
+test('a run summary keeps paragraph breaks: one blank line between paragraphs, none at the ends', () => {
+  const said = ['', '', 'First paragraph.', '', '', '', 'Second paragraph.', '- item', '', '   ', 'Third.', '', ''].join('\n');
+  assert.equal(F.summaryOf(said), ['First paragraph.', '', 'Second paragraph.', '- item', '', 'Third.'].join('\n'));
+});
+
+test('a cut summary ends with one line that names the run log, from the line cap alone or the character cap', () => {
+  const run = { id: 'abcd1234', skill: 'merge-train', args: '', model: 'opus', status: 'done', startedAt: 0, endedAt: 1000, log: '/home/u/.claude-wow/factory/logs/abcd1234.log', prUrls: [] };
+  const lines = Array.from({ length: 45 }, (_, k) => `Step ${k} went well.`);
+  const byLines = F.summarize(lines.join('\n'));
+  assert.equal(byLines.cut, true, 'the line cap alone marks the summary cut');
+  assert.ok(byLines.text.length < 4000);
+  assert.equal(byLines.text.split('\n').length, 40);
+  assert.ok(byLines.text.endsWith('Step 39 went well.'));
+  const note = `Cut for chat. The full output is in ${run.log} on the bridge computer.`;
+  const shown = F.describe({ ...run, summary: byLines.text, summaryCut: byLines.cut }, 1000);
+  assert.equal(shown.split('\n').at(-1), note);
+  assert.equal(shown.split(note).length, 2, 'the note is there once');
+  const whole = F.summarize(lines.slice(0, 40).join('\n'));
+  assert.equal(whole.cut, false, 'exactly 40 lines is not cut');
+  assert.ok(!F.describe({ ...run, summary: whole.text, summaryCut: whole.cut }, 1000).includes('Cut for chat'));
+  const blanksPastCap = F.summarize([...lines.slice(0, 40), '', ''].join('\n'));
+  assert.equal(blanksPastCap.cut, false, 'trailing blank lines past the cap are not a cut');
+  const long = Array.from({ length: 200 }, (_, i) => `Sentence number ${i} is here.`).join(' ');
+  const byChars = F.summarize(long);
+  assert.equal(byChars.cut, true, 'the character cap marks the summary cut');
+  assert.match(F.describe({ ...run, summary: byChars.text, summaryCut: byChars.cut }, 1000), /is here\.\nCut for chat\. The full output is in \/home\/u\/\.claude-wow\/factory\/logs\/abcd1234\.log on the bridge computer\.$/);
 });
 
 test('refusals: a skill outside the allowlist, a skill-like injection, an off factory, a missing claude and too many runs start nothing', async () => {
@@ -281,8 +311,9 @@ test('a run summary keeps a full merge report, not just its first lines', () => 
   assert.equal(summary, report, 'every line of a normal report is kept');
   const near = Array.from({ length: 39 }, (_, k) => `${k} ${'y'.repeat(95)} https://github.com/o/r/pull/${1000 + k}`);
   const cut = F.summaryOf(near.join('\n'));
-  assert.ok(cut.endsWith(' ...') && cut.length < near.join('\n').length, 'past 4,000 characters the summary stops at a boundary');
-  const kept = cut.slice(0, -4).split('\n');
+  assert.ok(!cut.endsWith('...') && cut.length < near.join('\n').length, 'past 4,000 characters the summary stops at a boundary');
+  assert.equal(F.summarize(near.join('\n')).cut, true);
+  const kept = cut.split('\n');
   assert.ok(kept.every(l => near.includes(l)), 'every kept line is whole, so no URL is cut into another number');
   const flood = Array.from({ length: 100 }, (_, k) => `line ${k}`).join('\n');
   assert.equal(F.summaryOf(flood).split('\n').length, 40, 'a flood is still capped');

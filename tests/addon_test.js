@@ -1503,7 +1503,7 @@ test('whisper tabs: on by default; the active chat is a tab at login, Enter ther
   assert.equal(vm.evaluate('ChatFrame11Tab.text'), 'Claude', 'a chat with its default name is the agent\'s tab');
   assert.equal(vm.evaluate('ChatFrame11EditBox.attrs.tellTarget'), 'Claude', 'the box whispers the agent');
   assert.equal(vm.evaluate('ChatFrame11.shown'), 'false', 'opened in the dock without stealing the view');
-  assert.ok(tabLines(vm, 11).includes('Type here and press Enter'), 'a welcome line: ' + tabLines(vm, 11));
+  assert.ok(tabLines(vm, 11).includes('Type to talk'), 'a welcome line: ' + tabLines(vm, 11));
   assert.ok(tabLinks(vm, 11).includes(`addon:claudewow:open:${chatId}`), 'with a workspace link');
   assert.equal(vm.evaluate('ClaudeWoWFrame.shown'), 'false', 'the workspace window stays closed');
   assert.equal(vm.evaluate('ClaudeWoWMini.shown'), 'true', 'a fresh install shows the compact bar with the status light');
@@ -2715,9 +2715,10 @@ test('context growth: past the threshold the chat is warned once per crossing, w
   replyWith(vm, 'ctx = 60000, turns = 4, window = 200000, cost = 1.2');
   assert.equal(warnings(), 1, 'the crossing warns');
   const warning = last();
-  for (const must of ['60.0k tokens of 200.0k after 4 turns, past the 50.0k mark', 're-reads all 60.0k tokens', 'costs more than the last', '≈$1.20 so far (a comparison, not a bill)', 'New chat', "AI's memory of this conversation", 'this transcript stays here', '/claude config context 0']) {
+  for (const must of ['60.0k tokens of 200.0k after 4 turns, past the 50.0k mark', 're-reads all of it', 'replies cost more and start slower', 'New chat starts AI fresh', 'this transcript stays here', '/claude config context <n> moves the mark, 0 turns it off']) {
     assert.ok(warning.includes(must), `warning says "${must}": ${warning}`);
   }
+  assert.equal(warning.split('\n').length, 3, 'two sentences and the config hint: ' + warning);
   assert.ok(vm.evaluate('table.concat(STUB.prints, "\\n")').includes('past the 50.0k mark'), 'the warning reached the game chat, where the reply went');
   assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].ctxWarned'), 'true');
   replyWith(vm, 'ctx = 75000, turns = 5, window = 200000');
@@ -2751,6 +2752,17 @@ test('context growth: past the threshold the chat is warned once per crossing, w
   assert.equal(vm.num('ClaudeWoWDB.settings.contextWarn'), 100000);
   vm.run('SlashCmdList.CLAUDE("diag")');
   assert.ok(last().includes('context: warning at 100.0k tokens'), last());
+});
+
+test('context growth: a warning after one turn says "1 turn", not "1 turns"', () => {
+  const vm = newVM();
+  login(vm);
+  connect(vm);
+  vm.run('SlashCmdList.CLAUDE("config context 50k")');
+  replyWith(vm, 'ctx = 60000, turns = 1, window = 200000');
+  const warning = vm.evaluate('(function() for _, m in ipairs(ClaudeWoWDB.chats[1].history) do if m.newChat then return m.text end end end)()');
+  assert.ok(warning.includes('after 1 turn, past the 50.0k mark'), warning);
+  assert.ok(!warning.includes('1 turns'), warning);
 });
 
 const gamePath = rel => 'Interface\\\\AddOns\\\\ClaudeWoW_Runtime\\\\' + rel.split('/').join('\\\\');
@@ -2945,12 +2957,13 @@ test('projects: a chat started by /claude in a whisper tab says general chat, no
   connectIn(vm, '/Users/me/every');
   vm.run('SlashCmdList.CLAUDE("where should i go now")');
   const general = chatTabText(vm, vm.evaluate('ClaudeWoWDB.activeChat'));
-  assert.match(general, / - general chat\. Type here/);
-  assert.doesNotMatch(general, /coding in/);
+  assert.match(general, /, general chat\. Type to talk; .* opens the full window\./);
+  assert.doesNotMatch(general, /\/claude help/, 'the welcome line drops the help clause');
+  assert.doesNotMatch(general, / in every/);
   vm.run('SlashCmdList.CLAUDE("--project every fix the build")');
   const project = chatTabText(vm, vm.evaluate('ClaudeWoWDB.activeChat'));
   assert.match(project, /\nproject: every\n/);
-  assert.match(project, / - coding in every\. Type here/, 'the welcome line names the project the flag set');
+  assert.match(project, / in every\. Type to talk; .* opens the full window\./, 'the welcome line names the project the flag set');
   assert.doesNotMatch(project, /general chat/);
 });
 
@@ -2987,6 +3000,36 @@ test('projects: a chat has none by default; --project, #name and none attach and
 
   vm.run('SlashCmdList.CLAUDE("-c --project none")');
   assert.equal(vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].cwd'), '');
+});
+
+test('projects: the bridge list adds recent projects with repo labels, and one folder spelled with ~ or a trailing slash is listed once', () => {
+  const vm = newVM();
+  login(vm);
+  vm.run('ClaudeWoWDB.settings.projects = { "~/code/every", "/Users/me/code/every/" }');
+  vm.run('STUB.RunTimers()');
+  nextSlot(vm, '{ now = time(), cwd = "/Users/me/code/every", home = "/Users/me", projects = { { path = "/Users/me/code/every", label = "every" }, { path = "/Users/me/wow-ai", label = "claude-wow" }, { path = "/Users/me/every-3", label = "every (every-3)" } }, replies = {} }');
+  vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
+  assert.equal(vm.evaluate('ClaudeWoW.IsConnected()'), 'true');
+
+  vm.run('SlashCmdList.CLAUDE("--project nope hi")');
+  const said = vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history[#ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history].text');
+  assert.match(said, /Known: every, claude-wow, every \(every-3\)\./, 'one every for both spellings, then the bridge list by label: ' + said);
+
+  vm.run('SlashCmdList.CLAUDE("--project claude-wow fix the build")');
+  const rec = stripRecords(vm).find(r => r.text === 'fix the build');
+  assert.equal(rec.cwd, '/Users/me/wow-ai', 'the repo label finds the folder');
+  const tab = vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history[#ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history - 1].text');
+  assert.match(tab, /project: claude-wow/);
+});
+
+test('projects: without a bridge list the picker keeps folder names, and ~ stays as typed until the bridge names its home', () => {
+  const vm = newVM();
+  login(vm);
+  vm.run('ClaudeWoWDB.settings.projects = { "~/code/every", "/Users/me/wow-ai" }');
+  connectIn(vm, '/Users/me/code/every');
+  vm.run('SlashCmdList.CLAUDE("--project nope hi")');
+  const said = vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history[#ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history].text');
+  assert.match(said, /Known: every, wow-ai, every\./, said);
 });
 
 test('the whisper tab and the game chat echo render coding replies the same way: fences skipped, code untouched, links short, cuts on word boundaries', () => {

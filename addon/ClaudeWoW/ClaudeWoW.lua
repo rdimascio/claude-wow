@@ -150,8 +150,25 @@ local function ParseTokens(text)
 	return math.floor(n + 0.5)
 end
 
+function Cli.NormalizeFolder(cwd)
+	local p = tostring(cwd or "")
+	local home = run.bridgeHome
+	if home and home ~= "" then
+		if p == "~" then
+			p = home
+		elseif p:match("^~[\\/]") then
+			p = home:gsub("[\\/]+$", "") .. p:sub(2)
+		end
+	end
+	if #p > 1 then p = p:gsub("([^:\\/])[\\/]+$", "%1") end
+	return p
+end
+
 -- Last path component of a folder, for labels.
 local function FolderName(cwd)
+	local labels = run.bridgeProjectLabels
+	local label = labels and labels[Cli.NormalizeFolder(cwd)]
+	if label and label ~= "" then return label end
 	local name = tostring(cwd or ""):gsub("[\\/]+$", ""):match("([^\\/]+)$")
 	return name or ""
 end
@@ -1674,11 +1691,9 @@ local function ContextWarning(c)
 	if c.ctxWarned then return end
 	c.ctxWarned = true
 	local size = FmtTokens(c.ctx) .. " tokens"
-	local text = "This chat's context is " .. size .. (c.window and (" of " .. FmtTokens(c.window)) or "") .. " after " .. (c.turns or "?") .. " turns, past the " .. FmtTokens(limit) .. " mark. "
-		.. "Every message you send here re-reads all " .. size .. " before it starts on your question, so each reply costs more than the last and is slower to start, and it only grows.\n"
-		.. (c.cost and string.format("At API list prices this session comes to %s$%.2f so far (a comparison, not a bill). ", SEG.APPROX, c.cost) or "")
-		.. "Start a new chat to reset it: the New chat button below, or /claude. You lose " .. ChatAgentName(c) .. "'s memory of this conversation; this transcript stays here.\n"
-		.. "Said once per crossing. /claude config context <n> moves the mark, /claude config context 0 turns it off."
+	local text = "This chat's context is " .. size .. (c.window and (" of " .. FmtTokens(c.window)) or "") .. " after " .. (c.turns or "?") .. " turn" .. ((c.turns or 0) == 1 and "" or "s") .. ", past the " .. FmtTokens(limit) .. " mark: every message re-reads all of it, so replies cost more and start slower.\n"
+		.. "New chat starts " .. ChatAgentName(c) .. " fresh; this transcript stays here.\n"
+		.. "/claude config context <n> moves the mark, 0 turns it off."
 	AddHistory(c, "system", text)
 	c.history[#c.history].newChat = true
 	-- Where the reply itself went: the whisper tab if the chat has one, else the game chat.
@@ -2053,6 +2068,7 @@ local function TryLoadSlot(why)
 		if type(data.plugins) == "table" and #data.plugins > 0 then run.bridgePlugins = data.plugins end
 		ClaudeWoW.ApplyLive(data.live)
 		ClaudeWoW.ApplySessions(data.sessions, data.now)
+		ClaudeWoW.ApplyProjects(data.projects, data.home)
 		local acked = ClaudeWoW.ApplyAcks(data.acks)
 		ApplyTransport(data)
 		if acked then RefreshStrip() end
@@ -2279,6 +2295,7 @@ local function ProcessInbox()
 	if type(inbox.plugins) == "table" and #inbox.plugins > 0 then run.bridgePlugins = inbox.plugins end
 	ClaudeWoW.ApplyLive(inbox.live)
 	ClaudeWoW.ApplySessions(inbox.sessions, inbox.now)
+	ClaudeWoW.ApplyProjects(inbox.projects, inbox.home)
 	ApplyTransport(inbox)
 	ClaudeWoW.Version.Apply(inbox.bridge, inbox.now)
 	ClaudeWoW.Version.ApplyDisk(inbox.addonDisk, inbox.now)
@@ -2836,9 +2853,9 @@ end
 
 function Whisper.Welcome(chat, frame)
 	local folder = FolderName(ChatFolder(chat))
-	local where = folder ~= "" and ("coding in " .. Display(folder)) or "general chat"
+	local where = folder ~= "" and (" in " .. Display(folder)) or ", general chat"
 	local r, g, b = Whisper.SystemColor()
-	WhisperWrite(frame, ChatAgentName(chat) .. " - " .. where .. ". Type here and press Enter to talk; /claude help lists the commands; " .. Link("open", chat.id, "workspace") .. " opens the full window.", r, g, b)
+	WhisperWrite(frame, ChatAgentName(chat) .. where .. ". Type to talk; " .. Link("open", chat.id, "workspace") .. " opens the full window.", r, g, b)
 	if db.settings.whisperNews then
 		db.settings.whisperNews = nil
 		WhisperWrite(frame, "New: chats live in whisper tabs like this one by default. /claude config ui whisper off goes back to the window and the game chat.", r, g, b)
@@ -3601,11 +3618,25 @@ function ClaudeWoW.ApplySessions(list, now)
 	if type(now) == "number" then run.bridgeNow = now end
 end
 
+function Q.HasDenial(m)
+	return type(m) == "table" and type(m.denied) == "table" and #m.denied > 0
+end
+
+function Q.DenialIndex(c)
+	local history = c and c.history or {}
+	for i = #history, 1, -1 do
+		local m = history[i]
+		if Q.HasDenial(m) then return i end
+		if m.role ~= "system" then return nil end
+	end
+	return nil
+end
+
 function ClaudeWoW.OpenDenial(chatId)
 	local c = FindChat(chatId)
 	if not c or c.pendingId then return nil end
-	local latest = c.history[#c.history]
-	if latest and type(latest.denied) == "table" and #latest.denied > 0 then
+	local latest = c.history[Q.DenialIndex(c) or 0]
+	if latest then
 		return latest.denied, latest.id, latest.agent
 	end
 	return nil
@@ -3667,15 +3698,30 @@ end
 function Cli.KnownProjects()
 	local out, seen = {}, {}
 	local function Add(p)
-		if type(p) == "string" and p ~= "" and not seen[p] and #out < Cli.PROJECTS_MAX then
-			seen[p] = true
-			table.insert(out, p)
-		end
+		if type(p) ~= "string" or p == "" or #out >= Cli.PROJECTS_MAX then return end
+		local key = Cli.NormalizeFolder(p)
+		if seen[key] then return end
+		seen[key] = true
+		table.insert(out, key)
 	end
 	for _, p in ipairs(db.settings.projects or {}) do Add(p) end
 	for _, c in ipairs(db.chats) do Add(Cli.ProjectOf(c)) end
 	Add(run.bridgeCwd)
+	for _, p in ipairs(run.bridgeProjects or {}) do Add(p) end
 	return out
+end
+
+function ClaudeWoW.ApplyProjects(projects, home)
+	if type(home) == "string" and home ~= "" then run.bridgeHome = home end
+	if type(projects) ~= "table" then return end
+	local list, labels = {}, {}
+	for _, p in ipairs(projects) do
+		if type(p) == "table" and type(p.path) == "string" and p.path ~= "" then
+			table.insert(list, p.path)
+			if type(p.label) == "string" and p.label ~= "" then labels[Cli.NormalizeFolder(p.path)] = p.label end
+		end
+	end
+	run.bridgeProjects, run.bridgeProjectLabels = list, labels
 end
 
 function Cli.RememberProject(path)
@@ -3764,11 +3810,38 @@ function Cli.ProjectMenu(anchor)
 	Cli.Out(c, "project: " .. Cli.ProjectLabel(c) .. " (known: " .. Cli.ProjectNames() .. "). Use /claude --project <name|path|none>.")
 end
 
+Cli.PROJECT_W_MIN = 60
+Cli.PROJECT_W_MAX = 240
+Cli.PROJECT_HEADER_SHARE = 0.5
+Cli.PROJECT_PAD = 8
+
+function Cli.ProjectButtonRoom(b)
+	local host = b:GetParent()
+	local hostWidth = (host and Try(host.GetWidth, host)) or 0
+	if ui.chatTitle then
+		return math.max(Cli.PROJECT_W_MIN, math.min(Cli.PROJECT_W_MAX, math.floor(hostWidth * Cli.PROJECT_HEADER_SHARE)))
+	end
+	return math.max(Cli.PROJECT_W_MIN, hostWidth - 2 * Cli.PROJECT_PAD)
+end
+
 function Cli.UpdateProjectButton()
 	local b = ui.projectButton
 	if not b then return end
-	b.text:SetText("Project: |cffffffff" .. Display(Cli.ProjectLabel(ActiveChat())) .. "|r")
-	b:SetWidth(math.max(60, (Try(b.text.GetStringWidth, b.text) or 100) + 8))
+	b.fullName = Display(Cli.ProjectLabel(ActiveChat()))
+	b.text:SetWidth(0)
+	b.text:SetText("Project: |cffffffff" .. b.fullName .. "|r")
+	local natural = (Try(b.text.GetStringWidth, b.text) or 100) + Cli.PROJECT_PAD
+	local width = math.min(Cli.ProjectButtonRoom(b), math.max(Cli.PROJECT_W_MIN, natural))
+	b.truncated = natural > width
+	b:SetWidth(width)
+	b.text:SetWidth(width - Cli.PROJECT_PAD)
+end
+
+function Cli.ProjectButtonTooltip(b)
+	GameTooltip:SetOwner(b, ui.chatTitle and "ANCHOR_BOTTOMRIGHT" or "ANCHOR_TOP")
+	GameTooltip:SetText("Project: " .. (b.fullName or Cli.NO_PROJECT))
+	GameTooltip:AddLine("The repo this chat works in. No project = a general chat. You can also type #name in a message or use /claude --project <name>.", 0.8, 0.8, 0.8, true)
+	GameTooltip:Show()
 end
 
 -- Folder this chat's agent works in. Empty (or "-" / "default") = the bridge's
@@ -4312,7 +4385,7 @@ function ClaudeWoW.UpdateStatus()
 	ClaudeWoW.UpdateDot()
 	ClaudeWoW.UpdateConnect()
 	if ui.title then
-		local t = c and Display(c.name) or "Claude WoW"
+		local t = c and Display(c.name) or "Claude"
 		if ui.chatTitle then
 			t = Q.PANEL_TITLE
 		else
@@ -4541,10 +4614,9 @@ function ClaudeWoW.Render()
 			b:Show()
 			y = y + b:GetHeight() + 6
 		end
-		local last = #c.history
+		local openDenial = not c.pendingId and Q.DenialIndex(c) or nil
 		for i, m in ipairs(c.history) do
-			-- The Allow button only makes sense on the newest reply, and only while idle.
-			local denied = (i == last and not c.pendingId and type(m.denied) == "table" and #m.denied > 0) and m.denied or nil
+			local denied = i == openDenial and m.denied or nil
 			local picker = type(m.picker) == "table" and #m.picker > 0 and m.picker or nil
 			Place(m.role, picker and m.head or m.text, m.t and date("%H:%M", m.t) or "", false, denied, m.agent, m.macros, m.newChat, picker)
 		end
@@ -4682,7 +4754,7 @@ function ClaudeWoW.UpdateMini()
 	elseif unread > 0 then
 		t = "|cff55ff55" .. unread .. (unread == 1 and " new reply" or " new replies") .. "|r"
 	else
-		t = "|cff999999idle|r"
+		t = "|cff999999Ready|r"
 	end
 	ui.miniBadge:SetText(t)
 	if ui.miniPulse then
@@ -4971,6 +5043,14 @@ Q.PAD_ROW_AFTER_ROW = -3
 Q.TITLE_IDLE = { 0.75, 0.61, 0 }
 Q.TITLE_WORKING = { 1, 1, 0 }
 Q.TITLE_REPLY = { 0.25, 0.75, 0.25 }
+Q.TITLE_NEEDS_YOU = { 1, 0.4, 0.1 }
+
+function Q.TitleColor(c)
+	if c.pendingId then return Q.TITLE_WORKING end
+	if Q.DenialIndex(c) then return Q.TITLE_NEEDS_YOU end
+	if (c.unread or 0) > 0 then return Q.TITLE_REPLY end
+	return Q.TITLE_IDLE
+end
 Q.COUNT_W = 92
 Q.GOLD_ICON = "|TInterface\\MoneyFrame\\UI-GoldIcon:12:12:0:-1|t"
 Q.STATUS_HIT_W = 260
@@ -5161,7 +5241,7 @@ end
 
 Q.PARCHMENT_LINK_COLORS = {
 	ff9d9d9d = "ff5c5248", ffffffff = "ff2e1f0f", ff1eff00 = "ff0d6b00", ff0070dd = "ff004c99", ffa335ee = "ff6a1b9a",
-	ffff8000 = "ff9a4a00", ffe6cc80 = "ff7a5c1e", ffffff00 = "ff7a3b00", ffffd100 = "ff7a3b00", ff71d5ff = "ff00577a",
+	ffff8000 = "ff9a4a00", ffe6cc80 = "ff7a5c1e", ffffff00 = "ff7a3b00", ffffd100 = "ff7a3b00", ff71d5ff = "ff1c4f9c",
 }
 
 Q.GAME_LINK_COLORS = {}
@@ -5184,10 +5264,8 @@ function Q.OnParchment(link)
 end
 
 Q.URL_CHARS = "[%w%-%._~:/%?#@!%$&'%(%)%+,;=%%]"
-Q.TEXT_INK = {
-	game = { strong = "ffffffff", code = "ffa8c8d8", link = "ff71d5ff" },
-	parchment = { strong = "ff5c1a00", code = "ff1f4a5a", link = "ff00577a" },
-}
+Q.TEXT_INK = { game = { strong = "ffffffff", code = "ffa8c8d8", link = "ff71d5ff" } }
+Q.TEXT_INK.parchment = { strong = "ff5c1a00", code = "ff7a2e0e", link = Q.PARCHMENT_LINK_COLORS[Q.TEXT_INK.game.link] }
 
 function Q.UrlLabel(url)
 	local n = url:match("^https?://github%.com/[^/]+/[^/]+/pull/(%d+)")
@@ -5498,11 +5576,11 @@ end
 function Q.PoiState(poi, glyphKey, number, selected)
 	if not Q.SetArt(poi.bg, selected and "poiSelected" or "poi", true) then Q.SetArt(poi.bg, "poi", true) end
 	poi.outer:SetShown(selected)
-	if glyphKey then
-		poi.glyph:SetShown(Q.SetArt(poi.glyph, glyphKey, true))
+	local glyphShown = glyphKey ~= nil and Q.SetArt(poi.glyph, glyphKey, true)
+	poi.glyph:SetShown(glyphShown)
+	if glyphShown then
 		poi.number:Hide()
 	else
-		poi.glyph:Hide()
 		poi.number:SetText(number)
 		poi.number:Show()
 	end
@@ -5615,7 +5693,7 @@ function Q.FillRow(r, c, index, width)
 	if c.agent and c.agent ~= "" then title = title .. " |cff9d9d9d" .. AgentName(c.agent) .. "|r" end
 	if unread > 0 then title = title .. " (" .. unread .. ")" end
 	r.title:SetText(title)
-	r.titleColor = active and { 1, 1, 1 } or (unread > 0 and Q.TITLE_REPLY) or (c.pendingId and Q.TITLE_WORKING) or Q.TITLE_IDLE
+	r.titleColor = active and { 1, 1, 1 } or Q.TitleColor(c)
 	local glyph = (c.pendingId and (active and "workingSelected" or "working")) or (unread > 0 and "reply") or nil
 	Q.PoiState(r.poi, glyph, tostring(index), active)
 	local lines = Q.PreviewsOn() and Q.ChatObjectives(c) or {}
@@ -5853,7 +5931,7 @@ function ClaudeWoW.RefreshTitleBar()
 	local label = ui.chatTitle
 	if not label then return end
 	local c = ActiveChat()
-	label:SetText(c and Display(c.name) or "Claude WoW")
+	label:SetText(c and Display(c.name) or "Claude")
 end
 
 function Q.TitleBarTooltip(bar)
@@ -6122,8 +6200,8 @@ local function BuildUI()
 	mini:SetScript("OnClick", function() ClaudeWoW.Minimize(true) end)
 	mini:SetScript("OnEnter", function(self)
 		GameTooltip:SetOwner(self, "ANCHOR_LEFT")
-		GameTooltip:SetText("Minimize to the small bar  (Esc)")
-		GameTooltip:AddLine("The agent keeps working; the bar shows when a reply lands.", 0.8, 0.8, 0.8, true)
+		GameTooltip:SetText("Minimize (Esc)")
+		GameTooltip:AddLine("The agent keeps working. The small bar shows when a reply lands.", 0.8, 0.8, 0.8, true)
 		GameTooltip:Show()
 	end)
 	mini:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -6371,24 +6449,32 @@ local function BuildUI()
 	inputBg:SetScript("OnMouseDown", function() input:SetFocus() end)
 	ui.input = input
 
-	local projectButton = CreateFrame("Button", "ClaudeWoWProjectButton", inputBg)
-	projectButton:SetSize(120, 16)
-	projectButton:SetPoint("BOTTOMRIGHT", inputBg, "BOTTOMRIGHT", -6, 4)
-	projectButton:SetFrameLevel((Try(inputBg.GetFrameLevel, inputBg) or 1) + 5)
+	local projectHost = ui.titleBar or inputBg
+	local projectButton = CreateFrame("Button", "ClaudeWoWProjectButton", projectHost)
+	if ui.titleBar then
+		projectButton:SetSize(120, Q.NAV_H - 10)
+		projectButton:SetPoint("RIGHT", projectHost, "RIGHT", -Cli.PROJECT_PAD, 0)
+		ui.chatTitle:SetPoint("RIGHT", projectButton, "LEFT", -Cli.PROJECT_PAD, 0)
+	else
+		projectButton:SetSize(120, 16)
+		projectButton:SetPoint("BOTTOMRIGHT", projectHost, "BOTTOMRIGHT", -6, 4)
+	end
+	projectButton:SetFrameLevel((Try(projectHost.GetFrameLevel, projectHost) or 1) + 5)
 	projectButton.text = projectButton:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 	projectButton.text:SetPoint("RIGHT", projectButton, "RIGHT", -2, 0)
 	projectButton.text:SetJustifyH("RIGHT")
+	projectButton.text:SetWordWrap(false)
 	local projectHl = projectButton:CreateTexture(nil, "HIGHLIGHT")
 	projectHl:SetAllPoints()
 	projectHl:SetColorTexture(1, 1, 1, 0.08)
-	projectButton:SetScript("OnClick", function(self) Cli.ProjectMenu(self) end)
-	projectButton:SetScript("OnEnter", function(self)
-		GameTooltip:SetOwner(self, "ANCHOR_TOP")
-		GameTooltip:SetText("Project")
-		GameTooltip:AddLine("The repo this chat works in. No project = a general chat. You can also type #name in a message or use /claude --project <name>.", 0.8, 0.8, 0.8, true)
-		GameTooltip:Show()
+	projectButton:RegisterForClicks("LeftButtonUp")
+	projectButton:SetScript("OnClick", function(self)
+		GameTooltip:Hide()
+		Cli.ProjectMenu(self)
 	end)
+	projectButton:SetScript("OnEnter", Cli.ProjectButtonTooltip)
 	projectButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
+	projectHost:HookScript("OnSizeChanged", function() Cli.UpdateProjectButton() end)
 	ui.projectButton = projectButton
 
 	-- Send sits to the right of the input box, vertically centred on it.
@@ -6509,7 +6595,7 @@ local function BuildUI()
 
 	local mlabel = m:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 	mlabel:SetPoint("LEFT", miniDotHolder, "RIGHT", 6, 0)
-	mlabel:SetText("Claude WoW")
+	mlabel:SetText("Claude")
 
 	local badge = m:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	badge:SetPoint("LEFT", mlabel, "RIGHT", 8, 0)
@@ -6547,7 +6633,7 @@ local function BuildUI()
 	mclose:SetScript("OnLeave", function() GameTooltip:Hide() end)
 	m:SetScript("OnEnter", function(self)
 		GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
-		GameTooltip:SetText("Claude WoW")
+		GameTooltip:SetText("Claude")
 		GameTooltip:AddLine("Click: open the workspace (full transcripts, chats, settings). Drag: move.", 0.8, 0.8, 0.8, true)
 		GameTooltip:AddLine((ui.dot and ui.dot.tip) or "Bridge status unknown", 0.6, 0.6, 0.6, true)
 		GameTooltip:Show()
