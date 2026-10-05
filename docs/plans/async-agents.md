@@ -13,9 +13,9 @@ The game is the control room, not a chat client. Each project has one long-lived
 | One thread per project | A chat with `/claude --project <name>` (or `#name`); its session resumes per chat |
 | Start background work, see its state | The factory: `factory_dispatch`, `factory_status`, `runs.json`, `logs/`, `maxRunning`, `timeoutMs` |
 | A result reaches the game | `deliverFactoryRun` sends `FACTORY.describe(run)` to the dispatching chat as a late reply |
-| Read-only workers | `plugins.claude-code.factory.permissionMode` (config) |
-| Which skills a worker may run | `factory.skills` (config) |
+| Worker settings, apart from chat settings | `plugins.claude-code.factory`: `model`, `effort`, per-skill `models`, `permissionMode`, `allowedTools`, `skills`, `maxRunning`, `timeoutMs` |
 | Allow one retry without a lasting grant | Greed on the Loot roll (`job.allowOnce`, run-only rules) |
+| Always allow | Need on the Loot roll (`allowRules`), today into the chat list only |
 | Feedback on a result | `/claude wrong` writes `feedback.jsonl` with the chat |
 | A per-call cost cap | `--max-budget-usd`, already emitted from `maxCostUsd` |
 
@@ -23,7 +23,7 @@ The game is the control room, not a chat client. Each project has one long-lived
 
 - Results reach the game on the next slot read: when the player sends a message, at login, or at the idle check in `pixel` mode only. The default `screenshot` mode has no idle read.
 - One late reply per chat: two results before a slot read show only the newer one. `factory_status` and the thread have all of them.
-- Run-only grants cover the whole run, not one call. So a worker never gets an outward tool (merge, send, post, pay); it stops and proposes, and the thread or the player does the outward step in a normal turn with the normal roll.
+- Grants are per tool rule, not per call. Greed covers the whole re-dispatched run; Need covers every later worker. Outward tools (merge, send, post, pay) are not in the default worker list, so a worker stops and proposes. Need on one of them is the player's explicit choice to let workers do it unattended, and the roll says so.
 - A worker with `Bash` runs as the same user as the bridge and can write `~/.claude-wow`. Workers get no `Bash` by default. A project that grants it accepts that, as `docs/LIVE-SESSION.md` already says for in-game runs.
 - Cost is the CLI's list-price estimate per run. The day is bounded by `maxRunning` x the per-run cap x the wake-up cap, not by an exact daily budget.
 
@@ -37,9 +37,9 @@ The game is the control room, not a chat client. Each project has one long-lived
 
 ### 1. Factory hardening
 
-- Config defaults for factory runs: `permissionMode: "default"`, read-only tools, no `Bash`, a skill list without outward skills (`merge-train`, `babysit-prs` and the like).
-- `maxCostUsd` from factory config into the run (today `undefined`).
-- A `deniedTools` option on `createFactory`, fed from the in-game deny list and the home guard rules. Factory runs get no deny rules today.
+- Workers use only the worker settings. Today a factory run's allow list is the chat list plus `factory.allowedTools`; it becomes `factory.allowedTools` alone, so a chat's Need rules never reach unattended runs.
+- Config defaults for workers: `permissionMode: "default"`, read-only tools, no `Bash`, a skill list without outward skills (`merge-train`, `babysit-prs` and the like).
+- New worker settings: `maxCostUsd` (today `undefined`) and `deniedTools`, merged with the in-game deny list and the home guard rules. Factory runs get no deny rules today.
 - One writing worker per checkout: refuse a second dispatch with write tools in the same folder while one runs.
 - Free prompts, not only skills: a user skill `job` whose body is "do what the args say, then report".
 - `factory_stop` tool: kill one run by id (`killTree`), marked `stopped`.
@@ -62,8 +62,11 @@ About 100 lines plus tests.
 
 ### 3. Approvals
 
-- When a worker ends denied, offer the existing roll on the dispatching chat with Greed only (Need hidden through `neverOffered`). Greed re-dispatches the run with `allowOnce`.
-- Never offered for outward tools: those are not in a worker's tools at all.
+- When a worker ends denied, offer the existing roll on the dispatching chat, labeled as a worker roll.
+- Greed re-dispatches the run with `allowOnce`.
+- Need writes the rule into `factory.allowedTools`, never the chat list, and re-dispatches. The hint says "every future worker may do this unattended".
+- Pass: the run stays `failed` and the thread is woken with the denial.
+- Rules in the worker `deniedTools` are never offered (`neverOffered`).
 - Mid-run approval for headless runs waits for "4. Approval mid-run" in `docs/plans/mcp-and-agent-controls.md`.
 
 About 60 lines plus tests.
