@@ -251,7 +251,7 @@ Settings, with `/claude config <key> [value]`:
 | `signal on\|off`, `auto on\|off\|<seconds>` | the sound-file readiness check, and the reload-mode auto refresh |
 | `plugin <name>\|default` | advanced: pin the chat to `ask`, `claude-code` or `live` by hand |
 
-Click any message, or `/claude copy` for the last reply, to open it in a selectable box for Ctrl+C.
+Click any message, or `/claude copy` for the last reply, to open it in a selectable box for Ctrl+C. Click a web link in a reply to open it in your browser (the bridge opens only links the agent wrote in that chat); right-click, Ctrl-click or Shift-click it to copy it instead.
 
 ### Short in the chat, full in the window
 
