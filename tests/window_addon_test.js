@@ -420,6 +420,19 @@ test('a quest token is a real quest link in parchment ink, and clicking it opens
   assert.equal(vm.num('#STUB.refs'), 0, 'and the click is not also sent to the game');
   vm.run('STUB.bubble.scripts.OnHyperlinkClick(STUB.bubble, "quest:777:5", "[Gone]", "LeftButton")');
   assert.equal(vm.evaluate('STUB.refs[1]'), 'quest:777:5', 'a quest no longer in the log falls back to the game');
+  vm.run('STUB.scrolled = {}; QUESTLOG_QUEST_HEIGHT = 16; QuestLogListScrollFrameScrollBar = { SetValue = function(self, v) table.insert(STUB.scrolled, v) end }; STUB.selected = {}; STUB.bubble.scripts.OnHyperlinkClick(STUB.bubble, "quest:855:21", "[Tribes at War]", "LeftButton")');
+  assert.equal(vm.num('STUB.scrolled[1]'), 16, 'the list scrolls to the quest row');
+  vm.run('STUB.refs, STUB.selected = {}, {}; IsModifiedClick = function() return true end; STUB.bubble.scripts.OnHyperlinkClick(STUB.bubble, "quest:855:21", "[Tribes at War]", "LeftButton"); IsModifiedClick = function() return false end');
+  assert.equal(vm.evaluate('STUB.refs[1]'), 'quest:855:21', 'a shift-click goes to the game, which puts the link in the chat box');
+  assert.equal(vm.num('#STUB.selected'), 0, 'and does not open the quest log');
+  vm.run(`
+    STUB.collapsed = true
+    GetNumQuestLogEntries = function() return STUB.collapsed and 1 or 2 end
+    ExpandQuestHeader = function(i) if i == 0 then STUB.collapsed = false end end
+    STUB.bubble.scripts.OnHyperlinkClick(STUB.bubble, "quest:855:21", "[Tribes at War]", "LeftButton")
+  `);
+  assert.equal(vm.evaluate('STUB.collapsed'), 'false', 'a quest under a collapsed zone expands the log');
+  assert.equal(vm.num('STUB.selected[1]'), 2, 'and still opens on its row');
   vm.run('STUB.mapped = {}; QuestMapFrame_OpenToQuestDetails = function(id) table.insert(STUB.mapped, id) end; STUB.bubble.scripts.OnHyperlinkClick(STUB.bubble, "quest:855:21", "[Tribes at War]", "LeftButton")');
   assert.equal(vm.num('STUB.mapped[1]'), 855, 'on a client with the quest map (Forever) it opens the quest details there');
   assert.equal(vm.num('#STUB.selected'), 1, 'and not the old quest log');

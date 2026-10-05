@@ -5191,10 +5191,17 @@ end)
 
 function Q.OpenQuest(id)
 	local _, _, index = Q.QuestTitle(id)
+	if not index and type(ExpandQuestHeader) == "function" then
+		pcall(ExpandQuestHeader, 0)
+		_, _, index = Q.QuestTitle(id)
+	end
 	if not index then return false end
 	if type(QuestMapFrame_OpenToQuestDetails) == "function" then return (pcall(QuestMapFrame_OpenToQuestDetails, id)) end
 	if type(QuestLog_SetSelection) ~= "function" or not QuestLogFrame then return false end
 	if not QuestLogFrame:IsShown() then pcall(ShowUIPanel, QuestLogFrame) end
+	if QuestLogListScrollFrameScrollBar and tonumber(QUESTLOG_QUEST_HEIGHT) then
+		pcall(QuestLogListScrollFrameScrollBar.SetValue, QuestLogListScrollFrameScrollBar, (index - 1) * QUESTLOG_QUEST_HEIGHT)
+	end
 	local ok = pcall(QuestLog_SetSelection, index)
 	if type(QuestLog_Update) == "function" then pcall(QuestLog_Update) end
 	return ok
@@ -5203,7 +5210,8 @@ end
 function Q.LinkClick(self, link, text, button)
 	self.linkClickAt = GetTime()
 	local quest = tonumber(tostring(link or ""):match("^quest:(%d+)"))
-	if quest and Q.OpenQuest(quest) then return end
+	local modified = type(IsModifiedClick) == "function" and IsModifiedClick()
+	if quest and not modified and Q.OpenQuest(quest) then return end
 	if type(SetItemRef) == "function" then SetItemRef(link, text, button, self) end
 end
 
