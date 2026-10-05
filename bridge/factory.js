@@ -169,21 +169,36 @@ function plainLine(line) {
 }
 
 function cutAtBoundary(text, max) {
-  if (text.length <= max) return text;
+  if (text.length <= max) return { text, cut: false };
   const head = text.slice(0, max);
-  const sentenceEnd = Math.max(head.lastIndexOf('\n'), head.lastIndexOf('. ') + 1);
+  const lineEnd = head.lastIndexOf('\n');
+  const sentenceEnd = Math.max(...['. ', '! ', '? '].map(mark => head.lastIndexOf(mark) + 1));
+  const boundary = Math.max(lineEnd, sentenceEnd);
   const wordEnd = head.lastIndexOf(' ');
-  const end = sentenceEnd > max / 2 ? sentenceEnd : wordEnd > 0 ? wordEnd : max;
-  return head.slice(0, end).trimEnd() + ' ...';
+  const end = boundary > 0 ? boundary : wordEnd > 0 ? wordEnd : max;
+  return { text: head.slice(0, end).trimEnd(), cut: true };
+}
+
+function summarize(text) {
+  const lines = [];
+  for (const line of String(text || '')
+    .split('\n')
+    .map(plainLine)) {
+    if (line || (lines.length && lines[lines.length - 1])) lines.push(line);
+  }
+  while (lines.length && !lines[lines.length - 1]) lines.pop();
+  const kept = lines.slice(0, SUMMARY_LINES);
+  while (kept.length && !kept[kept.length - 1]) kept.pop();
+  const capped = cutAtBoundary(kept.join('\n'), SUMMARY_CHARS);
+  return { text: capped.text, cut: capped.cut || lines.length > SUMMARY_LINES };
 }
 
 function summaryOf(text) {
-  const lines = String(text || '')
-    .split('\n')
-    .map(plainLine)
-    .filter(Boolean)
-    .slice(0, SUMMARY_LINES);
-  return cutAtBoundary(lines.join('\n'), SUMMARY_CHARS);
+  return summarize(text).text;
+}
+
+function cutNote(run) {
+  return `Cut for chat. The full output is in ${run.log} on the bridge computer.`;
 }
 
 function prUrls(text) {
@@ -199,6 +214,7 @@ function describe(run, now) {
   if (run.why) body.push(run.why);
   if (run.summary) body.push(run.summary);
   for (const url of run.prUrls || []) if (!run.summary || !run.summary.includes(url)) body.push(url);
+  if (run.summary && run.summaryCut && run.log) body.push(cutNote(run));
   return body.join('\n');
 }
 
@@ -364,7 +380,9 @@ function createFactory({
       const said = ev && typeof ev.result === 'string' ? ev.result : '';
       run.endedAt = now();
       run.costUsd = ev && Number.isFinite(ev.total_cost_usd) ? ev.total_cost_usd : null;
-      run.summary = summaryOf(said);
+      const summary = summarize(said);
+      run.summary = summary.text;
+      run.summaryCut = summary.cut;
       run.prUrls = prUrls(said);
       if (stopping) {
         run.status = 'killed';
@@ -511,6 +529,7 @@ module.exports = {
   launchConfig,
   duration,
   resultEvent,
+  summarize,
   summaryOf,
   prUrls,
   describe,

@@ -83,13 +83,13 @@ function stripFlags(vm) {
   return payload.split('\x1E').map(r => ({ flags: r.split('\x1F')[4], text: r.split('\x1F').slice(-1)[0] }));
 }
 
-function deliverDenial(vm, rules, agent = 'claude', chatIndex = 1) {
+function deliverDenial(vm, rules, agent = 'claude', chatIndex = 1, extra = '') {
   vm.run('ClaudeWoW.Send("clean the build folder")');
   const chatId = vm.evaluate(`ClaudeWoWDB.chats[${chatIndex}].id`);
   const id = vm.num(`ClaudeWoWDB.chats[${chatIndex}].pendingId`);
   const luaRules = rules.map(r => JSON.stringify(r)).join(', ');
   vm.run(
-    `STUB.onLoadAddOn = function(name) ClaudeWoW_SlotData = { now = time(), cwd = "", replies = { { chat = "${chatId}", id = ${id}, status = "done", text = "I need permission", agent = "${agent}", denied = { ${luaRules} } } } } end`,
+    `STUB.onLoadAddOn = function(name) ClaudeWoW_SlotData = { now = time(), cwd = "", replies = { { chat = "${chatId}", id = ${id}, status = "done", text = "I need permission", agent = "${agent}", denied = { ${luaRules} }${extra ? ', ' + extra : ''} } } } end`,
   );
   vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
   assert.equal(vm.evaluate(`ClaudeWoWDB.chats[${chatIndex}].pendingId`), null);
@@ -145,6 +145,22 @@ test('a roll whose denial went stale closes without acting, and the next queued 
   assert.equal(vm.evaluate('ClaudeWoWRollFrame.shown'), 'false');
   assert.equal(vm.evaluate('ClaudeWoWRoll.Current()'), null);
   assert.equal(vm.num('ClaudeWoWRoll.Waiting()'), 0);
+});
+
+test('a context warning right after a denied reply leaves the denial open for the roll frame and the Allow & retry button', () => {
+  const vm = newVM();
+  vm.run('ClaudeWoWDB.settings.contextWarn = 1000');
+  const { chatId, id } = deliverDenial(vm, ['WebSearch'], 'claude', 1, 'ctx = 5000, turns = 3');
+  assert.equal(vm.evaluate(`${lastHistory}.role`), 'system');
+  assert.equal(vm.evaluate(`${lastHistory}.newChat`), 'true', 'the context warning is the newest message');
+  assert.equal(vm.evaluate(`(ClaudeWoW.OpenDenial("${chatId}"))[1]`), 'WebSearch');
+  assert.equal(vm.num(`select(2, ClaudeWoW.OpenDenial("${chatId}"))`), id);
+  assert.equal(vm.evaluate('ClaudeWoWRollFrame.shown'), 'true', 'the roll frame still offers the denial');
+  vm.run('SlashCmdList.CLAUDE("config roll off")');
+  vm.run('RESULT = "none"; for _, f in ipairs(STUB.frames) do if f.template == "UIPanelButtonTemplate" and f.rules and f.shown then RESULT = f.text end end');
+  assert.equal(vm.evaluate('RESULT'), 'Allow WebSearch & retry', 'the button sits on the denied reply, not on the warning');
+  vm.run('table.insert(ClaudeWoWDB.chats[1].history, { role = "user", text = "never mind", t = time() })');
+  assert.equal(vm.evaluate(`ClaudeWoW.OpenDenial("${chatId}")`), null, 'a newer player message closes it');
 });
 
 const hexDirs = (...dirs) => Buffer.from(dirs.join('\x1F')).toString('hex');

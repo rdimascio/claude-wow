@@ -33,7 +33,7 @@ function pad3(n) {
 // inspected and tested elsewhere.
 function isWindowsAbsolute(p) {
   const value = String(p || '');
-  return /^[A-Za-z]:[\\/]/.test(value) || value.startsWith('\\\\');
+  return /^[A-Za-z]:[\\/]/.test(value) || /^\\\\/.test(value);
 }
 
 function baseName(p) {
@@ -874,13 +874,14 @@ function denialNotes(agentName, fresh, again) {
   const rules = (fresh || []).filter(e => e.kind !== 'folder');
   const folders = (fresh || []).filter(e => e.kind === 'folder');
   if (rules.length) {
+    const actions = rules.length === 1 ? '1 action that is' : `${rules.length} actions that are`;
     notes.push(
-      `${who} needed ${rules.length} action(s) that aren't allowed yet:\n  ${rules.map(e => e.what).join('\n  ')}\nUse the Allow button below to permit them and let it continue.`,
+      `${who} needed ${actions} not allowed yet:\n  ${rules.map(e => e.what).join('\n  ')}\nAllow ${rules.length === 1 ? 'it' : 'them'} from this chat to let it continue.`,
     );
   }
   if (folders.length) {
     notes.push(
-      `${who} was blocked outside this chat's folders:\n  ${folders.map(e => `${e.what} (folder ${e.folder})`).join('\n  ')}\nAn allowlist rule cannot open a folder. Allow it below to add the folder to this chat (like /claude --add-dir) and let it continue.`,
+      `${who} was blocked outside this chat's folders:\n  ${folders.map(e => `${e.what} (folder ${e.folder})`).join('\n  ')}\nAn allowlist rule cannot open a folder. Allow it from this chat to add the folder (like /claude --add-dir) and let it continue.`,
     );
   }
   const seen = new Set();
@@ -1174,6 +1175,11 @@ function luaTable(globalName, records, opts = {}) {
   if (Array.isArray(opts.sessions)) {
     lines.splice(lines.length - 1, 0, '\tsessions = {', ...opts.sessions.map(luaSession), '\t},');
   }
+  if (Array.isArray(opts.projects)) {
+    const rows = opts.projects.filter(p => p && p.path).map(p => `{ path = ${luaStr(p.path)}, label = ${luaStr(p.label || '')} }`);
+    lines.splice(lines.length - 1, 0, `\tprojects = { ${rows.join(', ')} },`);
+  }
+  if (opts.home) lines.splice(lines.length - 1, 0, `\thome = ${luaStr(opts.home)},`);
   if (Array.isArray(opts.acks)) {
     const acks = opts.acks.filter(a => a && Number.isInteger(a.id) && a.id > 0);
     lines.splice(lines.length - 1, 0, `\tacks = { ${acks.map(a => `{ session = ${luaStr(a.session || '')}, id = ${a.id} }`).join(', ')} },`);

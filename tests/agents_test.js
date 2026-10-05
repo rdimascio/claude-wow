@@ -261,7 +261,8 @@ test('Claude stream: tool calls and text become progress, the result carries the
   });
   assert.deepEqual(r.done, { text: 'Done.', error: false });
   assert.deepEqual(r.denied, ['Bash(cargo:*)', 'WebSearch']);
-  assert.ok(r.notes[0].includes('2 action(s)') && r.notes[0].includes('Bash: cargo build'));
+  assert.ok(r.notes[0].includes('needed 2 actions that are not allowed yet') && r.notes[0].includes('Bash: cargo build'));
+  assert.ok(r.notes[0].endsWith('\nAllow them from this chat to let it continue.'), r.notes[0]);
   const err = A.claudeParser().feed({ type: 'result', is_error: true, result: 'boom' });
   assert.deepEqual(err.done, { text: 'boom', error: true });
 });
@@ -516,7 +517,7 @@ test('Grok stream as Grok Build 1.0.41 prints it: tool inputs, a classifier refu
   });
   assert.deepEqual(blocked.denied, ['Bash(rm:*)']);
   assert.ok(blocked.notes[0].startsWith('Grok was not allowed to: $ rm victim.txt\nAuto mode blocked this action'), blocked.notes[0]);
-  assert.ok(blocked.notes[0].endsWith('Use the Allow button below to permit it and let it continue.'));
+  assert.ok(blocked.notes[0].endsWith('Allow it from this chat to let it continue.'));
   // A deny rule.
   p.feed({
     type: 'tool_call',

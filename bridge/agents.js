@@ -533,9 +533,7 @@ function grokParser() {
             const c = calls.get(String(ev.toolCallId || ''));
             if (c && c.rule) {
               out.denied.push(c.rule);
-              out.notes.push(
-                `Grok was not allowed to: ${c.line}\n${snippet(why).replace(/\.\.\.$/, '')}\nUse the Allow button below to permit it and let it continue.`,
-              );
+              out.notes.push(`Grok was not allowed to: ${c.line}\n${snippet(why).replace(/\.\.\.$/, '')}\nAllow it from this chat to let it continue.`);
             }
           }
           break;
@@ -848,7 +846,7 @@ const AGENTS = {
     mcp: true,
     resolve: () => {
       const [file, args] = R.scriptCommand('local-agent');
-      const script = args.find(a => a.endsWith('.js'));
+      const script = args.find(a => /\.js$/.test(a));
       return { file, args, found: script ? exists(script) : true };
     },
     args({ cfg, resume, mcpConfig }) {

@@ -53,6 +53,7 @@ const R = require('./runtime'); // node, bun, or the compiled binary (tests/runt
 const AS = require('./assets'); // the capture scripts and the primer, by path, from a checkout or the binary (tests/assets_test.js)
 const ACH = require('./achievements');
 const SS = require('./sessions');
+const PJ = require('./projects');
 const G = require('./gamefs');
 const SIG = require('./signals');
 const DM = require('./datamcp');
@@ -718,6 +719,8 @@ function sharedSlotFields(urgent) {
   return {
     live: liveInfo,
     sessions: sessionList(),
+    projects: projectList(),
+    home: os.homedir(),
     cwd: DEFAULT_CWD,
     agent: DEFAULT_AGENT,
     agents: A.agentIds(),
@@ -765,6 +768,33 @@ function recentClaudeSessions() {
     claudeSessionsCache = { at: Date.now(), list };
   }
   return claudeSessionsCache.list;
+}
+
+const PROJECTS_TTL_MS = 30000;
+let projectsCache = { at: 0, list: [] };
+
+function projectList() {
+  if (Date.now() - projectsCache.at <= PROJECTS_TTL_MS) return projectsCache.list;
+  const chats = Object.values(transcripts.chats)
+    .filter(c => c.cwd && registry.normalize(c.plugin) === 'claude-code')
+    .map(c => ({ cwd: c.cwd, at: c.updated }));
+  let recent = [];
+  if (cfg.claudeSessions !== false) {
+    try {
+      recent = PJ.recentClaudeProjects(CLAUDE_DIR);
+    } catch (e) {
+      log(`projects: cannot read ${CLAUDE_DIR} (${e.message})`);
+    }
+  }
+  const askDir = registry.get('ask').scratchFolder(pluginsCfg.ask);
+  let list = [];
+  try {
+    list = PJ.knownProjects({ defaultCwd: DEFAULT_CWD, chats, recent, exclude: [HOME.dir, askDir] });
+  } catch (e) {
+    log(`projects: cannot list (${e.message})`);
+  }
+  projectsCache = { at: Date.now(), list };
+  return list;
 }
 
 function sessionList() {
