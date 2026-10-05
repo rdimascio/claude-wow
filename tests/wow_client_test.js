@@ -160,11 +160,16 @@ test('LoadAddOn loads required dependencies first and stops on a missing or fail
     addon('DevTop', ['## Interface: ' + iface, '## RequiredDeps: DevBase'], 'DEV_ORDER = (DEV_ORDER or "") .. "top,"');
     addon('DevNeedsMissing', ['## Interface: ' + iface, '## Dependencies: DevNotThere'], 'DEV_BAD = true');
     addon('DevStale', ['## Interface: 1']);
+    addon('DevZed', ['## Interface: ' + iface], 'DEV_PAIR = (DEV_PAIR or "") .. "zed,"');
+    addon('DevAlpha', ['## Interface: ' + iface], 'DEV_PAIR = (DEV_PAIR or "") .. "alpha,"');
+    addon('DevPair', ['## Interface: ' + iface, '## Dependencies: DevZed, DevAlpha'], 'DEV_PAIR = (DEV_PAIR or "") .. "pair,"');
     addon('DevNeedsStale', ['## Interface: ' + iface, '## Dependencies: DevStale'], 'DEV_BAD = true');
     const client = new WowClient(sb).launch();
     assert.equal(client.luaValue('LoadAddOn("DevTop")'), 'true');
     assert.equal(client.luaValue('DEV_ORDER'), 'base,top,');
     assert.equal(client.luaValue('IsAddOnLoaded("DevBase")'), 'true');
+    assert.equal(client.luaValue('LoadAddOn("DevPair")'), 'true');
+    assert.equal(client.luaValue('DEV_PAIR'), 'zed,alpha,pair,', 'dependencies load in the listed order');
     assert.equal(client.luaValue('select(2, LoadAddOn("DevNeedsMissing"))'), 'DEP_MISSING');
     assert.equal(client.luaValue('select(2, LoadAddOn("DevNeedsStale"))'), 'DEP_INTERFACE_VERSION');
     assert.equal(client.luaValue('DEV_BAD'), null);

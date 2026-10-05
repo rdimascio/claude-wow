@@ -195,13 +195,14 @@ function DEV.ns(name)
 end
 
 function DEV.RequiredDeps(meta)
-	local deps = {}
-	for k, v in pairs(meta) do
-		if k:match("^Dep") or k == "RequiredDeps" then
-			for dep in v:gmatch("[^,%s]+") do deps[#deps + 1] = dep end
-		end
+	local keys, deps = {}, {}
+	for k in pairs(meta) do
+		if k:match("^Dep") or k == "RequiredDeps" then keys[#keys + 1] = k end
 	end
-	table.sort(deps)
+	table.sort(keys)
+	for _, k in ipairs(keys) do
+		for dep in meta[k]:gmatch("[^,%s]+") do deps[#deps + 1] = dep end
+	end
 	return deps
 end
 
