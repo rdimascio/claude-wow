@@ -3710,7 +3710,10 @@ Cli.SKILL_BUILTINS = { "runs", "stop" }
 Cli.skillCommands = {}
 
 function Cli.IsCodingChat(c)
-	return c ~= nil and Cli.ChatPlugin(c) == "claude-code"
+	if not c then return false end
+	local plugin = Cli.ChatPlugin(c)
+	if plugin == "" then plugin = run.bridgePlugin or "" end
+	return plugin == "claude-code"
 end
 
 function Cli.SlashNames()

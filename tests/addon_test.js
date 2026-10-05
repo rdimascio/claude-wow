@@ -2359,6 +2359,22 @@ function skillsVM(skills = '"babysit-pr", "fresh-eyes", "review-prs"') {
   return vm;
 }
 
+test('slash commands: a chat with no plugin of its own follows the bridge default, so it takes them when the default is claude-code and refuses them when it is ask', () => {
+  for (const [dflt, sent] of [
+    ['claude-code', true],
+    ['ask', false],
+  ]) {
+    const vm = newVM();
+    login(vm);
+    vm.run('ClaudeWoWDB.chats[1].cwd = ""; ClaudeWoWDB.chats[1].plugin = ""');
+    vm.run('STUB.RunTimers()');
+    nextSlot(vm, `{ now = time(), cwd = "/Users/me/every", plugin = "${dflt}", plugins = { "ask", "claude-code" }, skills = { "babysit-pr" }, replies = {} }`);
+    vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
+    vm.run('SlashCmdList.CLAUDEWOW_SKILL_BABYSIT_PR("7")');
+    assert.equal(!!stripRecords(vm).find(r => r.text === '/babysit-pr 7'), sent, dflt);
+  }
+});
+
 test('slash commands: each factory skill from the bridge becomes a game slash command that sends /skill args to the coding chat; a command another addon owns is left alone', () => {
   const vm = skillsVM();
   assert.equal(vm.evaluate('SLASH_CLAUDEWOW_SKILL_BABYSIT_PR1'), '/babysit-pr');
