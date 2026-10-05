@@ -715,8 +715,8 @@ const AGENTS = {
     posixPaths: () => [],
     envPath: 'CODEX_BIN',
     npmPackage: '@openai/codex',
-    args({ cfg, resume, cwd, images }) {
-      const a = [];
+    args({ cfg, resume, cwd, images, codexMcpArgs }) {
+      const a = Array.isArray(codexMcpArgs) ? [...codexMcpArgs] : [];
       if (cfg.networkAccess) a.push('-c', 'sandbox_workspace_write.network_access=true');
       a.push('exec', '--json', '--skip-git-repo-check', '-C', cwd);
       const mode = cfg.permissionMode || 'acceptEdits';

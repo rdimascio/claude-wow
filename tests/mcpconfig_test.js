@@ -246,3 +246,77 @@ test('claudeOwnServers lists the user, local, project and enabled plugin servers
   ]);
   assert.deepEqual(MC.claudeOwnServers({ home, configDir: '', cwd, read: () => null }), []);
 });
+
+test('Codex: default servers become -c mcp_servers entries with names of env vars, the codex allow list and auto-approval', () => {
+  const entries = MC.forCodex(parsed(SAMPLE, { GITHUB_TOKEN: SECRET, LINEAR_KEY: SECRET }).mcp);
+  assert.deepEqual(
+    entries.map(e => e.name),
+    ['github', 'notion', 'linear'],
+  );
+  assert.deepEqual(MC.codexArgs(entries), [
+    '-c',
+    'mcp_servers.github.command="npx"',
+    '-c',
+    'mcp_servers.github.args=["-y","@modelcontextprotocol/server-github"]',
+    '-c',
+    'mcp_servers.github.env_vars=["GITHUB_TOKEN"]',
+    '-c',
+    'mcp_servers.github.default_tools_approval_mode="approve"',
+    '-c',
+    'mcp_servers.notion.url="https://mcp.notion.com/mcp"',
+    '-c',
+    'mcp_servers.notion.enabled_tools=["search"]',
+    '-c',
+    'mcp_servers.notion.default_tools_approval_mode="approve"',
+    '-c',
+    'mcp_servers.linear.url="https://mcp.linear.app/mcp"',
+    '-c',
+    'mcp_servers.linear.bearer_token_env_var="LINEAR_KEY"',
+    '-c',
+    'mcp_servers.linear.enabled_tools=["list_issues"]',
+    '-c',
+    'mcp_servers.linear.default_tools_approval_mode="approve"',
+  ]);
+  assert.equal(MC.forCodex(null).length, 0);
+  assert.deepEqual(MC.codexArgs([]), []);
+});
+
+test('Codex: every value is a TOML string, so a number-looking argument, quotes and backslashes survive; no env value reaches argv', () => {
+  const args = MC.codexArgs([
+    {
+      name: 's',
+      server: { type: 'stdio', command: 'C:\\Tools\\srv.exe', args: ['007', '1e3', 'say "hi"', 'true', 'a\u007fb'] },
+      envVars: ['GITHUB_TOKEN'],
+      enabledTools: [],
+      disabledTools: ['goal_set'],
+    },
+  ]);
+  assert.deepEqual(args, [
+    '-c',
+    'mcp_servers.s.command="C:\\\\Tools\\\\srv.exe"',
+    '-c',
+    'mcp_servers.s.args=["007","1e3","say \\"hi\\"","true","a\\u007fb"]',
+    '-c',
+    'mcp_servers.s.env_vars=["GITHUB_TOKEN"]',
+    '-c',
+    'mcp_servers.s.enabled_tools=[]',
+    '-c',
+    'mcp_servers.s.disabled_tools=["goal_set"]',
+    '-c',
+    'mcp_servers.s.default_tools_approval_mode="approve"',
+  ]);
+  const saved = process.env.GITHUB_TOKEN;
+  process.env.GITHUB_TOKEN = SECRET;
+  try {
+    const argv = A.AGENTS.codex.args({ cfg: {}, resume: '', cwd: '/p', images: [], codexMcpArgs: MC.codexArgs(MC.forCodex(parsed(SAMPLE, process.env).mcp)) });
+    assert.ok(!JSON.stringify(argv).includes(SECRET));
+    assert.ok(argv.indexOf('-c') < argv.indexOf('exec'), 'config overrides go before the exec subcommand');
+  } finally {
+    if (saved === undefined) delete process.env.GITHUB_TOKEN;
+    else process.env.GITHUB_TOKEN = saved;
+  }
+  assert.deepEqual(
+    A.AGENTS.codex.args({ cfg: {}, resume: '', cwd: '/p', images: [] }),
+    A.AGENTS.codex.args({ cfg: {}, resume: '', cwd: '/p', images: [], codexMcpArgs: [] }),
+  );
+});

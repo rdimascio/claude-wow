@@ -66,6 +66,7 @@ function parseServer(name, s, reserved) {
       if (typeof s.bearerTokenEnvVar !== 'string' || !ENV_NAME_RE.test(s.bearerTokenEnvVar))
         return { error: `${where}.bearerTokenEnvVar must be an environment variable name` };
       out.envVars = [s.bearerTokenEnvVar];
+      out.bearerTokenEnvVar = s.bearerTokenEnvVar;
       out.server.headers = { Authorization: `Bearer ${envRef(s.bearerTokenEnvVar)}` };
     }
     return out;
@@ -196,10 +197,46 @@ function claudeOwnServers({ home = os.homedir(), configDir = process.env.CLAUDE_
   return [...new Set(out)];
 }
 
+function forCodex(mcp) {
+  if (!mcp) return [];
+  return mcp.servers
+    .filter(s => s.default)
+    .map(s => ({
+      name: s.name,
+      server: s.server,
+      envVars: s.server.type === 'http' ? [] : s.envVars,
+      bearerTokenEnvVar: s.bearerTokenEnvVar || '',
+      enabledTools: s.allow.codex.includes(ALL_TOOLS) ? null : s.allow.codex,
+    }));
+}
+
+const tomlString = v => JSON.stringify(String(v)).replace(/\u007f/g, '\\u007f');
+const tomlList = list => `[${list.map(tomlString).join(',')}]`;
+
+function codexArgs(entries) {
+  const out = [];
+  for (const e of entries || []) {
+    const key = `mcp_servers.${e.name}`;
+    const set = (k, v) => out.push('-c', `${key}.${k}=${v}`);
+    if (e.server.type === 'http') {
+      set('url', tomlString(e.server.url));
+      if (e.bearerTokenEnvVar) set('bearer_token_env_var', tomlString(e.bearerTokenEnvVar));
+    } else {
+      set('command', tomlString(e.server.command));
+      set('args', tomlList(e.server.args || []));
+      if (e.envVars && e.envVars.length) set('env_vars', tomlList(e.envVars));
+    }
+    if (Array.isArray(e.enabledTools)) set('enabled_tools', tomlList(e.enabledTools));
+    if (Array.isArray(e.disabledTools) && e.disabledTools.length) set('disabled_tools', tomlList(e.disabledTools));
+    set('default_tools_approval_mode', tomlString('approve'));
+  }
+  return out;
+}
+
 function summary(mcp) {
   if (!mcp) return '';
   const names = mcp.servers.map(s => `${s.name} (${s.default ? 'on' : 'off'} by default)`);
   return `${names.length ? names.join(', ') : 'no servers'}${mcp.strict ? '; strict: Claude runs load only these and the bridge servers' : ''}`;
 }
 
-module.exports = { parse, forClaude, scopeAllowed, claudeOwnServers, summary, serverOf, ALL_TOOLS };
+module.exports = { parse, forClaude, forCodex, codexArgs, scopeAllowed, claudeOwnServers, summary, serverOf, ALL_TOOLS };
