@@ -4534,10 +4534,17 @@ local function GetBubble(i)
 	return b
 end
 
+function Q.SendTooltip(button)
+	GameTooltip:SetOwner(button, "ANCHOR_TOP")
+	GameTooltip:SetText("Send (Enter)")
+	GameTooltip:AddLine("/claude help lists commands.", 0.8, 0.8, 0.8, true)
+	GameTooltip:Show()
+end
+
 function Q.UpdatePlaceholder()
 	local placeholder, input = ui.placeholder, ui.input
 	if not placeholder or not input then return end
-	placeholder:SetText("Message " .. ChatAgentName(ActiveChat()) .. ". Enter sends; /claude help lists commands.")
+	placeholder:SetText("Message " .. ChatAgentName(ActiveChat()))
 	if (input:GetText() or "") == "" and not input:HasFocus() then placeholder:Show() else placeholder:Hide() end
 end
 
@@ -5028,6 +5035,8 @@ local PANEL_W = 150
 Q.PORTRAIT = "Interface\\AddOns\\ClaudeWoW\\Portrait"
 Q.NATIVE_TEMPLATES = { "ButtonFrameTemplate", "InsetFrameTemplate" }
 Q.LIST_W = 300
+Q.COMPOSER_BOTTOM = 2
+Q.COMPOSER_GAP = 6
 Q.NAV_TOP = -24
 Q.NAV_H = 34
 Q.LIST_ROW_H = 20
@@ -5056,7 +5065,9 @@ Q.QUEST_ART = {
 Q.ROW_TITLE_X = 31
 Q.ROW_TOP = 8
 Q.ROW_BOTTOM = 6
-Q.ROW_BOTTOM_BARE = 4
+Q.POI_TOP = 4
+Q.POI_SIZE = 20
+Q.ROW_MIN_H = Q.POI_TOP + Q.POI_SIZE + Q.ROW_BOTTOM
 Q.OBJECTIVE_GAP = 3
 Q.OBJECTIVE_LINE_GAP = 2
 Q.HEADER_INSET = 9
@@ -5641,7 +5652,7 @@ end
 
 function Q.Poi(parent)
 	local poi = CreateFrame("Button", nil, parent)
-	poi:SetSize(20, 20)
+	poi:SetSize(Q.POI_SIZE, Q.POI_SIZE)
 	poi.outer = poi:CreateTexture(nil, "BACKGROUND")
 	poi.outer:SetPoint("CENTER")
 	if Q.SetArt(poi.outer, "poiOuter", true) then poi.outer:SetBlendMode("ADD") end
@@ -5712,7 +5723,7 @@ function Q.QuestRow(i)
 	if not Q.SetArt(r.glow, "rowGlow") then r.glow:SetColorTexture(1, 0.82, 0, 0.12) end
 	r.glow:Hide()
 	r.poi = Q.Poi(r)
-	r.poi:SetPoint("TOPLEFT", r, "TOPLEFT", 6, -4)
+	r.poi:SetPoint("TOPLEFT", r, "TOPLEFT", 6, -Q.POI_TOP)
 	r.del = Q.DeleteButton(r)
 	r.del:SetPoint("TOPRIGHT", r, "TOPRIGHT", -2, -Q.ROW_TOP + 2)
 	r.when = r:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
@@ -5787,7 +5798,8 @@ function Q.FillRow(r, c, index, width)
 		r.objectives[k].dash:Hide()
 		r.objectives[k].text:Hide()
 	end
-	local height = #lines > 0 and (y - Q.OBJECTIVE_LINE_GAP + Q.ROW_BOTTOM) or (Q.ROW_TOP + titleH + Q.ROW_BOTTOM_BARE)
+	local textBottom = #lines > 0 and (y - Q.OBJECTIVE_LINE_GAP) or (Q.ROW_TOP + titleH)
+	local height = math.max(textBottom + Q.ROW_BOTTOM, Q.ROW_MIN_H)
 	r:SetHeight(height)
 	Q.RowColors(r, false)
 	return height
@@ -6073,7 +6085,7 @@ function Q.BuildQuestFrames(f)
 	ui.search = search
 
 	local newChat = MakeButton(list, "New chat", Q.LIST_W - 12, function() ClaudeWoW.NewChat() end)
-	newChat:SetPoint("BOTTOM", list, "BOTTOM", 0, 2)
+	newChat:SetPoint("BOTTOM", list, "BOTTOM", 0, Q.COMPOSER_BOTTOM)
 	ui.newChat = newChat
 
 	local listScroll = CreateFrame("ScrollFrame", "ClaudeWoWChatScroll", list, Q.TemplateExists("ScrollFrameTemplate") and "ScrollFrameTemplate" or "UIPanelScrollFrameTemplate")
@@ -6484,10 +6496,10 @@ local function BuildUI()
 	local inputBg = Q.Panel(f, native)
 	if native then
 		inputBg:SetPoint("TOPLEFT", ui.parchment, "BOTTOMLEFT", 0, -4)
-		inputBg:SetPoint("BOTTOMRIGHT", ui.listPanel, "BOTTOMLEFT", -6 - SEND_W - 6, 0)
+		inputBg:SetPoint("BOTTOMRIGHT", ui.listPanel, "BOTTOMLEFT", -Q.COMPOSER_GAP - SEND_W - Q.COMPOSER_GAP, Q.COMPOSER_BOTTOM)
 	else
 		inputBg:SetPoint("BOTTOMLEFT", panel, "BOTTOMRIGHT", 8, 0)
-		inputBg:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -14 - SEND_W - 6, 50)
+		inputBg:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -14 - SEND_W - Q.COMPOSER_GAP, 50)
 		inputBg:SetHeight(54)
 	end
 	if not native then
@@ -6559,16 +6571,15 @@ local function BuildUI()
 	projectHost:HookScript("OnSizeChanged", function() Cli.UpdateProjectButton() end)
 	ui.projectButton = projectButton
 
-	-- Send sits to the right of the input box, vertically centred on it.
 	local send = MakeButton(f, "Send", SEND_W, ClaudeWoW.SendFromInput)
-	send:SetHeight(30)
-	send:SetPoint("LEFT", inputBg, "RIGHT", 6, 0)
+	send:SetPoint("BOTTOMLEFT", inputBg, "BOTTOMRIGHT", Q.COMPOSER_GAP, 0)
+	send:SetScript("OnEnter", Q.SendTooltip)
+	send:SetScript("OnLeave", function() GameTooltip:Hide() end)
 	ui.send = send
 
 	-- Connect stands in for Send until the bridge has been seen (see UpdateConnect).
 	local connect = MakeButton(f, "Connect", SEND_W, function() ClaudeWoW.Connect(true) end)
-	connect:SetHeight(30)
-	connect:SetPoint("LEFT", inputBg, "RIGHT", 6, 0)
+	connect:SetPoint("BOTTOMLEFT", inputBg, "BOTTOMRIGHT", Q.COMPOSER_GAP, 0)
 	connect:SetScript("OnEnter", function(self)
 		GameTooltip:SetOwner(self, "ANCHOR_TOP")
 		GameTooltip:SetText("Connect to the bridge")
