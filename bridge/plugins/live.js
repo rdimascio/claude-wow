@@ -36,14 +36,16 @@ function createLive(overrides = {}) {
 
   const opt = key => {
     const o = core ? core.options('live') : {};
-    return Number.isFinite(o[key]) && o[key] >= 0 ? o[key] : (overrides[key] !== undefined ? overrides[key] : DEFAULTS[key]);
+    return Number.isFinite(o[key]) && o[key] >= 0 ? o[key] : overrides[key] !== undefined ? overrides[key] : DEFAULTS[key];
   };
   const replyTimeoutMs = () => {
     const o = core ? core.options('live') : {};
     if (Number.isFinite(o.timeoutMs) && o.timeoutMs > 0) return o.timeoutMs;
     return (core && core.timeoutMs) || 1800000;
   };
-  const log = line => { if (core) core.log(`live: ${line}`); };
+  const log = line => {
+    if (core) core.log(`live: ${line}`);
+  };
   const claudeDir = () => overrides.claudeDir || (core && core.claudeDir) || '';
   const homeArg = () => (core && core.liveHome) || '';
 
@@ -67,7 +69,9 @@ function createLive(overrides = {}) {
       const id = (running && running.id) || s.sessionId || '';
       const cwd = s.cwd || (running && running.cwd) || '';
       let label = '';
-      try { label = id ? SS.sessionLabel(dir, id, cwd) : ''; } catch {}
+      try {
+        label = id ? SS.sessionLabel(dir, id, cwd) : '';
+      } catch {}
       s.info = { at: Date.now(), value: { id, name: (running && running.name) || '', cwd: (running && running.cwd) || '', label } };
     }
     return s.info.value;
@@ -95,7 +99,9 @@ function createLive(overrides = {}) {
   }
 
   function status() {
-    return listening().sort((a, b) => a.connectedAt - b.connectedAt).map(describe);
+    return listening()
+      .sort((a, b) => a.connectedAt - b.connectedAt)
+      .map(describe);
   }
 
   function sessionsList() {
@@ -106,14 +112,16 @@ function createLive(overrides = {}) {
       const key = info.id || `${info.name}\n${info.cwd}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      const { pidName, ...entry } = info;
+      const { pidName: _pidName, ...entry } = info;
       out.push(entry);
     }
     return out.sort((a, b) => Number(b.listening) - Number(a.listening) || b.at - a.at);
   }
 
   function matchesTarget(s, target) {
-    const want = String(target || '').trim().toLowerCase();
+    const want = String(target || '')
+      .trim()
+      .toLowerCase();
     if (!want) return true;
     const info = sessionOf(s);
     const id = info.id.toLowerCase();
@@ -157,15 +165,22 @@ function createLive(overrides = {}) {
     const key = lateKey(chatId, p.messageId);
     dropLate(key);
     while (lateReplies.size >= LATE_REPLIES_MAX) dropLate(lateReplies.keys().next().value);
-    const timer = setTimeout(() => { if (lateReplies.get(key) === kept) dropLate(key); }, replyTimeoutMs());
+    const timer = setTimeout(() => {
+      if (lateReplies.get(key) === kept) dropLate(key);
+    }, replyTimeoutMs());
     if (timer.unref) timer.unref();
     const kept = { job: p.job, conn: p.conn, messageId: p.messageId, timer };
     lateReplies.set(key, kept);
   }
 
   function holdLateReply(chatId, entry) {
-    if (pending.has(chatId)) { keepLate(chatId, entry); return; }
-    const timer = setTimeout(() => { if (pending.get(chatId) === held) clearPending(chatId); }, replyTimeoutMs());
+    if (pending.has(chatId)) {
+      keepLate(chatId, entry);
+      return;
+    }
+    const timer = setTimeout(() => {
+      if (pending.get(chatId) === held) clearPending(chatId);
+    }, replyTimeoutMs());
     if (timer.unref) timer.unref();
     const held = { ...entry, sentAt: Date.now(), timer, watch: null, late: true };
     pending.set(chatId, held);
@@ -192,7 +207,11 @@ function createLive(overrides = {}) {
   function pickedUpByTranscript(s, job, chatId, sentAt) {
     const file = transcriptOf(s);
     if (!file) return false;
-    try { if (fs.statSync(file).mtimeMs < sentAt - 1000) return false; } catch { return false; }
+    try {
+      if (fs.statSync(file).mtimeMs < sentAt - 1000) return false;
+    } catch {
+      return false;
+    }
     const tail = SS.readTail(file);
     return pickupMarkers(chatId, job.id).some(m => tail.includes(m));
   }
@@ -212,14 +231,19 @@ function createLive(overrides = {}) {
     let elapsed = 0;
     const step = () => {
       const wait = Math.min(pollMs, pickupMs - elapsed);
-      p.watch = setTimeout(() => { elapsed += wait; check(); }, wait);
+      p.watch = setTimeout(() => {
+        elapsed += wait;
+        check();
+      }, wait);
       if (p.watch.unref) p.watch.unref();
     };
     const check = () => {
       p.watch = null;
       if (pending.get(chatId) !== p || p.late) return;
       let seen = false;
-      try { seen = pickedUp(s, job, chatId, p.sentAt); } catch {}
+      try {
+        seen = pickedUp(s, job, chatId, p.sentAt);
+      } catch {}
       if (seen) {
         p.active = true;
         log(`${core.tag(job)} "${s.name}" picked it up`);
@@ -274,7 +298,7 @@ function createLive(overrides = {}) {
     dropLate(key);
     log(`${core.tag(kept.job)} late reply from "${s.name}" to message_id ${messageId} (${text.length} chars)`);
     deliverLate(kept.job, text);
-    answer(true)('Delivered to the player\'s in-game whisper tab.');
+    answer(true)("Delivered to the player's in-game whisper tab.");
     return true;
   }
 
@@ -292,7 +316,9 @@ function createLive(overrides = {}) {
       }
     }
     if (!p) {
-      answer(false)(`No player message is waiting for a reply in chat_id "${chatId}". Each player message takes exactly one ${LP.REPLY_TOOL} call, with the chat_id from its <channel> tag.`);
+      answer(false)(
+        `No player message is waiting for a reply in chat_id "${chatId}". Each player message takes exactly one ${LP.REPLY_TOOL} call, with the chat_id from its <channel> tag.`,
+      );
       return;
     }
     if (p.conn !== s.id) {
@@ -304,7 +330,7 @@ function createLive(overrides = {}) {
     log(`${core.tag(p.job)} ${p.late ? 'late ' : ''}reply from "${s.name}" (${text.length} chars)`);
     if (p.late) deliverLate(p.job, text);
     else core.reply(p.job, text);
-    answer(true)('Delivered to the player\'s in-game whisper tab.');
+    answer(true)("Delivered to the player's in-game whisper tab.");
   }
 
   function onPermissionRequest(s, msg) {
@@ -365,7 +391,10 @@ function createLive(overrides = {}) {
 
   async function onGoalCall(s, msg) {
     const answer = r => sendTo(s, { type: 'goal_result', call: msg.call, ok: !!(r && r.ok), text: String((r && r.text) || '') });
-    if (!core || typeof core.goals !== 'function') { answer({ ok: false, text: 'This bridge has no goal store.' }); return; }
+    if (!core || typeof core.goals !== 'function') {
+      answer({ ok: false, text: 'This bridge has no goal store.' });
+      return;
+    }
     const tool = String(msg.tool || '');
     if (!s.listening) {
       log(`${tool} from "${s.name}" refused: the session is not listening on the channel`);
@@ -379,7 +408,11 @@ function createLive(overrides = {}) {
       return;
     }
     let result;
-    try { result = await core.goals(tool, msg.args); } catch (e) { result = { ok: false, text: `${tool} failed: ${e && e.message ? e.message : e}` }; }
+    try {
+      result = await core.goals(tool, msg.args);
+    } catch (e) {
+      result = { ok: false, text: `${tool} failed: ${e && e.message ? e.message : e}` };
+    }
     log(`${tool} from "${s.name}": ${result && result.ok ? 'ok' : 'refused'}`);
     answer(result);
   }
@@ -395,7 +428,11 @@ function createLive(overrides = {}) {
     sessions.delete(s.id);
     s.runPending = true;
     let accepted = { why: 'this bridge gives no run grants' };
-    try { if (grants) accepted = await grants.hello(msg, s.sock); } catch (e) { accepted = { why: e && e.message ? e.message : String(e) }; }
+    try {
+      if (grants) accepted = await grants.hello(msg, s.sock);
+    } catch (e) {
+      accepted = { why: e && e.message ? e.message : String(e) };
+    }
     s.runPending = false;
     if (!accepted.run || s.sock.destroyed) {
       if (accepted.run) grants.detach(accepted.run, s.sock);
@@ -422,7 +459,9 @@ function createLive(overrides = {}) {
   async function detectListening(s) {
     if (!s.ppid) return { listening: false, why: 'the channel server did not name its Claude Code process' };
     let line = null;
-    try { line = await commandLineOf(s.ppid); } catch {}
+    try {
+      line = await commandLineOf(s.ppid);
+    } catch {}
     if (!line) return { listening: false, why: `cannot read the command line of Claude Code pid ${s.ppid}` };
     if (LP.isPrintMode(line)) return { listening: false, print: true, why: `Claude Code pid ${s.ppid} runs one prompt with -p/--print` };
     if (LP.sessionListens(line)) return { listening: true, why: '' };
@@ -436,38 +475,60 @@ function createLive(overrides = {}) {
   function onConnection(sock) {
     const s = { id: nextConn++, sock, verified: false, name: '', cwd: '', pid: 0, connectedAt: Date.now(), listening: false, sessionId: '' };
     sessions.set(s.id, s);
-    const hello = setTimeout(() => { if (!s.verified) sock.destroy(); }, opt('helloTimeoutMs'));
+    const hello = setTimeout(() => {
+      if (!s.verified) sock.destroy();
+    }, opt('helloTimeoutMs'));
     if (hello.unref) hello.unref();
-    sock.on('data', LP.lineReader(msg => {
-      if (s.runPending) return;
-      if (s.run) { onRunMessage(s, msg); return; }
-      if (s.verified) { onVerified(s, msg); return; }
-      clearTimeout(hello);
-      if (msg.type === GM.HELLO) { acceptRun(s, msg); return; }
-      if (msg.type !== 'hello' || typeof msg.nonce !== 'string' || !msg.nonce || !LP.sameProof(msg.proof, LP.proof(token, 'client', msg.nonce))) {
-        sock.write(LP.encode({ type: 'reject', reason: 'bad hello' }));
-        sock.destroy();
-        log('refused a connection without a valid hello');
-        return;
-      }
-      s.verified = true;
-      s.name = String(msg.name || 'claude').replace(/[^\w .@-]/g, '').slice(0, 40) || 'claude';
-      s.cwd = String(msg.cwd || '').slice(0, 300);
-      s.pid = Number(msg.pid) || 0;
-      s.ppid = Number(msg.ppid) || 0;
-      s.sessionId = SS.SESSION_ID_RE.test(String(msg.session || '')) ? String(msg.session) : '';
-      s.detecting = true;
-      sock.write(LP.encode({ type: 'welcome', proof: LP.proof(token, 'bridge', msg.nonce) }));
-      detectListening(s).then(heard => {
-        s.detecting = false;
-        if (sessions.get(s.id) !== s) return;
-        s.listening = heard.listening;
-        s.print = !!heard.print;
-        log(`session "${s.name}" connected${s.cwd ? ' from ' + s.cwd : ''}${s.pid ? ', pid ' + s.pid : ''}, ${s.listening ? 'listening' : 'not listening (' + heard.why + ')'}`);
-        wake();
-        changed();
-      });
-    }, () => sock.destroy()));
+    sock.on(
+      'data',
+      LP.lineReader(
+        msg => {
+          if (s.runPending) return;
+          if (s.run) {
+            onRunMessage(s, msg);
+            return;
+          }
+          if (s.verified) {
+            onVerified(s, msg);
+            return;
+          }
+          clearTimeout(hello);
+          if (msg.type === GM.HELLO) {
+            acceptRun(s, msg);
+            return;
+          }
+          if (msg.type !== 'hello' || typeof msg.nonce !== 'string' || !msg.nonce || !LP.sameProof(msg.proof, LP.proof(token, 'client', msg.nonce))) {
+            sock.write(LP.encode({ type: 'reject', reason: 'bad hello' }));
+            sock.destroy();
+            log('refused a connection without a valid hello');
+            return;
+          }
+          s.verified = true;
+          s.name =
+            String(msg.name || 'claude')
+              .replace(/[^\w .@-]/g, '')
+              .slice(0, 40) || 'claude';
+          s.cwd = String(msg.cwd || '').slice(0, 300);
+          s.pid = Number(msg.pid) || 0;
+          s.ppid = Number(msg.ppid) || 0;
+          s.sessionId = SS.SESSION_ID_RE.test(String(msg.session || '')) ? String(msg.session) : '';
+          s.detecting = true;
+          sock.write(LP.encode({ type: 'welcome', proof: LP.proof(token, 'bridge', msg.nonce) }));
+          detectListening(s).then(heard => {
+            s.detecting = false;
+            if (sessions.get(s.id) !== s) return;
+            s.listening = heard.listening;
+            s.print = !!heard.print;
+            log(
+              `session "${s.name}" connected${s.cwd ? ' from ' + s.cwd : ''}${s.pid ? ', pid ' + s.pid : ''}, ${s.listening ? 'listening' : 'not listening (' + heard.why + ')'}`,
+            );
+            wake();
+            changed();
+          });
+        },
+        () => sock.destroy(),
+      ),
+    );
     sock.on('error', () => {});
     sock.on('close', () => {
       clearTimeout(hello);
@@ -494,16 +555,30 @@ function createLive(overrides = {}) {
     core = c;
     if (server) return;
     const o = core.options('live');
-    if (o.enabled === false) { log('off (plugins.live.enabled is false)'); return; }
+    if (o.enabled === false) {
+      log('off (plugins.live.enabled is false)');
+      return;
+    }
     token = LP.writeToken(core.home);
     address = LP.endpoint(core.home, platform);
-    if (platform !== 'win32') { try { fs.rmSync(address, { force: true }); } catch {} }
+    if (platform !== 'win32') {
+      try {
+        fs.rmSync(address, { force: true });
+      } catch {}
+    }
     server = net.createServer(onConnection);
     const listener = server;
-    listener.on('error', e => { log(`cannot listen on ${address}: ${e.message}`); if (server === listener) server = null; });
+    listener.on('error', e => {
+      log(`cannot listen on ${address}: ${e.message}`);
+      if (server === listener) server = null;
+    });
     const umask = platform !== 'win32' ? process.umask(0o177) : null;
     server.listen(address, () => {
-      if (platform !== 'win32') { try { fs.chmodSync(address, 0o600); } catch {} }
+      if (platform !== 'win32') {
+        try {
+          fs.chmodSync(address, 0o600);
+        } catch {}
+      }
       log(`listening on ${address}`);
     });
     if (umask !== null) process.umask(umask);
@@ -520,7 +595,11 @@ function createLive(overrides = {}) {
     if (server) {
       server.close();
       server = null;
-      if (platform !== 'win32') { try { fs.rmSync(address, { force: true }); } catch {} }
+      if (platform !== 'win32') {
+        try {
+          fs.rmSync(address, { force: true });
+        } catch {}
+      }
     }
   }
 
@@ -543,13 +622,26 @@ function createLive(overrides = {}) {
     return new Promise(resolve => {
       const ready = () => listening().some(s => matchesTarget(s, target));
       const detecting = () => connected().some(s => s.detecting && matchesTarget(s, target));
-      if (ready()) { resolve(); return; }
+      if (ready()) {
+        resolve();
+        return;
+      }
       let expired = false;
       let timer = null;
       let cap = null;
-      const done = () => { clearTimeout(timer); clearTimeout(cap); waiters.delete(check); resolve(); };
-      const check = () => { if (ready() || (expired && !detecting())) done(); };
-      timer = setTimeout(() => { expired = true; check(); }, ms);
+      const done = () => {
+        clearTimeout(timer);
+        clearTimeout(cap);
+        waiters.delete(check);
+        resolve();
+      };
+      const check = () => {
+        if (ready() || (expired && !detecting())) done();
+      };
+      timer = setTimeout(() => {
+        expired = true;
+        check();
+      }, ms);
       cap = setTimeout(done, ms + DETECT_WAIT_MS);
       waiters.add(check);
     });
@@ -568,9 +660,12 @@ function createLive(overrides = {}) {
   }
 
   function noSessionText(target) {
-    if (target) return `The running Claude Code session "${target}" is not connected. /claude -r lists the ones that are, and /claude -r <id> resumes a session headless when its terminal is closed.`;
+    if (target)
+      return `The running Claude Code session "${target}" is not connected. /claude -r lists the ones that are, and /claude -r <id> resumes a session headless when its terminal is closed.`;
     const n = deaf().length;
-    const note = n ? `\n${n} running session${n === 1 ? ' was' : 's were'} started without the channel; /claude -r shows how to restart ${n === 1 ? 'it' : 'them'}.` : '';
+    const note = n
+      ? `\n${n} running session${n === 1 ? ' was' : 's were'} started without the channel; /claude -r shows how to restart ${n === 1 ? 'it' : 'them'}.`
+      : '';
     return `No live Claude Code session is connected. Start one with:\n${core.liveStartCommand}\n(see docs/LIVE-SESSION.md)${note}`;
   }
 
@@ -587,14 +682,20 @@ function createLive(overrides = {}) {
       const sent = sendTo(s, { type: 'permission', request_id: perm.requestId, behavior: verdict.allow ? 'allow' : 'deny' });
       log(`${c.tag(job)} permission ${perm.requestId} (${perm.rule}): ${verdict.allow ? 'allowed' : 'denied'}${sent ? '' : ', but the session is gone'}`);
       if (!verdict.forward) {
-        if (!sent) { c.fail(job, 'The live Claude Code session that asked is no longer connected.'); return; }
+        if (!sent) {
+          c.fail(job, 'The live Claude Code session that asked is no longer connected.');
+          return;
+        }
         expectReply(job, chatId, s, { watch: false, messageId: perm.messageId });
         c.progress(job, `${verdict.allow ? 'Allowed' : 'Denied'} ${perm.rule}; Claude Code carries on.`);
         return;
       }
       if (sent) keepLate(chatId, { job: perm.job, conn: perm.conn, messageId: perm.messageId });
     }
-    if (!server) { c.fail(job, 'The live plugin is off on this bridge (plugins.live.enabled is false).'); return; }
+    if (!server) {
+      c.fail(job, 'The live plugin is off on this bridge (plugins.live.enabled is false).');
+      return;
+    }
     const target = job.liveTarget || '';
     if (!listening().some(x => matchesTarget(x, target)) && !(target && deafMatch(target))) await waitForSession(opt('waitMs'), target);
     const s = pick(chatId, target);
@@ -636,7 +737,16 @@ function createLive(overrides = {}) {
     sessions: sessionsList,
     runEndpoint,
     banner: () => `forwards chats to a running Claude Code session (${LP.DEV_FLAG} ${LP.CHANNEL_ARG}); see docs/LIVE-SESSION.md`,
-    _state: { sessions, pending, permissions, lateReplies, runSockets, get address() { return address; } },
+    _state: {
+      sessions,
+      pending,
+      permissions,
+      lateReplies,
+      runSockets,
+      get address() {
+        return address;
+      },
+    },
   };
 }
 

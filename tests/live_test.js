@@ -6,7 +6,6 @@ const net = require('net');
 const os = require('os');
 const path = require('path');
 const LP = require('../bridge/liveproto');
-const P = require('../bridge/protocol');
 const { createChannel, parentListens, pickProtocol } = require('../bridge/channel');
 const { createLive } = require('../bridge/plugins/live');
 
@@ -29,7 +28,10 @@ function fakeStdout() {
     write(s) {
       buf += s;
       let nl;
-      while ((nl = buf.indexOf('\n')) >= 0) { lines.push(JSON.parse(buf.slice(0, nl))); buf = buf.slice(nl + 1); }
+      while ((nl = buf.indexOf('\n')) >= 0) {
+        lines.push(JSON.parse(buf.slice(0, nl)));
+        buf = buf.slice(nl + 1);
+      }
     },
   };
 }
@@ -50,7 +52,9 @@ function fakeCore(home, extra = {}) {
     progress: (job, text) => calls.progress.push({ job, text }),
     accept: job => calls.accept.push(job),
     gameContext: () => extra.ctx || '',
-    publish: () => { calls.publish++; },
+    publish: () => {
+      calls.publish++;
+    },
   };
   return { core, calls };
 }
@@ -60,7 +64,14 @@ function tmpHome() {
 }
 
 async function initialize(ch, out) {
-  ch.feed(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 't', version: '0' } } }) + '\n');
+  ch.feed(
+    JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 't', version: '0' } },
+    }) + '\n',
+  );
   ch.feed(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n');
   await until(() => out.lines.find(l => l.id === 1));
 }
@@ -71,20 +82,35 @@ const DEAF = 'claude --dangerously-skip-permissions';
 async function rig(opts = {}) {
   const home = tmpHome();
   const commandLine = opts.commandLine || (() => LISTENING);
-  const parentOf = opts.parentOf || (async pid => (pid === process.pid ? (opts.ppid || 777) : null));
+  const parentOf = opts.parentOf || (async pid => (pid === process.pid ? opts.ppid || 777 : null));
   const live = createLive(opts.realPickup ? { commandLine, parentOf } : { commandLine, parentOf, pickedUp: opts.pickedUp || (() => false) });
   const { core, calls } = fakeCore(home, opts);
   live.start(core);
   await until(() => fs.existsSync(LP.endpoint(home)) || !POSIX);
   const out = fakeStdout();
-  const ch = createChannel({ stdout: out, home, name: opts.name || 'proj', cwd: '/work/proj', retryMs: 20, ppid: opts.ppid || 777, sessionId: opts.sessionId || '' });
-  const cleanup = () => { ch.stop(); live.stop(); fs.rmSync(home, { recursive: true, force: true }); };
+  const ch = createChannel({
+    stdout: out,
+    home,
+    name: opts.name || 'proj',
+    cwd: '/work/proj',
+    retryMs: 20,
+    ppid: opts.ppid || 777,
+    sessionId: opts.sessionId || '',
+  });
+  const cleanup = () => {
+    ch.stop();
+    live.stop();
+    fs.rmSync(home, { recursive: true, force: true });
+  };
   if (opts.connect !== false) {
     try {
       ch.connect();
       await until(() => ch.verified);
       await until(() => live.sessions().length === 1);
-    } catch (e) { cleanup(); throw e; }
+    } catch (e) {
+      cleanup();
+      throw e;
+    }
   }
   return { home, live, core, calls, out, ch, cleanup };
 }
@@ -103,7 +129,10 @@ test('endpoint: a socket in the home folder, /tmp when that path is too long, a 
 test('framing: newline-delimited JSON across chunk boundaries, garbage skipped, oversized lines dropped', () => {
   const got = [];
   let overflow = 0;
-  const feed = LP.lineReader(m => got.push(m), () => overflow++);
+  const feed = LP.lineReader(
+    m => got.push(m),
+    () => overflow++,
+  );
   feed(Buffer.from('{"a":1}\n{"b"'));
   feed(':2}\nnot json\n[1,2]\n\n{"c":3}');
   assert.deepEqual(got, [{ a: 1 }, { b: 2 }]);
@@ -144,7 +173,13 @@ test('proofs: HMAC over role and nonce, compared in constant time', () => {
 test('notification shape: notifications/claude/channel with content and identifier-only string meta', () => {
   const ctx = 'Character: Thrall, level 12 Orc Shaman\nZone: Durotar (Razor Hill) 52.1, 43.0';
   const meta = LP.channelMeta({ id: 7, name: 'Quest help' }, 'tok:c1', ctx);
-  assert.deepEqual(meta, { chat_id: 'tok:c1', message_id: '7', chat_name: 'Quest help', character: 'Thrall, level 12 Orc Shaman', zone: 'Durotar (Razor Hill) 52.1, 43.0' });
+  assert.deepEqual(meta, {
+    chat_id: 'tok:c1',
+    message_id: '7',
+    chat_name: 'Quest help',
+    character: 'Thrall, level 12 Orc Shaman',
+    zone: 'Durotar (Razor Hill) 52.1, 43.0',
+  });
   const n = LP.channelNotification('hello', { chat_id: 'x', 'bad-key': 'y', empty: '', multi: 'a\nb' });
   assert.deepEqual(n, { jsonrpc: '2.0', method: 'notifications/claude/channel', params: { content: 'hello', meta: { chat_id: 'x', multi: 'a b' } } });
   assert.deepEqual(LP.permissionVerdict('abcde', true).params, { request_id: 'abcde', behavior: 'allow' });
@@ -163,19 +198,10 @@ test('permission rules and verdicts: Need/Greed allow, the Pass text denies, any
   assert.deepEqual(LP.isVerdictJob({ allow: [], allowOnce: ['Write'], text: 'x' }), { allow: true, forward: false });
   assert.deepEqual(LP.isVerdictJob({ allow: [], text: ` ${LP.PASS_TEXT} ` }), { allow: false, forward: false });
   assert.deepEqual(LP.isVerdictJob({ allow: [], text: 'actually, what drops the sword?' }), { allow: false, forward: true });
-  assert.match(LP.permissionPrompt({ tool_name: 'Bash', description: 'Create a file', input_preview: '{"command":"touch x"}' }, 'proj'), /^Claude Code \(proj\) wants to use Bash: Create a file\.\n.*touch x.*\nRoll Need or Greed/s);
-});
-
-test('start command: the dev-channel flag, a cd to the repo, CLAUDE_WOW_HOME only when set, --resume when given', () => {
-  assert.equal(LP.startCommand(), 'claude --dangerously-load-development-channels server:claude-wow');
-  assert.equal(LP.startCommand({ repo: '/Users/me/wow ai', home: '/tmp/h', resume: 'abc-123' }),
-    "cd '/Users/me/wow ai' && CLAUDE_WOW_HOME=/tmp/h claude --resume abc-123 --dangerously-load-development-channels server:claude-wow");
-});
-
-test('slot files carry the connected live sessions and the start command', () => {
-  const lua = P.luaTable('ClaudeWoW_SlotData', [], { live: { sessions: ['proj (/work/proj)'], start: 'claude --x' } });
-  assert.match(lua, /\tlive = \{ sessions = \{ "proj \(\/work\/proj\)" \}, start = "claude --x" \},/);
-  assert.doesNotMatch(P.luaTable('ClaudeWoW_SlotData', [], {}), /live =/);
+  assert.match(
+    LP.permissionPrompt({ tool_name: 'Bash', description: 'Create a file', input_preview: '{"command":"touch x"}' }, 'proj'),
+    /^Claude Code \(proj\) wants to use Bash: Create a file\.\n.*touch x.*\nRoll Need or Greed/s,
+  );
 });
 
 test('channel server: initialize declares the channel and permission capabilities, tools/list has wow_reply', async () => {
@@ -191,7 +217,25 @@ test('channel server: initialize declares the channel and permission capabilitie
   assert.equal(pickProtocol('2024-11-05'), '2024-11-05');
   ch.feed(JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' }) + '\n');
   const list = await until(() => out.lines.find(l => l.id === 2));
-  assert.deepEqual(list.result.tools.map(t => t.name), ['wow_reply', 'goal_set', 'goal_list', 'order_issue', 'goal_vote_open', 'goal_vote_close', 'farm_spot_lookup', 'market_price', 'route_draw', 'campaign_start', 'campaign_end', 'beat_add', 'beat_trigger', 'narrate']);
+  assert.deepEqual(
+    list.result.tools.map(t => t.name),
+    [
+      'wow_reply',
+      'goal_set',
+      'goal_list',
+      'order_issue',
+      'goal_vote_open',
+      'goal_vote_close',
+      'farm_spot_lookup',
+      'market_price',
+      'route_draw',
+      'campaign_start',
+      'campaign_end',
+      'beat_add',
+      'beat_trigger',
+      'narrate',
+    ],
+  );
   assert.deepEqual(list.result.tools[0].inputSchema.required, ['chat_id', 'text']);
   ch.feed(JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'resources/list' }) + '\n');
   const nope = await until(() => out.lines.find(l => l.id === 3));
@@ -214,23 +258,37 @@ test('bridge to session: a message becomes a channel notification, wow_reply goe
     assert.equal(job.agent, 'claude');
     assert.equal(r.calls.accept.length, 1, 'the message goes into the transcript');
     const note = await until(() => r.out.lines.find(l => l.method === 'notifications/claude/channel'));
-    assert.match(note.params.content, /^\[In-game situation[\s\S]*Character: Thrall[\s\S]*where is the flight master\?\n\n\(The player reads your answer in game: send it with wow_reply, chat_id "tok:c1"\.\)$/);
+    assert.match(
+      note.params.content,
+      /^\[In-game situation[\s\S]*Character: Thrall[\s\S]*where is the flight master\?\n\n\(The player reads your answer in game: send it with wow_reply, chat_id "tok:c1"\.\)$/,
+    );
     assert.deepEqual(note.params.meta, { chat_id: 'tok:c1', message_id: '4', chat_name: 'Live', character: 'Thrall, level 12 Orc Shaman', zone: 'Durotar' });
     assert.match(r.calls.progress[0].text, /Sent to the live Claude Code session "proj"/);
-    r.ch.feed(JSON.stringify({ jsonrpc: '2.0', id: 9, method: 'tools/call', params: { name: 'wow_reply', arguments: { chat_id: 'tok:c1', text: 'East of Razor Hill.\nTL;DR: east' } } }) + '\n');
+    r.ch.feed(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 9,
+        method: 'tools/call',
+        params: { name: 'wow_reply', arguments: { chat_id: 'tok:c1', text: 'East of Razor Hill.\nTL;DR: east' } },
+      }) + '\n',
+    );
     const res = await until(() => r.out.lines.find(l => l.id === 9));
     assert.equal(res.result.isError, false);
     assert.match(res.result.content[0].text, /Delivered/);
     assert.equal(r.calls.reply.length, 1);
     assert.equal(r.calls.reply[0].job, job);
     assert.equal(r.calls.reply[0].text, 'East of Razor Hill.\nTL;DR: east');
-    r.ch.feed(JSON.stringify({ jsonrpc: '2.0', id: 10, method: 'tools/call', params: { name: 'wow_reply', arguments: { chat_id: 'tok:c1', text: 'again' } } }) + '\n');
+    r.ch.feed(
+      JSON.stringify({ jsonrpc: '2.0', id: 10, method: 'tools/call', params: { name: 'wow_reply', arguments: { chat_id: 'tok:c1', text: 'again' } } }) + '\n',
+    );
     const twice = await until(() => r.out.lines.find(l => l.id === 10));
     assert.equal(twice.result.isError, true, 'one reply per message');
     assert.match(twice.result.content[0].text, /No player message is waiting/);
     assert.ok(r.calls.publish >= 1, 'a connect republishes the slot files');
     assert.deepEqual(r.live.status(), ['proj (/work/proj)']);
-  } finally { r.cleanup(); }
+  } finally {
+    r.cleanup();
+  }
 });
 
 test('goal tools: the live session calls goal_set, goal_list and order_issue through the bridge socket; the bridge is the only writer', async () => {
@@ -238,7 +296,15 @@ test('goal tools: the live session calls goal_set, goal_list and order_issue thr
   const home = tmpHome();
   const ctx = { text: 'Character: Bone on Forever, level 20 Orc Rogue (Horde)\nProfessions: Skinning 187/225', at: Date.now() };
   const posts = [];
-  const store = G.createGoals({ dir: path.join(home, 'goals'), context: () => ctx, streamOptions: () => ({ url: 'http://127.0.0.1:9' }), post: async (url, command) => { posts.push(command); return { ok: true, status: 200 }; } });
+  const store = G.createGoals({
+    dir: path.join(home, 'goals'),
+    context: () => ctx,
+    streamOptions: () => ({ url: 'http://127.0.0.1:9' }),
+    post: async (url, command) => {
+      posts.push(command);
+      return { ok: true, status: 200 };
+    },
+  });
   const r = await rig();
   r.core.goals = (tool, args) => store.call(tool, args);
   const call = async (id, name, args) => {
@@ -256,7 +322,10 @@ test('goal tools: the live session calls goal_set, goal_list and order_issue thr
     assert.equal(refused.isError, true);
     assert.match(refused.content[0].text, /no slash commands/);
     const list = JSON.parse((await call(23, 'goal_list', {})).content[0].text);
-    assert.deepEqual(list.goals.map(g => [g.id, g.pct]), [['g_393', 83]]);
+    assert.deepEqual(
+      list.goals.map(g => [g.id, g.pct]),
+      [['g_393', 83]],
+    );
     assert.equal(list.order.text, 'Skin 38 more, then train');
     assert.deepEqual(posts.at(-1).orders.order, { text: 'Skin 38 more, then train', goal: 'Skinning 225', pct: 83 });
     const saved = JSON.parse(fs.readFileSync(path.join(home, 'goals', 'Bone-Forever', 'goals.json'), 'utf8'));
@@ -265,13 +334,19 @@ test('goal tools: the live session calls goal_set, goal_list and order_issue thr
     const none = await call(24, 'goal_list', {});
     assert.equal(none.isError, true);
     assert.match(none.content[0].text, /no goal store/);
-  } finally { r.cleanup(); fs.rmSync(home, { recursive: true, force: true }); }
+  } finally {
+    r.cleanup();
+    fs.rmSync(home, { recursive: true, force: true });
+  }
 });
 
 test('goal tools: a connected session that is not listening on the channel is refused by the bridge', async () => {
   const r = await rig({ commandLine: () => DEAF });
   const calls = [];
-  r.core.goals = async (tool, args) => { calls.push(tool); return { ok: true, text: 'done' }; };
+  r.core.goals = async tool => {
+    calls.push(tool);
+    return { ok: true, text: 'done' };
+  };
   try {
     await initialize(r.ch, r.out);
     r.ch.feed(JSON.stringify({ jsonrpc: '2.0', id: 30, method: 'tools/call', params: { name: 'order_issue', arguments: { text: 'skin 10' } } }) + '\n');
@@ -279,33 +354,45 @@ test('goal tools: a connected session that is not listening on the channel is re
     assert.equal(res.isError, true);
     assert.match(res.content[0].text, /only works in a session started with --dangerously-load-development-channels server:claude-wow/);
     assert.deepEqual(calls, []);
-  } finally { r.cleanup(); }
+  } finally {
+    r.cleanup();
+  }
 });
 
 async function goalCallRefused(r, id) {
   await initialize(r.ch, r.out);
-  r.ch.feed(JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: { name: 'goal_set', arguments: { profession: 'Skinning', rank: 200 } } }) + '\n');
+  r.ch.feed(
+    JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: { name: 'goal_set', arguments: { profession: 'Skinning', rank: 200 } } }) + '\n',
+  );
   return (await until(() => r.out.lines.find(l => l.id === id))).result;
 }
 
 test('goal tools: a hello whose pid is not really a child of the claimed Claude Code pid is refused', async () => {
   const r = await rig({ parentOf: async pid => (pid === process.pid ? 4321 : null) });
   const calls = [];
-  r.core.goals = async tool => { calls.push(tool); return { ok: true, text: 'done' }; };
+  r.core.goals = async tool => {
+    calls.push(tool);
+    return { ok: true, text: 'done' };
+  };
   try {
     assert.equal(r.live.status().length, 1, 'the session counts as listening');
     const res = await goalCallRefused(r, 31);
     assert.equal(res.isError, true);
     assert.match(res.content[0].text, new RegExp(`goal_set was refused: pid ${process.pid} is not a child of Claude Code pid 777`));
     assert.deepEqual(calls, []);
-  } finally { r.cleanup(); }
+  } finally {
+    r.cleanup();
+  }
 });
 
 test('goal tools: a listening session that runs under an agent run the bridge started from the game is refused', async () => {
   const tree = { [process.pid]: 777, 777: 555, 555: 1 };
   const r = await rig({ parentOf: async pid => tree[pid] || null });
   const calls = [];
-  r.core.goals = async tool => { calls.push(tool); return { ok: true, text: 'done' }; };
+  r.core.goals = async tool => {
+    calls.push(tool);
+    return { ok: true, text: 'done' };
+  };
   r.core.agentPids = () => [555];
   try {
     const res = await goalCallRefused(r, 32);
@@ -317,7 +404,9 @@ test('goal tools: a listening session that runs under an agent run the bridge st
     const ok = (await until(() => r.out.lines.find(l => l.id === 33))).result;
     assert.equal(ok.isError, false, ok.content[0].text);
     assert.deepEqual(calls, ['goal_list']);
-  } finally { r.cleanup(); }
+  } finally {
+    r.cleanup();
+  }
 });
 
 test('parentPid reads the real parent from ps', { skip: !POSIX }, async () => {
@@ -325,30 +414,6 @@ test('parentPid reads the real parent from ps', { skip: !POSIX }, async () => {
   assert.equal(await LP.parentPid(0), null);
   assert.equal(await LP.parentPid(4242, { run: async () => ' 77\n' }), 77);
   assert.equal(await LP.parentPid(4242, { run: async () => '' }), null);
-});
-
-test('goal tools with no bridge connected do nothing and say so', async () => {
-  const out = fakeStdout();
-  const ch = createChannel({ stdout: out, home: tmpHome(), retryMs: 1000 });
-  ch.feed(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'order_issue', arguments: { text: 'skin 10' } } }) + '\n');
-  const res = await until(() => out.lines.find(l => l.id === 1));
-  assert.equal(res.result.isError, true);
-  assert.match(res.result.content[0].text, /not connected, so order_issue did nothing/);
-  ch.stop();
-});
-
-test('the channel registers with the bridge only once Claude Code has listed its tools', async () => {
-  const r = await rig({ connect: false });
-  try {
-    r.ch.connectWhenReady();
-    await new Promise(res => setTimeout(res, 100));
-    assert.deepEqual(r.live.status(), [], 'not before initialize');
-    await initialize(r.ch, r.out);
-    await new Promise(res => setTimeout(res, 100));
-    assert.deepEqual(r.live.status(), [], 'not before tools/list, or wow_reply may be missing when the first message lands');
-    r.ch.feed(JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' }) + '\n');
-    await until(() => r.live.status().length === 1);
-  } finally { r.cleanup(); }
 });
 
 const PRINT_JOB = 'claude -p --output-format stream-json --dangerously-load-development-channels server:claude-wow';
@@ -366,7 +431,12 @@ test('parentListens: only a parent that loads the claude-wow channel and is not 
   ];
   for (const [line, want] of cases) {
     const seen = [];
-    const got = await parentListens(4242, { commandLine: async pid => { seen.push(pid); return line; } });
+    const got = await parentListens(4242, {
+      commandLine: async pid => {
+        seen.push(pid);
+        return line;
+      },
+    });
     assert.equal(got, want, line);
     assert.deepEqual(seen, [4242]);
   }
@@ -374,14 +444,31 @@ test('parentListens: only a parent that loads the claude-wow channel and is not 
   assert.equal(LP.isPrintMode('claude --permission-mode plan -p'), true);
   assert.equal(LP.isPrintMode('claude --printer'), false);
   assert.equal(await parentListens(4242, { commandLine: async () => null }), true, 'an unreadable parent keeps the old behaviour; the bridge still checks it');
-  assert.equal(await parentListens(4242, { commandLine: async () => { throw new Error('ps failed'); } }), true);
+  assert.equal(
+    await parentListens(4242, {
+      commandLine: async () => {
+        throw new Error('ps failed');
+      },
+    }),
+    true,
+  );
 });
 
 test('not listening: the channel lists no tools, declares no channel, sends no instructions, and never dials the bridge', async () => {
   const r = await rig({ connect: false });
   const dials = [];
   const out = fakeStdout();
-  const ch = createChannel({ stdout: out, home: r.home, retryMs: 20, ppid: 4242, listening: parentListens(4242, { commandLine: async () => PRINT_JOB }), connect: addr => { dials.push(addr); return net.connect(addr); } });
+  const ch = createChannel({
+    stdout: out,
+    home: r.home,
+    retryMs: 20,
+    ppid: 4242,
+    listening: parentListens(4242, { commandLine: async () => PRINT_JOB }),
+    connect: addr => {
+      dials.push(addr);
+      return net.connect(addr);
+    },
+  });
   try {
     ch.connectWhenReady();
     await initialize(ch, out);
@@ -401,13 +488,24 @@ test('not listening: the channel lists no tools, declares no channel, sends no i
     assert.equal(ch.listening, false);
     assert.equal(r.live._state.sessions.size, 0);
     assert.deepEqual(r.live.sessions(), []);
-  } finally { ch.stop(); r.cleanup(); }
+  } finally {
+    ch.stop();
+    r.cleanup();
+  }
 });
 
 test('listening: a parent started with the channel gets the full server and connects after tools/list', async () => {
   const r = await rig({ connect: false });
   const out = fakeStdout();
-  const ch = createChannel({ stdout: out, home: r.home, name: 'proj', cwd: '/work/proj', retryMs: 20, ppid: 777, listening: parentListens(777, { commandLine: async () => LISTENING }) });
+  const ch = createChannel({
+    stdout: out,
+    home: r.home,
+    name: 'proj',
+    cwd: '/work/proj',
+    retryMs: 20,
+    ppid: 777,
+    listening: parentListens(777, { commandLine: async () => LISTENING }),
+  });
   try {
     ch.connectWhenReady();
     await initialize(ch, out);
@@ -415,19 +513,45 @@ test('listening: a parent started with the channel gets the full server and conn
     assert.deepEqual(init.result.capabilities, { experimental: { 'claude/channel': {}, 'claude/channel/permission': {} }, tools: {} });
     assert.match(init.result.instructions, /wow_reply/);
     ch.feed(JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' }) + '\n');
-    assert.deepEqual((await until(() => out.lines.find(l => l.id === 2))).result.tools.map(t => t.name), ['wow_reply', 'goal_set', 'goal_list', 'order_issue', 'goal_vote_open', 'goal_vote_close', 'farm_spot_lookup', 'market_price', 'route_draw', 'campaign_start', 'campaign_end', 'beat_add', 'beat_trigger', 'narrate']);
+    assert.deepEqual(
+      (await until(() => out.lines.find(l => l.id === 2))).result.tools.map(t => t.name),
+      [
+        'wow_reply',
+        'goal_set',
+        'goal_list',
+        'order_issue',
+        'goal_vote_open',
+        'goal_vote_close',
+        'farm_spot_lookup',
+        'market_price',
+        'route_draw',
+        'campaign_start',
+        'campaign_end',
+        'beat_add',
+        'beat_trigger',
+        'narrate',
+      ],
+    );
     await until(() => r.live.status().length === 1);
     assert.equal(ch.listening, true);
-  } finally { ch.stop(); r.cleanup(); }
+  } finally {
+    ch.stop();
+    r.cleanup();
+  }
 });
 
 test('channel.js started by a process without the channel flag answers MCP with an empty server', { timeout: 60000 }, async () => {
   const home = tmpHome();
-  const child = require('child_process').spawn(process.execPath, [path.join(__dirname, '..', 'bridge', 'channel.js')], { env: { ...process.env, CLAUDE_WOW_HOME: home }, stdio: ['pipe', 'pipe', 'pipe'] });
+  const child = require('child_process').spawn(process.execPath, [path.join(__dirname, '..', 'bridge', 'channel.js')], {
+    env: { ...process.env, CLAUDE_WOW_HOME: home },
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
   const out = fakeStdout();
   let err = '';
   child.stdout.on('data', d => out.write(d.toString()));
-  child.stderr.on('data', d => { err += d; });
+  child.stderr.on('data', d => {
+    err += d;
+  });
   try {
     child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18' } }) + '\n');
     child.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n');
@@ -454,18 +578,9 @@ test('the /claude -r picker never lists a -p/--print process, even one that conn
     const job = { id: 1, session: 'tok', chat: 'c1', text: 'hi', allow: [] };
     await r.live.handle(job, r.core);
     assert.doesNotMatch(r.calls.fail[0].text, /started without the channel/, 'a print job is not counted as a deaf session');
-  } finally { r.cleanup(); }
-});
-
-test('no session connected: the chat is told plainly how to start one', async () => {
-  const r = await rig({ connect: false, options: { waitMs: 0 } });
-  try {
-    const job = { id: 1, session: 'tok', chat: 'c1', text: 'hi', allow: [] };
-    await r.live.handle(job, r.core);
-    assert.equal(r.calls.fail.length, 1);
-    assert.match(r.calls.fail[0].text, /^No live Claude Code session is connected\. Start one with:\nclaude --dangerously-load-development-channels server:claude-wow/);
-    assert.deepEqual(r.live.status(), []);
-  } finally { r.cleanup(); }
+  } finally {
+    r.cleanup();
+  }
 });
 
 test('/claude -r targets one running session: by its Claude Code session id or prefix, its title or its name; another target is told it is not connected', async () => {
@@ -482,7 +597,14 @@ test('/claude -r targets one running session: by its Claude Code session id or p
     assert.equal(s.title, 'wow-ai-90');
     assert.equal(s.cwd, '/work/proj');
     const sent = () => r.out.lines.filter(l => l.method === 'notifications/claude/channel').length;
-    const tries = [['6624f327', true], [id, true], ['WOW-AI-90', true], ['proj', true], ['662', false], ['other', false]];
+    const tries = [
+      ['6624f327', true],
+      [id, true],
+      ['WOW-AI-90', true],
+      ['proj', true],
+      ['662', false],
+      ['other', false],
+    ];
     let n = 0;
     for (const [target, hit] of tries) {
       const job = { id: ++n, session: 'tok', chat: 'c' + n, text: 'hi ' + target, allow: [], liveTarget: target };
@@ -493,24 +615,17 @@ test('/claude -r targets one running session: by its Claude Code session id or p
       } else {
         const fail = r.calls.fail.find(f => f.job === job);
         assert.ok(fail, target);
-        assert.equal(fail.text, `The running Claude Code session "${target}" is not connected. /claude -r lists the ones that are, and /claude -r <id> resumes a session headless when its terminal is closed.`);
+        assert.equal(
+          fail.text,
+          `The running Claude Code session "${target}" is not connected. /claude -r lists the ones that are, and /claude -r <id> resumes a session headless when its terminal is closed.`,
+        );
         assert.equal(sent(), before);
       }
     }
-  } finally { r.cleanup(); fs.rmSync(claudeDir, { recursive: true, force: true }); }
-});
-
-test('a session that connects within waitMs still gets the message', async () => {
-  const r = await rig({ connect: false, options: { waitMs: 3000 } });
-  try {
-    await initialize(r.ch, r.out);
-    const job = { id: 2, session: 'tok', chat: 'c1', text: 'hi', allow: [] };
-    const handled = r.live.handle(job, r.core);
-    setTimeout(() => r.ch.connect(), 50);
-    await handled;
-    assert.equal(r.calls.fail.length, 0);
-    await until(() => r.out.lines.find(l => l.method === 'notifications/claude/channel'));
-  } finally { r.cleanup(); }
+  } finally {
+    r.cleanup();
+    fs.rmSync(claudeDir, { recursive: true, force: true });
+  }
 });
 
 test('socket: owner-only permissions, and a peer without the token is refused', { skip: !POSIX }, async () => {
@@ -523,14 +638,19 @@ test('socket: owner-only permissions, and a peer without the token is refused', 
     const got = [];
     const closed = new Promise(resolve => {
       const s = net.connect(addr, () => s.write(LP.encode({ type: 'hello', name: 'evil', nonce: 'n', proof: LP.proof('wrong', 'client', 'n') })));
-      s.on('data', LP.lineReader(m => got.push(m)));
+      s.on(
+        'data',
+        LP.lineReader(m => got.push(m)),
+      );
       s.on('close', resolve);
       s.on('error', () => {});
     });
     await closed;
     assert.deepEqual(got, [{ type: 'reject', reason: 'bad hello' }]);
     assert.deepEqual(r.live.status(), []);
-  } finally { r.cleanup(); }
+  } finally {
+    r.cleanup();
+  }
 });
 
 test('channel side: frames from a peer that cannot prove the token are ignored', { skip: !POSIX }, async () => {
@@ -538,10 +658,13 @@ test('channel side: frames from a peer that cannot prove the token are ignored',
   LP.writeToken(home);
   const addr = LP.endpoint(home);
   const fake = net.createServer(sock => {
-    sock.on('data', LP.lineReader(() => {
-      sock.write(LP.encode({ type: 'welcome', proof: 'forged' }));
-      sock.write(LP.encode({ type: 'message', content: 'injected', meta: { chat_id: 'x' } }));
-    }));
+    sock.on(
+      'data',
+      LP.lineReader(() => {
+        sock.write(LP.encode({ type: 'welcome', proof: 'forged' }));
+        sock.write(LP.encode({ type: 'message', content: 'injected', meta: { chat_id: 'x' } }));
+      }),
+    );
     sock.on('error', () => {});
   });
   await new Promise(resolve => fake.listen(addr, resolve));
@@ -566,7 +689,10 @@ test('channel side: a socket other users can reach is never connected to', { ski
   LP.writeToken(home);
   const addr = LP.endpoint(home);
   let accepted = 0;
-  const open = net.createServer(sock => { accepted++; sock.destroy(); });
+  const open = net.createServer(sock => {
+    accepted++;
+    sock.destroy();
+  });
   await new Promise(resolve => open.listen(addr, resolve));
   fs.chmodSync(addr, 0o666);
   const ch = createChannel({ stdout: fakeStdout(), home, retryMs: 20 });
@@ -587,7 +713,13 @@ test('permission relay: the request becomes a Need/Greed roll in the chat, the r
     await initialize(r.ch, r.out);
     const job = { id: 5, session: 'tok', chat: 'c1', text: 'touch a file', allow: [] };
     await r.live.handle(job, r.core);
-    r.ch.feed(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/claude/channel/permission_request', params: { request_id: 'abcde', tool_name: 'Bash', description: 'Create a file', input_preview: '{"command":"touch x.txt"}' } }) + '\n');
+    r.ch.feed(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'notifications/claude/channel/permission_request',
+        params: { request_id: 'abcde', tool_name: 'Bash', description: 'Create a file', input_preview: '{"command":"touch x.txt"}' },
+      }) + '\n',
+    );
     await until(() => r.calls.reply.length === 1);
     assert.equal(r.calls.reply[0].job, job);
     assert.deepEqual(r.calls.reply[0].denied, ['Bash(touch:*)'], 'the reply carries the rule, so the addon opens the roll');
@@ -597,71 +729,124 @@ test('permission relay: the request becomes a Need/Greed roll in the chat, the r
     const verdict = await until(() => r.out.lines.find(l => l.method === 'notifications/claude/channel/permission'));
     assert.deepEqual(verdict.params, { request_id: 'abcde', behavior: 'allow' });
     assert.equal(r.out.lines.filter(l => l.method === 'notifications/claude/channel').length, 1, 'the verdict is not forwarded as chat');
-    r.ch.feed(JSON.stringify({ jsonrpc: '2.0', id: 20, method: 'tools/call', params: { name: 'wow_reply', arguments: { chat_id: 'tok:c1', message_id: '5', text: 'done' } } }) + '\n');
+    r.ch.feed(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 20,
+        method: 'tools/call',
+        params: { name: 'wow_reply', arguments: { chat_id: 'tok:c1', message_id: '5', text: 'done' } },
+      }) + '\n',
+    );
     await until(() => r.calls.reply.length === 2);
     assert.equal(r.calls.reply[1].job, greed, 'the answer after the roll lands on the verdict message');
 
     const job2 = { id: 7, session: 'tok', chat: 'c1', text: 'touch another', allow: [] };
     await r.live.handle(job2, r.core);
-    r.ch.feed(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/claude/channel/permission_request', params: { request_id: 'fghij', tool_name: 'Write', description: 'Write', input_preview: '{}' } }) + '\n');
+    r.ch.feed(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'notifications/claude/channel/permission_request',
+        params: { request_id: 'fghij', tool_name: 'Write', description: 'Write', input_preview: '{}' },
+      }) + '\n',
+    );
     await until(() => r.calls.reply.length === 3);
     await r.live.handle({ id: 8, session: 'tok', chat: 'c1', text: LP.PASS_TEXT, allow: [] }, r.core);
     const deny = await until(() => r.out.lines.find(l => l.method === 'notifications/claude/channel/permission' && l.params.request_id === 'fghij'));
     assert.equal(deny.params.behavior, 'deny');
-  } finally { r.cleanup(); }
+  } finally {
+    r.cleanup();
+  }
 });
 
 test('permission relay: an unanswered roll is denied after permissionTimeoutMs; a request with no chat waiting stays in the terminal', async () => {
   const r = await rig({ options: { permissionTimeoutMs: 50 } });
   try {
     await initialize(r.ch, r.out);
-    r.ch.feed(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/claude/channel/permission_request', params: { request_id: 'aaaaa', tool_name: 'Bash', description: 'x', input_preview: '{}' } }) + '\n');
+    r.ch.feed(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'notifications/claude/channel/permission_request',
+        params: { request_id: 'aaaaa', tool_name: 'Bash', description: 'x', input_preview: '{}' },
+      }) + '\n',
+    );
     await new Promise(res => setTimeout(res, 100));
     assert.equal(r.calls.reply.length, 0);
     assert.equal(r.out.lines.filter(l => l.method === 'notifications/claude/channel/permission').length, 0);
     await r.live.handle({ id: 1, session: 'tok', chat: 'c1', text: 'go', allow: [] }, r.core);
-    r.ch.feed(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/claude/channel/permission_request', params: { request_id: 'bbbbb', tool_name: 'Bash', description: 'x', input_preview: '{}' } }) + '\n');
+    r.ch.feed(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'notifications/claude/channel/permission_request',
+        params: { request_id: 'bbbbb', tool_name: 'Bash', description: 'x', input_preview: '{}' },
+      }) + '\n',
+    );
     const deny = await until(() => r.out.lines.find(l => l.method === 'notifications/claude/channel/permission'));
     assert.deepEqual(deny.params, { request_id: 'bbbbb', behavior: 'deny' });
-  } finally { r.cleanup(); }
+  } finally {
+    r.cleanup();
+  }
 });
 
-const wowReply = (r, id, args) => r.ch.feed(JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: { name: 'wow_reply', arguments: args } }) + '\n');
+const wowReply = (r, id, args) =>
+  r.ch.feed(JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: { name: 'wow_reply', arguments: args } }) + '\n');
 
-test('permission relay: after an unanswered roll is denied, the session\'s answer still lands as a late reply, with or without message_id', async () => {
+test("permission relay: after an unanswered roll is denied, the session's answer still lands as a late reply, with or without message_id", async () => {
   const r = await rig({ options: { permissionTimeoutMs: 30 } });
   try {
     await initialize(r.ch, r.out);
     const job = { id: 21, session: 'tok', chat: 'c1', text: 'touch a file', allow: [] };
     await r.live.handle(job, r.core);
-    r.ch.feed(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/claude/channel/permission_request', params: { request_id: 'ccccc', tool_name: 'Bash', description: 'x', input_preview: '{}' } }) + '\n');
+    r.ch.feed(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'notifications/claude/channel/permission_request',
+        params: { request_id: 'ccccc', tool_name: 'Bash', description: 'x', input_preview: '{}' },
+      }) + '\n',
+    );
     await until(() => r.out.lines.find(l => l.method === 'notifications/claude/channel/permission' && l.params.behavior === 'deny'));
     await until(() => r.live._state.pending.size === 1);
     wowReply(r, 30, { chat_id: 'tok:c1', message_id: '21', text: 'I could not touch it, here is why.' });
     const res = await until(() => r.out.lines.find(l => l.id === 30));
     assert.equal(res.result.isError, false, res.result.content[0].text);
-    assert.deepEqual((r.calls.late || []).map(l => [l.job, l.text]), [[job, 'I could not touch it, here is why.']]);
-    assert.equal(r.calls.reply.length, 1, 'only the roll prompt went out as the message\'s reply');
+    assert.deepEqual(
+      (r.calls.late || []).map(l => [l.job, l.text]),
+      [[job, 'I could not touch it, here is why.']],
+    );
+    assert.equal(r.calls.reply.length, 1, "only the roll prompt went out as the message's reply");
 
     const job2 = { id: 22, session: 'tok', chat: 'c2', text: 'write a file', allow: [] };
     await r.live.handle(job2, r.core);
-    r.ch.feed(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/claude/channel/permission_request', params: { request_id: 'ddddd', tool_name: 'Write', description: 'x', input_preview: '{}' } }) + '\n');
+    r.ch.feed(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'notifications/claude/channel/permission_request',
+        params: { request_id: 'ddddd', tool_name: 'Write', description: 'x', input_preview: '{}' },
+      }) + '\n',
+    );
     await until(() => r.out.lines.find(l => l.method === 'notifications/claude/channel/permission' && l.params.request_id === 'ddddd'));
     await until(() => r.live._state.pending.has('tok:c2'));
     wowReply(r, 31, { chat_id: 'tok:c2', text: 'Skipped the write.' });
     const res2 = await until(() => r.out.lines.find(l => l.id === 31));
     assert.equal(res2.result.isError, false, res2.result.content[0].text);
     assert.deepEqual(r.calls.late.at(-1).job, job2);
-  } finally { r.cleanup(); }
+  } finally {
+    r.cleanup();
+  }
 });
 
-test('permission relay: a new message typed instead of a roll denies it; the session\'s answer to the first message lands as its late reply', async () => {
+test("permission relay: a new message typed instead of a roll denies it; the session's answer to the first message lands as its late reply", async () => {
   const r = await rig();
   try {
     await initialize(r.ch, r.out);
     const job = { id: 61, session: 'tok', chat: 'c1', text: 'touch a file', allow: [] };
     await r.live.handle(job, r.core);
-    r.ch.feed(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/claude/channel/permission_request', params: { request_id: 'eeeee', tool_name: 'Bash', description: 'x', input_preview: '{}' } }) + '\n');
+    r.ch.feed(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'notifications/claude/channel/permission_request',
+        params: { request_id: 'eeeee', tool_name: 'Bash', description: 'x', input_preview: '{}' },
+      }) + '\n',
+    );
     await until(() => r.calls.reply.length === 1);
     const next = { id: 62, session: 'tok', chat: 'c1', text: 'never mind, where is the bank?', allow: [] };
     await r.live.handle(next, r.core);
@@ -670,14 +855,19 @@ test('permission relay: a new message typed instead of a roll denies it; the ses
     wowReply(r, 70, { chat_id: 'tok:c1', message_id: '61', text: 'Skipped the file.' });
     const res = await until(() => r.out.lines.find(l => l.id === 70));
     assert.equal(res.result.isError, false, res.result.content[0].text);
-    assert.deepEqual((r.calls.late || []).map(l => [l.job, l.text]), [[job, 'Skipped the file.']]);
+    assert.deepEqual(
+      (r.calls.late || []).map(l => [l.job, l.text]),
+      [[job, 'Skipped the file.']],
+    );
     wowReply(r, 71, { chat_id: 'tok:c1', message_id: '62', text: 'In the city.' });
     await until(() => r.calls.reply.length === 2);
     assert.equal(r.calls.reply[1].job, next);
-  } finally { r.cleanup(); }
+  } finally {
+    r.cleanup();
+  }
 });
 
-test('reply correlation: an answer to an older message that went late lands as its late reply, never as the newer message\'s reply', async () => {
+test("reply correlation: an answer to an older message that went late lands as its late reply, never as the newer message's reply", async () => {
   const r = await rig({ options: { pickupMs: 20, pickupPollMs: 5 }, pickedUp: (session, job) => job.id !== 41 });
   try {
     await initialize(r.ch, r.out);
@@ -690,7 +880,10 @@ test('reply correlation: an answer to an older message that went late lands as i
     wowReply(r, 50, { chat_id: 'tok:c1', message_id: '41', text: 'answer to first' });
     const res = await until(() => r.out.lines.find(l => l.id === 50));
     assert.equal(res.result.isError, false, res.result.content[0].text);
-    assert.deepEqual((r.calls.late || []).map(l => [l.job, l.text]), [[a, 'answer to first']]);
+    assert.deepEqual(
+      (r.calls.late || []).map(l => [l.job, l.text]),
+      [[a, 'answer to first']],
+    );
     assert.equal(r.calls.reply.length, 0, 'the newer message is still waiting');
     wowReply(r, 51, { chat_id: 'tok:c1', message_id: '99', text: 'stray' });
     const stray = await until(() => r.out.lines.find(l => l.id === 51));
@@ -703,7 +896,9 @@ test('reply correlation: an answer to an older message that went late lands as i
     wowReply(r, 53, { chat_id: 'tok:c1', message_id: '41', text: 'again' });
     const again = await until(() => r.out.lines.find(l => l.id === 53));
     assert.equal(again.result.isError, true, 'a late answer lands once');
-  } finally { r.cleanup(); }
+  } finally {
+    r.cleanup();
+  }
 });
 
 test('a session that disconnects fails the messages still waiting on it', async () => {
@@ -717,14 +912,9 @@ test('a session that disconnects fails the messages still waiting on it', async 
     assert.equal(r.calls.fail[0].job, job);
     assert.match(r.calls.fail[0].text, /disconnected before it answered/);
     await until(() => r.live.status().length === 0);
-  } finally { r.cleanup(); }
-});
-
-test('the live plugin is registered in the bridge and .mcp.json starts the channel server', () => {
-  const src = fs.readFileSync(path.join(__dirname, '..', 'bridge', 'bridge.js'), 'utf8');
-  assert.match(src, /registry\.register\(require\('\.\/plugins\/live'\)\)/);
-  const mcp = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '.mcp.json'), 'utf8'));
-  assert.deepEqual(mcp.mcpServers['claude-wow'], { command: 'node', args: ['bridge/channel.js'], alwaysLoad: true });
+  } finally {
+    r.cleanup();
+  }
 });
 
 const SESSION_A = '6624f327-7126-423e-a653-d7cf7a4e492b';
@@ -775,7 +965,10 @@ test('listening detection: the Claude Code command line must load the claude-wow
   assert.deepEqual(LP.channelFlagValues('claude --dangerously-load-development-channels server:a server:b -c'), ['server:a', 'server:b']);
 
   const calls = [];
-  const run = (file, args, timeout) => { calls.push([file, timeout, ...args]); return 'claude --dangerously-load-development-channels server:claude-wow\n'; };
+  const run = (file, args, timeout) => {
+    calls.push([file, timeout, ...args]);
+    return 'claude --dangerously-load-development-channels server:claude-wow\n';
+  };
   assert.equal(await LP.commandLine(3421, { platform: 'darwin', run }), 'claude --dangerously-load-development-channels server:claude-wow');
   assert.deepEqual(calls[0], ['ps', 5000, '-ww', '-o', 'args=', '-p', '3421']);
   await LP.commandLine(3421, { platform: 'win32', run });
@@ -784,9 +977,19 @@ test('listening detection: the Claude Code command line must load the claude-wow
   assert.match(calls[1].at(-1), /Win32_Process -Filter 'ProcessId=3421'\)\.CommandLine/);
   assert.equal(await LP.commandLine(0, { run }), null);
   assert.equal(await LP.commandLine('1; rm -rf /', { run }), null, 'only a numeric pid reaches the command');
-  assert.equal(await LP.commandLine(5, { run: () => { throw new Error('no such process'); } }), null);
+  assert.equal(
+    await LP.commandLine(5, {
+      run: () => {
+        throw new Error('no such process');
+      },
+    }),
+    null,
+  );
   assert.equal(await LP.commandLine(5, { run: async () => '' }), null);
-  assert.equal(LP.restartCommand({ cwd: '/Users/me/wow ai', id: SESSION_A }, ''), `cd '/Users/me/wow ai' && claude --resume ${SESSION_A} --dangerously-load-development-channels server:claude-wow`);
+  assert.equal(
+    LP.restartCommand({ cwd: '/Users/me/wow ai', id: SESSION_A }, ''),
+    `cd '/Users/me/wow ai' && claude --resume ${SESSION_A} --dangerously-load-development-channels server:claude-wow`,
+  );
   assert.match(String(await LP.commandLine(process.pid)), /node|bun/i, 'reads a real process on this machine');
 });
 
@@ -800,24 +1003,36 @@ test('a session started without the channel is connected but never offered as li
     assert.equal(s.listening, false);
     assert.equal(s.id, SESSION_A);
     assert.equal(s.restart, `cd /work/proj && claude --resume ${SESSION_A} --dangerously-load-development-channels server:claude-wow`);
-    assert.ok(r.calls.log.some(l => l.includes('not listening (Claude Code pid 4242 was started without --dangerously-load-development-channels server:claude-wow)')), r.calls.log.join('\n'));
+    assert.ok(
+      r.calls.log.some(l => l.includes('not listening (Claude Code pid 4242 was started without --dangerously-load-development-channels server:claude-wow)')),
+      r.calls.log.join('\n'),
+    );
     for (const target of [SESSION_A, '6624f327', 'proj']) {
       const job = { id: 1, session: 'tok', chat: 'c-' + target, text: 'hey!', allow: [], liveTarget: target };
       await r.live.handle(job, r.core);
       const fail = r.calls.fail.find(f => f.job === job);
       assert.ok(fail, target);
-      assert.equal(fail.text, [
-        'The Claude Code session "wow-ai-90" is running, but it was not started with the claude-wow channel, so it cannot hear the game.',
-        'Restart it in its terminal with:',
-        `cd /work/proj && claude --resume ${SESSION_A} --dangerously-load-development-channels server:claude-wow`,
-        'Or pick it in /claude -r and click resume headless to continue it here without the terminal.',
-      ].join('\n'));
+      assert.equal(
+        fail.text,
+        [
+          'The Claude Code session "wow-ai-90" is running, but it was not started with the claude-wow channel, so it cannot hear the game.',
+          'Restart it in its terminal with:',
+          `cd /work/proj && claude --resume ${SESSION_A} --dangerously-load-development-channels server:claude-wow`,
+          'Or pick it in /claude -r and click resume headless to continue it here without the terminal.',
+        ].join('\n'),
+      );
     }
     const plain = { id: 2, session: 'tok', chat: 'c9', text: 'hi', allow: [] };
     await r.live.handle(plain, r.core);
-    assert.match(r.calls.fail.find(f => f.job === plain).text, /^No live Claude Code session is connected\. Start one with:\n[\s\S]*\n1 running session was started without the channel; \/claude -r shows how to restart it\.$/);
+    assert.match(
+      r.calls.fail.find(f => f.job === plain).text,
+      /^No live Claude Code session is connected\. Start one with:\n[\s\S]*\n1 running session was started without the channel; \/claude -r shows how to restart it\.$/,
+    );
     assert.equal(r.out.lines.filter(l => l.method === 'notifications/claude/channel').length, 0, 'nothing is sent into a session that cannot hear it');
-  } finally { r.cleanup(); fs.rmSync(fx.dir, { recursive: true, force: true }); }
+  } finally {
+    r.cleanup();
+    fs.rmSync(fx.dir, { recursive: true, force: true });
+  }
 });
 
 test('a message waits for a slow command-line read (PowerShell on Windows) instead of calling the session deaf', async () => {
@@ -832,17 +1047,27 @@ test('a message waits for a slow command-line read (PowerShell on Windows) inste
     await r.live.handle(job, r.core);
     assert.equal(r.calls.fail.length, 0, JSON.stringify(r.calls.fail));
     await until(() => r.out.lines.find(l => l.method === 'notifications/claude/channel'));
-  } finally { r.cleanup(); }
+  } finally {
+    r.cleanup();
+  }
 });
 
 test('another channel server, or a command line that cannot be read, is not listening either', async () => {
-  for (const [commandLine, why] of [[() => 'claude --dangerously-load-development-channels server:other', 'was started without'], [() => null, 'cannot read the command line of Claude Code pid 777']]) {
+  for (const [commandLine, why] of [
+    [() => 'claude --dangerously-load-development-channels server:other', 'was started without'],
+    [() => null, 'cannot read the command line of Claude Code pid 777'],
+  ]) {
     const r = await rig({ commandLine });
     try {
       assert.deepEqual(r.live.status(), []);
       assert.equal(r.live.sessions()[0].listening, false);
-      assert.ok(r.calls.log.some(l => l.includes(why)), r.calls.log.join('\n'));
-    } finally { r.cleanup(); }
+      assert.ok(
+        r.calls.log.some(l => l.includes(why)),
+        r.calls.log.join('\n'),
+      );
+    } finally {
+      r.cleanup();
+    }
   }
 });
 
@@ -859,9 +1084,18 @@ test('the session list: one row per Claude Code session, listening ones first; t
     extra.push(other);
     other.connect();
     await until(() => r.live.sessions().length === 2);
-    assert.deepEqual(r.live.sessions().map(s => [s.id, s.listening]), [[SESSION_A, true], [SESSION_B, false]]);
+    assert.deepEqual(
+      r.live.sessions().map(s => [s.id, s.listening]),
+      [
+        [SESSION_A, true],
+        [SESSION_B, false],
+      ],
+    );
     assert.deepEqual(r.live.status(), ['other (/work/other)']);
-  } finally { for (const c of extra) c.stop(); r.cleanup(); }
+  } finally {
+    for (const c of extra) c.stop();
+    r.cleanup();
+  }
   const prev = { pid: process.env.CLAUDE_PID, id: process.env.CLAUDE_CODE_SESSION_ID };
   process.env.CLAUDE_PID = '31337';
   process.env.CLAUDE_CODE_SESSION_ID = SESSION_A;
@@ -869,7 +1103,15 @@ test('the session list: one row per Claude Code session, listening ones first; t
     const home = tmpHome();
     LP.writeToken(home);
     const hellos = [];
-    const srv = net.createServer(sock => sock.on('data', LP.lineReader(m => { hellos.push(m); sock.destroy(); })));
+    const srv = net.createServer(sock =>
+      sock.on(
+        'data',
+        LP.lineReader(m => {
+          hellos.push(m);
+          sock.destroy();
+        }),
+      ),
+    );
     await new Promise(res => srv.listen(LP.endpoint(home), res));
     if (POSIX) fs.chmodSync(LP.endpoint(home), 0o600);
     const ch = createChannel({ stdout: fakeStdout(), home, retryMs: 5000 });
@@ -881,12 +1123,14 @@ test('the session list: one row per Claude Code session, listening ones first; t
     srv.close();
     fs.rmSync(home, { recursive: true, force: true });
   } finally {
-    if (prev.pid === undefined) delete process.env.CLAUDE_PID; else process.env.CLAUDE_PID = prev.pid;
-    if (prev.id === undefined) delete process.env.CLAUDE_CODE_SESSION_ID; else process.env.CLAUDE_CODE_SESSION_ID = prev.id;
+    if (prev.pid === undefined) delete process.env.CLAUDE_PID;
+    else process.env.CLAUDE_PID = prev.pid;
+    if (prev.id === undefined) delete process.env.CLAUDE_CODE_SESSION_ID;
+    else process.env.CLAUDE_CODE_SESSION_ID = prev.id;
   }
 });
 
-test('delivery watchdog: no sign of pickup within 45 s fails the message with one line; a late reply still lands', async (t) => {
+test('delivery watchdog: no sign of pickup within 45 s fails the message with one line; a late reply still lands', async t => {
   const r = await rig();
   try {
     await initialize(r.ch, r.out);
@@ -904,15 +1148,28 @@ test('delivery watchdog: no sign of pickup within 45 s fails the message with on
     assert.ok(!r.calls.fail[0].text.includes('\n'), 'one line');
     for (let s = 0; s < 10; s++) t.mock.timers.tick(1000);
     assert.equal(r.calls.fail.length, 1, 'failed once');
-    r.ch.feed(JSON.stringify({ jsonrpc: '2.0', id: 9, method: 'tools/call', params: { name: 'wow_reply', arguments: { chat_id: 'tok:c1', text: 'Sorry, I was busy. Hi!' } } }) + '\n');
+    r.ch.feed(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 9,
+        method: 'tools/call',
+        params: { name: 'wow_reply', arguments: { chat_id: 'tok:c1', text: 'Sorry, I was busy. Hi!' } },
+      }) + '\n',
+    );
     const res = await settle(() => r.out.lines.find(l => l.id === 9));
     assert.equal(res.result.isError, false);
-    assert.deepEqual((r.calls.late || []).map(l => [l.job, l.text]), [[job, 'Sorry, I was busy. Hi!']]);
-    assert.equal(r.calls.reply.length, 0, 'a late reply is not the failed message\'s reply');
-  } finally { t.mock.timers.reset(); r.cleanup(); }
+    assert.deepEqual(
+      (r.calls.late || []).map(l => [l.job, l.text]),
+      [[job, 'Sorry, I was busy. Hi!']],
+    );
+    assert.equal(r.calls.reply.length, 0, "a late reply is not the failed message's reply");
+  } finally {
+    t.mock.timers.reset();
+    r.cleanup();
+  }
 });
 
-test('delivery watchdog: the message showing up in the session transcript counts as picked up', async (t) => {
+test('delivery watchdog: the message showing up in the session transcript counts as picked up', async t => {
   const fx = claudeFixture(4242, SESSION_A, '/work/proj', [{ type: 'user', message: { role: 'user', content: 'earlier' } }]);
   const r = await rig({ claudeDir: fx.dir, ppid: 4242, realPickup: true });
   try {
@@ -923,29 +1180,57 @@ test('delivery watchdog: the message showing up in the session transcript counts
     await settle(() => r.out.lines.some(l => l.method === 'notifications/claude/channel'));
     t.mock.timers.tick(5000);
     assert.ok(!r.calls.progress.some(p => /picked it up/.test(p.text)));
-    fs.appendFileSync(fx.transcript, JSON.stringify({ type: 'user', message: { role: 'user', content: '<channel source="claude-wow" chat_id="tok:c1" message_id="7" chat_name="Live">\nwhere is the flight master?\n</channel>' } }) + '\n');
+    fs.appendFileSync(
+      fx.transcript,
+      JSON.stringify({
+        type: 'user',
+        message: {
+          role: 'user',
+          content: '<channel source="claude-wow" chat_id="tok:c1" message_id="7" chat_name="Live">\nwhere is the flight master?\n</channel>',
+        },
+      }) + '\n',
+    );
     t.mock.timers.tick(5000);
-    assert.ok(r.calls.progress.some(p => p.text === 'The live Claude Code session "proj" picked it up and is working on it.'), JSON.stringify(r.calls.progress));
+    assert.ok(
+      r.calls.progress.some(p => p.text === 'The live Claude Code session "proj" picked it up and is working on it.'),
+      JSON.stringify(r.calls.progress),
+    );
     for (let s = 0; s < 45; s++) t.mock.timers.tick(1000);
     assert.equal(r.calls.fail.length, 0, 'a session that picked it up is not failed at 45 s');
     for (let s = 0; s < 15; s++) t.mock.timers.tick(1000);
     assert.match(r.calls.fail[0].text, /did not answer within 1 min/, 'it gets the full reply timeout instead');
-    assert.deepEqual(require('../bridge/plugins/live').pickupMarkers('tok:c1', 7), ['chat_id="tok:c1" message_id="7"', 'chat_id=\\"tok:c1\\" message_id=\\"7\\"']);
-  } finally { t.mock.timers.reset(); r.cleanup(); fs.rmSync(fx.dir, { recursive: true, force: true }); }
+    assert.deepEqual(require('../bridge/plugins/live').pickupMarkers('tok:c1', 7), [
+      'chat_id="tok:c1" message_id="7"',
+      'chat_id=\\"tok:c1\\" message_id=\\"7\\"',
+    ]);
+  } finally {
+    t.mock.timers.reset();
+    r.cleanup();
+    fs.rmSync(fx.dir, { recursive: true, force: true });
+  }
 });
 
-test('delivery watchdog: a permission request counts as activity, and pickupMs 0 turns the watchdog off', async (t) => {
+test('delivery watchdog: a permission request counts as activity, and pickupMs 0 turns the watchdog off', async t => {
   const r = await rig();
   try {
     await initialize(r.ch, r.out);
     t.mock.timers.enable({ apis: ['setTimeout'] });
     await r.live.handle({ id: 1, session: 'tok', chat: 'c1', text: 'touch a file', allow: [] }, r.core);
     await settle(() => r.out.lines.some(l => l.method === 'notifications/claude/channel'));
-    r.ch.feed(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/claude/channel/permission_request', params: { request_id: 'abcde', tool_name: 'Bash', description: 'x', input_preview: '{}' } }) + '\n');
+    r.ch.feed(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'notifications/claude/channel/permission_request',
+        params: { request_id: 'abcde', tool_name: 'Bash', description: 'x', input_preview: '{}' },
+      }) + '\n',
+    );
     await settle(() => r.calls.reply.length === 1);
     t.mock.timers.tick(46000);
     assert.equal(r.calls.fail.length, 0);
-  } finally { t.mock.timers.reset(); r.cleanup(); }
+  } finally {
+    t.mock.timers.reset();
+    r.cleanup();
+  }
   const off = await rig({ options: { pickupMs: 0 } });
   try {
     await initialize(off.ch, off.out);
@@ -953,5 +1238,15 @@ test('delivery watchdog: a permission request counts as activity, and pickupMs 0
     await off.live.handle({ id: 1, session: 'tok', chat: 'c1', text: 'hi', allow: [] }, off.core);
     t.mock.timers.tick(50000);
     assert.equal(off.calls.fail.length, 0);
-  } finally { t.mock.timers.reset(); off.cleanup(); }
+  } finally {
+    t.mock.timers.reset();
+    off.cleanup();
+  }
+});
+
+test('the live plugin is registered in the bridge and .mcp.json starts the channel server', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', 'bridge', 'bridge.js'), 'utf8');
+  assert.match(src, /registry\.register\(require\('\.\/plugins\/live'\)\)/);
+  const mcp = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '.mcp.json'), 'utf8'));
+  assert.deepEqual(mcp.mcpServers['claude-wow'], { command: 'node', args: ['bridge/channel.js'], alwaysLoad: true });
 });

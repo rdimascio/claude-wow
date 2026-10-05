@@ -115,7 +115,11 @@ function migrateConfig(cfg) {
     if (legacy) notes.push('clients');
   }
   let dropped = 0;
-  for (const k of LEGACY_KEYS) if (k in cfg) { delete cfg[k]; dropped++; }
+  for (const k of LEGACY_KEYS)
+    if (k in cfg) {
+      delete cfg[k];
+      dropped++;
+    }
   if (dropped && !notes.length) notes.push('clients');
   if (cfg.capture && cfg.capture.screenshotDir && cfg.clients.length) {
     if (!cfg.clients[0].screenshotDir) cfg.clients[0].screenshotDir = cfg.capture.screenshotDir;
@@ -218,7 +222,11 @@ function recordsFor(records, key, max = 30) {
 
 function installedBuild(client, readText = file => fs.readFileSync(file, 'utf8')) {
   let text = null;
-  try { text = readText(path.join(client.addonDir, P.ADDON, P.ADDON + '.toc')); } catch { text = null; }
+  try {
+    text = readText(path.join(client.addonDir, P.ADDON, P.ADDON + '.toc'));
+  } catch {
+    text = null;
+  }
   if (text === null || text === undefined) return null;
   return P.addonDiskInfo(text);
 }
@@ -258,9 +266,36 @@ function describe(clients, state, { now = Date.now(), diskOf = installedBuild } 
 }
 
 module.exports = {
-  LEGACY_KEYS, ENTRY_KEYS, STATE_KEYS, CLIENTS_MAX,
-  keyOf, sameDir, labelOf, dirOfAddons, addonDirFor, savedFileFor, accountOf, productFor,
-  legacyEntry, resolveEntry, allClients, clientsOf, compactEntry, migrateConfig, upsertClient,
-  clientState, adoptLegacyState, legacyStateFor, contextText, foreignContext, noteHeard, heardAt, lastSpoke, recordsFor,
-  installedBuild, slotClients, describe, agoText,
+  LEGACY_KEYS,
+  ENTRY_KEYS,
+  STATE_KEYS,
+  CLIENTS_MAX,
+  keyOf,
+  sameDir,
+  labelOf,
+  dirOfAddons,
+  addonDirFor,
+  savedFileFor,
+  accountOf,
+  productFor,
+  legacyEntry,
+  resolveEntry,
+  allClients,
+  clientsOf,
+  compactEntry,
+  migrateConfig,
+  upsertClient,
+  clientState,
+  adoptLegacyState,
+  legacyStateFor,
+  contextText,
+  foreignContext,
+  noteHeard,
+  heardAt,
+  lastSpoke,
+  recordsFor,
+  installedBuild,
+  slotClients,
+  describe,
+  agoText,
 };

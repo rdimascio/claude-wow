@@ -18,7 +18,8 @@ const RAW_PATH_PREFIX = '/cmangos/classic-db/';
 const DUMP_NAME = /^ClassicDB_1_12_1_(z\d{1,6})\.sql\.gz$/;
 const GIT_SHA = /^[0-9a-f]{40}$/;
 const POINTER = /^(z\d{1,6}-[0-9a-f]{7})(?:-\d+)?$/;
-const LICENSE_NOTE = 'cMaNGOS classic-db (GPL-3.0), a community rebuild of the 1.12 world. Names and quest text are Blizzard\'s. Cached on this machine only; never committed or redistributed.';
+const LICENSE_NOTE =
+  "cMaNGOS classic-db (GPL-3.0), a community rebuild of the 1.12 world. Names and quest text are Blizzard's. Cached on this machine only; never committed or redistributed.";
 const MAX_LISTING_BYTES = 256 * 1024;
 const MAX_DUMP_BYTES = 64 * 1024 * 1024;
 const MAX_SQL_BYTES = 256 * 1024 * 1024;
@@ -34,7 +35,11 @@ function communityRoot(dataDir) {
 
 function readCommunity(root) {
   let pointer;
-  try { pointer = fs.readFileSync(path.join(root, D.CURRENT_FILE), 'utf8').trim(); } catch { return null; }
+  try {
+    pointer = fs.readFileSync(path.join(root, D.CURRENT_FILE), 'utf8').trim();
+  } catch {
+    return null;
+  }
   const match = POINTER.exec(pointer);
   if (!match) return null;
   const dir = path.join(root, pointer);
@@ -75,7 +80,10 @@ const LOOT_TABLES = Object.freeze(['ItemSparse', 'AreaTable', 'DungeonEncounter'
 
 function tablesHash(manifest, names) {
   const tables = (manifest && manifest.tables) || {};
-  return crypto.createHash('sha256').update(names.map(t => `${t}:${(tables[t] && tables[t].sha256) || 'absent'}`).join('\n')).digest('hex');
+  return crypto
+    .createHash('sha256')
+    .update(names.map(t => `${t}:${(tables[t] && tables[t].sha256) || 'absent'}`).join('\n'))
+    .digest('hex');
 }
 
 function placementHash(manifest) {
@@ -133,14 +141,20 @@ function gitBlobSha(bytes) {
 async function fetchFrom(fetchImpl, url, origin, maxBytes) {
   let res;
   try {
-    res = await fetchImpl(url, { headers: { 'user-agent': `claude-wow/${require('../package.json').version} (data sync)` }, redirect: 'error', signal: AbortSignal.timeout(D.FETCH_TIMEOUT_MS) });
+    res = await fetchImpl(url, {
+      headers: { 'user-agent': `claude-wow/${require('../package.json').version} (data sync)` },
+      redirect: 'error',
+      signal: AbortSignal.timeout(D.FETCH_TIMEOUT_MS),
+    });
   } catch (e) {
     throw new D.SyncError(`${url}: ${e && e.message ? e.message : String(e)}`);
   }
   if (!res) throw new D.SyncError(`${url}: no response`);
   if (res.status === 403 && res.headers.get('x-ratelimit-remaining') === '0') {
     const reset = Number(res.headers.get('x-ratelimit-reset'));
-    throw new D.SyncError(`GitHub's rate limit for unauthenticated requests is used up; try again after ${Number.isFinite(reset) ? new Date(reset * 1000).toISOString() : 'an hour'}`);
+    throw new D.SyncError(
+      `GitHub's rate limit for unauthenticated requests is used up; try again after ${Number.isFinite(reset) ? new Date(reset * 1000).toISOString() : 'an hour'}`,
+    );
   }
   if (res.status !== 200) throw new D.SyncError(`${url}: HTTP ${res.status}`);
   if (res.url && new URL(res.url).origin !== origin) throw new D.SyncError(`${url}: the answer came from ${new URL(res.url).origin}, not ${origin}`);
@@ -153,17 +167,29 @@ function pickDump(listing) {
   if (dumps.length !== 1) throw new D.SyncError(`${LISTING_URL}: expected one ClassicDB_1_12_1_z<rev>.sql.gz, found ${dumps.length}`);
   const dump = dumps[0];
   if (typeof dump.sha !== 'string' || !GIT_SHA.test(dump.sha)) throw new D.SyncError(`${dump.name}: the listing has no valid git sha`);
-  if (!Number.isSafeInteger(dump.size) || dump.size <= 0 || dump.size > MAX_DUMP_BYTES) throw new D.SyncError(`${dump.name}: size ${dump.size} is outside 1..${MAX_DUMP_BYTES} bytes`);
+  if (!Number.isSafeInteger(dump.size) || dump.size <= 0 || dump.size > MAX_DUMP_BYTES)
+    throw new D.SyncError(`${dump.name}: size ${dump.size} is outside 1..${MAX_DUMP_BYTES} bytes`);
   let url;
-  try { url = new URL(dump.download_url); } catch { throw new D.SyncError(`${dump.name}: no valid download URL`); }
-  if (url.origin !== RAW_ORIGIN || !url.pathname.startsWith(RAW_PATH_PREFIX) || !url.pathname.endsWith(`/Full_DB/${dump.name}`)) throw new D.SyncError(`${dump.name}: unexpected download URL ${url.href}`);
+  try {
+    url = new URL(dump.download_url);
+  } catch {
+    throw new D.SyncError(`${dump.name}: no valid download URL`);
+  }
+  if (url.origin !== RAW_ORIGIN || !url.pathname.startsWith(RAW_PATH_PREFIX) || !url.pathname.endsWith(`/Full_DB/${dump.name}`))
+    throw new D.SyncError(`${dump.name}: unexpected download URL ${url.href}`);
   return { name: dump.name, sha: dump.sha, size: dump.size, url: url.href, revision: DUMP_NAME.exec(dump.name)[1] };
 }
 
 function nameOrDrop(value, drop, extraJunk = null) {
   const name = D.toName(typeof value === 'string' ? value : '');
-  if (!name) { drop('badName'); return null; }
-  if (JUNK.test(name) || (extraJunk && extraJunk.test(name))) { drop('junk'); return null; }
+  if (!name) {
+    drop('badName');
+    return null;
+  }
+  if (JUNK.test(name) || (extraJunk && extraJunk.test(name))) {
+    drop('junk');
+    return null;
+  }
   return name;
 }
 
@@ -208,7 +234,9 @@ function finishSpawns(owner) {
 
 function convert(sql, client) {
   const droppedBy = {};
-  const drop = reason => { droppedBy[reason] = (droppedBy[reason] || 0) + 1; };
+  const drop = reason => {
+    droppedBy[reason] = (droppedBy[reason] || 0) + 1;
+  };
   const ctx = {
     uiMaps: new Map(client.rows('uimaps').map(m => [m.id, { type: m.type, system: m.system }])),
     assignments: client.rows('uimapassignments'),
@@ -220,13 +248,19 @@ function convert(sql, client) {
   };
   const eventGuids = table => new Set([...S.rows(sql, table, ['guid', 'event'])].filter(r => r.event > 0).map(r => r.guid));
   const addSpawn = (owner, spot) => {
-    if (!spot) { drop('badSpawn'); return; }
+    if (!spot) {
+      drop('badSpawn');
+      return;
+    }
     owner.all.push(spot);
   };
 
   const npcs = new Map();
   for (const r of S.rows(sql, 'creature_template', ['Entry', 'Name', 'SubName'])) {
-    if (!GD.isId(r.Entry)) { drop('badId'); continue; }
+    if (!GD.isId(r.Entry)) {
+      drop('badId');
+      continue;
+    }
     const name = nameOrDrop(r.Name, drop, NPC_JUNK);
     if (!name) continue;
     npcs.set(r.Entry, { id: r.Entry, name, subname: r.SubName ? D.toName(r.SubName) : null, gives: [], ends: [], all: [] });
@@ -261,7 +295,10 @@ function convert(sql, client) {
   const objectNames = new Map([...S.rows(sql, 'gameobject_template', ['entry', 'name'])].map(r => [r.entry, r.name]));
   const quests = new Map();
   for (const r of S.rows(sql, 'quest_template', ['entry', 'Title'])) {
-    if (!GD.isId(r.entry)) { drop('badId'); continue; }
+    if (!GD.isId(r.entry)) {
+      drop('badId');
+      continue;
+    }
     const title = nameOrDrop(r.Title, drop);
     if (!title) continue;
     quests.set(r.entry, { id: r.entry, title, inClientData: !!client.byId('quests', r.entry), givers: [], enders: [] });
@@ -269,13 +306,22 @@ function convert(sql, client) {
   const relate = (table, kind, list, back) => {
     for (const r of S.rows(sql, table, ['id', 'quest'])) {
       const quest = quests.get(r.quest);
-      if (!quest) { drop('relationWithoutQuest'); continue; }
+      if (!quest) {
+        drop('relationWithoutQuest');
+        continue;
+      }
       let owner = kind === 'npc' ? npcs.get(r.id) : objects.get(r.id);
       if (!owner && kind === 'object') {
         const name = objectNames.has(r.id) ? nameOrDrop(objectNames.get(r.id), drop) : null;
-        if (name) { owner = { id: r.id, name, gives: [], ends: [], all: [] }; objects.set(r.id, owner); }
+        if (name) {
+          owner = { id: r.id, name, gives: [], ends: [], all: [] };
+          objects.set(r.id, owner);
+        }
       }
-      if (!owner) { drop('relationWithoutOwner'); continue; }
+      if (!owner) {
+        drop('relationWithoutOwner');
+        continue;
+      }
       quest[list].push({ kind, id: r.id });
       owner[back].push(r.quest);
     }
@@ -294,7 +340,8 @@ function convert(sql, client) {
   const loot = L.convert(sql, client, { npcs, nameOrDrop, drop });
   const sorted = m => [...m.values()].map(finishSpawns).sort((a, b) => a.id - b.id);
   const entities = { npcs: sorted(npcs), questinfo: [...quests.values()].sort((a, b) => a.id - b.id), objects: sorted(objects), ...loot.entities };
-  for (const required of ['npcs', 'questinfo']) if (!entities[required].length) throw new S.DumpError(`no ${required} row survived conversion; the dump layout changed`);
+  for (const required of ['npcs', 'questinfo'])
+    if (!entities[required].length) throw new S.DumpError(`no ${required} row survived conversion; the dump layout changed`);
   return { entities, droppedBy, loot: loot.loot };
 }
 
@@ -311,7 +358,11 @@ function swap(root, version, tmpDir, log) {
   fs.renameSync(pointerTmp, path.join(root, D.CURRENT_FILE));
   for (const old of fs.readdirSync(root)) {
     if (old === name || !(POINTER.test(old) || old.endsWith('.tmp'))) continue;
-    try { fs.rmSync(path.join(root, old), { recursive: true, force: true }); } catch (e) { log(`could not remove ${path.join(root, old)}: ${e.message}`); }
+    try {
+      fs.rmSync(path.join(root, old), { recursive: true, force: true });
+    } catch (e) {
+      log(`could not remove ${path.join(root, old)}: ${e.message}`);
+    }
   }
   return path.join(root, name);
 }
@@ -323,16 +374,27 @@ async function syncCommunity(opts = {}) {
   if (!opts.dataDir) throw new D.SyncError('no data folder given');
   if (typeof fetchImpl !== 'function') throw new D.SyncError('no fetch function given');
   const client = GD.openStore({ dataDir: opts.dataDir, flavor: FLAVOR });
-  const needed = ['uimaps', 'uimapassignments', 'quests', 'items', 'zones', ...((client.manifest && client.manifest.entities && client.manifest.entities.encounters) ? ['encounters'] : [])];
+  const needed = [
+    'uimaps',
+    'uimapassignments',
+    'quests',
+    'items',
+    'zones',
+    ...(client.manifest && client.manifest.entities && client.manifest.entities.encounters ? ['encounters'] : []),
+  ];
   if (!client.build || !needed.every(e => client.has(e))) {
-    throw new D.SyncError(`the Classic Era client tables are needed first (map positions, quest IDs, items, zones and encounters come from them): run "${D.syncCommand(FLAVOR)}"`);
+    throw new D.SyncError(
+      `the Classic Era client tables are needed first (map positions, quest IDs, items, zones and encounters come from them): run "${D.syncCommand(FLAVOR)}"`,
+    );
   }
   const root = communityRoot(opts.dataDir);
   const lock = D.acquireLock(root, now, opts.pidAlive);
   try {
     log(`fetch ${LISTING_URL}`);
     let listing;
-    try { listing = JSON.parse((await fetchFrom(fetchImpl, LISTING_URL, API_ORIGIN, MAX_LISTING_BYTES)).toString('utf8')); } catch (e) {
+    try {
+      listing = JSON.parse((await fetchFrom(fetchImpl, LISTING_URL, API_ORIGIN, MAX_LISTING_BYTES)).toString('utf8'));
+    } catch (e) {
       if (e instanceof D.SyncError) throw e;
       throw new D.SyncError(`${LISTING_URL}: not JSON`);
     }
@@ -340,7 +402,15 @@ async function syncCommunity(opts = {}) {
     const version = `${dump.revision}-${dump.sha.slice(0, 7)}`;
     const before = readCommunity(root);
     const identity = clientIdentity(client);
-    if (!opts.force && before && before.manifest.sha === dump.sha && before.manifest.client && before.manifest.client.placementHash && before.manifest.client.placementHash === identity.placementHash && before.manifest.client.lootHash === identity.lootHash) {
+    if (
+      !opts.force &&
+      before &&
+      before.manifest.sha === dump.sha &&
+      before.manifest.client &&
+      before.manifest.client.placementHash &&
+      before.manifest.client.placementHash === identity.placementHash &&
+      before.manifest.client.lootHash === identity.lootHash
+    ) {
       log(`community data is already at ${version} for client data ${client.build}; nothing to do (--force syncs it again)`);
       return { status: 'current', version, dir: before.dir, manifest: before.manifest };
     }
@@ -349,11 +419,15 @@ async function syncCommunity(opts = {}) {
     if (gz.length !== dump.size) throw new D.SyncError(`${dump.name}: got ${gz.length} bytes, the listing says ${dump.size}`);
     if (gitBlobSha(gz) !== dump.sha) throw new D.SyncError(`${dump.name}: the file does not match the git sha ${dump.sha} the listing gives`);
     let sql;
-    try { sql = zlib.gunzipSync(gz, { maxOutputLength: MAX_SQL_BYTES }).toString('utf8'); } catch (e) {
+    try {
+      sql = zlib.gunzipSync(gz, { maxOutputLength: MAX_SQL_BYTES }).toString('utf8');
+    } catch (e) {
       throw new D.SyncError(`${dump.name}: cannot be unpacked within ${MAX_SQL_BYTES} bytes (${e.code || e.message})`);
     }
     let converted;
-    try { converted = convert(sql, client); } catch (e) {
+    try {
+      converted = convert(sql, client);
+    } catch (e) {
       if (e instanceof S.DumpError) throw new D.SyncError(`${dump.name}: ${e.message}`);
       throw e;
     }
@@ -400,4 +474,23 @@ async function syncCommunity(opts = {}) {
   }
 }
 
-module.exports = { FLAVOR, SOURCE, SHAPE, placementHash, clientIdentity, finishSpawns, sharedMaps, LISTING_URL, ENTITIES, MAX_SPAWNS, LICENSE_NOTE, communityRoot, readCommunity, openCommunity, gitBlobSha, pickDump, convert, syncCommunity };
+module.exports = {
+  FLAVOR,
+  SOURCE,
+  SHAPE,
+  placementHash,
+  clientIdentity,
+  finishSpawns,
+  sharedMaps,
+  LISTING_URL,
+  ENTITIES,
+  MAX_SPAWNS,
+  LICENSE_NOTE,
+  communityRoot,
+  readCommunity,
+  openCommunity,
+  gitBlobSha,
+  pickDump,
+  convert,
+  syncCommunity,
+};

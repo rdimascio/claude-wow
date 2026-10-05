@@ -26,7 +26,11 @@ function stateDir() {
 }
 
 function loadSession(id) {
-  try { return JSON.parse(fs.readFileSync(path.join(stateDir(), `${id}.json`), 'utf8')); } catch { return null; }
+  try {
+    return JSON.parse(fs.readFileSync(path.join(stateDir(), `${id}.json`), 'utf8'));
+  } catch {
+    return null;
+  }
 }
 
 function saveSession(s) {
@@ -49,8 +53,13 @@ function turnUsage(turn) {
 }
 
 function priceOf(u) {
-  return (u.input_tokens * RATES.input + u.output_tokens * RATES.output
-    + u.cache_read_input_tokens * RATES.cacheRead + u.cache_creation_input_tokens * RATES.cacheWrite) / 1e6;
+  return (
+    (u.input_tokens * RATES.input +
+      u.output_tokens * RATES.output +
+      u.cache_read_input_tokens * RATES.cacheRead +
+      u.cache_creation_input_tokens * RATES.cacheWrite) /
+    1e6
+  );
 }
 
 function addUsage(total, u) {
@@ -77,7 +86,9 @@ function readStdin() {
     let data = '';
     if (process.stdin.isTTY) return resolve('');
     process.stdin.setEncoding('utf8');
-    process.stdin.on('data', c => { data += c; });
+    process.stdin.on('data', c => {
+      data += c;
+    });
     process.stdin.on('end', () => resolve(data));
   });
 }
@@ -87,7 +98,14 @@ function promptText(raw) {
   try {
     const msg = JSON.parse(line);
     const content = msg && msg.message && msg.message.content;
-    if (Array.isArray(content)) return { text: content.filter(c => c.type === 'text').map(c => c.text).join('\n'), images: content.filter(c => c.type === 'image').length };
+    if (Array.isArray(content))
+      return {
+        text: content
+          .filter(c => c.type === 'text')
+          .map(c => c.text)
+          .join('\n'),
+        images: content.filter(c => c.type === 'image').length,
+      };
   } catch {}
   return { text: raw, images: 0 };
 }
@@ -113,8 +131,12 @@ function bashRefusal(command, argv, stuck) {
   if (argList(argv, '--disallowedTools').includes('Bash')) return 'Permission to use Bash has been denied.';
   const rules = argList(argv, '--allowedTools');
   const dirs = stuck ? [process.cwd()] : [process.cwd(), ...argList(argv, '--add-dir')];
-  const outside = String(command).split(/\s+/).slice(1).find(a => path.isAbsolute(a) && !insideAny(a, dirs));
-  if (outside) return `${word} in '${outside}' needs approval. The path is outside the working directories for this session ('${process.cwd()}'). Allowing runs the command as written.`;
+  const outside = String(command)
+    .split(/\s+/)
+    .slice(1)
+    .find(a => path.isAbsolute(a) && !insideAny(a, dirs));
+  if (outside)
+    return `${word} in '${outside}' needs approval. The path is outside the working directories for this session ('${process.cwd()}'). Allowing runs the command as written.`;
   const autoEdit = arg(argv, '--permission-mode') === 'acceptEdits' && ACCEPT_EDITS_COMMANDS.has(word);
   if (!autoEdit && !rules.includes(`Bash(${word}:*)`)) return 'This command requires approval';
   return '';
@@ -122,26 +144,46 @@ function bashRefusal(command, argv, stuck) {
 
 function runBash(session, command, argv) {
   const id = `toolu_fake_${session.turns}`;
-  emit({ type: 'assistant', session_id: session.id, message: { model: MODEL, role: 'assistant', content: [{ type: 'tool_use', id, name: 'Bash', input: { command } }], usage: turnUsage(session.turns) } });
+  emit({
+    type: 'assistant',
+    session_id: session.id,
+    message: { model: MODEL, role: 'assistant', content: [{ type: 'tool_use', id, name: 'Bash', input: { command } }], usage: turnUsage(session.turns) },
+  });
   const refusal = bashRefusal(command, argv, session.stuck);
   if (!refusal) {
-    emit({ type: 'user', session_id: session.id, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, is_error: false, content: '(Bash completed with no output)' }] } });
+    emit({
+      type: 'user',
+      session_id: session.id,
+      message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, is_error: false, content: '(Bash completed with no output)' }] },
+    });
     return null;
   }
   emit({ type: 'system', subtype: 'permission_denied', tool_name: 'Bash', tool_use_id: id, message: refusal, session_id: session.id });
-  emit({ type: 'user', session_id: session.id, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, is_error: true, content: refusal }] } });
+  emit({
+    type: 'user',
+    session_id: session.id,
+    message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, is_error: true, content: refusal }] },
+  });
   return { tool_name: 'Bash', tool_use_id: id, tool_input: { command } };
 }
 
 function mcpConfigOf(argv) {
   const value = arg(argv, '--mcp-config');
   if (!value) return null;
-  try { return JSON.parse(value.trim().startsWith('{') ? value : fs.readFileSync(value, 'utf8')); } catch { return null; }
+  try {
+    return JSON.parse(value.trim().startsWith('{') ? value : fs.readFileSync(value, 'utf8'));
+  } catch {
+    return null;
+  }
 }
 
 function rpcClient(server, opts = {}) {
   const { spawn } = require('child_process');
-  const child = spawn(server.command, server.args || [], { env: { ...process.env, ...(server.env || {}) }, stdio: ['pipe', 'pipe', 'ignore'], detached: !!opts.detached });
+  const child = spawn(server.command, server.args || [], {
+    env: { ...process.env, ...server.env },
+    stdio: ['pipe', 'pipe', 'ignore'],
+    detached: !!opts.detached,
+  });
   const waiting = new Map();
   let buf = '';
   child.on('error', () => {});
@@ -150,40 +192,65 @@ function rpcClient(server, opts = {}) {
     let nl;
     while ((nl = buf.indexOf('\n')) >= 0) {
       let msg = null;
-      try { msg = JSON.parse(buf.slice(0, nl)); } catch {}
+      try {
+        msg = JSON.parse(buf.slice(0, nl));
+      } catch {}
       buf = buf.slice(nl + 1);
-      if (msg && waiting.has(msg.id)) { waiting.get(msg.id)(msg); waiting.delete(msg.id); }
+      if (msg && waiting.has(msg.id)) {
+        waiting.get(msg.id)(msg);
+        waiting.delete(msg.id);
+      }
     }
   });
-  const request = (body, ms = 10000) => new Promise(resolve => {
-    if (body.id !== undefined) {
-      const timer = setTimeout(() => { waiting.delete(body.id); resolve(null); }, ms);
-      waiting.set(body.id, msg => { clearTimeout(timer); resolve(msg); });
-    }
-    child.stdin.write(JSON.stringify({ jsonrpc: '2.0', ...body }) + '\n');
-    if (body.id === undefined) resolve(null);
-  });
+  const request = (body, ms = 10000) =>
+    new Promise(resolve => {
+      if (body.id !== undefined) {
+        const timer = setTimeout(() => {
+          waiting.delete(body.id);
+          resolve(null);
+        }, ms);
+        waiting.set(body.id, msg => {
+          clearTimeout(timer);
+          resolve(msg);
+        });
+      }
+      child.stdin.write(JSON.stringify({ jsonrpc: '2.0', ...body }) + '\n');
+      if (body.id === undefined) resolve(null);
+    });
   return { child, request };
 }
 
 function resultText(msg) {
   const result = msg && msg.result;
-  return { isError: !result || !!result.isError, text: result && Array.isArray(result.content) ? result.content.map(c => c.text || '').join('\n') : 'no answer' };
+  return {
+    isError: !result || !!result.isError,
+    text: result && Array.isArray(result.content) ? result.content.map(c => c.text || '').join('\n') : 'no answer',
+  };
 }
 
 async function holdUntilTerm(spec, argv) {
   const m = /^(\S+)\s+(\S+)\s*(.*)$/.exec(String(spec).trim());
   const server = m ? ((mcpConfigOf(argv) || {}).mcpServers || {})[m[1]] : null;
-  const log = entry => { fs.mkdirSync(stateDir(), { recursive: true }); fs.appendFileSync(path.join(stateDir(), 'term-calls.jsonl'), JSON.stringify(entry) + '\n'); };
-  if (!server) { log({ phase: 'setup', error: 'no server' }); return; }
+  const log = entry => {
+    fs.mkdirSync(stateDir(), { recursive: true });
+    fs.appendFileSync(path.join(stateDir(), 'term-calls.jsonl'), JSON.stringify(entry) + '\n');
+  };
+  if (!server) {
+    log({ phase: 'setup', error: 'no server' });
+    return;
+  }
   let args = {};
-  try { args = m[3] ? JSON.parse(m[3]) : {}; } catch {}
+  try {
+    args = m[3] ? JSON.parse(m[3]) : {};
+  } catch {}
   const c = rpcClient(server, { detached: true });
   await c.request({ id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18' } });
   log({ phase: 'first', ...resultText(await c.request({ id: 2, method: 'tools/call', params: { name: 'goal_list', arguments: {} } })) });
   process.on('SIGTERM', async () => {
     log({ phase: 'term', ...resultText(await c.request({ id: 3, method: 'tools/call', params: { name: m[2], arguments: args } }, 3000)) });
-    try { process.kill(-c.child.pid, 'SIGKILL'); } catch {}
+    try {
+      process.kill(-c.child.pid, 'SIGKILL');
+    } catch {}
     process.exit(0);
   });
   setInterval(() => {}, 1 << 30);
@@ -205,23 +272,34 @@ function mcpRuleAllows(argv, server, tool) {
 function rpcExchange(server, requests) {
   return new Promise(resolve => {
     const { spawn } = require('child_process');
-    const child = spawn(server.command, server.args || [], { env: { ...process.env, ...(server.env || {}) }, stdio: ['pipe', 'pipe', 'ignore'] });
+    const child = spawn(server.command, server.args || [], { env: { ...process.env, ...server.env }, stdio: ['pipe', 'pipe', 'ignore'] });
     const wanted = requests.filter(r => r.id !== undefined).map(r => r.id);
     const got = new Map();
     let buf = '';
-    const done = () => { child.kill(); resolve(got); };
+    const done = () => {
+      child.kill();
+      resolve(got);
+    };
     const timer = setTimeout(done, 20000);
-    child.on('error', () => { clearTimeout(timer); resolve(got); });
+    child.on('error', () => {
+      clearTimeout(timer);
+      resolve(got);
+    });
     child.stdout.on('data', chunk => {
       buf += chunk.toString('utf8');
       let nl;
       while ((nl = buf.indexOf('\n')) >= 0) {
         let msg = null;
-        try { msg = JSON.parse(buf.slice(0, nl)); } catch {}
+        try {
+          msg = JSON.parse(buf.slice(0, nl));
+        } catch {}
         buf = buf.slice(nl + 1);
         if (msg && msg.id !== undefined) got.set(msg.id, msg);
       }
-      if (wanted.every(id => got.has(id))) { clearTimeout(timer); done(); }
+      if (wanted.every(id => got.has(id))) {
+        clearTimeout(timer);
+        done();
+      }
     });
     for (const r of requests) child.stdin.write(JSON.stringify({ jsonrpc: '2.0', ...r }) + '\n');
   });
@@ -234,11 +312,23 @@ async function runMcpCall(session, spec, argv) {
   const full = `mcp__${name}__${tool}`;
   const id = `toolu_mcp_${session.turns}`;
   let args = {};
-  try { args = rawArgs ? JSON.parse(rawArgs) : {}; } catch { return { text: `mcp-call arguments are not JSON: ${rawArgs}` }; }
-  emit({ type: 'assistant', session_id: session.id, message: { model: MODEL, role: 'assistant', content: [{ type: 'tool_use', id, name: full, input: args }], usage: turnUsage(session.turns) } });
+  try {
+    args = rawArgs ? JSON.parse(rawArgs) : {};
+  } catch {
+    return { text: `mcp-call arguments are not JSON: ${rawArgs}` };
+  }
+  emit({
+    type: 'assistant',
+    session_id: session.id,
+    message: { model: MODEL, role: 'assistant', content: [{ type: 'tool_use', id, name: full, input: args }], usage: turnUsage(session.turns) },
+  });
   if (!mcpRuleAllows(argv, name, tool)) {
     const refusal = `Claude requested permissions to use ${full}, but you haven't granted it yet.`;
-    emit({ type: 'user', session_id: session.id, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, is_error: true, content: refusal }] } });
+    emit({
+      type: 'user',
+      session_id: session.id,
+      message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, is_error: true, content: refusal }] },
+    });
     return { text: `mcp ${tool} denied`, denial: { tool_name: full, tool_use_id: id, tool_input: args } };
   }
   let server = null;
@@ -251,21 +341,37 @@ async function runMcpCall(session, spec, argv) {
   ]);
   const res = got.get(2);
   const result = res && res.result;
-  const text = result && Array.isArray(result.content) ? result.content.map(c => c.text || '').join('\n') : `no answer (${res && res.error ? res.error.message : 'the server said nothing'})`;
+  const text =
+    result && Array.isArray(result.content)
+      ? result.content.map(c => c.text || '').join('\n')
+      : `no answer (${res && res.error ? res.error.message : 'the server said nothing'})`;
   const isError = !result || !!result.isError;
-  emit({ type: 'user', session_id: session.id, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, is_error: isError, content: text }] } });
+  emit({
+    type: 'user',
+    session_id: session.id,
+    message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, is_error: isError, content: text }] },
+  });
   return { text: `mcp ${tool} ${isError ? 'error' : 'ok'}: ${text}` };
 }
 
 function lastUserLine(text) {
-  const lines = String(text).split('\n').map(l => l.trim()).filter(Boolean);
+  const lines = String(text)
+    .split('\n')
+    .map(l => l.trim())
+    .filter(Boolean);
   return lines[lines.length - 1] || '';
 }
 
 async function main() {
   const argv = process.argv.slice(2);
-  if (argv.includes('--version')) { console.log('0.0.0 (claude-wow fake)'); return; }
-  if (argv.includes('--no-session-persistence')) { console.log('Fake Chat Title'); return; }
+  if (argv.includes('--version')) {
+    console.log('0.0.0 (claude-wow fake)');
+    return;
+  }
+  if (argv.includes('--no-session-persistence')) {
+    console.log('Fake Chat Title');
+    return;
+  }
   const raw = await readStdin();
   const { text, images } = promptText(raw);
   const d = directives(text);
@@ -274,7 +380,19 @@ async function main() {
   const prior = resume ? loadSession(resume) : null;
   const session = prior || { id: resume || crypto.randomUUID(), turns: 0, total: {}, created: Date.now() };
   session.turns += 1;
-  recordCall({ at: new Date().toISOString(), session: session.id, turn: session.turns, resume: resume || null, images, directives: d, prompt: String(text).slice(0, 4000), argv, mcpConfig: mcpConfigOf(argv), cwd: process.cwd(), pid: process.pid });
+  recordCall({
+    at: new Date().toISOString(),
+    session: session.id,
+    turn: session.turns,
+    resume: resume || null,
+    images,
+    directives: d,
+    prompt: String(text).slice(0, 4000),
+    argv,
+    mcpConfig: mcpConfigOf(argv),
+    cwd: process.cwd(),
+    pid: process.pid,
+  });
 
   if (d.auth) {
     emit({ type: 'result', subtype: 'success', is_error: true, result: 'Invalid API key · Please run /login', session_id: session.id });
@@ -282,45 +400,91 @@ async function main() {
   }
   if (d['no-result']) process.exit(Number(d['no-result']) || 1);
   emit({ type: 'system', subtype: 'init', session_id: session.id, model: MODEL, cwd: process.cwd(), tools: [], mcp_servers: mcpServers(argv, d['mcp-fail']) });
-  if (d.crash) { process.stderr.write('fake-claude: crashing on request\n'); process.exit(Number(d.crash) || 3); }
+  if (d.crash) {
+    process.stderr.write('fake-claude: crashing on request\n');
+    process.exit(Number(d.crash) || 3);
+  }
   if (typeof d['mcp-term'] === 'string') await holdUntilTerm(d['mcp-term'], argv);
-  if (d.hang) { setInterval(() => {}, 1 << 30); await new Promise(() => {}); }
+  if (d.hang) {
+    setInterval(() => {}, 1 << 30);
+    await new Promise(() => {});
+  }
 
-  if (typeof d.think === 'string') emit({ type: 'assistant', session_id: session.id, message: { model: MODEL, role: 'assistant', content: [{ type: 'text', text: d.think }], usage: turnUsage(session.turns) } });
+  if (typeof d.think === 'string')
+    emit({
+      type: 'assistant',
+      session_id: session.id,
+      message: { model: MODEL, role: 'assistant', content: [{ type: 'text', text: d.think }], usage: turnUsage(session.turns) },
+    });
   const tools = Number(d.tools) || 0;
   const pause = Number(d.sleep) || 0;
   for (let i = 1; i <= tools; i++) {
-    emit({ type: 'assistant', session_id: session.id, message: { model: MODEL, role: 'assistant', content: [{ type: 'tool_use', id: `tool_${i}`, name: 'Bash', input: { command: `echo step ${i}` } }], usage: turnUsage(session.turns) } });
+    emit({
+      type: 'assistant',
+      session_id: session.id,
+      message: {
+        model: MODEL,
+        role: 'assistant',
+        content: [{ type: 'tool_use', id: `tool_${i}`, name: 'Bash', input: { command: `echo step ${i}` } }],
+        usage: turnUsage(session.turns),
+      },
+    });
     if (pause) await sleep((pause * 1000) / (tools + 1));
   }
   if (pause) await sleep(tools ? (pause * 1000) / (tools + 1) : pause * 1000);
 
   if (d['rate-limit']) {
-    emit({ type: 'result', subtype: 'success', is_error: true, result: 'Claude AI usage limit reached|' + Math.floor(Date.now() / 1000 + 3600), session_id: session.id });
+    emit({
+      type: 'result',
+      subtype: 'success',
+      is_error: true,
+      result: 'Claude AI usage limit reached|' + Math.floor(Date.now() / 1000 + 3600),
+      session_id: session.id,
+    });
     saveSession(session);
     process.exit(1);
   }
   if (d.error) {
-    emit({ type: 'result', subtype: 'error_during_execution', is_error: true, session_id: session.id, ...(d.error === true ? {} : { result: String(d.error) }) });
+    emit({
+      type: 'result',
+      subtype: 'error_during_execution',
+      is_error: true,
+      session_id: session.id,
+      ...(d.error === true ? {} : { result: String(d.error) }),
+    });
     saveSession(session);
     process.exit(1);
   }
 
-  if (typeof d['bash-stuck'] === 'string') { d.bash = d['bash-stuck']; session.stuck = true; }
+  if (typeof d['bash-stuck'] === 'string') {
+    d.bash = d['bash-stuck'];
+    session.stuck = true;
+  }
   const command = typeof d.bash === 'string' ? d.bash : session.pendingBash;
   const denials = [];
   if (command) {
     const denial = runBash(session, command, argv);
-    if (denial) { denials.push(denial); session.pendingBash = command; } else delete session.pendingBash;
+    if (denial) {
+      denials.push(denial);
+      session.pendingBash = command;
+    } else delete session.pendingBash;
   }
 
   if (typeof d['use-tool'] === 'string') {
     const name = d['use-tool'].trim();
     const id = `toolu_use_${session.turns}`;
-    emit({ type: 'assistant', session_id: session.id, message: { model: MODEL, role: 'assistant', content: [{ type: 'tool_use', id, name, input: { path: '.' } }], usage: turnUsage(session.turns) } });
+    emit({
+      type: 'assistant',
+      session_id: session.id,
+      message: { model: MODEL, role: 'assistant', content: [{ type: 'tool_use', id, name, input: { path: '.' } }], usage: turnUsage(session.turns) },
+    });
     if (argList(argv, '--disallowedTools').includes(name)) {
       const refusal = `Permission to use ${name} has been denied.`;
-      emit({ type: 'user', session_id: session.id, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, is_error: true, content: refusal }] } });
+      emit({
+        type: 'user',
+        session_id: session.id,
+        message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, is_error: true, content: refusal }] },
+      });
       denials.push({ tool_name: name, tool_use_id: id, tool_input: { path: '.' } });
     }
   }
@@ -340,11 +504,20 @@ async function main() {
   const body = d.long ? `${reply}\n` + 'lorem ipsum dolor sit amet '.repeat(Number(d.long) || 100) : reply;
   emit({ type: 'assistant', session_id: session.id, message: { model: MODEL, role: 'assistant', content: [{ type: 'text', text: body }], usage: u } });
   emit({
-    type: 'result', subtype: 'success', is_error: false, result: body, session_id: session.id,
-    num_turns: session.turns, usage: u, permission_denials: denials,
+    type: 'result',
+    subtype: 'success',
+    is_error: false,
+    result: body,
+    session_id: session.id,
+    num_turns: session.turns,
+    usage: u,
+    permission_denials: denials,
     modelUsage: { [MODEL]: session.total },
     total_cost_usd: session.total.costUSD,
   });
 }
 
-main().catch(e => { process.stderr.write(String(e && e.stack || e) + '\n'); process.exit(70); });
+main().catch(e => {
+  process.stderr.write(String((e && e.stack) || e) + '\n');
+  process.exit(70);
+});

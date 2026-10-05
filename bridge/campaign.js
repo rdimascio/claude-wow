@@ -51,15 +51,22 @@ function isDmRecord(job) {
 
 function refusalText(r, what, names) {
   switch (r.problem) {
-    case GR.PROBLEM.empty: return `${what} is empty.`;
-    case GR.PROBLEM.length: return `${what} is ${r.length} characters${r.expanded ? ' once its tokens are expanded' : ''}; the limit is ${r.max}.`;
-    case GR.PROBLEM.char: return r.expanded
-      ? `${what}: ${r.token} expands to "${r.name}", which has a character that cannot be shown.`
-      : `${what} has the character U+${r.char.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')}. Allowed: ${NARRATE_CHARS_TEXT}. No links, handles or slash commands.`;
-    case GR.PROBLEM.glued: return `${what}: ${GR.gluedText(r.token)}`;
-    case GR.PROBLEM.words: return `${what} uses words that are not allowed: ${r.words.map(w => `"${w}"`).join(', ')}. Story text may use numbers, everyday words, the character's name (${names.join(', ') || 'none reported yet'}) and reference tokens. No zone, NPC, item or quest names, and no calls to action. ${GR.tokenHint()}`;
-    case GR.PROBLEM.phrases: return `${what} was refused. ${GR.phrasesText(r.phrases, r.phrasesNote)}`;
-    default: return `${what} was refused. ${GR.errorsText(r.errors, r.store)}`;
+    case GR.PROBLEM.empty:
+      return `${what} is empty.`;
+    case GR.PROBLEM.length:
+      return `${what} is ${r.length} characters${r.expanded ? ' once its tokens are expanded' : ''}; the limit is ${r.max}.`;
+    case GR.PROBLEM.char:
+      return r.expanded
+        ? `${what}: ${r.token} expands to "${r.name}", which has a character that cannot be shown.`
+        : `${what} has the character U+${r.char.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')}. Allowed: ${NARRATE_CHARS_TEXT}. No links, handles or slash commands.`;
+    case GR.PROBLEM.glued:
+      return `${what}: ${GR.gluedText(r.token)}`;
+    case GR.PROBLEM.words:
+      return `${what} uses words that are not allowed: ${r.words.map(w => `"${w}"`).join(', ')}. Story text may use numbers, everyday words, the character's name (${names.join(', ') || 'none reported yet'}) and reference tokens. No zone, NPC, item or quest names, and no calls to action. ${GR.tokenHint()}`;
+    case GR.PROBLEM.phrases:
+      return `${what} was refused. ${GR.phrasesText(r.phrases, r.phrasesNote)}`;
+    default:
+      return `${what} was refused. ${GR.errorsText(r.errors, r.store)}`;
   }
 }
 
@@ -93,12 +100,18 @@ function emptyStore(character) {
 
 function readStore(file, character) {
   let raw;
-  try { raw = fs.readFileSync(file, 'utf8'); } catch (e) {
+  try {
+    raw = fs.readFileSync(file, 'utf8');
+  } catch (e) {
     if (e.code === 'ENOENT') return emptyStore(character);
     throw new Error(`cannot read ${file}: ${e.message}`);
   }
   let doc;
-  try { doc = JSON.parse(raw); } catch (e) { throw new Error(`${file} is not valid JSON (${e.message}); fix or move it first`); }
+  try {
+    doc = JSON.parse(raw);
+  } catch (e) {
+    throw new Error(`${file} is not valid JSON (${e.message}); fix or move it first`);
+  }
   if (!doc || doc.v !== STORE_VERSION) throw new Error(`${file} is not a version ${STORE_VERSION} campaign store`);
   const c = doc.campaign;
   if (c !== null && (!c || typeof c !== 'object' || !Array.isArray(c.beats))) throw new Error(`${file} has a damaged campaign; fix or move it first`);
@@ -131,18 +144,26 @@ function checkTrigger(raw, store) {
   if (spec.type === TRIGGER.death || spec.type === TRIGGER.manual) return { ok: true, trigger: { type: spec.type }, refs: [] };
   if (spec.type === TRIGGER.level) {
     const level = wholeNumber(spec.level, 2, LEVEL_LIMIT);
-    return level === null ? fail(`a level trigger needs level, a whole number from 2 to ${LEVEL_LIMIT}.`) : { ok: true, trigger: { type: spec.type, level }, refs: [] };
+    return level === null
+      ? fail(`a level trigger needs level, a whole number from 2 to ${LEVEL_LIMIT}.`)
+      : { ok: true, trigger: { type: spec.type, level }, refs: [] };
   }
   const stop = GR.storeProblem(store);
   if (stop) return fail(`A ${spec.type} trigger is checked against the synced game data. ${GR.errorsText([{ reason: stop }], store)}`);
   if (spec.type === TRIGGER.zone) {
     const mapID = wholeNumber(spec.mapID, 1, Number.MAX_SAFE_INTEGER);
     const row = mapID === null ? null : store.byId('uimaps', mapID);
-    if (!row) return fail(`zone trigger: mapID ${spec.mapID} is not a map in the synced data for the client's build (${store.build}). Look the uiMapID up with the wowdata tools; never use an ID from memory.`);
+    if (!row)
+      return fail(
+        `zone trigger: mapID ${spec.mapID} is not a map in the synced data for the client's build (${store.build}). Look the uiMapID up with the wowdata tools; never use an ID from memory.`,
+      );
     return { ok: true, trigger: { type: spec.type, mapID }, refs: [{ kind: 'map', id: mapID, name: row.name, trust: store.rowTrust, build: store.build }] };
   }
   const questID = wholeNumber(spec.questID, 1, Number.MAX_SAFE_INTEGER);
-  if (questID === null || !store.byId('quests', questID)) return fail(`quest_turnin trigger: questID ${spec.questID} is not a quest in the synced data for the client's build (${store.build}). Look it up with the wowdata tools.`);
+  if (questID === null || !store.byId('quests', questID))
+    return fail(
+      `quest_turnin trigger: questID ${spec.questID} is not a quest in the synced data for the client's build (${store.build}). Look it up with the wowdata tools.`,
+    );
   return { ok: true, trigger: { type: spec.type, questID }, refs: [{ kind: 'quest', id: questID, trust: store.rowTrust, build: store.build }] };
 }
 
@@ -258,10 +279,16 @@ function slotPayload(doc, snap) {
   const title = recheck(beat.title, names, TITLE_MAX);
   if (!title) return { ...out, withheld: `beat ${beat.id} is not shown: its title fails the story text check` };
   const checkedNarration = (beat.narration || []).map(l => recheck(l, names, NARRATION_MAX)).filter(Boolean);
-  const checkedLive = (Array.isArray(c.live) ? c.live : []).map(l => recheck(l && l.text, characterNames(snap).concat((l && l.names) || []), NARRATION_MAX)).filter(Boolean);
+  const checkedLive = (Array.isArray(c.live) ? c.live : [])
+    .map(l => recheck(l && l.text, characterNames(snap).concat((l && l.names) || []), NARRATION_MAX))
+    .filter(Boolean);
   const dropped = (beat.narration || []).length + (c.live || []).length - checkedNarration.length - checkedLive.length;
   const { narration, live } = fitBody(checkedNarration, checkedLive);
-  return { ...out, beat: { id: String(beat.id), title, narration, live }, ...(dropped ? { withheld: `${dropped} line(s) of beat ${beat.id} failed the story text check` } : {}) };
+  return {
+    ...out,
+    beat: { id: String(beat.id), title, narration, live },
+    ...(dropped ? { withheld: `${dropped} line(s) of beat ${beat.id} failed the story text check` } : {}),
+  };
 }
 
 function luaDm(payload, nowSec) {
@@ -270,7 +297,8 @@ function luaDm(payload, nowSec) {
   if (!payload.beat) return `\tdm = { ${head}${manual} },`;
   const narration = [...payload.beat.narration];
   const live = [...payload.beat.live];
-  const render = () => `\tdm = { ${head}${manual}, beat = { id = ${luaStr(payload.beat.id)}, title = ${luaStr(payload.beat.title)}, lines = { ${narration.concat(live).map(luaStr).join(', ')} } } },`;
+  const render = () =>
+    `\tdm = { ${head}${manual}, beat = { id = ${luaStr(payload.beat.id)}, title = ${luaStr(payload.beat.title)}, lines = { ${narration.concat(live).map(luaStr).join(', ')} } } },`;
   let lua = render();
   while (Buffer.byteLength(lua, 'utf8') > SLOT_LUA_MAX_BYTES && (live.length || narration.length > 1)) {
     if (live.length) live.shift();
@@ -309,7 +337,10 @@ function createCampaigns(opts) {
 
   function checkBeatHere(spec, names, data, label) {
     const r = checkBeat(spec, names, data, label);
-    if (r.ok && !telemetryOn && r.beat.trigger.type !== TRIGGER.manual) return fail(`${label}: a ${r.beat.trigger.type} trigger can never fire, because game state telemetry is off in this bridge (telemetry.enabled is false). Use a manual trigger or beat_trigger.`);
+    if (r.ok && !telemetryOn && r.beat.trigger.type !== TRIGGER.manual)
+      return fail(
+        `${label}: a ${r.beat.trigger.type} trigger can never fire, because game state telemetry is off in this bridge (telemetry.enabled is false). Use a manual trigger or beat_trigger.`,
+      );
     return r;
   }
   let cached = { file: '', stamp: '', doc: null };
@@ -324,7 +355,10 @@ function createCampaigns(opts) {
     let opened = false;
     let store = null;
     return () => {
-      if (!opened) { opened = true; store = gameData(snap.text); }
+      if (!opened) {
+        opened = true;
+        store = gameData(snap.text);
+      }
       return store;
     };
   }
@@ -346,7 +380,9 @@ function createCampaigns(opts) {
   }
 
   function standingOf(character) {
-    try { return standing(character) || null; } catch (e) {
+    try {
+      return standing(character) || null;
+    } catch (e) {
       log(`campaign: cannot read where ${character} stands (${e.message})`);
       return null;
     }
@@ -368,7 +404,9 @@ function createCampaigns(opts) {
   function fireFrom(character, edges, { standingToo }) {
     const file = storeFile(root, character);
     let doc;
-    try { doc = readStore(file, character); } catch (e) {
+    try {
+      doc = readStore(file, character);
+    } catch (e) {
       log(`campaign: ${e.message}`);
       return [];
     }
@@ -376,10 +414,21 @@ function createCampaigns(opts) {
     if (!armedBeat(c)) return [];
     const stamp = now();
     let fired = fireMatching(c, edges, stamp, Infinity);
-    if (!fired.length && standingToo) fired = fireMatching(c, standingHappenings(standingOf(character)).map(h => ({ ...h, by: `${h.type} (already there)` })), stamp, 1);
+    if (!fired.length && standingToo)
+      fired = fireMatching(
+        c,
+        standingHappenings(standingOf(character)).map(h => ({ ...h, by: `${h.type} (already there)` })),
+        stamp,
+        1,
+      );
     if (!fired.length) return [];
-    const firedText = c.fired.slice(-fired.length).map(f => `beat ${f.id} fired by ${f.by}`).join(', ');
-    try { save(file, doc, firedText, character); } catch (e) {
+    const firedText = c.fired
+      .slice(-fired.length)
+      .map(f => `beat ${f.id} fired by ${f.by}`)
+      .join(', ');
+    try {
+      save(file, doc, firedText, character);
+    } catch (e) {
       log(`campaign: could not save ${file} (${e.message})`);
       return [];
     }
@@ -395,7 +444,9 @@ function createCampaigns(opts) {
   function manual(character) {
     if (!TL.CHARACTER_KEY_RE.test(String(character || ''))) return { fired: false, text: 'the record names no character' };
     const fired = fireFrom(character, [{ type: TRIGGER.manual }], { standingToo: false });
-    return fired.length ? { fired: true, text: `beat ${fired[0].id} fired` } : { fired: false, text: 'the next beat does not wait for /dm next; nothing fired' };
+    return fired.length
+      ? { fired: true, text: `beat ${fired[0].id} fired` }
+      : { fired: false, text: 'the next beat does not wait for /dm next; nothing fired' };
   }
 
   function startCampaign(doc, args, snap, data, stamp) {
@@ -412,7 +463,9 @@ function createCampaigns(opts) {
       beats.push({ id: `b${i + 1}`, ...r.beat, addedAt: stamp });
     }
     doc.campaign = { id: `c_${doc.rev + 1}`, title: title.text, startedAt: stamp, beats, next: 0, current: null, live: [], fired: [], refs: title.refs };
-    return done(`Started the campaign "${title.text}" with ${beats.length} beat${beats.length === 1 ? '' : 's'}.${beats.length ? ` The first waits for ${TRIGGER_WORDS[beats[0].trigger.type]}.` : ''}`);
+    return done(
+      `Started the campaign "${title.text}" with ${beats.length} beat${beats.length === 1 ? '' : 's'}.${beats.length ? ` The first waits for ${TRIGGER_WORDS[beats[0].trigger.type]}.` : ''}`,
+    );
   }
 
   function addBeat(doc, args, snap, data, stamp) {
@@ -453,7 +506,11 @@ function createCampaigns(opts) {
     const key = snap.character.key;
     const file = storeFile(root, key);
     let doc;
-    try { doc = readStore(file, key); } catch (e) { return fail(e.message); }
+    try {
+      doc = readStore(file, key);
+    } catch (e) {
+      return fail(e.message);
+    }
     const stamp = now();
     if (tool !== TOOL.end) {
       const stale = staleContextText(snap, stamp, tool);
@@ -471,14 +528,20 @@ function createCampaigns(opts) {
     else if (tool === TOOL.trigger) change = triggerBeat(doc, args, stamp);
     else change = narrate(doc, args, snap, data);
     if (!change.ok) return change;
-    try { save(file, doc, tool, key); } catch (e) { return fail(`Could not save ${file}: ${e.message}`); }
+    try {
+      save(file, doc, tool, key);
+    } catch (e) {
+      return fail(`Could not save ${file}: ${e.message}`);
+    }
     if (change.fired !== undefined) noteBeatEvent(key, doc.campaign, change.fired);
     let text = change.text;
     if (tool === TOOL.start || tool === TOOL.add) {
       const already = fireFrom(key, [], { standingToo: true });
       if (already.length) {
         text += ` The character is already there, so beat ${already[0].id} fired now.`;
-        try { doc = readStore(file, key); } catch {}
+        try {
+          doc = readStore(file, key);
+        } catch {}
       }
     }
     return done(`${text}\n${JSON.stringify(campaignView(doc))}`);
@@ -486,7 +549,9 @@ function createCampaigns(opts) {
 
   function storedDoc(file, key) {
     let stat;
-    try { stat = fs.statSync(file); } catch (e) {
+    try {
+      stat = fs.statSync(file);
+    } catch (e) {
       if (e.code === 'ENOENT') return emptyStore(key);
       throw new Error(`cannot read ${file}: ${e.message}`);
     }
@@ -525,7 +590,9 @@ function createBridgeCampaigns({ home, context, onChange, standing, telemetryOn 
     standing,
     telemetryOn,
     gameData: contextText => {
-      try { return GR.openFor(home.data, contextText); } catch (e) {
+      try {
+        return GR.openFor(home.data, contextText);
+      } catch (e) {
         log(`campaign: cannot open the synced game data (${e.message})`);
         return null;
       }
@@ -557,7 +624,13 @@ function beatSchema() {
     type: 'object',
     properties: {
       title: { type: 'string', maxLength: GR.TOKEN_TEXT_MAX, description: `The beat title, at most ${TITLE_MAX} characters after expansion` },
-      narration: { type: 'array', minItems: 1, maxItems: NARRATION_LINES_MAX, items: { type: 'string', maxLength: GR.TOKEN_TEXT_MAX }, description: `1 to ${NARRATION_LINES_MAX} lines, at most ${NARRATION_MAX} characters in all after expansion` },
+      narration: {
+        type: 'array',
+        minItems: 1,
+        maxItems: NARRATION_LINES_MAX,
+        items: { type: 'string', maxLength: GR.TOKEN_TEXT_MAX },
+        description: `1 to ${NARRATION_LINES_MAX} lines, at most ${NARRATION_MAX} characters in all after expansion`,
+      },
       trigger: triggerSchema(),
     },
     required: ['title', 'narration', 'trigger'],
@@ -569,7 +642,11 @@ function toolSchemas() {
     {
       name: TOOL.start,
       description: `Start the one solo campaign for the character the game last reported, with up to ${BEATS_MAX} beats in order (more can be added with ${TOOL.add}). The current beat shows in the in-game DM frame on the next slot the addon reads. ${storyRules()}`,
-      inputSchema: { type: 'object', properties: { title: { type: 'string', maxLength: GR.TOKEN_TEXT_MAX }, beats: { type: 'array', maxItems: BEATS_MAX, items: beatSchema() } }, required: ['title'] },
+      inputSchema: {
+        type: 'object',
+        properties: { title: { type: 'string', maxLength: GR.TOKEN_TEXT_MAX }, beats: { type: 'array', maxItems: BEATS_MAX, items: beatSchema() } },
+        required: ['title'],
+      },
     },
     {
       name: TOOL.end,
@@ -595,7 +672,39 @@ function toolSchemas() {
 }
 
 module.exports = {
-  STORE_VERSION, CAMPAIGN_FILE, BEATS_MAX, NARRATION_LINES_MAX, LIVE_LINES_MAX, NARRATION_MAX, TITLE_MAX, SLOT_LUA_MAX_BYTES, FIRED_MAX, BODY_LINES_MAX, BODY_CHARS_PER_LINE,
-  TRIGGER, TRIGGER_TYPES, TOOL, TOOL_NAMES, WRITE_TOOL_NAMES, MANUAL_KIND, MANUAL_TEXT, AD_WORDS, NARRATE_WORDS, BEAT_EVENT,
-  isDmRecord, contextIsFor, fitBody, checkStory, checkTrigger, happeningsFrom, standingHappenings, slotPayload, luaDm, readStore, storeFile, createCampaigns, createBridgeCampaigns, toolSchemas,
+  STORE_VERSION,
+  CAMPAIGN_FILE,
+  BEATS_MAX,
+  NARRATION_LINES_MAX,
+  LIVE_LINES_MAX,
+  NARRATION_MAX,
+  TITLE_MAX,
+  SLOT_LUA_MAX_BYTES,
+  FIRED_MAX,
+  BODY_LINES_MAX,
+  BODY_CHARS_PER_LINE,
+  TRIGGER,
+  TRIGGER_TYPES,
+  TOOL,
+  TOOL_NAMES,
+  WRITE_TOOL_NAMES,
+  MANUAL_KIND,
+  MANUAL_TEXT,
+  AD_WORDS,
+  NARRATE_WORDS,
+  BEAT_EVENT,
+  isDmRecord,
+  contextIsFor,
+  fitBody,
+  checkStory,
+  checkTrigger,
+  happeningsFrom,
+  standingHappenings,
+  slotPayload,
+  luaDm,
+  readStore,
+  storeFile,
+  createCampaigns,
+  createBridgeCampaigns,
+  toolSchemas,
 };

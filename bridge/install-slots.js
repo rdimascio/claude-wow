@@ -20,7 +20,9 @@ const PRESENCE = cfg.presenceMax || SIG.DEFAULT_PRESENCE_MAX;
 const clients = CLI.clientsOf(cfg);
 
 let state = {};
-try { state = JSON.parse(fs.readFileSync(HOME.state, 'utf8')); } catch {}
+try {
+  state = JSON.parse(fs.readFileSync(HOME.state, 'utf8'));
+} catch {}
 
 if (!clients.length) {
   console.error('config.json names no WoW client (no "clients" and no addonDir); run setup first');
@@ -30,7 +32,11 @@ if (!clients.length) {
 let failed = 0;
 function ensure(file, content, counts, { replaceWhenDifferent = false } = {}) {
   if (fs.existsSync(file)) {
-    if (replaceWhenDifferent && fs.readFileSync(file, 'utf8') !== content) { G.writeFile(file, content); counts.updated++; return; }
+    if (replaceWhenDifferent && fs.readFileSync(file, 'utf8') !== content) {
+      G.writeFile(file, content);
+      counts.updated++;
+      return;
+    }
     counts.kept++;
     return;
   }
@@ -52,35 +58,56 @@ async function install(client) {
   for (let i = 1; i <= N; i++) {
     const name = 'ClaudeWoW_S' + String(i).padStart(3, '0');
     const dir = path.join(addons, name);
-    ensure(path.join(dir, name + '.toc'), [
-      '## Interface: ' + iface,
-      '## Title: Azeroth Companion slot ' + String(i).padStart(3, '0'),
-      '## Notes: Reply slot for Claude WoW. Load-on-demand; leave it enabled.',
-      '## LoadOnDemand: 1',
-      '## Dependencies: ClaudeWoW',
-      '',
-      'Inbox.lua',
-      '',
-    ].join('\n'), counts, { replaceWhenDifferent: true });
+    ensure(
+      path.join(dir, name + '.toc'),
+      [
+        '## Interface: ' + iface,
+        '## Title: Azeroth Companion slot ' + String(i).padStart(3, '0'),
+        '## Notes: Reply slot for Claude WoW. Load-on-demand; leave it enabled.',
+        '## LoadOnDemand: 1',
+        '## Dependencies: ClaudeWoW',
+        '',
+        'Inbox.lua',
+        '',
+      ].join('\n'),
+      counts,
+      { replaceWhenDifferent: true },
+    );
     ensure(path.join(dir, 'Inbox.lua'), 'ClaudeWoW_SlotData = nil\n', counts);
   }
 
   const saved = CLI.legacyStateFor(state, CLI.allClients(cfg), client.key);
-  const runtime = SIG.prepareRuntime(addons, { slots: N, actMax: ACT, presence: saved.presence || null, presenceMax: PRESENCE, tocInterface: iface, removeLegacy: true });
+  const runtime = SIG.prepareRuntime(addons, {
+    slots: N,
+    actMax: ACT,
+    presence: saved.presence || null,
+    presenceMax: PRESENCE,
+    tocInterface: iface,
+    removeLegacy: true,
+  });
   counts.made += runtime.made;
   counts.updated += runtime.updated;
 
   const perms = G.repair(addons);
-  if (perms.fixed) console.log(`${tag}permissions: ${perms.fixed} of ${perms.checked} file(s) and folder(s) under the ClaudeWoW addon folders set to 0777 to match the game install (Battle.net error 2113)`);
+  if (perms.fixed)
+    console.log(
+      `${tag}permissions: ${perms.fixed} of ${perms.checked} file(s) and folder(s) under the ClaudeWoW addon folders set to 0777 to match the game install (Battle.net error 2113)`,
+    );
   for (const f of perms.failed) console.log(`${tag}permissions: could not chmod ${f}`);
-  console.log(`${tag}slots: ${N}  files created: ${counts.made}  updated: ${counts.updated}  already present: ${counts.kept}  signal files armed: ${runtime.armed}  stale signal files removed: ${runtime.cleaned}`);
+  console.log(
+    `${tag}slots: ${N}  files created: ${counts.made}  updated: ${counts.updated}  already present: ${counts.kept}  signal files armed: ${runtime.armed}  stale signal files removed: ${runtime.cleaned}`,
+  );
   console.log(`${tag}runtime: ${SIG.runtimeRoot(addons)}`);
   console.log(`${tag}presence: ring ${runtime.presence.state.ring} at ${runtime.presence.state.at} of ${PRESENCE}, the other ring armed`);
-  if (runtime.legacyRemoved) console.log(`${tag}migrate: removed ${runtime.legacyRemoved} old signal folder(s) from ${path.join(addons, P.ADDON)}; ${SIG.RESTART_NOTE}`);
+  if (runtime.legacyRemoved)
+    console.log(`${tag}migrate: removed ${runtime.legacyRemoved} old signal folder(s) from ${path.join(addons, P.ADDON)}; ${SIG.RESTART_NOTE}`);
   if (counts.made > 0 || counts.updated > 0 || runtime.armed > 0) {
     const running = await CL.clientRunning(client.dir);
     const who = clients.length > 1 ? client.label : 'WoW';
-    if (running === true) console.log(`${tag}restart: ${who} is running now. Fully quit and relaunch it so it sees the new files: the game only sees files that existed when it started.`);
+    if (running === true)
+      console.log(
+        `${tag}restart: ${who} is running now. Fully quit and relaunch it so it sees the new files: the game only sees files that existed when it started.`,
+      );
     else if (running === false) console.log(`${tag}restart: ${who} is not running; it sees the new files at its next launch.`);
     else console.log(`${tag}Now fully quit and relaunch ${who} so it sees the new files: the game only sees files that existed when it started.`);
   }
