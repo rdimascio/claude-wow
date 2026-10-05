@@ -3068,7 +3068,7 @@ test('help: without the Settings API the page goes through Interface Options', (
   assert.equal(vm.evaluate('ClaudeWoWHelpWindow'), null);
 });
 
-test('help: with no options API, or in combat, the page opens in its own closable window', () => {
+test('help: only a client with no options API gets the stand-in window; a registered page always stays with Settings, in combat too', () => {
   const vm = helpVM();
   const before = activeHistory(vm);
   vm.run('SlashCmdList.CLAUDE("help")');
@@ -3081,11 +3081,14 @@ test('help: with no options API, or in combat, the page opens in its own closabl
 
   const fighting = helpVM(SETTINGS_API);
   fighting.run('STUB.combat = true; SlashCmdList.CLAUDE("help")');
-  assert.equal(fighting.num('#STUB.settings.opened'), 0, 'Settings is not opened in combat');
-  assert.equal(fighting.evaluate('ClaudeWoWHelpWindow.shown'), 'true');
-  fighting.run('STUB.combat = false; SlashCmdList.CLAUDE("help")');
-  assert.equal(fighting.evaluate('table.concat(STUB.settings.opened, ",")'), '42');
-  assert.equal(fighting.evaluate('ClaudeWoWHelpWindow.shown'), 'false', 'the stand-in closes when Settings takes the page');
+  assert.equal(fighting.evaluate('table.concat(STUB.settings.opened, ",")'), '42', 'Settings opens in combat');
+  assert.equal(fighting.evaluate('ClaudeWoWHelpWindow'), null, 'no stand-in window in combat');
+  assert.equal(fighting.evaluate('ClaudeWoWHelpPanel.rel'), null, 'the registered canvas is never re-anchored by the addon');
+
+  const failing = helpVM(SETTINGS_API + '\nSettings.OpenToCategory = function() error("blocked") end');
+  failing.run('SlashCmdList.CLAUDE("help")');
+  assert.equal(failing.evaluate('ClaudeWoWHelpWindow'), null, 'a failed open does not steal the canvas either');
+  assert.equal(failing.evaluate('ClaudeWoWHelpPanel.rel'), null);
 });
 
 test('help: a client that has not loaded Help.lua yet says to restart, in the chat frame, not the transcript', () => {
