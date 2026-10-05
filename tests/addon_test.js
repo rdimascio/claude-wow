@@ -1503,7 +1503,7 @@ test('whisper tabs: on by default; the active chat is a tab at login, Enter ther
   assert.equal(vm.evaluate('ChatFrame11Tab.text'), 'Claude', 'a chat with its default name is the agent\'s tab');
   assert.equal(vm.evaluate('ChatFrame11EditBox.attrs.tellTarget'), 'Claude', 'the box whispers the agent');
   assert.equal(vm.evaluate('ChatFrame11.shown'), 'false', 'opened in the dock without stealing the view');
-  assert.ok(tabLines(vm, 11).includes('Type here and press Enter'), 'a welcome line: ' + tabLines(vm, 11));
+  assert.ok(tabLines(vm, 11).includes('Type to talk'), 'a welcome line: ' + tabLines(vm, 11));
   assert.ok(tabLinks(vm, 11).includes(`addon:claudewow:open:${chatId}`), 'with a workspace link');
   assert.equal(vm.evaluate('ClaudeWoWFrame.shown'), 'false', 'the workspace window stays closed');
   assert.equal(vm.evaluate('ClaudeWoWMini.shown'), 'true', 'a fresh install shows the compact bar with the status light');
@@ -2715,9 +2715,10 @@ test('context growth: past the threshold the chat is warned once per crossing, w
   replyWith(vm, 'ctx = 60000, turns = 4, window = 200000, cost = 1.2');
   assert.equal(warnings(), 1, 'the crossing warns');
   const warning = last();
-  for (const must of ['60.0k tokens of 200.0k after 4 turns, past the 50.0k mark', 're-reads all 60.0k tokens', 'costs more than the last', '≈$1.20 so far (a comparison, not a bill)', 'New chat', "AI's memory of this conversation", 'this transcript stays here', '/claude config context 0']) {
+  for (const must of ['60.0k tokens of 200.0k after 4 turns, past the 50.0k mark', 're-reads all of it', 'replies cost more and start slower', 'New chat starts AI fresh', 'this transcript stays here', '/claude config context <n> moves the mark, 0 turns it off']) {
     assert.ok(warning.includes(must), `warning says "${must}": ${warning}`);
   }
+  assert.equal(warning.split('\n').length, 3, 'two sentences and the config hint: ' + warning);
   assert.ok(vm.evaluate('table.concat(STUB.prints, "\\n")').includes('past the 50.0k mark'), 'the warning reached the game chat, where the reply went');
   assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].ctxWarned'), 'true');
   replyWith(vm, 'ctx = 75000, turns = 5, window = 200000');
@@ -2751,6 +2752,17 @@ test('context growth: past the threshold the chat is warned once per crossing, w
   assert.equal(vm.num('ClaudeWoWDB.settings.contextWarn'), 100000);
   vm.run('SlashCmdList.CLAUDE("diag")');
   assert.ok(last().includes('context: warning at 100.0k tokens'), last());
+});
+
+test('context growth: a warning after one turn says "1 turn", not "1 turns"', () => {
+  const vm = newVM();
+  login(vm);
+  connect(vm);
+  vm.run('SlashCmdList.CLAUDE("config context 50k")');
+  replyWith(vm, 'ctx = 60000, turns = 1, window = 200000');
+  const warning = vm.evaluate('(function() for _, m in ipairs(ClaudeWoWDB.chats[1].history) do if m.newChat then return m.text end end end)()');
+  assert.ok(warning.includes('after 1 turn, past the 50.0k mark'), warning);
+  assert.ok(!warning.includes('1 turns'), warning);
 });
 
 const gamePath = rel => 'Interface\\\\AddOns\\\\ClaudeWoW_Runtime\\\\' + rel.split('/').join('\\\\');
@@ -2945,12 +2957,13 @@ test('projects: a chat started by /claude in a whisper tab says general chat, no
   connectIn(vm, '/Users/me/every');
   vm.run('SlashCmdList.CLAUDE("where should i go now")');
   const general = chatTabText(vm, vm.evaluate('ClaudeWoWDB.activeChat'));
-  assert.match(general, / - general chat\. Type here/);
-  assert.doesNotMatch(general, /coding in/);
+  assert.match(general, /, general chat\. Type to talk; .* opens the full window\./);
+  assert.doesNotMatch(general, /\/claude help/, 'the welcome line drops the help clause');
+  assert.doesNotMatch(general, / in every/);
   vm.run('SlashCmdList.CLAUDE("--project every fix the build")');
   const project = chatTabText(vm, vm.evaluate('ClaudeWoWDB.activeChat'));
   assert.match(project, /\nproject: every\n/);
-  assert.match(project, / - coding in every\. Type here/, 'the welcome line names the project the flag set');
+  assert.match(project, / in every\. Type to talk; .* opens the full window\./, 'the welcome line names the project the flag set');
   assert.doesNotMatch(project, /general chat/);
 });
 
@@ -2987,6 +3000,36 @@ test('projects: a chat has none by default; --project, #name and none attach and
 
   vm.run('SlashCmdList.CLAUDE("-c --project none")');
   assert.equal(vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].cwd'), '');
+});
+
+test('projects: the bridge list adds recent projects with repo labels, and one folder spelled with ~ or a trailing slash is listed once', () => {
+  const vm = newVM();
+  login(vm);
+  vm.run('ClaudeWoWDB.settings.projects = { "~/code/every", "/Users/me/code/every/" }');
+  vm.run('STUB.RunTimers()');
+  nextSlot(vm, '{ now = time(), cwd = "/Users/me/code/every", home = "/Users/me", projects = { { path = "/Users/me/code/every", label = "every" }, { path = "/Users/me/wow-ai", label = "claude-wow" }, { path = "/Users/me/every-3", label = "every (every-3)" } }, replies = {} }');
+  vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
+  assert.equal(vm.evaluate('ClaudeWoW.IsConnected()'), 'true');
+
+  vm.run('SlashCmdList.CLAUDE("--project nope hi")');
+  const said = vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history[#ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history].text');
+  assert.match(said, /Known: every, claude-wow, every \(every-3\)\./, 'one every for both spellings, then the bridge list by label: ' + said);
+
+  vm.run('SlashCmdList.CLAUDE("--project claude-wow fix the build")');
+  const rec = stripRecords(vm).find(r => r.text === 'fix the build');
+  assert.equal(rec.cwd, '/Users/me/wow-ai', 'the repo label finds the folder');
+  const tab = vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history[#ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history - 1].text');
+  assert.match(tab, /project: claude-wow/);
+});
+
+test('projects: without a bridge list the picker keeps folder names, and ~ stays as typed until the bridge names its home', () => {
+  const vm = newVM();
+  login(vm);
+  vm.run('ClaudeWoWDB.settings.projects = { "~/code/every", "/Users/me/wow-ai" }');
+  connectIn(vm, '/Users/me/code/every');
+  vm.run('SlashCmdList.CLAUDE("--project nope hi")');
+  const said = vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history[#ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history].text');
+  assert.match(said, /Known: every, wow-ai, every\./, said);
 });
 
 test('the whisper tab and the game chat echo render coding replies the same way: fences skipped, code untouched, links short, cuts on word boundaries', () => {
@@ -3652,4 +3695,179 @@ test('a give-up and a late reply give back the draft typed while waiting, like a
   minutes(vm, 2, 700);
   assert.equal(lastOf(vm, 1, 'assistant'), 'after the cancel');
   assert.equal(vm.evaluate('ClaudeWoWInput:GetText()'), 'typed before the cancel', 'back in the box on a reply the bridge marks late');
+});
+
+function connectWithPlugins(vm, plugins) {
+  vm.run('STUB.RunTimers()');
+  nextSlot(vm, `{ now = time(), cwd = "", plugins = { ${plugins.map(p => JSON.stringify(p)).join(', ')} }, replies = {} }`);
+  vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
+  assert.equal(vm.evaluate('ClaudeWoW.IsConnected()'), 'true');
+}
+
+const lastLine = vm => vm.evaluate('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history].text');
+
+function loadDev(vm, handlerSetup = '') {
+  vm.run(handlerSetup || 'DEV_PREV = 0; local h = function() DEV_PREV = DEV_PREV + 1 end; function geterrorhandler() return DEV_HANDLER or h end; function seterrorhandler(f) DEV_HANDLER = f end');
+  vm.run(fs.readFileSync(path.join(ADDON, 'Dev.lua'), 'utf8'), 'ClaudeWoW', 'addon/Dev.lua');
+}
+
+test('dev commands: refused until the bridge advertises the dev plugin, then sent verbatim as @dev records', () => {
+  const vm = newVM();
+  login(vm);
+  connect(vm);
+  vm.run('SlashCmdList.CLAUDE("dev status")');
+  assert.match(lastLine(vm), /has not said it has dev tools/);
+  assert.equal(stripRecords(vm).filter(r => r.text.startsWith('@dev')).length, 0);
+
+  const vm2 = newVM();
+  login(vm2);
+  connectWithPlugins(vm2, ['ask', 'claude-code', 'dev']);
+  vm2.run('SlashCmdList.CLAUDE("dev status")');
+  const rec = stripRecords(vm2).find(r => r.text === '@dev status');
+  assert.ok(rec, 'the record carries @dev status');
+  assert.ok(!rec.flags.split(';').includes('t'), 'a dev command never asks for a chat title');
+});
+
+test('dev commands: bare dev asks for help, wrong carries its note, bug needs text', () => {
+  const sent = (cmd) => {
+    const vm = newVM();
+    login(vm);
+    connectWithPlugins(vm, ['dev']);
+    vm.run(`SlashCmdList.CLAUDE(${JSON.stringify(cmd)})`);
+    return { vm, texts: stripRecords(vm).map(r => r.text).filter(t => t.startsWith('@dev')) };
+  };
+  assert.deepEqual(sent('dev').texts, ['@dev help']);
+  assert.deepEqual(sent('wrong the drop rate is from retail').texts, ['@dev wrong the drop rate is from retail']);
+  assert.deepEqual(sent('wrong').texts, ['@dev wrong']);
+  const bare = sent('bug');
+  assert.deepEqual(bare.texts, []);
+  assert.match(lastLine(bare.vm), /Say what went wrong/);
+});
+
+test('Dev.lua keeps only Claude WoW errors, counts repeats, keeps 20, and still calls the previous handler', () => {
+  const vm = newVM();
+  login(vm);
+  loadDev(vm);
+  assert.equal(vm.evaluate('ClaudeWoWDev.installed'), 'true');
+  vm.run('DEV_HANDLER("Interface/AddOns/ClaudeWoW/Map.lua:3: boom"); DEV_HANDLER("Interface/AddOns/ClaudeWoW/Map.lua:3: boom"); DEV_HANDLER("Interface/AddOns/OtherAddon/x.lua:1: theirs")');
+  assert.equal(vm.num('DEV_PREV'), 3, 'every error still reaches the handler that was there before');
+  assert.equal(vm.num('#ClaudeWoWDev.errors'), 1);
+  assert.equal(vm.num('ClaudeWoWDev.errors[1].count'), 2);
+  vm.run('for i = 1, 25 do DEV_HANDLER("Interface\\\\AddOns\\\\ClaudeWoW\\\\DM.lua:" .. i .. ": e") end');
+  assert.equal(vm.num('#ClaudeWoWDev.errors'), 20);
+  assert.match(vm.evaluate('ClaudeWoWDev.errors[20].message'), /DM.lua:25/);
+  vm.run('SlashCmdList.CLAUDE("errors")');
+  assert.match(lastLine(vm), /^20 Lua errors from Claude WoW this UI session \(27 in all\)/);
+});
+
+test('Dev.lua without seterrorhandler installs nothing and says so', () => {
+  const vm = newVM();
+  login(vm);
+  loadDev(vm, 'seterrorhandler = nil');
+  assert.equal(vm.evaluate('ClaudeWoWDev.installed'), null);
+  vm.run('SlashCmdList.CLAUDE("errors")');
+  assert.match(lastLine(vm), /this client has no seterrorhandler/);
+});
+
+test('Dev.lua says so when another addon keeps the error handler, and reads BugGrabber then', () => {
+  const vm = newVM();
+  login(vm);
+  loadDev(vm, 'local h = function() end; function geterrorhandler() return h end; function seterrorhandler() end');
+  assert.equal(vm.evaluate('ClaudeWoWDev.installed'), null);
+  assert.equal(vm.evaluate('ClaudeWoWDev.blocked'), 'true');
+  vm.run('SlashCmdList.CLAUDE("errors")');
+  assert.match(lastLine(vm), /another addon keeps the error handler/);
+  vm.run('BugGrabber = { GetDB = function() return { { message = "Interface/AddOns/ClaudeWoW/Orders.lua:7: bad", counter = 3 }, { message = "Interface/AddOns/Other/x.lua:1: no" } } end }');
+  vm.run('SlashCmdList.CLAUDE("errors")');
+  assert.match(lastLine(vm), /^1 Lua error from Claude WoW this UI session, from BugGrabber, newest last:\nx3 ClaudeWoW\/Orders.lua:7: bad/);
+});
+
+test('a dev command waits while the chat has a reply pending, keeps the resume id, the reset and the title', () => {
+  const vm = newVM();
+  login(vm);
+  connectWithPlugins(vm, ['dev']);
+  vm.run('local c = ClaudeWoWDB.chats[1]; c.resumeId = "1111aaaa-0000-4000-8000-000000000001"; c.resetNext = true');
+  vm.run('SlashCmdList.CLAUDE("dev status")');
+  const rec = stripRecords(vm).find(r => r.text === '@dev status');
+  assert.ok(rec);
+  const flags = rec.flags.split(';');
+  assert.ok(!flags.some(f => f.startsWith('resume=') || f.startsWith('live=')), rec.flags);
+  assert.ok(!flags.includes('n'), 'the reset waits for the next agent message');
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].resetNext'), 'true');
+  vm.run('SlashCmdList.CLAUDE("dev diff")');
+  assert.match(lastLine(vm), /still waiting on a reply/);
+  const id = vm.num('ClaudeWoWDB.chats[1].pendingId');
+  const chatId = vm.evaluate('ClaudeWoWDB.chats[1].id');
+  nextSlot(vm, `{ now = time(), cwd = "", plugins = { "dev" }, replies = { { chat = "${chatId}", id = ${id}, status = "done", text = "branch main", plugin = "dev", cwd = "/elsewhere", session = "" } } }`);
+  vm.run('STUB.now = STUB.now + 6; STUB.Tick(); STUB.now = STUB.now + 6; STUB.Tick()');
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].pendingId'), null, 'the dev reply landed');
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].resumeId'), '1111aaaa-0000-4000-8000-000000000001');
+  vm.run('ClaudeWoW.Send("continue the fix")');
+  const next = stripRecords(vm).find(r => r.text === 'continue the fix');
+  assert.ok(next.flags.split(';').includes('resume=1111aaaa-0000-4000-8000-000000000001'), next.flags);
+  assert.ok(next.flags.split(';').includes('n'));
+  assert.ok(next.flags.split(';').includes('t'), 'the first real message still asks for a title');
+});
+
+test('dev errors and bug attach the caught errors under the marker the bridge splits on, within the payload limit', () => {
+  const vm = newVM();
+  login(vm);
+  loadDev(vm);
+  connectWithPlugins(vm, ['dev']);
+  vm.run('for i = 1, 20 do DEV_HANDLER("Interface/AddOns/ClaudeWoW/Window.lua:" .. i .. ": " .. string.rep("x", 200)) end');
+  vm.run('SlashCmdList.CLAUDE("dev errors")');
+  const rec = stripRecords(vm).find(r => r.text.startsWith('@dev errors'));
+  assert.ok(rec);
+  const [head, attached] = rec.text.split('\n--- addon errors ---\n');
+  assert.equal(head, '@dev errors');
+  assert.ok(attached.length <= 1400, `attachment ${attached.length} chars`);
+  assert.match(attached, /Window.lua:20:/, 'the newest error is kept');
+
+  const vm2 = newVM();
+  login(vm2);
+  loadDev(vm2);
+  connectWithPlugins(vm2, ['dev']);
+  vm2.run('DEV_HANDLER("Interface/AddOns/ClaudeWoW/Map.lua:3: boom")');
+  vm2.run('SlashCmdList.CLAUDE("bug the map pins vanish")');
+  const bug = stripRecords(vm2).find(r => r.text.startsWith('@dev bug'));
+  assert.match(bug.text, /^@dev bug the map pins vanish\n--- addon errors ---\naddon .*\nClaudeWoW\/Map.lua:3: boom$/);
+});
+
+test('/claude -r all opens one chat per handed-off session with its recap, skips running and adopted ones, and says how to hand off', () => {
+  const vm = newVM();
+  login(vm);
+  vm.run('STUB.RunTimers()');
+  nextSlot(vm, `{ now = time(), cwd = "", replies = {}, sessions = {
+    { id = "aaaa1111-0000-4000-8000-000000000001", name = "Fix map pins", title = "Fix map pins", cwd = "/repo", agent = "claude", at = 1, handoff = true, branch = "fix/pins", recap = "Last ask: fix pins\\nLast answer: PR 12 is open." },
+    { id = "aaaa1111-0000-4000-8000-000000000002", name = "Cost cap", title = "Cost cap", cwd = "/repo-wt", agent = "claude", at = 2, handoff = true },
+    { id = "aaaa1111-0000-4000-8000-000000000003", name = "Still open", title = "Still open", cwd = "/repo", agent = "claude", at = 3, handoff = true, running = true },
+    { id = "aaaa1111-0000-4000-8000-000000000004", name = "Not handed", cwd = "/repo", agent = "claude", at = 4 },
+  } }`);
+  vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
+  assert.equal(vm.evaluate('ClaudeWoW.IsConnected()'), 'true');
+  const before = vm.num('#ClaudeWoWDB.chats');
+  vm.run('SlashCmdList.CLAUDE("-r all")');
+  assert.equal(vm.num('#ClaudeWoWDB.chats'), before + 2);
+  const byResume = id => `(function() for _, ch in ipairs(ClaudeWoWDB.chats) do if ch.resumeId == "${id}" then return ch end end end)()`;
+  const pins = byResume('aaaa1111-0000-4000-8000-000000000001');
+  const cost = byResume('aaaa1111-0000-4000-8000-000000000002');
+  assert.equal(vm.evaluate(`${pins}.cwd`), '/repo');
+  assert.equal(vm.evaluate(`${pins}.name`), 'Fix map pins');
+  assert.equal(vm.evaluate(`${cost}.cwd`), '/repo-wt');
+  const historyOf = c => vm.evaluate(`(function() local t = {} for _, m in ipairs(${c}.history) do t[#t + 1] = m.text end return table.concat(t, "|") end)()`);
+  assert.match(historyOf(pins), /Last ask: fix pins\nLast answer: PR 12 is open\./);
+  const all = historyOf(pins) + historyOf(cost);
+  assert.match(all, /Opened 2 chats for the handed-off sessions: (Fix map pins, Cost cap|Cost cap, Fix map pins)\./);
+  assert.match(all, /Still running in a terminal, so not opened .*: Still open\./);
+  vm.run('SlashCmdList.CLAUDE("-r all")');
+  assert.equal(vm.num('#ClaudeWoWDB.chats'), before + 2, 'a second -r all opens nothing new');
+  assert.match(vm.evaluate('(function() local c for _, ch in ipairs(ClaudeWoWDB.chats) do if ch.id == ClaudeWoWDB.activeChat then c = ch end end return c.history[#c.history].text end)()'), /2 already had a chat/);
+});
+
+test('/claude -r all with no handed-off session says how to hand off', () => {
+  const vm = newVM();
+  login(vm);
+  connect(vm);
+  vm.run('SlashCmdList.CLAUDE("-r all")');
+  assert.match(vm.evaluate('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history].text'), /No sessions were handed off\. In a terminal, run: claude-wow handoff/);
 });

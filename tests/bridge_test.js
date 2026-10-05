@@ -137,6 +137,13 @@ test('luaTable carries the fallback note when there is one', () => {
   assert.match(lua, /^\ttransportNote = "pixel transport, fallen back to \\"why\\"",$/m);
 });
 
+test('luaTable carries the project list with labels and the home folder, quoted for Lua', () => {
+  assert.ok(!/projects =|home =/.test(P.luaTable('X', [], {})), 'no fields unless given');
+  const lua = P.luaTable('X', [], { projects: [{ path: '/Users/me/wow-ai', label: 'claude-wow' }, { path: '', label: 'skip' }, { path: 'C:\\src\\a "b"', label: '' }], home: '/Users/me' });
+  assert.match(lua, /^\tprojects = \{ \{ path = "\/Users\/me\/wow-ai", label = "claude-wow" \}, \{ path = "C:\\\\src\\\\a \\"b\\"", label = "" \} \},$/m);
+  assert.match(lua, /^\thome = "\/Users\/me",$/m);
+});
+
 test('jobsFromStrip parses the current record format and keeps separators inside text', () => {
   const rec = ['sess', 'chat1', '12', 'realms', 'allow=WebSearch', 'My chat', 'hello\x1Fworld'].join('\x1F');
   const jobs = P.jobsFromStrip(12, rec);
@@ -364,7 +371,7 @@ test('classifyDenial: outside the working folders becomes a folder, anything els
 
   const notes = P.denialNotes('Claude', [outside, plain], []);
   assert.equal(notes.length, 2);
-  assert.match(notes[0], /needed 1 action\(s\)[\s\S]*Bash: curl x/);
+  assert.match(notes[0], /needed 1 action that is not allowed yet[\s\S]*Bash: curl x/);
   assert.match(notes[1], /blocked outside this chat's folders:\n {2}Bash: touch \/tmp\/demo\.txt \(folder \/tmp\)/);
   const again = P.denialNotes('Claude', [], [outside, outside]);
   assert.equal(again.length, 1, 'one line per repeat');

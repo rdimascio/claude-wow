@@ -53,10 +53,13 @@ const R = require('./runtime');  // node, bun, or the compiled binary (tests/run
 const AS = require('./assets');  // the capture scripts and the primer, by path, from a checkout or the binary (tests/assets_test.js)
 const ACH = require('./achievements');
 const SS = require('./sessions');
+const PJ = require('./projects');
 const G = require('./gamefs');
 const SIG = require('./signals');
 const DM = require('./datamcp');
 const GM = require('./goalsmcp');
+const FB = require('./feedback');
+const HO = require('./handoff');
 const FACTORY = require('./factory');
 const GD = require('./gamedata');
 const DSYNC = require('./datasync');
@@ -78,6 +81,7 @@ registry.register(require('./plugins/claude-code'));
 registry.register(require('./plugins/roast'));
 registry.register(require('./plugins/stream'));
 registry.register(require('./plugins/live'));
+registry.register(require('./plugins/dev'));
 const LP = require('./liveproto');
 const T = require('./titles');
 const GOALS = require('./goals');
@@ -309,6 +313,7 @@ function noteMessage(job, role, text) {
   if (job.client) c.client = job.client;
   const m = { role, text: String(text ?? '').slice(0, 4000), id: job.id, t: Math.floor(Date.now() / 1000) };
   if (role === 'assistant' && job.agent) m.agent = job.agent;
+  if (job.plugin) m.plugin = job.plugin;
   c.messages.push(m);
   while (c.messages.length > 200) c.messages.shift();
   c.updated = Date.now();
@@ -367,6 +372,8 @@ function forgetChat(job) {
   if (state.sessionPlugin) delete state.sessionPlugin[sessKey(job)];
   if (state.sessionRules) delete state.sessionRules[sessKey(job)];
   if (state.sessionUsage) delete state.sessionUsage[sessKey(job)];
+  if (state.lastRuns) delete state.lastRuns[sessKey(job)];
+  devNotes.delete(chatKey(job));
   if (pendingRestore) pendingRestore.chats = pendingRestore.chats.filter(c => c.id !== job.chat);
   saveTranscripts();
   log(`#${job.id}${job.session ? '@' + job.session : ''} forgot chat ${job.chat}${had ? '' : ' (nothing stored)'}`);
@@ -591,7 +598,7 @@ function sharedSlotFields(urgent) {
   if (TELEMETRY_ON) {
     try { gsLua = telemetry.luaGs(); } catch (e) { log(`telemetry: slot field gs left out (${e && e.message ? e.message : e})`); }
   }
-  return { live: liveInfo, sessions: sessionList(), cwd: DEFAULT_CWD, agent: DEFAULT_AGENT, agents: A.agentIds(), plugin: DEFAULT_PLUGIN, plugins: registry.ids(), map, widgets, transport: TRANSPORT, levels: LEVELS, codec: STRIP_CODEC, transportNote, achievementsLua, goalsLua, dmLua, gsLua, bridge: BRIDGE_INFO };
+  return { live: liveInfo, sessions: sessionList(), projects: projectList(), home: os.homedir(), cwd: DEFAULT_CWD, agent: DEFAULT_AGENT, agents: A.agentIds(), plugin: DEFAULT_PLUGIN, plugins: registry.ids(), map, widgets, transport: TRANSPORT, levels: LEVELS, codec: STRIP_CODEC, transportNote, achievementsLua, goalsLua, dmLua, gsLua, bridge: BRIDGE_INFO };
 }
 
 function slotFile(globalName, records, shared, client) {
@@ -610,11 +617,54 @@ function recentClaudeSessions() {
   return claudeSessionsCache.list;
 }
 
+const PROJECTS_TTL_MS = 30000;
+let projectsCache = { at: 0, list: [] };
+
+function projectList() {
+  if (Date.now() - projectsCache.at <= PROJECTS_TTL_MS) return projectsCache.list;
+  const chats = Object.values(transcripts.chats)
+    .filter(c => c.cwd && registry.normalize(c.plugin) === 'claude-code')
+    .map(c => ({ cwd: c.cwd, at: c.updated }));
+  let recent = [];
+  if (cfg.claudeSessions !== false) {
+    try { recent = PJ.recentClaudeProjects(CLAUDE_DIR); } catch (e) { log(`projects: cannot read ${CLAUDE_DIR} (${e.message})`); }
+  }
+  const askDir = registry.get('ask').scratchFolder(pluginsCfg.ask);
+  let list = [];
+  try { list = PJ.knownProjects({ defaultCwd: DEFAULT_CWD, chats, recent, exclude: [HOME.dir, askDir] }); } catch (e) { log(`projects: cannot list (${e.message})`); }
+  projectsCache = { at: Date.now(), list };
+  return list;
+}
+
+const HANDOFF_CHECK_MS = 15000;
+let handoffCache = { key: '', handoff: null, checkedAt: 0, entries: [] };
+function handoffEntries(now = Date.now()) {
+  let st;
+  try { st = fs.statSync(path.join(HOME.dir, HO.FILE_NAME)); } catch { return []; }
+  const key = `${st.mtimeMs}:${st.size}:${st.ino}`;
+  if (key !== handoffCache.key) {
+    let handoff = null;
+    try { handoff = HO.readHandoff(HOME.dir, now); } catch (e) { log(`handoff: cannot read ${HO.FILE_NAME} (${e.message})`); }
+    if (handoff && handoff.claudeDir && path.resolve(handoff.claudeDir) !== path.resolve(CLAUDE_DIR)) {
+      log(`handoff: ${HO.FILE_NAME} lists sessions from ${handoff.claudeDir}, but this bridge resumes sessions from ${CLAUDE_DIR}; set claudeDir in config.json or CLAUDE_CONFIG_DIR so they match`);
+    }
+    handoffCache = { key, handoff, checkedAt: 0, entries: [] };
+  }
+  const h = handoffCache.handoff;
+  if (!h || now - h.at > HO.FRESH_MS) return [];
+  if (now - handoffCache.checkedAt >= HANDOFF_CHECK_MS) {
+    try { handoffCache.entries = HO.slotEntries(h, { running: s => HO.stillRunning(s) }); }
+    catch (e) { log(`handoff: ${e.message}`); handoffCache.entries = []; }
+    handoffCache.checkedAt = now;
+  }
+  return handoffCache.entries;
+}
+
 function sessionList() {
   const lp = livePlugin();
   const live = lp && typeof lp.sessions === 'function' ? lp.sessions() : [];
   const merged = SS.mergeSessions({ live, own: SS.ownSessions(state, transcripts), claude: recentClaudeSessions(), limit: SESSION_LIST_MAX });
-  return merged.map(s => ({ ...s, branch: SS.gitBranch(s.cwd) }));
+  return HO.withHandoff(merged, handoffEntries()).map(s => ({ ...s, branch: s.branch || SS.gitBranch(s.cwd) }));
 }
 
 function resolveResume(job) {
@@ -1321,7 +1371,9 @@ function runJob(job) {
     finish(job, 'error', refusal);
     return;
   }
-  if (job.resume && !job.liveTarget) {
+  const early = registry.route(job, { fallback: DEFAULT_PLUGIN });
+  const sessionless = !!(early.plugin && early.plugin.sessionless);
+  if (job.resume && !job.liveTarget && !sessionless) {
     const found = resolveResume(job);
     if (found.error) {
       log(`${tag} resume ${job.resume}: ${found.error.split('\n')[0]}`);
@@ -1383,8 +1435,67 @@ const core = {
   gameData: job => GR.openFor(HOME.data, contextTextFor(job)),
   get runGrants() { return joinedGrants; },
   get factory() { return factory; },
+  get logFile() { return LOG_FILE; },
+  beat: job => beat(job),
+  resolveCwd: job => P.resolveCwd(job.cwd, DEFAULT_CWD),
+  clientOf: job => clientFor(job),
+  get feedback() { return feedbackStore; },
+  lastRun: job => (state.lastRuns && state.lastRuns[sessKey(job)]) || null,
+  lastTurn: (job, replyId) => lastTurn(job, replyId),
+  claimRun: job => {
+    const key = chatKey(job);
+    if (running.has(key)) return false;
+    running.set(key, { job, child: null, startedAt: Date.now() });
+    return true;
+  },
+  runChild: (job, child) => {
+    const cur = running.get(chatKey(job));
+    if (cur && cur.job === job) cur.child = child;
+  },
+  setDevNote: (job, text) => { devNotes.set(chatKey(job), { text: String(text || ''), at: Date.now() }); },
   agentPids: () => [...running.values()].map(r => r.child).concat(T.titleChildren(), factory.children()).filter(Boolean).map(c => c.pid),
 };
+
+const feedbackStore = FB.createStore(HOME.dir);
+const devNotes = new Map();
+const DEV_NOTE_TTL_MS = 30 * 60000;
+const LAST_RUNS_MAX = 30;
+const RUN_TOOLS_KEPT = 12;
+const RUN_TOOL_CHARS = 160;
+const RUN_STDERR_KEPT = 600;
+
+function takeDevNote(job) {
+  const key = chatKey(job);
+  const note = devNotes.get(key);
+  devNotes.delete(key);
+  return note && Date.now() - note.at < DEV_NOTE_TTL_MS ? note.text : '';
+}
+
+function lastTurn(job, replyId) {
+  const c = job.chat && transcripts.chats[job.chat];
+  if (!c) return null;
+  const answers = c.messages.filter(m => m.role === 'assistant' && m.plugin !== 'dev' && (replyId === null || replyId === undefined || m.id === replyId));
+  const answer = answers[answers.length - 1];
+  if (!answer) return null;
+  const asked = c.messages.filter(m => m.role === 'user' && m.id === answer.id).pop();
+  return {
+    id: answer.id,
+    plugin: answer.plugin || c.plugin || '',
+    agent: answer.agent || '',
+    session: (state.sessions && state.sessions[sessKey(job)]) || '',
+    prompt: asked ? asked.text : '',
+    reply: answer.text,
+  };
+}
+
+function noteRun(job, run) {
+  const runs = state.lastRuns = state.lastRuns || {};
+  const key = sessKey(job);
+  delete runs[key];
+  runs[key] = run;
+  const keys = Object.keys(runs);
+  for (const k of keys.slice(0, Math.max(0, keys.length - LAST_RUNS_MAX))) delete runs[k];
+}
 
 const runGrants = GM.createRunGrants({
   call: (tool, args) => core.goals(tool, args),
@@ -1697,7 +1808,8 @@ function runAgent(job, opts = {}) {
   const ctx = gameContext(job);
   const system = P.systemPrompt(ctx, primer(), { tools: pluginTools, surfaces: plugin.surfaces, voice: plugin.voice });
   const systemShort = P.systemPrompt(ctx, '', { surfaces: plugin.surfaces, voice: plugin.voice });
-  const prompt = P.messagePrompt(job.text, ctx, { image });
+  const devNote = takeDevNote(job);
+  const prompt = P.messagePrompt(devNote ? `${devNote}\n\n${job.text}` : job.text, ctx, { image });
   const promptFile = path.join(TMP_DIR, `prompt-${job.id}-${Date.now().toString(36)}.txt`);
   const input = agent.input({ prompt, system, systemShort, resume, cfg: acfg, images });
   if (input.promptFile !== undefined) {
@@ -1759,6 +1871,7 @@ function runAgent(job, opts = {}) {
   const parser = agent.parser({ cwd, granted, isDir: isDirectory, neverOffer: [...IN_GAME_NEVER_GRANTED, ...(acfg.deniedTools || [])], neverOfferIf: neverOffered(acfg.deniedTools || []) });
   job.activity = ACH.createRunLog(agentId);
   const progress = [];
+  const toolTrail = [];
   let sessionId = resume || '';
   let result = null;       // { text, error } once the agent has produced its reply
   let usage = null;        // the last { context, output, window? } the parser saw (agents.js)
@@ -1774,6 +1887,8 @@ function runAgent(job, opts = {}) {
   const pushProgress = (line) => {
     progress.push(line);
     while (progress.length > 10) progress.shift();
+    toolTrail.push(String(line).slice(0, RUN_TOOL_CHARS));
+    while (toolTrail.length > RUN_TOOLS_KEPT) toolTrail.shift();
     beat(job);
     publish(key, { chat: job.chat, id: job.id, status: 'working', text: checkedProgress(job, progress.join('\n')), steps, cwd: job.cwd, session: sessionId, agent: agentId, plugin: plugin.id, client: job.client }, false);
   };
@@ -1906,6 +2021,14 @@ function runAgent(job, opts = {}) {
     }
     if (deniedAgain.size) log(`${tag} blocked again on ${[...deniedAgain].join(', ')} although already allowed: not offered again`);
     const extra = notes.length ? `\n\n[bridge] ${notes.join('\n\n[bridge] ')}` : '';
+    const usageNow = P.usageFields(job.usage);
+    noteRun(job, {
+      at: Date.now(), ms: Date.now() - startedAt, code,
+      status: result && !result.error ? 'done' : result ? 'error' : job.cancelled ? 'cancelled' : job.timedOut ? 'timed out' : shuttingDown ? 'bridge stopped' : 'no result',
+      agent: agentId, model: acfg.model || '', effort: acfg.effort || '', cwd, session: sessionId, resumed: !!resume,
+      steps, tools: [...toolTrail], denied: [...denied], stderr: stderr.trim().slice(-RUN_STDERR_KEPT),
+      turns: usageNow.turns, ctx: usageNow.ctx, cost: usageNow.cost,
+    });
     if (result && !result.error) {
       const body = String(result.text || '').trim() || (notes.length ? '' : `(${agent.name} finished without a reply)`);
       finish(job, 'done', (body + extra).trim(), sessionId, [...denied]);
@@ -2025,8 +2148,11 @@ function finish(job, status, text, session, denied) {
   }
   job.finished = true;
   lastActivityAt = Date.now();
-  running.delete(chatKey(job));
-  if (state.inflight) delete state.inflight[chatKey(job)];
+  const owned = running.get(chatKey(job));
+  if (!owned || owned.job === job) {
+    running.delete(chatKey(job));
+    if (state.inflight) delete state.inflight[chatKey(job)];
+  }
   dropHandling(handlingKey(job));
   markHandled(job);
   saveState();
@@ -2329,7 +2455,7 @@ function agentLine(id) {
   if (!cmd.found) return `not found - ${cmd.note}`;
   const where = cmd.args.length ? `${cmd.file} ${cmd.args.join(' ')}` : cmd.file;
   const rules = Array.isArray(acfg.allowedTools) ? acfg.allowedTools.length : 0;
-  return `${where}  [${acfg.permissionMode || 'acceptEdits'}${id === 'codex' ? '' : ', ' + rules + ' allowed tool rules'}${acfg.model ? ', model ' + acfg.model : ''}]`;
+  return `${where}  [${acfg.permissionMode || 'acceptEdits'}${id === 'codex' ? '' : ', ' + rules + ' allowed tool rules'}${acfg.model ? ', model ' + acfg.model : ''}${id === 'claude' && A.costCap(acfg.maxCostUsd) !== null ? ', cost cap $' + acfg.maxCostUsd + ' per message' : ''}]`;
 }
 
 function banner() {
@@ -2391,6 +2517,10 @@ function startSelfUpdate() {
 }
 
 banner();
+for (const id of A.agentIds()) {
+  const note = A.costCapNote(id, A.agentConfig(cfg, id));
+  if (note) log(note);
+}
 if (!once) startPlugins();
 if (inject !== null) {
   const job = { id: state.lastId + 1, session: '', chat: '', text: inject, cwd: '', newSession: false, via: 'inject', agent: injectAgent || '', client: defaultClient() ? defaultClient().key : '' };

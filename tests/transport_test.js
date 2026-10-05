@@ -170,3 +170,25 @@ test('a report the bridge cannot use (an unknown reason) changes nothing, and a 
   assert.ok(!/transportNote/.test(lua));
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test('agents.claude.maxCostUsd end to end: the run gets --max-budget-usd, a key the agent cannot take is logged, a budget stop is the reply', () => {
+  const dir = scratch('costcap');
+  const { home, saved, project, cfg } = fakeInstall(dir);
+  const argvFile = path.join(dir, 'argv.json');
+  const stop = { type: 'result', subtype: 'error_max_budget_usd', is_error: true, terminal_reason: 'budget_exhausted', errors: ['Reached maximum budget ($0.5)'], session_id: 'sess-1' };
+  fs.writeFileSync(cfg.agents.claude.path, `require('fs').writeFileSync(${JSON.stringify(argvFile)}, JSON.stringify(process.argv.slice(2)));\nprocess.stdout.write(${JSON.stringify(JSON.stringify(stop) + '\n')});\nprocess.exitCode = 1;\n`);
+  fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify({ ...cfg, agents: { claude: { ...cfg.agents.claude, maxCostUsd: 0.5 }, codex: { maxCostUsd: 2 } } }));
+  fs.writeFileSync(saved, outbox(9, 'ping', ''));
+  const r = runOnce(home, project);
+  assert.equal(r.status, 0, r.out);
+  assert.match(r.out, /Codex has no cost cap, so agents\.codex\.maxCostUsd is ignored\./, r.out);
+  assert.ok(!/agents\.claude\.maxCostUsd/.test(r.out), 'a valid cap is not logged as a problem');
+  assert.match(r.out, /^ {2}claude {3}: .*, cost cap \$0\.5 per message\]$/m, r.out);
+  const argv = JSON.parse(fs.readFileSync(argvFile, 'utf8'));
+  assert.equal(argv[argv.indexOf('--max-budget-usd') + 1], '0.5');
+  assert.match(r.out, /#9@sess1 done \(/, r.out);
+  const transcript = fs.readFileSync(path.join(home, 'transcripts.json'), 'utf8');
+  assert.ok(transcript.includes('"Stopped: this message hit the $0.50 cost cap."'), transcript);
+  assert.ok(!transcript.includes('Bridge error'), 'the player set the cap, so the reply is not a bridge error');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
