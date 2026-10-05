@@ -1034,7 +1034,7 @@ function publishClient(r, records, shared) {
   } catch (e) {
     if (!r.warnedNoAddon) {
       r.warnedNoAddon = true;
-      log(`publish: cannot write ${c.inboxFile} (${e.code || e.message}); addon not installed in ${c.label}? run: node setup.js, then restart WoW`);
+      log(G.publishFailureNote(c.inboxFile, c.label, e));
     }
     return false;
   }
