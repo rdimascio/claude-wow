@@ -1067,7 +1067,7 @@ test("an empty, unfocused input shows a hint naming the chat's agent; typing or 
     'it sits on the input background, not on the scrolling edit box',
   );
   assert.equal(vm.evaluate(`${hint}.shown`), 'true');
-  assert.equal(vm.evaluate(`${hint}:GetText()`), 'Message Claude. Enter sends; /claude help lists commands.');
+  assert.equal(vm.evaluate(`${hint}:GetText()`), 'Message Claude', 'a short hint that fits the box');
   assert.equal(vm.evaluate('type(ClaudeWoWInput.scripts.OnTextChanged)'), 'function', 'the scrolling text handler is kept');
 
   vm.run('ClaudeWoWInput:SetText("hi")');
@@ -1087,5 +1087,93 @@ test("an empty, unfocused input shows a hint naming the chat's agent; typing or 
   vm.run(
     'ClaudeWoW.NewChat(); ClaudeWoWDB.chats[2].agent = "codex"; ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[2].id); ClaudeWoWInput:ClearFocus(); ClaudeWoW.Render()',
   );
-  assert.equal(vm.evaluate(`${hint}:GetText()`), 'Message Codex. Enter sends; /claude help lists commands.', 'the name follows the chat');
+  assert.equal(vm.evaluate(`${hint}:GetText()`), 'Message Codex', 'the name follows the chat');
+});
+
+test('the input box, Send and New chat sit on one footer line, as 22 px Blizzard buttons, and Send names its key and the help command on hover', () => {
+  const vm = nativeVM();
+  const box = 'ClaudeWoWInputScroll.parent';
+  const anchor = f => vm.evaluate(`(function() local f = ${f} return f.point .. "," .. f.relPoint .. "," .. f.x .. "," .. f.y end)()`);
+  for (const b of ['ClaudeWoW.UI.send', 'ClaudeWoW.UI.connect', 'ClaudeWoW.UI.newChat']) {
+    assert.equal(vm.num(`${b}:GetHeight()`), 22, `${b} has the UIPanelButtonTemplate height`);
+    assert.equal(vm.evaluate(`${b}.template`), 'UIPanelButtonTemplate');
+  }
+  for (const b of ['ClaudeWoW.UI.send', 'ClaudeWoW.UI.connect']) {
+    assert.equal(vm.evaluate(`${b}.rel == ${box}`), 'true');
+    assert.equal(anchor(b), 'BOTTOMLEFT,BOTTOMRIGHT,6,0', `${b} sits on the input box's bottom edge, 6 px to its right`);
+  }
+  assert.equal(vm.evaluate(`${box}.rel == ClaudeWoW.UI.listPanel and ClaudeWoW.UI.newChat.rel == ClaudeWoW.UI.listPanel`), 'true');
+  const newChatY = vm.num('ClaudeWoW.UI.newChat.y');
+  assert.equal(
+    anchor(box),
+    `BOTTOMRIGHT,BOTTOMLEFT,${-6 - 84 - 6},${newChatY}`,
+    'the box ends on the same line as New chat, one 6 px gap before Send and one after',
+  );
+  assert.equal(anchor('ClaudeWoW.UI.newChat'), `BOTTOM,BOTTOM,0,${newChatY}`);
+
+  vm.run('ClaudeWoW.UI.send.scripts.OnEnter(ClaudeWoW.UI.send)');
+  assert.equal(vm.evaluate('GameTooltip:GetText()'), 'Send (Enter)');
+  assert.equal(vm.evaluate('table.concat(GameTooltip.lines, "|")'), '/claude help lists commands.');
+  vm.run('ClaudeWoW.UI.send.scripts.OnLeave(ClaudeWoW.UI.send)');
+  assert.equal(vm.evaluate('GameTooltip.shown'), 'false');
+});
+
+test('a chat row with no preview line keeps the same spacing before the next row as one with a preview line', () => {
+  const vm = nativeVM();
+  vm.run(`ClaudeWoW.NewChat(); ClaudeWoWDB.chats[4].name = "Chat 4"; ClaudeWoW.SetFolder("~/every-io/every", ClaudeWoWDB.chats[4])
+    table.insert(ClaudeWoWDB.chats[3].history, { role = "user", text = "route please", t = time() + 60 })
+    ClaudeWoW.Render()`);
+  const rows = JSON.parse(
+    vm.evaluate(`(function()
+      local out = {}
+      for _, r in ipairs(ClaudeWoW.UI.questList.rows) do
+        if r.shown then
+          local lines = 0
+          for _, l in ipairs(r.objectives) do if l.text.shown then lines = lines + 1 end end
+          table.insert(out, string.format('{"top":%d,"height":%d,"lines":%d}', -r.y, r.height, lines))
+        end
+      end
+      return "[" .. table.concat(out, ",") .. "]"
+    end)()`),
+  ).sort((a, b) => a.top - b.top);
+  const titleH = 14;
+  const lineH = 14;
+  const textBottom = r => r.top + 8 + titleH + (r.lines > 0 ? 3 + r.lines * lineH + (r.lines - 1) * 2 : 0);
+  const gaps = { bare: [], preview: [] };
+  for (let i = 0; i + 1 < rows.length; i++) {
+    const a = rows[i];
+    const b = rows[i + 1];
+    if (b.top !== a.top + a.height - 3) continue;
+    gaps[a.lines > 0 ? 'preview' : 'bare'].push(b.top + 8 - textBottom(a));
+    assert.ok(b.top + 4 >= a.top + 4 + 20 + 3, 'the next POI disc never touches this one');
+  }
+  assert.ok(gaps.bare.length > 0 && gaps.preview.length > 0, JSON.stringify(rows));
+  assert.ok(Math.min(...gaps.bare) >= Math.max(...gaps.preview), 'no crowding under an empty row: ' + JSON.stringify(gaps));
+  for (const r of rows) assert.ok(r.height >= 4 + 20 + 6, 'a row is never shorter than its POI disc and the bottom padding');
+});
+
+test("beside the world map the window takes the map's top and height, and goes home at its own size when the map closes", () => {
+  const vm = newVM();
+  open(vm);
+  const home = rect(vm);
+  const top = 1080 - 106;
+  vm.run(`WorldMapFrame.rect = { left = 0, right = 610, top = ${top}, bottom = ${top - 438} }; ShowUIPanel(WorldMapFrame)`);
+  settle(vm);
+  assert.deepEqual(rect(vm), { left: 618, right: 618 + 780, top, bottom: top - 438 }, 'top and bottom edges line up with the map, 8 px to its right');
+  assert.equal(vm.evaluate('ClaudeWoWWindow.state.dodged'), 'true');
+  assert.equal(vm.num('ClaudeWoWWindow.Layout().h'), 500, 'the saved size is not touched');
+
+  vm.run('HideUIPanel(WorldMapFrame)');
+  settle(vm);
+  assert.deepEqual(rect(vm), home, 'home again at its own size');
+
+  vm.run('UIParent:SetSize(1300, 1080); ShowUIPanel(WorldMapFrame)');
+  settle(vm);
+  assert.deepEqual(rect(vm), { left: 618, right: 1300, top, bottom: top - 438 }, 'a narrower screen: it narrows to fit beside the map');
+
+  vm.run('HideUIPanel(WorldMapFrame); UIParent:SetSize(1100, 1080); ShowUIPanel(WorldMapFrame)');
+  settle(vm);
+  const r = rect(vm);
+  assert.ok(r.right - r.left >= 560 && !overlaps(r, panelRect(vm, 'WorldMapFrame')), 'no room beside it: it steps aside as for any panel');
+  assert.notEqual(r.top - r.bottom, 438);
 });
