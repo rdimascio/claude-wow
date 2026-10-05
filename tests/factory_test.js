@@ -37,7 +37,7 @@ function rig(opts = {}) {
     dir: path.join(dir, 'home', 'factory'),
     log: l => logs.push(l),
     command: () => (opts.missing ? { found: false, note: 'not here' } : { file: process.execPath, args: [FAKE], found: true }),
-    baseConfig: () => ({ permissionMode: 'acceptEdits', allowedTools: ['WebSearch'], deniedTools: [], effort: 'max', model: 'opus[1m]' }),
+    baseConfig: () => ({ permissionMode: 'acceptEdits', allowedTools: ['WebSearch'], deniedTools: [], effort: 'max', model: 'opus[1m]', maxCostUsd: 0.5 }),
     env: () => ({ ...process.env, CLAUDE_WOW_FAKE_STATE: fakeState }),
     onDone: (run, ctx) => done.push({ run, ctx }),
     spawn: (...a) => { const c = PR.spawnChild(...a); spawned.push(c); return c; },
@@ -115,6 +115,7 @@ test('a dispatch runs the skill as its own claude -p run: prompt on stdin, the s
     assert.equal(argAfter(call.argv, '--permission-mode'), 'acceptEdits');
     assert.ok(call.argv.includes('Bash(gh:*)') && call.argv.includes('WebSearch'));
     assert.ok(!call.argv.includes('--mcp-config'), 'a factory run gets no bridge tools');
+    assert.ok(!call.argv.includes('--max-budget-usd'), 'the chat cost cap does not end a factory run');
     assert.equal(argAfter(call.argv, '--append-system-prompt'), F.RUN_SYSTEM);
     assert.equal(r.done.length, 1, 'the bridge is told once');
     assert.equal(r.done[0].ctx.key, 'chat-1');

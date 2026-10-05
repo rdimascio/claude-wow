@@ -256,6 +256,7 @@ function createFactory({ dir, log = () => {}, command, baseConfig, env, onDone =
       permissionMode: conf.permissionMode || base.permissionMode || 'acceptEdits',
       allowedTools: [...new Set([...(Array.isArray(base.allowedTools) ? base.allowedTools : []), ...conf.allowedTools])],
       addDirs: [],
+      maxCostUsd: undefined,
     };
     const argv = [...cmd.args, ...A.AGENTS.claude.args({ cfg: runCfg, resume: '', system: RUN_SYSTEM, images: [], mcpConfig: '' })];
     let id;
