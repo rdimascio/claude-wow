@@ -2269,6 +2269,8 @@ function startDiscord() {
     .catch(e => log(`discord: could not start (${e && e.message ? e.message : e})`));
 }
 
+let lastLateSeq = 0;
+
 function lateReply(job, raw) {
   lastActivityAt = Date.now();
   if (chatDeletedSince(job)) {
@@ -2278,13 +2280,17 @@ function lateReply(job, raw) {
   const { text, summary } = checkedReply(job, P.splitSummary(String(raw || '')));
   noteMessage(job, 'assistant', text);
   if (discordHub) discordHub.postTo(job.chat, text);
+  lastLateSeq = SW.nextLateSeq(lastLateSeq, Date.now());
+  const base = chatKey(job);
+  SW.trimLate(live, base, SW.LATE_KEPT_PER_CHAT - 1, state.replies && typeof state.replies === 'object' ? state.replies : null);
   publish(
-    `${chatKey(job)}#late`,
+    SW.lateKey(base, lastLateSeq),
     {
       chat: job.chat,
       id: job.id,
       status: 'done',
       late: true,
+      lateSeq: lastLateSeq,
       text,
       summary,
       cwd: job.cwd,
@@ -3186,6 +3192,7 @@ function finish(job, status, text, session, denied) {
   if (!chatDeletedSince(job)) noteMessage(job, status === 'done' ? 'assistant' : 'system', status === 'done' ? shown.text : 'Bridge error: ' + text);
   awardAchievements(job, status);
   const usage = P.usageFields(job.usage);
+  const lateOk = !!job.lateOk && FINAL_STATUSES.has(status);
   publish(
     chatKey(job),
     {
@@ -3200,7 +3207,8 @@ function finish(job, status, text, session, denied) {
       macros,
       agent: job.agent || '',
       plugin: job.plugin || '',
-      lateOk: status === 'error' && !!job.lateOk,
+      lateOk,
+      lateIn: lateOk && Number.isInteger(job.lateIn) && job.lateIn > 0 ? job.lateIn : undefined,
       ...usage,
       client: job.client,
     },
