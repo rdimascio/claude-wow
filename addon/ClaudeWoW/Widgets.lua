@@ -131,6 +131,18 @@ local TEMPLATES = {
 }
 W.TEMPLATES = TEMPLATES
 
+local FRAME_KINDS = {
+	"Frame", "Button", "CheckButton", "Slider", "StatusBar", "ScrollFrame", "EditBox", "Cooldown", "ColorSelect",
+	"MessageFrame", "ScrollingMessageFrame", "SimpleHTML", "Model", "PlayerModel", "DressUpModel", "GameTooltip",
+}
+W.FRAME_KINDS = FRAME_KINDS
+
+local FONT_GETTERS = {
+	"GetFont", "GetTextColor", "GetShadowColor", "GetShadowOffset", "GetJustifyH", "GetJustifyV", "GetSpacing", "GetObjectType",
+}
+
+local REGION_CONSTRUCTORS = { "CreateFontString", "CreateTexture", "CreateMaskTexture", "CreateLine", "CreateAnimationGroup" }
+
 local TOOLTIP_METHODS = {
 	"SetOwner", "ClearLines", "AddLine", "AddDoubleLine", "AddTexture", "SetText", "Show", "Hide", "IsShown", "NumLines",
 	"SetUnit", "SetUnitAura", "SetUnitBuff", "SetUnitDebuff", "SetSpellByID", "SetItemByID", "SetHyperlink",
@@ -152,6 +164,7 @@ local LUA_FUNCTION = NameSet(LUA_FUNCTIONS)
 local GAME_FUNCTION = NameSet(GAME_FUNCTIONS)
 local DATA_TABLE = NameSet(DATA_TABLES)
 local TEMPLATE = NameSet(TEMPLATES)
+local FRAME_KIND = NameSet(FRAME_KINDS)
 local FONT_OBJECT = NameSet(FONT_OBJECTS)
 local UNIT_WRITER_VERB = NameSet(UNIT_WRITER_VERBS)
 
@@ -349,6 +362,15 @@ local function NewMembrane(widget)
 	function special.SetScript(_, real, handler, fn)
 		if type(fn) ~= "function" and fn ~= nil then error("SetScript needs a function or nil", 3) end
 		if real == widget.frame then return SetContainerScripts(real, handler, fn and { fn } or nil) end
+		if handler == "OnEscapePressed" and type(real.SetAutoFocus) == "function" then
+			local scripted = fn and ScriptHandler(fn)
+			local escape = function(self, ...)
+				real:ClearFocus()
+				if scripted then return scripted(self, ...) end
+			end
+			originalOf[escape] = fn
+			return real:SetScript(handler, escape)
+		end
 		return real:SetScript(handler, fn and ScriptHandler(fn) or nil)
 	end
 	function special.HookScript(_, real, handler, fn)
@@ -401,7 +423,15 @@ local function NewMembrane(widget)
 	function special.SetFocus()
 		error("SetFocus is not allowed in a widget: a widget must never take the keyboard", 3)
 	end
-	local CONTAINER_MOUSE_METHODS = { "EnableMouse", "EnableMouseWheel", "SetMouseClickEnabled", "SetMouseMotionEnabled" }
+	for _, name in ipairs(REGION_CONSTRUCTORS) do
+		special[name] = function(_, real, _, ...)
+			return CallExported(real[name], real, nil, MapValues(Import, ...))
+		end
+	end
+	function special.CreateAnimation(_, real, animationType, _, ...)
+		return CallExported(real.CreateAnimation, real, animationType, nil, MapValues(Import, ...))
+	end
+	local CONTAINER_MOUSE_METHODS ={ "EnableMouse", "EnableMouseWheel", "SetMouseClickEnabled", "SetMouseMotionEnabled" }
 	for _, name in ipairs(CONTAINER_MOUSE_METHODS) do
 		special[name] = function(_, real, enable, ...)
 			if real == widget.frame and enable then error(name .. " is not allowed on ui.frame: it covers the whole screen; use it on a child frame", 3) end
@@ -431,6 +461,16 @@ local function NewMembrane(widget)
 			if kind == "function" then return OwnedMethod(key) end
 			if kind == "table" then return ExportObject(value) end
 			return value
+		end,
+		__newindex = function(proxy, key, value)
+			local real = ownedRealOf[proxy]
+			local kind = type(value)
+			local scalar = kind ~= "function" and kind ~= "table" and kind ~= "userdata"
+			if type(key) == "string" and scalar and type(real[key]) ~= "function" then
+				real[key] = value
+			else
+				rawset(proxy, key, value)
+			end
 		end,
 		__metatable = false,
 	}
@@ -467,7 +507,7 @@ local function NewMembrane(widget)
 	end
 
 	function membrane.Font(real)
-		local proxy = membrane.Foreign(real)
+		local proxy = membrane.Foreign(real, FONT_GETTERS)
 		fontRealOf[proxy] = real
 		return proxy
 	end
@@ -496,16 +536,21 @@ end
 
 local function WidgetCreateFrame(widget, membrane)
 	return function(kind, _, parent, template, id)
+		if not FRAME_KIND[kind] then error(tostring(kind) .. " is not an allowed widget frame type: use " .. table.concat(FRAME_KINDS, ", "), 2) end
 		CheckTemplates(template)
 		local frame = CreateFrame(kind, nil, membrane.FrameParent(parent), template, id)
-		if type(frame.SetAutoFocus) == "function" then frame:SetAutoFocus(false) end
+		if type(frame.SetAutoFocus) == "function" then
+			frame:SetAutoFocus(false)
+			frame:SetScript("OnEscapePressed", frame.ClearFocus)
+		end
 		widget.frames[#widget.frames + 1] = frame
 		return membrane.Adopt(frame)
 	end
 end
 
 local function TimerHandle(handle)
-	if type(handle) ~= "table" then return nil end
+	local kind = type(handle)
+	if kind ~= "table" and kind ~= "userdata" then return nil end
 	local methods = {
 		Cancel = function()
 			if handle.Cancel then handle:Cancel() end

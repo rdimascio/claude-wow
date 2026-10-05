@@ -30,6 +30,9 @@ C_UnitAuras = { GetAuraDataByIndex = function(unit, index) if unit == "player" a
 RAID_CLASS_COLORS = { HUNTER = { r = 0.67, g = 0.83, b = 0.45, colorStr = "ffabd473" } }
 GameFontNormal = CreateFrame("Font", "GameFontNormal")
 GameFontNormal.GetObjectType = function() return "Font" end
+function Methods.CreateAnimationGroup(self, name) local g = Methods.CreateFontString(self, name) g.kind = "AnimationGroup" return g end
+function Methods.CreateAnimation(self, kind, name) local a = Methods.CreateFontString(self, name) a.kind = "Animation" return a end
+GameFontNormal.GetFont = function() return "Fonts/FRIZQT__.TTF", 12, "" end
 function GameTooltip.SetOwner(self, owner, anchor) self.owner, self.anchor = owner, anchor end
 C_NamePlate = { GetNamePlates = function()
   local plates = { DEFAULT_CHAT_FRAME.editBox, nested = { chat = DEFAULT_CHAT_FRAME, run = RunScript, count = 2 } }
@@ -75,7 +78,7 @@ function newVM(savedVariables = '') {
   if (savedVariables) run(savedVariables);
   for (const f of ['Codec.lua', 'Inbox.lua', 'ClaudeWoW.lua', 'Map.lua', 'Widgets.lua']) run(fs.readFileSync(path.join(ADDON, f), 'utf8'), 'ClaudeWoW');
   run('STUB.FireEvent("ADDON_LOADED", "ClaudeWoW"); STUB.FireEvent("PLAYER_LOGIN")');
-  return { run, evaluate };
+  return { L, run, evaluate };
 }
 
 const TARGET_METER = [
@@ -198,7 +201,7 @@ test('a saved widget cannot reach code outside the sandbox', () => {
     ['securecall', 'local ui = ...\nsecurecall("Run" .. "Script", "WIDGET_ESCAPED = true")'],
     ['indirect', 'local ui = ...\nlocal name = "secure" .. "call"\n_G[name]("Run" .. "Script", "WIDGET_ESCAPED = true")'],
     ['editbox', 'local ui = ...\nlocal eb = DEFAULT_CHAT_FRAME.editBox\neb:SetText("/run WIDGET_ESCAPED = true")\neb:GetScript("OnEnterPressed")(eb)'],
-    ['unlisted', 'local ui = ...\nlocal abandon = _G["Abandon" .. "Skill"]\nassert(abandon == nil, "AbandonSkill leaked")\nabandon(1)'],
+    ['unlisted', 'local ui = ...\nlocal abandon = _G["Abandon" .. "Skill"]\nabandon(1)'],
     ['namespace', 'local ui = ...\nassert(C_Fake.GetThing() == 7)\nC_Fake["Drop" .. "Thing"]()'],
     ['climber', [
       'local ui = ...',
@@ -220,6 +223,7 @@ test('a saved widget cannot reach code outside the sandbox', () => {
   assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("editbox")'), 'failed');
   assert.match(vm.evaluate('select(2, ClaudeWoWWidgets.Status("editbox"))'), /DEFAULT_CHAT_FRAME/);
   assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("unlisted")'), 'failed');
+  assert.match(vm.evaluate('select(2, ClaudeWoWWidgets.Status("unlisted"))'), /attempt to call a nil value/);
   assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("namespace")'), 'failed');
   assert.match(vm.evaluate('select(2, ClaudeWoWWidgets.Status("namespace"))'), /C_Fake.DropThing is not allowed in a widget/);
   assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("climber")'), 'running', vm.evaluate('select(2, ClaudeWoWWidgets.Status("climber"))'));
@@ -453,4 +457,83 @@ test('a widget can read unit names and raid marks and use tooltip and game font 
   assert.equal(vm.evaluate(`${strings}[1].font == GameTooltipText`), 'true');
   assert.equal(vm.evaluate(`${strings}[2].font == Tooltip_Med`), 'true');
   assert.equal(vm.evaluate(`${strings}[3].font == GameFontHighlightSmall`), 'true');
+});
+
+test('a named font string, texture or animation never replaces a global', () => {
+  const source = [
+    'local ui = ...',
+    'local f = CreateFrame("Frame")',
+    'f:CreateFontString("ClaudeWoWWidgets", "OVERLAY")',
+    'f:CreateTexture("ClaudeWoWDB")',
+    'f:CreateFontString("GameTooltip")',
+    'local group = f:CreateAnimationGroup("UIParent")',
+    'group:CreateAnimation("Alpha", "SlashCmdList")',
+    'ui.db.ok = true',
+  ].join('\n');
+  const vm = newVM(savedWidgets([['names', source]]));
+  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("names")'), 'running', vm.evaluate('select(2, ClaudeWoWWidgets.Status("names"))'));
+  assert.equal(vm.evaluate('type(rawget(ClaudeWoWWidgets, "Status"))'), 'function');
+  assert.equal(vm.evaluate('type(ClaudeWoWDB.chats)'), 'table');
+  assert.equal(vm.evaluate('GameTooltip.kind'), 'Frame');
+  assert.equal(vm.evaluate('UIParent.kind'), 'Frame');
+  assert.equal(vm.evaluate('type(rawget(SlashCmdList, "CLAUDE"))'), 'function');
+  assert.equal(vm.evaluate('(function() for _, f in ipairs(STUB.frames) do if #f.children == 4 then for _, c in ipairs(f.children) do if c.name then return c.name end end return "unnamed" end end end)()'), 'unnamed');
+});
+
+test('a widget edit box always lets Escape clear the focus', () => {
+  const source = [
+    'local ui = ...',
+    'local plain = CreateFrame("EditBox")',
+    'local trap = CreateFrame("EditBox", nil, nil, "InputBoxTemplate")',
+    'trap:SetScript("OnEscapePressed", function() ui.db.escaped = true end)',
+    'assert(trap:GetScript("OnEscapePressed") ~= nil)',
+  ].join('\n');
+  const vm = newVM(savedWidgets([['boxes', source]]));
+  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("boxes")'), 'running', vm.evaluate('select(2, ClaudeWoWWidgets.Status("boxes"))'));
+  for (const which of ['nil', '"InputBoxTemplate"']) {
+    const box = `(function() for i = #STUB.frames, 1, -1 do local f = STUB.frames[i] if f.kind == "EditBox" and f.template == ${which} and f.parent ~= DEFAULT_CHAT_FRAME then return f end end end)()`;
+    vm.run(`local b = ${box}; STUB.focus = b; b.scripts.OnEscapePressed(b)`);
+    assert.equal(vm.evaluate('STUB.focus'), null, which);
+  }
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.boxes.escaped'), 'true');
+});
+
+test('a widget reads a font object, writes plain fields to its frame and makes only display frame types', () => {
+  const source = [
+    'local ui = ...',
+    'local path, size = GameFontNormal:GetFont()',
+    'ui.db.size = size',
+    'local b = CreateFrame("Button")',
+    'b.tooltipText = "hi"',
+    'b.Hide = 1',
+    'b.onClick = function() end',
+    'ui.frame.Hide = 1',
+  ].join('\n');
+  const vm = newVM(savedWidgets([['font', source], ['movie', 'local ui = ...\nCreateFrame("Movie" .. "Frame")']]));
+  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("font")'), 'running', vm.evaluate('select(2, ClaudeWoWWidgets.Status("font"))'));
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.font.size'), '12');
+  const button = '(function() for i = #STUB.frames, 1, -1 do if STUB.frames[i].kind == "Button" then return STUB.frames[i] end end end)()';
+  assert.equal(vm.evaluate(`${button}.tooltipText`), 'hi');
+  assert.equal(vm.evaluate(`rawget(${button}, "onClick")`), null);
+  assert.equal(vm.evaluate(`rawget(${button}, "Hide")`), null);
+  vm.run('SlashCmdList.CLAUDE("config ui remove font")');
+  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("font")'), 'removed');
+  assert.equal(vm.evaluate(`${button}.shown`), 'false');
+  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("movie")'), 'failed');
+  assert.match(vm.evaluate('select(2, ClaudeWoWWidgets.Status("movie"))'), /MovieFrame is not an allowed widget frame type/);
+});
+
+test('a ticker handle the client returns as userdata still cancels', () => {
+  const vm = newVM();
+  lua.lua_newuserdata(vm.L, 0);
+  lua.lua_setglobal(vm.L, to_luastring('TICKER_UD'));
+  vm.run([
+    'debug.setmetatable(TICKER_UD, { __index = { Cancel = function() TICKER_UD_CANCELLED = true end } })',
+    'C_Timer.NewTicker = function(delay, fn) table.insert(STUB.tickers, fn) return TICKER_UD end',
+  ].join('\n'));
+  vm.run(widgetSet([['tick', 'local ui = ...\nC_Timer.NewTicker(1, function(handle) ui.db.n = (ui.db.n or 0) + 1 handle:Cancel() end)']]));
+  vm.run('STUB.Tick()');
+  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("tick")'), 'running', vm.evaluate('select(2, ClaudeWoWWidgets.Status("tick"))'));
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.tick.n'), '1');
+  assert.equal(vm.evaluate('TICKER_UD_CANCELLED'), 'true');
 });
