@@ -134,11 +134,44 @@ test('a disabled ClaudeWoW does not load and its SavedVariables are left alone',
     assert.equal(client.luaValue('ClaudeWoW'), null);
     assert.equal(client.luaValue('ClaudeWoWDB'), null);
     assert.equal(client.luaValue('IsAddOnLoaded("ClaudeWoW")'), 'false');
+    assert.equal(client.luaValue('IsAddOnLoaded("ClaudeWoW_Runtime")'), 'false', 'the runtime needs ClaudeWoW, so the game refuses it');
+    assert.equal(client.luaValue('select(2, LoadAddOn("ClaudeWoW_Runtime"))'), 'DEP_DISABLED');
+    assert.equal(client.luaValue('select(2, LoadAddOn("ClaudeWoW_S001"))'), 'DEP_DISABLED');
     client.reload();
     client.quit();
     assert.equal(fs.readFileSync(sb.saved, 'utf8'), saved);
     assert.deepEqual(client.errors(), []);
   });
+});
+
+test('LoadAddOn loads required dependencies first and stops on a missing or failed one, like the game', () => {
+  const sb = sandbox();
+  const iface = P.TOC_INTERFACE;
+  const made = [];
+  const addon = (name, tocLines, body = '') => {
+    const dir = path.join(sb.addons, name);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, name + '.toc'), [...tocLines, '## LoadOnDemand: 1', '', 'Main.lua', ''].join('\n'));
+    fs.writeFileSync(path.join(dir, 'Main.lua'), body);
+    made.push(dir);
+  };
+  try {
+    addon('DevBase', ['## Interface: ' + iface], 'DEV_ORDER = (DEV_ORDER or "") .. "base,"');
+    addon('DevTop', ['## Interface: ' + iface, '## RequiredDeps: DevBase'], 'DEV_ORDER = (DEV_ORDER or "") .. "top,"');
+    addon('DevNeedsMissing', ['## Interface: ' + iface, '## Dependencies: DevNotThere'], 'DEV_BAD = true');
+    addon('DevStale', ['## Interface: 1']);
+    addon('DevNeedsStale', ['## Interface: ' + iface, '## Dependencies: DevStale'], 'DEV_BAD = true');
+    const client = new WowClient(sb).launch();
+    assert.equal(client.luaValue('LoadAddOn("DevTop")'), 'true');
+    assert.equal(client.luaValue('DEV_ORDER'), 'base,top,');
+    assert.equal(client.luaValue('IsAddOnLoaded("DevBase")'), 'true');
+    assert.equal(client.luaValue('select(2, LoadAddOn("DevNeedsMissing"))'), 'DEP_MISSING');
+    assert.equal(client.luaValue('select(2, LoadAddOn("DevNeedsStale"))'), 'DEP_INTERFACE_VERSION');
+    assert.equal(client.luaValue('DEV_BAD'), null);
+    assert.equal(client.luaValue('IsAddOnLoaded("ClaudeWoW_Runtime")'), 'true', 'the runtime loads when ClaudeWoW does');
+  } finally {
+    for (const dir of made) fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('ClaudeWoW whose TOC lists no matching interface loads only with out-of-date addons allowed', () => {

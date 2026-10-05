@@ -47,7 +47,11 @@ AddOns/ClaudeWoW_S###/Inbox.lua ◄── bridge/bridge.js (a real process) ◄�
     client's file name, then fires `SCREENSHOT_SUCCEEDED`.
   - `LoadAddOn` reads the slot's `.toc` and files from disk, once per UI
     session. It reports `MISSING`, `DISABLED` (client option `disabled`) and
-    `INTERFACE_VERSION` like the client. Addon folders are indexed at launch,
+    `INTERFACE_VERSION` like the client. It loads each addon listed in
+    `## Dependencies`, `## RequiredDeps` or another `## Dep...` line first; a
+    dependency that is missing, disabled or fails to load stops the addon
+    with `DEP_` and that reason (`DEP_DISABLED` for `ClaudeWoW_Runtime` and the
+    slots when `ClaudeWoW` is disabled). Addon folders are indexed at launch,
     not at `/reload`.
   - Alt+Z (`:hide`) hides `UIParent`, so the strip and its `OnUpdate` stop.
   - `PlaySoundFile` is true only when the `.wav` file exists now and existed
