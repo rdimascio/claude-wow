@@ -318,3 +318,57 @@ test('a run summary keeps a full merge report, not just its first lines', () => 
   const flood = Array.from({ length: 100 }, (_, k) => `line ${k}`).join('\n');
   assert.equal(F.summaryOf(flood).split('\n').length, 40, 'a flood is still capped');
 });
+
+test('slash commands: parsed only from a leading /name, and only for a listed skill, /runs or /stop while the factory is on', () => {
+  assert.deepEqual(F.parseSlash('  /babysit-pr   12\n please '), { name: 'babysit-pr', args: '12 please' });
+  assert.deepEqual(F.parseSlash('/runs'), { name: 'runs', args: '' });
+  for (const t of ['babysit-pr 12', '/Users/me/x is broken', '/tmp/x', 'why /babysit-pr', '/', '/-x']) assert.equal(F.parseSlash(t), null, t);
+  const factory = { status: x => ({ ok: true, text: 'status ' + x.runId }), cancel: x => ({ ok: true, text: 'cancel ' + x.runId }), dispatch: () => { throw new Error('no dispatch expected'); } };
+  const on = { conf: conf({ skills: ['babysit-pr'] }) };
+  assert.equal(F.slashCommand(factory, '/runs', { conf: F.settings({}) }), null, 'the factory off: every slash message goes to the agent');
+  assert.equal(F.slashCommand(factory, '/fresh-eyes 3', on), null, 'a skill not on the list goes to the agent');
+  assert.equal(F.slashCommand(factory, '/tmp is full', on), null);
+  assert.equal(F.slashCommand(factory, 'babysit-pr 12', on), null);
+  assert.equal(F.slashCommand(factory, '/runs ab12cd34 extra', on).text, 'status ab12cd34');
+  assert.equal(F.slashCommand(factory, '/runs', on).text, 'status ');
+  assert.equal(F.slashCommand(factory, '/stop ab12cd34', on).text, 'cancel ab12cd34');
+  assert.deepEqual(F.slotSkills(on.conf), ['babysit-pr']);
+  assert.deepEqual(F.slotSkills(F.settings({})), []);
+});
+
+test('a slash command starts the run with no agent turn, and /stop ends it as stopped and reports it once', { skip: !POSIX }, async () => {
+  const r = rig();
+  try {
+    const started = F.slashCommand(r.factory, '/babysit-pr [[hang]]', r.ctx());
+    assert.equal(started.ok, true, started.text);
+    const id = /factory run ([0-9a-f]{8})/.exec(started.text)[1];
+    assert.match(started.text, new RegExp(`^Started /babysit-pr \\[\\[hang\\]\\] as factory run ${id} on opus\\. .*/runs ${id} .*/stop ${id} ends it\\.$`));
+    await until(() => r.calls().find(c => c.prompt === '/babysit-pr [[hang]]'));
+    assert.match(F.slashCommand(r.factory, `/runs ${id}`, r.ctx()).text, /: running for /);
+    assert.equal(F.slashCommand(r.factory, '/stop 00000000', r.ctx()).ok, false);
+    const stopped = F.slashCommand(r.factory, `/stop ${id}`, r.ctx());
+    assert.equal(stopped.ok, true, stopped.text);
+    const run = await until(() => r.factory.runs().find(x => x.id === id && x.status !== 'running'));
+    assert.equal(run.status, 'stopped');
+    assert.equal(run.why, 'It was stopped from the game.');
+    assert.equal(r.done.length, 1, 'the stopped run is reported back to the chat');
+    assert.match(F.slashCommand(r.factory, `/stop ${id}`, r.ctx()).text, /is not running; it is stopped/);
+  } finally { r.cleanup(); }
+});
+
+test('the coding plugin answers a slash command itself and never starts an agent run for it', () => {
+  const code = require('../bridge/plugins/claude-code');
+  const p = PL.createRegistry().register(code);
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'cw-factory-slash-'));
+  const runs = [], replies = [], fails = [], accepted = [];
+  const factory = { status: () => ({ ok: true, text: 'No factory runs yet.' }), cancel: () => ({ ok: false, text: 'There is no factory run x.' }), dispatch: () => ({ ok: false, text: 'nope' }), runs: () => [] };
+  const core = { log() {}, tag: j => '#' + j.id, defaultCwd: base, options: () => ({ factory: { enabled: true, skills: ['babysit-pr'] } }), sessionFolder: () => '', factory, accept: j => accepted.push(j.id), reply: (j, t) => replies.push(t), fail: (j, t) => fails.push(t), runAgent: (job, o) => runs.push(o) };
+  p.handle({ id: 1, cwd: '', text: '/runs' }, core);
+  p.handle({ id: 2, cwd: '', text: '/stop x' }, core);
+  p.handle({ id: 3, cwd: '', text: '/review-prs' }, core);
+  assert.deepEqual(replies, ['No factory runs yet.']);
+  assert.deepEqual(fails, ['There is no factory run x.']);
+  assert.deepEqual(accepted, [1, 2], 'a command is kept in the transcript like any message');
+  assert.equal(runs.length, 1, 'only the unknown command went to the dispatcher');
+  fs.rmSync(base, { recursive: true, force: true });
+});

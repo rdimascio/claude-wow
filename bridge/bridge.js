@@ -592,7 +592,7 @@ function sharedSlotFields(urgent) {
   if (TELEMETRY_ON) {
     try { gsLua = telemetry.luaGs(); } catch (e) { log(`telemetry: slot field gs left out (${e && e.message ? e.message : e})`); }
   }
-  return { live: liveInfo, sessions: sessionList(), projects: projectList(), home: os.homedir(), cwd: DEFAULT_CWD, agent: DEFAULT_AGENT, agents: A.agentIds(), plugin: DEFAULT_PLUGIN, plugins: registry.ids(), map, widgets, transport: TRANSPORT, levels: LEVELS, codec: STRIP_CODEC, transportNote, achievementsLua, goalsLua, dmLua, gsLua, bridge: BRIDGE_INFO };
+  return { live: liveInfo, sessions: sessionList(), projects: projectList(), home: os.homedir(), skills: FACTORY.slotSkills(FACTORY.settings(pluginsCfg['claude-code'])), cwd: DEFAULT_CWD, agent: DEFAULT_AGENT, agents: A.agentIds(), plugin: DEFAULT_PLUGIN, plugins: registry.ids(), map, widgets, transport: TRANSPORT, levels: LEVELS, codec: STRIP_CODEC, transportNote, achievementsLua, goalsLua, dmLua, gsLua, bridge: BRIDGE_INFO };
 }
 
 function slotFile(globalName, records, shared, client) {

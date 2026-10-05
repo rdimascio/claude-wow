@@ -1004,6 +1004,9 @@ function luaTable(globalName, records, opts = {}) {
     lines.splice(lines.length - 1, 0, `\tprojects = { ${rows.join(', ')} },`);
   }
   if (opts.home) lines.splice(lines.length - 1, 0, `\thome = ${luaStr(opts.home)},`);
+  if (Array.isArray(opts.skills) && opts.skills.length) {
+    lines.splice(lines.length - 1, 0, `\tskills = { ${opts.skills.map(luaStr).join(', ')} },`);
+  }
   if (Array.isArray(opts.acks)) {
     const acks = opts.acks.filter(a => a && Number.isInteger(a.id) && a.id > 0);
     lines.splice(lines.length - 1, 0, `\tacks = { ${acks.map(a => `{ session = ${luaStr(a.session || '')}, id = ${a.id} }`).join(', ')} },`);

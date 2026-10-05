@@ -144,6 +144,12 @@ test('luaTable carries the project list with labels and the home folder, quoted 
   assert.match(lua, /^\thome = "\/Users\/me",$/m);
 });
 
+test('luaTable carries the factory skill names only when there are some', () => {
+  assert.ok(!/skills =/.test(P.luaTable('X', [], {})));
+  assert.ok(!/skills =/.test(P.luaTable('X', [], { skills: [] })));
+  assert.match(P.luaTable('X', [], { skills: ['babysit-pr', 'fresh-eyes'] }), /^\tskills = \{ "babysit-pr", "fresh-eyes" \},$/m);
+});
+
 test('jobsFromStrip parses the current record format and keeps separators inside text', () => {
   const rec = ['sess', 'chat1', '12', 'realms', 'allow=WebSearch', 'My chat', 'hello\x1Fworld'].join('\x1F');
   const jobs = P.jobsFromStrip(12, rec);
