@@ -371,7 +371,7 @@ test('classifyDenial: outside the working folders becomes a folder, anything els
 
   const notes = P.denialNotes('Claude', [outside, plain], []);
   assert.equal(notes.length, 2);
-  assert.match(notes[0], /needed 1 action\(s\)[\s\S]*Bash: curl x/);
+  assert.match(notes[0], /needed 1 action that is not allowed yet[\s\S]*Bash: curl x/);
   assert.match(notes[1], /blocked outside this chat's folders:\n {2}Bash: touch \/tmp\/demo\.txt \(folder \/tmp\)/);
   const again = P.denialNotes('Claude', [], [outside, outside]);
   assert.equal(again.length, 1, 'one line per repeat');

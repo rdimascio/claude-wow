@@ -3618,11 +3618,25 @@ function ClaudeWoW.ApplySessions(list, now)
 	if type(now) == "number" then run.bridgeNow = now end
 end
 
+function Q.HasDenial(m)
+	return type(m) == "table" and type(m.denied) == "table" and #m.denied > 0
+end
+
+function Q.DenialIndex(c)
+	local history = c and c.history or {}
+	for i = #history, 1, -1 do
+		local m = history[i]
+		if Q.HasDenial(m) then return i end
+		if m.role ~= "system" then return nil end
+	end
+	return nil
+end
+
 function ClaudeWoW.OpenDenial(chatId)
 	local c = FindChat(chatId)
 	if not c or c.pendingId then return nil end
-	local latest = c.history[#c.history]
-	if latest and type(latest.denied) == "table" and #latest.denied > 0 then
+	local latest = c.history[Q.DenialIndex(c) or 0]
+	if latest then
 		return latest.denied, latest.id, latest.agent
 	end
 	return nil
@@ -4573,10 +4587,9 @@ function ClaudeWoW.Render()
 			b:Show()
 			y = y + b:GetHeight() + 6
 		end
-		local last = #c.history
+		local openDenial = not c.pendingId and Q.DenialIndex(c) or nil
 		for i, m in ipairs(c.history) do
-			-- The Allow button only makes sense on the newest reply, and only while idle.
-			local denied = (i == last and not c.pendingId and type(m.denied) == "table" and #m.denied > 0) and m.denied or nil
+			local denied = i == openDenial and m.denied or nil
 			local picker = type(m.picker) == "table" and #m.picker > 0 and m.picker or nil
 			Place(m.role, picker and m.head or m.text, m.t and date("%H:%M", m.t) or "", false, denied, m.agent, m.macros, m.newChat, picker)
 		end
@@ -5003,6 +5016,14 @@ Q.PAD_ROW_AFTER_ROW = -3
 Q.TITLE_IDLE = { 0.75, 0.61, 0 }
 Q.TITLE_WORKING = { 1, 1, 0 }
 Q.TITLE_REPLY = { 0.25, 0.75, 0.25 }
+Q.TITLE_NEEDS_YOU = { 1, 0.4, 0.1 }
+
+function Q.TitleColor(c)
+	if c.pendingId then return Q.TITLE_WORKING end
+	if Q.DenialIndex(c) then return Q.TITLE_NEEDS_YOU end
+	if (c.unread or 0) > 0 then return Q.TITLE_REPLY end
+	return Q.TITLE_IDLE
+end
 Q.COUNT_W = 92
 Q.GOLD_ICON = "|TInterface\\MoneyFrame\\UI-GoldIcon:12:12:0:-1|t"
 Q.STATUS_HIT_W = 260
@@ -5528,11 +5549,11 @@ end
 function Q.PoiState(poi, glyphKey, number, selected)
 	if not Q.SetArt(poi.bg, selected and "poiSelected" or "poi", true) then Q.SetArt(poi.bg, "poi", true) end
 	poi.outer:SetShown(selected)
-	if glyphKey then
-		poi.glyph:SetShown(Q.SetArt(poi.glyph, glyphKey, true))
+	local glyphShown = glyphKey ~= nil and Q.SetArt(poi.glyph, glyphKey, true)
+	poi.glyph:SetShown(glyphShown)
+	if glyphShown then
 		poi.number:Hide()
 	else
-		poi.glyph:Hide()
 		poi.number:SetText(number)
 		poi.number:Show()
 	end
@@ -5645,7 +5666,7 @@ function Q.FillRow(r, c, index, width)
 	if c.agent and c.agent ~= "" then title = title .. " |cff9d9d9d" .. AgentName(c.agent) .. "|r" end
 	if unread > 0 then title = title .. " (" .. unread .. ")" end
 	r.title:SetText(title)
-	r.titleColor = active and { 1, 1, 1 } or (unread > 0 and Q.TITLE_REPLY) or (c.pendingId and Q.TITLE_WORKING) or Q.TITLE_IDLE
+	r.titleColor = active and { 1, 1, 1 } or Q.TitleColor(c)
 	local glyph = (c.pendingId and (active and "workingSelected" or "working")) or (unread > 0 and "reply") or nil
 	Q.PoiState(r.poi, glyph, tostring(index), active)
 	local lines = Q.PreviewsOn() and Q.ChatObjectives(c) or {}

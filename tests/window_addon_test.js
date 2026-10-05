@@ -351,6 +351,47 @@ test('on Classic Era the window keeps only the atlases that client draws, and pl
   }
 });
 
+const rowOf = (index) => `(function() for _, r in ipairs(ClaudeWoW.UI.questList.rows) do if r.shown and r.chatId == ClaudeWoWDB.chats[${index}].id then return r end end end)()`;
+const titleColorOf = (vm, index) => vm.evaluate(`(function() local c = ${rowOf(index)}.titleColor return c[1] .. "," .. c[2] .. "," .. c[3] end)()`);
+
+test('on Classic Era a working chat whose glyph atlas is refused shows its number on the disc, not a blank', () => {
+  const vm = newVM({ before: NATIVE_TEMPLATES + '\nfunction GetBuildInfo() return "1.15.9", "70003", "Sep 1 2026", 11509, "", " " end' });
+  open(vm);
+  vm.run('ClaudeWoW.NewChat(); ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[2].id); ClaudeWoWDB.chats[1].pendingId = 99; ClaudeWoW.Render()');
+  assert.equal(vm.evaluate('ClaudeWoW.UI.art.working'), 'false', 'Era has no working glyph atlas');
+  const poi = `${rowOf(1)}.poi`;
+  assert.equal(vm.evaluate(`${poi}.glyph.shown`), 'false');
+  assert.equal(vm.evaluate(`${poi}.number.shown`), 'true', 'the number stands in for the refused glyph');
+  assert.match(vm.evaluate(`${poi}.number.text`), /^\d+$/);
+
+  const forever = nativeVM();
+  forever.run('ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[3].id); ClaudeWoWDB.chats[1].pendingId = 99; ClaudeWoW.Render()');
+  assert.equal(forever.evaluate(`${rowOf(1)}.poi.glyph.shown`), 'true', 'where the atlas exists the glyph shows');
+  assert.equal(forever.evaluate(`${rowOf(1)}.poi.number.shown`), 'false');
+});
+
+test('a chat whose newest reply waits on a permission gets the needs-you title color; working outranks it, it outranks an unread reply', () => {
+  const vm = nativeVM();
+  vm.run('ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[3].id)');
+  const idle = titleColorOf(vm, 1);
+  vm.run('ClaudeWoWDB.chats[2].unread = 1; ClaudeWoW.Render()');
+  const reply = titleColorOf(vm, 2);
+  assert.notEqual(reply, idle);
+  vm.run(`local h = ClaudeWoWDB.chats[1].history
+    table.insert(h, { role = "user", text = "clean up", t = time() })
+    table.insert(h, { role = "assistant", text = "I need permission", t = time(), denied = { "Bash(rm:*)" } })
+    table.insert(h, { role = "system", text = "This chat's context is large.", t = time() })
+    ClaudeWoW.Render()`);
+  const needsYou = titleColorOf(vm, 1);
+  assert.equal(needsYou, '1,0.4,0.1', 'a trailing system message does not hide the open denial');
+  vm.run('ClaudeWoWDB.chats[1].unread = 2; ClaudeWoW.Render()');
+  assert.equal(titleColorOf(vm, 1), needsYou, 'needs you outranks an unread reply');
+  vm.run('ClaudeWoWDB.chats[1].pendingId = 99; ClaudeWoW.Render()');
+  assert.notEqual(titleColorOf(vm, 1), needsYou, 'working outranks needs you');
+  vm.run('ClaudeWoWDB.chats[1].pendingId = nil; ClaudeWoWDB.chats[1].unread = 0; table.insert(ClaudeWoWDB.chats[1].history, { role = "user", text = "never mind", t = time() }); ClaudeWoW.Render()');
+  assert.equal(titleColorOf(vm, 1), idle, 'a newer message from the player closes the denial');
+});
+
 test('on Classic Era, where the quest parchment atlas is missing, the transcript uses the Vanilla quest panel parchment', () => {
   const vm = newVM({ before: NATIVE_TEMPLATES + `
     function GetBuildInfo() return "1.15.9", "70003", "Sep 1 2026", 11509 end
