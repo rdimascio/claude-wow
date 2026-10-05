@@ -416,6 +416,7 @@ function noteMessage(job, role, text) {
 }
 
 const RESTORE_CHATS = 16;
+const HIDDEN_CHAT_PLUGINS = new Set(['stream']);
 const RESTORE_MESSAGES = 40;
 const RESTORE_TEXT_MAX = 2000;
 
@@ -443,7 +444,14 @@ function maybeOfferRestore(job) {
   if (!job.session || transcripts.tokens[tokenKey]) return;
   transcripts.tokens[tokenKey] = Date.now();
   const chats = Object.values(transcripts.chats)
-    .filter(c => c.id !== job.chat && c.messages.length && (!c.client || c.client === job.client) && (c.cwd || !c.char || c.char === job.char))
+    .filter(
+      c =>
+        c.id !== job.chat &&
+        c.messages.length &&
+        (!c.client || c.client === job.client) &&
+        (c.cwd || !c.char || c.char === job.char) &&
+        !HIDDEN_CHAT_PLUGINS.has(c.plugin),
+    )
     .sort((a, b) => (b.updated || 0) - (a.updated || 0))
     .slice(0, RESTORE_CHATS)
     .map(c => ({
