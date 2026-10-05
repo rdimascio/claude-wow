@@ -30,17 +30,22 @@ const LIMITS = {
   sums: { maxBytes: 64 * 1024, timeoutMs: 30000, idleMs: 15000 },
   asset: { maxBytes: 400 * 1024 * 1024, timeoutMs: 15 * MINUTE_MS, idleMs: 60000 },
 };
-const SEMVER = /^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
+const SEMVER =
+  /^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 const HOMEBREW_PATH = /\/Cellar\/|\/opt\/homebrew\/|\/\.linuxbrew\//;
 const PROJECT_NAMES = ['claude-wow', 'wow-ai'];
 const SKIP_FILE = 'update-skip.json';
 const STALE_DOWNLOAD_MS = 6 * HOUR_MS;
 const GAME_CHECK_MAX_AGE_MS = 15000;
 const DOWNLOAD_NAME = /^\..+\.update-(\d+)-[0-9a-f]{8}(\.exe)?$/;
-const SUM_LINE =/^([0-9a-fA-F]{64})\s+\*?(\S.*?)\s*$/;
+const SUM_LINE = /^([0-9a-fA-F]{64})\s+\*?(\S.*?)\s*$/;
 
 function ownVersion() {
-  try { return require('../package.json').version; } catch { return '0.0.0'; }
+  try {
+    return require('../package.json').version;
+  } catch {
+    return '0.0.0';
+  }
 }
 
 function apiBase(env = process.env) {
@@ -60,7 +65,8 @@ function normalizeVersion(v) {
 }
 
 function compareIdentifiers(a, b) {
-  const numA = /^\d+$/.test(a), numB = /^\d+$/.test(b);
+  const numA = /^\d+$/.test(a),
+    numB = /^\d+$/.test(b);
   if (numA && numB) return Math.sign(Number(a) - Number(b));
   if (numA) return -1;
   if (numB) return 1;
@@ -68,7 +74,8 @@ function compareIdentifiers(a, b) {
 }
 
 function compareSemver(a, b) {
-  const x = parseSemver(a), y = parseSemver(b);
+  const x = parseSemver(a),
+    y = parseSemver(b);
   if (!x || !y) return null;
   for (let i = 0; i < 3; i++) if (x.core[i] !== y.core[i]) return x.core[i] < y.core[i] ? -1 : 1;
   if (!x.pre.length || !y.pre.length) return x.pre.length === y.pre.length ? 0 : x.pre.length ? -1 : 1;
@@ -86,12 +93,20 @@ function assetName(platform = process.platform, arch = process.arch) {
 }
 
 function realpathOf(p) {
-  try { return fs.realpathSync(p); } catch { return path.resolve(p); }
+  try {
+    return fs.realpathSync(p);
+  } catch {
+    return path.resolve(p);
+  }
 }
 
 function isThisProject(dir) {
   if (fs.existsSync(path.join(dir, 'bridge', 'supervisor.js'))) return true;
-  try { return PROJECT_NAMES.includes(JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8')).name); } catch { return false; }
+  try {
+    return PROJECT_NAMES.includes(JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8')).name);
+  } catch {
+    return false;
+  }
 }
 
 function gitCheckoutAbove(file) {
@@ -109,7 +124,11 @@ function releasesLayout(real) {
   if (path.basename(releasesDir) !== REL.RELEASES_DIR) return null;
   const layout = REL.layout(path.dirname(releasesDir));
   if (!REL.isInsideReleases(layout, real)) return null;
-  try { if (!fs.lstatSync(layout.current).isSymbolicLink()) return null; } catch { return null; }
+  try {
+    if (!fs.lstatSync(layout.current).isSymbolicLink()) return null;
+  } catch {
+    return null;
+  }
   return { layout, release: path.basename(path.dirname(real)), currentRelease: REL.currentName(layout) };
 }
 
@@ -120,13 +139,19 @@ function unpublishedRelease(found) {
 function installKind({ compiled = R.compiled, execPath = process.execPath } = {}) {
   if (!compiled) return { kind: 'dev', why: 'running from source (node or bun and a checkout); update it with git pull or the installer' };
   const real = realpathOf(execPath);
-  if (HOMEBREW_PATH.test(real.split(path.sep).join('/'))) return { kind: 'homebrew', binary: real, why: 'Homebrew installed this binary; update it with: brew upgrade claude-wow' };
+  if (HOMEBREW_PATH.test(real.split(path.sep).join('/')))
+    return { kind: 'homebrew', binary: real, why: 'Homebrew installed this binary; update it with: brew upgrade claude-wow' };
   const repo = gitCheckoutAbove(real);
   if (repo) return { kind: 'dev', binary: real, why: `the binary is inside the git checkout ${repo}; rebuild it there` };
   const found = releasesLayout(real);
   if (!found) return { kind: 'binary', binary: real };
   const devName = unpublishedRelease(found);
-  if (devName) return { kind: 'dev', binary: real, why: `releases/${devName} is not a published release (its ${REL.RELEASE_INFO} has no source "${REL.SOURCE_RELEASE}" or "${REL.SOURCE_SELF_UPDATE}"); claude-wow dev deploy updates it` };
+  if (devName)
+    return {
+      kind: 'dev',
+      binary: real,
+      why: `releases/${devName} is not a published release (its ${REL.RELEASE_INFO} has no source "${REL.SOURCE_RELEASE}" or "${REL.SOURCE_SELF_UPDATE}"); claude-wow dev deploy updates it`,
+    };
   return { kind: 'releases', binary: real, ...found };
 }
 
@@ -148,9 +173,17 @@ function get(url, opts = {}) {
   const until = opts.until || Date.now() + opts.timeoutMs;
   return new Promise((resolve, reject) => {
     let u;
-    try { u = new URL(url); } catch { reject(new Error(`bad URL: ${url}`)); return; }
+    try {
+      u = new URL(url);
+    } catch {
+      reject(new Error(`bad URL: ${url}`));
+      return;
+    }
     const mod = u.protocol === 'https:' ? https : u.protocol === 'http:' ? http : null;
-    if (!mod) { reject(new Error(`unsupported URL: ${url}`)); return; }
+    if (!mod) {
+      reject(new Error(`unsupported URL: ${url}`));
+      return;
+    }
     let settled = false;
     let req = null;
     const deadline = setTimeout(() => done(new Error(`timed out: ${u.host}`)), Math.max(0, until - Date.now()));
@@ -158,39 +191,74 @@ function get(url, opts = {}) {
       if (settled) return;
       settled = true;
       clearTimeout(deadline);
-      if (err) { if (req) req.destroy(); reject(err); } else resolve(value);
+      if (err) {
+        if (req) req.destroy();
+        reject(err);
+      } else resolve(value);
     }
     req = mod.get(u, { headers: { 'User-Agent': userAgent, ...headers } }, res => {
       const status = res.statusCode;
       if (status >= 300 && status < 400 && res.headers.location) {
         res.resume();
-        if (redirects <= 0) { done(new Error(`too many redirects from ${u.host}`)); return; }
+        if (redirects <= 0) {
+          done(new Error(`too many redirects from ${u.host}`));
+          return;
+        }
         let next;
-        try { next = new URL(res.headers.location, u); } catch { done(new Error(`bad redirect from ${u.host}`)); return; }
-        if (u.protocol === 'https:' && next.protocol !== 'https:') { done(new Error(`refused a redirect from https to ${next.protocol} (${next.host})`)); return; }
+        try {
+          next = new URL(res.headers.location, u);
+        } catch {
+          done(new Error(`bad redirect from ${u.host}`));
+          return;
+        }
+        if (u.protocol === 'https:' && next.protocol !== 'https:') {
+          done(new Error(`refused a redirect from https to ${next.protocol} (${next.host})`));
+          return;
+        }
         settled = true;
         clearTimeout(deadline);
         req.destroy();
         get(next.href, { ...opts, until, redirects: redirects - 1 }).then(resolve, reject);
         return;
       }
-      if (status < 200 || status >= 300) { res.resume(); done(httpError(status, u)); return; }
+      if (status < 200 || status >= 300) {
+        res.resume();
+        done(httpError(status, u));
+        return;
+      }
       const length = Number(res.headers['content-length']);
-      if (Number.isFinite(length) && length > maxBytes) { res.resume(); done(new Error(`${u.pathname} is ${length} bytes, more than the ${maxBytes} allowed`)); return; }
+      if (Number.isFinite(length) && length > maxBytes) {
+        res.resume();
+        done(new Error(`${u.pathname} is ${length} bytes, more than the ${maxBytes} allowed`));
+        return;
+      }
       let got = 0;
       const chunks = [];
       res.on('data', chunk => {
         if (settled) return;
         got += chunk.length;
-        if (got > maxBytes) { done(new Error(`${u.pathname} passed the ${maxBytes} bytes allowed`)); return; }
-        try { if (onData) onData(chunk); else chunks.push(chunk); } catch (e) { done(e); }
+        if (got > maxBytes) {
+          done(new Error(`${u.pathname} passed the ${maxBytes} bytes allowed`));
+          return;
+        }
+        try {
+          if (onData) onData(chunk);
+          else chunks.push(chunk);
+        } catch (e) {
+          done(e);
+        }
       });
       res.on('end', () => {
-        if (!res.complete) { done(new Error(`the connection to ${u.host} closed early`)); return; }
+        if (!res.complete) {
+          done(new Error(`the connection to ${u.host} closed early`));
+          return;
+        }
         done(null, onData ? { bytes: got } : Buffer.concat(chunks));
       });
       res.on('error', e => done(e));
-      res.on('close', () => { if (!res.complete) done(new Error(`the connection to ${u.host} closed early`)); });
+      res.on('close', () => {
+        if (!res.complete) done(new Error(`the connection to ${u.host} closed early`));
+      });
     });
     req.setTimeout(idleMs, () => done(new Error(`no data for ${Math.round(idleMs / 1000)} s from ${u.host}`)));
     req.on('error', e => done(e));
@@ -206,7 +274,11 @@ async function latestRelease(api, limits = LIMITS) {
     throw e;
   }
   let data;
-  try { data = JSON.parse(body.toString('utf8')); } catch { throw new Error('the release answer is not JSON'); }
+  try {
+    data = JSON.parse(body.toString('utf8'));
+  } catch {
+    throw new Error('the release answer is not JSON');
+  }
   const version = normalizeVersion(data && data.tag_name);
   if (!version) throw new Error(`the latest release tag "${String(data && data.tag_name).slice(0, 40)}" is not a version`);
   const assets = (Array.isArray(data.assets) ? data.assets : [])
@@ -225,7 +297,9 @@ function parseSums(text) {
 }
 
 function rmQuiet(file) {
-  try { fs.rmSync(file, { force: true }); } catch {}
+  try {
+    fs.rmSync(file, { force: true });
+  } catch {}
 }
 
 async function downloadTo(url, file, limits) {
@@ -233,7 +307,14 @@ async function downloadTo(url, file, limits) {
   const hash = crypto.createHash('sha256');
   let ok = false;
   try {
-    await get(url, { ...limits, headers: { Accept: 'application/octet-stream' }, onData: chunk => { hash.update(chunk); fs.writeSync(fd, chunk); } });
+    await get(url, {
+      ...limits,
+      headers: { Accept: 'application/octet-stream' },
+      onData: chunk => {
+        hash.update(chunk);
+        fs.writeSync(fd, chunk);
+      },
+    });
     fs.fsyncSync(fd);
     ok = true;
   } finally {
@@ -246,7 +327,10 @@ async function downloadTo(url, file, limits) {
 function probeBinary(file) {
   return new Promise(resolve => {
     execFile(file, ['--version'], { timeout: PROBE_TIMEOUT_MS, windowsHide: true, encoding: 'utf8' }, (err, stdout) => {
-      if (err) { resolve({ ok: false, why: err.message.split('\n')[0] }); return; }
+      if (err) {
+        resolve({ ok: false, why: err.message.split('\n')[0] });
+        return;
+      }
       const m = /claude-wow (\S+)/.exec(String(stdout || ''));
       resolve(m ? { ok: true, version: m[1] } : { ok: false, why: 'it printed no version' });
     });
@@ -258,12 +342,23 @@ function tempPath(dir, name, platform) {
 }
 
 function replaceFile(tmp, target, platform = process.platform) {
-  if (platform !== 'win32') { fs.renameSync(tmp, target); return; }
+  if (platform !== 'win32') {
+    fs.renameSync(tmp, target);
+    return;
+  }
   let aside = `${target}.old`;
-  try { fs.rmSync(aside, { force: true }); } catch { aside = `${target}.old-${Date.now()}`; }
+  try {
+    fs.rmSync(aside, { force: true });
+  } catch {
+    aside = `${target}.old-${Date.now()}`;
+  }
   fs.renameSync(target, aside);
-  try { fs.renameSync(tmp, target); } catch (e) {
-    try { fs.renameSync(aside, target); } catch {}
+  try {
+    fs.renameSync(tmp, target);
+  } catch (e) {
+    try {
+      fs.renameSync(aside, target);
+    } catch {}
     throw e;
   }
 }
@@ -297,7 +392,11 @@ function binaryLockFile(binary) {
 
 async function installedSupersedes(binary, version, probe) {
   let ran;
-  try { ran = await probe(binary); } catch { return ''; }
+  try {
+    ran = await probe(binary);
+  } catch {
+    return '';
+  }
   if (!ran || !ran.ok) return '';
   const order = compareSemver(ran.version, version);
   return order !== null && order >= 0 ? `${binary} is already ${ran.version}, as new as ${version} or newer` : '';
@@ -322,7 +421,7 @@ async function swapIn(install, tmp, version, sum, ctx = {}) {
   }
   const lock = REL.acquireLock(binaryLockFile(install.binary), { command });
   try {
-    const superseded = skippedNow(home, version, explicit) || await installedSupersedes(install.binary, version, probe);
+    const superseded = skippedNow(home, version, explicit) || (await installedSupersedes(install.binary, version, probe));
     if (superseded) return { binary: '', superseded };
     lock.assertHeld();
     replaceFile(tmp, install.binary, platform);
@@ -341,16 +440,27 @@ function clearPendingRestart(home, reason) {
 
 function pruneStaleDownloads(dir, { alive = REL.pidAlive, now = Date.now, maxAgeMs = STALE_DOWNLOAD_MS } = {}) {
   let names = [];
-  try { names = fs.readdirSync(dir); } catch { return []; }
+  try {
+    names = fs.readdirSync(dir);
+  } catch {
+    return [];
+  }
   const removed = [];
   for (const n of names) {
     const m = DOWNLOAD_NAME.exec(n);
     if (!m) continue;
     const file = path.join(dir, n);
     let age = 0;
-    try { age = now() - fs.statSync(file).mtimeMs; } catch { continue; }
+    try {
+      age = now() - fs.statSync(file).mtimeMs;
+    } catch {
+      continue;
+    }
     if (alive(Number(m[1])) && age < maxAgeMs) continue;
-    try { fs.rmSync(file, { force: true }); removed.push(n); } catch {}
+    try {
+      fs.rmSync(file, { force: true });
+      removed.push(n);
+    } catch {}
   }
   return removed;
 }
@@ -363,7 +473,9 @@ function readSkip(home) {
   try {
     const s = JSON.parse(fs.readFileSync(skipFile(home), 'utf8'));
     return s && typeof s === 'object' && normalizeVersion(s.version) ? { ...s, version: normalizeVersion(s.version) } : null;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 function skipVersion(home, version, reason = '', now = Date.now) {
@@ -379,7 +491,9 @@ function skipVersion(home, version, reason = '', now = Date.now) {
 }
 
 function clearSkip(home) {
-  try { fs.rmSync(skipFile(home), { force: true }); } catch {}
+  try {
+    fs.rmSync(skipFile(home), { force: true });
+  } catch {}
 }
 
 function skipRelease(l, name, reason = '') {
@@ -394,10 +508,17 @@ function cleanupAside(install, platform = process.platform) {
   const base = path.basename(install.binary);
   let removed = 0;
   let names = [];
-  try { names = fs.readdirSync(dir); } catch { return 0; }
+  try {
+    names = fs.readdirSync(dir);
+  } catch {
+    return 0;
+  }
   for (const n of names) {
     if (n !== `${base}.old` && !n.startsWith(`${base}.old-`)) continue;
-    try { fs.rmSync(path.join(dir, n), { force: true }); removed++; } catch {}
+    try {
+      fs.rmSync(path.join(dir, n), { force: true });
+      removed++;
+    } catch {}
   }
   return removed;
 }
@@ -410,7 +531,9 @@ function readRecord(home) {
   try {
     const r = JSON.parse(fs.readFileSync(recordFile(home), 'utf8'));
     return r && typeof r === 'object' && !Array.isArray(r) ? r : {};
-  } catch { return {}; }
+  } catch {
+    return {};
+  }
 }
 
 function writeRecord(home, patch) {
@@ -429,7 +552,20 @@ function effectiveVersion(version, record) {
 }
 
 async function runUpdate(opts = {}) {
-  const { home, version = ownVersion(), api = apiBase(), install = installKind(), platform = process.platform, arch = process.arch, probe = probeBinary, checkOnly = false, explicit = false, limits = LIMITS, activate, alive } = opts;
+  const {
+    home,
+    version = ownVersion(),
+    api = apiBase(),
+    install = installKind(),
+    platform = process.platform,
+    arch = process.arch,
+    probe = probeBinary,
+    checkOnly = false,
+    explicit = false,
+    limits = LIMITS,
+    activate,
+    alive,
+  } = opts;
   const current = effectiveVersion(version, readRecord(home));
   if (install.kind === 'dev') return { status: 'refused', current, message: `self-update is off: ${install.why}` };
   const asset = assetName(platform, arch);
@@ -443,9 +579,22 @@ async function runUpdate(opts = {}) {
   if (order === null) return failed(`cannot compare ${latest} with this version ${current}`);
   if (order <= 0) return { status: 'current', current, latest, message: `claude-wow ${current} is up to date (latest release ${latest})` };
   const skip = explicit ? null : readSkip(home);
-  if (skip && compareSemver(latest, skip.version) <= 0) return { status: 'skipped', current, latest, message: `claude-wow ${latest} is out, but ${skip.version} is skipped${skip.reason ? ` (${skip.reason})` : ''}; a newer release or claude-wow update installs again` };
-  if (install.kind === 'homebrew') return { status: 'homebrew', current, latest, message: `claude-wow ${latest} is out (this is ${current}). Homebrew installed this one, so run: brew upgrade claude-wow` };
-  if (checkOnly) return { status: 'available', current, latest, message: `claude-wow ${latest} is out (this is ${current}); run claude-wow update to install it` };
+  if (skip && compareSemver(latest, skip.version) <= 0)
+    return {
+      status: 'skipped',
+      current,
+      latest,
+      message: `claude-wow ${latest} is out, but ${skip.version} is skipped${skip.reason ? ` (${skip.reason})` : ''}; a newer release or claude-wow update installs again`,
+    };
+  if (install.kind === 'homebrew')
+    return {
+      status: 'homebrew',
+      current,
+      latest,
+      message: `claude-wow ${latest} is out (this is ${current}). Homebrew installed this one, so run: brew upgrade claude-wow`,
+    };
+  if (checkOnly)
+    return { status: 'available', current, latest, message: `claude-wow ${latest} is out (this is ${current}); run claude-wow update to install it` };
   const file = release.assets.find(a => a.name === asset);
   if (!file) return failed(`release ${release.tag} has no ${asset}; nothing was replaced`);
   const sumsFile = release.assets.find(a => a.name === SUMS_ASSET);
@@ -464,7 +613,13 @@ async function runUpdate(opts = {}) {
     if (swapped.superseded) return { status: 'skipped', current, latest, message: `not installing ${latest}: ${swapped.superseded}` };
     if (explicit) clearSkip(home);
     const pruneNote = swapped.pruneError ? `; old releases were not pruned (${swapped.pruneError})` : '';
-    return { status: 'updated', current, latest, binary: swapped.binary, message: `updated claude-wow ${current} to ${latest} (${swapped.binary})${pruneNote}` };
+    return {
+      status: 'updated',
+      current,
+      latest,
+      binary: swapped.binary,
+      message: `updated claude-wow ${current} to ${latest} (${swapped.binary})${pruneNote}`,
+    };
   } finally {
     rmQuiet(tmp);
   }
@@ -474,16 +629,30 @@ async function checkAndRecord(opts = {}) {
   const now = opts.now || Date.now;
   const at = now();
   let outcome;
-  try { outcome = await runUpdate(opts); } catch (e) {
+  try {
+    outcome = await runUpdate(opts);
+  } catch (e) {
     outcome = { status: 'failed', message: `update check failed: ${e && e.message ? e.message : e}` };
   }
   if (outcome.status === 'refused' || !opts.home) return outcome;
   const patch = { attemptAt: at, ok: outcome.status !== 'failed', status: outcome.status, message: outcome.message };
   if (outcome.latest) patch.latest = outcome.latest;
   if (outcome.status === 'updated') {
-    Object.assign(patch, { pendingRestart: true, version: outcome.latest, from: outcome.current, binary: outcome.binary, updatedAt: at, restartFrom: null, restartRequestedAt: null });
+    Object.assign(patch, {
+      pendingRestart: true,
+      version: outcome.latest,
+      from: outcome.current,
+      binary: outcome.binary,
+      updatedAt: at,
+      restartFrom: null,
+      restartRequestedAt: null,
+    });
   }
-  try { writeRecord(opts.home, patch); } catch (e) { outcome.message += ` (could not write ${RECORD_FILE}: ${e.message})`; }
+  try {
+    writeRecord(opts.home, patch);
+  } catch (e) {
+    outcome.message += ` (could not write ${RECORD_FILE}: ${e.message})`;
+  }
   return outcome;
 }
 
@@ -502,19 +671,35 @@ function seconds(ms) {
   return `${Math.round(ms / 1000)} s`;
 }
 
-function restartVerdict({ record, version, idle = { idle: true, reason: '' }, lastActivityAt = 0, now = Date.now(), idleMs = DEFAULT_IDLE_SECONDS * 1000, supervised = false, gameRunning = null }) {
+function restartVerdict({
+  record,
+  version,
+  idle = { idle: true, reason: '' },
+  lastActivityAt = 0,
+  now = Date.now(),
+  idleMs = DEFAULT_IDLE_SECONDS * 1000,
+  supervised = false,
+  gameRunning = null,
+}) {
   if (!record || !record.pendingRestart || !record.version) return { restart: false, pending: false, code: 'none', why: 'no update waits' };
   const order = compareSemver(record.version, version);
   if (order === null || order <= 0) return { restart: false, pending: false, code: 'running', why: `already running ${version}` };
-  if (record.restartFrom === version) return { restart: false, pending: false, code: 'tried', why: `a restart for ${record.version} already happened and this is still ${version}` };
+  if (record.restartFrom === version)
+    return { restart: false, pending: false, code: 'tried', why: `a restart for ${record.version} already happened and this is still ${version}` };
   if (!supervised) return { restart: false, pending: true, code: 'manual', why: 'this bridge runs without the supervisor; restart it by hand' };
   if (!idle || !idle.idle) return { restart: false, pending: true, code: 'busy', why: (idle && idle.reason) || 'the bridge is busy' };
   const quietMs = Math.max(0, now - (Number(lastActivityAt) || 0));
-  if (quietMs < Math.min(MIN_QUIET_MS, idleMs)) return { restart: false, pending: true, code: 'recent', why: `the last message or reply was ${seconds(quietMs)} ago` };
+  if (quietMs < Math.min(MIN_QUIET_MS, idleMs))
+    return { restart: false, pending: true, code: 'recent', why: `the last message or reply was ${seconds(quietMs)} ago` };
   const game = typeof gameRunning === 'function' ? gameRunning() : gameRunning;
   if (game === false) return { restart: true, pending: true, code: 'closed', why: 'nothing is running and the game is closed' };
   if (quietMs >= idleMs) return { restart: true, pending: true, code: 'idle', why: `nothing is running and no message or reply for ${seconds(quietMs)}` };
-  return { restart: false, pending: true, code: 'active', why: `${game ? 'the game is running and ' : ''}the last message or reply was ${seconds(quietMs)} ago; it restarts after ${seconds(idleMs)} of quiet or when the game closes` };
+  return {
+    restart: false,
+    pending: true,
+    code: 'active',
+    why: `${game ? 'the game is running and ' : ''}the last message or reply was ${seconds(quietMs)} ago; it restarts after ${seconds(idleMs)} of quiet or when the game closes`,
+  };
 }
 
 function gameRunningOf(states) {
@@ -530,10 +715,24 @@ function cachedGameCheck(check, { now = Date.now, maxAgeMs = GAME_CHECK_MAX_AGE_
   function refresh() {
     if (pending) return pending;
     let started;
-    try { started = Promise.resolve(check()); } catch (e) { started = Promise.reject(e); }
+    try {
+      started = Promise.resolve(check());
+    } catch (e) {
+      started = Promise.reject(e);
+    }
     pending = started
-      .then(states => { value = gameRunningOf(states); }, () => { value = null; })
-      .then(() => { at = now(); pending = null; });
+      .then(
+        states => {
+          value = gameRunningOf(states);
+        },
+        () => {
+          value = null;
+        },
+      )
+      .then(() => {
+        at = now();
+        pending = null;
+      });
     return pending;
   }
   function get() {
@@ -546,9 +745,20 @@ function cachedGameCheck(check, { now = Date.now, maxAgeMs = GAME_CHECK_MAX_AGE_
 
 function createUpdater(deps) {
   const {
-    home, cfg = {}, log = () => {}, version = ownVersion(), idle = () => ({ idle: true, reason: '' }), lastActivityAt = () => 0,
-    gameRunning = () => null, restart, supervised = false, install = installKind(), api,
-    now = Date.now, check = checkAndRecord, timers = { setTimeout, setInterval },
+    home,
+    cfg = {},
+    log = () => {},
+    version = ownVersion(),
+    idle = () => ({ idle: true, reason: '' }),
+    lastActivityAt = () => 0,
+    gameRunning = () => null,
+    restart,
+    supervised = false,
+    install = installKind(),
+    api,
+    now = Date.now,
+    check = checkAndRecord,
+    timers = { setTimeout, setInterval },
   } = deps;
   const idleMs = idleMsFrom(cfg);
   const autoCheck = cfg.autoUpdate !== false && install.kind !== 'dev';
@@ -598,7 +808,9 @@ function createUpdater(deps) {
       return null;
     }
     if (v.restart) {
-      try { writeRecord(home, { restartFrom: version, restartRequestedAt: now() }); } catch (e) {
+      try {
+        writeRecord(home, { restartFrom: version, restartRequestedAt: now() });
+      } catch (e) {
         log(`self-update: cannot write ${RECORD_FILE} (${e.message}); not restarting, so a failed restart cannot loop`);
         return v;
       }
@@ -612,7 +824,11 @@ function createUpdater(deps) {
   }
 
   function start() {
-    try { settleRecord(); } catch (e) { log(`self-update: cannot read ${recordFile(home)} (${e.message})`); }
+    try {
+      settleRecord();
+    } catch (e) {
+      log(`self-update: cannot read ${recordFile(home)} (${e.message})`);
+    }
     const removed = cleanupAside(install);
     if (removed) log(`self-update: removed ${removed} old binary copy(ies) left by the last update`);
     if (install.kind === 'dev') log(`self-update: off (${install.why})`);
@@ -663,24 +879,85 @@ async function main(argv = [], deps = {}) {
   let checkOnly = false;
   for (const a of argv) {
     if (a === '--check') checkOnly = true;
-    else if (a === '-h' || a === '--help' || a === 'help') { out(HELP); return 0; }
-    else { err(`claude-wow update: unknown option "${a}"`); out(HELP); return 2; }
+    else if (a === '-h' || a === '--help' || a === 'help') {
+      out(HELP);
+      return 0;
+    } else {
+      err(`claude-wow update: unknown option "${a}"`);
+      out(HELP);
+      return 2;
+    }
   }
   const home = deps.home || H.resolve().dir;
   const outcome = await checkAndRecord({ ...deps, home, checkOnly, explicit: !checkOnly });
-  if (outcome.status === 'failed') { err(`claude-wow update: ${outcome.message}`); return 1; }
+  if (outcome.status === 'failed') {
+    err(`claude-wow update: ${outcome.message}`);
+    return 1;
+  }
   out(outcome.message);
   if (outcome.status === 'refused') return 3;
-  if (outcome.status === 'updated') out('A bridge running under the supervisor or the service restarts on it by itself once nothing is running and the game is closed or quiet. A bridge started with "claude-wow bridge": restart it by hand.');
+  if (outcome.status === 'updated')
+    out(
+      'A bridge running under the supervisor or the service restarts on it by itself once nothing is running and the game is closed or quiet. A bridge started with "claude-wow bridge": restart it by hand.',
+    );
   return 0;
 }
 
 module.exports = {
-  DEFAULT_API, RECORD_FILE, SUMS_ASSET, LIMITS, UPDATE_EXIT_CODE, RESTART_TICK_MS, CHECK_TICK_MS, FIRST_CHECK_DELAY_MS,
-  DEFAULT_IDLE_SECONDS, MIN_QUIET_MS, DAY_MS, HOUR_MS, HELP, SKIP_FILE, STALE_DOWNLOAD_MS,
-  readSkip, skipVersion, clearSkip, skipRelease, clearPendingRestart, binaryLockFile, pruneStaleDownloads, supersededBy, releaseVersion,
-  apiBase, parseSemver, normalizeVersion, compareSemver, assetName, installKind, launchPath, releasesLayout,
-  get, latestRelease, parseSums, downloadTo, probeBinary, swapIn, replaceFile, cleanupAside, unpublishedRelease,
-  recordFile, readRecord, writeRecord, effectiveVersion, runUpdate, checkAndRecord, checkDue, idleMsFrom,
-  restartVerdict, createUpdater, statusLine, main, gameRunningOf, cachedGameCheck, GAME_CHECK_MAX_AGE_MS,
+  DEFAULT_API,
+  RECORD_FILE,
+  SUMS_ASSET,
+  LIMITS,
+  UPDATE_EXIT_CODE,
+  RESTART_TICK_MS,
+  CHECK_TICK_MS,
+  FIRST_CHECK_DELAY_MS,
+  DEFAULT_IDLE_SECONDS,
+  MIN_QUIET_MS,
+  DAY_MS,
+  HOUR_MS,
+  HELP,
+  SKIP_FILE,
+  STALE_DOWNLOAD_MS,
+  readSkip,
+  skipVersion,
+  clearSkip,
+  skipRelease,
+  clearPendingRestart,
+  binaryLockFile,
+  pruneStaleDownloads,
+  supersededBy,
+  releaseVersion,
+  apiBase,
+  parseSemver,
+  normalizeVersion,
+  compareSemver,
+  assetName,
+  installKind,
+  launchPath,
+  releasesLayout,
+  get,
+  latestRelease,
+  parseSums,
+  downloadTo,
+  probeBinary,
+  swapIn,
+  replaceFile,
+  cleanupAside,
+  unpublishedRelease,
+  recordFile,
+  readRecord,
+  writeRecord,
+  effectiveVersion,
+  runUpdate,
+  checkAndRecord,
+  checkDue,
+  idleMsFrom,
+  restartVerdict,
+  createUpdater,
+  statusLine,
+  main,
+  gameRunningOf,
+  cachedGameCheck,
+  GAME_CHECK_MAX_AGE_MS,
 };

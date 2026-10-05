@@ -52,7 +52,12 @@ function writeClusters(samples) {
   for (const [bucket, n] of counts) {
     const total = n + (counts.get(bucket + 1) || 0);
     if (total < MIN_CLUSTER) continue;
-    const size = Math.min(...samples.filter(s => { const b = Math.floor(s / WRITE_BUCKET); return b === bucket || b === bucket + 1; }));
+    const size = Math.min(
+      ...samples.filter(s => {
+        const b = Math.floor(s / WRITE_BUCKET);
+        return b === bucket || b === bucket + 1;
+      }),
+    );
     clusters.push({ size, total });
   }
   return clusters;
@@ -89,7 +94,7 @@ function stripOurLines(file, chunkBytes = STRIP_CHUNK_BYTES, { notAfter = Infini
     let writeAt = 0;
     let removed = 0;
     let carry = '';
-    const keep = (text) => {
+    const keep = text => {
       if (removed > 0 && text) fs.writeSync(fd, Buffer.from(text, 'latin1'), 0, text.length, writeAt);
       writeAt += text.length;
     };
@@ -124,10 +129,15 @@ function scheduleCleaning({ platform = process.platform, clean, everyMs, warn, e
     return null;
   }
   let busy = false;
-  const attempt = async (why) => {
+  const attempt = async why => {
     if (busy) return false;
     busy = true;
-    try { await clean(why); } catch {} finally { busy = false; }
+    try {
+      await clean(why);
+    } catch {
+    } finally {
+      busy = false;
+    }
     return true;
   };
   attempt('startup');
@@ -139,7 +149,11 @@ function scheduleCleaning({ platform = process.platform, clean, everyMs, warn, e
 async function cleanWhenClosed(file, folder, opts = {}) {
   const now = opts.now || Date.now();
   let st;
-  try { st = fs.statSync(file); } catch { return { cleaned: false, why: 'no file' }; }
+  try {
+    st = fs.statSync(file);
+  } catch {
+    return { cleaned: false, why: 'no file' };
+  }
   if (now - st.mtimeMs < CLEAN_MIN_IDLE_MS) return { cleaned: false, why: 'written less than a minute ago' };
   const clock = opts.clock || Date.now;
   const state = await clientState(folder, opts);
@@ -147,14 +161,18 @@ async function cleanWhenClosed(file, folder, opts = {}) {
   if (state.running === true) return { cleaned: false, why: 'the game is running' };
   if (state.running !== false) return { cleaned: false, why: 'cannot tell whether the game is running', reason: state.why };
   let after;
-  try { after = fs.statSync(file); } catch { return { cleaned: false, why: 'no file' }; }
+  try {
+    after = fs.statSync(file);
+  } catch {
+    return { cleaned: false, why: 'no file' };
+  }
   if (after.mtimeMs !== st.mtimeMs || after.size !== st.size) return { cleaned: false, why: 'written while the process check ran' };
   return Object.assign({ cleaned: true }, stripOurLines(file, opts.chunkBytes, { notAfter: checkedAt + VERDICT_MAX_AGE_MS, clock }));
 }
 
 function reasonTeller(log, max = MAX_TOLD_REASONS) {
   const told = new Set();
-  return (result) => {
+  return result => {
     if (!result || !result.reason || told.has(result.reason) || told.size >= max) return false;
     told.add(result.reason);
     log(result.reason);
@@ -217,7 +235,10 @@ function createAssembler(onFrame, { key, onRefused } = {}) {
     }
     const all = carry + text;
     const cut = all.lastIndexOf('\n');
-    if (cut < 0) { carry = all; return; }
+    if (cut < 0) {
+      carry = all;
+      return;
+    }
     carry = all.slice(cut + 1);
     for (const line of all.slice(0, cut).split('\n')) {
       if (line.indexOf(TAG) < 0) continue;
@@ -245,7 +266,11 @@ function watchChatLog(file, onFrame, opts = {}) {
 
   function midLineAt(position) {
     if (position <= 0) return false;
-    try { return read(position - 1, position) !== '\n'; } catch { return true; }
+    try {
+      return read(position - 1, position) !== '\n';
+    } catch {
+      return true;
+    }
   }
 
   function startAt(position) {
@@ -254,7 +279,11 @@ function watchChatLog(file, onFrame, opts = {}) {
   }
 
   function sizeNow() {
-    try { return fs.statSync(file).size; } catch { return -1; }
+    try {
+      return fs.statSync(file).size;
+    } catch {
+      return -1;
+    }
   }
 
   function read(from, to) {
@@ -271,16 +300,30 @@ function watchChatLog(file, onFrame, opts = {}) {
   function check() {
     const size = sizeNow();
     if (size < 0) {
-      if (!missingTold) { missingTold = true; log(`chat log transport: ${file} does not exist yet (the client creates it when chat logging first writes)`); }
-      if (offset > 0) { offset = 0; assembler.reset(); }
+      if (!missingTold) {
+        missingTold = true;
+        log(`chat log transport: ${file} does not exist yet (the client creates it when chat logging first writes)`);
+      }
+      if (offset > 0) {
+        offset = 0;
+        assembler.reset();
+      }
       if (offset < 0) offset = 0;
       return;
     }
-    if (offset < 0) { startAt(size); return; }
+    if (offset < 0) {
+      startAt(size);
+      return;
+    }
     if (size < offset) startAt(0);
     if (size === offset) return;
     let text;
-    try { text = read(offset, size); } catch (e) { log(`chat log transport: cannot read ${file} (${e.message})`); return; }
+    try {
+      text = read(offset, size);
+    } catch (e) {
+      log(`chat log transport: cannot read ${file} (${e.message})`);
+      return;
+    }
     offset += text.length;
     if (opts.onWrite) opts.onWrite(text.length);
     assembler.feed(text);
@@ -296,4 +339,23 @@ function watchChatLog(file, onFrame, opts = {}) {
   return { close: () => clearInterval(timer), check, resync };
 }
 
-module.exports = { TAG, DEFAULTS, options, ensureKey, parseLine, decodeFrame, createAssembler, watchChatLog, noteWrite, bufferSize, calibratedFiller, stripOurLines, clientState, clientRunning, cleanSupported, scheduleCleaning, cleanWhenClosed, reasonTeller };
+module.exports = {
+  TAG,
+  DEFAULTS,
+  options,
+  ensureKey,
+  parseLine,
+  decodeFrame,
+  createAssembler,
+  watchChatLog,
+  noteWrite,
+  bufferSize,
+  calibratedFiller,
+  stripOurLines,
+  clientState,
+  clientRunning,
+  cleanSupported,
+  scheduleCleaning,
+  cleanWhenClosed,
+  reasonTeller,
+};

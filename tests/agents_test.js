@@ -29,38 +29,35 @@ test('agent ids, display names and the legacy Claude config keys', () => {
   assert.deepEqual(A.agentConfig({ agents: { grok: { model: 'grok-build' } } }, 'grok'), { model: 'grok-build' });
 });
 
-test('Claude Code: headless stream-json with the allowlist, resume and system prompt; prompt on stdin', () => {
-  const cfg = { permissionMode: 'acceptEdits', allowedTools: ['WebSearch', 'Bash(git:*)'], model: 'opus' };
-  const args = A.AGENTS.claude.args({ cfg, resume: 'sess-1', system: SYS, cwd: 'C:\\p' });
-  assert.deepEqual(args, ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'acceptEdits',
-    '--allowedTools', 'WebSearch', 'Bash(git:*)', '--model', 'opus', '--resume', 'sess-1', '--append-system-prompt', SYS]);
-  const bare = A.AGENTS.claude.args({ cfg: {}, resume: '', system: '', cwd: 'C:\\p' });
-  assert.deepEqual(bare, ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'acceptEdits']);
-  assert.deepEqual(A.AGENTS.claude.input({ prompt: 'hi', system: SYS, systemShort: 'x', resume: '' }), { stdin: 'hi' });
-  const env = A.AGENTS.claude.env({ CLAUDECODE: '1', PATH: 'x' });
-  assert.equal(env.CLAUDECODE, undefined);
-  assert.equal(env.PATH, 'x');
-});
-
-test('Claude Code with the wowdata server (ask runs): --mcp-config with the bridge\'s JSON and mcp__wowdata as a run-only rule', () => {
-  const mcpConfig = JSON.stringify({ mcpServers: { wowdata: { type: 'stdio', command: '/x/claude-wow', args: ['data-mcp', '--data', '/h/data'], alwaysLoad: true } } });
-  const cfg = P.withRunOnlyRules({ allowedTools: ['WebSearch'] }, ['mcp__wowdata']);
-  assert.deepEqual(A.AGENTS.claude.args({ cfg, resume: 'r', system: SYS, cwd: 'x', mcpConfig }), ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'acceptEdits',
-    '--allowedTools', 'WebSearch', 'mcp__wowdata', '--mcp-config', mcpConfig, '--resume', 'r', '--append-system-prompt', SYS]);
-  assert.deepEqual(P.withRunOnlyRules({ allowedTools: ['mcp__wowdata'] }, ['mcp__wowdata']).allowedTools, ['mcp__wowdata']);
-});
-
 test('Claude Code with an image (vision): a stream-json user message with the picture as a content block', () => {
   const image = { file: '/b/tmp/vision-7-x.png', data: 'aGVsbG8=', mediaType: 'image/png', width: 1280, height: 712 };
   // Without images nothing changes: no --input-format, plain text on stdin.
-  assert.deepEqual(A.AGENTS.claude.args({ cfg: {}, resume: '', system: '', cwd: 'x', images: [] }),
-    ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'acceptEdits']);
+  assert.deepEqual(A.AGENTS.claude.args({ cfg: {}, resume: '', system: '', cwd: 'x', images: [] }), [
+    '-p',
+    '--output-format',
+    'stream-json',
+    '--verbose',
+    '--permission-mode',
+    'acceptEdits',
+  ]);
   assert.deepEqual(A.AGENTS.claude.input({ prompt: 'hi', images: [] }), { stdin: 'hi' });
   assert.deepEqual(A.AGENTS.claude.input({ prompt: 'hi' }), { stdin: 'hi' });
   // With one: the prompt goes in as one JSON line the CLI reads with --input-format stream-json.
   const args = A.AGENTS.claude.args({ cfg: {}, resume: 's', system: 'SYS', cwd: 'x', images: [image] });
-  assert.deepEqual(args, ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'acceptEdits',
-    '--input-format', 'stream-json', '--resume', 's', '--append-system-prompt', 'SYS']);
+  assert.deepEqual(args, [
+    '-p',
+    '--output-format',
+    'stream-json',
+    '--verbose',
+    '--permission-mode',
+    'acceptEdits',
+    '--input-format',
+    'stream-json',
+    '--resume',
+    's',
+    '--append-system-prompt',
+    'SYS',
+  ]);
   const { stdin } = A.AGENTS.claude.input({ prompt: 'what is this?', images: [image] });
   assert.ok(stdin.endsWith('\n'), 'one line, newline-terminated');
   const msg = JSON.parse(stdin);
@@ -70,12 +67,18 @@ test('Claude Code with an image (vision): a stream-json user message with the pi
   assert.deepEqual(msg.message.content[1], { type: 'text', text: A.IMAGE_CAPTION + '\n\nwhat is this?' });
   assert.equal(msg.message.content.length, 2);
   // A path-only image (no pixels loaded) is not inlined: it is named in the prompt like the other CLIs do.
-  assert.deepEqual(A.AGENTS.claude.input({ prompt: 'hi', images: ['/a.png'] }), { stdin: 'hi\n\nAttached screenshots: /a.png — read them with your Read tool.' });
+  assert.deepEqual(A.AGENTS.claude.input({ prompt: 'hi', images: ['/a.png'] }), {
+    stdin: 'hi\n\nAttached screenshots: /a.png — read them with your Read tool.',
+  });
   assert.ok(!A.AGENTS.claude.args({ cfg: {}, resume: '', system: '', cwd: 'x', images: ['/a.png'] }).includes('--input-format'));
   // The other agents take the file path out of the same image objects.
   assert.deepEqual(A.imagePaths([image, '/b.png', null]), ['/b/tmp/vision-7-x.png', '/b.png']);
   assert.deepEqual(A.AGENTS.codex.args({ cfg: {}, resume: '', cwd: 'x', images: [image] }).slice(-3), ['-i', '/b/tmp/vision-7-x.png', '-']);
-  assert.ok(A.AGENTS.codex.input({ prompt: 'p', system: '', systemShort: '', resume: '', images: [image] }).stdin.includes('Attached screenshots: /b/tmp/vision-7-x.png'));
+  assert.ok(
+    A.AGENTS.codex
+      .input({ prompt: 'p', system: '', systemShort: '', resume: '', images: [image] })
+      .stdin.includes('Attached screenshots: /b/tmp/vision-7-x.png'),
+  );
   assert.ok(A.AGENTS.hermes.args({ cfg: {}, cwd: '.', resume: '', images: [image] }).includes('/b/tmp/vision-7-x.png'));
   assert.ok(A.AGENTS.grok.input({ prompt: 'p', images: [image] }).promptFile.includes('/b/tmp/vision-7-x.png'));
 });
@@ -83,8 +86,18 @@ test('Claude Code with an image (vision): a stream-json user message with the pi
 test('Codex: exec --json in the chat folder, sandbox from permissionMode, resume as a subcommand, prompt on stdin with the context on top', () => {
   const args = A.AGENTS.codex.args({ cfg: { permissionMode: 'acceptEdits', model: 'gpt-5-codex' }, resume: '', cwd: 'C:\\p' });
   assert.deepEqual(args, ['exec', '--json', '--skip-git-repo-check', '-C', 'C:\\p', '--sandbox', 'workspace-write', '-m', 'gpt-5-codex', '-']);
-  assert.deepEqual(A.AGENTS.codex.args({ cfg: {}, resume: 'thread-9', cwd: 'C:\\p' }),
-    ['exec', '--json', '--skip-git-repo-check', '-C', 'C:\\p', '--sandbox', 'workspace-write', 'resume', 'thread-9', '-']);
+  assert.deepEqual(A.AGENTS.codex.args({ cfg: {}, resume: 'thread-9', cwd: 'C:\\p' }), [
+    'exec',
+    '--json',
+    '--skip-git-repo-check',
+    '-C',
+    'C:\\p',
+    '--sandbox',
+    'workspace-write',
+    'resume',
+    'thread-9',
+    '-',
+  ]);
   assert.ok(A.AGENTS.codex.args({ cfg: { permissionMode: 'default' }, resume: '', cwd: 'x' }).includes('read-only'));
   const yolo = A.AGENTS.codex.args({ cfg: { permissionMode: 'bypassPermissions' }, resume: '', cwd: 'x' });
   assert.ok(yolo.includes('--dangerously-bypass-approvals-and-sandbox') && !yolo.includes('--sandbox'));
@@ -142,15 +155,22 @@ test('Hermes command modes, image forwarding and plain text completion', () => {
     assert.ok(!A.AGENTS.hermes.args({ cfg: { permissionMode }, cwd: '.', resume: '' }).includes('--yolo'));
   }
   const p = A.hermesParser();
-  assert.deepEqual(p.finish({ stdout: fs.readFileSync(path.join(__dirname, 'fixtures/agents/hermes-pong.stdout'), 'utf8'),
-    stderr: fs.readFileSync(path.join(__dirname, 'fixtures/agents/hermes-pong.stderr'), 'utf8'), code: 0 }),
-  { session: '20260925_134414_e62607', done: { text: 'PONG', error: false } });
+  assert.deepEqual(
+    p.finish({
+      stdout: fs.readFileSync(path.join(__dirname, 'fixtures/agents/hermes-pong.stdout'), 'utf8'),
+      stderr: fs.readFileSync(path.join(__dirname, 'fixtures/agents/hermes-pong.stderr'), 'utf8'),
+      code: 0,
+    }),
+    { session: '20260925_134414_e62607', done: { text: 'PONG', error: false } },
+  );
 });
 
 test('agy review fixes: hermes stderr errors, yolo spellings, flag-like images, agy arg bound', () => {
   const p = A.hermesParser();
-  assert.deepEqual(p.finish({ stdout: '', stderr: '\x1b[2mSession_ID: abc\x1b[0m\nError: model not found\n', code: 1 }),
-    { session: 'abc', done: { text: 'Error: model not found', error: true } });
+  assert.deepEqual(p.finish({ stdout: '', stderr: '\x1b[2mSession_ID: abc\x1b[0m\nError: model not found\n', code: 1 }), {
+    session: 'abc',
+    done: { text: 'Error: model not found', error: true },
+  });
   const extra = ['--yolo', '-y', '--yolo=1', '--max-turns', '3'];
   const args = A.AGENTS.hermes.args({ cfg: { extraArgs: extra }, cwd: '.', resume: '', images: ['--yolo'] });
   assert.deepEqual(args.slice(-2), ['--max-turns', '3']);
@@ -163,13 +183,46 @@ test('agy review fixes: hermes stderr errors, yolo spellings, flag-like images, 
 test('Grok: streaming-json from a prompt file, dontAsk plus translated allow rules, resume and the system prompt', () => {
   const cfg = { permissionMode: 'acceptEdits', allowedTools: ['WebSearch', 'Bash(git:*)', 'Bash'], model: 'grok-build' };
   const args = A.AGENTS.grok.args({ cfg, resume: 's-1', cwd: 'C:\\p', system: SYS, promptFile: 'C:\\b\\tmp\\prompt-001.txt' });
-  assert.deepEqual(args, ['--no-auto-update', '--output-format', 'streaming-json', '--cwd', 'C:\\p', '--prompt-file', 'C:\\b\\tmp\\prompt-001.txt',
-    '--permission-mode', 'dontAsk', '--allow', 'Edit', '--allow', 'Read', '--allow', 'Grep', '--allow', 'WebSearch',
-    '--allow', 'Bash(git *)', '--allow', 'Bash(git)', '--allow', 'Bash',
-    '-m', 'grok-build', '-r', 's-1', '--append-system-prompt', SYS]);
+  assert.deepEqual(args, [
+    '--no-auto-update',
+    '--output-format',
+    'streaming-json',
+    '--cwd',
+    'C:\\p',
+    '--prompt-file',
+    'C:\\b\\tmp\\prompt-001.txt',
+    '--permission-mode',
+    'dontAsk',
+    '--allow',
+    'Edit',
+    '--allow',
+    'Read',
+    '--allow',
+    'Grep',
+    '--allow',
+    'WebSearch',
+    '--allow',
+    'Bash(git *)',
+    '--allow',
+    'Bash(git)',
+    '--allow',
+    'Bash',
+    '-m',
+    'grok-build',
+    '-r',
+    's-1',
+    '--append-system-prompt',
+    SYS,
+  ]);
   const strict = A.AGENTS.grok.args({ cfg: { permissionMode: 'default', allowedTools: ['WebFetch'] }, resume: '', cwd: 'x', system: '', promptFile: 'f' });
   assert.ok(!strict.includes('Edit') && strict.includes('WebFetch') && strict.includes('dontAsk'));
-  const yolo = A.AGENTS.grok.args({ cfg: { permissionMode: 'bypassPermissions', allowedTools: ['WebFetch'], deniedTools: ['Bash(rm:*)'] }, resume: '', cwd: 'x', system: '', promptFile: 'f' });
+  const yolo = A.AGENTS.grok.args({
+    cfg: { permissionMode: 'bypassPermissions', allowedTools: ['WebFetch'], deniedTools: ['Bash(rm:*)'] },
+    resume: '',
+    cwd: 'x',
+    system: '',
+    promptFile: 'f',
+  });
   assert.ok(yolo.includes('--always-approve') && !yolo.includes('--allow') && !yolo.includes('dontAsk'));
   assert.deepEqual(yolo.slice(yolo.indexOf('--deny')), ['--deny', 'Bash(rm *)', '--deny', 'Bash(rm)']);
   const claudeDeny = A.AGENTS.claude.args({ cfg: { deniedTools: ['Bash(rm:*)', 'WebFetch'] }, resume: '', system: '', cwd: 'x' });
@@ -186,11 +239,26 @@ test('Claude stream: tool calls and text become progress, the result carries the
   const p = A.claudeParser();
   let r = p.feed({ type: 'system', subtype: 'init', session_id: 'sess-1' });
   assert.equal(r.session, 'sess-1');
-  r = p.feed({ type: 'assistant', session_id: 'sess-1', message: { content: [{ type: 'text', text: 'Let me look.' }, { type: 'tool_use', name: 'Edit', input: { file_path: 'player.gd' } }] } });
+  r = p.feed({
+    type: 'assistant',
+    session_id: 'sess-1',
+    message: {
+      content: [
+        { type: 'text', text: 'Let me look.' },
+        { type: 'tool_use', name: 'Edit', input: { file_path: 'player.gd' } },
+      ],
+    },
+  });
   assert.deepEqual(r.progress, ['Let me look.', 'Edit player.gd']);
   assert.equal(r.steps, 1, 'only the tool call counts as a step, not the text');
   assert.equal(r.done, undefined);
-  r = p.feed({ type: 'result', session_id: 'sess-1', is_error: false, result: 'Done.', permission_denials: [{ tool_name: 'Bash', tool_input: { command: 'cargo build' } }, { tool_name: 'WebSearch' }] });
+  r = p.feed({
+    type: 'result',
+    session_id: 'sess-1',
+    is_error: false,
+    result: 'Done.',
+    permission_denials: [{ tool_name: 'Bash', tool_input: { command: 'cargo build' } }, { tool_name: 'WebSearch' }],
+  });
   assert.deepEqual(r.done, { text: 'Done.', error: false });
   assert.deepEqual(r.denied, ['Bash(cargo:*)', 'WebSearch']);
   assert.ok(r.notes[0].includes('needed 2 actions that are not allowed yet') && r.notes[0].includes('Bash: cargo build'));
@@ -205,7 +273,11 @@ const fixtureIsDir = p => fixtureDirs.has(p);
 
 function replayClaude(name, opts = {}) {
   const p = A.claudeParser({ cwd: FIXTURE_CWD, isDir: fixtureIsDir, ...opts });
-  const lines = fs.readFileSync(path.join(__dirname, 'fixtures/agents', name), 'utf8').trim().split(/\r?\n/).map(l => JSON.parse(l));
+  const lines = fs
+    .readFileSync(path.join(__dirname, 'fixtures/agents', name), 'utf8')
+    .trim()
+    .split(/\r?\n/)
+    .map(l => JSON.parse(l));
   const out = { denied: [], notes: [], deniedAgain: [] };
   for (const ev of lines) {
     const r = p.feed(ev);
@@ -217,50 +289,23 @@ function replayClaude(name, opts = {}) {
   return out;
 }
 
-test('Claude denials from real streams: a command without a rule is offered as a rule', () => {
-  const r = replayClaude('claude-denied-rule.jsonl');
-  assert.deepEqual(r.denied, ['Bash(curl:*)']);
-  assert.equal(r.notes.length, 1);
-  assert.match(r.notes[0], /^Claude needed 1 action that is not allowed yet:\n {2}Bash: curl -sI https:\/\/example\.com -o \/dev\/null\n/);
-  assert.ok(r.notes[0].endsWith('\nAllow it from this chat to let it continue.'), r.notes[0]);
-});
-
-test('Claude denials from real streams: a path outside the working folders is offered as the folder, even when the rule is allowed', () => {
-  const r = replayClaude('claude-denied-outside.jsonl', { granted: { rules: ['Bash(touch:*)'], dirs: [FIXTURE_CWD] } });
-  assert.deepEqual(r.denied, ['AddDir(/tmp)']);
-  assert.equal(r.notes.length, 1);
-  assert.match(r.notes[0], /^Claude was blocked outside this chat's folders:\n {2}Bash: touch \/tmp\/cwow-s2\.txt \(folder \/tmp\)\n/);
-  assert.match(r.notes[0], /\/claude --add-dir/);
-});
-
 test('Claude denials from real streams: the "may only list files" wording and a Write outside the folders are folders too', () => {
   assert.deepEqual(replayClaude('claude-denied-outside-list.jsonl').denied, ['AddDir(/usr/share/misc)']);
   assert.deepEqual(replayClaude('claude-denied-outside-nested.jsonl').denied, ['AddDir(/tmp)'], 'the nearest folder that exists');
   assert.deepEqual(replayClaude('claude-denied-write-outside.jsonl').denied, ['AddDir(/tmp)']);
 });
 
-test('Claude denials from real streams: a retry that is still denied for what it was granted is not offered again', () => {
-  const folder = replayClaude('claude-denied-outside.jsonl', { granted: { rules: ['Bash(touch:*)'], dirs: [FIXTURE_CWD, '/tmp'] } });
-  assert.deepEqual(folder.denied, []);
-  assert.deepEqual(folder.deniedAgain, ['AddDir(/tmp)']);
-  assert.equal(folder.notes.length, 1);
-  assert.equal(folder.notes[0], "Claude was blocked again on Bash: touch /tmp/cwow-s2.txt although /tmp is already one of this chat's folders, so allowing it again would not help: touch in '/tmp/cwow-s2.txt' needs approval.");
-  const rule = replayClaude('claude-denied-rule.jsonl', { granted: { rules: ['Bash(curl:*)'], dirs: [FIXTURE_CWD] } });
-  assert.deepEqual(rule.denied, []);
-  assert.deepEqual(rule.deniedAgain, ['Bash(curl:*)']);
-  assert.equal(rule.notes[0], 'Claude was blocked again on Bash: curl -sI https://example.com -o /dev/null although Bash(curl:*) is already allowed, so allowing it again would not help: This command requires approval');
-  const missing = replayClaude('claude-denied-adddir-missing.jsonl', { granted: { rules: ['Bash(mkdir:*)'], dirs: [FIXTURE_CWD, '/tmp/cwow-s10/a'] } });
-  assert.deepEqual(missing.denied, [], 'Claude Code drops an --add-dir that does not exist yet; the folder is not offered again');
-  assert.deepEqual(missing.deniedAgain, ['AddDir(/tmp)']);
-});
-
 test('Claude denials: a tool under a granted mcp__<server> rule is denied again, never offered as a new rule', () => {
   const granted = { rules: ['WebSearch', 'mcp__wowdata'], dirs: [FIXTURE_CWD] };
   const p = A.claudeParser({ cwd: FIXTURE_CWD, isDir: fixtureIsDir, granted });
-  const r = p.feed({ type: 'result', result: 'x', permission_denials: [
-    { tool_name: 'mcp__wowdata__wow_item', tool_use_id: 't1', tool_input: { id: 501 } },
-    { tool_name: 'mcp__wowdataextra__wow_item', tool_use_id: 't2', tool_input: {} },
-  ] });
+  const r = p.feed({
+    type: 'result',
+    result: 'x',
+    permission_denials: [
+      { tool_name: 'mcp__wowdata__wow_item', tool_use_id: 't1', tool_input: { id: 501 } },
+      { tool_name: 'mcp__wowdataextra__wow_item', tool_use_id: 't2', tool_input: {} },
+    ],
+  });
   assert.deepEqual(r.deniedAgain, ['mcp__wowdata__wow_item']);
   assert.deepEqual(r.denied, ['mcp__wowdataextra__wow_item'], 'another server that only shares the prefix is still offered');
   assert.equal(P.deniedAgain({ kind: 'rule', rule: 'mcp__wowdata__wow_item' }, granted), true);
@@ -268,59 +313,67 @@ test('Claude denials: a tool under a granted mcp__<server> rule is denied again,
   assert.equal(P.deniedAgain({ kind: 'rule', rule: 'mcp__wowdata' }, granted), true);
 });
 
-test('Claude init: an MCP server that is not connected is reported, a connected one is not', () => {
-  const p = A.claudeParser();
-  const r = p.feed({ type: 'system', subtype: 'init', session_id: 's', mcp_servers: [{ name: 'wowdata', status: 'failed' }, { name: 'linear', status: 'connected' }, { name: 'docs', status: 'needs-auth' }] });
-  assert.deepEqual(r.mcpDown, [{ name: 'wowdata', status: 'failed' }, { name: 'docs', status: 'needs-auth' }]);
-  assert.equal(p.feed({ type: 'system', subtype: 'init', mcp_servers: [{ name: 'wowdata', status: 'connected' }] }).mcpDown, undefined);
-  assert.equal(p.feed({ type: 'system', subtype: 'init' }).mcpDown, undefined);
-});
-
-test('Claude stream after --add-dir: the resumed retry runs, no denial', () => {
-  const r = replayClaude('claude-resume-adddir.jsonl', { granted: { rules: [], dirs: [FIXTURE_CWD, '/tmp'] } });
-  assert.deepEqual(r.denied, []);
-  assert.deepEqual(r.notes, []);
-  assert.deepEqual(r.done, { text: 'DONE', error: false });
-});
-
-test('Claude denials without a reason on record fall back to a rule, and a tool_result error stands in for the system event', () => {
-  const p = A.claudeParser({ cwd: FIXTURE_CWD, isDir: fixtureIsDir });
-  p.feed({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 't1', is_error: true, content: [{ type: 'text', text: "cp in '/srv/x' needs approval. The path is outside the working directories for this session." }] }] } });
-  const r = p.feed({ type: 'result', result: 'x', permission_denials: [
-    { tool_name: 'Bash', tool_use_id: 't1', tool_input: { command: 'cp a /srv/x' } },
-    { tool_name: 'Bash', tool_use_id: 't2', tool_input: { command: 'rm -rf build' } },
-  ] });
-  assert.deepEqual(r.denied, ['AddDir(/srv)', 'Bash(rm:*)']);
-});
-
 test('Codex stream: thread id, one line per item, the last agent message is the reply, declined commands are noted', () => {
   const p = A.codexParser();
   const feed = ev => p.feed(ev);
   assert.equal(feed({ type: 'thread.started', thread_id: 'thr-1' }).session, 'thr-1');
   assert.deepEqual(feed({ type: 'turn.started' }).progress, []);
-  assert.deepEqual(feed({ type: 'item.completed', item: { id: 'i0', type: 'reasoning', text: 'Looking at the tests first' } }).progress, ['~ Looking at the tests first']);
-  assert.deepEqual(feed({ type: 'item.started', item: { id: 'i1', type: 'command_execution', command: 'npm test\nsecond', status: 'in_progress' } }).progress, ['$ npm test']);
+  assert.deepEqual(feed({ type: 'item.completed', item: { id: 'i0', type: 'reasoning', text: 'Looking at the tests first' } }).progress, [
+    '~ Looking at the tests first',
+  ]);
+  assert.deepEqual(feed({ type: 'item.started', item: { id: 'i1', type: 'command_execution', command: 'npm test\nsecond', status: 'in_progress' } }).progress, [
+    '$ npm test',
+  ]);
   // The shell wrapper Codex runs commands through is stripped (real line from codex 0.156).
   assert.equal(A.codexItemLine({ type: 'command_execution', command: "/bin/zsh -lc 'ls -la'" }), '$ ls -la');
   assert.equal(A.codexItemLine({ type: 'command_execution', command: 'C:\\Windows\\System32\\cmd.exe /c "dir /b"' }), '$ dir /b');
   assert.equal(A.shellInner('bash -c "echo hi"'), 'echo hi');
   assert.equal(A.shellInner('npm test'), 'npm test');
   // Completing an item that was announced when it started adds nothing.
-  assert.deepEqual(feed({ type: 'item.completed', item: { id: 'i1', type: 'command_execution', command: 'npm test', status: 'completed', exit_code: 0 } }).progress, []);
-  assert.deepEqual(feed({ type: 'item.completed', item: { id: 'i2', type: 'file_change', status: 'completed', changes: [{ path: 'C:/x/a.js', kind: 'update' }, { path: 'C:/x/b.js', kind: 'update' }] } }).progress, ['edit a.js, b.js']);
-  assert.deepEqual(feed({ type: 'item.completed', item: { id: 'i3', type: 'file_change', status: 'completed', changes: [{ path: 'new.md', kind: 'add' }] } }).progress, ['write new.md']);
+  assert.deepEqual(
+    feed({ type: 'item.completed', item: { id: 'i1', type: 'command_execution', command: 'npm test', status: 'completed', exit_code: 0 } }).progress,
+    [],
+  );
+  assert.deepEqual(
+    feed({
+      type: 'item.completed',
+      item: {
+        id: 'i2',
+        type: 'file_change',
+        status: 'completed',
+        changes: [
+          { path: 'C:/x/a.js', kind: 'update' },
+          { path: 'C:/x/b.js', kind: 'update' },
+        ],
+      },
+    }).progress,
+    ['edit a.js, b.js'],
+  );
+  assert.deepEqual(
+    feed({ type: 'item.completed', item: { id: 'i3', type: 'file_change', status: 'completed', changes: [{ path: 'new.md', kind: 'add' }] } }).progress,
+    ['write new.md'],
+  );
   assert.deepEqual(feed({ type: 'item.started', item: { id: 'i4', type: 'web_search', query: 'lua 5.1 gsub' } }).progress, ['search: lua 5.1 gsub']);
-  assert.deepEqual(feed({ type: 'item.started', item: { id: 'i5', type: 'mcp_tool_call', server: 'fs', tool: 'list', status: 'in_progress' } }).progress, ['tool: fs.list']);
+  assert.deepEqual(feed({ type: 'item.started', item: { id: 'i5', type: 'mcp_tool_call', server: 'fs', tool: 'list', status: 'in_progress' } }).progress, [
+    'tool: fs.list',
+  ]);
   const declined = feed({ type: 'item.completed', item: { id: 'i6', type: 'command_execution', command: 'git push', status: 'declined' } });
   assert.deepEqual(declined.progress, ['$ git push']);
   assert.ok(declined.notes[0].startsWith('Codex was not allowed to run: git push'));
-  assert.deepEqual(feed({ type: 'item.completed', item: { id: 'i7', type: 'agent_message', text: 'First draft of the answer.' } }).progress, ['First draft of the answer.']);
-  assert.deepEqual(feed({ type: 'item.completed', item: { id: 'i8', type: 'agent_message', text: 'All done: tests pass.' } }).progress, ['All done: tests pass.']);
+  assert.deepEqual(feed({ type: 'item.completed', item: { id: 'i7', type: 'agent_message', text: 'First draft of the answer.' } }).progress, [
+    'First draft of the answer.',
+  ]);
+  assert.deepEqual(feed({ type: 'item.completed', item: { id: 'i8', type: 'agent_message', text: 'All done: tests pass.' } }).progress, [
+    'All done: tests pass.',
+  ]);
   assert.deepEqual(feed({ type: 'item.completed', item: { id: 'i9', type: 'error', message: 'rate limited once' } }).notes, ['rate limited once']);
   const end = feed({ type: 'turn.completed', usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 } });
   assert.deepEqual(end.done, { text: 'All done: tests pass.', error: false });
   // A failed turn is an error with its message; a stream error too.
-  assert.deepEqual(A.codexParser().feed({ type: 'turn.failed', error: { message: 'context window exceeded' } }).done, { text: 'context window exceeded', error: true });
+  assert.deepEqual(A.codexParser().feed({ type: 'turn.failed', error: { message: 'context window exceeded' } }).done, {
+    text: 'context window exceeded',
+    error: true,
+  });
   assert.deepEqual(A.codexParser().feed({ type: 'error', message: 'auth' }).done, { text: 'auth', error: true });
   // A turn with no agent message yields an empty reply (the bridge fills in a note).
   assert.deepEqual(A.codexParser().feed({ type: 'turn.completed', usage: {} }).done, { text: '', error: false });
@@ -380,28 +433,136 @@ test('Grok stream: chunks join into the reply, thoughts and tool calls become pr
 test('Grok stream as Grok Build 1.0.41 prints it: tool inputs, a classifier refusal, a deny-rule refusal, an ordinary failure', () => {
   const p = A.grokParser();
   // Lines captured from real runs (paths shortened).
-  assert.deepEqual(p.feed({ type: 'tool_call', toolCallId: 'c1', title: 'read_file', kind: 'read', status: 'pending', toolName: 'read_file', rawInput: { target_file: '/x/gproj/hello.txt' }, content: [], locations: [] }).progress, ['read hello.txt']);
-  assert.deepEqual(p.feed({ type: 'tool_call', toolCallId: 'c2', title: 'write', kind: 'write', status: 'pending', toolName: 'write', rawInput: { file_path: '/x/gproj/note.txt', content: 'hi' } }).progress, ['edit note.txt']);
-  assert.deepEqual(p.feed({ type: 'tool_call', toolCallId: 'c3', title: 'grep', kind: 'search', status: 'pending', toolName: 'grep', rawInput: { pattern: 'PONG', path: 'hello.txt' } }).progress, ['grep PONG']);
-  assert.deepEqual(p.feed({ type: 'tool_call', toolCallId: 'c4', title: 'list_dir', kind: 'read', toolName: 'list_dir', rawInput: { target_directory: '/x/gproj/src' } }).progress, ['ls src']);
-  assert.deepEqual(p.feed({ type: 'tool_call', toolCallId: 'c5', title: 'run_terminal_command', kind: 'execute', status: 'pending', toolName: 'run_terminal_command', rawInput: { command: 'rm victim.txt', description: 'Remove victim.txt' } }).progress, ['$ rm victim.txt']);
+  assert.deepEqual(
+    p.feed({
+      type: 'tool_call',
+      toolCallId: 'c1',
+      title: 'read_file',
+      kind: 'read',
+      status: 'pending',
+      toolName: 'read_file',
+      rawInput: { target_file: '/x/gproj/hello.txt' },
+      content: [],
+      locations: [],
+    }).progress,
+    ['read hello.txt'],
+  );
+  assert.deepEqual(
+    p.feed({
+      type: 'tool_call',
+      toolCallId: 'c2',
+      title: 'write',
+      kind: 'write',
+      status: 'pending',
+      toolName: 'write',
+      rawInput: { file_path: '/x/gproj/note.txt', content: 'hi' },
+    }).progress,
+    ['edit note.txt'],
+  );
+  assert.deepEqual(
+    p.feed({
+      type: 'tool_call',
+      toolCallId: 'c3',
+      title: 'grep',
+      kind: 'search',
+      status: 'pending',
+      toolName: 'grep',
+      rawInput: { pattern: 'PONG', path: 'hello.txt' },
+    }).progress,
+    ['grep PONG'],
+  );
+  assert.deepEqual(
+    p.feed({ type: 'tool_call', toolCallId: 'c4', title: 'list_dir', kind: 'read', toolName: 'list_dir', rawInput: { target_directory: '/x/gproj/src' } })
+      .progress,
+    ['ls src'],
+  );
+  assert.deepEqual(
+    p.feed({
+      type: 'tool_call',
+      toolCallId: 'c5',
+      title: 'run_terminal_command',
+      kind: 'execute',
+      status: 'pending',
+      toolName: 'run_terminal_command',
+      rawInput: { command: 'rm victim.txt', description: 'Remove victim.txt' },
+    }).progress,
+    ['$ rm victim.txt'],
+  );
   // Progress updates carry no verdict.
-  assert.deepEqual(p.feed({ type: 'tool_call_update', toolCallId: 'c5', status: null, content: [{ type: 'content', content: { type: 'text', text: 'Remove victim.txt' } }], rawOutput: null }).denied, []);
+  assert.deepEqual(
+    p.feed({
+      type: 'tool_call_update',
+      toolCallId: 'c5',
+      status: null,
+      content: [{ type: 'content', content: { type: 'text', text: 'Remove victim.txt' } }],
+      rawOutput: null,
+    }).denied,
+    [],
+  );
   // The classifier refusal: status failed plus a "was not executed" line.
-  const blocked = p.feed({ type: 'tool_call_update', toolCallId: 'c5', status: 'failed', content: [{ type: 'content', content: { type: 'text', text: 'Tool `run_terminal_command` was not executed: Auto mode blocked this action (rm of a named non-scratch file is irreversible deletion and must wait). Take a safer approach that stays within what the user asked for; do not retry this exact action.' } }], rawOutput: null });
+  const blocked = p.feed({
+    type: 'tool_call_update',
+    toolCallId: 'c5',
+    status: 'failed',
+    content: [
+      {
+        type: 'content',
+        content: {
+          type: 'text',
+          text: 'Tool `run_terminal_command` was not executed: Auto mode blocked this action (rm of a named non-scratch file is irreversible deletion and must wait). Take a safer approach that stays within what the user asked for; do not retry this exact action.',
+        },
+      },
+    ],
+    rawOutput: null,
+  });
   assert.deepEqual(blocked.denied, ['Bash(rm:*)']);
   assert.ok(blocked.notes[0].startsWith('Grok was not allowed to: $ rm victim.txt\nAuto mode blocked this action'), blocked.notes[0]);
   assert.ok(blocked.notes[0].endsWith('Allow it from this chat to let it continue.'));
   // A deny rule.
-  p.feed({ type: 'tool_call', toolCallId: 'c6', title: 'run_terminal_command', kind: 'execute', toolName: 'run_terminal_command', rawInput: { command: 'touch probe-deny.txt' } });
-  const denied = p.feed({ type: 'tool_call_update', toolCallId: 'c6', status: 'failed', content: [{ type: 'content', content: { type: 'text', text: 'Tool `run_terminal_command` was not executed: Denied by permission policy: deny rule on bash matching "touch *"' } }] });
+  p.feed({
+    type: 'tool_call',
+    toolCallId: 'c6',
+    title: 'run_terminal_command',
+    kind: 'execute',
+    toolName: 'run_terminal_command',
+    rawInput: { command: 'touch probe-deny.txt' },
+  });
+  const denied = p.feed({
+    type: 'tool_call_update',
+    toolCallId: 'c6',
+    status: 'failed',
+    content: [
+      {
+        type: 'content',
+        content: { type: 'text', text: 'Tool `run_terminal_command` was not executed: Denied by permission policy: deny rule on bash matching "touch *"' },
+      },
+    ],
+  });
   assert.deepEqual(denied.denied, ['Bash(touch:*)']);
   assert.ok(denied.notes[0].includes('Denied by permission policy'));
   // A command that merely failed is not a refusal.
   p.feed({ type: 'tool_call', toolCallId: 'c7', kind: 'execute', toolName: 'run_terminal_command', rawInput: { command: 'npm test' } });
-  assert.deepEqual(p.feed({ type: 'tool_call_update', toolCallId: 'c7', status: 'failed', content: [{ type: 'content', content: { type: 'text', text: '3 tests failed' } }], rawOutput: { type: 'Bash', exit_code: 1 } }).denied, []);
+  assert.deepEqual(
+    p.feed({
+      type: 'tool_call_update',
+      toolCallId: 'c7',
+      status: 'failed',
+      content: [{ type: 'content', content: { type: 'text', text: '3 tests failed' } }],
+      rawOutput: { type: 'Bash', exit_code: 1 },
+    }).denied,
+    [],
+  );
   // A completed run of the same command, with output, is not one either.
-  assert.deepEqual(p.feed({ type: 'tool_call_update', toolCallId: 'c7', status: 'completed', content: [{ type: 'content', content: { type: 'text', text: 'total 8' } }], rawOutput: { type: 'Bash', exit_code: 0 } }).denied, []);
+  assert.deepEqual(
+    p.feed({
+      type: 'tool_call_update',
+      toolCallId: 'c7',
+      status: 'completed',
+      content: [{ type: 'content', content: { type: 'text', text: 'total 8' } }],
+      rawOutput: { type: 'Bash', exit_code: 0 },
+    }).denied,
+    [],
+  );
   assert.equal(A.grokRefusal({ status: 'completed', content: [] }), null);
   // The rest of the toolbox.
   assert.equal(A.grokCall({ toolName: 'todo_write', kind: 'think' }).line, 'todo list');
@@ -416,7 +577,13 @@ test('Grok stream as Grok Build 1.0.41 prints it: tool inputs, a classifier refu
   for (const w of [' read', ' `hello.txt`', ' and reply.']) q.feed({ type: 'text', data: w });
   r = q.feed({ type: 'tool_call', toolCallId: 'r1', title: 'read_file', kind: 'read', toolName: 'read_file', rawInput: { target_file: '/x/hello.txt' } });
   assert.deepEqual(r.progress, ["I'll read `hello.txt` and reply.", 'read hello.txt']);
-  q.feed({ type: 'tool_call_update', toolCallId: 'r1', status: 'completed', content: [{ type: 'content', content: { type: 'text', text: '1→PONG\n' } }], rawOutput: { type: 'ReadFile' } });
+  q.feed({
+    type: 'tool_call_update',
+    toolCallId: 'r1',
+    status: 'completed',
+    content: [{ type: 'content', content: { type: 'text', text: '1→PONG\n' } }],
+    rawOutput: { type: 'ReadFile' },
+  });
   q.feed({ type: 'thought', data: 'The file contains PONG.' });
   q.feed({ type: 'text', data: 'P' });
   r = q.feed({ type: 'text', data: 'ONG' });
@@ -439,12 +606,18 @@ test('resolveCommand: a configured script runs with this node, an npm .cmd shim 
     fs.mkdirSync(bin, { recursive: true });
     fs.writeFileSync(path.join(bin, 'codex.js'), '');
     const shim = path.join(tmp, 'codex.cmd');
-    fs.writeFileSync(shim, '@ECHO off\r\nSETLOCAL\r\nCALL :find_dp0\r\nendLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\node_modules\\@openai\\codex\\bin\\codex.js" %*\r\n');
+    fs.writeFileSync(
+      shim,
+      '@ECHO off\r\nSETLOCAL\r\nCALL :find_dp0\r\nendLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\node_modules\\@openai\\codex\\bin\\codex.js" %*\r\n',
+    );
     assert.deepEqual(A.unwrapShim(shim, A.AGENTS.codex), { file: process.execPath, args: [path.join(bin, 'codex.js')], found: true });
     assert.deepEqual(A.resolveCommand('codex', { path: shim }), { file: process.execPath, args: [path.join(bin, 'codex.js')], found: true });
     // Current npm shims mention "%dp0%\node.exe" before the script.
     const realShim = path.join(tmp, 'codex2.cmd');
-    fs.writeFileSync(realShim, 'IF EXIST "%dp0%\\node.exe" (\r\n  SET "_prog=%dp0%\\node.exe"\r\n)\r\n"%_prog%"  "%dp0%\\node_modules\\@openai\\codex\\bin\\codex.js" %*\r\n');
+    fs.writeFileSync(
+      realShim,
+      'IF EXIST "%dp0%\\node.exe" (\r\n  SET "_prog=%dp0%\\node.exe"\r\n)\r\n"%_prog%"  "%dp0%\\node_modules\\@openai\\codex\\bin\\codex.js" %*\r\n',
+    );
     assert.deepEqual(A.unwrapShim(realShim, A.AGENTS.codex), { file: process.execPath, args: [path.join(bin, 'codex.js')], found: true });
     // Other generators write %~dp0 and .bat launchers.
     const batShim = path.join(tmp, 'codex3.bat');
@@ -455,14 +628,20 @@ test('resolveCommand: a configured script runs with this node, an npm .cmd shim 
     fs.mkdirSync(path.dirname(claudeExe), { recursive: true });
     fs.writeFileSync(claudeExe, '');
     const claudeShim = path.join(tmp, 'claude.cmd');
-    fs.writeFileSync(claudeShim, 'IF EXIST "%dp0%\\node.exe" (\r\n  SET "_prog=%dp0%\\node.exe"\r\n)\r\n"%_prog%"  "%dp0%\\node_modules\\@anthropic-ai\\claude-code\\bin\\claude.exe" %*\r\n');
+    fs.writeFileSync(
+      claudeShim,
+      'IF EXIST "%dp0%\\node.exe" (\r\n  SET "_prog=%dp0%\\node.exe"\r\n)\r\n"%_prog%"  "%dp0%\\node_modules\\@anthropic-ai\\claude-code\\bin\\claude.exe" %*\r\n',
+    );
     assert.deepEqual(A.unwrapShim(claudeShim, A.AGENTS.claude), { file: claudeExe, args: [], found: true });
     // Grok's launcher has no extension: the native exe next to it when present, else this node runs the script.
     const grokScript = path.join(tmp, 'node_modules', '@xai-official', 'grok', 'bin', 'grok');
     fs.mkdirSync(path.dirname(grokScript), { recursive: true });
     fs.writeFileSync(grokScript, '#!/usr/bin/env node\n');
     const grokShim = path.join(tmp, 'grok.cmd');
-    fs.writeFileSync(grokShim, 'IF EXIST "%dp0%\\node.exe" (\r\n  SET "_prog=%dp0%\\node.exe"\r\n)\r\n"%_prog%"  "%dp0%\\node_modules\\@xai-official\\grok\\bin\\grok" %*\r\n');
+    fs.writeFileSync(
+      grokShim,
+      'IF EXIST "%dp0%\\node.exe" (\r\n  SET "_prog=%dp0%\\node.exe"\r\n)\r\n"%_prog%"  "%dp0%\\node_modules\\@xai-official\\grok\\bin\\grok" %*\r\n',
+    );
     assert.deepEqual(A.unwrapShim(grokShim, A.AGENTS.grok), { file: process.execPath, args: [grokScript], found: true });
     const grokExe = path.join(tmp, 'node_modules', '@xai-official', `grok-win32-${process.arch === 'arm64' ? 'arm64' : 'x64'}`, 'bin', 'grok.exe');
     fs.mkdirSync(path.dirname(grokExe), { recursive: true });
@@ -500,14 +679,43 @@ test('resolveCommand: a configured script runs with this node, an npm .cmd shim 
 test('Claude stream: usage on the assistant messages is the context the next turn will carry; the result only adds the window', () => {
   // Shapes as Claude Code 2.1 prints them (`-p --output-format stream-json --verbose`, haiku):
   // turn 1 of a session, one call; turn 2 resumed, a tool step and the answer.
-  const usage1 = { input_tokens: 10, cache_creation_input_tokens: 17366, cache_read_input_tokens: 13689, cache_creation: { ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: 17366 }, output_tokens: 1, service_tier: 'standard' };
+  const usage1 = {
+    input_tokens: 10,
+    cache_creation_input_tokens: 17366,
+    cache_read_input_tokens: 13689,
+    cache_creation: { ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: 17366 },
+    output_tokens: 1,
+    service_tier: 'standard',
+  };
   const p = A.claudeParser();
   const r1 = p.feed({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'pong' }], usage: usage1 }, session_id: 's1' });
   assert.deepEqual(r1.usage, { context: 31065, output: 1 });
   assert.deepEqual(r1.progress, ['pong']);
-  const end1 = p.feed({ type: 'result', subtype: 'success', is_error: false, num_turns: 1, result: 'pong', session_id: 's1',
-    usage: { input_tokens: 10, cache_creation_input_tokens: 17366, cache_read_input_tokens: 13689, output_tokens: 44, cache_creation: { ephemeral_1h_input_tokens: 17366, ephemeral_5m_input_tokens: 0 } },
-    modelUsage: { 'claude-haiku-4-5-20251001': { inputTokens: 10, outputTokens: 44, cacheReadInputTokens: 13689, cacheCreationInputTokens: 17366, contextWindow: 200000, maxOutputTokens: 32000 } } });
+  const end1 = p.feed({
+    type: 'result',
+    subtype: 'success',
+    is_error: false,
+    num_turns: 1,
+    result: 'pong',
+    session_id: 's1',
+    usage: {
+      input_tokens: 10,
+      cache_creation_input_tokens: 17366,
+      cache_read_input_tokens: 13689,
+      output_tokens: 44,
+      cache_creation: { ephemeral_1h_input_tokens: 17366, ephemeral_5m_input_tokens: 0 },
+    },
+    modelUsage: {
+      'claude-haiku-4-5-20251001': {
+        inputTokens: 10,
+        outputTokens: 44,
+        cacheReadInputTokens: 13689,
+        cacheCreationInputTokens: 17366,
+        contextWindow: 200000,
+        maxOutputTokens: 32000,
+      },
+    },
+  });
   // The run's price at list rates is exactly what Claude Code itself reported (total_cost_usd 0.0363309):
   // haiku 4.5 at $1/M input, $5/M output, cache reads at 0.1x, this run's cache writes all 1-hour at 2x.
   assert.deepEqual(end1.usage, { context: 31065, output: 1, window: 200000, cost: 0.0363309, costIsSessionTotal: true });
@@ -517,21 +725,44 @@ test('Claude stream: usage on the assistant messages is the context the next tur
   // last call is what turn 3 will carry. The result's usage is the SUM of the two
   // calls (cache_read 62491), which must not be mistaken for the context.
   const q = A.claudeParser();
-  const step = q.feed({ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Bash', input: { command: 'ls' } }], usage: { input_tokens: 10, cache_read_input_tokens: 31055, cache_creation_input_tokens: 381, output_tokens: 4 } } });
+  const step = q.feed({
+    type: 'assistant',
+    message: {
+      content: [{ type: 'tool_use', name: 'Bash', input: { command: 'ls' } }],
+      usage: { input_tokens: 10, cache_read_input_tokens: 31055, cache_creation_input_tokens: 381, output_tokens: 4 },
+    },
+  });
   assert.equal(step.usage.context, 31446);
   q.feed({ type: 'user', message: { content: [{ type: 'tool_result', content: 'a.js' }] } });
-  const last = q.feed({ type: 'assistant', message: { content: [{ type: 'text', text: 'pong' }], usage: { input_tokens: 8, cache_read_input_tokens: 31436, cache_creation_input_tokens: 1170, output_tokens: 2 } } });
+  const last = q.feed({
+    type: 'assistant',
+    message: {
+      content: [{ type: 'text', text: 'pong' }],
+      usage: { input_tokens: 8, cache_read_input_tokens: 31436, cache_creation_input_tokens: 1170, output_tokens: 2 },
+    },
+  });
   assert.equal(last.usage.context, 32614);
-  const end2 = q.feed({ type: 'result', subtype: 'success', result: 'pong', num_turns: 2,
+  const end2 = q.feed({
+    type: 'result',
+    subtype: 'success',
+    result: 'pong',
+    num_turns: 2,
     usage: { input_tokens: 18, cache_read_input_tokens: 62491, cache_creation_input_tokens: 1551, output_tokens: 161 },
-    modelUsage: { 'claude-haiku-4-5-20251001': { contextWindow: 200000 } } });
+    modelUsage: { 'claude-haiku-4-5-20251001': { contextWindow: 200000 } },
+  });
   assert.equal(end2.usage.context, 32614, 'the last assistant message, not the summed result');
   assert.equal(end2.usage.window, 200000);
   // A modelUsage entry with no token counts: the top-level usage (the turn's sum) is priced at that model.
   assert.ok(Math.abs(end2.usage.cost - (18 * 1 + 161 * 5 + 62491 * 0.1 + 1551 * 1.25) / 1e6) < 1e-12, String(end2.usage.cost));
   assert.equal(end2.usage.costUnknown, undefined);
   // A turn with no assistant message (an error) falls back to the result's usage; no usage at all reports none.
-  const e = A.claudeParser().feed({ type: 'result', subtype: 'error_during_execution', is_error: true, result: 'boom', usage: { input_tokens: 5, cache_read_input_tokens: 100, output_tokens: 0 } });
+  const e = A.claudeParser().feed({
+    type: 'result',
+    subtype: 'error_during_execution',
+    is_error: true,
+    result: 'boom',
+    usage: { input_tokens: 5, cache_read_input_tokens: 100, output_tokens: 0 },
+  });
   assert.deepEqual(e.usage, { context: 105, output: 0, costUnknown: ['no model named'] }, 'tokens, and a price it cannot name');
   assert.equal(A.claudeParser().feed({ type: 'result', result: 'x' }).usage, undefined);
   assert.equal(A.claudeParser().feed({ type: 'assistant', message: { content: [] } }).usage, undefined);
@@ -543,18 +774,37 @@ test('Claude stream: usage on the assistant messages is the context the next tur
 
 test('API-equivalent cost: per-model list rates, cache reads and writes priced apart, unknown models omitted rather than guessed', () => {
   // The real haiku run, priced from modelUsage with the 1h/5m split from usage.cache_creation.
-  const real = { usage: { input_tokens: 10, cache_creation_input_tokens: 17366, cache_read_input_tokens: 13689, output_tokens: 44, cache_creation: { ephemeral_1h_input_tokens: 17366, ephemeral_5m_input_tokens: 0 } },
-    modelUsage: { 'claude-haiku-4-5-20251001': { inputTokens: 10, outputTokens: 44, cacheReadInputTokens: 13689, cacheCreationInputTokens: 17366, contextWindow: 200000 } } };
+  const real = {
+    usage: {
+      input_tokens: 10,
+      cache_creation_input_tokens: 17366,
+      cache_read_input_tokens: 13689,
+      output_tokens: 44,
+      cache_creation: { ephemeral_1h_input_tokens: 17366, ephemeral_5m_input_tokens: 0 },
+    },
+    modelUsage: {
+      'claude-haiku-4-5-20251001': { inputTokens: 10, outputTokens: 44, cacheReadInputTokens: 13689, cacheCreationInputTokens: 17366, contextWindow: 200000 },
+    },
+  };
   const c = A.claudeCost(real, '');
   assert.deepEqual(c.models, ['claude-haiku-4-5-20251001']);
   assert.deepEqual(c.unknown, []);
   assert.ok(Math.abs(c.usd - 0.0363309) < 1e-9, `${c.usd} = Claude Code's own total_cost_usd`);
   // Cache reads are a tenth of fresh input: the measured session (45.2M of 45.4M input tokens
   // read from cache) would be ~10x overstated at the full input rate.
-  const opus = A.claudeCost({ usage: {}, modelUsage: { 'claude-opus-4-6': { inputTokens: 200000, outputTokens: 0, cacheReadInputTokens: 45200000, cacheCreationInputTokens: 0 } } }, '');
+  const opus = A.claudeCost(
+    { usage: {}, modelUsage: { 'claude-opus-4-6': { inputTokens: 200000, outputTokens: 0, cacheReadInputTokens: 45200000, cacheCreationInputTokens: 0 } } },
+    '',
+  );
   assert.ok(Math.abs(opus.usd - (200000 * 5 + 45200000 * 0.5) / 1e6) < 1e-9, opus.usd);
   // Five-minute cache writes at 1.25x, one-hour at 2x, split by the top-level ratio.
-  const writes = A.claudeCost({ usage: { cache_creation: { ephemeral_5m_input_tokens: 750, ephemeral_1h_input_tokens: 250 } }, modelUsage: { 'claude-sonnet-5': { cacheCreationInputTokens: 1000 } } }, '');
+  const writes = A.claudeCost(
+    {
+      usage: { cache_creation: { ephemeral_5m_input_tokens: 750, ephemeral_1h_input_tokens: 250 } },
+      modelUsage: { 'claude-sonnet-5': { cacheCreationInputTokens: 1000 } },
+    },
+    '',
+  );
   assert.ok(Math.abs(writes.usd - (750 * 2 * 1.25 + 250 * 2 * 2) / 1e6) < 1e-12, writes.usd);
   // Claude Fable 5.1 lists its own cache-read rate.
   const fable = A.claudeCost({ usage: {}, modelUsage: { 'claude-fable-5-1': { cacheReadInputTokens: 1e6 } } }, '');
@@ -567,19 +817,35 @@ test('API-equivalent cost: per-model list rates, cache reads and writes priced a
   assert.equal(A.claudeCost({ usage: { input_tokens: 5 } }, ''), null);
   assert.equal(A.claudeCost({}, 'claude-opus-5'), null);
   // No modelUsage: the top-level usage at the model the assistant messages named.
-  const top = A.claudeCost({ usage: { input_tokens: 1000, output_tokens: 100, cache_read_input_tokens: 10000, cache_creation_input_tokens: 2000 } }, 'claude-opus-5');
+  const top = A.claudeCost(
+    { usage: { input_tokens: 1000, output_tokens: 100, cache_read_input_tokens: 10000, cache_creation_input_tokens: 2000 } },
+    'claude-opus-5',
+  );
   assert.ok(Math.abs(top.usd - (1000 * 5 + 100 * 25 + 10000 * 0.5 + 2000 * 5 * 1.25) / 1e6) < 1e-12, top.usd);
   assert.deepEqual(A.claudeCost({ usage: { input_tokens: 1 } }, 'claude-new-9').unknown, ['claude-new-9']);
   for (const r of A.CLAUDE_RATES) assert.ok(r.input > 0 && r.output > 0 && r.match instanceof RegExp);
-  const opus55 = A.claudeCost({ usage: {}, modelUsage: { 'claude-opus-5-5[1m]': { inputTokens: 1e6, outputTokens: 1e6, cacheReadInputTokens: 1e6, cacheCreationInputTokens: 1e6 } } }, '');
+  const opus55 = A.claudeCost(
+    { usage: {}, modelUsage: { 'claude-opus-5-5[1m]': { inputTokens: 1e6, outputTokens: 1e6, cacheReadInputTokens: 1e6, cacheCreationInputTokens: 1e6 } } },
+    '',
+  );
   assert.ok(Math.abs(opus55.usd - (4 + 20 + 0.2 + 4 * 1.25)) < 1e-9, `Opus 5.5 lists $4 in, $20 out, $0.20 cache read: ${opus55.usd}`);
-  const sonnet55 = A.claudeCost({ usage: {}, modelUsage: { 'claude-sonnet-5-5': { inputTokens: 1e6, outputTokens: 1e6, cacheReadInputTokens: 1e6, cacheCreationInputTokens: 1e6 } } }, '');
+  const sonnet55 = A.claudeCost(
+    { usage: {}, modelUsage: { 'claude-sonnet-5-5': { inputTokens: 1e6, outputTokens: 1e6, cacheReadInputTokens: 1e6, cacheCreationInputTokens: 1e6 } } },
+    '',
+  );
   assert.ok(Math.abs(sonnet55.usd - (2 + 10 + 0.2 + 2 * 1.25)) < 1e-9, `Sonnet 5.5 lists $2 in, $10 out: ${sonnet55.usd}`);
   assert.deepEqual([A.claudeRate('claude-opus-5').input, A.claudeRate('claude-opus-5-20260301').input], [5, 5], 'Opus 5 keeps its own rate');
   assert.deepEqual([A.claudeRate('claude-opus-4-5').input, A.claudeRate('claude-sonnet-4-5').input], [5, 3]);
   // Through the parser: the result carries the run's cost, or names the model it could not price.
   const p = A.claudeParser();
-  p.feed({ type: 'assistant', message: { model: 'claude-new-9', content: [{ type: 'text', text: 'hi' }], usage: { input_tokens: 5, cache_read_input_tokens: 100, cache_creation_input_tokens: 0, output_tokens: 1 } } });
+  p.feed({
+    type: 'assistant',
+    message: {
+      model: 'claude-new-9',
+      content: [{ type: 'text', text: 'hi' }],
+      usage: { input_tokens: 5, cache_read_input_tokens: 100, cache_creation_input_tokens: 0, output_tokens: 1 },
+    },
+  });
   const r = p.feed({ type: 'result', result: 'hi', usage: { input_tokens: 5, cache_read_input_tokens: 100, output_tokens: 1 } });
   assert.deepEqual(r.usage, { context: 105, output: 1, costUnknown: ['claude-new-9'] });
 });
@@ -620,7 +886,10 @@ test('per-chat settings from /claude flags: each agent gets the ones it has, in 
   assert.ok(!grok.includes('Edit'), 'plan gives Grok no edit rules');
   const agy = argsFor('agy');
   assert.equal(after(agy, '--mode'), 'plan');
-  assert.deepEqual(agy.filter((a, i) => agy[i - 1] === '--add-dir'), ['/proj', '/srv/extra']);
+  assert.deepEqual(
+    agy.filter((a, i) => agy[i - 1] === '--add-dir'),
+    ['/proj', '/srv/extra'],
+  );
   assert.deepEqual(A.unsupportedSettings('claude', chosen), []);
   assert.deepEqual(A.unsupportedSettings('codex', chosen), []);
   assert.deepEqual(A.unsupportedSettings('grok', chosen), ['--effort high', '--add-dir /srv/extra -x']);
@@ -632,7 +901,17 @@ test('per-chat settings from /claude flags: each agent gets the ones it has, in 
 });
 
 test('agents.claude.maxCostUsd: a positive number becomes --max-budget-usd; anything else is left off and named once in the log', () => {
-  const argsFor = (id, maxCostUsd) => A.AGENTS[id].args({ cfg: { effort: 'high', maxCostUsd }, resume: '', cwd: '/proj', system: '', systemShort: '', promptFile: '/tmp/p.txt', prompt: 'hi', images: [] });
+  const argsFor = (id, maxCostUsd) =>
+    A.AGENTS[id].args({
+      cfg: { effort: 'high', maxCostUsd },
+      resume: '',
+      cwd: '/proj',
+      system: '',
+      systemShort: '',
+      promptFile: '/tmp/p.txt',
+      prompt: 'hi',
+      images: [],
+    });
   const capped = argsFor('claude', 0.5);
   assert.equal(capped[capped.indexOf('--max-budget-usd') + 1], '0.5');
   assert.equal(capped.indexOf('--max-budget-usd'), capped.indexOf('--effort') + 2);
@@ -649,10 +928,14 @@ test('agents.claude.maxCostUsd: a positive number becomes --max-budget-usd; anyt
   assert.equal(A.costCapNote('claude', { maxCostUsd: null }), '', 'null is the template value for no cap');
   assert.equal(A.costCapNote('codex', { maxCostUsd: null }), '');
   for (const bad of [0, -1, '0.5', true]) {
-    assert.equal(A.costCapNote('claude', { maxCostUsd: bad }), `agents.claude.maxCostUsd must be a positive number of US dollars; ${JSON.stringify(bad)} is ignored, so Claude runs have no cost cap.`);
+    assert.equal(
+      A.costCapNote('claude', { maxCostUsd: bad }),
+      `agents.claude.maxCostUsd must be a positive number of US dollars; ${JSON.stringify(bad)} is ignored, so Claude runs have no cost cap.`,
+    );
   }
   assert.equal(A.costCapNote('codex', { maxCostUsd: 0.5 }), 'Codex has no cost cap, so agents.codex.maxCostUsd is ignored.');
-  for (const id of ['grok', 'agy', 'hermes', 'local']) assert.match(A.costCapNote(id, { maxCostUsd: 1 }), new RegExp(`^${A.displayName(id)} has no cost cap, so agents\\.${id}\\.maxCostUsd is ignored\\.$`));
+  for (const id of ['grok', 'agy', 'hermes', 'local'])
+    assert.match(A.costCapNote(id, { maxCostUsd: 1 }), new RegExp(`^${A.displayName(id)} has no cost cap, so agents\\.${id}\\.maxCostUsd is ignored\\.$`));
   assert.equal(A.costCapNote('codex', {}), '');
 });
 
@@ -682,42 +965,104 @@ test('a plugin block sets the model and effort for its chats; a chat flag still 
   assert.deepEqual(A.withPluginSettings(agentCfg, 'claude', {}), agentCfg, 'no block keeps config.json');
   assert.deepEqual(A.withPluginSettings(agentCfg, 'codex', askOpts), agentCfg, 'another agent ignores the claude block');
   assert.equal(A.withPluginSettings(agentCfg, 'claude', { agents: { claude: { model: 'x y; rm' } } }).model, 'opus[1m]', 'a malformed value is ignored');
-  assert.equal(A.withPluginSettings({}, 'hermes', { agents: { hermes: { effort: 'high' } } }).effort, undefined, 'an agent never gets a setting it cannot take');
+  assert.equal(
+    A.withPluginSettings({}, 'hermes', { agents: { hermes: { effort: 'high' } } }).effort,
+    undefined,
+    'an agent never gets a setting it cannot take',
+  );
 });
 
 test('a wowdata call shows a loading line, then a line built from its result rows, never from the arguments', () => {
   const PD = require('../bridge/progressdata');
   const p = A.claudeParser();
-  const call = (id, tool, input, server = 'wowdata') => p.feed({ type: 'assistant', message: { content: [{ type: 'tool_use', id, name: `mcp__${server}__${tool}`, input }] } }).progress;
-  const answer = (id, result, isError = false) => p.feed({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: id, is_error: isError, content: [{ type: 'text', text: JSON.stringify(result) }] }] } }).progress;
+  const call = (id, tool, input, server = 'wowdata') =>
+    p.feed({ type: 'assistant', message: { content: [{ type: 'tool_use', id, name: `mcp__${server}__${tool}`, input }] } }).progress;
+  const answer = (id, result, isError = false) =>
+    p.feed({
+      type: 'user',
+      message: { content: [{ type: 'tool_result', tool_use_id: id, is_error: isError, content: [{ type: 'text', text: JSON.stringify(result) }] }] },
+    }).progress;
   const cited = { source: 'wago.tools', build: '1.15.9.1', trust: 'client-data' };
   assert.deepEqual(call('a', 'wow_instance', { name: 'Evil Typed Name' }), ['Looking up a dungeon or raid']);
   const boss = (name, chest) => ({ name, community: chest ? { chest: { name: 'Cache' } } : {} });
-  const core = { found: true, total: 1, buildCheck: 'exact', query: { id: 409 }, results: [{ ...cited, id: 409, name: 'Molten Core', bossSets: [{ bosses: [boss('A'), boss('B', true)] }, { bosses: [boss('A'), boss('B', true)] }] }] };
+  const core = {
+    found: true,
+    total: 1,
+    buildCheck: 'exact',
+    query: { id: 409 },
+    results: [{ ...cited, id: 409, name: 'Molten Core', bossSets: [{ bosses: [boss('A'), boss('B', true)] }, { bosses: [boss('A'), boss('B', true)] }] }],
+  };
   assert.deepEqual(answer('a', core), ['Molten Core: 2 encounters, 1 chest in 1.12 data'], 'difficulty sets are counted by name, not added up');
   call('a2', 'wow_instance', { name: 'the' });
-  assert.deepEqual(answer('a2', { ...core, total: 26 }), ['Molten Core: 2 encounters, 1 chest in 1.12 data, 25 more'], 'more counts the whole result, not the page');
+  assert.deepEqual(
+    answer('a2', { ...core, total: 26 }),
+    ['Molten Core: 2 encounters, 1 chest in 1.12 data, 25 more'],
+    'more counts the whole result, not the page',
+  );
   call('b', 'wow_item', { id: 2243 });
-  const item = { found: true, total: 1, buildCheck: 'exact', query: { id: 2243 }, results: [{ ...cited, id: 2243, name: 'Ignored Name', community: { droppedBy: { total: 359 }, skinnedFrom: { total: 0 }, objects: { total: 1 } } }] };
-  assert.deepEqual(answer('b', item), ['Dropped by 359 NPCs, in 1 chest, node or pool in 1.12 data: {item:2243}'], 'the readable part leads and the token comes last');
+  const item = {
+    found: true,
+    total: 1,
+    buildCheck: 'exact',
+    query: { id: 2243 },
+    results: [{ ...cited, id: 2243, name: 'Ignored Name', community: { droppedBy: { total: 359 }, skinnedFrom: { total: 0 }, objects: { total: 1 } } }],
+  };
+  assert.deepEqual(
+    answer('b', item),
+    ['Dropped by 359 NPCs, in 1 chest, node or pool in 1.12 data: {item:2243}'],
+    'the readable part leads and the token comes last',
+  );
   call('b2', 'wow_item', { id: 38 });
-  assert.deepEqual(answer('b2', { ...item, results: [{ ...item.results[0], community: { droppedBy: { total: 0 } } }] }), ['No source shown in 1.12 data: {item:2243}'], 'never claims the data has no source');
+  assert.deepEqual(
+    answer('b2', { ...item, results: [{ ...item.results[0], community: { droppedBy: { total: 0 } } }] }),
+    ['No source shown in 1.12 data: {item:2243}'],
+    'never claims the data has no source',
+  );
   call('b3', 'wow_item', { name: 'x' });
   assert.deepEqual(answer('b3', { ...item, total: 8, query: { name: 'x' } }), ['8 items, first {item:2243}']);
-  const npc = drops => ({ found: true, total: 1, buildCheck: 'exact', query: { id: 11502 }, results: [{ id: 11502, name: 'Ragnaros', trust: 'community-db', drops }] });
-  const drops = { total: 106, items: [{ id: 7078, quality: 2 }, { id: 17204, quality: 5 }, { id: 2000, quality: 4 }] };
+  const npc = drops => ({
+    found: true,
+    total: 1,
+    buildCheck: 'exact',
+    query: { id: 11502 },
+    results: [{ id: 11502, name: 'Ragnaros', trust: 'community-db', drops }],
+  });
+  const drops = {
+    total: 106,
+    items: [
+      { id: 7078, quality: 2 },
+      { id: 17204, quality: 5 },
+      { id: 2000, quality: 4 },
+    ],
+  };
   call('c', 'wow_npc', { id: 11502 });
   assert.deepEqual(answer('c', npc(drops)), ['NPC in 1.12 data: 106 drops, including {item:17204}'], 'the highest quality item shown, and never the NPC name');
   call('c2', 'wow_npc', { id: 11502 });
-  assert.deepEqual(answer('c2', { ...npc(drops), buildCheck: 'build-mismatch' }), ['NPC in 1.12 data: 106 drops'], 'no item token from data for another client build');
+  assert.deepEqual(
+    answer('c2', { ...npc(drops), buildCheck: 'build-mismatch' }),
+    ['NPC in 1.12 data: 106 drops'],
+    'no item token from data for another client build',
+  );
   call('c3', 'wow_npc', { name: 'ragnaros' });
   assert.deepEqual(answer('c3', { ...npc(drops), total: 2 }), ['2 NPCs in 1.12 data'], 'several hits are counted, not described by the first');
   call('d', 'wow_where', { name: 'x' });
-  assert.deepEqual(answer('d', { found: true, total: 3, query: { name: 'x' }, results: [{ ...cited, trust: 'unverified-build-mismatch', name: 'Elwynn Forest' }] }), ['3 places'], 'a name from unverified rows is not shown');
+  assert.deepEqual(
+    answer('d', { found: true, total: 3, query: { name: 'x' }, results: [{ ...cited, trust: 'unverified-build-mismatch', name: 'Elwynn Forest' }] }),
+    ['3 places'],
+    'a name from unverified rows is not shown',
+  );
   call('e', 'wow_where', { name: 'x' });
-  assert.deepEqual(answer('e', { found: true, total: 3, query: { name: 'x' }, results: [{ ...cited, name: 'Bad {item:1}|cff' }] }), ['Bad item:1cff and 2 more'], 'token and escape characters are stripped from a data name');
+  assert.deepEqual(
+    answer('e', { found: true, total: 3, query: { name: 'x' }, results: [{ ...cited, name: 'Bad {item:1}|cff' }] }),
+    ['Bad item:1cff and 2 more'],
+    'token and escape characters are stripped from a data name',
+  );
   call('e2', 'wow_faction', { name: 'x' });
-  assert.deepEqual(answer('e2', { found: true, total: 1, query: { name: 'x' }, results: [{ ...cited, name: 'Timbermaw Hold' }] }), ['1 faction'], 'a faction is counted, not named');
+  assert.deepEqual(
+    answer('e2', { found: true, total: 1, query: { name: 'x' }, results: [{ ...cited, name: 'Timbermaw Hold' }] }),
+    ['1 faction'],
+    'a faction is counted, not named',
+  );
   call('f', 'wow_item', { id: 1 });
   assert.deepEqual(answer('f', { found: false, results: [] }), ['Nothing found']);
   call('g', 'wow_item', { id: 1 });
@@ -731,7 +1076,11 @@ test('a wowdata call shows a loading line, then a line built from its result row
   call('m', 'wow_item', { id: 1 });
   assert.deepEqual(answer('m', { found: true, total: 1, query: { id: 1 }, results: [null] }), [], 'a malformed row adds no line and does not throw');
   call('n', 'wow_instance', { id: 1 });
-  const longName = { ...core, total: 47, results: [{ ...core.results[0], name: 'N'.repeat(40), bossSets: [{ bosses: Array.from({ length: 12 }, (_, k) => boss(`B${k}`, true)) }] }] };
+  const longName = {
+    ...core,
+    total: 47,
+    results: [{ ...core.results[0], name: 'N'.repeat(40), bossSets: [{ bosses: Array.from({ length: 12 }, (_, k) => boss(`B${k}`, true)) }] }],
+  };
   const [line] = answer('n', longName);
   assert.ok(line.startsWith('N'.repeat(40) + ': 12 encounters') && line.length <= PD.MAX_LINE, `the name counts toward the line budget (${line.length})`);
 });

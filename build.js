@@ -55,11 +55,28 @@ function main(argv) {
     if (argv[i] === '--target') targets.push(argv[++i]);
     else if (argv[i] === '--host') targets.push(hostTarget());
     else if (argv[i] === '--out') out = path.resolve(argv[++i]);
-    else if (argv[i] === '-h' || argv[i] === '--help') { console.log(fs.readFileSync(__filename, 'utf8').split('\n').filter(l => l.startsWith('//')).slice(1).map(l => l.slice(3)).join('\n')); return 0; }
-    else { console.error(`unknown option ${argv[i]}`); return 2; }
+    else if (argv[i] === '-h' || argv[i] === '--help') {
+      console.log(
+        fs
+          .readFileSync(__filename, 'utf8')
+          .split('\n')
+          .filter(l => l.startsWith('//'))
+          .slice(1)
+          .map(l => l.slice(3))
+          .join('\n'),
+      );
+      return 0;
+    } else {
+      console.error(`unknown option ${argv[i]}`);
+      return 2;
+    }
   }
   if (!targets.length) targets = TARGETS;
-  for (const t of targets) if (!TARGETS.includes(t)) { console.error(`unknown target ${t}; one of ${TARGETS.join(', ')}`); return 2; }
+  for (const t of targets)
+    if (!TARGETS.includes(t)) {
+      console.error(`unknown target ${t}; one of ${TARGETS.join(', ')}`);
+      return 2;
+    }
   const bun = findBun();
   const version = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version;
   const bunVersion = (spawnSync(bun, ['--version'], { encoding: 'utf8', windowsHide: true }).stdout || '').trim();
@@ -70,7 +87,10 @@ function main(argv) {
     const file = path.join(out, outName(target));
     const args = ['build', '--compile', `--target=${target}`, path.join(ROOT, 'build', 'entry.js'), '--outfile', file];
     const r = spawnSync(bun, args, { cwd: ROOT, stdio: 'inherit', windowsHide: true });
-    if (r.status !== 0) { console.error(`bun build failed for ${target}`); return 1; }
+    if (r.status !== 0) {
+      console.error(`bun build failed for ${target}`);
+      return 1;
+    }
     const buf = fs.readFileSync(file);
     const sum = crypto.createHash('sha256').update(buf).digest('hex');
     sums.push(`${sum}  ${path.basename(file)}`);
@@ -81,7 +101,10 @@ function main(argv) {
   const mine = path.join(out, outName(hostTarget()));
   if (targets.includes(hostTarget())) {
     const r = spawnSync(mine, ['service', 'help'], { encoding: 'utf8', windowsHide: true });
-    if (r.status !== 0 || !/install/.test(r.stdout)) { console.error(`${mine} does not run: ${(r.stderr || r.stdout || String(r.error)).trim()}`); return 1; }
+    if (r.status !== 0 || !/install/.test(r.stdout)) {
+      console.error(`${mine} does not run: ${(r.stderr || r.stdout || String(r.error)).trim()}`);
+      return 1;
+    }
     console.log(`  ${path.basename(mine)} runs (service help)`);
   }
   console.log(`checksums: ${path.join(out, 'SHA256SUMS')}`);

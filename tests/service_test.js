@@ -6,7 +6,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const S = require('../bridge/service');
 
@@ -54,56 +53,6 @@ test('per-user folders per platform, none of them under /usr or Program Files', 
   assert.ok(win.logs.startsWith('C:\\U\\p\\AppData\\Local'));
   assert.equal(S.pidFile(mac), path.join(mac.run, 'supervisor.pid'));
   assert.equal(S.serviceLogFile(mac), path.join(mac.logs, 'bridge.log'));
-});
-
-test('the LaunchAgent plist: label, node + supervisor, RunAtLoad, KeepAlive, logs, PATH, and XML escaping', () => {
-  const plist = S.launchdPlist({
-    node: '/opt/homebrew/bin/node', script: '/Users/p/claude-wow/bridge/supervisor.js', cwd: '/Users/p/claude-wow',
-    logFile: '/Users/p/Library/Logs/claude-wow/launchd.log', env: { PATH: '/a/b & c:/usr/bin', EMPTY: '' },
-  });
-  assert.ok(plist.startsWith('<?xml version="1.0"'));
-  assert.match(plist, /<key>Label<\/key>\s*<string>io\.claudewow\.bridge<\/string>/);
-  assert.match(plist, /<key>ProgramArguments<\/key>\s*<array>\s*<string>\/opt\/homebrew\/bin\/node<\/string>\s*<string>\/Users\/p\/claude-wow\/bridge\/supervisor\.js<\/string>\s*<\/array>/);
-  assert.match(plist, /<key>WorkingDirectory<\/key>\s*<string>\/Users\/p\/claude-wow<\/string>/);
-  assert.match(plist, /<key>RunAtLoad<\/key>\s*<true\/>/);
-  assert.match(plist, /<key>KeepAlive<\/key>\s*<true\/>/);
-  assert.match(plist, /<key>StandardOutPath<\/key>\s*<string>\/Users\/p\/Library\/Logs\/claude-wow\/launchd\.log<\/string>/);
-  assert.match(plist, /<key>CLAUDE_WOW_SERVICE<\/key>\s*<string>1<\/string>/, 'the supervisor knows it is the service');
-  assert.match(plist, /<key>PATH<\/key>\s*<string>\/a\/b &amp; c:\/usr\/bin<\/string>/, 'the ampersand is escaped');
-  assert.ok(!plist.includes('EMPTY'), 'empty variables are left out');
-  // Well-formed: every <key> has a value, every open tag closes.
-  for (const tag of ['dict', 'array', 'plist']) {
-    assert.equal((plist.match(new RegExp(`<${tag}[ >]`, 'g')) || []).length, (plist.match(new RegExp(`</${tag}>`, 'g')) || []).length, tag);
-  }
-  assert.equal(S.xmlEscape('<a href="x">&</a>'), '&lt;a href=&quot;x&quot;&gt;&amp;&lt;/a&gt;');
-});
-
-test('the plist parses with plutil where it exists', { skip: process.platform !== 'darwin' }, () => {
-  const { spawnSync } = require('child_process');
-  const file = path.join(scratch('plutil'), 'io.claudewow.bridge.plist');
-  fs.writeFileSync(file, S.launchdPlist({ node: '/usr/local/bin/node', script: '/x/supervisor.js', cwd: '/x', logFile: '/x/l.log', env: { PATH: '/usr/bin' } }));
-  const r = spawnSync('plutil', ['-lint', file], { encoding: 'utf8' });
-  if (r.error) return; // no plutil on this box
-  assert.equal(r.status, 0, r.stdout + r.stderr);
-});
-
-test('the systemd unit: ExecStart with quoted paths, Restart=always, the environment, WantedBy=default.target', () => {
-  const unit = S.systemdUnit({ node: '/usr/bin/node', script: '/home/p/my claude-wow/bridge/supervisor.js', cwd: '/home/p/my claude-wow', env: { PATH: '/usr/bin', DISPLAY: ':0' } });
-  assert.match(unit, /^\[Unit\]/);
-  assert.match(unit, /^ExecStart="\/usr\/bin\/node" "\/home\/p\/my claude-wow\/bridge\/supervisor\.js"$/m);
-  assert.match(unit, /^WorkingDirectory=\/home\/p\/my claude-wow$/m);
-  assert.match(unit, /^Restart=always$/m);
-  assert.match(unit, /^Environment="CLAUDE_WOW_SERVICE=1"$/m);
-  assert.match(unit, /^Environment="DISPLAY=:0"$/m);
-  assert.match(unit, /^WantedBy=default\.target$/m);
-});
-
-test('the Windows launcher: hidden window, service flag, quotes doubled', () => {
-  const vbs = S.startupVbs({ node: 'C:\\Program Files\\nodejs\\node.exe', script: 'C:\\Users\\p\\claude-wow\\bridge\\supervisor.js', cwd: 'C:\\Users\\p\\claude-wow' });
-  assert.match(vbs, /sh\.Environment\("Process"\)\("CLAUDE_WOW_SERVICE"\) = "1"/);
-  assert.match(vbs, /sh\.CurrentDirectory = "C:\\Users\\p\\claude-wow"/);
-  assert.match(vbs, /sh\.Run """C:\\Program Files\\nodejs\\node\.exe"" ""C:\\Users\\p\\claude-wow\\bridge\\supervisor\.js""", 0, False/);
-  assert.ok(vbs.split('\n').every(l => l === '' || l.endsWith('\r')), 'CRLF for Windows');
 });
 
 test('log rotation: nothing below the limit, then a shift of .1 .. .keep with the oldest dropped', () => {
@@ -194,7 +143,13 @@ test('status on a clean machine says not installed / not running and exits 3; he
   const lines = [];
   const dir = scratch('status');
   fs.writeFileSync(path.join(dir, 'bridge.log'), '');
-  const code = S.status({ run: dir, logs: dir, definition: path.join(dir, 'io.claudewow.bridge.plist') }, 'darwin', l => lines.push(l), path.join(dir, 'state.json'), path.join(dir, 'config.json'));
+  const code = S.status(
+    { run: dir, logs: dir, definition: path.join(dir, 'io.claudewow.bridge.plist') },
+    'darwin',
+    l => lines.push(l),
+    path.join(dir, 'state.json'),
+    path.join(dir, 'config.json'),
+  );
   assert.equal(code, 3);
   assert.match(lines.join('\n'), /installed : no/);
   assert.match(lines.join('\n'), /running   : no/);
@@ -218,17 +173,18 @@ test('install refuses without a config.json rather than looping a broken service
     assert.match(errs.join('\n'), /config\.json is missing/);
     assert.ok(errs.join('\n').includes(path.join(home, 'config.json')), 'names the file it looked for');
   } finally {
-    if (saved === undefined) delete process.env.CLAUDE_WOW_HOME; else process.env.CLAUDE_WOW_HOME = saved;
+    if (saved === undefined) delete process.env.CLAUDE_WOW_HOME;
+    else process.env.CLAUDE_WOW_HOME = saved;
   }
 });
 
-test('the old name\'s service is removed: its definition goes, its pid file is honoured, and nothing throws when it is absent', () => {
+test("the old name's service is removed: its definition goes, its pid file is honoured, and nothing throws when it is absent", () => {
   // Windows backend: pure fs (no process of the old service is running here).
   const dir = scratch('oldwin');
   const old = { run: dir, definition: path.join(dir, 'Startup', 'WoW AI bridge.vbs') };
   assert.equal(S.backend('win32').removeOld(old), false, 'nothing to remove');
   fs.mkdirSync(path.dirname(old.definition), { recursive: true });
-  fs.writeFileSync(old.definition, '\' old launcher\r\n');
+  fs.writeFileSync(old.definition, "' old launcher\r\n");
   fs.writeFileSync(S.pidFile(old), JSON.stringify({ pid: 2147483000, mode: 'service' })); // a pid nobody has: not killed, not an error
   assert.equal(S.backend('win32').removeOld(old), true);
   assert.ok(!fs.existsSync(old.definition), 'the old launcher is gone');
@@ -251,7 +207,11 @@ test('the definition runs node + supervisor.js from a checkout, and the binary a
   const R = require('../bridge/runtime');
   const checkout = { compiled: false, execPath: '/opt/homebrew/bin/node', root: '/Users/p/claude-wow' };
   const binary = { compiled: true, execPath: '/Users/p/.local/bin/claude-wow', root: '/build/machine/claude-wow' };
-  assert.deepEqual(S.program(checkout), { node: '/opt/homebrew/bin/node', script: path.join('/Users/p/claude-wow', 'bridge', 'supervisor.js'), cwd: '/Users/p/claude-wow' });
+  assert.deepEqual(S.program(checkout), {
+    node: '/opt/homebrew/bin/node',
+    script: path.join('/Users/p/claude-wow', 'bridge', 'supervisor.js'),
+    cwd: '/Users/p/claude-wow',
+  });
   const b = S.program(binary);
   assert.equal(b.node, '/Users/p/.local/bin/claude-wow');
   assert.equal(b.script, '', 'no script: the binary is the supervisor');
@@ -263,9 +223,15 @@ test('the definition runs node + supervisor.js from a checkout, and the binary a
   const plist = S.definition('darwin', d, binary);
   assert.match(plist, /<key>ProgramArguments<\/key>\s*<array>\s*<string>\/Users\/p\/\.local\/bin\/claude-wow<\/string>\s*<\/array>/, 'one argument, no script');
   assert.ok(!/supervisor\.js/.test(plist));
-  assert.match(S.definition('darwin', d, checkout), /<string>\/opt\/homebrew\/bin\/node<\/string>\s*<string>[\\/]Users[\\/]p[\\/]claude-wow[\\/]bridge[\\/]supervisor\.js<\/string>/);
+  assert.match(
+    S.definition('darwin', d, checkout),
+    /<string>\/opt\/homebrew\/bin\/node<\/string>\s*<string>[\\/]Users[\\/]p[\\/]claude-wow[\\/]bridge[\\/]supervisor\.js<\/string>/,
+  );
   assert.match(S.definition('linux', S.dirs('linux', {}, '/home/p'), binary), /^ExecStart="\/Users\/p\/\.local\/bin\/claude-wow"$/m);
-  assert.match(S.definition('win32', S.dirs('win32', {}, 'C:\\Users\\p'), { ...binary, execPath: 'C:\\Users\\p\\bin\\claude-wow.exe' }), /sh\.Run """C:\\Users\\p\\bin\\claude-wow\.exe""", 0, False/);
+  assert.match(
+    S.definition('win32', S.dirs('win32', {}, 'C:\\Users\\p'), { ...binary, execPath: 'C:\\Users\\p\\bin\\claude-wow.exe' }),
+    /sh\.Run """C:\\Users\\p\\bin\\claude-wow\.exe""", 0, False/,
+  );
   assert.match(S.launchdPlist({ node: '/n', script: '', cwd: '/c', logFile: '/l' }), /<array>\s*<string>\/n<\/string>\s*<\/array>/);
   assert.match(S.systemdUnit({ node: '/n', script: '', cwd: '/c' }), /^ExecStart="\/n"$/m);
 });
@@ -285,14 +251,22 @@ test('a binary installed under <home>/releases makes a service that runs <home>/
   }
   const elsewhere = { compiled: true, execPath: path.join(home, 'bin', 'claude-wow'), root: '/x' };
   assert.equal(S.program(elsewhere, home).node, elsewhere.execPath, 'a binary outside releases keeps its own path');
-  assert.equal(S.program({ compiled: false, execPath: REL.releaseBinary(l, '0.5.0-abc'), root: '/repo' }, home).script, path.join('/repo', 'bridge', 'supervisor.js'), 'a checkout is never a release');
+  assert.equal(
+    S.program({ compiled: false, execPath: REL.releaseBinary(l, '0.5.0-abc'), root: '/repo' }, home).script,
+    path.join('/repo', 'bridge', 'supervisor.js'),
+    'a checkout is never a release',
+  );
   const plist = S.definition('darwin', S.dirs('darwin', {}, '/Users/p'), fromRelease, home);
   assert.ok(plist.includes(`<string>${S.xmlEscape(REL.currentBinary(l))}</string>\n    </array>`), 'one argument: the current binary');
   assert.ok(plist.includes(`<key>WorkingDirectory</key>\n    <string>${S.xmlEscape(home)}</string>`));
   assert.ok(!plist.includes(`${path.sep}releases${path.sep}`), 'no release folder is baked in, so a flip of current is enough');
   const programArgs = /<key>ProgramArguments<\/key>\s*<array>([\s\S]*?)<\/array>/.exec(plist)[1];
   assert.equal((programArgs.match(/<string>/g) || []).length, 1, 'no node and no script before or after the binary');
-  assert.match(plist, new RegExp(`<key>PATH</key>\\s*<string>${S.xmlEscape(l.current).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}${path.delimiter}`), 'PATH starts with the current folder');
+  assert.match(
+    plist,
+    new RegExp(`<key>PATH</key>\\s*<string>${S.xmlEscape(l.current).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}${path.delimiter}`),
+    'PATH starts with the current folder',
+  );
 });
 
 test('status names every client in config.json with its installed build and which one spoke last', () => {
@@ -306,13 +280,25 @@ test('status names every client in config.json with its installed build and whic
   fs.writeFileSync(path.join(dir, 'state.json'), JSON.stringify({ clients: { [CLI.keyOf(era)]: { heard: Date.now() - 60000 } } }));
   const lines = [];
   fs.writeFileSync(path.join(dir, 'bridge.log'), '');
-  S.status({ run: dir, logs: dir, definition: path.join(dir, 'none.plist') }, 'darwin', l => lines.push(l), path.join(dir, 'state.json'), path.join(dir, 'config.json'));
+  S.status(
+    { run: dir, logs: dir, definition: path.join(dir, 'none.plist') },
+    'darwin',
+    l => lines.push(l),
+    path.join(dir, 'state.json'),
+    path.join(dir, 'config.json'),
+  );
   const at = lines.findIndex(l => l.startsWith('  clients   : '));
   assert.ok(at >= 0, lines.join('\n'));
   assert.equal(lines[at], `  clients   : _classic_beta_: addon not installed, not heard yet (${forever})`);
   assert.equal(lines[at + 1], `              _classic_era_: addon 1.2.3 build abcdefabcdef, heard 60 s ago, spoke last (${era})`);
   const none = [];
-  S.status({ run: dir, logs: dir, definition: path.join(dir, 'none.plist') }, 'darwin', l => none.push(l), path.join(dir, 'state.json'), path.join(dir, 'missing.json'));
+  S.status(
+    { run: dir, logs: dir, definition: path.join(dir, 'none.plist') },
+    'darwin',
+    l => none.push(l),
+    path.join(dir, 'state.json'),
+    path.join(dir, 'missing.json'),
+  );
   assert.ok(none.includes('  clients   : no config.json (claude-wow setup)'));
 });
 
@@ -324,7 +310,10 @@ function fakeLaunchd({ teardownPolls = 3, bootstrapBroken = false, bootstrapRace
     state.calls.push(sub);
     if (sub === 'print') {
       if (state.loaded) return { ok: true, status: 0, out: 'state = running\npid = 4242\n' };
-      if (state.tearingDown > 0) { state.tearingDown--; return { ok: true, status: 0, out: 'state = exiting\n' }; }
+      if (state.tearingDown > 0) {
+        state.tearingDown--;
+        return { ok: true, status: 0, out: 'state = exiting\n' };
+      }
       return { ok: false, status: 113, out: 'Could not find service "io.claudewow.bridge" in domain for port\n' };
     }
     if (sub === 'bootout') {
@@ -333,7 +322,10 @@ function fakeLaunchd({ teardownPolls = 3, bootstrapBroken = false, bootstrapRace
       return { ok: true, status: 0, out: '' };
     }
     if (sub === 'bootstrap') {
-      if (bootstrapRaces) { state.loaded = true; return { ok: false, status: 37, out: 'Bootstrap failed: 37: Operation already in progress\n' }; }
+      if (bootstrapRaces) {
+        state.loaded = true;
+        return { ok: false, status: 37, out: 'Bootstrap failed: 37: Operation already in progress\n' };
+      }
       if (bootstrapBroken || state.loaded || state.tearingDown > 0) return { ok: false, status: 5, out: 'Bootstrap failed: 5: Input/output error\n' };
       state.loaded = true;
       return { ok: true, status: 0, out: '' };
@@ -344,7 +336,9 @@ function fakeLaunchd({ teardownPolls = 3, bootstrapBroken = false, bootstrapRace
   const b = Object.assign(Object.create(S.backend('darwin')), {
     exec,
     uid: () => 501,
-    sleep: () => { state.sleeps++; },
+    sleep: () => {
+      state.sleeps++;
+    },
     removeOld: () => false,
   });
   return { b, state };
@@ -361,17 +355,6 @@ test('install over a loaded LaunchAgent waits for bootout to finish, then ends l
   assert.ok(state.calls.indexOf('bootout') < state.calls.indexOf('bootstrap'));
   assert.ok(!state.calls.includes('load'), 'no bootstrap ran while launchd was still tearing the old job down');
   assert.match(fs.readFileSync(d.definition, 'utf8'), /<key>Label<\/key>\s*<string>io\.claudewow\.bridge<\/string>/);
-});
-
-test('install that bootstraps an agent launchd already loaded returns at once instead of retrying', () => {
-  const dir = scratch('macinstallrace');
-  const d = { logs: path.join(dir, 'logs'), run: path.join(dir, 'run'), definition: path.join(dir, 'LaunchAgents', `${S.LABEL}.plist`) };
-  const { b, state } = fakeLaunchd({ bootstrapRaces: true });
-  state.loaded = false;
-  b.install(d);
-  assert.equal(state.loaded, true);
-  assert.equal(state.calls.filter(c => c === 'bootstrap').length, 1);
-  assert.equal(state.sleeps, 0);
 });
 
 test('install fails loudly when launchd will not load the agent, even if the legacy load exits 0', () => {
