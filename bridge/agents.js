@@ -683,6 +683,7 @@ const AGENTS = {
       const denied = Array.isArray(cfg.deniedTools) ? cfg.deniedTools.filter(Boolean) : [];
       if (denied.length) a.push('--disallowedTools', ...denied);
       if (mcpConfig) a.push('--mcp-config', mcpConfig);
+      if (cfg.strictMcpConfig === true) a.push('--strict-mcp-config');
       if (cfg.model) a.push('--model', cfg.model);
       if (cfg.effort) a.push('--effort', cfg.effort);
       const capUsd = costCap(cfg.maxCostUsd);

@@ -218,3 +218,110 @@ test('agents.claude.maxCostUsd end to end: the run gets --max-budget-usd, a key 
   assert.ok(!transcript.includes('Bridge error'), 'the player set the cap, so the reply is not a bridge error');
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+function mcpAgent(file, record, result) {
+  fs.writeFileSync(
+    file,
+    `const fs = require('fs');\nconst a = process.argv.slice(2);\nconst i = a.indexOf('--mcp-config');\nfs.writeFileSync(${JSON.stringify(record)}, JSON.stringify({ argv: a, mcp: i >= 0 ? fs.readFileSync(a[i + 1], 'utf8') : null }));\nprocess.stdout.write(${JSON.stringify(JSON.stringify(result) + '\n')});\n`,
+  );
+}
+
+function outboxWithAllow(id, text, rules) {
+  const hex = s => Buffer.from(s, 'utf8').toString('hex');
+  return `ClaudeWoWDB = {\n["outbox"] = {\n["id"] = ${id},\n["session"] = "sess1",\n["chat"] = "chat1",\n["text"] = "${hex(text)}",\n["cwd"] = "",\n["allow"] = "${hex(rules.join('\x1F'))}",\n["t"] = 1,\n},\n}\n`;
+}
+
+test('an absent mcp key and an empty mcp block give the same argv and the same MCP config', () => {
+  const dir = scratch('mcp-absent');
+  const { home, saved, project, cfg } = fakeInstall(dir);
+  const record = path.join(dir, 'run.json');
+  mcpAgent(cfg.agents.claude.path, record, { type: 'result', result: 'pong', session_id: 'sess-1' });
+  const runs = [];
+  for (const mcp of [undefined, {}, { servers: {}, strict: false }]) {
+    fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify(mcp === undefined ? cfg : { ...cfg, mcp }));
+    fs.rmSync(path.join(home, 'state.json'), { force: true });
+    fs.writeFileSync(saved, outbox(20, 'ping', ''));
+    const r = runOnce(home, project);
+    assert.equal(r.status, 0, r.out);
+    assert.match(r.out, /#20@sess1 done \(/, r.out);
+    runs.push(JSON.parse(fs.readFileSync(record, 'utf8')));
+  }
+  assert.ok(!runs[0].argv.includes('--strict-mcp-config'));
+  assert.deepEqual(runs[1], runs[0]);
+  assert.deepEqual(runs[2], runs[0]);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('mcp.servers end to end: servers reach --mcp-config with ${VAR} only, strict is logged and passed, a reserved name is refused, and a tool outside allow is never offered nor persisted', () => {
+  const dir = scratch('mcp-servers');
+  const { home, saved, project, cfg } = fakeInstall(dir);
+  const userHome = path.join(dir, 'user');
+  fs.mkdirSync(userHome, { recursive: true });
+  fs.writeFileSync(path.join(userHome, '.claude.json'), JSON.stringify({ mcpServers: { mobbin: { type: 'http', url: 'https://m' } } }));
+  const secret = 'ghp_e2e_secret_value_never_written';
+  const record = path.join(dir, 'run.json');
+  mcpAgent(cfg.agents.claude.path, record, {
+    type: 'result',
+    result: 'pong',
+    session_id: 'sess-1',
+    permission_denials: [
+      { tool_name: 'mcp__notion__create_page', tool_use_id: 't1', tool_input: {} },
+      { tool_name: 'mcp__slack__post', tool_use_id: 't2', tool_input: {} },
+    ],
+  });
+  const withMcp = {
+    ...cfg,
+    agents: { claude: { ...cfg.agents.claude, allowedTools: ['WebSearch', 'mcp__notion', 'mcp__notion__notion-create-pages'] } },
+    mcp: {
+      strict: true,
+      servers: {
+        notion: { type: 'http', url: 'https://mcp.notion.com/mcp', allow: { claude: ['notion-search'] }, default: true },
+        github: { command: 'npx', args: ['-y', 'server-github'], envVars: ['GITHUB_TOKEN'], allow: '*', default: true },
+        wowdata: { command: 'node', args: ['fake.js'], default: true },
+      },
+    },
+  };
+  fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify(withMcp));
+  fs.writeFileSync(saved, outbox(21, 'ping', ''));
+  const env = { HOME: userHome, USERPROFILE: userHome, CLAUDE_CONFIG_DIR: '', GITHUB_TOKEN: secret };
+  const run = () =>
+    spawnSync(process.execPath, [BRIDGE, '--once', '--project', project], {
+      encoding: 'utf8',
+      env: { ...process.env, CLAUDE_WOW_HOME: home, ...env },
+      timeout: 60000,
+    });
+  const first = run();
+  const out = first.stdout + first.stderr;
+  assert.equal(first.status, 0, out);
+  assert.match(out, /mcp\.servers\.wowdata: "wowdata" is a bridge server name \(wowdata, wowgoals, wowfactory\); this server is skipped/, out);
+  assert.match(out, /mcp: notion \(on by default\), github \(on by default\); strict: /, out);
+  assert.match(out, /mcp\.strict: Claude runs stop loading these servers of your own: user:mobbin, and claude\.ai connectors/, out);
+  assert.match(out, /mcp: allowed tool rules that mcp\.servers does not allow are left out of Claude runs: mcp__notion, mcp__notion__notion-create-pages/, out);
+  const { argv, mcp } = JSON.parse(fs.readFileSync(record, 'utf8'));
+  assert.ok(argv.includes('--strict-mcp-config'), argv.join(' '));
+  const allowed = argv.slice(argv.indexOf('--allowedTools') + 1, argv.indexOf('--disallowedTools'));
+  assert.ok(allowed.includes('mcp__notion__notion-search') && allowed.includes('mcp__github'), allowed.join(' '));
+  assert.ok(!allowed.includes('mcp__notion') && !allowed.includes('mcp__notion__notion-create-pages'), allowed.join(' '));
+  assert.ok(argv.slice(argv.indexOf('--disallowedTools')).includes('mcp__notion__notion-create-pages'));
+  assert.deepEqual(JSON.parse(mcp).mcpServers, {
+    notion: { type: 'http', url: 'https://mcp.notion.com/mcp' },
+    github: { type: 'stdio', command: 'npx', args: ['-y', 'server-github'], env: { GITHUB_TOKEN: '${GITHUB_TOKEN}' } },
+  });
+  const inbox = fs.readFileSync(path.join(cfg.addonDir, 'ClaudeWoW_S001', 'Inbox.lua'), 'utf8');
+  assert.match(inbox, /denied = \{ "mcp__slack__post" \},/, inbox);
+  assert.ok(!inbox.includes('mcp__notion__create_page'), inbox);
+
+  fs.writeFileSync(saved, outboxWithAllow(22, 'go on', ['mcp__notion__create_page', 'mcp__slack__post']));
+  const second = run();
+  assert.equal(second.status, 0, second.stdout + second.stderr);
+  const saved2 = JSON.parse(fs.readFileSync(path.join(home, 'config.json'), 'utf8'));
+  assert.ok(saved2.agents.claude.allowedTools.includes('mcp__slack__post'), JSON.stringify(saved2.agents.claude));
+  assert.ok(!saved2.agents.claude.allowedTools.includes('mcp__notion__create_page'), JSON.stringify(saved2.agents.claude));
+  const secondArgv = JSON.parse(fs.readFileSync(record, 'utf8')).argv;
+  assert.ok(!secondArgv.slice(secondArgv.indexOf('--allowedTools'), secondArgv.indexOf('--disallowedTools')).includes('mcp__notion__create_page'));
+
+  for (const f of [record, path.join(home, 'config.json'), path.join(home, 'state.json'), path.join(home, 'transcripts.json')])
+    assert.ok(!fs.readFileSync(f, 'utf8').includes(secret), f);
+  assert.ok(!(first.stdout + first.stderr + second.stdout + second.stderr).includes(secret));
+  fs.rmSync(dir, { recursive: true, force: true });
+});

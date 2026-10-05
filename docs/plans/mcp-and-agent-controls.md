@@ -49,7 +49,7 @@ Any MCP server the player configures works from in-game chats, on Claude and on 
 
 Claude:
 - Merge enabled servers into the existing per-run JSON. Env and headers use Claude's own `${VAR}` expansion, written verbatim.
-- Allow rules `mcp__<server>__<tool>` via `P.withRunOnlyRules`; tools not in `allow` via `P.withRunDeniedRules`, so `neverOffered` keeps them out of the roll and a Need can never persist them.
+- Allow rules `mcp__<server>__<tool>` via `P.withRunOnlyRules`. Tools not in `allow` stay unallowed (a headless run is denied them) and a bridge-side predicate in `neverOffered` keeps them out of the roll, so a Need can never persist them. Measured on 2.1.289 (step 2): `--disallowedTools mcp__x` and `mcp__x__*` remove every tool of `x`, even one in `--allowedTools`, so "every other tool" cannot be a deny pattern. Only exact rules already in `allowedTools` for that server go to `P.withRunDeniedRules`; broader ones are dropped from the run.
 - `--strict-mcp-config` only when `mcp.strict: true`. On startup with strict on, log the servers in `~/.claude.json` / `.mcp.json` / plugins that will stop loading.
 
 Codex:
