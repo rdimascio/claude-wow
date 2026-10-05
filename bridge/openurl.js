@@ -81,13 +81,15 @@ function noteLinks(chat, texts) {
   chat.links = list;
 }
 
+function claimChat(chat, client) {
+  if (!chat || typeof chat !== 'object' || !client) return;
+  if (chat.client && chat.client !== client) chat.links = [];
+  chat.client = client;
+}
+
 function agentLinks(chat) {
   const known = new Set();
-  if (!chat || typeof chat !== 'object') return known;
-  if (Array.isArray(chat.links)) for (const url of chat.links) if (typeof url === 'string') known.add(url);
-  for (const m of Array.isArray(chat.messages) ? chat.messages : []) {
-    if (m && m.role === 'assistant') for (const url of linksIn(m.text)) known.add(url);
-  }
+  if (chat && typeof chat === 'object' && Array.isArray(chat.links)) for (const url of chat.links) if (typeof url === 'string') known.add(url);
   return known;
 }
 
@@ -134,7 +136,7 @@ function createOpener({ enabled = true, platform = process.platform, env = proce
   const available = enabled === true && !!launch;
 
   function request(job, chat) {
-    const no = why => ({ opened: false, text: `open link refused (${why}): ${shownInput(job && job.text)}` });
+    const no = why => ({ opened: false, why, text: `open link refused (${why}): ${shownInput(job && job.text)}` });
     if (!available) return no(enabled === true ? `no browser launcher on ${platform}` : 'openLinks is off');
     if (!job || job.via === 'reload') return no('not a strip record');
     const checked = checkUrl(job.text);
@@ -150,7 +152,7 @@ function createOpener({ enabled = true, platform = process.platform, env = proce
       if (child && typeof child.on === 'function') child.on('error', e => log(`open link: ${command} failed (${e && e.message ? e.message : e})`));
       if (child && typeof child.unref === 'function') child.unref();
     } catch (e) {
-      return { opened: false, text: `open link failed (${e && e.message ? e.message : e}): ${shownInput(checked.href)}` };
+      return { opened: false, why: 'the browser launcher failed', text: `open link failed (${e && e.message ? e.message : e}): ${shownInput(checked.href)}` };
     }
     return { opened: true, text: `open link: ${shownInput(checked.href)} for chat ${shownInput(job.chat)}` };
   }
@@ -168,6 +170,7 @@ module.exports = {
   linksIn,
   checkUrl,
   noteLinks,
+  claimChat,
   agentLinks,
   launcherFor,
   createLimiter,

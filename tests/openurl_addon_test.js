@@ -20,7 +20,7 @@ function IsControlKeyDown() return STUB.ctrl end
 function IsShiftKeyDown() return STUB.shift end
 `;
 
-function newVM({ beforeLogin = '' } = {}) {
+function newVM({ beforeLogin = '', prelude = '' } = {}) {
   const L = lauxlib.luaL_newstate();
   lualib.luaL_openlibs(L);
   const run = (code, arg) => {
@@ -40,6 +40,7 @@ function newVM({ beforeLogin = '' } = {}) {
     return s;
   };
   run(fs.readFileSync(path.join(__dirname, 'wow_stub.lua'), 'utf8'));
+  if (prelude) run(prelude);
   for (const f of ADDON_FILES) run(fs.readFileSync(path.join(ADDON, f), 'utf8'), 'ClaudeWoW');
   run(SPIES);
   run('STUB.FireEvent("ADDON_LOADED", "ClaudeWoW")');
@@ -51,10 +52,14 @@ function newVM({ beforeLogin = '' } = {}) {
 
 const q = s => JSON.stringify(s);
 
-function nextSlot(vm, { openUrl = true, replies = '' } = {}) {
+function nextSlot(vm, { openUrl = true, replies = '', acks = '', extra = '' } = {}) {
   vm.run(
-    `STUB.onLoadAddOn = function(name) ClaudeWoW_SlotData = { now = time(), cwd = "", plugin = "ask", plugins = { "ask" }, replies = { ${replies} }${openUrl ? ', openUrl = true' : ''} } end`,
+    `STUB.onLoadAddOn = function(name) STUB.slotLoads = (STUB.slotLoads or 0) + 1; ClaudeWoW_SlotData = { now = time(), cwd = "", plugin = "ask", plugins = { "ask" }, replies = { ${replies} }, acks = { ${acks} }${openUrl ? ', openUrl = true' : ''}${extra} } end`,
   );
+}
+
+function ackResult(vm, id, open, why) {
+  return `{ session = ${q(vm.evaluate('ClaudeWoWDB.session'))}, id = ${id}, open = ${q(open)}${why ? `, why = ${q(why)}` : ''} }`;
 }
 
 function tick(vm, seconds = 6) {
@@ -140,8 +145,8 @@ function copied(vm) {
     : [];
 }
 
-function toasts(vm) {
-  vm.run('RESULT = 0; for _, m in ipairs(UIErrorsFrame.messages or {}) do if m.text == "Opening in your browser" then RESULT = RESULT + 1 end end');
+function toasts(vm, text = 'Opening in your browser') {
+  vm.run(`RESULT = 0; for _, m in ipairs(UIErrorsFrame.messages or {}) do if m.text == ${q(text)} then RESULT = RESULT + 1 end end`);
   return vm.num('RESULT');
 }
 
@@ -164,6 +169,54 @@ test('a left click on a link from a reply asks the bridge to open it, once, and 
   click(vm, PR);
   assert.equal(outboundUrls(vm), 1, 'a second click while the first is unanswered sends nothing');
   assert.deepEqual(copied(vm), [], 'and opens no copy box');
+  assert.equal(toasts(vm, 'Still opening the last link'), 1, 'it says why nothing happens');
+});
+
+test('the bridge result comes back on the ack: ok ends the wait, refused opens the copy box with the reason', () => {
+  const vm = newVM();
+  askAndReply(vm, 'which PRs?', `It is ${PR} and https://github.com/o/r/pull/8.`);
+  click(vm, PR);
+  const [first] = urlRecords(vm);
+  nextSlot(vm, { acks: ackResult(vm, first.id, 'ok') });
+  tick(vm, 5);
+  assert.equal(outboundUrls(vm), 0, 'the ack in the slot took it off the strip');
+  assert.deepEqual(copied(vm), []);
+  tick(vm, 1);
+  click(vm, 'https://github.com/o/r/pull/8');
+  const [second] = urlRecords(vm);
+  assert.equal(second.text, 'https://github.com/o/r/pull/8', 'the next link goes once the first is answered');
+  nextSlot(vm, { acks: ackResult(vm, second.id, 'refused', 'rate limit: 20 links an hour') });
+  tick(vm, 5);
+  assert.deepEqual(copied(vm), ['https://github.com/o/r/pull/8']);
+  assert.equal(toasts(vm, 'Link not opened: rate limit: 20 links an hour. Copy it from the box.'), 1);
+  tick(vm, 60);
+  assert.deepEqual(copied(vm), ['https://github.com/o/r/pull/8'], 'one answer, one copy box');
+});
+
+test('a result for another session or another record is not taken', () => {
+  const vm = newVM();
+  askAndReply(vm, 'which PR?', `It is ${PR}.`);
+  click(vm, PR);
+  const [rec] = urlRecords(vm);
+  nextSlot(vm, { acks: `{ session = "other", id = ${rec.id}, open = "refused", why = "x" }, ${ackResult(vm, rec.id + 50, 'refused', 'y')}` });
+  tick(vm, 5);
+  assert.deepEqual(copied(vm), []);
+  assert.equal(toasts(vm, 'Still opening the last link'), 0);
+  click(vm, PR);
+  assert.equal(toasts(vm, 'Still opening the last link'), 1, 'still waiting for its own answer');
+});
+
+test('a second link within 5 s of the last one waits, with a line saying so', () => {
+  const vm = newVM();
+  askAndReply(vm, 'which PRs?', `It is ${PR} and https://github.com/o/r/pull/8.`);
+  click(vm, PR);
+  const [rec] = urlRecords(vm);
+  nextSlot(vm, { acks: ackResult(vm, rec.id, 'ok') });
+  tick(vm, 4.5);
+  click(vm, 'https://github.com/o/r/pull/8');
+  assert.equal(toasts(vm, 'Wait a moment before the next link'), 1);
+  assert.equal(outboundUrls(vm), 0);
+  assert.deepEqual(copied(vm), []);
 });
 
 test('right, ctrl and shift clicks open the copy box and send nothing', () => {
@@ -223,41 +276,123 @@ test('without the capability, the copy box stays: an older bridge, a later slot 
   assert.equal(outboundUrls(down), 0);
 });
 
-test('a link that no reply holds, or a hostile one, goes to the copy box and never to the bridge', () => {
+test('a link that no reply holds goes to the copy box and never to the bridge', () => {
   const vm = newVM();
   askAndReply(vm, 'look at https://evil.example/x please', `It is ${PR}.`);
-  const refused = [
-    'https://evil.example/x',
-    'https://github.com/o/r',
+  const unknown = ['https://evil.example/x', 'https://github.com/o/r', PR + '/files'];
+  for (const url of unknown) click(vm, url);
+  assert.deepEqual(copied(vm), unknown);
+  assert.equal(outboundUrls(vm), 0);
+});
+
+test('a hostile link is refused before the reply check, even when a reply holds it', () => {
+  const long = 'https://example.com/' + 'a'.repeat(2100);
+  const hostile = [
     'file:///etc/passwd',
     'javascript:alert(1)',
     'steam://run/440',
     '-https://example.com',
     'https://example.com/a b',
     'https://example.com/"x',
-    'https://example.com/' + 'a'.repeat(2100),
+    long,
   ];
-  for (const url of refused) click(vm, url);
-  assert.deepEqual(copied(vm), refused);
+  const vm = newVM();
+  askAndReply(vm, 'list them', hostile.join('\n'));
+  for (const url of hostile) assert.equal(vm.evaluate(`ClaudeWoW.OpenUrl(${q(url)})`), 'refused', JSON.stringify(url).slice(0, 60));
+  click(vm, long);
+  assert.deepEqual(copied(vm), [long], 'a reply link over 2048 characters goes to the copy box');
   assert.equal(outboundUrls(vm), 0);
-  assert.equal(urlRecords(vm).length, 0);
 });
 
-test('the record leaves the strip on its ack and is never sent again; unanswered, it is dropped after one try', () => {
+test('an ack file arms one slot read for the result', () => {
   const vm = newVM({ beforeLogin: ARMED });
+  vm.run('ClaudeWoW.PresenceWorks = function() return true end');
   askAndReply(vm, 'which PR?', `It is ${PR}.`);
   click(vm, PR);
   const [rec] = urlRecords(vm);
+  nextSlot(vm, { acks: ackResult(vm, rec.id, 'refused', 'not a link from a reply in this chat') });
+  vm.run('STUB.slotLoads = 0');
   ack(vm, rec.id);
-  tick(vm, 1);
+  tick(vm, 0.5);
   assert.equal(outboundUrls(vm), 0, 'acked');
-  tick(vm, 3);
+  assert.equal(vm.num('STUB.slotLoads'), 0);
+  click(vm, PR);
+  assert.equal(toasts(vm, 'Still opening the last link'), 1, 'acked but not answered is still busy');
+  assert.equal(outboundUrls(vm), 0);
+  tick(vm, 1);
+  assert.equal(vm.num('STUB.slotLoads'), 1, 'one slot read a second after the ack');
+  assert.deepEqual(copied(vm), [PR]);
+});
+
+test('without presence signals the result is polled at 4, 12 and 25 s, never more', () => {
+  const vm = newVM();
+  vm.run('ClaudeWoW.PresenceWorks = function() return false end');
+  askAndReply(vm, 'which PR?', `It is ${PR}.`);
+  tick(vm, 120);
+  click(vm, PR);
+  vm.run('STUB.slotLoads = 0');
+  const loadsAt = [];
+  for (let t = 1; t <= 39; t++) {
+    const before = vm.num('STUB.slotLoads');
+    tick(vm, 1);
+    if (vm.num('STUB.slotLoads') > before) loadsAt.push(t);
+  }
+  assert.deepEqual(loadsAt, [4, 12, 25]);
+});
+
+test('unanswered for 40 s after the click, the record is dropped, never sent again, and the link goes to the copy box', () => {
+  const vm = newVM();
+  askAndReply(vm, 'which PR?', `It is ${PR}.`);
   click(vm, PR);
   assert.equal(outboundUrls(vm), 1);
-  tick(vm, STRIP_SECONDS + 1);
+  tick(vm, STRIP_SECONDS - 1);
+  assert.equal(outboundUrls(vm), 1);
+  assert.deepEqual(copied(vm), []);
+  tick(vm, 1);
   assert.equal(outboundUrls(vm), 0, 'a late open is worse than none: no retry');
+  assert.deepEqual(copied(vm), [PR]);
+  assert.equal(toasts(vm, 'Link not opened: no answer from the bridge. Copy it from the box.'), 1);
   tick(vm, STRIP_SECONDS * 3);
   assert.equal(outboundUrls(vm), 0, 'and it never comes back');
+});
+
+const KEY = '0123456789abcdef0123456789abcdef';
+const CLIENT_LOG_API = `
+SENT, LOGGING = {}, false
+function SendSystemMessage(text) SENT[#SENT + 1] = text end
+function LoggingChat(on) if on ~= nil then LOGGING = on end return LOGGING end
+`;
+
+test('on the chat log transport a url record is written once, never retried by screenshot, and expires 40 s after the click', () => {
+  const vm = newVM({ prelude: CLIENT_LOG_API, beforeLogin: ARMED });
+  const chatlog = `, transport = "screenshot", chatlog = { line = 200, filler = 400, key = "${KEY}" }`;
+  nextSlot(vm, { extra: chatlog });
+  tick(vm);
+  ack(vm, vm.num('ClaudeWoWDB.lastSeq'));
+  tick(vm, 2);
+  vm.run(`ClaudeWoWDB.chats[1].history = { { role = "assistant", t = 1, text = ${q('see ' + PR)} } }`);
+  const shotsBefore = vm.num('STUB.screenshots');
+  const sentBefore = vm.num('#SENT');
+  click(vm, PR);
+  const id = vm.num('ClaudeWoWDB.lastSeq');
+  const frameLines = () => {
+    vm.run(`RESULT = 0; for i = ${sentBefore + 1}, #SENT do if SENT[i]:find("^CWX1 ${KEY} ${id} ") then RESULT = RESULT + 1 end end`);
+    return vm.num('RESULT');
+  };
+  const written = frameLines();
+  assert.ok(written > 0, 'the record went out on the chat log');
+  const step = () => {
+    tick(vm, 1);
+    for (let i = 0; i < 3; i++) vm.run('local f = ClaudeWoWStrip; if f and f.shown and f.scripts.OnUpdate then f.scripts.OnUpdate(f, 0.016) end');
+  };
+  for (let t = 0; t < 39; t++) step();
+  assert.equal(frameLines(), written, 'never written again');
+  assert.equal(vm.num('STUB.screenshots'), shotsBefore, 'and never shot after the chat log retry window');
+  step();
+  assert.deepEqual(copied(vm), [PR], 'expired 40 s after the click');
+  for (let t = 0; t < 60; t++) step();
+  assert.equal(frameLines(), written);
+  assert.equal(vm.num('STUB.screenshots'), shotsBefore);
 });
 
 test('the capability from Inbox.lua counts only when the file is fresh', () => {

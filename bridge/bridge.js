@@ -356,7 +356,7 @@ function saveTranscripts() {
 // run's late progress and reply must not recreate the transcript.
 const forgotten = new Set();
 
-function noteMessage(job, role, text, linkTexts = []) {
+function noteMessage(job, role, text, agentTexts = []) {
   if (!job.chat) return;
   if (role === 'user') forgotten.delete(job.chat);
   else if (forgotten.has(job.chat)) return;
@@ -364,11 +364,11 @@ function noteMessage(job, role, text, linkTexts = []) {
   if (job.name) c.name = job.name;
   if (job.cwd) c.cwd = job.cwd;
   if (job.plugin) c.plugin = job.plugin;
-  if (job.client) c.client = job.client;
+  OU.claimChat(c, job.client);
   const m = { role, text: String(text ?? '').slice(0, 4000), id: job.id, t: Math.floor(Date.now() / 1000) };
   if (role === 'assistant' && job.agent) m.agent = job.agent;
   if (job.plugin) m.plugin = job.plugin;
-  if (role === 'assistant') OU.noteLinks(c, [text, ...linkTexts]);
+  if (role === 'assistant' && agentTexts.length) OU.noteLinks(c, agentTexts);
   c.messages.push(m);
   while (c.messages.length > 200) c.messages.shift();
   c.updated = Date.now();
@@ -1107,9 +1107,9 @@ function signal(client, kind, id, on) {
   setSignalFile(SIG.signalFile(client.addonDir, kind, slotNumber(id)), on);
 }
 
-function ackJob(job) {
+function ackJob(job, result) {
   const r = rtOf(job.client);
-  if (r) r.acks = P.noteAck(r.acks, job);
+  if (r) r.acks = P.noteAck(r.acks, job, Date.now(), result);
   signal(clientFor(job), 'ack', job.id, true);
 }
 
@@ -1426,14 +1426,15 @@ function submit(job) {
   if (OU.isOpenRecord(job)) {
     markHandled(job);
     saveState();
-    ackJob(job);
     let result;
     try {
       result = linkOpener.request(job, transcripts.chats[job.chat]);
     } catch (e) {
-      result = { text: `open link failed (${e && e.message ? e.message : e})` };
+      result = { opened: false, why: 'the bridge failed', text: `open link failed (${e && e.message ? e.message : e})` };
     }
     log(`${tagOf(job)} ${result.text}`);
+    ackJob(job, result.opened ? { open: 'ok' } : { open: 'refused', why: result.why });
+    publishNow();
     return;
   }
   if (job.ctx !== undefined) setContext(job);
@@ -1964,7 +1965,7 @@ function checkedReply(job, reply) {
 function lateReply(job, raw) {
   lastActivityAt = Date.now();
   const { text, summary } = checkedReply(job, P.splitSummary(String(raw || '')));
-  noteMessage(job, 'assistant', text, [summary]);
+  noteMessage(job, 'assistant', text);
   publish(
     `${chatKey(job)}#late`,
     {
@@ -2570,6 +2571,7 @@ function runAgent(job, opts = {}) {
     });
     if (result && !result.error) {
       const body = String(result.text || '').trim() || (notes.length ? '' : `(${agent.name} finished without a reply)`);
+      job.agentText = body;
       finish(job, 'done', (body + extra).trim(), sessionId, [...denied]);
     } else if (result) {
       const said =
@@ -2758,7 +2760,12 @@ function finish(job, status, text, session, denied) {
     }
   }
   const shown = status === 'done' ? checkedReply(job, { text, summary }) : { text, summary };
-  noteMessage(job, status === 'done' ? 'assistant' : 'system', status === 'done' ? shown.text : 'Bridge error: ' + text, [shown.summary]);
+  noteMessage(
+    job,
+    status === 'done' ? 'assistant' : 'system',
+    status === 'done' ? shown.text : 'Bridge error: ' + text,
+    status === 'done' && typeof job.agentText === 'string' ? [job.agentText] : [],
+  );
   awardAchievements(job, status);
   const usage = P.usageFields(job.usage);
   publish(
