@@ -42,9 +42,8 @@ function openUpFolder(dir) {
   openUpEntry(dir, realFolder(dir));
 }
 
-function writeNewTemp(file, content) {
-  const tmp = `${file}.${crypto.randomBytes(8).toString('hex')}.tmp`;
-  const fd = fs.openSync(tmp, EXCLUSIVE_NEW_FILE, OWNER_ONLY);
+function writeExclusive(target, content) {
+  const fd = fs.openSync(target, EXCLUSIVE_NEW_FILE, OWNER_ONLY);
   try {
     try {
       if (matchesGame()) fs.fchmodSync(fd, GAME_MODE);
@@ -53,15 +52,28 @@ function writeNewTemp(file, content) {
       fs.closeSync(fd);
     }
   } catch (e) {
-    remove(tmp);
+    remove(target);
     throw e;
   }
+}
+
+function createIfMissing(target, content) {
+  try {
+    writeExclusive(target, content);
+    return true;
+  } catch (e) {
+    if (e.code === 'EEXIST') return false;
+    throw e;
+  }
+}
+
+function writeNewTemp(file, content) {
+  const tmp = `${file}.${crypto.randomBytes(8).toString('hex')}.tmp`;
+  writeExclusive(tmp, content);
   return tmp;
 }
 
-function replaceFile(file, content) {
-  const dir = path.dirname(file);
-  const folderBefore = realFolder(dir);
+function renameOver(file, content) {
   const tmp = writeNewTemp(file, content);
   try {
     fs.renameSync(tmp, file);
@@ -69,7 +81,55 @@ function replaceFile(file, content) {
     remove(tmp);
     throw e;
   }
+}
+
+function checkFolderKept(dir, folderBefore) {
   if (matchesGame() && !sameEntry(realFolder(dir), folderBefore)) throw unsafe(dir, 'folder was replaced during the write');
+}
+
+function replaceFile(file, content) {
+  const dir = path.dirname(file);
+  const folderBefore = realFolder(dir);
+  renameOver(file, content);
+  checkFolderKept(dir, folderBefore);
+}
+
+function asBuffer(content) {
+  return Buffer.isBuffer(content) ? content : Buffer.from(content);
+}
+
+function keepIfSame(file, wanted) {
+  let fd;
+  try {
+    fd = fs.openSync(file, EXISTING_ENTRY_NO_LINK);
+  } catch (e) {
+    return e.code === 'ENOENT' ? 'missing' : 'differs';
+  }
+  try {
+    const st = fs.fstatSync(fd);
+    if (!st.isFile() || st.size !== wanted.length) return 'differs';
+    if (!fs.readFileSync(fd).equals(wanted)) return 'differs';
+    if (!matchesGame() || (st.mode & PERMISSION_BITS) === GAME_MODE) return 'same';
+    try {
+      fs.fchmodSync(fd, GAME_MODE);
+      return 'same';
+    } catch {
+      return 'differs';
+    }
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+function writeFile(file, content) {
+  const dir = path.dirname(file);
+  const folderBefore = realFolder(dir);
+  const wanted = asBuffer(content);
+  const found = keepIfSame(file, wanted);
+  if (found === 'same') return false;
+  if (found !== 'missing' || !createIfMissing(file, wanted)) renameOver(file, wanted);
+  checkFolderKept(dir, folderBefore);
+  return true;
 }
 
 function missingAncestors(dir) {
@@ -91,10 +151,22 @@ function mkdir(dir) {
   for (const d of created.reverse()) openUpFolder(d);
 }
 
+function folderFor(file) {
+  const dir = path.dirname(file);
+  try {
+    return realFolder(dir);
+  } catch (e) {
+    if (e.code !== 'ENOENT') throw e;
+  }
+  mkdir(dir);
+  return realFolder(dir);
+}
+
 function ensureFile(file, content) {
   if (fs.existsSync(file)) return false;
-  mkdir(path.dirname(file));
-  replaceFile(file, content);
+  const folderBefore = folderFor(file);
+  if (!createIfMissing(file, content)) return false;
+  checkFolderKept(path.dirname(file), folderBefore);
   return true;
 }
 
@@ -108,7 +180,7 @@ function remove(file) {
 }
 
 function copyFile(from, to) {
-  replaceFile(to, fs.readFileSync(from));
+  return writeFile(to, fs.readFileSync(from));
 }
 
 function addonFolders(addonDir) {
@@ -145,4 +217,4 @@ function repair(addonDir) {
   return result;
 }
 
-module.exports = { GAME_MODE, PERMISSION_BITS, WORLD_WRITABLE, ADDON_FOLDER, matchesGame, mkdir, writeFile: replaceFile, atomicWrite: replaceFile, ensureFile, remove, copyFile, addonFolders, repair };
+module.exports = { GAME_MODE, PERMISSION_BITS, WORLD_WRITABLE, ADDON_FOLDER, matchesGame, mkdir, writeFile, atomicWrite: replaceFile, ensureFile, remove, copyFile, addonFolders, repair };

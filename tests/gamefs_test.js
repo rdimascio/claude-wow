@@ -187,3 +187,45 @@ test('repair sets every file and folder under the ClaudeWoW addon folders to 077
   assert.deepEqual(G.repair(path.join(addons, 'missing')), { checked: 0, fixed: 0, failed: [] });
   fs.rmSync(addons, { recursive: true, force: true });
 });
+
+test('writeFile and copyFile skip a file that already has the content, fix its mode, and still rewrite a changed one', () => {
+  const dir = scratch('unchanged');
+  const file = path.join(dir, 'w.lua');
+  const src = path.join(dir, 'src.lua');
+  const copied = path.join(dir, 'c.lua');
+  fs.writeFileSync(src, 'copied');
+  assert.equal(G.writeFile(file, 'same'), true);
+  assert.equal(G.copyFile(src, copied), true);
+  const before = fs.statSync(file).ino;
+  if (process.platform !== 'win32') fs.chmodSync(file, 0o644);
+  assert.equal(G.writeFile(file, 'same'), false);
+  assert.equal(G.copyFile(src, copied), false);
+  assert.equal(fs.statSync(file).ino, before, 'an unchanged file is left in place');
+  if (process.platform !== 'win32') assert.equal(modeOf(file), 0o777);
+  assert.equal(G.writeFile(file, 'sane'), true, 'same size, other bytes');
+  assert.equal(fs.readFileSync(file, 'utf8'), 'sane');
+  assert.equal(G.writeFile(file, 'longer text'), true);
+  assert.equal(fs.readFileSync(file, 'utf8'), 'longer text');
+  fs.writeFileSync(src, 'changed');
+  assert.equal(G.copyFile(src, copied), true);
+  assert.equal(fs.readFileSync(copied, 'utf8'), 'changed');
+  assert.deepEqual(fs.readdirSync(dir).sort(), ['c.lua', 'src.lua', 'w.lua']);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('ensureFile creates a missing file and its folders 0777 and never writes through a dangling link', posixOnly, () => {
+  const dir = scratch('ensure');
+  const file = path.join(dir, 'a', 'b', '001.wav');
+  assert.equal(withUmask(0o077, () => G.ensureFile(file, 'RIFF')), true);
+  assert.equal(fs.readFileSync(file, 'utf8'), 'RIFF');
+  assert.equal(modeOf(file), 0o777);
+  assert.equal(modeOf(path.join(dir, 'a')), 0o777);
+  assert.equal(G.ensureFile(file, 'other'), false);
+  assert.equal(fs.readFileSync(file, 'utf8'), 'RIFF');
+  const target = path.join(dir, 'outside.wav');
+  const linked = path.join(dir, 'a', 'b', '002.wav');
+  fs.symlinkSync(target, linked);
+  assert.equal(G.ensureFile(linked, 'RIFF'), false);
+  assert.equal(fs.existsSync(target), false);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
