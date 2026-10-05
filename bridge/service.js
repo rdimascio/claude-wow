@@ -293,7 +293,6 @@ function makePrivateLogDir(dir, platform = process.platform) {
 }
 
 function secureServiceLogs(d, { platform = process.platform, bridgeLog = null } = {}) {
-  if (platform === 'win32') return;
   makePrivate(d.logs, PRIVATE_DIR_MODE, platform);
   securePrivateLog(serviceLogFile(d), { platform });
   securePrivateLog(launchdLogFile(d), { keep: LAUNCHD_LOG_KEEP, platform });
@@ -515,7 +514,7 @@ const mac = {
   },
   install(d) {
     fs.mkdirSync(path.dirname(d.definition), { recursive: true });
-    makePrivateLogDir(d.logs, 'darwin');
+    fs.mkdirSync(d.logs, { recursive: true });
     fs.mkdirSync(d.run, { recursive: true });
     rotate(launchdLogFile(d), { maxBytes: 1024 * 1024, keep: LAUNCHD_LOG_KEEP });
     secureServiceLogs(d, { platform: 'darwin' });
@@ -585,7 +584,7 @@ const linux = {
   },
   install(d) {
     fs.mkdirSync(path.dirname(d.definition), { recursive: true });
-    makePrivateLogDir(d.logs, 'linux');
+    fs.mkdirSync(d.logs, { recursive: true });
     secureServiceLogs(d, { platform: 'linux' });
     this.removeOld();
     fs.writeFileSync(d.definition, definition('linux', d));
@@ -968,7 +967,6 @@ module.exports = {
   rotate,
   RotatingLog,
   secureServiceLogs,
-  securePrivateLog,
   PRIVATE_FILE_MODE,
   PRIVATE_DIR_MODE,
   writePid,
