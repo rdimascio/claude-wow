@@ -66,6 +66,7 @@ function parseServer(name, s, reserved) {
       if (typeof s.bearerTokenEnvVar !== 'string' || !ENV_NAME_RE.test(s.bearerTokenEnvVar))
         return { error: `${where}.bearerTokenEnvVar must be an environment variable name` };
       out.envVars = [s.bearerTokenEnvVar];
+      out.bearerTokenEnvVar = s.bearerTokenEnvVar;
       out.server.headers = { Authorization: `Bearer ${envRef(s.bearerTokenEnvVar)}` };
     }
     return out;
@@ -102,7 +103,9 @@ function parse(raw, { reserved = [], log = () => {}, env = {} } = {}) {
     }
     for (const e of r.envVars)
       if (env[e] === undefined || env[e] === '')
-        log(`mcp.servers.${name}: ${e} is not set in the bridge's environment, so the server gets the literal text ${envRef(e)}`);
+        log(
+          `mcp.servers.${name}: ${e} is not set in the bridge's environment, so a Claude server gets the literal text ${envRef(e)} and a Codex server gets nothing`,
+        );
     servers.push(r);
   }
   return { servers, strict };
@@ -117,14 +120,18 @@ function serverOf(rule) {
   return m ? { server: m[1], tool: m[2] === undefined ? '' : m[2] } : null;
 }
 
-function forClaude(mcp) {
+const chosen = (s, on) => (Array.isArray(on) ? on.includes(s.name) : s.default);
+
+function forClaude(mcp, { on } = {}) {
   if (!mcp) return null;
-  const loaded = mcp.servers.filter(s => s.default);
+  const loaded = mcp.servers.filter(s => chosen(s, on));
   const allowed = new Map(mcp.servers.map(s => [s.name, s.allow.claude]));
   const allowRules = loaded.flatMap(s => s.allow.claude.map(t => toolRule(s.name, t)));
+  const off = Array.isArray(on) ? mcp.servers.filter(s => !on.includes(s.name)).map(s => s.name) : [];
   const blocks = rule => {
     const r = serverOf(rule);
     if (!r || !allowed.has(r.server)) return false;
+    if (off.includes(r.server)) return true;
     const tools = allowed.get(r.server);
     return !tools.includes(ALL_TOOLS) && !tools.includes(r.tool);
   };
@@ -132,6 +139,7 @@ function forClaude(mcp) {
     servers: Object.fromEntries(loaded.map(s => [s.name, s.server])),
     names: loaded.map(s => s.name),
     allowRules,
+    offRules: off.map(n => `mcp__${n}`),
     strict: mcp.strict,
     blocks,
   };
@@ -196,10 +204,67 @@ function claudeOwnServers({ home = os.homedir(), configDir = process.env.CLAUDE_
   return [...new Set(out)];
 }
 
+function codexOwnServers({ home = os.homedir(), codexHome = process.env.CODEX_HOME || '', readText = f => fs.readFileSync(f, 'utf8') } = {}) {
+  let text = '';
+  try {
+    text = readText(path.join(codexHome || path.join(home, '.codex'), 'config.toml'));
+  } catch {
+    return [];
+  }
+  const names = new Set();
+  for (const m of text.matchAll(/^\s*\[\s*mcp_servers\s*\.\s*(?:"([^"]+)"|'([^']+)'|([A-Za-z0-9_-]+))/gm)) names.add(m[1] || m[2] || m[3]);
+  for (const m of text.matchAll(/^\s*mcp_servers\s*\.\s*(?:"([^"]+)"|'([^']+)'|([A-Za-z0-9_-]+))\s*[.=]/gm)) names.add(m[1] || m[2] || m[3]);
+  return [...names];
+}
+
+function forCodex(mcp, { skip = [], on } = {}) {
+  if (!mcp) return [];
+  const turnedOff = Array.isArray(on) ? skip.filter(n => !on.includes(n) && mcp.servers.some(s => s.name === n)).map(name => ({ name, off: true })) : [];
+  return mcp.servers
+    .filter(s => chosen(s, on) && !skip.includes(s.name))
+    .map(s => ({
+      name: s.name,
+      server: s.server,
+      envVars: s.server.type === 'http' ? [] : s.envVars,
+      bearerTokenEnvVar: s.bearerTokenEnvVar || '',
+      enabledTools: s.allow.codex.includes(ALL_TOOLS) ? null : s.allow.codex,
+    }))
+    .concat(turnedOff);
+}
+
+const tomlString = v => JSON.stringify(String(v).replace(/[\ud800-\udfff]/gu, '\ufffd')).replace(/\u007f/g, '\\u007f');
+const tomlList = list => `[${list.map(tomlString).join(',')}]`;
+
+function codexArgs(entries) {
+  const out = [];
+  for (const e of entries || []) {
+    const key = `mcp_servers.${e.name}`;
+    const set = (k, v) => out.push('-c', `${key}.${k}=${v}`);
+    if (e.off) {
+      set('enabled', 'false');
+      continue;
+    }
+    if (e.server.type === 'http') {
+      set('url', tomlString(e.server.url));
+      if (e.bearerTokenEnvVar) set('bearer_token_env_var', tomlString(e.bearerTokenEnvVar));
+    } else {
+      set('command', tomlString(e.server.command));
+      set('args', tomlList(e.server.args || []));
+      if (e.envVars && e.envVars.length) set('env_vars', tomlList(e.envVars));
+    }
+    set('enabled', 'true');
+    if (Array.isArray(e.enabledTools)) set('enabled_tools', tomlList(e.enabledTools));
+    set('default_tools_approval_mode', tomlString('approve'));
+  }
+  const secrets = [...new Set((entries || []).flatMap(e => [...(e.envVars || []), ...(e.bearerTokenEnvVar ? [e.bearerTokenEnvVar] : [])]))];
+  if (secrets.length) out.push('-c', `shell_environment_policy.exclude=${tomlList(secrets)}`);
+  return out;
+}
+
 function summary(mcp) {
   if (!mcp) return '';
   const names = mcp.servers.map(s => `${s.name} (${s.default ? 'on' : 'off'} by default)`);
   return `${names.length ? names.join(', ') : 'no servers'}${mcp.strict ? '; strict: Claude runs load only these and the bridge servers' : ''}`;
 }
 
-module.exports = { parse, forClaude, scopeAllowed, claudeOwnServers, summary, serverOf, ALL_TOOLS };
+module.exports = { parse, forClaude, forCodex, codexArgs, codexOwnServers, scopeAllowed, claudeOwnServers, summary, serverOf, ALL_TOOLS };

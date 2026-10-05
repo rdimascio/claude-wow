@@ -77,19 +77,19 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { os: ubuntu-latest, shard: 1, of: 2, fileTimeout: 180000 }
-          - { os: ubuntu-latest, shard: 2, of: 2, fileTimeout: 180000 }
-          - { os: macos-latest, shard: 1, of: 2, fileTimeout: 180000 }
-          - { os: macos-latest, shard: 2, of: 2, fileTimeout: 180000 }
-          - { os: windows-latest, shard: 1, of: 4, fileTimeout: 400000 }
-          - { os: windows-latest, shard: 2, of: 4, fileTimeout: 400000 }
-          - { os: windows-latest, shard: 3, of: 4, fileTimeout: 400000 }
-          - { os: windows-latest, shard: 4, of: 4, fileTimeout: 400000 }
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest","windows-latest"]' || '["ubuntu-latest","macos-latest","windows-latest"]') }}
+        shard: [1, 2, 3, 4]
+        exclude:
+          - { os: ubuntu-latest, shard: 3 }
+          - { os: ubuntu-latest, shard: 4 }
+          - { os: macos-latest, shard: 3 }
+          - { os: macos-latest, shard: 4 }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     env:
       CLAUDE_WOW_FUZZ_EPISODES: 10
+      SHARDS: ${{ matrix.os == 'windows-latest' && 4 || 2 }}
+      FILE_TIMEOUT_MS: ${{ matrix.os == 'windows-latest' && 400000 || 180000 }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -99,7 +99,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
       - run: npm ci --ignore-scripts
-      - run: node --test --test-shard=${{ matrix.shard }}/${{ matrix.of }} --test-concurrency=2 --test-timeout=${{ matrix.fileTimeout }} --test-reporter=spec "tests/e2e/*_test.js"
+      - run: node --test --test-shard=${{ matrix.shard }}/${{ env.SHARDS }} --test-concurrency=2 --test-timeout=${{ env.FILE_TIMEOUT_MS }} --test-reporter=spec "tests/e2e/*_test.js"
 
   fuzz:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'

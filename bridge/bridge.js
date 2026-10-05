@@ -95,6 +95,7 @@ const OB = require('./observed');
 const OT = require('./observedtools');
 const MH = require('./maphold');
 const REL = require('./releases');
+const SVC = require('./service');
 const MC = require('./mcpconfig');
 
 const HERE = __dirname;
@@ -802,6 +803,7 @@ function sharedSlotFields(urgent) {
     live: liveInfo,
     sessions: sessionList(),
     projects: projectList(),
+    mcp: mcpSlotList(),
     home: os.homedir(),
     discord: !!discordHub,
     cwd: DEFAULT_CWD,
@@ -2354,6 +2356,14 @@ function factorySocket(tag) {
 }
 
 const loggedMcpDropped = new Set();
+const mcpHealth = new Map();
+function noteMcpHealth(servers) {
+  for (const s of servers) mcpHealth.set(s.name, s.status);
+}
+function mcpSlotList() {
+  if (!USER_MCP) return [];
+  return USER_MCP.servers.map(s => ({ name: s.name, on: s.default, health: mcpHealth.get(s.name) || 'unknown' }));
+}
 function loggedMcpBlocks(tag, never, userMcp) {
   if (!userMcp) return never;
   const said = new Set();
@@ -2388,11 +2398,12 @@ function runAgent(job, opts = {}) {
   const agent = A.AGENTS[agentId];
   const chosen = chatSettings(job);
   const claudeRun = agentId === 'claude';
+  const codexRun = agentId === 'codex';
   const runToolSocket = claudeRun && opts.runTools ? runToolsSocket(tag, job) : '';
   const runDenied = [...inGameDeniedTools({ claudeRun, plugin, withRunTools: !!runToolSocket }), ...(Array.isArray(opts.deniedTools) ? opts.deniedTools : [])];
   const factoryConf = claudeRun && opts.factory && opts.factory.enabled ? opts.factory : null;
   const factoryToolSocket = factoryConf ? factorySocket(tag) : '';
-  const userMcp = claudeRun ? MC.forClaude(USER_MCP) : null;
+  const userMcp = claudeRun ? MC.forClaude(USER_MCP, { on: chosen.mcp }) : null;
   const grantForGood = P.splitGrants(inGameGrantable(job.allow, runDenied, userMcp));
   const grantOnce = P.splitGrants(inGameGrantable(job.allowOnce, runDenied, userMcp));
   if (grantForGood.rules.length) {
@@ -2402,7 +2413,10 @@ function runAgent(job, opts = {}) {
   if (grantOnce.rules.length) {
     log(`${tag} allowed for this run only (${agentId}): ${grantOnce.rules.join(', ')}`);
   }
-  const dataServer = opts.gameData && (claudeRun || agent.mcp) ? gameDataServer(tag, job) : null;
+  const dataServer = opts.gameData && (claudeRun || codexRun || agent.mcp) ? gameDataServer(tag, job) : null;
+  const codexMcp = codexRun
+    ? [...(dataServer ? [{ name: DM.SERVER_NAME, server: dataServer.server }] : []), ...MC.forCodex(USER_MCP, { skip: CODEX_OWN_MCP, on: chosen.mcp })]
+    : [];
   const runOnlyRules = [
     ...grantOnce.rules,
     ...(dataServer ? dataServer.rules : []),
@@ -2415,7 +2429,11 @@ function runAgent(job, opts = {}) {
     loggedMcpDropped.add(scoped.dropped.join(' '));
     log(`${tag} mcp: allowed tool rules that mcp.servers does not allow are left out of Claude runs: ${scoped.dropped.join(', ')}`);
   }
-  const acfg = A.withChatSettings(P.withRunDeniedRules(P.withRunOnlyRules(scoped.agentCfg, runOnlyRules), [...runDenied, ...scoped.denied]), agentId, chosen);
+  const acfg = A.withChatSettings(
+    P.withRunDeniedRules(P.withRunOnlyRules(scoped.agentCfg, runOnlyRules), [...runDenied, ...scoped.denied, ...(userMcp ? userMcp.offRules : [])]),
+    agentId,
+    chosen,
+  );
   const runDirs = [...grantForGood.dirs, ...grantOnce.dirs].map(d => P.resolveCwd(d, DEFAULT_CWD));
   if (runDirs.length) {
     acfg.addDirs = [...new Set([...A.addDirs(acfg), ...runDirs])];
@@ -2509,12 +2527,14 @@ function runAgent(job, opts = {}) {
     ? FACTORY.launchConfig({ runId: factoryGrant.id, token: factoryGrant.token, socket: factoryToolSocket, skills: factoryConf.skills }).server
     : null;
   if (factoryGrant) factoryChats.set(key, job);
-  const mcpJson = GM.mcpConfig({
-    ...(userMcp ? userMcp.servers : {}),
-    [DM.SERVER_NAME]: dataServer && dataServer.server,
-    [GM.SERVER_NAME]: runServer,
-    [FACTORY.SERVER_NAME]: factoryServer,
-  });
+  const mcpJson = codexRun
+    ? ''
+    : GM.mcpConfig({
+        ...(userMcp ? userMcp.servers : {}),
+        [DM.SERVER_NAME]: dataServer && dataServer.server,
+        [GM.SERVER_NAME]: runServer,
+        [FACTORY.SERVER_NAME]: factoryServer,
+      });
   const mcpConfigFile = mcpJson ? path.join(MCP_CONFIG_DIR, `mcp-${job.id}-${crypto.randomBytes(8).toString('hex')}.json`) : '';
   if (mcpConfigFile) {
     try {
@@ -2547,6 +2567,7 @@ function runAgent(job, opts = {}) {
       timeoutMs: cfg.timeoutMs,
       mcpConfig: mcpConfigFile,
       strictMcpConfig: !!(userMcp && userMcp.strict),
+      codexMcpArgs: MC.codexArgs(codexMcp),
     }),
   ];
   const env = agent.env({ ...process.env });
@@ -2580,6 +2601,12 @@ function runAgent(job, opts = {}) {
     runGrant && GM.SERVER_NAME + ' for this run',
     factoryGrant && FACTORY.SERVER_NAME + ' for this run',
     userMcp && userMcp.names.length && 'mcp ' + userMcp.names.join(' '),
+    codexMcp.some(e => e.name !== DM.SERVER_NAME && !e.off) &&
+      'mcp ' +
+        codexMcp
+          .filter(e => e.name !== DM.SERVER_NAME && !e.off)
+          .map(e => e.name)
+          .join(' '),
     userMcp && userMcp.strict && 'strict mcp',
   ]
     .filter(Boolean)
@@ -2713,6 +2740,7 @@ function runAgent(job, opts = {}) {
     for (const d of r.denied) denied.add(d);
     if (Array.isArray(r.deniedAgain)) for (const d of r.deniedAgain) deniedAgain.add(d);
     if (Array.isArray(r.mcpDown)) noteMcpDown(r.mcpDown);
+    if (Array.isArray(r.mcpStatus)) noteMcpHealth(r.mcpStatus);
     notes.push(...r.notes);
     if (r.done) result = r.done;
   };
@@ -2880,6 +2908,7 @@ function chatSettings(job) {
     effort: job.effort || '',
     permissionMode: job.permissionMode || '',
     addDirs: (Array.isArray(job.addDirs) ? job.addDirs : []).map(d => P.resolveCwd(d, DEFAULT_CWD)),
+    ...(Array.isArray(job.mcp) ? { mcp: job.mcp } : {}),
   };
 }
 
@@ -2898,6 +2927,28 @@ function noteInflight(key, job, child, agentName, marker) {
   saveState();
 }
 
+function endOrphanOnWindows(run) {
+  if (!pidAlive(run.pid)) {
+    log(`#${run.id}: the ${run.agent || 'agent'} process ${run.pid} the previous bridge started is already gone`);
+    return;
+  }
+  if (!Number.isFinite(run.startedAt) || run.startedAt < BOOTED_AT) return;
+  let found = '';
+  const outcome = SVC.endWinAgentRun(run, undefined, (proc, query) => {
+    found =
+      proc.state === 'found'
+        ? `created ${proc.created} vs started ${run.startedAt}, command ${proc.command}`
+        : `${proc.state}: ${String(query.out || query.error || '')
+            .trim()
+            .slice(0, 200)}`;
+  });
+  const agent = run.agent || 'agent';
+  if (outcome === 'ended') log(`#${run.id}: ended the orphaned ${agent} process tree ${run.pid} left by the previous bridge`);
+  else if (outcome === 'unknown' || outcome === 'failed')
+    log(`#${run.id}: could not confirm and end the orphaned ${agent} process ${run.pid} (${outcome}); if it still runs, end it in Task Manager`);
+  else log(`#${run.id}: left pid ${run.pid} alone (${outcome}): it is not the ${agent} run the previous bridge started (${found})`);
+}
+
 function recoverInflight() {
   const staleQueue = state.queued !== undefined || state.handling !== undefined || state.held !== undefined;
   delete state.queued;
@@ -2909,7 +2960,8 @@ function recoverInflight() {
     return;
   }
   for (const [key, run] of lost) {
-    if (process.platform !== 'win32' && isSameProcess(run.pid, run.startedAt, run.marker)) {
+    if (process.platform === 'win32') endOrphanOnWindows(run);
+    else if (isSameProcess(run.pid, run.startedAt, run.marker)) {
       try {
         process.kill(-run.pid, 'SIGKILL');
         log(`#${run.id}: ended the orphaned ${run.agent || 'agent'} process group ${run.pid} left by the previous bridge`);
@@ -3563,11 +3615,17 @@ function startSelfUpdate() {
 }
 
 const USER_MCP = MC.parse(cfg.mcp, { reserved: [DM.SERVER_NAME, GM.SERVER_NAME, FACTORY.SERVER_NAME], log, env: process.env });
+const CODEX_OWN_MCP = USER_MCP ? MC.codexOwnServers().filter(n => USER_MCP.servers.some(s => s.name === n)) : [];
 banner();
+for (const n of CODEX_OWN_MCP)
+  log(
+    `mcp.servers.${n}: ~/.codex/config.toml has a server of the same name, and Codex would merge the two (its url, auth and env with this one), so Codex runs leave this server out; rename one of them`,
+  );
 if (USER_MCP && (USER_MCP.servers.length || USER_MCP.strict)) {
   log(`mcp: ${MC.summary(USER_MCP)}`);
   if (USER_MCP.strict) {
     const own = MC.claudeOwnServers({ cwd: DEFAULT_CWD });
+    log('mcp.strict: Codex has no strict mode, so Codex runs still load the servers in ~/.codex/config.toml');
     log(
       `mcp.strict: Claude runs stop loading ${own.length ? 'at least these servers of your own: ' + own.join(', ') : 'the servers of your own (none found in ~/.claude.json, .mcp.json or plugins)'}, and claude.ai connectors`,
     );
