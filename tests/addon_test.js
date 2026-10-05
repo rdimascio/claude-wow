@@ -473,6 +473,18 @@ test('game chat echo: the summary by default, the first lines without one, the w
   assert.ok(!out.includes('Long line one'), 'the body stays out of the game chat');
   assert.ok(out.includes('[open]'), 'the open link is there');
   assert.ok(vm.evaluate('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history].text').includes('Long line three'), 'the window has the full reply');
+  assert.equal(
+    vm.evaluate('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history].summary'),
+    'Renamed foo.\nTests pass.',
+    'the summary is kept with the message',
+  );
+  const lastBubble = '(function() local last for _, b in ipairs(ClaudeWoW.UI.bubbles) do if b.shown then last = b end end return last end)()';
+  const shown = vm.evaluate(`${lastBubble}.body:GetText()`);
+  assert.ok(
+    shown.includes('Long line three') && !shown.includes('TL;DR') && !shown.includes('Renamed foo.'),
+    'the window bubble leaves out the TL;DR block: ' + shown,
+  );
+  assert.ok(vm.evaluate(`${lastBubble}.text`).includes('TL;DR: Renamed foo.'), 'the copy box still gets the whole reply');
 
   // Without a summary: the first two lines, then a hint that there is more.
   reply('Line one\\nLine two\\nLine three\\nLine four');
@@ -2394,8 +2406,8 @@ test('projects: the bridge list adds recent projects with repo labels, and one f
   vm.run('SlashCmdList.CLAUDE("--project claude-wow fix the build")');
   const rec = stripRecords(vm).find(r => r.text === 'fix the build');
   assert.equal(rec.cwd, '/Users/me/wow-ai', 'the repo label finds the folder');
-  const tab = vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history[#ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history - 1].text');
-  assert.match(tab, /project: claude-wow/);
+  assert.equal(vm.num('#ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history'), 1, 'the project note is not a transcript message: the header shows the project');
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history[1].role'), 'user');
 });
 
 test('projects: without a bridge list the picker keeps folder names, and ~ stays as typed until the bridge names its home', () => {

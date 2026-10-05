@@ -677,6 +677,92 @@ test('clicking a link in a reply opens the link, not the copy box; clicking the 
   assert.equal(vm.num('STUB.copies'), 1, 'a click on plain text still opens the copy box');
 });
 
+const shownBodies = vm =>
+  vm
+    .evaluate(
+      '(function() local t = {} for _, b in ipairs(ClaudeWoW.UI.bubbles) do if b.shown then table.insert(t, b.body:GetText()) end end return table.concat(t, "\\n@@\\n") end)()',
+    )
+    .split('\n@@\n');
+
+test('the window leaves out the closing TL;DR block of a reply, but not one in a code fence, one with more text after it, or one that is not the bridge summary', () => {
+  const vm = nativeVM();
+  vm.run(`
+    local c = ClaudeWoWDB.chats[1]
+    ClaudeWoW.SwitchChat(c.id)
+    c.history = {
+      { role = "assistant", t = 1, text = "Renamed the helper.\\nAll green.\\n\\n**TL;DR:** Helper renamed." },
+      { role = "assistant", t = 2, text = "Renamed it.\\n\\nTL;DR: Bridge summary.", summary = "Bridge summary." },
+      { role = "assistant", t = 3, text = "Example:\\n\`\`\`\\nTL;DR: fenced line\\n\`\`\`" },
+      { role = "assistant", t = 4, text = "TL;DR: first\\nline a\\nline b\\nline c\\nline d" },
+      { role = "assistant", t = 5, text = "Body here.\\n\\nTL;DR: Short one.\\n\\nbridge note", summary = "Short one." },
+      { role = "assistant", t = 6, text = "TL;DR: Just the answer." },
+      { role = "user", t = 7, text = "TL;DR: typed by the player" },
+      { role = "assistant", t = 8, text = "Checked the logs.\\n## tldr: heading style" },
+    }
+    ClaudeWoW.Render()
+  `);
+  const [plain, bridge, fenced, mid, mismatch, only, user, heading] = shownBodies(vm);
+  assert.ok(plain.includes('All green.') && !plain.includes('TL;DR') && !plain.includes('Helper renamed'), 'a bold TL;DR block is left out: ' + plain);
+  assert.ok(bridge.includes('Renamed it.') && !bridge.includes('Bridge summary'), 'the block the bridge split off is left out: ' + bridge);
+  assert.ok(fenced.includes('TL;DR: fenced line'), 'a TL;DR inside a code fence stays: ' + fenced);
+  assert.ok(mid.includes('first') && mid.includes('line d'), 'a TL;DR with more text after it stays: ' + mid);
+  assert.ok(mismatch.includes('Short one.') && mismatch.includes('bridge note'), 'a tail that is not the bridge summary stays: ' + mismatch);
+  assert.ok(only.includes('Just the answer.') && !only.includes('TL;DR'), 'a reply that is only a TL;DR shows its line without the marker: ' + only);
+  assert.ok(user.includes('TL;DR: typed by the player'), 'a player message is never cut: ' + user);
+  assert.ok(heading.includes('Checked the logs.') && !heading.includes('heading style'), 'a heading-style marker is the same block: ' + heading);
+  vm.run(`
+    STUB.copied = {}
+    ClaudeWoW.ShowCopy = function(text) table.insert(STUB.copied, text) end
+    local b = (function() for _, b in ipairs(ClaudeWoW.UI.bubbles) do if b.shown then return b end end end)()
+    b.scripts.OnMouseUp(b, "LeftButton")
+    STUB.RunTimers()
+  `);
+  assert.equal(vm.evaluate('STUB.copied[1]'), 'Renamed the helper.\nAll green.\n\n**TL;DR:** Helper renamed.', 'the copy box gets the whole reply');
+});
+
+const emptyState = vm => ({
+  shown: vm.evaluate('ClaudeWoW.UI.empty and ClaudeWoW.UI.empty.shown'),
+  title: vm.evaluate('ClaudeWoW.UI.empty and ClaudeWoW.UI.empty.title:GetText()'),
+  body: vm.evaluate('ClaudeWoW.UI.empty and ClaudeWoW.UI.empty.body:GetText()'),
+  top: -vm.num('ClaudeWoW.UI.empty.y'),
+});
+
+test('an empty chat shows a centered empty state with the project, not a system bubble, and setting the project adds no message', () => {
+  const vm = nativeVM();
+  vm.run('ClaudeWoW.NewChat(); ClaudeWoW.Render()');
+  let e = emptyState(vm);
+  assert.equal(e.title, 'Restoring your chats', 'fresh saved data waits for the restore in the same style');
+  assert.match(e.body, /restoring your chats\.\.\./);
+  vm.run('STUB.now = STUB.now + 30; STUB.Tick(); ClaudeWoW.IsConnected = function() return true end; ClaudeWoW.Render()');
+  assert.equal(shownBodies(vm).filter(Boolean).length, 0, 'no bubble on an empty chat');
+  e = emptyState(vm);
+  assert.equal(e.shown, 'true');
+  assert.equal(e.title, 'No messages yet');
+  assert.match(e.body, /Type below and press Enter/);
+  assert.match(e.body, /Project: No project/);
+  assert.ok(e.top > 0, 'centered in the parchment, not at the top: ' + e.top);
+
+  vm.run('ClaudeWoWProjectButton.scripts.OnClick(ClaudeWoWProjectButton); STUB.Pick("wow-ai")');
+  assert.equal(vm.num('#ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history'), 0, 'picking a project writes no "project:" message');
+  assert.match(emptyState(vm).body, /Project: wow-ai/, 'the empty state names the new project');
+
+  vm.run('SlashCmdList.CLAUDE("--project nope")');
+  const bodies = shownBodies(vm);
+  assert.equal(bodies.length, 1);
+  assert.match(bodies[0], /Unknown project "nope"/, 'a system answer to a command still shows');
+  e = emptyState(vm);
+  assert.equal(e.shown, 'true', 'a chat with only system lines is still empty');
+  assert.ok(e.top > 0, 'below the system line');
+
+  vm.run('ClaudeWoW.IsConnected = function() return false end; ClaudeWoW.Render()');
+  e = emptyState(vm);
+  assert.equal(e.title, 'Not connected');
+  assert.match(e.body, /click Connect below/);
+
+  vm.run('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history = { { role = "user", t = 1, text = "hi" } }; ClaudeWoW.Render()');
+  assert.equal(emptyState(vm).shown, 'false', 'a chat with a message has no empty state');
+});
+
 test('general chats sit under Chats, project chats under their project, and the project button in the header switches the project', () => {
   const vm = nativeVM();
   vm.run('ClaudeWoW.NewChat("Best rogue race")');

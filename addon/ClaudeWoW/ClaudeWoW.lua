@@ -477,8 +477,9 @@ function ClaudeWoW.MigrateWhisper(s, fresh)
 	if not fresh then s.whisperNews = true end
 end
 
-local function AddHistory(chat, role, text, id, denied, agent, macros)
-	table.insert(chat.history, { role = role, text = text, id = id, t = time(), denied = denied, agent = agent, macros = macros })
+local function AddHistory(chat, role, text, id, denied, agent, macros, summary)
+	local kept = type(summary) == "string" and summary ~= "" and #summary <= Q.SUMMARY_STRIP_CHARS and summary or nil
+	table.insert(chat.history, { role = role, text = text, id = id, t = time(), denied = denied, agent = agent, macros = macros, summary = kept })
 	while #chat.history > MAX_HISTORY do
 		table.remove(chat.history, 1)
 	end
@@ -2342,7 +2343,7 @@ end
 Finish = function(chat, role, text, denied, agent, summary, macros)
 	if chat.quiet then return FinishQuiet(chat, role, text) end
 	local msgId = chat.pendingId
-	AddHistory(chat, role, text, msgId, denied, agent, macros)
+	AddHistory(chat, role, text, msgId, denied, agent, macros, role == "assistant" and summary or nil)
 	chat.pendingId = nil
 	chat.progress = nil
 	ContextWarning(chat)
@@ -2376,7 +2377,7 @@ function ClaudeWoW.LateReply(chat, r)
 	local text = type(r.text) == "string" and r.text or ""
 	local agent = type(r.agent) == "string" and r.agent ~= "" and r.agent or nil
 	if run.lateWait then run.lateWait[chat.id] = nil end
-	AddHistory(chat, "assistant", text, r.id, nil, agent)
+	AddHistory(chat, "assistant", text, r.id, nil, agent, nil, r.summary)
 	local visible = ui.frame and ui.frame:IsShown() and db.activeChat == chat.id
 	if not visible and not Whisper.Active() then chat.unread = (chat.unread or 0) + 1 end
 	ClaudeWoW.Render()
@@ -3790,7 +3791,7 @@ function Cli.ProjectTag(c, text)
 		if path then
 			if Cli.ProjectOf(c) ~= path then
 				Cli.SetProject(c, path)
-				Cli.Out(c, "project: " .. FolderName(path))
+				Cli.Note(c, "project: " .. FolderName(path))
 			end
 			local escaped = ("#" .. tag):gsub("%p", "%%%0")
 			return (text:gsub(escaped, tag, 1))
@@ -3806,7 +3807,7 @@ end
 
 function Cli.PickProject(c, value)
 	local note, err = Cli.SetProject(c, value)
-	Cli.Out(c, err or ("project: " .. note))
+	if err then Cli.Out(c, err) else Cli.Note(c, "project: " .. note) end
 	ClaudeWoW.Render()
 end
 
@@ -4541,6 +4542,65 @@ function Q.UpdatePlaceholder()
 	if (input:GetText() or "") == "" and not input:HasFocus() then placeholder:Show() else placeholder:Hide() end
 end
 
+Q.EMPTY_GAP, Q.EMPTY_SIDE, Q.EMPTY_LINE_GAP = 16, 20, 8
+
+function Q.EmptyState(c)
+	for _, m in ipairs(c.history) do
+		if m.role ~= "system" or (type(m.picker) == "table" and #m.picker > 0) then return nil end
+	end
+	if run.restoring then
+		return { title = "Restoring your chats", lines = { "Connecting to the bridge and restoring your chats..." } }
+	end
+	if not ClaudeWoW.IsConnected() then
+		return { title = "Not connected", lines = { "Start the bridge (npm start in the claude-wow folder, or claude-wow in your project), then click Connect below." } }
+	end
+	local start = Whisper.Active()
+		and ("Type below and press Enter, or talk to " .. ChatAgentName(c) .. " in its chat tab.")
+		or "Type below and press Enter. Shift-click an item, spell or quest to link it."
+	return { title = "No messages yet", lines = { start, "Project: " .. Cli.ProjectLabel(c) } }
+end
+
+function Q.EmptyFrame()
+	if ui.empty then return ui.empty end
+	local parchment = ui.parchment ~= nil
+	local f = CreateFrame("Frame", nil, ui.content)
+	f.title = f:CreateFontString(nil, "OVERLAY", parchment and Q.FontObject("QuestTitleFont", "GameFontNormalLarge") or "GameFontNormalLarge")
+	f.title:SetPoint("TOP", f, "TOP", 0, 0)
+	f.title:SetJustifyH("CENTER")
+	f.body = f:CreateFontString(nil, "OVERLAY", parchment and Q.FontObject("QuestFont", "GameFontHighlight") or "GameFontHighlight")
+	f.body:SetPoint("TOP", f.title, "BOTTOM", 0, -Q.EMPTY_LINE_GAP)
+	f.body:SetJustifyH("CENTER")
+	f.body:SetJustifyV("TOP")
+	f.body:SetWordWrap(true)
+	if parchment then
+		f.title:SetTextColor(Q.PARCHMENT_TEXT[1], Q.PARCHMENT_TEXT[2], Q.PARCHMENT_TEXT[3])
+		f.body:SetTextColor(Q.PARCHMENT_DIM[1], Q.PARCHMENT_DIM[2], Q.PARCHMENT_DIM[3])
+	else
+		f.title:SetTextColor(1, 0.82, 0)
+		f.body:SetTextColor(0.8, 0.8, 0.8)
+	end
+	ui.empty = f
+	return f
+end
+
+function Q.PlaceEmpty(state, y, width)
+	local f = Q.EmptyFrame()
+	local inner = math.max(80, width - 2 * Q.EMPTY_SIDE)
+	f:SetWidth(inner)
+	f.title:SetWidth(inner)
+	f.body:SetWidth(inner)
+	f.title:SetText(Display(state.title))
+	f.body:SetText(Display(table.concat(state.lines, "\n")))
+	local h = (Try(f.title.GetStringHeight, f.title) or 14) + Q.EMPTY_LINE_GAP + (Try(f.body.GetStringHeight, f.body) or 14)
+	f:SetHeight(h)
+	local view = Try(ui.scroll.GetHeight, ui.scroll) or 0
+	local top = math.max(y > 0 and (y + Q.EMPTY_GAP) or 0, math.floor((view - h) / 2))
+	f:ClearAllPoints()
+	f:SetPoint("TOPLEFT", ui.content, "TOPLEFT", math.floor((width - inner) / 2), -top)
+	f:Show()
+	return top + h
+end
+
 function ClaudeWoW.Render()
 	local c = ActiveChat()
 	Cli.UpdateProjectButton()
@@ -4638,31 +4698,32 @@ function ClaudeWoW.Render()
 			b.text = text
 			b:Show()
 			y = y + b:GetHeight() + 6
+			return b
 		end
 		local openDenial = not c.pendingId and Q.DenialIndex(c) or nil
 		for i, m in ipairs(c.history) do
 			local denied = i == openDenial and m.denied or nil
 			local picker = type(m.picker) == "table" and #m.picker > 0 and m.picker or nil
-			Place(m.role, picker and m.head or m.text, m.t and date("%H:%M", m.t) or "", false, denied, m.agent, m.macros, m.newChat, picker)
+			local reply = m.role == "assistant" and not picker
+			local b = Place(m.role, picker and m.head or (reply and Q.StripSummary(m.text, m.summary) or m.text), m.t and date("%H:%M", m.t) or "", false, denied, m.agent, m.macros, m.newChat, picker)
+			if reply then b.text = m.text end
 		end
+		local empty = nil
 		if c.pendingId then
 			local head = "Working " .. SEG.DOT .. " " .. ActivityLine(c)
 			if run.statusText and run.statusText ~= "" and not run.statusWorking then head = head .. "\n" .. run.statusText end
 			local steps = Cli.StepLines(c)
 			Place("assistant", #steps > 0 and (head .. "\n\n" .. table.concat(steps, "\n")) or head, "", true, nil, ChatAgent(c))
-		elseif #c.history == 0 then
-			if run.restoring then
-				Place("system", "Connecting to the bridge and restoring your chats...", "", true)
-			elseif not ClaudeWoW.IsConnected() then
-				Place("system", "Not connected to the bridge. Start it (npm start in the claude-wow folder, or claude-wow in your project), then click Connect below.", "", true)
-			else
-				Place("system", Whisper.Active()
-					and ("Nothing here yet. Type below and press Enter, or talk to " .. ChatAgentName(c) .. " in its chat tab: this window is the full record, the tab is the everyday way in. Shift-click an item, spell or quest to link it. /claude help lists the commands.")
-					or "Click the box below and type to start. Shift-click an item, spell or quest to link it into your message. /claude help lists the commands. From the game chat, /claude <text> starts a new chat with that message, /claude -c <text> continues the current one.", "", true)
-			end
+		else
+			empty = Q.EmptyState(c)
 		end
 		for i = n + 1, #ui.bubbles do
 			ui.bubbles[i]:Hide()
+		end
+		if empty then
+			y = Q.PlaceEmpty(empty, y, width)
+		elseif ui.empty then
+			ui.empty:Hide()
 		end
 		ui.content:SetHeight(math.max(y, 1))
 		C_Timer.After(0.05, function()
@@ -5346,6 +5407,46 @@ function Q.MarkFences(text)
 		else table.insert(out, line) end
 	end
 	return table.concat(out, "\n")
+end
+
+Q.SUMMARY_STRIP_CHARS = 400
+
+function Q.SummaryMarkerEnd(line)
+	local s = line:lower()
+	local i = s:match("^[ \t]*#*[ \t]*()")
+	local bold = s:sub(i, i + 1)
+	if bold == "**" or bold == "__" then i = s:match("^..[ \t]*()", i) end
+	i = s:match("^tl;?dr()", i)
+	if not i then return nil end
+	i = s:match("^[ \t]*:?[ \t]*()", i)
+	bold = s:sub(i, i + 1)
+	if bold == "**" or bold == "__" then i = i + 2 end
+	return s:match("^[ \t]*:?[ \t]*()", i)
+end
+
+function Q.StripSummary(text, summary)
+	text = tostring(text or "")
+	local lines, fenced, at, after, inFence = {}, false, nil, nil, false
+	for line in (text .. "\n"):gmatch("(.-)\n") do
+		table.insert(lines, line)
+		if line:match("^%s*```") then
+			fenced = not fenced
+		else
+			local e = Q.SummaryMarkerEnd(line)
+			if e then at, after, inFence = #lines, e, fenced end
+		end
+	end
+	if not at or inFence then return text end
+	local rest = { lines[at]:sub(after) }
+	for k = at + 1, #lines do table.insert(rest, lines[k]) end
+	local tail = Trim(table.concat(rest, "\n"))
+	if tail == "" or #tail > Q.SUMMARY_STRIP_CHARS then return text end
+	local tailLines = 0
+	for _ in tail:gmatch("[^\n]*%S[^\n]*") do tailLines = tailLines + 1 end
+	if tailLines > ECHO.SUMMARY_LINES then return text end
+	if type(summary) == "string" and summary ~= "" and Trim(summary) ~= tail then return text end
+	local head = table.concat(lines, "\n", 1, at - 1):gsub("%s+$", "")
+	return head ~= "" and head or tail
 end
 
 function Q.MarkdownLine(line, ink, parchment)
@@ -6475,6 +6576,7 @@ local function BuildUI()
 	scroll:SetScrollChild(content)
 	ui.content = content
 	ui.bubbles = {}
+	ui.empty = nil
 	scroll:HookScript("OnSizeChanged", function(self, w, h)
 		if ui.frame:IsShown() then ClaudeWoW.Render() end
 	end)
@@ -6972,6 +7074,12 @@ function Cli.Out(c, text, open)
 	if open then Cli.Show(c) end
 end
 
+function Cli.Note(c, text)
+	if not c then return end
+	ClaudeWoW.Render()
+	Cli.Emit(c, text)
+end
+
 function Cli.Say(c, text)
 	Cli.Out(c, text, true)
 end
@@ -7333,10 +7441,10 @@ function Cli.DirsLabel(c)
 end
 
 function Cli.ApplyChatFlags(c, o)
-	local notes = {}
+	local notes, projectNote = {}, nil
 	if o.agent ~= nil then ClaudeWoW.SetAgent(o.agent == true and "" or o.agent, c) end
 	if type(o.project) == "string" then
-		table.insert(notes, "project: " .. (Cli.SetProject(c, o.project) or Cli.ProjectLabel(c)))
+		projectNote = "project: " .. (Cli.SetProject(c, o.project) or Cli.ProjectLabel(c))
 	elseif o.project == true then
 		table.insert(notes, "project: " .. Cli.ProjectLabel(c) .. " (known: " .. Cli.ProjectNames() .. ")")
 	end
@@ -7365,7 +7473,7 @@ function Cli.ApplyChatFlags(c, o)
 		end
 		table.insert(notes, "extra folders: " .. Cli.DirsLabel(c))
 	end
-	return notes
+	return notes, projectNote
 end
 
 function Cli.Age(at)
@@ -7659,7 +7767,8 @@ function Cli.AttachWith(e, o)
 		c.name = o.name:sub(1, 24)
 		Whisper.Retitle(c)
 	end
-	local notes = Cli.ApplyChatFlags(c, o)
+	local notes, projectNote = Cli.ApplyChatFlags(c, o)
+	if projectNote then Cli.Note(c, projectNote) end
 	if #notes > 0 then Cli.Out(c, table.concat(notes, "\n")) end
 	if o.text ~= "" then
 		ClaudeWoW.Send(o.text, nil, { chat = c.id })
@@ -7778,17 +7887,18 @@ function ClaudeWoW.RunCli(o)
 		Cli.RunResume(o)
 		return
 	end
-	local c, notes
+	local c, notes, projectNote
 	if o.continue or (o.flags > 0 and o.text == "" and not Cli.HasSetters(o)) then
 		c = ActiveChat()
 		if o.continue and type(o.name) == "string" then
 			c.name = o.name:sub(1, 24)
 			Whisper.Retitle(c)
 		end
-		notes = Cli.ApplyChatFlags(c, o)
+		notes, projectNote = Cli.ApplyChatFlags(c, o)
 	else
-		c = ClaudeWoW.NewChat(type(o.name) == "string" and o.name:sub(1, 24) or nil, function(fresh) notes = Cli.ApplyChatFlags(fresh, o) end)
+		c = ClaudeWoW.NewChat(type(o.name) == "string" and o.name:sub(1, 24) or nil, function(fresh) notes, projectNote = Cli.ApplyChatFlags(fresh, o) end)
 	end
+	if projectNote then Cli.Note(c, projectNote) end
 	if #notes > 0 then Cli.Out(c, table.concat(notes, "\n")) end
 	if o.text ~= "" then
 		ClaudeWoW.Send(o.text, nil, { chat = c.id })
