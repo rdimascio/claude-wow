@@ -5151,6 +5151,18 @@ Q.PARCHMENT_LINK_COLORS = {
 	ffff8000 = "ff9a4a00", ffe6cc80 = "ff7a5c1e", ffffff00 = "ff7a3b00", ffffd100 = "ff7a3b00", ff71d5ff = "ff00577a",
 }
 
+Q.GAME_LINK_COLORS = {}
+for game, dark in pairs(Q.PARCHMENT_LINK_COLORS) do
+	if game ~= "ffffd100" then Q.GAME_LINK_COLORS[dark] = game end
+end
+
+function Q.OffParchment(text)
+	return (tostring(text or ""):gsub("|c(%x%x%x%x%x%x%x%x)", function(hex)
+		local game = Q.GAME_LINK_COLORS[hex:lower()]
+		return game and ("|c" .. game) or nil
+	end))
+end
+
 function Q.OnParchment(link)
 	return (link:gsub("|c(%x%x%x%x%x%x%x%x)", function(hex)
 		local dark = Q.PARCHMENT_LINK_COLORS[hex:lower()]
@@ -5189,16 +5201,36 @@ Q.linkEvents:SetScript("OnEvent", function()
 	end)
 end)
 
+function Q.CollapsedHeaders()
+	local names = {}
+	for i = 1, math.min(tonumber(Try(GetNumQuestLogEntries)) or 0, 60) do
+		local title, _, _, isHeader, isCollapsed = Try(GetQuestLogTitle, i)
+		if isHeader and isCollapsed and title then names[title] = true end
+	end
+	return names
+end
+
+function Q.CollapseAgain(names)
+	if type(CollapseQuestHeader) ~= "function" then return end
+	for i = math.min(tonumber(Try(GetNumQuestLogEntries)) or 0, 60), 1, -1 do
+		local title, _, _, isHeader = Try(GetQuestLogTitle, i)
+		if isHeader and names[title] then pcall(CollapseQuestHeader, i) end
+	end
+end
+
 function Q.OpenQuest(id)
 	local _, _, index = Q.QuestTitle(id)
 	if not index and type(ExpandQuestHeader) == "function" then
+		local collapsed = Q.CollapsedHeaders()
 		pcall(ExpandQuestHeader, 0)
 		_, _, index = Q.QuestTitle(id)
+		if not index then Q.CollapseAgain(collapsed) end
 	end
 	if not index then return false end
 	if type(QuestMapFrame_OpenToQuestDetails) == "function" then return (pcall(QuestMapFrame_OpenToQuestDetails, id)) end
 	if type(QuestLog_SetSelection) ~= "function" or not QuestLogFrame then return false end
 	if not QuestLogFrame:IsShown() then pcall(ShowUIPanel, QuestLogFrame) end
+	if type(QuestLog_Update) == "function" then pcall(QuestLog_Update) end
 	if QuestLogListScrollFrameScrollBar and tonumber(QUESTLOG_QUEST_HEIGHT) then
 		pcall(QuestLogListScrollFrameScrollBar.SetValue, QuestLogListScrollFrameScrollBar, (index - 1) * QUESTLOG_QUEST_HEIGHT)
 	end
@@ -5212,7 +5244,7 @@ function Q.LinkClick(self, link, text, button)
 	local quest = tonumber(tostring(link or ""):match("^quest:(%d+)"))
 	local modified = type(IsModifiedClick) == "function" and IsModifiedClick()
 	if quest and not modified and Q.OpenQuest(quest) then return end
-	if type(SetItemRef) == "function" then SetItemRef(link, text, button, self) end
+	if type(SetItemRef) == "function" then SetItemRef(link, Q.OffParchment(text), button, self) end
 end
 
 function Q.LinkEnter(self, link)
