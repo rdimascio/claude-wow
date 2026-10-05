@@ -40,6 +40,7 @@ const readline = require('readline');
 const os = require('os');
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
+const { StringDecoder } = require('string_decoder');
 const PR = require('./procs'); // the children (agent runs, the capture script): their process groups, and ending them for good (tests/procs_test.js)
 const P = require('./protocol'); // the pure protocol code, unit-tested in tests/bridge_test.js
 const A = require('./agents'); // how each agent is launched and read, unit-tested in tests/agents_test.js
@@ -53,6 +54,8 @@ const R = require('./runtime'); // node, bun, or the compiled binary (tests/runt
 const AS = require('./assets'); // the capture scripts and the primer, by path, from a checkout or the binary (tests/assets_test.js)
 const ACH = require('./achievements');
 const SS = require('./sessions');
+const CQ = require('./chatqueue');
+const DH = require('./chathub');
 const PJ = require('./projects');
 const G = require('./gamefs');
 const SIG = require('./signals');
@@ -92,6 +95,7 @@ const OB = require('./observed');
 const OT = require('./observedtools');
 const MH = require('./maphold');
 const REL = require('./releases');
+const SVC = require('./service');
 const MC = require('./mcpconfig');
 
 const HERE = __dirname;
@@ -104,6 +108,28 @@ const LOG_FILE = HOME.log;
 const DEPLOY_LOCK_FILE = REL.layout(HOME.dir).lock;
 const DEPLOY_HOLD_POLL_MS = 1000;
 const TMP_DIR = HOME.tmp; // prompt files for agents that read the prompt from disk
+const PRIVATE_FILE_MODE = 0o600;
+const PRIVATE_DIR_MODE = 0o700;
+
+function restrictMode(target, mode) {
+  if (process.platform === 'win32') return;
+  try {
+    fs.chmodSync(target, mode);
+  } catch (e) {
+    if (e.code !== 'ENOENT') log(`could not make ${target} private (${e.message})`);
+  }
+}
+
+function makePrivateDir(dir) {
+  fs.mkdirSync(dir, { recursive: true, mode: PRIVATE_DIR_MODE });
+  restrictMode(dir, PRIVATE_DIR_MODE);
+}
+
+function writePrivateScratch(file, content) {
+  makePrivateDir(path.dirname(file));
+  fs.writeFileSync(file, content, { mode: PRIVATE_FILE_MODE });
+  restrictMode(file, PRIVATE_FILE_MODE);
+}
 
 const argv = process.argv.slice(2);
 if (argv.includes('--help') || argv.includes('-h')) {
@@ -143,6 +169,8 @@ if (!DEFAULT_AGENT) {
 }
 // The plugin a chat is routed to unless it is bound to another ("plugin=" flag).
 const pluginsCfg = cfg.plugins && typeof cfg.plugins === 'object' ? cfg.plugins : {};
+const DISCORD = DH.settings(cfg.discord);
+const DISCORD_TOKEN = DH.takeToken(process.env, HOME.dir);
 const DEFAULT_PLUGIN = pluginsCfg.default ? registry.normalize(pluginsCfg.default) : registry.ids()[0];
 if (!DEFAULT_PLUGIN) {
   console.error(`"plugins.default": "${pluginsCfg.default}" in ${CONFIG_FILE} is not one of ${registry.ids().join(', ')}.`);
@@ -266,6 +294,8 @@ function holdLock() {
   return false;
 }
 const holdsLock = !exitWhenIdle && holdLock();
+for (const privateFile of [STATE_FILE, HOME.transcripts, LOG_FILE]) restrictMode(privateFile, PRIVATE_FILE_MODE);
+for (const privateDir of [TMP_DIR, HOME.mapjobs, HOME.uijobs]) restrictMode(privateDir, PRIVATE_DIR_MODE);
 
 const stateEarly = readJson(STATE_FILE, {});
 const chosen = P.chooseTransport(cap, stateEarly);
@@ -353,6 +383,12 @@ function saveTranscripts() {
 // Chats the player deleted in game while a run for them was still going: the
 // run's late progress and reply must not recreate the transcript.
 const forgotten = new Set();
+const chatGenerations = new Map();
+const generationOf = chat => chatGenerations.get(chat) || 0;
+const stampGeneration = job => {
+  if (job.chat) job.chatGeneration = generationOf(job.chat);
+};
+const chatDeletedSince = job => !!job.chat && job.chatGeneration !== undefined && job.chatGeneration !== generationOf(job.chat);
 
 function noteMessage(job, role, text) {
   if (!job.chat) return;
@@ -422,6 +458,8 @@ function maybeOfferRestore(job) {
 function forgetChat(job) {
   if (!job.chat) return;
   const had = !!transcripts.chats[job.chat];
+  chatGenerations.set(job.chat, generationOf(job.chat) + 1);
+  dropChatWork(job.chat);
   delete transcripts.chats[job.chat];
   forgotten.add(job.chat);
   delete state.sessions[sessKey(job)];
@@ -431,6 +469,8 @@ function forgetChat(job) {
   if (state.sessionPlugin) delete state.sessionPlugin[sessKey(job)];
   if (state.sessionRules) delete state.sessionRules[sessKey(job)];
   if (state.sessionUsage) delete state.sessionUsage[sessKey(job)];
+  if (state.chatSettings) delete state.chatSettings[job.chat];
+  unlinkDiscord(job.chat);
   if (state.lastRuns) delete state.lastRuns[sessKey(job)];
   devNotes.delete(chatKey(job));
   if (pendingRestore) pendingRestore.chats = pendingRestore.chats.filter(c => c.id !== job.chat);
@@ -438,8 +478,42 @@ function forgetChat(job) {
   log(`#${job.id}${job.session ? '@' + job.session : ''} forgot chat ${job.chat}${had ? '' : ' (nothing stored)'}`);
 }
 
+function discardVisionFile(job) {
+  if (job && job.image && job.image.file) {
+    try {
+      fs.unlinkSync(job.image.file);
+    } catch {}
+  }
+}
+
+function dropChatWork(chat) {
+  for (const q of queued.dropWhere(j => j.chat === chat)) {
+    markHandled(q);
+    discardVisionFile(q);
+    log(`${tagOf(q)} dropped: its chat was deleted before it started`);
+  }
+  noteQueued();
+  let heldDropped = false;
+  for (const [key, entry] of [...held]) {
+    if (!entry.job || entry.job.chat !== chat) continue;
+    held.delete(key);
+    markHandled(entry.job);
+    discardVisionFile(entry.job);
+    heldDropped = true;
+    log(`${tagOf(entry.job)} dropped: its chat was deleted while it was held for a deploy`);
+  }
+  if (heldDropped) noteHeld();
+  for (const r of running.values()) {
+    if (r.job.chat !== chat) continue;
+    r.job.cancelled = true;
+    log(`${tagOf(r.job)} its chat was deleted; ending it and everything it started`);
+    revokeRunGrant(r.job);
+    if (r.child) killTree(r.child);
+  }
+}
+
 const running = new Map(); // chatKey -> { job, child }
-const queued = new Map(); // chatKey -> job waiting for that chat (or for a free parallel slot)
+const queued = CQ.createChatQueue();
 const live = new Map(); // chatKey -> latest record shown to the game
 let lastActivityAt = Date.now();
 let lastPublish = 0;
@@ -476,8 +550,9 @@ function readJson(file, fallback) {
 
 function durableWrite(file, content) {
   const tmp = `${file}.${process.pid}.tmp`;
-  const fd = fs.openSync(tmp, 'w');
+  const fd = fs.openSync(tmp, 'w', PRIVATE_FILE_MODE);
   try {
+    if (process.platform !== 'win32') fs.fchmodSync(fd, PRIVATE_FILE_MODE);
     fs.writeSync(fd, content);
     fs.fsyncSync(fd);
   } finally {
@@ -494,7 +569,7 @@ function log(...parts) {
   const line = `[${new Date().toISOString()}] ${parts.join(' ')}`;
   console.log(line);
   try {
-    fs.appendFileSync(LOG_FILE, line + '\n');
+    fs.appendFileSync(LOG_FILE, line + '\n', { mode: PRIVATE_FILE_MODE });
   } catch {}
 }
 
@@ -547,6 +622,7 @@ function shutdown(sig, exitCode) {
   factory.stop();
   forgetUnstartedWork();
   stopPlugins();
+  if (discordHub) discordHub.stop().catch(() => {});
   let voteClosing = Promise.resolve();
   try {
     voteClosing = VOTES.settleWithin(voteBox.stop(), VOTES.SHUTDOWN_PUSH_WAIT_MS);
@@ -729,6 +805,7 @@ function sharedSlotFields(urgent) {
     projects: projectList(),
     mcp: mcpSlotList(),
     home: os.homedir(),
+    discord: !!discordHub,
     cwd: DEFAULT_CWD,
     agent: DEFAULT_AGENT,
     agents: A.agentIds(),
@@ -1115,7 +1192,7 @@ const RUN_LIMIT_SECONDS = Math.floor((cfg.timeoutMs || 1800000) / 1000);
 function aliveRuns(client) {
   const mine = job => job && job.client === client.key && Number.isInteger(job.id);
   const runs = [...running.values()].filter(r => mine(r.job)).map(r => ({ session: r.job.session, id: r.job.id, since: Math.floor(r.startedAt / 1000) }));
-  for (const job of queued.values()) if (mine(job)) runs.push({ session: job.session, id: job.id, since: 0 });
+  for (const job of queued.jobs()) if (mine(job)) runs.push({ session: job.session, id: job.id, since: 0 });
   for (const entry of held.values()) if (mine(entry.job)) runs.push({ session: entry.job.session, id: entry.job.id, since: 0 });
   return runs;
 }
@@ -1125,7 +1202,12 @@ function pendingIds(client) {
   const ids = [...running.values()]
     .filter(r => mine(r.job))
     .map(r => r.job.id)
-    .concat([...queued.values()].filter(mine).map(j => j.id));
+    .concat(
+      queued
+        .jobs()
+        .filter(mine)
+        .map(j => j.id),
+    );
   for (const r of live.values()) if (r && r.status === 'working' && r.client === client.key) ids.push(r.id);
   return ids;
 }
@@ -1288,7 +1370,7 @@ function contextTextFor(job) {
 }
 
 function gameContext(job) {
-  if (cfg.gameContext === false) return '';
+  if (cfg.gameContext === false || (job && job.noGameContext)) return '';
   return contextTextFor(job);
 }
 
@@ -1457,26 +1539,56 @@ function submit(job) {
     log(`hello from session ${job.session}${inLabel(client)}${pendingRestore ? ' (restore offered)' : ''}`);
     return;
   }
-  if (inFlight(job)) return;
+  admit(job);
+}
+
+function admit(job) {
+  if (shuttingDown || inFlight(job)) return;
   lastActivityAt = Date.now();
   if (holdForDeploy(job)) return;
   dispatchMessage(job);
 }
 
+function agentSessionOf(job) {
+  if (job.agentSession) return job.agentSession;
+  const saved = state.sessions && state.sessions[sessKey(job)];
+  if (saved) return saved;
+  if (job.resume && !job.liveTarget) {
+    const found = resolveResume(job);
+    if (found.session && found.session.id) return found.session.id;
+  }
+  return sessKey(job);
+}
+
+function sessionBusy(job) {
+  const mine = agentSessionOf(job);
+  for (const r of running.values()) if (r.job !== job && agentSessionOf(r.job) === mine) return true;
+  return false;
+}
+
 function dispatchMessage(job) {
   dropHeld(job);
+  stampGeneration(job);
   const key = chatKey(job);
   const cur = running.get(key);
   if (cur && cur.job.id === job.id) return;
-  const q = queued.get(key);
-  if (q && q.id === job.id) return;
+  if (queued.has(key, job)) return;
   if (state.handling && state.handling[handlingKey(job)]) return;
-  if (cur || running.size >= MAX_PARALLEL) {
-    queued.set(key, job);
+  const sharedBusy = !cur && sessionBusy(job);
+  if (cur || sharedBusy || running.size >= MAX_PARALLEL) {
+    const placed = queued.push(key, job);
+    if (placed === 'present') return;
+    if (placed === 'full') {
+      log(`#${job.id}${job.session ? '@' + job.session : ''} refused: ${CQ.PER_CHAT_MAX} messages already wait in this chat`);
+      finish(job, 'error', `This chat already has ${CQ.PER_CHAT_MAX} messages waiting. Wait for one to finish, then send this again.`);
+      return;
+    }
     noteQueued();
     saveState();
     SW.republishQueued(publishNow);
-    log(`#${job.id}${job.session ? '@' + job.session : ''} queued (${cur ? 'chat busy' : running.size + ' running'})`);
+    log(
+      `#${job.id}${job.session ? '@' + job.session : ''} queued (${cur ? 'chat busy' : sharedBusy ? 'its agent session is busy in another chat' : running.size + ' running'})`,
+    );
     return;
   }
   runJob(job);
@@ -1491,9 +1603,9 @@ function noteHelloVersions(job) {
 
 function cancelRun(job) {
   const key = chatKey(job);
-  const q = queued.get(key);
-  if (q && q.id === job.cancel) {
-    queued.delete(key);
+  const q = queued.find(key, job.cancel);
+  if (q) {
+    queued.remove(key, q);
     noteQueued();
     markHandled(q);
     saveState();
@@ -1521,17 +1633,16 @@ function cancelRun(job) {
 // Is this message already running or waiting its turn? (A retried strip.)
 function inFlight(job) {
   const key = chatKey(job);
-  const cur = running.get(key),
-    q = queued.get(key);
-  return !!((cur && cur.job.id === job.id) || (q && q.id === job.id));
+  const cur = running.get(key);
+  return !!((cur && cur.job.id === job.id) || queued.has(key, job));
 }
 
 function drainQueue() {
   if (shuttingDown) return; // a run ending under the shutdown must not start the next one
-  for (const [key, job] of queued) {
+  for (const [key, job] of queued.heads()) {
     if (running.size >= MAX_PARALLEL) break;
-    if (running.has(key)) continue;
-    queued.delete(key);
+    if (running.has(key) || sessionBusy(job)) continue;
+    queued.remove(key, job);
     noteQueued();
     saveState();
     runJob(job);
@@ -1539,7 +1650,7 @@ function drainQueue() {
 }
 
 function noteQueued() {
-  const waiting = [...queued.values()].map(j => ({ id: j.id, chat: j.chat, session: j.session }));
+  const waiting = queued.jobs().map(j => ({ id: j.id, chat: j.chat, session: j.session }));
   if (waiting.length) state.queued = waiting;
   else delete state.queued;
 }
@@ -1676,6 +1787,11 @@ function runJob(job) {
     finish(job, 'error', refusal);
     return;
   }
+  if (job.discordLink) {
+    linkFromGame(job);
+    return;
+  }
+  if (job.via !== 'discord') noteChatSettings(job);
   const early = registry.route(job, { fallback: DEFAULT_PLUGIN });
   const sessionless = !!(early.plugin && early.plugin.sessionless);
   if (job.resume && !job.liveTarget && !sessionless) {
@@ -1945,10 +2061,151 @@ function checkedReply(job, reply) {
   return { ...reply, text: text.text, summary: RT.checkReply(reply.summary, linked).text };
 }
 
+const CHAT_SETTINGS = ['agent', 'model', 'effort', 'permissionMode', 'addDirs', 'plugin'];
+let discordHub = null;
+
+function noteChatSettings(job) {
+  if (!job.chat || registry.normalize(job.plugin) !== 'claude-code') return;
+  const picked = {};
+  for (const k of CHAT_SETTINGS) if (job[k] !== undefined && job[k] !== '') picked[k] = job[k];
+  (state.chatSettings = state.chatSettings || {})[job.chat] = picked;
+}
+
+function discordLinkOf(chatId) {
+  const link = state.discordLinks && state.discordLinks[chatId];
+  return link ? { chatId, ...link } : null;
+}
+
+const discordLinks = {
+  get: discordLinkOf,
+  byThread: threadId => {
+    for (const [chatId, link] of Object.entries(state.discordLinks || {})) if (link.threadId === threadId) return { chatId, ...link };
+    return null;
+  },
+  all: () => Object.entries(state.discordLinks || {}).map(([chatId, link]) => ({ chatId, ...link })),
+};
+
+function discordReplyText(status, text, denied) {
+  const body = status === 'error' ? `Error: ${text}` : text;
+  const rules = Array.isArray(denied) ? denied.filter(Boolean) : [];
+  return rules.length ? `${body}\n\nThis run needs permission for ${rules.join(', ')}. Grant it in game (Claude window, this chat).` : body;
+}
+
+function unlinkDiscord(chatId) {
+  const link = discordLinkOf(chatId);
+  if (!link) return;
+  delete state.discordLinks[chatId];
+  if (discordHub) discordHub.postTo(chatId, 'This chat was deleted in game. This thread is no longer linked.');
+  log(`discord: chat ${chatId} unlinked (deleted in game)`);
+}
+
+function newDiscordChat(threadId, text) {
+  let cwd = DEFAULT_CWD;
+  let rest = String(text || '');
+  const tag = /^\s*#([\w.-]+)\s*/.exec(rest);
+  if (tag) {
+    const hit = PJ.knownProjects({ defaultCwd: DEFAULT_CWD, recent: PJ.recentClaudeProjects(CLAUDE_DIR) }).find(
+      p => p.label.toLowerCase() === tag[1].toLowerCase(),
+    );
+    if (!hit)
+      return { error: `Unknown project "${tag[1]}". Start the message with the name of a known project, or leave it out for ${path.basename(DEFAULT_CWD)}.` };
+    cwd = hit.path;
+    rest = rest.slice(tag[0].length);
+  }
+  const chatId = 'd' + crypto.randomBytes(5).toString('hex');
+  (state.discordLinks = state.discordLinks || {})[chatId] = { threadId, cwd, createdAt: Date.now() };
+  saveState();
+  log(`discord: new chat ${chatId} in ${cwd}`);
+  return { chatId, text: rest };
+}
+
+function discordJob(chatId, text) {
+  const link = discordLinkOf(chatId) || {};
+  state.discordSeq = (state.discordSeq || 0) + 1;
+  const settings = (state.chatSettings && state.chatSettings[chatId]) || {};
+  return {
+    ...settings,
+    session: 'discord',
+    chat: chatId,
+    id: state.discordSeq,
+    text,
+    cwd: link.cwd || (transcripts.chats[chatId] && transcripts.chats[chatId].cwd) || '',
+    plugin: 'claude-code',
+    via: 'discord',
+    name: '',
+    allow: [],
+  };
+}
+
+function linkFromGame(job) {
+  markHandled(job);
+  if (!discordHub) {
+    finish(job, 'error', DISCORD.error || 'Discord is not set up on this bridge (discord.enabled in config.json).');
+    return;
+  }
+  if (discordLinkOf(job.chat)) {
+    finish(job, 'done', 'This chat is already linked to a Discord thread.');
+    return;
+  }
+  const t = transcripts.chats[job.chat];
+  const recap = t
+    ? t.messages
+        .slice(-5)
+        .map(m => `${m.role === 'user' ? 'You' : 'Claude'}: ${String(m.text).slice(0, 300)}`)
+        .join('\n')
+    : '';
+  discordHub
+    .createLink(job.name || (t && t.name) || 'claude-wow chat', recap)
+    .then(threadId => {
+      (state.discordLinks = state.discordLinks || {})[job.chat] = { threadId, cwd: job.cwd || (t && t.cwd) || DEFAULT_CWD, createdAt: Date.now() };
+      saveState();
+      log(`${tagOf(job)} discord: linked to a new thread`);
+      finish(job, 'done', 'Linked. This chat now also lives in a Discord thread; messages from either side reach the same session.');
+    })
+    .catch(e => {
+      log(`${tagOf(job)} discord: link failed (${e.message})`);
+      finish(job, 'error', `Could not create the Discord thread: ${e.message}`);
+    });
+}
+
+function startDiscord() {
+  if (DISCORD.error) log(DISCORD.error);
+  if (!DISCORD.enabled || once || inject !== null) return;
+  const hub = DH.createChatHub({
+    config: DISCORD,
+    token: DISCORD_TOKEN,
+    home: HOME.dir,
+    log,
+    links: discordLinks,
+    onNewChat: newDiscordChat,
+    onMessage: ({ chatId, text }) => {
+      const job = discordJob(chatId, text);
+      saveState();
+      log(`${tagOf(job)} (discord) message for chat ${chatId}`);
+      admit(job);
+    },
+  });
+  hub
+    .start()
+    .then(r => {
+      if (!r.ok) return log(r.error);
+      discordHub = hub;
+      log(
+        `discord: on, channel ${DISCORD.channelId}, ${DISCORD.userIds.length} allowed user(s), ${Object.keys(state.discordLinks || {}).length} linked chat(s)`,
+      );
+    })
+    .catch(e => log(`discord: could not start (${e && e.message ? e.message : e})`));
+}
+
 function lateReply(job, raw) {
   lastActivityAt = Date.now();
+  if (chatDeletedSince(job)) {
+    log(`${tagOf(job)} late reply dropped: its chat was deleted`);
+    return;
+  }
   const { text, summary } = checkedReply(job, P.splitSummary(String(raw || '')));
   noteMessage(job, 'assistant', text);
+  if (discordHub) discordHub.postTo(job.chat, text);
   publish(
     `${chatKey(job)}#late`,
     {
@@ -2073,6 +2330,8 @@ function homeGuardRules() {
   const mcpDir = path.relative(HOME.dir, MCP_CONFIG_DIR);
   return homeDirs().flatMap(dir => [
     P.absolutePathRule('Read', LP.tokenFile(dir)),
+    P.absolutePathRule('Read', path.join(dir, DH.TOKEN_FILE)),
+    P.absolutePathRule('Read', path.join(dir, DH.WEBHOOK_FILE)),
     P.absolutePathRule('Edit', path.join(dir, path.basename(HOME.goals), '**')),
     P.absolutePathRule('Read', path.join(dir, mcpDir, '**')),
   ]);
@@ -2214,7 +2473,10 @@ function runAgent(job, opts = {}) {
     delete state.sessions[key];
   }
   const pluginTools = typeof opts.tools === 'string' ? opts.tools : plugin.tools;
-  const rulesHash = P.systemRulesHash(gameContext(job), { tools: pluginTools, surfaces: plugin.surfaces, voice: plugin.voice });
+  const rulesOpts = { tools: pluginTools, surfaces: plugin.surfaces, voice: plugin.voice };
+  if (discordLinkOf(job.chat) && state.sessions[skey] && state.sessionRules && state.sessionRules[skey] === P.systemRulesHash('', rulesOpts))
+    job.noGameContext = true;
+  const rulesHash = P.systemRulesHash(gameContext(job), rulesOpts);
   if (agentId === 'claude' && state.sessions[skey] && P.rulesChanged(state, skey, rulesHash)) {
     if (opts.thread) {
       log(`${tag} system prompt rules changed (${state.sessionRules[skey]} -> ${rulesHash}): thread chat, the session is kept`);
@@ -2227,6 +2489,7 @@ function runAgent(job, opts = {}) {
   maybeOfferRestore(job);
   noteMessage(job, 'user', job.text);
   const resume = state.sessions[skey] || state.sessions[key];
+  job.agentSession = resume || '';
 
   // Vision: the game view handleScreenshot cut out for this job, read now (it
   // may have waited in the queue) and handed to the agent as an image.
@@ -2255,8 +2518,7 @@ function runAgent(job, opts = {}) {
   const input = agent.input({ prompt, system, systemShort, resume, cfg: acfg, images });
   if (input.promptFile !== undefined) {
     try {
-      fs.mkdirSync(TMP_DIR, { recursive: true });
-      fs.writeFileSync(promptFile, input.promptFile);
+      writePrivateScratch(promptFile, input.promptFile);
     } catch (e) {
       finish(job, 'error', `Could not write the prompt file ${promptFile}: ${e.message}`);
       return;
@@ -2317,7 +2579,7 @@ function runAgent(job, opts = {}) {
   // it, on a plugin whose replies may reach the map.
   if (surfaces.has('map')) {
     try {
-      fs.mkdirSync(MAP_DIR, { recursive: true });
+      makePrivateDir(MAP_DIR);
       fs.rmSync(mapFileFor(job), { force: true });
       env.CLAUDE_WOW_MAP_FILE = mapFileFor(job);
     } catch (e) {
@@ -2326,7 +2588,7 @@ function runAgent(job, opts = {}) {
   }
   if (surfaces.has('ui')) {
     try {
-      fs.mkdirSync(WIDGET_DIR, { recursive: true });
+      makePrivateDir(WIDGET_DIR);
       fs.rmSync(widgetFileFor(job), { force: true });
       env.CLAUDE_WOW_UI_FILE = widgetFileFor(job);
     } catch (e) {
@@ -2410,6 +2672,7 @@ function runAgent(job, opts = {}) {
     toolTrail.push(String(line).slice(0, RUN_TOOL_CHARS));
     while (toolTrail.length > RUN_TOOLS_KEPT) toolTrail.shift();
     beat(job);
+    if (discordHub) discordHub.progressTo(job.chat, progress.slice(-3).join('\n'));
     publish(
       key,
       {
@@ -2474,7 +2737,7 @@ function runAgent(job, opts = {}) {
       log(`${tag} parser error: ${err && err.stack ? err.stack : detail}`);
       return;
     }
-    if (r.session) sessionId = r.session;
+    if (r.session) sessionId = job.agentSession = r.session;
     if (r.usage) usage = r.usage;
     if (Number.isInteger(r.steps) && r.steps > 0) steps += r.steps;
     for (const p of r.progress) pushProgress(p);
@@ -2486,12 +2749,15 @@ function runAgent(job, opts = {}) {
     if (r.done) result = r.done;
   };
 
+  const stdoutDecoder = new StringDecoder('utf8');
+  const stderrDecoder = new StringDecoder('utf8');
   child.stdout.on('data', chunk => {
+    const text = stdoutDecoder.write(chunk);
     if (agent.stream === 'text') {
-      stdoutText += chunk.toString('utf8');
+      stdoutText += text;
       return;
     }
-    buffer += chunk.toString('utf8');
+    buffer += text;
     let nl;
     while ((nl = buffer.indexOf('\n')) >= 0) {
       const line = buffer.slice(0, nl).trim();
@@ -2500,7 +2766,7 @@ function runAgent(job, opts = {}) {
     }
   });
   child.stderr.on('data', chunk => {
-    stderr += chunk.toString('utf8');
+    stderr += stderrDecoder.write(chunk);
   });
 
   const timer = setTimeout(() => {
@@ -2540,6 +2806,9 @@ function runAgent(job, opts = {}) {
 
   child.on('close', code => {
     cleanup();
+    stderr += stderrDecoder.end();
+    if (agent.stream === 'text') stdoutText += stdoutDecoder.end();
+    else buffer += stdoutDecoder.end();
     if (agent.stream === 'text') {
       try {
         const r = parser.finish({ stdout: stdoutText, stderr, code });
@@ -2551,7 +2820,7 @@ function runAgent(job, opts = {}) {
       }
     }
     if (buffer.trim()) handleLine(buffer.trim());
-    if (sessionId) {
+    if (sessionId && !chatDeletedSince(job)) {
       state.sessions[skey] = sessionId;
       (state.sessionCwd = state.sessionCwd || {})[skey] = cwd;
       (state.sessionAgent = state.sessionAgent || {})[skey] = agentId;
@@ -2662,6 +2931,28 @@ function noteInflight(key, job, child, agentName, marker) {
   saveState();
 }
 
+function endOrphanOnWindows(run) {
+  if (!pidAlive(run.pid)) {
+    log(`#${run.id}: the ${run.agent || 'agent'} process ${run.pid} the previous bridge started is already gone`);
+    return;
+  }
+  if (!Number.isFinite(run.startedAt) || run.startedAt < BOOTED_AT) return;
+  let found = '';
+  const outcome = SVC.endWinAgentRun(run, undefined, (proc, query) => {
+    found =
+      proc.state === 'found'
+        ? `created ${proc.created} vs started ${run.startedAt}, command ${proc.command}`
+        : `${proc.state}: ${String(query.out || query.error || '')
+            .trim()
+            .slice(0, 200)}`;
+  });
+  const agent = run.agent || 'agent';
+  if (outcome === 'ended') log(`#${run.id}: ended the orphaned ${agent} process tree ${run.pid} left by the previous bridge`);
+  else if (outcome === 'unknown' || outcome === 'failed')
+    log(`#${run.id}: could not confirm and end the orphaned ${agent} process ${run.pid} (${outcome}); if it still runs, end it in Task Manager`);
+  else log(`#${run.id}: left pid ${run.pid} alone (${outcome}): it is not the ${agent} run the previous bridge started (${found})`);
+}
+
 function recoverInflight() {
   const staleQueue = state.queued !== undefined || state.handling !== undefined || state.held !== undefined;
   delete state.queued;
@@ -2673,7 +2964,8 @@ function recoverInflight() {
     return;
   }
   for (const [key, run] of lost) {
-    if (process.platform !== 'win32' && isSameProcess(run.pid, run.startedAt, run.marker)) {
+    if (process.platform === 'win32') endOrphanOnWindows(run);
+    else if (isSameProcess(run.pid, run.startedAt, run.marker)) {
       try {
         process.kill(-run.pid, 'SIGKILL');
         log(`#${run.id}: ended the orphaned ${run.agent || 'agent'} process group ${run.pid} left by the previous bridge`);
@@ -2711,7 +3003,7 @@ function nameChat(job, key) {
     return;
   }
   try {
-    fs.mkdirSync(TMP_DIR, { recursive: true });
+    makePrivateDir(TMP_DIR);
   } catch {}
   titles.delete(key);
   job.titlePending = T.generateTitle({
@@ -2764,6 +3056,14 @@ function tellPluginFinished(plugin, job, outcome) {
   }
 }
 
+function releaseRunOf(job) {
+  const key = chatKey(job);
+  const owner = running.get(key);
+  if (owner && owner.job !== job) return;
+  running.delete(key);
+  if (state.inflight) delete state.inflight[key];
+}
+
 function finish(job, status, text, session, denied) {
   if (job.finished) return; // spawn failures fire both 'error' and 'close'
   const named = titles.get(chatKey(job));
@@ -2775,11 +3075,7 @@ function finish(job, status, text, session, denied) {
   }
   job.finished = true;
   lastActivityAt = Date.now();
-  const owned = running.get(chatKey(job));
-  if (!owned || owned.job === job) {
-    running.delete(chatKey(job));
-    if (state.inflight) delete state.inflight[chatKey(job)];
-  }
+  releaseRunOf(job);
   dropHandling(handlingKey(job));
   markHandled(job);
   saveState();
@@ -2801,7 +3097,7 @@ function finish(job, status, text, session, denied) {
     }
   }
   const shown = status === 'done' ? checkedReply(job, { text, summary }) : { text, summary };
-  noteMessage(job, status === 'done' ? 'assistant' : 'system', status === 'done' ? shown.text : 'Bridge error: ' + text);
+  if (!chatDeletedSince(job)) noteMessage(job, status === 'done' ? 'assistant' : 'system', status === 'done' ? shown.text : 'Bridge error: ' + text);
   awardAchievements(job, status);
   const usage = P.usageFields(job.usage);
   publish(
@@ -2827,6 +3123,7 @@ function finish(job, status, text, session, denied) {
   mapShare.onReplyPublished();
   signal(clientFor(job), 'sig', job.id, true);
   tellPluginFinished(plugin, job, { status, text, summary });
+  if (discordHub) discordHub.postTo(job.chat, discordReplyText(status, shown.text, denied));
   const growth = usage.turns
     ? `, turn ${usage.turns}${usage.ctx ? ', ctx ' + P.tokensLabel(usage.ctx) + (usage.window ? ' of ' + P.tokensLabel(usage.window) : '') : ''}${usage.cost !== undefined ? ', ~$' + usage.cost.toFixed(2) + ' API so far' : ''}`
     : '';
@@ -3030,7 +3327,7 @@ function attachGameView(img, cropTop, jobs, source) {
   try {
     view = V.gameView(img, { cropTop, maxWidth: vis.maxWidth });
     png = V.encodePNG(view);
-    fs.mkdirSync(TMP_DIR, { recursive: true });
+    makePrivateDir(TMP_DIR);
   } catch (e) {
     log(`vision: could not prepare the game view from ${source} (${e.message}); running without it`);
     return;
@@ -3038,36 +3335,37 @@ function attachGameView(img, cropTop, jobs, source) {
   for (const job of jobs) {
     const file = path.join(TMP_DIR, V.fileName(job.id));
     try {
-      fs.writeFileSync(file, png);
+      writePrivateScratch(file, png);
     } catch (e) {
       log(`vision: could not write ${file} (${e.message})`);
       continue;
     }
     job.image = { file, width: view.width, height: view.height, mediaType: 'image/png', bytes: png.length };
   }
-  pruneVisionFiles(Math.max(1, vis.keep | 0));
+  pruneVisionFiles(Math.max(1, vis.keep | 0), jobs);
   log(`vision: ${source} -> ${view.width}x${view.height} png, ${Math.round(png.length / 1024)} KB, for ${jobs.map(j => '#' + j.id).join(', ')}`);
 }
 
-function heldVisionFiles() {
+function waitingVisionFiles(fresh = []) {
   const saved = Array.isArray(state.held) ? state.held : [];
   const files = new Set();
-  for (const entry of [...held.values(), ...saved]) {
-    const file = entry && entry.job && entry.job.image && entry.job.image.file;
+  const waitingJobs = [...held.values(), ...saved].map(entry => entry && entry.job).concat(queued.jobs(), fresh);
+  for (const job of waitingJobs) {
+    const file = job && job.image && job.image.file;
     if (typeof file === 'string' && file) files.add(path.resolve(file));
   }
   return files;
 }
 
 // Keep the newest `keep` vision files in bridge/tmp; 0 sweeps them all (startup).
-function pruneVisionFiles(keep) {
+function pruneVisionFiles(keep, fresh = []) {
   let names = [];
   try {
     names = fs.readdirSync(TMP_DIR).filter(V.isVisionFile);
   } catch {
     return;
   }
-  const waiting = heldVisionFiles();
+  const waiting = waitingVisionFiles(fresh);
   const files = names
     .map(name => path.join(TMP_DIR, name))
     .filter(f => !waiting.has(path.resolve(f)))
@@ -3342,6 +3640,7 @@ for (const id of A.agentIds()) {
   if (note) log(note);
 }
 if (!once) startPlugins();
+startDiscord();
 if (inject !== null) {
   const job = {
     id: state.lastId + 1,

@@ -13,6 +13,28 @@ const ACCOUNT = 'DEV#1';
 const CLIENT_INTERFACE = '16001';
 const PRIMARY_FLAVOR = '_classic_beta_';
 const FLAVOR_RE = /^_[a-z_]+_$/;
+const WINDOWS_SYSTEM_ENV = [
+  'windir',
+  'SystemDrive',
+  'PATHEXT',
+  'PSModulePath',
+  'ProgramFiles',
+  'ProgramFiles(x86)',
+  'ProgramW6432',
+  'CommonProgramFiles',
+  'CommonProgramFiles(x86)',
+  'CommonProgramW6432',
+  'ProgramData',
+  'ALLUSERSPROFILE',
+  'PUBLIC',
+  'OS',
+  'NUMBER_OF_PROCESSORS',
+  'PROCESSOR_ARCHITECTURE',
+  'PROCESSOR_IDENTIFIER',
+  'USERNAME',
+  'USERDOMAIN',
+  'COMPUTERNAME',
+];
 
 const FAKE_AGENT = path.join(REPO, 'dev', 'fake-claude.js');
 
@@ -170,7 +192,7 @@ function installAddon(L, env) {
 }
 
 function envFor(L, extra = {}) {
-  const keep = ['PATH', 'LANG', 'TMPDIR', 'SystemRoot', 'TEMP', 'TMP', 'COMSPEC'];
+  const keep = ['PATH', 'LANG', 'TMPDIR', 'SystemRoot', 'TEMP', 'TMP', 'COMSPEC', ...WINDOWS_SYSTEM_ENV];
   const env = {};
   for (const k of keep) if (process.env[k] !== undefined) env[k] = process.env[k];
   return Object.assign(

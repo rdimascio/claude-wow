@@ -13,7 +13,7 @@ addon/ClaudeWoW/     the in-game addon (Lua 5.1, WoW API)
   Window.lua            the workspace window's behaviour: dodging Blizzard panels, dimming, per-character layout
   Bindings.xml          the "open or close the workspace" key binding
   ClaudeWoW.toc
-bridge/               the companion process (Node.js, no runtime dependencies)
+bridge/               the companion process (Node.js; the Chat SDK packages are its only runtime dependencies)
   bridge.js             I/O, processes, publishing
   protocol.js           pure functions: strip records, slot files, folders, dedup
   agents.js             one entry per agent (Claude, Codex, Grok, Antigravity, Hermes, Local): command line, prompt delivery, stream parser
@@ -60,7 +60,7 @@ npm run check        # lint, unit suite, e2e suite
 |---|---|---|
 | `lint` | Ubuntu | an oxlint finding, an unformatted file, a Lua local used before it is declared |
 | `unit` | Node on Ubuntu (with coverage floors) and Windows; Bun on Ubuntu, macOS and Windows | any unit test, or coverage under a floor |
-| `e2e` | Ubuntu and macOS (two shards each) and Windows (four shards, a longer per-file limit) | any end-to-end scenario, including the seeded fuzz scenario |
+| `e2e` | Ubuntu (two shards) and Windows (four shards, a longer per-file limit) on every PR; macOS (two shards) on every push to `main` and nightly, since macOS runners are the scarcest | any end-to-end scenario, including the seeded fuzz scenario |
 | `build` | Ubuntu | a binary that does not build or start |
 | `gate` | Ubuntu | any job above that did not pass. This is the one check to require in branch protection. |
 
