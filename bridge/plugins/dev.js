@@ -46,12 +46,16 @@ function capText(text, max = REPLY_MAX) {
 }
 
 function fence(body, lang = '') {
-  const text = String(body || '').replace(/```/g, "'''").replace(/\s+$/, '');
+  const text = String(body || '')
+    .replace(/```/g, "'''")
+    .replace(/\s+$/, '');
   return text ? '```' + lang + '\n' + text + '\n```' : '';
 }
 
 function lastLines(text, n) {
-  const lines = String(text || '').replace(/\s+$/, '').split('\n');
+  const lines = String(text || '')
+    .replace(/\s+$/, '')
+    .split('\n');
   return lines.slice(Math.max(0, lines.length - n)).join('\n');
 }
 
@@ -72,22 +76,38 @@ function runCommand(file, args, { cwd, timeoutMs = GIT_TIMEOUT_MS, env, onTick, 
     try {
       child = spawn(file, args, { cwd, env: env || process.env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
     } catch (e) {
-      resolve({ code: -1, out: '', err: String(e && e.message || e), missing: e && e.code === 'ENOENT', timedOut: false });
+      resolve({ code: -1, out: '', err: String((e && e.message) || e), missing: e && e.code === 'ENOENT', timedOut: false });
       return;
     }
     if (onSpawn) onSpawn(child);
-    const timer = setTimeout(() => { timedOut = true; PR.killTree(child); }, timeoutMs);
+    const timer = setTimeout(() => {
+      timedOut = true;
+      PR.killTree(child);
+    }, timeoutMs);
     const ticker = onTick ? setInterval(onTick, HEARTBEAT_MS) : null;
-    child.stdout.on('data', d => { if (out.length < OUTPUT_CAP) out += d.toString('utf8'); });
-    child.stderr.on('data', d => { if (err.length < OUTPUT_CAP) err += d.toString('utf8'); });
-    child.on('error', e => settle({ code: -1, err: String(e && e.message || e), missing: e && e.code === 'ENOENT' }));
+    child.stdout.on('data', d => {
+      if (out.length < OUTPUT_CAP) out += d.toString('utf8');
+    });
+    child.stderr.on('data', d => {
+      if (err.length < OUTPUT_CAP) err += d.toString('utf8');
+    });
+    child.on('error', e => settle({ code: -1, err: String((e && e.message) || e), missing: e && e.code === 'ENOENT' }));
     child.on('close', code => settle({ code: code === null ? -1 : code }));
   });
 }
 
 function parseArgs(text) {
-  const words = String(text || '').trim().split(/\s+/).filter(Boolean);
-  return { command: (words[0] || 'help').toLowerCase(), args: words.slice(1), rest: String(text || '').trim().replace(/^\S+\s*/, '') };
+  const words = String(text || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  return {
+    command: (words[0] || 'help').toLowerCase(),
+    args: words.slice(1),
+    rest: String(text || '')
+      .trim()
+      .replace(/^\S+\s*/, ''),
+  };
 }
 
 function splitAddonErrors(rest) {
@@ -114,11 +134,24 @@ function checksLine(rollup) {
   const tally = {};
   for (const c of rollup) {
     const s = String(c.conclusion || c.state || c.status || 'PENDING').toUpperCase();
-    const key = s === 'SUCCESS' || s === 'NEUTRAL' || s === 'SKIPPED' ? 'passed' : s === 'FAILURE' || s === 'ERROR' || s === 'TIMED_OUT' || s === 'CANCELLED' || s === 'ACTION_REQUIRED' ? 'failed' : 'pending';
+    const key =
+      s === 'SUCCESS' || s === 'NEUTRAL' || s === 'SKIPPED'
+        ? 'passed'
+        : s === 'FAILURE' || s === 'ERROR' || s === 'TIMED_OUT' || s === 'CANCELLED' || s === 'ACTION_REQUIRED'
+          ? 'failed'
+          : 'pending';
     tally[key] = (tally[key] || 0) + 1;
   }
-  const failed = rollup.filter(c => /FAILURE|ERROR|TIMED_OUT|CANCELLED|ACTION_REQUIRED/i.test(String(c.conclusion || c.state || ''))).map(c => c.name || c.context).filter(Boolean);
-  return ['failed', 'pending', 'passed'].filter(k => tally[k]).map(k => `${tally[k]} ${k}`).join(', ') + (failed.length ? ` (${failed.slice(0, 4).join(', ')})` : '');
+  const failed = rollup
+    .filter(c => /FAILURE|ERROR|TIMED_OUT|CANCELLED|ACTION_REQUIRED/i.test(String(c.conclusion || c.state || '')))
+    .map(c => c.name || c.context)
+    .filter(Boolean);
+  return (
+    ['failed', 'pending', 'passed']
+      .filter(k => tally[k])
+      .map(k => `${tally[k]} ${k}`)
+      .join(', ') + (failed.length ? ` (${failed.slice(0, 4).join(', ')})` : '')
+  );
 }
 
 async function gitRoot(cwd, run) {
@@ -147,7 +180,9 @@ async function status(ctx) {
     try {
       const p = JSON.parse(pr.out);
       out.push(`PR #${p.number} ${p.isDraft ? 'draft' : String(p.state || '').toLowerCase()}: ${p.title}`, p.url, `checks: ${checksLine(p.statusCheckRollup)}`);
-    } catch { out.push('PR: gh gave an unreadable answer'); }
+    } catch {
+      out.push('PR: gh gave an unreadable answer');
+    }
   } else if (pr.missing) {
     out.push('PR: gh is not installed on the bridge PC');
   } else if (/no pull requests found/i.test(pr.err)) {
@@ -193,7 +228,9 @@ function readTail(file, bytes) {
     fs.readSync(fd, buf, 0, len, size - len);
     const text = buf.toString('utf8');
     return len < size ? text.slice(text.indexOf('\n') + 1) : text;
-  } finally { fs.closeSync(fd); }
+  } finally {
+    fs.closeSync(fd);
+  }
 }
 
 function logTail(ctx) {
@@ -204,7 +241,11 @@ function logTail(ctx) {
   const filter = words.join(' ').toLowerCase();
   const file = core.logFile;
   let text;
-  try { text = readTail(file, LOG_TAIL_BYTES); } catch (e) { return `Cannot read ${file}: ${e.message}`; }
+  try {
+    text = readTail(file, LOG_TAIL_BYTES);
+  } catch (e) {
+    return `Cannot read ${file}: ${e.message}`;
+  }
   let lines = text.replace(/\s+$/, '').split('\n');
   if (filter) lines = lines.filter(l => l.toLowerCase().includes(filter));
   const shown = lines.slice(-n);
@@ -238,22 +279,27 @@ function runReport(ctx) {
     `${r.status}${r.code !== undefined && r.code !== null ? `, exit ${r.code}` : ''}, ${agoText(r.ms || 0)} long, ended ${agoText(now - (r.at || now))} ago`,
     `session ${r.session || 'none'}${r.resumed ? ' (resumed)' : ' (new)'}`,
   ];
-  const usage = [r.turns && `turn ${r.turns}`, r.ctx && `context ${r.ctx} tokens`, typeof r.cost === 'number' && `~$${r.cost.toFixed(2)} API so far`].filter(Boolean);
+  const usage = [r.turns && `turn ${r.turns}`, r.ctx && `context ${r.ctx} tokens`, typeof r.cost === 'number' && `~$${r.cost.toFixed(2)} API so far`].filter(
+    Boolean,
+  );
   if (usage.length) lines.push(usage.join(', '));
   if (Array.isArray(r.denied) && r.denied.length) lines.push(`denied: ${r.denied.join(', ')}`);
   if (Array.isArray(r.tools) && r.tools.length) lines.push(`last steps (${r.steps || r.tools.length} in all):`, fence(r.tools.join('\n')));
   if (r.stderr) lines.push('stderr:', fence(r.stderr));
   const cmd = resumeCommand(r);
-  if (cmd) lines.push('resume it in a terminal (quit this chat\'s runs first):', fence(cmd));
+  if (cmd) lines.push("resume it in a terminal (quit this chat's runs first):", fence(cmd));
   return lines.join('\n');
 }
 
 function testCommand(cwd, options, args) {
   const own = options && options.testCommand;
-  if (Array.isArray(own) && own.length && own.every(a => typeof a === 'string')) return { file: own[0], args: [...own.slice(1), ...args], label: [...own, ...args].join(' ') };
+  if (Array.isArray(own) && own.length && own.every(a => typeof a === 'string'))
+    return { file: own[0], args: [...own.slice(1), ...args], label: [...own, ...args].join(' ') };
   if (typeof own === 'string' && own.trim()) return { shell: own.trim(), extra: args, label: [own.trim(), ...args].join(' ') };
   let pkg = null;
-  try { pkg = JSON.parse(fs.readFileSync(path.join(cwd, 'package.json'), 'utf8')); } catch {}
+  try {
+    pkg = JSON.parse(fs.readFileSync(path.join(cwd, 'package.json'), 'utf8'));
+  } catch {}
   if (!pkg || !pkg.scripts || !pkg.scripts.test) return null;
   const npmArgs = ['test', ...(args.length ? ['--', ...args] : [])];
   return { file: 'npm', args: npmArgs, label: ['npm', ...npmArgs].join(' ') };
@@ -262,15 +308,25 @@ function testCommand(cwd, options, args) {
 const SAFE_ARG_RE = /^[A-Za-z0-9_./:=@+,-]+$/;
 
 function platformCommand(c, platform = process.platform) {
-  if (c.shell) return platform === 'win32' ? { file: 'cmd.exe', args: ['/d', '/s', '/c', [c.shell, ...c.extra].join(' ')] } : { file: '/bin/sh', args: ['-c', c.shell + ' "$@"', 'sh', ...c.extra] };
+  if (c.shell)
+    return platform === 'win32'
+      ? { file: 'cmd.exe', args: ['/d', '/s', '/c', [c.shell, ...c.extra].join(' ')] }
+      : { file: '/bin/sh', args: ['-c', c.shell + ' "$@"', 'sh', ...c.extra] };
   if (platform === 'win32' && /^(npm|npx|yarn|pnpm)$/.test(c.file)) return { file: 'cmd.exe', args: ['/d', '/s', '/c', [c.file, ...c.args].join(' ')] };
   return { file: c.file, args: c.args };
 }
 
 function testSummary(out) {
   const lines = String(out || '').split('\n');
-  const totals = lines.map(l => /^(?:#|ℹ) ((?:tests|suites|pass|fail|cancelled|skipped|todo|duration_ms) .*)$/.exec(l.trim())).filter(Boolean).map(m => m[1]);
-  const failing = lines.filter(l => /^\s*(?:not ok \d+|✖ )/.test(l)).map(l => l.trim()).filter((l, i, all) => all.indexOf(l) === i).slice(0, 15);
+  const totals = lines
+    .map(l => /^(?:#|ℹ) ((?:tests|suites|pass|fail|cancelled|skipped|todo|duration_ms) .*)$/.exec(l.trim()))
+    .filter(Boolean)
+    .map(m => m[1]);
+  const failing = lines
+    .filter(l => /^\s*(?:not ok \d+|✖ )/.test(l))
+    .map(l => l.trim())
+    .filter((l, i, all) => all.indexOf(l) === i)
+    .slice(0, 15);
   return { totals, failing };
 }
 
@@ -283,7 +339,14 @@ async function test(ctx) {
   const started = ctx.now();
   core.progress(job, `running ${c.label} in ${cwd}`);
   const p = platformCommand(c);
-  const r = await run(p.file, p.args, { cwd, timeoutMs: TEST_TIMEOUT_MS, onTick: () => { core.beat(job); core.progress(job, `running ${c.label}, ${agoText(ctx.now() - started)} so far`); } });
+  const r = await run(p.file, p.args, {
+    cwd,
+    timeoutMs: TEST_TIMEOUT_MS,
+    onTick: () => {
+      core.beat(job);
+      core.progress(job, `running ${c.label}, ${agoText(ctx.now() - started)} so far`);
+    },
+  });
   if (r.missing) return `${c.file} is not installed on the bridge PC (or not on the bridge's PATH).`;
   const all = r.out + (r.err ? '\n' + r.err : '');
   const { totals, failing } = testSummary(all);
@@ -296,7 +359,7 @@ async function test(ctx) {
 }
 
 function doctorNode(core) {
-  return path.basename(process.execPath).toLowerCase().startsWith('node') ? process.execPath : (core.options(ID).node || 'node');
+  return path.basename(process.execPath).toLowerCase().startsWith('node') ? process.execPath : core.options(ID).node || 'node';
 }
 
 async function doctor(ctx) {
@@ -308,7 +371,9 @@ async function doctor(ctx) {
   core.progress(job, 'running the doctor');
   const r = await run(doctorNode(core), [script, '--json'], { cwd: root, timeoutMs: DOCTOR_TIMEOUT_MS, onTick: () => core.beat(job) });
   let report;
-  try { report = JSON.parse(r.out); } catch {
+  try {
+    report = JSON.parse(r.out);
+  } catch {
     return `The doctor gave no report (exit ${r.code}${r.timedOut ? ', timed out' : ''}).${r.err.trim() ? '\n' + fence(lastLines(r.err, 20)) : ''}`;
   }
   const mark = { ok: 'ok', warn: 'WARN', fail: 'FAIL' };
@@ -343,12 +408,24 @@ function errors(ctx) {
   if (client) {
     const file = path.join(client.dir, 'Logs', 'General.log');
     let text = null;
-    try { text = readTail(file, GAME_LOG_TAIL_BYTES); } catch {}
+    try {
+      text = readTail(file, GAME_LOG_TAIL_BYTES);
+    } catch {}
     if (text === null) out.push(`No ${file}.`);
     else {
       const found = luaErrors(text);
-      const at = (() => { try { return fs.statSync(file).mtime; } catch { return null; } })();
-      out.push(found.length ? `${found.length} Lua error${found.length === 1 ? '' : 's'} in General.log (the game writes it when it exits${at ? ', last written ' + at.toISOString().slice(0, 16).replace('T', ' ') + ' UTC' : ''}), the last ${Math.min(LUA_ERRORS_SHOWN, found.length)}:` : 'No Lua error in General.log (the game writes it when it exits).');
+      const at = (() => {
+        try {
+          return fs.statSync(file).mtime;
+        } catch {
+          return null;
+        }
+      })();
+      out.push(
+        found.length
+          ? `${found.length} Lua error${found.length === 1 ? '' : 's'} in General.log (the game writes it when it exits${at ? ', last written ' + at.toISOString().slice(0, 16).replace('T', ' ') + ' UTC' : ''}), the last ${Math.min(LUA_ERRORS_SHOWN, found.length)}:`
+          : 'No Lua error in General.log (the game writes it when it exits).',
+      );
       if (found.length) out.push(fence(found.slice(-LUA_ERRORS_SHOWN).join('\n\n')));
     }
   } else out.push('The bridge does not know which game client sent this.');
@@ -357,7 +434,7 @@ function errors(ctx) {
 }
 
 function feedback(ctx) {
-  const { args, core, job } = ctx;
+  const { args, core } = ctx;
   const store = core.feedback;
   const sub = (args[0] || 'list').toLowerCase();
   if (sub === 'close' || sub === 'fix') {
@@ -375,7 +452,11 @@ function feedback(ctx) {
   const open = store.list({ status: sub === 'all' ? '' : 'open' });
   if (!open.length) return sub === 'all' ? 'No feedback yet.' : 'No open feedback. /claude dev feedback all shows the closed ones too.';
   const shown = open.slice(-15);
-  return [`${open.length} ${sub === 'all' ? '' : 'open '}item${open.length === 1 ? '' : 's'}${open.length > shown.length ? `, the last ${shown.length}` : ''}:`, ...shown.map(i => FB.describe(i)), 'fix <n> hands one to the agent in this chat; close <n> closes it.'].join('\n');
+  return [
+    `${open.length} ${sub === 'all' ? '' : 'open '}item${open.length === 1 ? '' : 's'}${open.length > shown.length ? `, the last ${shown.length}` : ''}:`,
+    ...shown.map(i => FB.describe(i)),
+    'fix <n> hands one to the agent in this chat; close <n> closes it.',
+  ].join('\n');
 }
 
 function wrong(ctx) {
@@ -383,12 +464,24 @@ function wrong(ctx) {
   let replyId = null;
   let note = rest;
   const ref = /^#(\d+)$/.exec(args[0] || '');
-  if (ref) { replyId = Number(ref[1]); note = rest.replace(/^#\d+\s*/, ''); }
+  if (ref) {
+    replyId = Number(ref[1]);
+    note = rest.replace(/^#\d+\s*/, '');
+  }
   const turn = core.lastTurn(job, replyId);
   if (!turn) return 'There is no reply in this chat to mark.';
   const item = core.feedback.add({
-    kind: 'wrong', chat: job.chat, chatName: job.name || '', replyId: turn.id, cwd: job.cwd || '', plugin: turn.plugin || '', agent: turn.agent || '',
-    session: turn.session || '', prompt: turn.prompt || '', reply: turn.reply || '', note,
+    kind: 'wrong',
+    chat: job.chat,
+    chatName: job.name || '',
+    replyId: turn.id,
+    cwd: job.cwd || '',
+    plugin: turn.plugin || '',
+    agent: turn.agent || '',
+    session: turn.session || '',
+    prompt: turn.prompt || '',
+    reply: turn.reply || '',
+    note,
   });
   return `Marked as wrong: #${item.n}${note ? '' : ' (add a note with /claude wrong <what was wrong>)'}. It is in ${core.feedback.file}; /claude dev feedback lists it.`;
 }
@@ -398,8 +491,18 @@ function bug(ctx) {
   if (!rest && !addonErrors) return 'Say what went wrong: /claude bug <text>.';
   const turn = core.lastTurn(job, null);
   const item = core.feedback.add({
-    kind: 'bug', chat: job.chat, chatName: job.name || '', replyId: turn ? turn.id : null, cwd: job.cwd || '', plugin: turn ? turn.plugin || '' : '', agent: turn ? turn.agent || '' : '',
-    session: turn ? turn.session || '' : '', prompt: turn ? turn.prompt || '' : '', reply: turn ? turn.reply || '' : '', note: rest, addon: addonErrors,
+    kind: 'bug',
+    chat: job.chat,
+    chatName: job.name || '',
+    replyId: turn ? turn.id : null,
+    cwd: job.cwd || '',
+    plugin: turn ? turn.plugin || '' : '',
+    agent: turn ? turn.agent || '' : '',
+    session: turn ? turn.session || '' : '',
+    prompt: turn ? turn.prompt || '' : '',
+    reply: turn ? turn.reply || '' : '',
+    note: rest,
+    addon: addonErrors,
   });
   return `Bug #${item.n} saved in ${core.feedback.file}. /claude dev feedback fix ${item.n} hands it to the agent in a chat for this repository.`;
 }
@@ -425,7 +528,7 @@ function noteFor(command, rest, reply) {
 }
 
 async function handleDev(job, core, deps = {}) {
-  const { command, args, rest: raw } = parseArgs(job.text);
+  const { command, rest: raw } = parseArgs(job.text);
   const { rest, addon } = splitAddonErrors(raw);
   const restArgs = rest ? rest.split(/\s+/).filter(Boolean) : [];
   const fn = COMMANDS[command];
@@ -438,15 +541,23 @@ async function handleDev(job, core, deps = {}) {
   core.log(`${core.tag(job)} dev ${command} starting in ${core.resolveCwd(job)}`);
   const run = deps.run || runCommand;
   const ctx = {
-    job, core, args: restArgs, rest, addonErrors: addon,
+    job,
+    core,
+    args: restArgs,
+    rest,
+    addonErrors: addon,
     cwd: core.resolveCwd(job),
-    run: (file, args, opts = {}) => (job.cancelled ? Promise.resolve({ code: -1, out: '', err: '', timedOut: false, cancelled: true }) : run(file, args, { ...opts, onSpawn: child => core.runChild(job, child) })),
+    run: (file, args, opts = {}) =>
+      job.cancelled
+        ? Promise.resolve({ code: -1, out: '', err: '', timedOut: false, cancelled: true })
+        : run(file, args, { ...opts, onSpawn: child => core.runChild(job, child) }),
     now: deps.now || Date.now,
     setNote: text => core.setDevNote(job, text),
   };
   let text;
-  try { text = await fn(ctx); }
-  catch (e) {
+  try {
+    text = await fn(ctx);
+  } catch (e) {
     core.log(`${core.tag(job)} dev ${command}: ${e && e.stack ? e.stack : e}`);
     core.fail(job, `dev ${command} failed: ${e && e.message ? e.message : e}`);
     return;
@@ -468,7 +579,7 @@ const plugin = {
   surfaces: [],
   achievements: false,
   sessionless: true,
-  banner: () => 'git status, diffs, logs, tests, doctor, Lua errors and feedback for the chat\'s folder (/claude dev help)',
+  banner: () => "git status, diffs, logs, tests, doctor, Lua errors and feedback for the chat's folder (/claude dev help)",
   handle: (job, core) => handleDev(job, core),
 };
 

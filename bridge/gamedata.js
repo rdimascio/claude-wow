@@ -3,9 +3,32 @@ const fs = require('fs');
 const path = require('path');
 const D = require('./datasync');
 
-const TRUST = Object.freeze({ clientData: 'client-data', buildUnchecked: 'client-data-build-unchecked', buildMismatch: 'unverified-build-mismatch', communityDb: 'community-db', communityOtherGame: 'community-db-unchecked-for-this-game', none: 'none' });
+const TRUST = Object.freeze({
+  clientData: 'client-data',
+  buildUnchecked: 'client-data-build-unchecked',
+  buildMismatch: 'unverified-build-mismatch',
+  communityDb: 'community-db',
+  communityOtherGame: 'community-db-unchecked-for-this-game',
+  none: 'none',
+});
 const BUILD_CHECK = Object.freeze({ exact: 'exact', family: 'family', mismatch: 'build-mismatch', unknown: 'unknown', noData: 'no-data' });
-const ENTITIES = Object.freeze(['items', 'quests', 'zones', 'flightpaths', 'uimaps', 'uimapassignments', 'skilllines', 'skilllineabilities', 'spellreagents', 'spells', 'spellranks', 'factions', 'instances', 'encounters', 'instancelevels']);
+const ENTITIES = Object.freeze([
+  'items',
+  'quests',
+  'zones',
+  'flightpaths',
+  'uimaps',
+  'uimapassignments',
+  'skilllines',
+  'skilllineabilities',
+  'spellreagents',
+  'spells',
+  'spellranks',
+  'factions',
+  'instances',
+  'encounters',
+  'instancelevels',
+]);
 const MAX_QUERY_LENGTH = 100;
 const REPLACED_PROBLEM = 'a newer sync replaced this data while it was in use; ask again';
 const CLIENT_BUILD_IN_CONTEXT = /^Game:[^\n]*\(client (\d+\.\d+\.\d+\.\d+)[,)]/m;
@@ -40,13 +63,22 @@ function unavailable(problem) {
 function readTable(file, expectedRows) {
   if (!Number.isSafeInteger(expectedRows) || expectedRows < 0) return unavailable('the manifest has no row count');
   let text;
-  try { text = fs.readFileSync(file, 'utf8'); } catch (e) { return unavailable(`the file cannot be read (${e.code || e.message})`); }
+  try {
+    text = fs.readFileSync(file, 'utf8');
+  } catch (e) {
+    return unavailable(`the file cannot be read (${e.code || e.message})`);
+  }
   const rows = [];
   let bad = 0;
   for (const line of text.split('\n')) {
     if (!line) continue;
     let row;
-    try { row = JSON.parse(line); } catch { bad++; continue; }
+    try {
+      row = JSON.parse(line);
+    } catch {
+      bad++;
+      continue;
+    }
     if (row && typeof row === 'object' && isId(row.id)) rows.push(row);
     else bad++;
   }
@@ -55,7 +87,10 @@ function readTable(file, expectedRows) {
 }
 
 function foldName(s) {
-  return String(s ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
+  return String(s ?? '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function rankName(name, q) {
@@ -82,7 +117,10 @@ function tableReader(dir, manifest, allowed) {
   function load(entity) {
     if (!tables.has(entity)) {
       const info = Object.prototype.hasOwnProperty.call(listed, entity) ? listed[entity] : null;
-      tables.set(entity, info && typeof info === 'object' ? readTable(path.join(dir, `${entity}.jsonl`), info.rows) : unavailable('this sync has no such table'));
+      tables.set(
+        entity,
+        info && typeof info === 'object' ? readTable(path.join(dir, `${entity}.jsonl`), info.rows) : unavailable('this sync has no such table'),
+      );
       if (tables.get(entity).problem && !fs.existsSync(path.join(dir, 'manifest.json'))) replaced = true;
     }
     return tables.get(entity);
@@ -190,4 +228,17 @@ function openStore({ dataDir, flavor: chosen, clientBuild = '' } = {}) {
   };
 }
 
-module.exports = { TRUST, BUILD_CHECK, ENTITIES, MAX_QUERY_LENGTH, isId, clientBuildOf, flavorFor, buildCheckFor, rowTrustFor, foldName, tableReader, openStore };
+module.exports = {
+  TRUST,
+  BUILD_CHECK,
+  ENTITIES,
+  MAX_QUERY_LENGTH,
+  isId,
+  clientBuildOf,
+  flavorFor,
+  buildCheckFor,
+  rowTrustFor,
+  foldName,
+  tableReader,
+  openStore,
+};

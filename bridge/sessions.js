@@ -30,7 +30,11 @@ function readSlice(file, bytes, fromEnd) {
   } catch {
     return '';
   } finally {
-    if (fd !== undefined) { try { fs.closeSync(fd); } catch {} }
+    if (fd !== undefined) {
+      try {
+        fs.closeSync(fd);
+      } catch {}
+    }
   }
 }
 
@@ -43,13 +47,17 @@ function jsonLines(text) {
   for (const line of String(text || '').split('\n')) {
     const s = line.trim();
     if (!s || s[0] !== '{') continue;
-    try { out.push(JSON.parse(s)); } catch {}
+    try {
+      out.push(JSON.parse(s));
+    } catch {}
   }
   return out;
 }
 
 function oneLine(text, max = NAME_MAX) {
-  const s = String(text || '').replace(/\s+/g, ' ').trim();
+  const s = String(text || '')
+    .replace(/\s+/g, ' ')
+    .trim();
   return s.length > max ? s.slice(0, max - 3).trimEnd() + '...' : s;
 }
 
@@ -58,7 +66,8 @@ function projectSlug(cwd) {
 }
 
 function sessionTitle(file) {
-  let custom = '', ai = '';
+  let custom = '',
+    ai = '';
   for (const ev of jsonLines(readSlice(file, TITLE_TAIL_BYTES, true))) {
     if (ev.type === 'custom-title' && typeof ev.customTitle === 'string' && ev.customTitle.trim()) custom = ev.customTitle;
     else if (ev.type === 'ai-title' && typeof ev.aiTitle === 'string' && ev.aiTitle.trim()) ai = ev.aiTitle;
@@ -84,7 +93,7 @@ function firstPrompt(file) {
 
 function sessionLabel(dir, id, cwd) {
   const file = id ? sessionFileFor(dir, id, cwd) : '';
-  return file ? (sessionTitle(file) || firstPrompt(file)) : '';
+  return file ? sessionTitle(file) || firstPrompt(file) : '';
 }
 
 const BRANCH_TTL_MS = 30000;
@@ -94,14 +103,22 @@ const branchCache = new Map();
 function readGitHead(dir) {
   const dotGit = path.join(dir, '.git');
   let st;
-  try { st = fs.statSync(dotGit); } catch { return null; }
+  try {
+    st = fs.statSync(dotGit);
+  } catch {
+    return null;
+  }
   let gitDir = dotGit;
   if (st.isFile()) {
     const m = /^gitdir:\s*(.+)$/m.exec(fs.readFileSync(dotGit, 'utf8'));
     if (!m) return '';
     gitDir = path.resolve(dir, m[1].trim());
   }
-  try { return fs.readFileSync(path.join(gitDir, 'HEAD'), 'utf8').trim(); } catch { return ''; }
+  try {
+    return fs.readFileSync(path.join(gitDir, 'HEAD'), 'utf8').trim();
+  } catch {
+    return '';
+  }
 }
 
 function gitBranch(cwd, now = Date.now()) {
@@ -112,10 +129,14 @@ function gitBranch(cwd, now = Date.now()) {
   let dir = path.resolve(String(cwd));
   for (let i = 0; i < BRANCH_DEPTH; i++) {
     let head = null;
-    try { head = readGitHead(dir); } catch { head = ''; }
+    try {
+      head = readGitHead(dir);
+    } catch {
+      head = '';
+    }
     if (head !== null) {
       const ref = /^ref:\s*refs\/heads\/(.+)$/.exec(head);
-      branch = ref ? ref[1] : (/^[0-9a-f]{7,}$/i.test(head) ? head.slice(0, 7) : '');
+      branch = ref ? ref[1] : /^[0-9a-f]{7,}$/i.test(head) ? head.slice(0, 7) : '';
       break;
     }
     const up = path.dirname(dir);
@@ -129,14 +150,23 @@ function gitBranch(cwd, now = Date.now()) {
 function sessionCwd(file) {
   const m = /"cwd"\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(readSlice(file, CWD_HEAD_BYTES, false));
   if (!m) return '';
-  try { return JSON.parse(`"${m[1]}"`); } catch { return ''; }
+  try {
+    return JSON.parse(`"${m[1]}"`);
+  } catch {
+    return '';
+  }
 }
 
 function projectDirs(dir) {
   const root = path.join(dir, 'projects');
   try {
-    return fs.readdirSync(root, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => path.join(root, d.name));
-  } catch { return []; }
+    return fs
+      .readdirSync(root, { withFileTypes: true })
+      .filter(d => d.isDirectory())
+      .map(d => path.join(root, d.name));
+  } catch {
+    return [];
+  }
 }
 
 function sessionFileFor(dir, id, cwd) {
@@ -163,14 +193,20 @@ function recentClaudeSessions(dir, { limit = 10 } = {}) {
       if (ev.project) cur.cwd = String(ev.project);
     }
     const prompt = String(ev.display || '').trim();
-    if (prompt && !prompt.startsWith('/') && at < cur.promptAt) { cur.prompt = prompt; cur.promptAt = at; }
+    if (prompt && !prompt.startsWith('/') && at < cur.promptAt) {
+      cur.prompt = prompt;
+      cur.promptAt = at;
+    }
     byId.set(id, cur);
   }
-  return [...byId.values()].sort((a, b) => b.at - a.at).slice(0, limit).map(s => {
-    const file = sessionFileFor(dir, s.id, s.cwd);
-    const name = (file && sessionTitle(file)) || oneLine(s.prompt) || (file && firstPrompt(file));
-    return { id: s.id, name, cwd: s.cwd, agent: 'claude', at: Math.floor(s.at / 1000) };
-  });
+  return [...byId.values()]
+    .sort((a, b) => b.at - a.at)
+    .slice(0, limit)
+    .map(s => {
+      const file = sessionFileFor(dir, s.id, s.cwd);
+      const name = (file && sessionTitle(file)) || oneLine(s.prompt) || (file && firstPrompt(file));
+      return { id: s.id, name, cwd: s.cwd, agent: 'claude', at: Math.floor(s.at / 1000) };
+    });
 }
 
 function findClaudeSessions(dir, ref, { limit = 20 } = {}) {
@@ -179,7 +215,11 @@ function findClaudeSessions(dir, ref, { limit = 20 } = {}) {
   const found = [];
   for (const p of projectDirs(dir)) {
     let names = [];
-    try { names = fs.readdirSync(p); } catch { continue; }
+    try {
+      names = fs.readdirSync(p);
+    } catch {
+      continue;
+    }
     for (const n of names) {
       if (!n.endsWith('.jsonl')) continue;
       const id = n.slice(0, -6);
@@ -187,7 +227,9 @@ function findClaudeSessions(dir, ref, { limit = 20 } = {}) {
       if (found.some(f => f.id === id)) continue;
       const file = path.join(p, n);
       let at = 0;
-      try { at = Math.floor(fs.statSync(file).mtimeMs / 1000); } catch {}
+      try {
+        at = Math.floor(fs.statSync(file).mtimeMs / 1000);
+      } catch {}
       found.push({ id, file, at });
       if (found.length >= limit) break;
     }
@@ -200,7 +242,11 @@ function runningClaude(dir, pid) {
   const n = Number(pid);
   if (!Number.isInteger(n) || n <= 0) return null;
   let info;
-  try { info = JSON.parse(fs.readFileSync(path.join(dir, 'sessions', `${n}.json`), 'utf8')); } catch { return null; }
+  try {
+    info = JSON.parse(fs.readFileSync(path.join(dir, 'sessions', `${n}.json`), 'utf8'));
+  } catch {
+    return null;
+  }
   if (!info || typeof info !== 'object') return null;
   const id = String(info.sessionId || '');
   return { id: SESSION_ID_RE.test(id) ? id : '', name: oneLine(info.name || ''), cwd: String(info.cwd || '') };
@@ -249,13 +295,22 @@ function mergeSessions({ live = [], own = [], claude = [], limit = 12 } = {}) {
 }
 
 function matchRef(list, ref) {
-  const want = String(ref || '').trim().toLowerCase();
+  const want = String(ref || '')
+    .trim()
+    .toLowerCase();
   if (!want) return [];
   const rules = [
     s => String(s.id || '').toLowerCase() === want,
     s => String(s.name || '').toLowerCase() === want,
-    s => want.length >= MIN_PREFIX && String(s.id || '').toLowerCase().startsWith(want),
-    s => String(s.name || '').toLowerCase().startsWith(want),
+    s =>
+      want.length >= MIN_PREFIX &&
+      String(s.id || '')
+        .toLowerCase()
+        .startsWith(want),
+    s =>
+      String(s.name || '')
+        .toLowerCase()
+        .startsWith(want),
   ];
   for (const rule of rules) {
     const hits = list.filter(rule);
@@ -279,7 +334,25 @@ function describe(s) {
 }
 
 module.exports = {
-  SESSION_ID_RE, REF_RE, MIN_PREFIX,
-  claudeDir, projectSlug, sessionTitle, sessionCwd, sessionFileFor, readTail, firstPrompt, sessionLabel, gitBranch,
-  recentClaudeSessions, findClaudeSessions, runningClaude, ownSessions, mergeSessions, matchRef, resolveResume, describe, oneLine,
+  SESSION_ID_RE,
+  REF_RE,
+  MIN_PREFIX,
+  claudeDir,
+  projectSlug,
+  sessionTitle,
+  sessionCwd,
+  sessionFileFor,
+  readTail,
+  firstPrompt,
+  sessionLabel,
+  gitBranch,
+  recentClaudeSessions,
+  findClaudeSessions,
+  runningClaude,
+  ownSessions,
+  mergeSessions,
+  matchRef,
+  resolveResume,
+  describe,
+  oneLine,
 };

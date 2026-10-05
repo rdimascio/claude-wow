@@ -24,7 +24,9 @@ function fromHex(hex) {
   return Buffer.from(hex || '', 'hex').toString('utf8');
 }
 
-function pad3(n) { return String(n).padStart(3, '0'); }
+function pad3(n) {
+  return String(n).padStart(3, '0');
+}
 
 // Treat Windows paths consistently when tests or imported agent events run on
 // another platform. The bridge still targets Windows, but protocol data can be
@@ -35,7 +37,12 @@ function isWindowsAbsolute(p) {
 }
 
 function baseName(p) {
-  return String(p || '').replace(/[\\/]+$/, '').split(/[\\/]/).pop() || '';
+  return (
+    String(p || '')
+      .replace(/[\\/]+$/, '')
+      .split(/[\\/]/)
+      .pop() || ''
+  );
 }
 
 function comparableWindowsPath(p) {
@@ -44,7 +51,9 @@ function comparableWindowsPath(p) {
 }
 
 // Reply slot / signal file number for a message id (1-based, wraps at `slots`).
-function slotNumber(id, slots) { return ((id - 1) % slots) + 1; }
+function slotNumber(id, slots) {
+  return ((id - 1) % slots) + 1;
+}
 
 const SIGNAL_CLEAR_AHEAD = 50;
 function slotsToClearAhead(id, slots, keepIds = [], ahead = SIGNAL_CLEAR_AHEAD) {
@@ -60,9 +69,13 @@ function slotsToClearAhead(id, slots, keepIds = [], ahead = SIGNAL_CLEAR_AHEAD) 
 }
 
 // A chat as the bridge tracks it: the addon's session token plus the chat id.
-function chatKey(job) { return `${job.session || ''}:${job.chat || 'default'}`; }
+function chatKey(job) {
+  return `${job.session || ''}:${job.chat || 'default'}`;
+}
 // Agent sessions are keyed by chat id alone, which survives an addon data reset.
-function sessKey(job) { return job.chat ? 'chat:' + job.chat : chatKey(job); }
+function sessKey(job) {
+  return job.chat ? 'chat:' + job.chat : chatKey(job);
+}
 
 // ---------------------------------------------------------------------------
 // Dedup: message ids restart whenever the addon's saved data is reset, so they
@@ -109,14 +122,26 @@ function pruneStale(state, transcripts, now = Date.now(), maxAgeMs = MONTH_MS) {
   state.seen = state.seen || {};
   for (const key of Object.keys(state.handled || {})) {
     if (key === '') continue;
-    if (!state.seen[key]) { state.seen[key] = now; continue; } // grace period starts now
-    if (now - state.seen[key] > maxAgeMs) { delete state.handled[key]; delete state.seen[key]; removed++; }
+    if (!state.seen[key]) {
+      state.seen[key] = now;
+      continue;
+    } // grace period starts now
+    if (now - state.seen[key] > maxAgeMs) {
+      delete state.handled[key];
+      delete state.seen[key];
+      removed++;
+    }
   }
   for (const key of Object.keys(state.seen)) {
-    if (!(state.handled || {})[key] && now - state.seen[key] > maxAgeMs) { delete state.seen[key]; }
+    if (!(state.handled || {})[key] && now - state.seen[key] > maxAgeMs) {
+      delete state.seen[key];
+    }
   }
   for (const [tok, t] of Object.entries((transcripts && transcripts.tokens) || {})) {
-    if (now - t > maxAgeMs) { delete transcripts.tokens[tok]; removed++; }
+    if (now - t > maxAgeMs) {
+      delete transcripts.tokens[tok];
+      removed++;
+    }
   }
   return removed;
 }
@@ -142,7 +167,7 @@ function pruneStale(state, transcripts, now = Date.now(), maxAgeMs = MONTH_MS) {
 function noteUsage(state, key, { usage, fresh, agent, startedAt, now = Date.now() } = {}) {
   const all = (state.sessionUsage = state.sessionUsage || {});
   const prev = !fresh && all[key] ? all[key] : null;
-  const rec = { turns: (prev ? prev.turns || 0 : 0) + 1, agent: agent || '', at: now, since: prev && prev.since ? prev.since : (startedAt || now) };
+  const rec = { turns: (prev ? prev.turns || 0 : 0) + 1, agent: agent || '', at: now, since: prev && prev.since ? prev.since : startedAt || now };
   const u = usage && Number.isFinite(usage.context) && usage.context > 0 ? usage : null;
   if (u) {
     rec.context = Math.round(u.context);
@@ -217,13 +242,15 @@ function sameFolder(a, b) {
 // "plugin=ask" = the chat is bound to that plugin instead of the bridge's
 // default (see plugins.js; only set when the flag is there, so a record from
 // an addon that predates plugins parses exactly as before).
-const SETTING_RE = /^[A-Za-z0-9._:\[\]-]{1,80}$/;
+const SETTING_RE = /^[A-Za-z0-9._:[\]-]{1,80}$/;
 const RESUME_REF_RE = /^[A-Za-z0-9._-]{1,80}$/;
 const ADD_DIRS_MAX = 8;
 const PERMISSION_MODES = ['acceptEdits', 'auto', 'bypassPermissions', 'manual', 'default', 'dontAsk', 'plan'];
 
 function permissionModeName(raw) {
-  const want = String(raw || '').trim().toLowerCase();
+  const want = String(raw || '')
+    .trim()
+    .toLowerCase();
   return PERMISSION_MODES.find(m => m.toLowerCase() === want) || '';
 }
 
@@ -239,27 +266,77 @@ function parseFlags(flags) {
     else if (tok === 'c') out.context = true;
     else if (tok === 't') out.title = true;
     else if (tok === 'v') out.vision = true; // attach the screenshot's game view to the run (screenshot transport only)
-    else if (tok.startsWith('allow=')) out.allow.push(...tok.slice(6).split(',').map(s => s.trim()).filter(Boolean));
-    else if (tok.startsWith('once=')) (out.allowOnce = out.allowOnce || []).push(...tok.slice(5).split(',').map(s => s.trim()).filter(Boolean));
+    else if (tok.startsWith('allow='))
+      out.allow.push(
+        ...tok
+          .slice(6)
+          .split(',')
+          .map(s => s.trim())
+          .filter(Boolean),
+      );
+    else if (tok.startsWith('once='))
+      (out.allowOnce = out.allowOnce || []).push(
+        ...tok
+          .slice(5)
+          .split(',')
+          .map(s => s.trim())
+          .filter(Boolean),
+      );
     else if (tok.startsWith('agent=')) out.agent = tok.slice(6).trim().toLowerCase();
-    else if (tok.startsWith('cancel=')) { const n = Number(tok.slice(7)); if (Number.isInteger(n) && n > 0) out.cancel = n; }
-    else if (tok.startsWith('plugin=')) { const p = tok.slice(7).trim().toLowerCase(); if (p) out.plugin = p; }
-    else if (tok.startsWith('kind=')) { const k = tok.slice(5).trim().toLowerCase(); if (/^[a-z][a-z0-9-]*$/.test(k)) out.kind = k; }
-    else if (tok.startsWith('model=')) { const v = tok.slice(6).trim(); if (SETTING_RE.test(v)) out.model = v; }
-    else if (tok.startsWith('effort=')) { const v = tok.slice(7).trim().toLowerCase(); if (SETTING_RE.test(v)) out.effort = v; }
-    else if (tok.startsWith('pm=')) { const v = permissionModeName(tok.slice(3)); if (v) out.permissionMode = v; }
-    else if (tok.startsWith('dirs=')) { const dirs = fromHex(tok.slice(5).trim()).split('\x1F').map(s => s.trim()).filter(Boolean).slice(0, ADD_DIRS_MAX); if (dirs.length) out.addDirs = dirs; }
-    else if (tok.startsWith('resume=')) { const v = tok.slice(7).trim(); if (RESUME_REF_RE.test(v)) out.resume = v; }
-    else if (tok.startsWith('live=')) { const v = fromHex(tok.slice(5).trim()).trim().slice(0, 80); if (v) out.liveTarget = v; }
+    else if (tok.startsWith('cancel=')) {
+      const n = Number(tok.slice(7));
+      if (Number.isInteger(n) && n > 0) out.cancel = n;
+    } else if (tok.startsWith('plugin=')) {
+      const p = tok.slice(7).trim().toLowerCase();
+      if (p) out.plugin = p;
+    } else if (tok.startsWith('kind=')) {
+      const k = tok.slice(5).trim().toLowerCase();
+      if (/^[a-z][a-z0-9-]*$/.test(k)) out.kind = k;
+    } else if (tok.startsWith('model=')) {
+      const v = tok.slice(6).trim();
+      if (SETTING_RE.test(v)) out.model = v;
+    } else if (tok.startsWith('effort=')) {
+      const v = tok.slice(7).trim().toLowerCase();
+      if (SETTING_RE.test(v)) out.effort = v;
+    } else if (tok.startsWith('pm=')) {
+      const v = permissionModeName(tok.slice(3));
+      if (v) out.permissionMode = v;
+    } else if (tok.startsWith('dirs=')) {
+      const dirs = fromHex(tok.slice(5).trim())
+        .split('\x1F')
+        .map(s => s.trim())
+        .filter(Boolean)
+        .slice(0, ADD_DIRS_MAX);
+      if (dirs.length) out.addDirs = dirs;
+    } else if (tok.startsWith('resume=')) {
+      const v = tok.slice(7).trim();
+      if (RESUME_REF_RE.test(v)) out.resume = v;
+    } else if (tok.startsWith('live=')) {
+      const v = fromHex(tok.slice(5).trim()).trim().slice(0, 80);
+      if (v) out.liveTarget = v;
+    }
     // "shot=missing" / "shot=failed": the addon is on the screenshot transport but
     // cannot take the shot (no Screenshot() in this client, or SCREENSHOT_FAILED on
     // every try). The bridge falls back to the pixel transport on it (transportFallback).
-    else if (tok.startsWith('shot=')) { const s = tok.slice(5).trim().toLowerCase(); if (FALLBACK_REASONS[s]) out.shot = s; }
-    else if (tok.startsWith('pt=')) { const v = tok.slice(3).trim().toLowerCase(); if (PRESENCE_TEST_RESULTS.includes(v)) out.presenceTest = v; }
-    else if (tok.startsWith('lc=')) { const v = tok.slice(3).trim().toLowerCase(); if (LATE_CREATE_RESULTS.includes(v)) out.lateCreate = v; }
-    else if (tok.startsWith('probe=')) { const v = tok.slice(6).trim().toLowerCase(); if (/^[0-9a-z]{4,16}$/.test(v)) out.probe = v; }
-    else if (tok.startsWith('ver=')) { const v = tok.slice(4).trim(); if (SEMVER_RE.test(v)) out.addonVersion = v; }
-    else if (tok.startsWith('proto=')) { const v = tok.slice(6).trim(); if (/^\d{1,6}$/.test(v) && Number(v) > 0) out.addonProto = Number(v); }
+    else if (tok.startsWith('shot=')) {
+      const s = tok.slice(5).trim().toLowerCase();
+      if (FALLBACK_REASONS[s]) out.shot = s;
+    } else if (tok.startsWith('pt=')) {
+      const v = tok.slice(3).trim().toLowerCase();
+      if (PRESENCE_TEST_RESULTS.includes(v)) out.presenceTest = v;
+    } else if (tok.startsWith('lc=')) {
+      const v = tok.slice(3).trim().toLowerCase();
+      if (LATE_CREATE_RESULTS.includes(v)) out.lateCreate = v;
+    } else if (tok.startsWith('probe=')) {
+      const v = tok.slice(6).trim().toLowerCase();
+      if (/^[0-9a-z]{4,16}$/.test(v)) out.probe = v;
+    } else if (tok.startsWith('ver=')) {
+      const v = tok.slice(4).trim();
+      if (SEMVER_RE.test(v)) out.addonVersion = v;
+    } else if (tok.startsWith('proto=')) {
+      const v = tok.slice(6).trim();
+      if (/^\d{1,6}$/.test(v) && Number(v) > 0) out.addonProto = Number(v);
+    }
   }
   return out;
 }
@@ -273,7 +350,11 @@ const ADDON_VERSIONS_MAX = 8;
 const MAX_DATE_MS = 8.64e15;
 
 function bridgeVersion() {
-  try { return require('../package.json').version; } catch { return '0.0.0'; }
+  try {
+    return require('../package.json').version;
+  } catch {
+    return '0.0.0';
+  }
 }
 
 function bridgeInfo(version = bridgeVersion()) {
@@ -286,7 +367,8 @@ function semverTriple(v) {
 }
 
 function compareSemver(a, b) {
-  const x = semverTriple(a), y = semverTriple(b);
+  const x = semverTriple(a),
+    y = semverTriple(b);
   if (!x || !y) return null;
   for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] < y[i] ? -1 : 1;
   return 0;
@@ -305,17 +387,39 @@ function versionVerdict(addon, bridge = bridgeInfo()) {
   const mine = `${version || 'version unknown'}, protocol ${proto}`;
   const theirs = `${bridge.version}, protocol ${protoRange(bridge)}`;
   if (proto < bridge.protoMin) {
-    return { verdict: 'update-addon', refuse: true, text: `This addon (${mine}) is too old for the bridge (${theirs}). The bridge refuses messages until you update the addon: ${ADDON_UPDATE_HOW}` };
+    return {
+      verdict: 'update-addon',
+      refuse: true,
+      text: `This addon (${mine}) is too old for the bridge (${theirs}). The bridge refuses messages until you update the addon: ${ADDON_UPDATE_HOW}`,
+    };
   }
   if (proto > bridge.protoMax) {
-    return { verdict: 'update-bridge', refuse: true, text: `The bridge (${theirs}) is too old for this addon (${mine}). The bridge refuses messages until you update it: ${BRIDGE_UPDATE_HOW}` };
+    return {
+      verdict: 'update-bridge',
+      refuse: true,
+      text: `The bridge (${theirs}) is too old for this addon (${mine}). The bridge refuses messages until you update it: ${BRIDGE_UPDATE_HOW}`,
+    };
   }
   if (!version) return { verdict: 'unknown', refuse: false, text: '' };
   if (version === bridge.version) return { verdict: 'equal', refuse: false, text: '' };
   const order = compareSemver(version, bridge.version);
-  if (order === -1) return { verdict: 'addon-older', refuse: false, text: `This addon (${version}) is older than the bridge (${bridge.version}). They still work together; update the addon when you can.` };
-  if (order === 1) return { verdict: 'bridge-older', refuse: false, text: `The bridge (${bridge.version}) is older than this addon (${version}). They still work together; update the bridge when you can.` };
-  return { verdict: 'differs', refuse: false, text: `This addon (${version}) and the bridge (${bridge.version}) are different builds. They still work together.` };
+  if (order === -1)
+    return {
+      verdict: 'addon-older',
+      refuse: false,
+      text: `This addon (${version}) is older than the bridge (${bridge.version}). They still work together; update the addon when you can.`,
+    };
+  if (order === 1)
+    return {
+      verdict: 'bridge-older',
+      refuse: false,
+      text: `The bridge (${bridge.version}) is older than this addon (${version}). They still work together; update the bridge when you can.`,
+    };
+  return {
+    verdict: 'differs',
+    refuse: false,
+    text: `This addon (${version}) and the bridge (${bridge.version}) are different builds. They still work together.`,
+  };
 }
 
 function noteAddonVersion(state, job, bridge = bridgeInfo(), now = Date.now()) {
@@ -325,7 +429,10 @@ function noteAddonVersion(state, job, bridge = bridgeInfo(), now = Date.now()) {
   const key = String(job.session || '');
   const prev = all[key];
   all[key] = { ...addon, bridge: bridge.version, protoMin: bridge.protoMin, protoMax: bridge.protoMax, verdict: v.verdict, at: now };
-  const keep = Object.entries(all).sort((a, b) => (b[1].at || 0) - (a[1].at || 0)).slice(0, ADDON_VERSIONS_MAX).map(([k]) => k);
+  const keep = Object.entries(all)
+    .sort((a, b) => (b[1].at || 0) - (a[1].at || 0))
+    .slice(0, ADDON_VERSIONS_MAX)
+    .map(([k]) => k);
   for (const k of Object.keys(all)) if (!keep.includes(k)) delete all[k];
   return { ...v, changed: !prev || prev.verdict !== v.verdict || prev.version !== addon.version || prev.bridge !== bridge.version };
 }
@@ -395,9 +502,11 @@ function jobsFromStrip(headerId, payload) {
       const job = { session: p[0], chat: p[1], id: Number(p[2]), cwd: p[3], ...flags, name: p[5], text: p.slice(withCtx ? 7 : 6).join('\x1F'), via: 'pixel' };
       if (withCtx) job.ctx = p[6];
       jobs.push(job);
-    } else if (p.length === 6 && /^\d+$/.test(p[2])) { // previous format without the chat name
+    } else if (p.length === 6 && /^\d+$/.test(p[2])) {
+      // previous format without the chat name
       jobs.push({ session: p[0], chat: p[1], id: Number(p[2]), cwd: p[3], ...parseFlags(p[4]), name: '', text: p[5], via: 'pixel' });
-    } else if (p.length === 4) { // pre-chat format: session, cwd, flags, text
+    } else if (p.length === 4) {
+      // pre-chat format: session, cwd, flags, text
       jobs.push({ session: p[0], chat: '', id: headerId, cwd: p[1], ...parseFlags(p[2]), text: p[3], via: 'pixel' });
     }
   }
@@ -433,7 +542,8 @@ function parseOutbox(src) {
   const opts = b.match(/\["opts"\]\s*=\s*"([0-9a-fA-F]*)"/);
   if (opts && opts[1]) {
     const f = parseFlags(fromHex(opts[1]));
-    for (const k of ['model', 'effort', 'permissionMode', 'addDirs', 'resume', 'liveTarget', 'addonVersion', 'addonProto']) if (f[k] !== undefined) job[k] = f[k];
+    for (const k of ['model', 'effort', 'permissionMode', 'addDirs', 'resume', 'liveTarget', 'addonVersion', 'addonProto'])
+      if (f[k] !== undefined) job[k] = f[k];
   }
   return job;
 }
@@ -525,10 +635,10 @@ const LINK_HINT = [
 // How the agent draws on the world map (see "Map layers" below and docs/MAP.md).
 // Sent with the game context, since marks only make sense in a game chat.
 const MAP_HINT = [
-  'You can mark the player\'s world map. Either append commands to the file named by the CLAUDE_WOW_MAP_FILE environment variable (one JSON object per line) or, for a few marks, end the reply with a fenced block whose language tag is wowmap containing them. Commands:',
+  "You can mark the player's world map. Either append commands to the file named by the CLAUDE_WOW_MAP_FILE environment variable (one JSON object per line) or, for a few marks, end the reply with a fenced block whose language tag is wowmap containing them. Commands:",
   '{"op":"set","layer":"<name>","title":"<shown title>","ordered":true,"loop":false,"points":[{"m":<uiMapID>,"x":<0-100>,"y":<0-100>,"label":"<text>","kind":"quest"}]}  replaces that layer; "ordered" draws a numbered route with a navigator, "loop" closes it.',
   '{"op":"clear","layer":"<name>"} removes a layer; {"op":"clearall"} removes them all.',
-  'x and y are map percent on the map with that uiMapID (the context gives the player\'s current one). kind is one of ore, herb, quest, turnin, kill, loot, object, explore, npc, trainer, vendor, dungeon, flight, poi. Only mark the map when asked for a route, marks or locations; say in the reply what you drew.',
+  "x and y are map percent on the map with that uiMapID (the context gives the player's current one). kind is one of ore, herb, quest, turnin, kill, loot, object, explore, npc, trainer, vendor, dungeon, flight, poi. Only mark the map when asked for a route, marks or locations; say in the reply what you drew.",
 ];
 
 // How the agent hands the player a ready-made macro (see "Macros" below).
@@ -551,10 +661,11 @@ function visionHint(image) {
 
 // What the situation block in a message is (the block itself is built by
 // messagePrompt). Sent while the addon sends a context at all.
-const SITUATION_RULE = 'A message may open with a block marked as the player\'s in-game situation, reported by the addon the moment they wrote it (not written by them): character, zone, map coordinates, money, professions, quest log. Use it when the request is about the game or the character (questions, macros, addon code, gear advice); ignore it when the task is unrelated. Every message carries a fresh one, so the latest block is where they are now. Items, spells or quests the player shift-clicked into a message appear as [Name] in the text, with their tooltip in a "Linked from the game" block at the end of the message.';
+const SITUATION_RULE =
+  'A message may open with a block marked as the player\'s in-game situation, reported by the addon the moment they wrote it (not written by them): character, zone, map coordinates, money, professions, quest log. Use it when the request is about the game or the character (questions, macros, addon code, gear advice); ignore it when the task is unrelated. Every message carries a fresh one, so the latest block is where they are now. Items, spells or quests the player shift-clicked into a message appear as [Name] in the text, with their tooltip in a "Linked from the game" block at the end of the message.';
 
 const WHERE_HINT = [
-  'The situation block\'s "Game:" line names the client. World of Warcraft: Forever is its own game: its NPCs, quests, drops and spawns can differ from retail and from Classic, so web databases and wikis (Wowhead and the like) are unverified guides there. World of Warcraft Classic (interface 115xx) is Classic Era: Classic web databases describe it, but an item, spell or quest ID still comes only from the sources the link rule below names. The wowdata client tables and order tokens use the synced data of the client\'s own game (Forever or Classic Era), never the other one\'s (the Classic community data below is the one exception); with no data synced for it, an order with a token is refused. In a chat reply, the bridge shows a spell token the player did not link in this chat as plain text, not as a link. wow_npc and wow_quest also give NPC names, quest titles, quest givers and spawn points from Classic community data (a rebuild of the 1.12 world, not the client); on Forever only the part Forever\'s own client data backs. Take an NPC or quest name from them rather than from memory, and say it is community data that may differ in game, on Forever that it is Classic data not checked for Forever. wow_item (by ID), wow_npc and wow_instance give who drops what from the same community data, with the same label: name sources from them, never a drop chance or count from memory or the web (the player\'s observed loot has the real rates).',
+  "The situation block's \"Game:\" line names the client. World of Warcraft: Forever is its own game: its NPCs, quests, drops and spawns can differ from retail and from Classic, so web databases and wikis (Wowhead and the like) are unverified guides there. World of Warcraft Classic (interface 115xx) is Classic Era: Classic web databases describe it, but an item, spell or quest ID still comes only from the sources the link rule below names. The wowdata client tables and order tokens use the synced data of the client's own game (Forever or Classic Era), never the other one's (the Classic community data below is the one exception); with no data synced for it, an order with a token is refused. In a chat reply, the bridge shows a spell token the player did not link in this chat as plain text, not as a link. wow_npc and wow_quest also give NPC names, quest titles, quest givers and spawn points from Classic community data (a rebuild of the 1.12 world, not the client); on Forever only the part Forever's own client data backs. Take an NPC or quest name from them rather than from memory, and say it is community data that may differ in game, on Forever that it is Classic data not checked for Forever. wow_item (by ID), wow_npc and wow_instance give who drops what from the same community data, with the same label: name sources from them, never a drop chance or count from memory or the web (the player's observed loot has the real rates).",
   `When you name what drops from, is skinned or pick pocketed from, or comes out of something (from wow_item, wow_npc or wow_instance), the answer is a list, in every voice, even when other rules ask for one line: a lead line that also names the source in a few words (community 1.12 data, and on Forever that it is not checked for Forever), then each item as its own line starting with "- " and holding only its {item:ID} token, best items first, then one line saying how many more there are and what kind they are. When the kinds differ (gear, plans and recipes, quest items), put each kind under a plain label line of one or two words. Keep the whole answer within 8 lines, counting every label line and every ${SUMMARY_MARKER} line, so the whisper tab shows it whole: that leaves 6 item lines with no label and no ${SUMMARY_MARKER} block, and one fewer for each label or ${SUMMARY_MARKER} line. Never run item links together on one line.`,
   'Coordinates are percent of the map with that uiMapID, 0 to 100, with 0,0 at the top left; give them as "x, y" and mark the spot on the map as well.',
 ];
@@ -572,14 +683,23 @@ function systemPrompt(ctx, primer, opts) {
   if (game && opts && Array.isArray(opts.surfaces) && opts.surfaces.includes('ui')) lines.push('', ...WIDGET_HINT);
   const ref = game ? String(primer || '').trim() : '';
   if (ref) {
-    lines.push('', 'Reference for writing addons and macros for this client. Follow it when the task is about WoW, and check anything it marks as uncertain against the Blizzard UI source it names:', '', ref);
+    lines.push(
+      '',
+      'Reference for writing addons and macros for this client. Follow it when the task is about WoW, and check anything it marks as uncertain against the Blizzard UI source it names:',
+      '',
+      ref,
+    );
   }
   return lines.join('\n');
 }
 
 const RULES_HASH_LENGTH = 16;
 function systemRulesHash(ctx, opts) {
-  return crypto.createHash('sha256').update(systemPrompt(ctx, '', opts)).digest('hex').slice(0, RULES_HASH_LENGTH);
+  return crypto
+    .createHash('sha256')
+    .update(systemPrompt(ctx, '', opts))
+    .digest('hex')
+    .slice(0, RULES_HASH_LENGTH);
 }
 
 function rulesChanged(state, key, hash) {
@@ -631,7 +751,7 @@ function ruleFor(d) {
   if (name === 'Bash') {
     const cmd = String((d.tool_input && d.tool_input.command) || '').trim();
     const word = cmd.split(/\s+/)[0];
-    if (word && /^[\w.\-]+$/.test(word)) return `Bash(${word}:*)`;
+    if (word && /^[\w.-]+$/.test(word)) return `Bash(${word}:*)`;
     return 'Bash';
   }
   return name;
@@ -642,7 +762,9 @@ const OUTSIDE_FOLDERS_RE = /working director/i;
 const QUOTED_PATH_RE = /\bin '([^']+)'/;
 const FILE_TOOL_PATH_KEYS = ['file_path', 'notebook_path', 'path'];
 
-function folderRule(dir) { return `AddDir(${dir})`; }
+function folderRule(dir) {
+  return `AddDir(${dir})`;
+}
 
 function ruleFolder(rule) {
   const m = FOLDER_RULE_RE.exec(String(rule || '').trim());
@@ -654,7 +776,8 @@ function splitGrants(rules) {
   for (const r of Array.isArray(rules) ? rules : []) {
     if (!r) continue;
     const dir = ruleFolder(r);
-    if (dir) out.dirs.push(dir); else out.rules.push(String(r));
+    if (dir) out.dirs.push(dir);
+    else out.rules.push(String(r));
   }
   return out;
 }
@@ -703,7 +826,9 @@ function denialWhat(d) {
 }
 
 function firstSentence(text) {
-  const s = String(text || '').replace(/\s+/g, ' ').trim();
+  const s = String(text || '')
+    .replace(/\s+/g, ' ')
+    .trim();
   const m = /^[\s\S]*?[.!?](?=\s|$)/.exec(s);
   return (m ? m[0] : s).slice(0, 200);
 }
@@ -750,10 +875,14 @@ function denialNotes(agentName, fresh, again) {
   const folders = (fresh || []).filter(e => e.kind === 'folder');
   if (rules.length) {
     const actions = rules.length === 1 ? '1 action that is' : `${rules.length} actions that are`;
-    notes.push(`${who} needed ${actions} not allowed yet:\n  ${rules.map(e => e.what).join('\n  ')}\nAllow ${rules.length === 1 ? 'it' : 'them'} from this chat to let it continue.`);
+    notes.push(
+      `${who} needed ${actions} not allowed yet:\n  ${rules.map(e => e.what).join('\n  ')}\nAllow ${rules.length === 1 ? 'it' : 'them'} from this chat to let it continue.`,
+    );
   }
   if (folders.length) {
-    notes.push(`${who} was blocked outside this chat's folders:\n  ${folders.map(e => `${e.what} (folder ${e.folder})`).join('\n  ')}\nAn allowlist rule cannot open a folder. Allow it from this chat to add the folder (like /claude --add-dir) and let it continue.`);
+    notes.push(
+      `${who} was blocked outside this chat's folders:\n  ${folders.map(e => `${e.what} (folder ${e.folder})`).join('\n  ')}\nAn allowlist rule cannot open a folder. Allow it from this chat to add the folder (like /claude --add-dir) and let it continue.`,
+    );
   }
   const seen = new Set();
   for (const e of again || []) {
@@ -770,12 +899,17 @@ const STEP_CHARS = 80;
 const MCP_PREFIXES = /^(?:claude_ai_|plugin_[^_]+_)/;
 
 function clip(text, max = STEP_CHARS) {
-  const s = String(text || '').trim().replace(/\s+/g, ' ');
+  const s = String(text || '')
+    .trim()
+    .replace(/\s+/g, ' ');
   return s.length > max ? s.slice(0, max - 3).trimEnd() + '...' : s;
 }
 
 function shortCommand(cmd) {
-  const first = String(cmd || '').split('\n')[0].replace(/^\s*cd\s+\S+\s*&&\s*/, '').trim();
+  const first = String(cmd || '')
+    .split('\n')[0]
+    .replace(/^\s*cd\s+\S+\s*&&\s*/, '')
+    .trim();
   const words = [];
   for (const w of first.split(/\s+/)) {
     if (!w || /^[-|&;<>'"$(]/.test(w) || words.length === 4) break;
@@ -785,11 +919,17 @@ function shortCommand(cmd) {
 }
 
 function hostOf(url) {
-  try { return new URL(String(url)).host; } catch { return clip(url, 40); }
+  try {
+    return new URL(String(url)).host;
+  } catch {
+    return clip(url, 40);
+  }
 }
 
 function humanTool(name) {
-  return String(name || '').replace(/[_-]+/g, ' ').trim();
+  return String(name || '')
+    .replace(/[_-]+/g, ' ')
+    .trim();
 }
 
 function describeMcp(name) {
@@ -805,22 +945,36 @@ function describeToolUse(block) {
   const inp = block.input || {};
   const name = String(block.name || '');
   switch (name) {
-    case 'Bash': return clip(inp.description) || clip(`Run ${shortCommand(inp.command)}`);
-    case 'Read': return `Read ${baseName(inp.file_path)}`;
+    case 'Bash':
+      return clip(inp.description) || clip(`Run ${shortCommand(inp.command)}`);
+    case 'Read':
+      return `Read ${baseName(inp.file_path)}`;
     case 'Edit':
-    case 'MultiEdit': return `Edit ${baseName(inp.file_path)}`;
-    case 'Write': return `Write ${baseName(inp.file_path)}`;
-    case 'NotebookEdit': return `Edit ${baseName(inp.notebook_path)}`;
-    case 'Grep': return clip(`Search for "${inp.pattern || ''}"`);
-    case 'Glob': return clip(`Find ${inp.pattern || 'files'}`);
+    case 'MultiEdit':
+      return `Edit ${baseName(inp.file_path)}`;
+    case 'Write':
+      return `Write ${baseName(inp.file_path)}`;
+    case 'NotebookEdit':
+      return `Edit ${baseName(inp.notebook_path)}`;
+    case 'Grep':
+      return clip(`Search for "${inp.pattern || ''}"`);
+    case 'Glob':
+      return clip(`Find ${inp.pattern || 'files'}`);
     case 'Agent':
-    case 'Task': return clip(`Agent: ${inp.description || 'subtask'}`);
-    case 'WebSearch': return clip(`Web search: ${inp.query || ''}`);
-    case 'WebFetch': return `Fetch ${hostOf(inp.url)}`;
-    case 'TodoWrite': return 'Update the plan';
-    case 'ToolSearch': return 'Load tools';
-    case 'Skill': return clip(`Use skill ${inp.skill || inp.command || ''}`);
-    default: return name.startsWith('mcp__') ? describeMcp(name) : name;
+    case 'Task':
+      return clip(`Agent: ${inp.description || 'subtask'}`);
+    case 'WebSearch':
+      return clip(`Web search: ${inp.query || ''}`);
+    case 'WebFetch':
+      return `Fetch ${hostOf(inp.url)}`;
+    case 'TodoWrite':
+      return 'Update the plan';
+    case 'ToolSearch':
+      return 'Load tools';
+    case 'Skill':
+      return clip(`Use skill ${inp.skill || inp.command || ''}`);
+    default:
+      return name.startsWith('mcp__') ? describeMcp(name) : name;
   }
 }
 
@@ -830,13 +984,16 @@ function describeToolUse(block) {
 
 // Escape for a double-quoted Lua 5.1 string literal.
 function luaStr(s) {
-  return '"' + String(s ?? '')
-    .replace(/\\/g, '\\\\')
-    .replace(/"/g, '\\"')
-    .replace(/\r/g, '')
-    .replace(/\n/g, '\\n')
-    .replace(/[\x00-\x08\x0b-\x1f\x7f]/g, c => '\\' + String(c.charCodeAt(0)).padStart(3, '0'))
-    + '"';
+  return (
+    '"' +
+    String(s ?? '')
+      .replace(/\\/g, '\\\\')
+      .replace(/"/g, '\\"')
+      .replace(/\r/g, '')
+      .replace(/\n/g, '\\n')
+      .replace(/[\x00-\x08\x0b-\x1f\x7f]/g, c => '\\' + String(c.charCodeAt(0)).padStart(3, '0')) +
+    '"'
+  );
 }
 
 // The slot file / Inbox.lua body: the latest record of every chat, the bridge's
@@ -891,8 +1048,10 @@ function transportFallback(state, reason, job, now = Date.now()) {
 function transportNote(fb) {
   if (!fb || !FALLBACK_REASONS[fb.reason]) return '';
   const when = fb.at ? new Date(fb.at).toISOString().slice(0, 16).replace('T', ' ') + ' UTC' : 'an earlier run';
-  return `pixel transport, fallen back to since ${when} because ${FALLBACK_REASONS[fb.reason]}; ` +
-    'the pixel capture is deprecated: set capture.mode in config.json to "pixel" to keep it without this note, or to "screenshot" to try the screenshot transport again';
+  return (
+    `pixel transport, fallen back to since ${when} because ${FALLBACK_REASONS[fb.reason]}; ` +
+    'the pixel capture is deprecated: set capture.mode in config.json to "pixel" to keep it without this note, or to "screenshot" to try the screenshot transport again'
+  );
 }
 
 // The strip's two levels per channel on the screenshot transport. A screenshot
@@ -929,11 +1088,17 @@ function stripCodec(raw) {
 // decoder reads the levels off each strip's ramp anyway; this is for the banner.
 function denseLevels(raw) {
   const lv = screenshotLevels(raw);
-  return [0, 1, 2, 3].map(k => Math.floor(lv.off + k * (lv.on - lv.off) / 3 + 0.5));
+  return [0, 1, 2, 3].map(k => Math.floor(lv.off + (k * (lv.on - lv.off)) / 3 + 0.5));
 }
 
 function luaSession(s) {
-  const f = [`id = ${luaStr(s.id || '')}`, `name = ${luaStr(s.name || '')}`, `cwd = ${luaStr(s.cwd || '')}`, `agent = ${luaStr(s.agent || '')}`, `at = ${Math.max(0, Math.floor(Number(s.at) || 0))}`];
+  const f = [
+    `id = ${luaStr(s.id || '')}`,
+    `name = ${luaStr(s.name || '')}`,
+    `cwd = ${luaStr(s.cwd || '')}`,
+    `agent = ${luaStr(s.agent || '')}`,
+    `at = ${Math.max(0, Math.floor(Number(s.at) || 0))}`,
+  ];
   if (s.plugin) f.push(`plugin = ${luaStr(s.plugin)}`);
   if (s.chat) f.push(`chat = ${luaStr(s.chat)}`);
   if (s.live) f.push('live = true');
@@ -980,18 +1145,29 @@ function luaTable(globalName, records, opts = {}) {
   if (opts.transportNote) lines.splice(lines.length - 1, 0, `\ttransportNote = ${luaStr(opts.transportNote)},`);
   if (opts.bridge && typeof opts.bridge === 'object') {
     const b = opts.bridge;
-    lines.splice(lines.length - 1, 0, `\tbridge = { version = ${luaStr(b.version)}, protoMin = ${Math.floor(Number(b.protoMin)) || 0}, protoMax = ${Math.floor(Number(b.protoMax)) || 0} },`);
+    lines.splice(
+      lines.length - 1,
+      0,
+      `\tbridge = { version = ${luaStr(b.version)}, protoMin = ${Math.floor(Number(b.protoMin)) || 0}, protoMax = ${Math.floor(Number(b.protoMax)) || 0} },`,
+    );
   }
   if (opts.addonDisk && typeof opts.addonDisk === 'object' && opts.addonDisk.version) {
     lines.splice(lines.length - 1, 0, `\taddonDisk = { version = ${luaStr(opts.addonDisk.version)}, build = ${luaStr(opts.addonDisk.build || '')} },`);
   }
   if (Array.isArray(opts.clients)) {
-    const rows = opts.clients.filter(c => c && typeof c === 'object').map(c => {
-      const f = [`name = ${luaStr(c.name || '')}`, `version = ${luaStr(c.version || '')}`, `build = ${luaStr(BUILD_RE.test(String(c.build || '')) ? c.build : '')}`, `heard = ${Math.max(0, Math.floor(Number(c.heard) || 0))}`];
-      if (c.here) f.push('here = true');
-      if (c.last) f.push('last = true');
-      return `{ ${f.join(', ')} }`;
-    });
+    const rows = opts.clients
+      .filter(c => c && typeof c === 'object')
+      .map(c => {
+        const f = [
+          `name = ${luaStr(c.name || '')}`,
+          `version = ${luaStr(c.version || '')}`,
+          `build = ${luaStr(BUILD_RE.test(String(c.build || '')) ? c.build : '')}`,
+          `heard = ${Math.max(0, Math.floor(Number(c.heard) || 0))}`,
+        ];
+        if (c.here) f.push('here = true');
+        if (c.last) f.push('last = true');
+        return `{ ${f.join(', ')} }`;
+      });
     lines.splice(lines.length - 1, 0, `\tclients = { ${rows.join(', ')} },`);
   }
   if (opts.live && typeof opts.live === 'object') {
@@ -1013,12 +1189,20 @@ function luaTable(globalName, records, opts = {}) {
   if (Number.isInteger(opts.runLimit) && opts.runLimit > 0) lines.splice(lines.length - 1, 0, `\trunLimit = ${opts.runLimit},`);
   if (Array.isArray(opts.alive)) {
     const alive = opts.alive.filter(a => a && Number.isInteger(a.id) && a.id > 0).slice(0, ALIVE_MAX);
-    lines.splice(lines.length - 1, 0, `\talive = { ${alive.map(a => `{ session = ${luaStr(a.session || '')}, id = ${a.id}, since = ${Math.max(0, Math.floor(Number(a.since) || 0))} }`).join(', ')} },`);
+    lines.splice(
+      lines.length - 1,
+      0,
+      `\talive = { ${alive.map(a => `{ session = ${luaStr(a.session || '')}, id = ${a.id}, since = ${Math.max(0, Math.floor(Number(a.since) || 0))} }`).join(', ')} },`,
+    );
   }
   if (opts.presence && typeof opts.presence === 'object') {
     const pr = opts.presence;
-    lines.splice(lines.length - 1, 0, `\tsignals = ${luaStr(pr.scheme || 'armed')},`,
-      `\tpresence = { ring = ${luaStr(pr.ring || '')}, at = ${Math.max(0, Math.floor(Number(pr.at) || 0))}, n = ${Math.max(0, Math.floor(Number(pr.n) || 0))}, probe = ${luaStr(pr.probe || '')} },`);
+    lines.splice(
+      lines.length - 1,
+      0,
+      `\tsignals = ${luaStr(pr.scheme || 'armed')},`,
+      `\tpresence = { ring = ${luaStr(pr.ring || '')}, at = ${Math.max(0, Math.floor(Number(pr.at) || 0))}, n = ${Math.max(0, Math.floor(Number(pr.n) || 0))}, probe = ${luaStr(pr.probe || '')} },`,
+    );
   }
   for (const r of records) {
     lines.push('\t\t{');
@@ -1060,14 +1244,22 @@ function luaTable(globalName, records, opts = {}) {
   if (restore) {
     lines.push('\trestore = {', `\t\ttoken = ${luaStr(restore.token)},`, '\t\tchats = {');
     for (const c of restore.chats) {
-      lines.push('\t\t\t{', `\t\t\t\tid = ${luaStr(c.id)},`, `\t\t\t\tname = ${luaStr(c.name)},`, `\t\t\t\tcwd = ${luaStr(c.cwd)},`, `\t\t\t\tplugin = ${luaStr(c.plugin || '')},`);
+      lines.push(
+        '\t\t\t{',
+        `\t\t\t\tid = ${luaStr(c.id)},`,
+        `\t\t\t\tname = ${luaStr(c.name)},`,
+        `\t\t\t\tcwd = ${luaStr(c.cwd)},`,
+        `\t\t\t\tplugin = ${luaStr(c.plugin || '')},`,
+      );
       if (Number(c.ctx) > 0) lines.push(`\t\t\t\tctx = ${Math.round(Number(c.ctx))},`);
       if (Number(c.turns) > 0) lines.push(`\t\t\t\tturns = ${Math.round(Number(c.turns))},`);
       if (Number(c.since) > 0) lines.push(`\t\t\t\tsince = ${Math.floor(Number(c.since))},`);
       if (Number.isFinite(Number(c.cost)) && c.cost !== undefined && c.cost !== null && c.cost !== '') lines.push(`\t\t\t\tcost = ${Number(c.cost)},`);
       lines.push('\t\t\t\tmessages = {');
       for (const m of c.messages) {
-        lines.push(`\t\t\t\t\t{ role = ${luaStr(m.role)}, id = ${Number(m.id) || 0}, t = ${Number(m.t) || 0}, agent = ${luaStr(m.agent || '')}, text = ${luaStr(m.text)} },`);
+        lines.push(
+          `\t\t\t\t\t{ role = ${luaStr(m.role)}, id = ${Number(m.id) || 0}, t = ${Number(m.t) || 0}, agent = ${luaStr(m.agent || '')}, text = ${luaStr(m.text)} },`,
+        );
       }
       lines.push('\t\t\t\t},', '\t\t\t},');
     }
@@ -1098,30 +1290,54 @@ const MAP_KINDS = new Set(['ore', 'herb', 'quest', 'turnin', 'kill', 'loot', 'ob
 const MAP_LIMITS = { layers: 12, pointsPerLayer: 400, totalPoints: 1500, label: 80, title: 80 };
 
 function cleanText(s, max) {
-  return String(s ?? '').replace(/[\x00-\x1f\x7f|]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
+  return String(s ?? '')
+    .replace(/[\x00-\x1f\x7f|]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, max);
 }
 
 // One command, sanitized, or null (with the reason in `why`).
 function validateMapCommand(c, why = []) {
-  if (!c || typeof c !== 'object') { why.push('not an object'); return null; }
+  if (!c || typeof c !== 'object') {
+    why.push('not an object');
+    return null;
+  }
   if (c.op === 'clearall') return { op: 'clearall' };
   const layer = String(c.layer ?? '');
-  if (!/^[A-Za-z0-9_.-]{1,32}$/.test(layer)) { why.push(`bad layer name "${layer.slice(0, 40)}"`); return null; }
+  if (!/^[A-Za-z0-9_.-]{1,32}$/.test(layer)) {
+    why.push(`bad layer name "${layer.slice(0, 40)}"`);
+    return null;
+  }
   if (c.op === 'clear') return { op: 'clear', layer };
-  if (c.op !== 'set') { why.push(`unknown op "${String(c.op).slice(0, 20)}"`); return null; }
-  if (!Array.isArray(c.points)) { why.push(`layer ${layer}: points must be an array`); return null; }
+  if (c.op !== 'set') {
+    why.push(`unknown op "${String(c.op).slice(0, 20)}"`);
+    return null;
+  }
+  if (!Array.isArray(c.points)) {
+    why.push(`layer ${layer}: points must be an array`);
+    return null;
+  }
   const points = [];
   for (const p of c.points.slice(0, MAP_LIMITS.pointsPerLayer)) {
-    const m = Number(p && p.m), x = Number(p && p.x), y = Number(p && p.y);
+    const m = Number(p && p.m),
+      x = Number(p && p.x),
+      y = Number(p && p.y);
     if (!Number.isInteger(m) || m <= 0 || m > 99999 || !Number.isFinite(x) || !Number.isFinite(y)) continue;
     points.push({
-      m, x: Math.round(Math.min(100, Math.max(0, x)) * 100) / 100, y: Math.round(Math.min(100, Math.max(0, y)) * 100) / 100,
-      label: cleanText(p.label, MAP_LIMITS.label), kind: MAP_KINDS.has(p.kind) ? p.kind : 'poi',
+      m,
+      x: Math.round(Math.min(100, Math.max(0, x)) * 100) / 100,
+      y: Math.round(Math.min(100, Math.max(0, y)) * 100) / 100,
+      label: cleanText(p.label, MAP_LIMITS.label),
+      kind: MAP_KINDS.has(p.kind) ? p.kind : 'poi',
     });
   }
   if (c.points.length > MAP_LIMITS.pointsPerLayer) why.push(`layer ${layer}: kept the first ${MAP_LIMITS.pointsPerLayer} points`);
   if (points.length < c.points.slice(0, MAP_LIMITS.pointsPerLayer).length) why.push(`layer ${layer}: dropped invalid points`);
-  if (!points.length) { why.push(`layer ${layer}: no valid points`); return null; }
+  if (!points.length) {
+    why.push(`layer ${layer}: no valid points`);
+    return null;
+  }
   return { op: 'set', layer, title: cleanText(c.title || layer, MAP_LIMITS.title), ordered: !!c.ordered, loop: !!c.loop, points };
 }
 
@@ -1139,10 +1355,17 @@ function applyMapCommands(map, cmds, now = Date.now()) {
     notes.push(...why);
     if (!c) continue;
     if (c.op === 'clearall') {
-      if (Object.keys(map.layers).length) { map.layers = {}; changed = true; }
+      if (Object.keys(map.layers).length) {
+        map.layers = {};
+        changed = true;
+      }
       notes.push('cleared all layers');
     } else if (c.op === 'clear') {
-      if (map.layers[c.layer]) { delete map.layers[c.layer]; changed = true; notes.push(`cleared layer ${c.layer}`); }
+      if (map.layers[c.layer]) {
+        delete map.layers[c.layer];
+        changed = true;
+        notes.push(`cleared layer ${c.layer}`);
+      }
     } else {
       map.layers[c.layer] = { title: c.title, ordered: c.ordered, loop: c.loop, points: c.points, t: now };
       changed = true;
@@ -1164,29 +1387,42 @@ function applyMapCommands(map, cmds, now = Date.now()) {
 
 // Pull ```wowmap blocks out of a reply: a JSON object, an array, or one object per line.
 function extractMapBlocks(text) {
-  const cmds = [], errors = [];
-  const stripped = String(text ?? '').replace(/```wowmap[^\n]*\n([\s\S]*?)```/g, (_, body) => {
-    const src = body.trim();
-    try {
-      const v = JSON.parse(src);
-      cmds.push(...(Array.isArray(v) ? v : [v]));
-    } catch {
-      for (const line of src.split('\n')) {
-        if (!line.trim()) continue;
-        try { cmds.push(JSON.parse(line)); } catch { errors.push('unreadable wowmap line: ' + line.trim().slice(0, 60)); }
+  const cmds = [],
+    errors = [];
+  const stripped = String(text ?? '')
+    .replace(/```wowmap[^\n]*\n([\s\S]*?)```/g, (_, body) => {
+      const src = body.trim();
+      try {
+        const v = JSON.parse(src);
+        cmds.push(...(Array.isArray(v) ? v : [v]));
+      } catch {
+        for (const line of src.split('\n')) {
+          if (!line.trim()) continue;
+          try {
+            cmds.push(JSON.parse(line));
+          } catch {
+            errors.push('unreadable wowmap line: ' + line.trim().slice(0, 60));
+          }
+        }
       }
-    }
-    return '';
-  }).replace(/\n{3,}/g, '\n\n').trim();
+      return '';
+    })
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
   return { text: stripped, cmds, errors };
 }
 
 // Commands the agent's tools appended to CLAUDE_WOW_MAP_FILE (one JSON per line).
 function parseMapFile(src) {
-  const cmds = [], errors = [];
+  const cmds = [],
+    errors = [];
   for (const line of String(src || '').split('\n')) {
     if (!line.trim()) continue;
-    try { cmds.push(JSON.parse(line)); } catch { errors.push('unreadable map file line'); }
+    try {
+      cmds.push(JSON.parse(line));
+    } catch {
+      errors.push('unreadable map file line');
+    }
   }
   return { cmds, errors };
 }
@@ -1194,7 +1430,9 @@ function parseMapFile(src) {
 function luaMap(map) {
   const lines = ['\tmap = {', `\t\tepoch = ${luaStr(map.epoch)},`, `\t\tversion = ${Number(map.version) || 0},`, '\t\tlayers = {'];
   for (const [name, l] of Object.entries(map.layers || {})) {
-    lines.push(`\t\t\t{ name = ${luaStr(name)}, title = ${luaStr(l.title)}, ordered = ${l.ordered ? 'true' : 'false'}, loop = ${l.loop ? 'true' : 'false'}, points = {`);
+    lines.push(
+      `\t\t\t{ name = ${luaStr(name)}, title = ${luaStr(l.title)}, ordered = ${l.ordered ? 'true' : 'false'}, loop = ${l.loop ? 'true' : 'false'}, points = {`,
+    );
     for (const p of l.points) lines.push(`\t\t\t\t{ ${p.m}, ${p.x}, ${p.y}, ${luaStr(p.label)}, ${luaStr(p.kind)} },`);
     lines.push('\t\t\t} },');
   }
@@ -1204,12 +1442,22 @@ function luaMap(map) {
 
 // A valid, silent 10 ms WAV. An empty file "won't play"; this one will.
 const SILENT_WAV = (() => {
-  const rate = 8000, samples = 80;
+  const rate = 8000,
+    samples = 80;
   const b = Buffer.alloc(44 + samples);
-  b.write('RIFF', 0); b.writeUInt32LE(36 + samples, 4); b.write('WAVE', 8);
-  b.write('fmt ', 12); b.writeUInt32LE(16, 16); b.writeUInt16LE(1, 20); b.writeUInt16LE(1, 22);
-  b.writeUInt32LE(rate, 24); b.writeUInt32LE(rate, 28); b.writeUInt16LE(1, 32); b.writeUInt16LE(8, 34);
-  b.write('data', 36); b.writeUInt32LE(samples, 40);
+  b.write('RIFF', 0);
+  b.writeUInt32LE(36 + samples, 4);
+  b.write('WAVE', 8);
+  b.write('fmt ', 12);
+  b.writeUInt32LE(16, 16);
+  b.writeUInt16LE(1, 20);
+  b.writeUInt16LE(1, 22);
+  b.writeUInt32LE(rate, 24);
+  b.writeUInt32LE(rate, 28);
+  b.writeUInt16LE(1, 32);
+  b.writeUInt16LE(8, 34);
+  b.write('data', 36);
+  b.writeUInt32LE(samples, 40);
   b.fill(128, 44);
   return b;
 })();
@@ -1232,9 +1480,16 @@ const firstChars = (s, max) => Array.from(s).slice(0, max).join('');
 
 function parseMacroHeader(rest) {
   let name = String(rest || '');
-  let icon = null, scope = 'account';
-  name = name.replace(/\bicon\s*=\s*("?)([^\s"]+)\1/i, (_, q, v) => { icon = v; return ' '; });
-  name = name.replace(/\bscope\s*=\s*("?)(\w+)\1/i, (_, q, v) => { scope = /^char/i.test(v) ? 'character' : 'account'; return ' '; });
+  let icon = null,
+    scope = 'account';
+  name = name.replace(/\bicon\s*=\s*("?)([^\s"]+)\1/i, (_, q, v) => {
+    icon = v;
+    return ' ';
+  });
+  name = name.replace(/\bscope\s*=\s*("?)(\w+)\1/i, (_, q, v) => {
+    scope = /^char/i.test(v) ? 'character' : 'account';
+    return ' ';
+  });
   name = name.replace(/\bname\s*=\s*"([^"]*)"/i, (_, v) => ` ${v} `);
   return { name, icon, scope };
 }
@@ -1242,18 +1497,42 @@ function parseMacroHeader(rest) {
 // { text, macros, notes }: text with each block made readable; invalid macros
 // stay visible but get no button, with the reason in notes.
 function extractMacros(text) {
-  const macros = [], notes = [];
+  const macros = [],
+    notes = [];
   const out = String(text ?? '').replace(MACRO_RE, (_, header, rawBody) => {
     const h = parseMacroHeader(header);
     // Blizzard strips double quotes from macro names; | would start an escape sequence.
-    const name = firstChars(h.name.replace(/["|\x00-\x1f\x7f]/g, '').replace(/\s+/g, ' ').trim(), MACRO_LIMITS.name);
-    const body = String(rawBody).replace(/\r/g, '').split('\n').map(l => l.replace(/\s+$/, '')).join('\n').replace(/^\n+|\n+$/g, '');
+    const name = firstChars(
+      h.name
+        .replace(/["|\x00-\x1f\x7f]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim(),
+      MACRO_LIMITS.name,
+    );
+    const body = String(rawBody)
+      .replace(/\r/g, '')
+      .split('\n')
+      .map(l => l.replace(/\s+$/, ''))
+      .join('\n')
+      .replace(/^\n+|\n+$/g, '');
     const readable = `Macro "${name || '?'}":\n${body}`;
     const bytes = Buffer.byteLength(body, 'utf8');
-    if (!name) { notes.push('a macro without a name was not offered as a button'); return readable; }
-    if (!body) { notes.push(`macro "${name}" is empty`); return readable; }
-    if (bytes > MACRO_LIMITS.body) { notes.push(`macro "${name}" is ${bytes} bytes, over the game's ${MACRO_LIMITS.body}; not offered as a button`); return readable; }
-    if (macros.length >= MACRO_LIMITS.perReply) { notes.push(`only the first ${MACRO_LIMITS.perReply} macros get a button`); return readable; }
+    if (!name) {
+      notes.push('a macro without a name was not offered as a button');
+      return readable;
+    }
+    if (!body) {
+      notes.push(`macro "${name}" is empty`);
+      return readable;
+    }
+    if (bytes > MACRO_LIMITS.body) {
+      notes.push(`macro "${name}" is ${bytes} bytes, over the game's ${MACRO_LIMITS.body}; not offered as a button`);
+      return readable;
+    }
+    if (macros.length >= MACRO_LIMITS.perReply) {
+      notes.push(`only the first ${MACRO_LIMITS.perReply} macros get a button`);
+      return readable;
+    }
     let icon = null;
     if (h.icon && /^\d{1,9}$/.test(h.icon)) icon = Number(h.icon);
     else if (h.icon && /^[A-Za-z0-9_]{1,64}$/.test(h.icon)) icon = h.icon;
@@ -1265,7 +1544,10 @@ function extractMacros(text) {
 
 // The summary is printed into the game chat: macro blocks have no place there.
 function stripMacroBlocks(text) {
-  return String(text ?? '').replace(MACRO_RE, '').replace(/\n{3,}/g, '\n\n').trim();
+  return String(text ?? '')
+    .replace(MACRO_RE, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 function luaMacros(macros) {
@@ -1277,35 +1559,121 @@ const WIDGET_NAME_RE = /^[A-Za-z0-9_.-]{1,32}$/;
 const WIDGET_BLOCK_RE = /```wowui([^\n]*)\n([\s\S]*?)```/g;
 
 const WIDGET_DENIED_NAMES = [
-  'CastSpell', 'CastSpellByName', 'CastSpellByID', 'CastShapeshiftForm', 'CastPetAction',
-  'UseAction', 'UseItemByName', 'UseInventoryItem', 'UseContainerItem', 'UseToy', 'UseToyByName',
-  'RunMacro', 'RunMacroText', 'RunBinding', 'RunScript',
-  'TargetUnit', 'TargetNearestEnemy', 'TargetNearestFriend', 'TargetLastTarget', 'TargetLastEnemy', 'ClearTarget',
-  'AssistUnit', 'FocusUnit', 'InteractUnit', 'FollowUnit',
-  'AttackTarget', 'StartAttack', 'StopAttack', 'PetAttack', 'PetFollow',
-  'SpellStopCasting', 'SpellStopTargeting', 'SpellTargetUnit', 'CancelShapeshiftForm', 'CancelUnitBuff',
-  'JumpOrAscendStart', 'MoveForwardStart', 'MoveBackwardStart', 'StrafeLeftStart', 'StrafeRightStart',
-  'TurnLeftStart', 'TurnRightStart', 'ToggleAutoRun', 'ToggleRun', 'SitStandOrDescendStart',
-  'PickupAction', 'PlaceAction', 'PickupSpell', 'PickupItem', 'PickupMacro', 'PickupContainerItem',
-  'PickupInventoryItem', 'DeleteCursorItem', 'EquipItemByName',
-  'SendChatMessage', 'SendAddonMessage', 'BNSendWhisper', 'DoEmote', 'SendMail', 'ChatEdit_SendText', 'ChatEdit_ParseText',
-  'InviteUnit', 'UninviteUnit', 'LeaveParty', 'AcceptGroup', 'AcceptTrade', 'InitiateTrade',
-  'BuyMerchantItem', 'RepairAllItems', 'PlaceAuctionBid', 'SetRaidTarget',
-  'CreateMacro', 'EditMacro', 'DeleteMacro',
-  'SetBinding', 'SetBindingClick', 'SetBindingSpell', 'SetBindingItem', 'SetBindingMacro', 'SaveBindings',
-  'SetCVar', 'ConsoleExec', 'ReloadUI', 'Logout', 'Quit', 'ForceQuit',
-  'LoadAddOn', 'EnableAddOn', 'DisableAddOn', 'SlashCmdList', 'hooksecurefunc',
-  'loadstring', 'load', 'getfenv', 'setfenv', 'getglobal', 'setglobal', 'rawget', 'rawset', 'debug',
+  'CastSpell',
+  'CastSpellByName',
+  'CastSpellByID',
+  'CastShapeshiftForm',
+  'CastPetAction',
+  'UseAction',
+  'UseItemByName',
+  'UseInventoryItem',
+  'UseContainerItem',
+  'UseToy',
+  'UseToyByName',
+  'RunMacro',
+  'RunMacroText',
+  'RunBinding',
+  'RunScript',
+  'TargetUnit',
+  'TargetNearestEnemy',
+  'TargetNearestFriend',
+  'TargetLastTarget',
+  'TargetLastEnemy',
+  'ClearTarget',
+  'AssistUnit',
+  'FocusUnit',
+  'InteractUnit',
+  'FollowUnit',
+  'AttackTarget',
+  'StartAttack',
+  'StopAttack',
+  'PetAttack',
+  'PetFollow',
+  'SpellStopCasting',
+  'SpellStopTargeting',
+  'SpellTargetUnit',
+  'CancelShapeshiftForm',
+  'CancelUnitBuff',
+  'JumpOrAscendStart',
+  'MoveForwardStart',
+  'MoveBackwardStart',
+  'StrafeLeftStart',
+  'StrafeRightStart',
+  'TurnLeftStart',
+  'TurnRightStart',
+  'ToggleAutoRun',
+  'ToggleRun',
+  'SitStandOrDescendStart',
+  'PickupAction',
+  'PlaceAction',
+  'PickupSpell',
+  'PickupItem',
+  'PickupMacro',
+  'PickupContainerItem',
+  'PickupInventoryItem',
+  'DeleteCursorItem',
+  'EquipItemByName',
+  'SendChatMessage',
+  'SendAddonMessage',
+  'BNSendWhisper',
+  'DoEmote',
+  'SendMail',
+  'ChatEdit_SendText',
+  'ChatEdit_ParseText',
+  'InviteUnit',
+  'UninviteUnit',
+  'LeaveParty',
+  'AcceptGroup',
+  'AcceptTrade',
+  'InitiateTrade',
+  'BuyMerchantItem',
+  'RepairAllItems',
+  'PlaceAuctionBid',
+  'SetRaidTarget',
+  'CreateMacro',
+  'EditMacro',
+  'DeleteMacro',
+  'SetBinding',
+  'SetBindingClick',
+  'SetBindingSpell',
+  'SetBindingItem',
+  'SetBindingMacro',
+  'SaveBindings',
+  'SetCVar',
+  'ConsoleExec',
+  'ReloadUI',
+  'Logout',
+  'Quit',
+  'ForceQuit',
+  'LoadAddOn',
+  'EnableAddOn',
+  'DisableAddOn',
+  'SlashCmdList',
+  'hooksecurefunc',
+  'loadstring',
+  'load',
+  'getfenv',
+  'setfenv',
+  'getglobal',
+  'setglobal',
+  'rawget',
+  'rawset',
+  'debug',
   'CombatLogGetCurrentEventInfo',
 ];
 const WIDGET_RESTRICTED_EVENTS = [
-  'COMBAT_LOG_EVENT', 'COMBAT_LOG_EVENT_UNFILTERED', 'COMBAT_LOG_APPLY_FILTER_SETTINGS', 'COMBAT_LOG_REFILTER_ENTRIES',
-  'MINIMAP_PING', 'UNIT_PING_PIN_ADDED', 'UNIT_PING_PIN_REMOVED',
+  'COMBAT_LOG_EVENT',
+  'COMBAT_LOG_EVENT_UNFILTERED',
+  'COMBAT_LOG_APPLY_FILTER_SETTINGS',
+  'COMBAT_LOG_REFILTER_ENTRIES',
+  'MINIMAP_PING',
+  'UNIT_PING_PIN_ADDED',
+  'UNIT_PING_PIN_REMOVED',
 ];
 const WIDGET_DENIED_RE = new RegExp(`(?<![A-Za-z0-9_])(${WIDGET_DENIED_NAMES.join('|')})(?![A-Za-z0-9_])`, 'g');
 const WIDGET_DENIED_PATTERNS = [
   { re: /Secure[A-Za-z]*(?:Template|Handler)|SecureAction/g, why: 'secure templates' },
-  { re: new RegExp(`(?<![A-Za-z0-9_])${ADDON}[A-Za-z0-9_]*`, 'g'), why: 'the addon\'s own data' },
+  { re: new RegExp(`(?<![A-Za-z0-9_])${ADDON}[A-Za-z0-9_]*`, 'g'), why: "the addon's own data" },
   { re: new RegExp(`(?<![A-Za-z0-9_])(?:${WIDGET_RESTRICTED_EVENTS.join('|')})(?![A-Za-z0-9_])`, 'g'), why: 'an event only the Blizzard UI may register' },
 ];
 
@@ -1329,18 +1697,38 @@ function deniedWidgetCalls(source) {
 }
 
 function validateWidgetCommand(c, why = []) {
-  if (!c || typeof c !== 'object') { why.push('not an object'); return null; }
+  if (!c || typeof c !== 'object') {
+    why.push('not an object');
+    return null;
+  }
   if (c.op === 'clearall') return { op: 'clearall' };
   const name = String(c.name ?? '');
-  if (!WIDGET_NAME_RE.test(name)) { why.push(`bad widget name "${name.slice(0, 40)}"`); return null; }
+  if (!WIDGET_NAME_RE.test(name)) {
+    why.push(`bad widget name "${name.slice(0, 40)}"`);
+    return null;
+  }
   if (c.op === 'remove') return { op: 'remove', name };
-  if (c.op !== 'set') { why.push(`unknown op "${String(c.op).slice(0, 20)}"`); return null; }
-  const source = String(c.source ?? '').replace(/\r/g, '').trim();
-  if (!source) { why.push(`widget ${name}: empty source`); return null; }
+  if (c.op !== 'set') {
+    why.push(`unknown op "${String(c.op).slice(0, 20)}"`);
+    return null;
+  }
+  const source = String(c.source ?? '')
+    .replace(/\r/g, '')
+    .trim();
+  if (!source) {
+    why.push(`widget ${name}: empty source`);
+    return null;
+  }
   const bytes = Buffer.byteLength(source, 'utf8');
-  if (bytes > WIDGET_LIMITS.sourceBytes) { why.push(`widget ${name}: ${bytes} bytes, over ${WIDGET_LIMITS.sourceBytes}; refused`); return null; }
+  if (bytes > WIDGET_LIMITS.sourceBytes) {
+    why.push(`widget ${name}: ${bytes} bytes, over ${WIDGET_LIMITS.sourceBytes}; refused`);
+    return null;
+  }
   const denied = deniedWidgetCalls(source);
-  if (denied.length) { why.push(`widget ${name} refused, widgets are display-only: ${denied.slice(0, 8).join(', ')}`); return null; }
+  if (denied.length) {
+    why.push(`widget ${name} refused, widgets are display-only: ${denied.slice(0, 8).join(', ')}`);
+    return null;
+  }
   return { op: 'set', name, title: cleanText(c.title || name, WIDGET_LIMITS.title), source, rev: widgetRevision(source) };
 }
 
@@ -1357,10 +1745,17 @@ function applyWidgetCommands(set, cmds, now = Date.now()) {
     notes.push(...why);
     if (!c) continue;
     if (c.op === 'clearall') {
-      if (Object.keys(set.items).length) { set.items = {}; changed = true; }
+      if (Object.keys(set.items).length) {
+        set.items = {};
+        changed = true;
+      }
       notes.push('removed all widgets');
     } else if (c.op === 'remove') {
-      if (set.items[c.name]) { delete set.items[c.name]; changed = true; notes.push(`removed widget ${c.name}`); }
+      if (set.items[c.name]) {
+        delete set.items[c.name];
+        changed = true;
+        notes.push(`removed widget ${c.name}`);
+      }
     } else if (set.items[c.name] && set.items[c.name].rev === c.rev && set.items[c.name].title === c.title) {
       notes.push(`widget ${c.name}: unchanged`);
     } else {
@@ -1384,27 +1779,38 @@ function applyWidgetCommands(set, cmds, now = Date.now()) {
 function parseWidgetHeader(rest) {
   let header = String(rest || '');
   let title = '';
-  header = header.replace(/\btitle\s*=\s*"([^"]*)"/i, (_, v) => { title = v; return ' '; });
+  header = header.replace(/\btitle\s*=\s*"([^"]*)"/i, (_, v) => {
+    title = v;
+    return ' ';
+  });
   const words = header.trim().split(/\s+/).filter(Boolean);
   return { name: words[0] || '', remove: words.slice(1).some(w => w.toLowerCase() === 'remove'), title };
 }
 
 function extractWidgetBlocks(text) {
   const cmds = [];
-  const stripped = String(text ?? '').replace(WIDGET_BLOCK_RE, (_, header, body) => {
-    const h = parseWidgetHeader(header);
-    if (h.remove) cmds.push({ op: 'remove', name: h.name });
-    else cmds.push({ op: 'set', name: h.name, title: h.title || h.name, source: body });
-    return h.remove ? '' : `[UI widget "${h.name || '?'}"]`;
-  }).replace(/\n{3,}/g, '\n\n').trim();
+  const stripped = String(text ?? '')
+    .replace(WIDGET_BLOCK_RE, (_, header, body) => {
+      const h = parseWidgetHeader(header);
+      if (h.remove) cmds.push({ op: 'remove', name: h.name });
+      else cmds.push({ op: 'set', name: h.name, title: h.title || h.name, source: body });
+      return h.remove ? '' : `[UI widget "${h.name || '?'}"]`;
+    })
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
   return { text: stripped, cmds };
 }
 
 function parseWidgetFile(src) {
-  const cmds = [], errors = [];
+  const cmds = [],
+    errors = [];
   for (const line of String(src || '').split('\n')) {
     if (!line.trim()) continue;
-    try { cmds.push(JSON.parse(line)); } catch { errors.push('unreadable widget file line'); }
+    try {
+      cmds.push(JSON.parse(line));
+    } catch {
+      errors.push('unreadable widget file line');
+    }
   }
   return { cmds, errors };
 }
@@ -1419,18 +1825,124 @@ function luaWidgets(set) {
 }
 
 module.exports = {
-  ADDON, RUNTIME_ADDON, SHIPPED_INBOX_PATH, OLD_ADDONS, OLD_ADDON_PATH, OLD_SAVED_FILE, TOC_INTERFACE, OLD_TOC_INTERFACES,
-  fromHex, pad3, slotNumber, SIGNAL_CLEAR_AHEAD, slotsToClearAhead, PRESENCE_TEST_RESULTS, LATE_CREATE_RESULTS, chatKey, sessKey,
-  alreadyHandled, markHandled, pruneStale, MONTH_MS, noteAck, recentAcks, RECENT_ACKS_MAX, RECENT_ACK_MS,
-  noteUsage, usageFields, tokensLabel,
-  resolveCwd, sameFolder, baseName,
-  PROTO, PROTO_MIN, PROTO_MAX, LEGACY_PROTO, SEMVER_RE, ADDON_VERSIONS_MAX, MAX_DATE_MS, bridgeVersion, bridgeInfo, compareSemver, versionVerdict, noteAddonVersion, addonRefusal, latestAddonVersion, versionsSummary, installedSummary, BUILD_RE, addonBuild, tocField, tocWithBuild, addonDiskInfo,
-  parseFlags, PERMISSION_MODES, permissionModeName, ADD_DIRS_MAX, jobsFromStrip, parseOutbox, withRunOnlyRules, withRunDeniedRules, withoutRules, absolutePathRule, systemPrompt, systemRulesHash, rulesChanged, noteRules, messagePrompt, visionHint, splitSummary,
-  ruleFor, describeToolUse,
-  folderRule, ruleFolder, splitGrants, insideFolder, nearestFolder, denialPath, classifyDenial, grantsFor, deniedAgain, denialNotes,
-  luaStr, luaTable, luaSession, SILENT_WAV, TRANSPORTS, DEFAULT_TRANSPORT, transportName, chooseTransport, FALLBACK_REASONS, transportFallback, transportNote, DEFAULT_LEVELS, screenshotLevels, STRIP_CODECS, DEFAULT_STRIP_CODEC, stripCodec, denseLevels,
-  MAP_LIMITS, validateMapCommand, newMap, applyMapCommands, extractMapBlocks, parseMapFile, luaMap,
-  MACRO_LIMITS, extractMacros, stripMacroBlocks, luaMacros,
-  WIDGET_LIMITS, WIDGET_DENIED_NAMES, WIDGET_RESTRICTED_EVENTS, deniedWidgetCalls, validateWidgetCommand, newWidgetSet, applyWidgetCommands,
-  extractWidgetBlocks, parseWidgetFile, luaWidgets, widgetRevision,
+  ADDON,
+  RUNTIME_ADDON,
+  SHIPPED_INBOX_PATH,
+  OLD_ADDONS,
+  OLD_ADDON_PATH,
+  OLD_SAVED_FILE,
+  TOC_INTERFACE,
+  OLD_TOC_INTERFACES,
+  fromHex,
+  pad3,
+  slotNumber,
+  SIGNAL_CLEAR_AHEAD,
+  slotsToClearAhead,
+  PRESENCE_TEST_RESULTS,
+  LATE_CREATE_RESULTS,
+  chatKey,
+  sessKey,
+  alreadyHandled,
+  markHandled,
+  pruneStale,
+  MONTH_MS,
+  noteAck,
+  recentAcks,
+  RECENT_ACKS_MAX,
+  RECENT_ACK_MS,
+  noteUsage,
+  usageFields,
+  tokensLabel,
+  resolveCwd,
+  sameFolder,
+  baseName,
+  PROTO,
+  PROTO_MIN,
+  PROTO_MAX,
+  LEGACY_PROTO,
+  SEMVER_RE,
+  ADDON_VERSIONS_MAX,
+  MAX_DATE_MS,
+  bridgeVersion,
+  bridgeInfo,
+  compareSemver,
+  versionVerdict,
+  noteAddonVersion,
+  addonRefusal,
+  latestAddonVersion,
+  versionsSummary,
+  installedSummary,
+  BUILD_RE,
+  addonBuild,
+  tocField,
+  tocWithBuild,
+  addonDiskInfo,
+  parseFlags,
+  PERMISSION_MODES,
+  permissionModeName,
+  ADD_DIRS_MAX,
+  jobsFromStrip,
+  parseOutbox,
+  withRunOnlyRules,
+  withRunDeniedRules,
+  withoutRules,
+  absolutePathRule,
+  systemPrompt,
+  systemRulesHash,
+  rulesChanged,
+  noteRules,
+  messagePrompt,
+  visionHint,
+  splitSummary,
+  ruleFor,
+  describeToolUse,
+  folderRule,
+  ruleFolder,
+  splitGrants,
+  insideFolder,
+  nearestFolder,
+  denialPath,
+  classifyDenial,
+  grantsFor,
+  deniedAgain,
+  denialNotes,
+  luaStr,
+  luaTable,
+  luaSession,
+  SILENT_WAV,
+  TRANSPORTS,
+  DEFAULT_TRANSPORT,
+  transportName,
+  chooseTransport,
+  FALLBACK_REASONS,
+  transportFallback,
+  transportNote,
+  DEFAULT_LEVELS,
+  screenshotLevels,
+  STRIP_CODECS,
+  DEFAULT_STRIP_CODEC,
+  stripCodec,
+  denseLevels,
+  MAP_LIMITS,
+  validateMapCommand,
+  newMap,
+  applyMapCommands,
+  extractMapBlocks,
+  parseMapFile,
+  luaMap,
+  MACRO_LIMITS,
+  extractMacros,
+  stripMacroBlocks,
+  luaMacros,
+  WIDGET_LIMITS,
+  WIDGET_DENIED_NAMES,
+  WIDGET_RESTRICTED_EVENTS,
+  deniedWidgetCalls,
+  validateWidgetCommand,
+  newWidgetSet,
+  applyWidgetCommands,
+  extractWidgetBlocks,
+  parseWidgetFile,
+  luaWidgets,
+  widgetRevision,
 };

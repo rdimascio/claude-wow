@@ -37,19 +37,30 @@ const releaseDir = (l, name) => path.join(l.releases, name);
 const releaseBinary = (l, name) => path.join(releaseDir(l, name), BINARY);
 const currentBinary = l => path.join(l.current, BINARY);
 
-function isFile(p) { try { return fs.statSync(p).isFile(); } catch { return false; } }
+function isFile(p) {
+  try {
+    return fs.statSync(p).isFile();
+  } catch {
+    return false;
+  }
+}
 
 function validName(name) {
   return typeof name === 'string' && NAME_PATTERN.test(name);
 }
 
 function checkName(name) {
-  if (!validName(name)) throw new Error(`"${name}" is not a usable release name (letters, digits, dot, dash, plus, underscore; it must start with a letter or digit)`);
+  if (!validName(name))
+    throw new Error(`"${name}" is not a usable release name (letters, digits, dot, dash, plus, underscore; it must start with a letter or digit)`);
   return name;
 }
 
 function realOrResolved(p) {
-  try { return fs.realpathSync(p); } catch { return path.resolve(p); }
+  try {
+    return fs.realpathSync(p);
+  } catch {
+    return path.resolve(p);
+  }
 }
 
 function isInsideReleases(l, file) {
@@ -60,7 +71,11 @@ function isInsideReleases(l, file) {
 
 function currentName(l) {
   let target;
-  try { target = fs.readlinkSync(l.current); } catch { return ''; }
+  try {
+    target = fs.readlinkSync(l.current);
+  } catch {
+    return '';
+  }
   const resolved = path.resolve(l.base, target);
   if (path.dirname(resolved) !== path.resolve(l.releases)) return '';
   const name = path.basename(resolved);
@@ -69,7 +84,11 @@ function currentName(l) {
 
 function previousName(l) {
   let text;
-  try { text = fs.readFileSync(l.previous, 'utf8').trim(); } catch { return ''; }
+  try {
+    text = fs.readFileSync(l.previous, 'utf8').trim();
+  } catch {
+    return '';
+  }
   return validName(text) ? text : '';
 }
 
@@ -77,7 +96,9 @@ function releaseComplete(l, name) {
   try {
     const info = JSON.parse(fs.readFileSync(path.join(releaseDir(l, name), RELEASE_INFO), 'utf8'));
     return !!info && info.name === name && info.complete === true;
-  } catch { return false; }
+  } catch {
+    return false;
+  }
 }
 
 function hasRelease(l, name) {
@@ -92,24 +113,44 @@ function fsyncPath(p) {
   } catch (e) {
     if (!isFile(p) && ['EISDIR', 'EPERM', 'EINVAL', 'EBADF'].includes(e.code)) return;
     throw e;
-  } finally { if (fd !== undefined) try { fs.closeSync(fd); } catch {} }
+  } finally {
+    if (fd !== undefined)
+      try {
+        fs.closeSync(fd);
+      } catch {}
+  }
 }
 
 function writeDurable(file, text) {
   const fd = fs.openSync(file, 'w');
-  try { fs.writeSync(fd, text); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+  try {
+    fs.writeSync(fd, text);
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
 }
 
 function writeAtomic(file, text) {
   const tmp = `${file}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`;
   fs.writeFileSync(tmp, text);
-  try { fs.renameSync(tmp, file); } catch (e) { try { fs.unlinkSync(tmp); } catch {} throw e; }
+  try {
+    fs.renameSync(tmp, file);
+  } catch (e) {
+    try {
+      fs.unlinkSync(tmp);
+    } catch {}
+    throw e;
+  }
 }
 
 function installRelease(l, { name, binaryFile, meta = {}, now = Date.now }) {
   checkName(name);
   if (hasRelease(l, name) && !binaryFile) return { name, dir: releaseDir(l, name), reused: true };
-  if (!binaryFile || !isFile(binaryFile)) throw new Error(`no binary to install for release ${name}${binaryFile ? ` (${binaryFile} is missing)` : ''}${fs.existsSync(releaseDir(l, name)) ? `; ${releaseDir(l, name)} is not a finished release, so it is not reused` : ''}`);
+  if (!binaryFile || !isFile(binaryFile))
+    throw new Error(
+      `no binary to install for release ${name}${binaryFile ? ` (${binaryFile} is missing)` : ''}${fs.existsSync(releaseDir(l, name)) ? `; ${releaseDir(l, name)} is not a finished release, so it is not reused` : ''}`,
+    );
   fs.mkdirSync(l.releases, { recursive: true });
   const staging = path.join(l.releases, `.staging-${name}-${process.pid}-${crypto.randomBytes(4).toString('hex')}`);
   fs.mkdirSync(staging);
@@ -139,7 +180,14 @@ function pointCurrentAt(l, name) {
   if (!hasRelease(l, name)) throw new Error(`release ${name} has no ${BINARY} in ${releaseDir(l, name)}`);
   const tmp = `${l.current}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`;
   fs.symlinkSync(path.join(RELEASES_DIR, name), tmp);
-  try { fs.renameSync(tmp, l.current); } catch (e) { try { fs.unlinkSync(tmp); } catch {} throw e; }
+  try {
+    fs.renameSync(tmp, l.current);
+  } catch (e) {
+    try {
+      fs.unlinkSync(tmp);
+    } catch {}
+    throw e;
+  }
 }
 
 function activate(l, name, { point = pointCurrentAt } = {}) {
@@ -152,7 +200,9 @@ function activate(l, name, { point = pointCurrentAt } = {}) {
   try {
     point(l, name);
   } catch (e) {
-    try { restorePreviousFile(l, recordedBefore); } catch (restoreError) {
+    try {
+      restorePreviousFile(l, recordedBefore);
+    } catch (restoreError) {
       e.message += `; ${l.previous} could not be put back to ${recordedBefore === null ? 'no previous release' : recordedBefore.trim()} (${restoreError.message})`;
     }
     throw e;
@@ -161,7 +211,9 @@ function activate(l, name, { point = pointCurrentAt } = {}) {
 }
 
 function readPreviousFile(l) {
-  try { return fs.readFileSync(l.previous, 'utf8'); } catch (e) {
+  try {
+    return fs.readFileSync(l.previous, 'utf8');
+  } catch (e) {
     if (e.code === 'ENOENT') return null;
     throw e;
   }
@@ -169,7 +221,11 @@ function readPreviousFile(l) {
 
 function restorePreviousFile(l, text) {
   if (text === null) {
-    try { fs.unlinkSync(l.previous); } catch (e) { if (e.code !== 'ENOENT') throw e; }
+    try {
+      fs.unlinkSync(l.previous);
+    } catch (e) {
+      if (e.code !== 'ENOENT') throw e;
+    }
     return;
   }
   writeAtomic(l.previous, text);
@@ -189,7 +245,9 @@ function releaseInfo(l, name) {
   try {
     const info = JSON.parse(fs.readFileSync(path.join(releaseDir(l, name), RELEASE_INFO), 'utf8'));
     return info && typeof info === 'object' && !Array.isArray(info) ? info : null;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 function isPublishedRelease(l, name) {
@@ -206,12 +264,20 @@ function releaseTime(l, name) {
     const info = JSON.parse(fs.readFileSync(path.join(releaseDir(l, name), RELEASE_INFO), 'utf8'));
     if (Number.isFinite(info.installedAt)) return info.installedAt;
   } catch {}
-  try { return fs.statSync(releaseDir(l, name)).mtimeMs; } catch { return 0; }
+  try {
+    return fs.statSync(releaseDir(l, name)).mtimeMs;
+  } catch {
+    return 0;
+  }
 }
 
 function listReleases(l) {
   let names;
-  try { names = fs.readdirSync(l.releases); } catch { return []; }
+  try {
+    names = fs.readdirSync(l.releases);
+  } catch {
+    return [];
+  }
   return names
     .filter(n => validName(n) && fs.statSync(releaseDir(l, n)).isDirectory())
     .map(n => ({ name: n, installedAt: releaseTime(l, n) }))
@@ -222,7 +288,11 @@ const STAGING_PATTERN = /^\.staging-.+-(\d+)-[0-9a-f]{8}$/;
 
 function pruneStaging(l, alive = pidAlive) {
   let names;
-  try { names = fs.readdirSync(l.releases); } catch { return []; }
+  try {
+    names = fs.readdirSync(l.releases);
+  } catch {
+    return [];
+  }
   const removed = [];
   for (const n of names) {
     const m = STAGING_PATTERN.exec(n);
@@ -269,11 +339,18 @@ async function installAndActivate(l, { name, binaryFile, meta, keep = KEEP_RELEA
 
 function pidAlive(pid) {
   if (!Number.isInteger(pid) || pid <= 0) return false;
-  try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; }
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return e.code === 'EPERM';
+  }
 }
 
 function readLock(file) {
-  let text = '', mtimeMs = 0, ino = 0;
+  let text = '',
+    mtimeMs = 0,
+    ino = 0;
   let fd;
   try {
     fd = fs.openSync(file, 'r');
@@ -281,12 +358,29 @@ function readLock(file) {
     mtimeMs = st.mtimeMs;
     ino = st.ino;
     text = fs.readFileSync(fd, 'utf8');
-  } catch { return null; } finally { if (fd !== undefined) try { fs.closeSync(fd); } catch {} }
+  } catch {
+    return null;
+  } finally {
+    if (fd !== undefined)
+      try {
+        fs.closeSync(fd);
+      } catch {}
+  }
   const empty = { pid: 0, host: '', started: 0, command: '', token: '', phase: '', mtimeMs, ino };
   try {
     const v = JSON.parse(text);
-    return { ...empty, pid: Number(v.pid) || 0, host: String(v.host || ''), started: Number(v.started) || 0, command: String(v.command || ''), token: String(v.token || ''), phase: String(v.phase || '') };
-  } catch { return empty; }
+    return {
+      ...empty,
+      pid: Number(v.pid) || 0,
+      host: String(v.host || ''),
+      started: Number(v.started) || 0,
+      command: String(v.command || ''),
+      token: String(v.token || ''),
+      phase: String(v.phase || ''),
+    };
+  } catch {
+    return empty;
+  }
 }
 
 const sameLockFile = (a, b) => !!a && !!b && a.ino === b.ino && a.token === b.token;
@@ -301,22 +395,38 @@ function createExclusive(file, text, token) {
     if (e.code === 'EEXIST') return false;
     throw e;
   } finally {
-    try { fs.unlinkSync(tmp); } catch {}
+    try {
+      fs.unlinkSync(tmp);
+    } catch {}
   }
 }
 
 function takeOverStale(file, held, pid = process.pid) {
   const aside = `${file}.stale-${pid}-${crypto.randomBytes(4).toString('hex')}`;
-  try { fs.renameSync(file, aside); } catch (e) { if (e.code === 'ENOENT') return false; throw e; }
+  try {
+    fs.renameSync(file, aside);
+  } catch (e) {
+    if (e.code === 'ENOENT') return false;
+    throw e;
+  }
   const moved = readLock(aside);
   if (sameLockFile(moved, held)) {
     fs.unlinkSync(aside);
     return true;
   }
   let restored = true;
-  try { fs.linkSync(aside, file); } catch { restored = false; }
-  try { fs.unlinkSync(aside); } catch {}
-  if (!restored) throw new Error(`${file} changed while this deploy took over a stale lock, and the lock it moved aside (${moved && moved.pid ? `pid ${moved.pid}` : 'no pid'}) could not be put back because another deploy took the lock in between. That deploy stops before it switches anything. Nothing was done here; run this again.`);
+  try {
+    fs.linkSync(aside, file);
+  } catch {
+    restored = false;
+  }
+  try {
+    fs.unlinkSync(aside);
+  } catch {}
+  if (!restored)
+    throw new Error(
+      `${file} changed while this deploy took over a stale lock, and the lock it moved aside (${moved && moved.pid ? `pid ${moved.pid}` : 'no pid'}) could not be put back because another deploy took the lock in between. That deploy stops before it switches anything. Nothing was done here; run this again.`,
+    );
   throw new Error(heldMessage(file, moved));
 }
 
@@ -365,7 +475,10 @@ function acquireLock(file, { pid = process.pid, command = '', alive = pidAlive, 
   for (let attempt = 0; attempt < 3; attempt++) {
     if (createExclusive(file, body, token)) {
       return {
-        file, pid, token, staleRemoved,
+        file,
+        pid,
+        token,
+        staleRemoved,
         release: () => releaseLock(file, token),
         setPhase: phase => setLockPhase(file, token, phase),
         assertHeld: () => assertLockHeld(file, token),
@@ -381,14 +494,53 @@ function acquireLock(file, { pid = process.pid, command = '', alive = pidAlive, 
 
 function releaseLock(file, token) {
   if (!lockHeldBy(file, token)) return false;
-  try { fs.unlinkSync(file); return true; } catch { return false; }
+  try {
+    fs.unlinkSync(file);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 module.exports = {
-  BINARY, RELEASES_DIR, KEEP_RELEASES, LOCK_MAX_AGE_MS, RELEASE_INFO, PREPARING, SWITCHING,
-  SOURCE_DEV_DEPLOY, SOURCE_RELEASE, SOURCE_SELF_UPDATE, PUBLISHED_SOURCES, releaseInfo, isPublishedRelease,
-  layout, releaseDir, releaseBinary, currentBinary, validName, checkName, isInsideReleases,
-  currentName, previousName, hasRelease, releaseComplete, installRelease, pointCurrentAt, activate, rollback, previousIsCurrentMessage,
-  listReleases, prune, pruneStaging, pruneReported, installAndActivate,
-  pidAlive, readLock, acquireLock, releaseLock, takeOverStale, switchingHolder,
+  BINARY,
+  RELEASES_DIR,
+  KEEP_RELEASES,
+  LOCK_MAX_AGE_MS,
+  RELEASE_INFO,
+  PREPARING,
+  SWITCHING,
+  SOURCE_DEV_DEPLOY,
+  SOURCE_RELEASE,
+  SOURCE_SELF_UPDATE,
+  PUBLISHED_SOURCES,
+  releaseInfo,
+  isPublishedRelease,
+  layout,
+  releaseDir,
+  releaseBinary,
+  currentBinary,
+  validName,
+  checkName,
+  isInsideReleases,
+  currentName,
+  previousName,
+  hasRelease,
+  releaseComplete,
+  installRelease,
+  pointCurrentAt,
+  activate,
+  rollback,
+  previousIsCurrentMessage,
+  listReleases,
+  prune,
+  pruneStaging,
+  pruneReported,
+  installAndActivate,
+  pidAlive,
+  readLock,
+  acquireLock,
+  releaseLock,
+  takeOverStale,
+  switchingHolder,
 };

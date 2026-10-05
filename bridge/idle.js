@@ -28,11 +28,19 @@ function idleStatus(state, { bridgeRunning = true } = {}) {
 }
 
 function readState(file) {
-  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) { return e.code === 'ENOENT' ? {} : null; }
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch (e) {
+    return e.code === 'ENOENT' ? {} : null;
+  }
 }
 
 function readBridgeLock(file) {
-  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    return null;
+  }
 }
 
 function bridgeRunning({ lock, pidInfo }, alive) {
@@ -53,7 +61,15 @@ function formatSeconds(ms) {
   return `${Math.round(ms / 1000)} s`;
 }
 
-async function waitForIdle({ probe, timeoutMs = DEFAULT_TIMEOUT_MS, pollMs = DEFAULT_POLL_MS, settleMs = DEFAULT_SETTLE_MS, now = Date.now, sleep = realSleep, onWait = () => {} }) {
+async function waitForIdle({
+  probe,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+  pollMs = DEFAULT_POLL_MS,
+  settleMs = DEFAULT_SETTLE_MS,
+  now = Date.now,
+  sleep = realSleep,
+  onWait = () => {},
+}) {
   const start = now();
   let idleSince = null;
   let lastReason = '';
@@ -69,7 +85,9 @@ async function waitForIdle({ probe, timeoutMs = DEFAULT_TIMEOUT_MS, pollMs = DEF
     lastReason = s.reason;
     if (now() - start >= timeoutMs) {
       const why = s.idle ? `it was idle for less than ${formatSeconds(settleMs)}` : s.reason;
-      throw new Error(`the bridge did not go idle within ${formatSeconds(timeoutMs)} (${why}). Nothing was switched. Run this again when the runs finish, or pass --timeout <seconds>.`);
+      throw new Error(
+        `the bridge did not go idle within ${formatSeconds(timeoutMs)} (${why}). Nothing was switched. Run this again when the runs finish, or pass --timeout <seconds>.`,
+      );
     }
     await sleep(pollMs);
   }

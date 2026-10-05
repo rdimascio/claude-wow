@@ -23,7 +23,9 @@ function fakeCore(t, over = {}) {
     reply: (job, text) => calls.replies.push(text),
     fail: (job, text) => calls.fails.push(text),
     progress: (job, text) => calls.progress.push(text),
-    beat: () => { calls.beats++; },
+    beat: () => {
+      calls.beats++;
+    },
     accept: () => {},
     resolveCwd: () => over.cwd || home,
     clientOf: () => over.client || null,
@@ -31,9 +33,14 @@ function fakeCore(t, over = {}) {
     lastRun: () => over.lastRun || null,
     lastTurn: (job, replyId) => (over.lastTurn ? over.lastTurn(replyId) : null),
     setDevNote: (job, text) => calls.notes.push(text),
-    claimRun: () => { calls.claimed++; return true; },
+    claimRun: () => {
+      calls.claimed++;
+      return true;
+    },
     runChild: (job, child) => calls.children.push(child),
-    get logFile() { return over.logFile || path.join(home, 'bridge.log'); },
+    get logFile() {
+      return over.logFile || path.join(home, 'bridge.log');
+    },
   };
   return { core, calls, home };
 }
@@ -58,7 +65,10 @@ test('parseArgs takes the first word as the command and defaults to help', () =>
 });
 
 test('splitAddonErrors cuts the addon block off the command text', () => {
-  assert.deepEqual(DEV.splitAddonErrors('the map is blank\n--- addon errors ---\nx2 ClaudeWoW.lua:9: boom'), { rest: 'the map is blank', addon: 'x2 ClaudeWoW.lua:9: boom' });
+  assert.deepEqual(DEV.splitAddonErrors('the map is blank\n--- addon errors ---\nx2 ClaudeWoW.lua:9: boom'), {
+    rest: 'the map is blank',
+    addon: 'x2 ClaudeWoW.lua:9: boom',
+  });
   assert.deepEqual(DEV.splitAddonErrors('plain'), { rest: 'plain', addon: '' });
 });
 
@@ -71,14 +81,25 @@ test('branchLine reads git status --branch headers', () => {
 
 test('checksLine counts passed, failed and pending checks and names the failures', () => {
   assert.equal(DEV.checksLine([]), 'no checks');
-  assert.equal(DEV.checksLine([{ name: 'test', conclusion: 'SUCCESS' }, { name: 'e2e', conclusion: 'FAILURE' }, { name: 'lint', status: 'IN_PROGRESS' }]), '1 failed, 1 pending, 1 passed (e2e)');
+  assert.equal(
+    DEV.checksLine([
+      { name: 'test', conclusion: 'SUCCESS' },
+      { name: 'e2e', conclusion: 'FAILURE' },
+      { name: 'lint', status: 'IN_PROGRESS' },
+    ]),
+    '1 failed, 1 pending, 1 passed (e2e)',
+  );
 });
 
 test('testCommand prefers plugins.dev.testCommand, else the package test script, else nothing', t => {
   const dir = tmpDir(t);
   assert.equal(DEV.testCommand(dir, {}, []), null);
   fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'node --test' } }));
-  assert.deepEqual(DEV.testCommand(dir, {}, ['tests/a_test.js']), { file: 'npm', args: ['test', '--', 'tests/a_test.js'], label: 'npm test -- tests/a_test.js' });
+  assert.deepEqual(DEV.testCommand(dir, {}, ['tests/a_test.js']), {
+    file: 'npm',
+    args: ['test', '--', 'tests/a_test.js'],
+    label: 'npm test -- tests/a_test.js',
+  });
   assert.deepEqual(DEV.testCommand(dir, { testCommand: ['node', '--test'] }, ['x']), { file: 'node', args: ['--test', 'x'], label: 'node --test x' });
   assert.equal(DEV.testCommand(dir, { testCommand: 'make check' }, ['a']).shell, 'make check');
 });
@@ -132,7 +153,19 @@ test('status reports the branch, changed files, commits and the PR checks', asyn
     ['git rev-parse', { out: '/repo/claude-wow\n' }],
     ['git status', { out: '## feat/x...origin/feat/x [ahead 1]\n M bridge/bridge.js\n?? new.js\n' }],
     ['git log', { out: 'abc123 fix it (2 hours ago)\n' }],
-    ['gh pr view', { out: JSON.stringify({ number: 12, title: 'fix it', url: 'https://github.com/o/r/pull/12', state: 'OPEN', isDraft: true, statusCheckRollup: [{ name: 'test', conclusion: 'FAILURE' }] }) }],
+    [
+      'gh pr view',
+      {
+        out: JSON.stringify({
+          number: 12,
+          title: 'fix it',
+          url: 'https://github.com/o/r/pull/12',
+          state: 'OPEN',
+          isDraft: true,
+          statusCheckRollup: [{ name: 'test', conclusion: 'FAILURE' }],
+        }),
+      },
+    ],
   ]);
   await DEV.handleDev(job('status'), core, { run });
   const text = calls.replies[0];
@@ -153,7 +186,11 @@ test('status outside a repository and without git says so', async t => {
 
 test('status with no PR, no gh, or a gh failure', async t => {
   const { core, calls } = fakeCore(t);
-  const base = [['git rev-parse', { out: '/r\n' }], ['git status', { out: '## main\n' }], ['git log', { out: '' }]];
+  const base = [
+    ['git rev-parse', { out: '/r\n' }],
+    ['git status', { out: '## main\n' }],
+    ['git log', { out: '' }],
+  ];
   await DEV.handleDev(job('status'), core, { run: scriptedRun([...base, ['gh', { code: 1, err: 'no pull requests found for branch "main"' }]]) });
   assert.match(calls.replies.pop(), /PR: none for this branch/);
   await DEV.handleDev(job('status'), core, { run: scriptedRun([...base, ['gh', { code: -1, missing: true }]]) });
@@ -165,7 +202,14 @@ test('status with no PR, no gh, or a gh failure', async t => {
 test('diff shows the stat, untracked files and the diff, and cuts a long one', async t => {
   const { core, calls } = fakeCore(t);
   const big = 'diff --git a/x b/x\n' + Array.from({ length: 2000 }, (_, i) => `+line ${i}`).join('\n');
-  await DEV.handleDev(job('diff'), core, { run: scriptedRun([['git rev-parse', { out: '/r\n' }], ['git diff HEAD --stat', { out: ' x | 2000 +\n' }], ['git diff HEAD', { out: big }], ['git ls-files', { out: 'new.js\n' }]]) });
+  await DEV.handleDev(job('diff'), core, {
+    run: scriptedRun([
+      ['git rev-parse', { out: '/r\n' }],
+      ['git diff HEAD --stat', { out: ' x | 2000 +\n' }],
+      ['git diff HEAD', { out: big }],
+      ['git ls-files', { out: 'new.js\n' }],
+    ]),
+  });
   const text = calls.replies.pop();
   assert.ok(text.length <= 6000);
   assert.match(text, /untracked: new.js/);
@@ -175,7 +219,11 @@ test('diff shows the stat, untracked files and the diff, and cuts a long one', a
 
 test('diff with a path scopes every git call and reports no changes', async t => {
   const { core, calls } = fakeCore(t);
-  const run = scriptedRun([['git rev-parse', { out: '/r\n' }], ['git diff', { out: '' }], ['git ls-files', { out: '' }]]);
+  const run = scriptedRun([
+    ['git rev-parse', { out: '/r\n' }],
+    ['git diff', { out: '' }],
+    ['git ls-files', { out: '' }],
+  ]);
   await DEV.handleDev(job('diff bridge/x.js'), core, { run });
   assert.equal(calls.replies.pop(), 'No uncommitted changes in bridge/x.js.');
   for (const s of run.seen.filter(s => s.args[0] !== 'rev-parse')) assert.deepEqual(s.args.slice(-2), ['--', 'bridge/x.js']);
@@ -198,7 +246,26 @@ test('log shows the end of bridge.log, filtered and capped', async t => {
 
 test('run shows the last run trace and the resume command', async t => {
   const now = Date.parse('2026-10-05T08:00:00Z');
-  const { core, calls } = fakeCore(t, { lastRun: { at: now - 60000, ms: 42000, status: 'error', code: 1, agent: 'claude', model: 'opus', cwd: '/r', session: 's-1', resumed: true, steps: 30, tools: ['Read a.js', 'Bash npm test'], denied: ['Bash(rm:*)'], stderr: 'boom', turns: 3, ctx: 12000, cost: 0.5 } });
+  const { core, calls } = fakeCore(t, {
+    lastRun: {
+      at: now - 60000,
+      ms: 42000,
+      status: 'error',
+      code: 1,
+      agent: 'claude',
+      model: 'opus',
+      cwd: '/r',
+      session: 's-1',
+      resumed: true,
+      steps: 30,
+      tools: ['Read a.js', 'Bash npm test'],
+      denied: ['Bash(rm:*)'],
+      stderr: 'boom',
+      turns: 3,
+      ctx: 12000,
+      cost: 0.5,
+    },
+  });
   await DEV.handleDev(job('run'), core, { now: () => now });
   const text = calls.replies.pop();
   assert.match(text, /claude opus in \/r/);
@@ -256,14 +323,22 @@ test('wrong stores the last reply with its prompt and note; bug stores the addon
   assert.match(calls.replies.pop(), /Bug #2 saved/);
   const items = core.feedback.list();
   assert.equal(items.length, 2);
-  assert.deepEqual({ kind: items[0].kind, note: items[0].note, reply: items[0].reply, prompt: items[0].prompt, session: items[0].session, chatName: items[0].chatName }, { kind: 'wrong', note: 'it is Y, not X', reply: 'Because of X.', prompt: 'why is the map blank', session: 's-9', chatName: 'Map bug' });
+  assert.deepEqual(
+    { kind: items[0].kind, note: items[0].note, reply: items[0].reply, prompt: items[0].prompt, session: items[0].session, chatName: items[0].chatName },
+    { kind: 'wrong', note: 'it is Y, not X', reply: 'Because of X.', prompt: 'why is the map blank', session: 's-9', chatName: 'Map bug' },
+  );
   assert.equal(items[1].addon, 'addon 0.5.0');
   assert.equal(calls.notes.length, 0);
 });
 
 test('wrong takes a reply id only with #, so a note may start with a number', async t => {
   const asked = [];
-  const { core, calls } = fakeCore(t, { lastTurn: id => { asked.push(id); return id === null ? { id: 9, prompt: 'p', reply: 'r' } : null; } });
+  const { core, calls } = fakeCore(t, {
+    lastTurn: id => {
+      asked.push(id);
+      return id === null ? { id: 9, prompt: 'p', reply: 'r' } : null;
+    },
+  });
   await DEV.handleDev(job('wrong #3 bad answer'), core, {});
   assert.equal(calls.replies.pop(), 'There is no reply in this chat to mark.');
   await DEV.handleDev(job('wrong 2 quests are missing'), core, {});
@@ -315,7 +390,11 @@ test('an unknown command answers with the help, a thrown error fails the message
   const { core, calls } = fakeCore(t);
   await DEV.handleDev(job('frobnicate'), core, {});
   assert.match(calls.replies.pop(), /^Unknown dev command "frobnicate"\.\nDev tools/);
-  await DEV.handleDev(job('status'), core, { run: async () => { throw new Error('kaput'); } });
+  await DEV.handleDev(job('status'), core, {
+    run: async () => {
+      throw new Error('kaput');
+    },
+  });
   assert.equal(calls.fails.pop(), 'dev status failed: kaput');
 });
 

@@ -38,9 +38,17 @@ const PROMPTS = [
   { id: 'where-trainer', kind: 'where-is', text: 'where is my class trainer in this city?' },
   { id: 'where-skinning', kind: 'where-is', text: 'my skinning is capped at 225. where do I train the next rank?' },
   { id: 'where-fishing', kind: 'where-is', text: 'where can I buy a fishing pole near here?' },
-  { id: 'macro-opener', kind: 'macro', text: 'make me a macro that opens with my stun when I am stealthed and uses my normal combo point builder when I am not' },
+  {
+    id: 'macro-opener',
+    kind: 'macro',
+    text: 'make me a macro that opens with my stun when I am stealthed and uses my normal combo point builder when I am not',
+  },
   { id: 'macro-pickpocket', kind: 'macro', text: 'macro: pick pocket my target, then start attacking it' },
-  { id: 'route-turnins', kind: 'route', text: 'which quests in my log are ready to turn in, and in what order should I hand them in? mark the route on my map' },
+  {
+    id: 'route-turnins',
+    kind: 'route',
+    text: 'which quests in my log are ready to turn in, and in what order should I hand them in? mark the route on my map',
+  },
   { id: 'route-next-zone', kind: 'route', text: 'I am level 20. where should I go to level next, and why?' },
   { id: 'advice-talents', kind: 'advice', text: 'which talent tree should I use for solo questing at my level?' },
   { id: 'advice-money', kind: 'advice', text: 'I only have about 21 silver. what should I spend money on first at this level?' },
@@ -51,11 +59,17 @@ function parseArgs(argv) {
   const o = { models: DEFAULT_MODELS, budget: DEFAULT_BUDGET_USD, out: '', only: [] };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === '--models') o.models = String(argv[++i] || '').split(',').filter(Boolean);
+    if (a === '--models')
+      o.models = String(argv[++i] || '')
+        .split(',')
+        .filter(Boolean);
     else if (a === '--budget') o.budget = Number(argv[++i]);
     else if (a === '--out') o.out = argv[++i];
     else if (a === '--render') o.render = argv[++i];
-    else if (a === '--only') o.only = String(argv[++i] || '').split(',').filter(Boolean);
+    else if (a === '--only')
+      o.only = String(argv[++i] || '')
+        .split(',')
+        .filter(Boolean);
     else if (a === '--help' || a === '-h') o.help = true;
   }
   return o;
@@ -116,11 +130,19 @@ function runOnce(run, cwd) {
     const started = Date.now();
     const child = spawn(run.file, run.args, { cwd, env: run.env, stdio: ['pipe', 'pipe', 'pipe'] });
     const tools = [];
-    let buffer = '', stderr = '', result = null, lastModel = '', firstTextMs = 0;
+    let buffer = '',
+      stderr = '',
+      result = null,
+      lastModel = '',
+      firstTextMs = 0;
     const timer = setTimeout(() => child.kill('SIGTERM'), RUN_TIMEOUT_MS);
     const take = line => {
       let ev;
-      try { ev = JSON.parse(line); } catch { return; }
+      try {
+        ev = JSON.parse(line);
+      } catch {
+        return;
+      }
       if (ev.type === 'assistant' && ev.message && Array.isArray(ev.message.content)) {
         if (ev.message.model) lastModel = ev.message.model;
         for (const b of ev.message.content) {
@@ -133,9 +155,14 @@ function runOnce(run, cwd) {
     child.stdout.on('data', d => {
       buffer += d.toString('utf8');
       let nl;
-      while ((nl = buffer.indexOf('\n')) >= 0) { take(buffer.slice(0, nl)); buffer = buffer.slice(nl + 1); }
+      while ((nl = buffer.indexOf('\n')) >= 0) {
+        take(buffer.slice(0, nl));
+        buffer = buffer.slice(nl + 1);
+      }
     });
-    child.stderr.on('data', d => { stderr += d.toString('utf8'); });
+    child.stderr.on('data', d => {
+      stderr += d.toString('utf8');
+    });
     child.stdin.on('error', () => {});
     child.stdin.end(run.stdin);
     child.on('close', code => {
@@ -156,21 +183,34 @@ function summarize(prompt, model, phase, run, raw, before = null) {
   const sessionCostUsd = Number.isFinite(r.total_cost_usd) ? r.total_cost_usd : null;
   const bridgeSessionCostUsd = bridgeCost ? bridgeCost.usd : null;
   return {
-    prompt: prompt.id, kind: prompt.kind, phase, text: phase === 'resumed' ? FOLLOW_UP : prompt.text, model,
+    prompt: prompt.id,
+    kind: prompt.kind,
+    phase,
+    text: phase === 'resumed' ? FOLLOW_UP : prompt.text,
+    model,
     sessionId: r.session_id || '',
     modelsUsed: r.modelUsage ? Object.keys(r.modelUsage) : [],
-    sessionCostUsd, bridgeSessionCostUsd,
+    sessionCostUsd,
+    bridgeSessionCostUsd,
     costUsd: minus(sessionCostUsd, before && before.sessionCostUsd),
     bridgeCostUsd: minus(bridgeSessionCostUsd, before && before.bridgeSessionCostUsd),
     bridgeUnknown: bridgeCost ? bridgeCost.unknown : [],
     cacheWriteTokens: Number.isFinite(u.cache_creation_input_tokens) ? u.cache_creation_input_tokens : null,
     cacheReadTokens: Number.isFinite(u.cache_read_input_tokens) ? u.cache_read_input_tokens : null,
-    wallMs: raw.wallMs, apiMs: r.duration_api_ms || null, firstTextMs: raw.firstTextMs || null,
-    turns: r.num_turns || null, tools: raw.tools,
-    isError: !!r.is_error || !raw.result, subtype: r.subtype || '', exitCode: raw.code,
-    answerChars: answer.length, answer,
-    argv: run.argv, systemSha256: run.systemSha256,
-    modelUsage: r.modelUsage || null, usage: r.usage || null,
+    wallMs: raw.wallMs,
+    apiMs: r.duration_api_ms || null,
+    firstTextMs: raw.firstTextMs || null,
+    turns: r.num_turns || null,
+    tools: raw.tools,
+    isError: !!r.is_error || !raw.result,
+    subtype: r.subtype || '',
+    exitCode: raw.code,
+    answerChars: answer.length,
+    answer,
+    argv: run.argv,
+    systemSha256: run.systemSha256,
+    modelUsage: r.modelUsage || null,
+    usage: r.usage || null,
     stderr: raw.result ? '' : raw.stderr,
   };
 }
@@ -198,20 +238,31 @@ const ktok = n => (Number.isFinite(n) ? `${(n / 1000).toFixed(1)}k` : 'n/a');
 
 function renderTable(results) {
   const rows = ['| Prompt | Phase | Model | Cost | Cache write / read | Wall latency | Answer length | Tools |', '|---|---|---|---|---|---|---|---|'];
-  for (const r of results) rows.push(`| ${r.prompt} | ${r.phase} | ${r.model} | ${usd(r.costUsd)} | ${ktok(r.cacheWriteTokens)} / ${ktok(r.cacheReadTokens)} | ${secs(r.wallMs)} | ${r.answerChars} chars | ${r.tools.join(', ') || 'none'}${r.isError ? ` (error: ${r.subtype || 'exit ' + r.exitCode})` : ''} |`);
+  for (const r of results)
+    rows.push(
+      `| ${r.prompt} | ${r.phase} | ${r.model} | ${usd(r.costUsd)} | ${ktok(r.cacheWriteTokens)} / ${ktok(r.cacheReadTokens)} | ${secs(r.wallMs)} | ${r.answerChars} chars | ${r.tools.join(', ') || 'none'}${r.isError ? ` (error: ${r.subtype || 'exit ' + r.exitCode})` : ''} |`,
+    );
   return rows.join('\n');
 }
 
 function renderTotals(results, models) {
-  const rows = ['| Model | Phase | Runs (errors) | Total cost | Mean cost | Mean cache write / read | Median wall latency | Mean answer length |', '|---|---|---|---|---|---|---|---|'];
+  const rows = [
+    '| Model | Phase | Runs (errors) | Total cost | Mean cost | Mean cache write / read | Median wall latency | Mean answer length |',
+    '|---|---|---|---|---|---|---|---|',
+  ];
   for (const m of models) {
     for (const phase of PHASES) {
       const all = results.filter(r => r.model === m && r.phase === phase);
       if (!all.length) continue;
       const mine = all.filter(r => !r.isError);
-      const total = all.map(r => r.costUsd).filter(Number.isFinite).reduce((a, b) => a + b, 0);
+      const total = all
+        .map(r => r.costUsd)
+        .filter(Number.isFinite)
+        .reduce((a, b) => a + b, 0);
       const costs = mine.map(r => r.costUsd).filter(Number.isFinite);
-      rows.push(`| ${m} | ${phase} | ${mine.length} (${all.length - mine.length}) | ${usd(total)} | ${usd(mean(costs))} | ${ktok(mean(mine.map(r => r.cacheWriteTokens)))} / ${ktok(mean(mine.map(r => r.cacheReadTokens)))} | ${secs(median(mine.map(r => r.wallMs)))} | ${Math.round(mean(mine.map(r => r.answerChars)))} chars |`);
+      rows.push(
+        `| ${m} | ${phase} | ${mine.length} (${all.length - mine.length}) | ${usd(total)} | ${usd(mean(costs))} | ${ktok(mean(mine.map(r => r.cacheWriteTokens)))} / ${ktok(mean(mine.map(r => r.cacheReadTokens)))} | ${secs(median(mine.map(r => r.wallMs)))} | ${Math.round(mean(mine.map(r => r.answerChars)))} chars |`,
+      );
     }
   }
   return rows.join('\n');
@@ -233,7 +284,9 @@ const folderFor = model => model.replace(/[^\w.-]/g, '_');
 async function main() {
   const o = parseArgs(process.argv.slice(2));
   if (o.help) {
-    console.log('node dev/measure-ask.js [--models opus[1m],claude-sonnet-5-5] [--budget 3] [--only id,id] [--out results.json]\nnode dev/measure-ask.js --render results.json');
+    console.log(
+      'node dev/measure-ask.js [--models opus[1m],claude-sonnet-5-5] [--budget 3] [--only id,id] [--out results.json]\nnode dev/measure-ask.js --render results.json',
+    );
     return;
   }
   if (o.render) {
@@ -246,11 +299,15 @@ async function main() {
   const meta = { claudePath, claudeVersion: claudeVersion(claudePath), ranAt: new Date().toISOString(), followUp: FOLLOW_UP };
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-wow-measure-'));
   const cwds = {};
-  for (const m of o.models) { cwds[m] = path.join(root, folderFor(m)); fs.mkdirSync(cwds[m]); }
+  for (const m of o.models) {
+    cwds[m] = path.join(root, folderFor(m));
+    fs.mkdirSync(cwds[m]);
+  }
   const out = o.out || path.join(root, 'results.json');
   const prompts = o.only.length ? PROMPTS.filter(p => o.only.includes(p.id)) : PROMPTS;
   const results = [];
-  let spent = 0, stopped = '';
+  let spent = 0,
+    stopped = '';
   const save = () => fs.writeFileSync(out, JSON.stringify({ ...meta, context: GAME_CONTEXT, budget: o.budget, spent, stopped, cwds, results }, null, 2) + '\n');
   console.log(`claude: ${claudePath} (${meta.claudeVersion})\nscratch: ${root}\nresults: ${out}\nbudget: $${o.budget}`);
   const step = async (prompt, model, phase, text, before) => {
@@ -267,7 +324,9 @@ async function main() {
     const row = summarize(prompt, model, phase, run, raw, before);
     results.push(row);
     spent += Number.isFinite(row.costUsd) ? row.costUsd : cap;
-    console.log(`${prompt.id} ${phase} ${model}: $${row.costUsd} bridge $${row.bridgeCostUsd} write ${row.cacheWriteTokens} read ${row.cacheReadTokens} ${row.wallMs}ms ${row.answerChars} chars tools=[${row.tools.join(',')}]${row.isError ? ' ERROR ' + row.subtype : ''} total $${spent.toFixed(4)}`);
+    console.log(
+      `${prompt.id} ${phase} ${model}: $${row.costUsd} bridge $${row.bridgeCostUsd} write ${row.cacheWriteTokens} read ${row.cacheReadTokens} ${row.wallMs}ms ${row.answerChars} chars tools=[${row.tools.join(',')}]${row.isError ? ' ERROR ' + row.subtype : ''} total $${spent.toFixed(4)}`,
+    );
     save();
     return row;
   };
@@ -287,6 +346,23 @@ async function main() {
   console.log(`spent $${spent.toFixed(4)} on ${results.length} runs`);
 }
 
-if (require.main === module) main().catch(e => { console.error(e.stack || e.message); process.exit(1); });
+if (require.main === module)
+  main().catch(e => {
+    console.error(e.stack || e.message);
+    process.exit(1);
+  });
 
-module.exports = { PROMPTS, GAME_CONTEXT, FOLLOW_UP, buildRun, askAgentConfig, redactedArgv, summarize, nextEstimate, median, renderTable, renderTotals, renderAnswers };
+module.exports = {
+  PROMPTS,
+  GAME_CONTEXT,
+  FOLLOW_UP,
+  buildRun,
+  askAgentConfig,
+  redactedArgv,
+  summarize,
+  nextEstimate,
+  median,
+  renderTable,
+  renderTotals,
+  renderAnswers,
+};

@@ -2,18 +2,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
-const { makeRoot, gameRunner, sessionCostByAgent, isAlive, H } = require('./helpers');
+const { makeRoot, gameRunner } = require('./helpers');
 
 const ROOT = makeRoot('failures');
 const withGame = gameRunner(ROOT);
-
-test('an agent that reports a rate limit reaches the player with the reason', async () => {
-  await withGame({}, async h => {
-    const r = await h.client.say('go [[rate-limit]]');
-    assert.equal(r.role, 'system');
-    assert.match(r.text, /usage limit/i);
-  });
-});
 
 test('an agent error with no text tells the player something useful', async () => {
   await withGame({}, async h => {

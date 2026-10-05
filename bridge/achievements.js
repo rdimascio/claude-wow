@@ -32,7 +32,16 @@ const CATALOG_BY_ID = new Map(CATALOG.map(entry => [entry.id, entry]));
 const COMMAND_SEPARATORS = /&&|\|\||[;\n|&]/;
 const ENV_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
 const COMMAND_PREFIXES = new Set(['sudo', 'time', 'exec', 'env', 'command', 'nice', 'npx', 'bunx', 'pnpx']);
-const TWO_WORD_PREFIXES = [['bundle', 'exec'], ['python', '-m'], ['python3', '-m'], ['uv', 'run'], ['poetry', 'run'], ['pnpm', 'exec'], ['yarn', 'dlx'], ['npm', 'exec']];
+const TWO_WORD_PREFIXES = [
+  ['bundle', 'exec'],
+  ['python', '-m'],
+  ['python3', '-m'],
+  ['uv', 'run'],
+  ['poetry', 'run'],
+  ['pnpm', 'exec'],
+  ['yarn', 'dlx'],
+  ['npm', 'exec'],
+];
 const GIT_OPTIONS_WITH_VALUE = new Set(['-C', '-c', '--git-dir', '--work-tree', '--namespace', '--exec-path']);
 
 const TEST_COMMANDS = [
@@ -61,7 +70,10 @@ const FORCE_OPTION = /^--force(?:-with-lease|-if-includes)?(?:=.*)?$/;
 const SHORT_FLAGS_WITH_F = /^-[a-zA-Z]*f[a-zA-Z]*$/;
 
 function commandSegments(command) {
-  return String(A.shellInner(command) || '').split(COMMAND_SEPARATORS).map(s => s.trim()).filter(Boolean);
+  return String(A.shellInner(command) || '')
+    .split(COMMAND_SEPARATORS)
+    .map(s => s.trim())
+    .filter(Boolean);
 }
 
 function unquote(word) {
@@ -73,16 +85,25 @@ function segmentWords(segment) {
   const words = (String(segment).match(/"[^"]*"|'[^']*'|\S+/g) || []).map(unquote);
   let i = 0;
   for (;;) {
-    if (i < words.length && (ENV_ASSIGNMENT.test(words[i]) || COMMAND_PREFIXES.has(words[i]))) { i++; continue; }
+    if (i < words.length && (ENV_ASSIGNMENT.test(words[i]) || COMMAND_PREFIXES.has(words[i]))) {
+      i++;
+      continue;
+    }
     const pair = TWO_WORD_PREFIXES.find(([a, b]) => words[i] === a && words[i + 1] === b);
-    if (pair) { i += 2; continue; }
+    if (pair) {
+      i += 2;
+      continue;
+    }
     break;
   }
   return words.slice(i);
 }
 
 function programName(word) {
-  return String(word || '').split(/[\\/]/).pop().replace(/\.exe$/i, '');
+  return String(word || '')
+    .split(/[\\/]/)
+    .pop()
+    .replace(/\.exe$/i, '');
 }
 
 function gitSubcommand(words) {
@@ -117,7 +138,10 @@ function testVerdict(run) {
 }
 
 function gitSegments(command, name) {
-  return commandSegments(command).map(segmentWords).map(gitSubcommand).filter(sub => sub && sub.name === name);
+  return commandSegments(command)
+    .map(segmentWords)
+    .map(gitSubcommand)
+    .filter(sub => sub && sub.name === name);
 }
 
 function countCommits(run) {
@@ -139,11 +163,13 @@ function countPushes(run) {
 }
 
 function usesForce(command) {
-  return commandSegments(command).map(segmentWords).some(words => {
-    if (words.some(w => FORCE_OPTION.test(w))) return true;
-    const git = gitSubcommand(words);
-    return !!(git && git.name === 'push' && git.args.some(w => SHORT_FLAGS_WITH_F.test(w)));
-  });
+  return commandSegments(command)
+    .map(segmentWords)
+    .some(words => {
+      if (words.some(w => FORCE_OPTION.test(w))) return true;
+      const git = gitSubcommand(words);
+      return !!(git && git.name === 'push' && git.args.some(w => SHORT_FLAGS_WITH_F.test(w)));
+    });
 }
 
 function isFriday(when) {
@@ -158,7 +184,10 @@ function summarizeRun(commands) {
   const summary = { verdicts: [], commits: 0, pushes: 0, forced: false, ranTests: false };
   for (const run of commands || []) {
     const verdict = testVerdict(run);
-    if (verdict) { summary.verdicts.push(verdict); summary.ranTests = true; }
+    if (verdict) {
+      summary.verdicts.push(verdict);
+      summary.ranTests = true;
+    }
     summary.commits += countCommits(run);
     summary.pushes += countPushes(run);
     if (usesForce(run.command)) summary.forced = true;
@@ -222,7 +251,11 @@ function createRunLog(agentId) {
     feed(ev) {
       if (!ev || typeof ev !== 'object') return;
       let found;
-      try { found = read(ev); } catch { return; }
+      try {
+        found = read(ev);
+      } catch {
+        return;
+      }
       for (const step of found) {
         if (step.kind === 'call') {
           const run = { command: step.command, output: '', failed: false, finished: false };
@@ -312,9 +345,9 @@ function luaEntry(entry, extra) {
 
 function luaAchievements(state) {
   const ledger = ledgerOf(state);
-  const recent = ledger.recent.filter(r => CATALOG_BY_ID.has(r.id))
-    .map(r => luaEntry(CATALOG_BY_ID.get(r.id), `seq = ${r.seq}, at = ${r.at}`));
-  const earned = Object.entries(ledger.earned).filter(([id]) => CATALOG_BY_ID.has(id))
+  const recent = ledger.recent.filter(r => CATALOG_BY_ID.has(r.id)).map(r => luaEntry(CATALOG_BY_ID.get(r.id), `seq = ${r.seq}, at = ${r.at}`));
+  const earned = Object.entries(ledger.earned)
+    .filter(([id]) => CATALOG_BY_ID.has(id))
     .sort((a, b) => a[1].at - b[1].at)
     .map(([id, e]) => luaEntry(CATALOG_BY_ID.get(id), `at = ${e.at}, count = ${e.count}`));
   return [
@@ -329,8 +362,29 @@ function luaAchievements(state) {
 }
 
 module.exports = {
-  CATALOG, RULES, RUBBER_DUCK_MESSAGES,
-  commandSegments, segmentWords, gitSubcommand, testRunner, isTestCommand, testVerdict,
-  countCommits, countPushes, usesForce, isFriday, isAfterMidnight, summarizeRun, wentGreen,
-  claudeActivity, codexActivity, createRunLog, newLedger, ledgerOf, pluginEarns, evaluate, totalPoints, luaAchievements,
+  CATALOG,
+  RULES,
+  RUBBER_DUCK_MESSAGES,
+  commandSegments,
+  segmentWords,
+  gitSubcommand,
+  testRunner,
+  isTestCommand,
+  testVerdict,
+  countCommits,
+  countPushes,
+  usesForce,
+  isFriday,
+  isAfterMidnight,
+  summarizeRun,
+  wentGreen,
+  claudeActivity,
+  codexActivity,
+  createRunLog,
+  newLedger,
+  ledgerOf,
+  pluginEarns,
+  evaluate,
+  totalPoints,
+  luaAchievements,
 };

@@ -27,7 +27,11 @@ async function postControl(url, command, timeoutMs = TIMEOUT_MS) {
     signal: AbortSignal.timeout(timeoutMs),
   });
   let body = null;
-  try { body = await res.json(); } catch { body = null; }
+  try {
+    body = await res.json();
+  } catch {
+    body = null;
+  }
   const ok = !!(body && body.ok === true);
   const message = body && typeof body.message === 'string' ? body.message : '';
   return { ok, message, status: res.status };

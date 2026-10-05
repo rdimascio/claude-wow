@@ -53,7 +53,8 @@ function parseArgs(argv) {
       opts.repo = dir;
     } else if (a === '--timeout') {
       const s = Number(rest[++i]);
-      if (!Number.isFinite(s) || s <= 0 || s * 1000 > MAX_TIMEOUT_MS) return { ...opts, error: `--timeout needs a number of seconds above 0 and at most ${MAX_TIMEOUT_MS / 1000}, not "${rest[i]}"` };
+      if (!Number.isFinite(s) || s <= 0 || s * 1000 > MAX_TIMEOUT_MS)
+        return { ...opts, error: `--timeout needs a number of seconds above 0 and at most ${MAX_TIMEOUT_MS / 1000}, not "${rest[i]}"` };
       opts.timeoutMs = s * 1000;
     } else if (a === '--keep') {
       const n = Number(rest[++i]);
@@ -72,15 +73,27 @@ function runCommand(cmd, args, opts = {}) {
 }
 
 function tail(text, n = OUTPUT_TAIL_LINES) {
-  return String(text || '').trim().split(/\r?\n/).slice(-n).join('\n');
+  return String(text || '')
+    .trim()
+    .split(/\r?\n/)
+    .slice(-n)
+    .join('\n');
 }
 
-function isDir(p) { try { return fs.statSync(p).isDirectory(); } catch { return false; } }
+function isDir(p) {
+  try {
+    return fs.statSync(p).isDirectory();
+  } catch {
+    return false;
+  }
+}
 
 function bunPath(env = process.env, home = os.homedir()) {
   if (env.BUN) return env.BUN;
   const local = path.join(home, '.bun', 'bin', 'bun');
-  try { if (fs.statSync(local).isFile()) return local; } catch {}
+  try {
+    if (fs.statSync(local).isFile()) return local;
+  } catch {}
   return 'bun';
 }
 
@@ -100,11 +113,19 @@ function git(run, dir, args) {
 }
 
 function packageVersion(dir) {
-  try { return String(JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8')).version || '0.0.0'); } catch { return '0.0.0'; }
+  try {
+    return String(JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8')).version || '0.0.0');
+  } catch {
+    return '0.0.0';
+  }
 }
 
 function stamp(ms) {
-  return new Date(ms).toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z').replace('T', '-');
+  return new Date(ms)
+    .toISOString()
+    .replace(/[-:]/g, '')
+    .replace(/\.\d+Z$/, 'Z')
+    .replace('T', '-');
 }
 
 function releaseNameFor(version, sha, dirty, nowMs) {
@@ -130,7 +151,10 @@ function resolveSource(target, ctx) {
   const repo = ctx.repo || (R.compiled ? '' : R.ROOT);
   if (!repo) throw new Error('the binary has no checkout of its own: pass --repo <checkout>, or a worktree folder');
   const found = run('git', ['-C', repo, 'rev-parse', '--verify', '--quiet', `${ref}^{commit}`]);
-  if (!found.ok) throw new Error(`"${ref}" is not a commit in ${repo}${ref === DEFAULT_REF ? ' (run git fetch origin first)' : ''}${isDir(ref) ? ` (to build the folder, write it as ./${ref})` : ''}`);
+  if (!found.ok)
+    throw new Error(
+      `"${ref}" is not a commit in ${repo}${ref === DEFAULT_REF ? ' (run git fetch origin first)' : ''}${isDir(ref) ? ` (to build the folder, write it as ./${ref})` : ''}`,
+    );
   const sha = found.out.trim();
   const tmp = fs.mkdtempSync(path.join(ctx.tmpRoot || os.tmpdir(), 'claude-wow-deploy-'));
   const dir = path.join(tmp, 'src');
@@ -155,7 +179,11 @@ function serviceDefinition(ctx) {
 
 function serviceRunsCurrent(l, ctx) {
   let text;
-  try { text = fs.readFileSync(serviceDefinition(ctx), 'utf8'); } catch { return false; }
+  try {
+    text = fs.readFileSync(serviceDefinition(ctx), 'utf8');
+  } catch {
+    return false;
+  }
   const bin = REL.currentBinary(l);
   return text.includes(SVC.xmlEscape(bin)) || text.includes(`"${bin}"`);
 }
@@ -173,12 +201,18 @@ function restartService(ctx) {
 
 function configuredClients(configFile) {
   let cfg;
-  try { cfg = JSON.parse(fs.readFileSync(configFile, 'utf8')); } catch { return []; }
+  try {
+    cfg = JSON.parse(fs.readFileSync(configFile, 'utf8'));
+  } catch {
+    return [];
+  }
   const inAddOnsFolder = c => {
     const interfaceDir = path.dirname(c.addonDir);
     return path.basename(c.addonDir).toLowerCase() === 'addons' && path.basename(interfaceDir).toLowerCase() === 'interface';
   };
-  return CLI.clientsOf(cfg).filter(inAddOnsFolder).map(c => c.dir);
+  return CLI.clientsOf(cfg)
+    .filter(inAddOnsFolder)
+    .map(c => c.dir);
 }
 
 function gameLines(output) {
@@ -231,7 +265,12 @@ function idleProbe(l, ctx) {
 
 function waitIdle(l, ctx, timeoutMs) {
   return I.waitForIdle({
-    probe: idleProbe(l, ctx), timeoutMs, now: ctx.now, sleep: ctx.sleep, pollMs: ctx.pollMs, settleMs: ctx.settleMs,
+    probe: idleProbe(l, ctx),
+    timeoutMs,
+    now: ctx.now,
+    sleep: ctx.sleep,
+    pollMs: ctx.pollMs,
+    settleMs: ctx.settleMs,
     onWait: s => ctx.out(`waiting : ${s.reason}`),
   });
 }
@@ -265,7 +304,9 @@ function cleanupOnce(steps) {
     if (done) return;
     done = true;
     for (const step of steps) {
-      try { step(); } catch {}
+      try {
+        step();
+      } catch {}
     }
   };
 }
@@ -273,13 +314,18 @@ function cleanupOnce(steps) {
 function cleanupOnSignal(ctx, cleanup, whatCleanupDid) {
   const signals = ctx.signals || process;
   const exit = ctx.exit || (code => process.exit(code));
-  const handlers = Object.keys(SIGNAL_EXIT_CODES).map(sig => [sig, () => {
-    cleanup();
-    ctx.err(`claude-wow dev: stopped by ${sig}; ${whatCleanupDid}`);
-    exit(SIGNAL_EXIT_CODES[sig]);
-  }]);
+  const handlers = Object.keys(SIGNAL_EXIT_CODES).map(sig => [
+    sig,
+    () => {
+      cleanup();
+      ctx.err(`claude-wow dev: stopped by ${sig}; ${whatCleanupDid}`);
+      exit(SIGNAL_EXIT_CODES[sig]);
+    },
+  ]);
   for (const [sig, handler] of handlers) signals.on(sig, handler);
-  return () => { for (const [sig, handler] of handlers) signals.removeListener(sig, handler); };
+  return () => {
+    for (const [sig, handler] of handlers) signals.removeListener(sig, handler);
+  };
 }
 
 async function deploy(opts, ctx) {
@@ -288,9 +334,15 @@ async function deploy(opts, ctx) {
   let source = null;
   let outDir = '';
   const cleanup = cleanupOnce([
-    () => { if (outDir) fs.rmSync(outDir, { recursive: true, force: true }); },
-    () => { if (source) source.cleanup(); },
-    () => { if (lock) lock.release(); },
+    () => {
+      if (outDir) fs.rmSync(outDir, { recursive: true, force: true });
+    },
+    () => {
+      if (source) source.cleanup();
+    },
+    () => {
+      if (lock) lock.release();
+    },
   ]);
   const stopListening = cleanupOnSignal(ctx, cleanup, 'removed the temporary build folders and released the deploy lock');
   try {
@@ -311,16 +363,20 @@ async function deploy(opts, ctx) {
     }
     const meta = { source: REL.SOURCE_DEV_DEPLOY, sha: source.sha, version: source.version, from: source.from, dirty: source.dirty };
     const waiter = serviceRunsCurrent(l, ctx) ? switchWaiter(l, ctx, lock, opts.timeoutMs) : null;
-    const result = await REL.installAndActivate(l, { name: source.name, binaryFile, meta, keep: opts.keep, now: ctx.now, alive: ctx.alive }, {
-      waitIdle: async () => {
-        if (waiter) await waiter();
-        lock.assertHeld();
+    const result = await REL.installAndActivate(
+      l,
+      { name: source.name, binaryFile, meta, keep: opts.keep, now: ctx.now, alive: ctx.alive },
+      {
+        waitIdle: async () => {
+          if (waiter) await waiter();
+          lock.assertHeld();
+        },
+        afterFlip: flip => {
+          ctx.out(`release : ${REL.releaseDir(l, flip.name)}${binaryFile ? ' (new)' : ''}`);
+          return afterSwitch(l, ctx, flip);
+        },
       },
-      afterFlip: flip => {
-        ctx.out(`release : ${REL.releaseDir(l, flip.name)}${binaryFile ? ' (new)' : ''}`);
-        return afterSwitch(l, ctx, flip);
-      },
-    });
+    );
     reportPrune(ctx, result);
     return result.outcome;
   } finally {
@@ -332,7 +388,11 @@ async function deploy(opts, ctx) {
 async function rollback(opts, ctx) {
   const l = REL.layout(ctx.base);
   let lock = null;
-  const cleanup = cleanupOnce([() => { if (lock) lock.release(); }]);
+  const cleanup = cleanupOnce([
+    () => {
+      if (lock) lock.release();
+    },
+  ]);
   const stopListening = cleanupOnSignal(ctx, cleanup, 'released the deploy lock; nothing was switched');
   try {
     lock = lockFor(l, ctx, 'dev rollback');
@@ -384,9 +444,19 @@ function defaultContext(overrides = {}) {
 async function main(argv, overrides = {}) {
   const ctx = defaultContext(overrides);
   const opts = parseArgs(argv);
-  if (opts.error) { ctx.err(`claude-wow dev: ${opts.error}\n`); ctx.out(HELP); return 2; }
-  if (opts.cmd === 'help') { ctx.out(HELP); return 0; }
-  if (!SUPPORTED_PLATFORMS.includes(ctx.platform)) { ctx.err(`claude-wow dev: ${opts.cmd} runs on macOS and Linux only`); return 2; }
+  if (opts.error) {
+    ctx.err(`claude-wow dev: ${opts.error}\n`);
+    ctx.out(HELP);
+    return 2;
+  }
+  if (opts.cmd === 'help') {
+    ctx.out(HELP);
+    return 0;
+  }
+  if (!SUPPORTED_PLATFORMS.includes(ctx.platform)) {
+    ctx.err(`claude-wow dev: ${opts.cmd} runs on macOS and Linux only`);
+    return 2;
+  }
   try {
     if (opts.cmd === 'status') return status(ctx);
     if (opts.cmd === 'rollback') return await rollback(opts, ctx);
@@ -398,6 +468,20 @@ async function main(argv, overrides = {}) {
 }
 
 module.exports = {
-  DEFAULT_REF, HELP, parseArgs, runCommand, bunPath, bunBuild, releaseNameFor, resolveSource,
-  serviceRunsCurrent, restartService, configuredClients, gameLines, deploy, rollback, status, main,
+  DEFAULT_REF,
+  HELP,
+  parseArgs,
+  runCommand,
+  bunPath,
+  bunBuild,
+  releaseNameFor,
+  resolveSource,
+  serviceRunsCurrent,
+  restartService,
+  configuredClients,
+  gameLines,
+  deploy,
+  rollback,
+  status,
+  main,
 };
