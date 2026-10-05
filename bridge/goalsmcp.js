@@ -29,7 +29,7 @@ const FILE_SEARCH_TOOLS = Object.freeze(['Grep', 'Glob', 'LS', 'NotebookRead']);
 const DENIED_WITHOUT_TOOLS = Object.freeze([SERVER_RULE]);
 
 const INSTRUCTIONS = [
-  'Goals, the current order, campaigns, narration and map routes for the player\'s character. The claude-wow bridge writes them for this in-game chat run only; the grant ends when the run ends.',
+  "Goals, the current order, campaigns, narration and map routes for the player's character. The claude-wow bridge writes them for this in-game chat run only; the grant ends when the run ends.",
   'Name every zone, NPC, item or quest only with a reference token ({item:ID}, {skill:ID}, {faction:ID}, {map:ID,x,y}) whose ID comes from the wowdata tools, never from memory. The bridge expands each token to the real name and refuses unknown IDs and any game name typed as plain text; the error names the word.',
   'Twitch votes are not here: they belong to the live Claude Code session.',
 ].join('\n');
@@ -43,18 +43,27 @@ function pickProtocol(requested) {
 }
 
 function version() {
-  try { return require('../package.json').version; } catch { return '0.0.0'; }
+  try {
+    return require('../package.json').version;
+  } catch {
+    return '0.0.0';
+  }
 }
 
 function isRunToolRule(rule) {
-  return String(rule || '').trim().startsWith(SERVER_RULE);
+  return String(rule || '')
+    .trim()
+    .startsWith(SERVER_RULE);
 }
 
 const RULE_RE = /^([^()]+)\((.*)\)$/;
 const DRIVE_RE = /^([A-Za-z]):(?:\/|$)/;
 
 function canonicalPath(raw, platform) {
-  let p = String(raw || '').trim().replace(/\\/g, '/').replace(/^\/+/, '');
+  let p = String(raw || '')
+    .trim()
+    .replace(/\\/g, '/')
+    .replace(/^\/+/, '');
   const drive = DRIVE_RE.exec(p);
   if (drive) p = `${drive[1]}/${p.slice(drive[0].length)}`;
   p = p.replace(/\/{2,}/g, '/');
@@ -84,7 +93,15 @@ function createRunGrants({ call, character = () => '', log = () => {}, tools = T
   function grant(label, ctx) {
     const id = crypto.randomBytes(16).toString('hex');
     const token = crypto.randomBytes(32).toString('hex');
-    runs.set(id, { id, token, label: String(label || ''), character: checksCharacter ? String(character() || '') : '', used: false, conn: null, ctx: ctx || null });
+    runs.set(id, {
+      id,
+      token,
+      label: String(label || ''),
+      character: checksCharacter ? String(character() || '') : '',
+      used: false,
+      conn: null,
+      ctx: ctx || null,
+    });
     return { id, token };
   }
 
@@ -132,7 +149,10 @@ function createRunGrants({ call, character = () => '', log = () => {}, tools = T
     const now = checksCharacter ? String(character() || '') : '';
     if (checksCharacter && (!run.character || !now || now !== run.character)) {
       log(`${run.label} ${tool} refused: the run was granted for ${run.character || 'no character'}, the game now reports ${now || 'no character'}`);
-      return answer(false, `${tool} was refused: this run was started for ${run.character || 'no reported character'}, and the game now reports ${now || 'no character'}.`);
+      return answer(
+        false,
+        `${tool} was refused: this run was started for ${run.character || 'no reported character'}, and the game now reports ${now || 'no character'}.`,
+      );
     }
     if (!tools.includes(tool)) {
       log(`${run.label} ${tool} refused: not given to in-game runs`);
@@ -140,13 +160,28 @@ function createRunGrants({ call, character = () => '', log = () => {}, tools = T
     }
     const args = msg.args && typeof msg.args === 'object' && !Array.isArray(msg.args) ? msg.args : {};
     let result;
-    try { result = await call(tool, args, run.ctx); } catch (e) { result = { ok: false, text: `${tool} failed: ${e && e.message ? e.message : e}` }; }
+    try {
+      result = await call(tool, args, run.ctx);
+    } catch (e) {
+      result = { ok: false, text: `${tool} failed: ${e && e.message ? e.message : e}` };
+    }
     const ok = !!(result && result.ok);
     log(`${run.label} ${tool} from the in-game run: ${ok ? 'ok' : 'refused'}`);
     return answer(ok, String((result && result.text) || ''));
   }
 
-  return { grant, has, revoke, revokeAll, hello, detach, onCall, get size() { return runs.size; } };
+  return {
+    grant,
+    has,
+    revoke,
+    revokeAll,
+    hello,
+    detach,
+    onCall,
+    get size() {
+      return runs.size;
+    },
+  };
 }
 
 function joinGrants(list) {
@@ -207,7 +242,9 @@ function createServer(opts) {
   let dropped = false;
   const granted = () => !!socket && RUN_ID_RE.test(runId) && !!token;
 
-  function send(msg) { out.write(JSON.stringify(msg) + '\n'); }
+  function send(msg) {
+    out.write(JSON.stringify(msg) + '\n');
+  }
 
   function settle(id, r) {
     const c = calls.get(id);
@@ -252,7 +289,10 @@ function createServer(opts) {
     verified = false;
     myNonce = LP.nonce();
     s.on('connect', () => s.write(LP.encode({ type: HELLO, run: runId, nonce: myNonce, proof: LP.proof(token, 'client', myNonce) })));
-    s.on('data', LP.lineReader(onBridge, () => s.destroy()));
+    s.on(
+      'data',
+      LP.lineReader(onBridge, () => s.destroy()),
+    );
     s.on('error', () => {});
     s.on('close', () => {
       if (sock === s) sock = null;
@@ -279,7 +319,10 @@ function createServer(opts) {
       const timer = setTimeout(() => settle(id, { ok: false, text: `The claude-wow bridge did not answer ${tool} in time.` }), timeoutMs);
       if (timer.unref) timer.unref();
       calls.set(id, { resolve, timer, tool, args, sent: false });
-      if (!open()) { settle(id, { ok: false, text: `The claude-wow bridge socket is missing or not private, so ${tool} did nothing.` }); return; }
+      if (!open()) {
+        settle(id, { ok: false, text: `The claude-wow bridge socket is missing or not private, so ${tool} did nothing.` });
+        return;
+      }
       if (verified) flush();
     });
   }
@@ -287,7 +330,12 @@ function createServer(opts) {
   async function onRequest(msg) {
     const { method, params } = msg;
     if (method === 'initialize') {
-      return { protocolVersion: pickProtocol(params && params.protocolVersion), capabilities: { tools: {} }, serverInfo: { name: serverName, version: version() }, instructions };
+      return {
+        protocolVersion: pickProtocol(params && params.protocolVersion),
+        capabilities: { tools: {} },
+        serverInfo: { name: serverName, version: version() },
+        instructions,
+      };
     }
     if (method === 'ping') return {};
     if (method === 'tools/list') return { tools: schemas() };
@@ -337,19 +385,50 @@ function main(argv, deps = {}) {
   const env = deps.env || process.env;
   const log = deps.log || (line => process.stderr.write(`[claude-wow goals-mcp] ${line}\n`));
   let opts;
-  try { opts = parseArgs(argv); } catch (e) { log(e.message); process.exitCode = 2; return null; }
+  try {
+    opts = parseArgs(argv);
+  } catch (e) {
+    log(e.message);
+    process.exitCode = 2;
+    return null;
+  }
   const token = String(env[TOKEN_ENV] || '');
   const server = createServer({ stdout, socket: opts.socket, runId: opts.runId, token, log });
   server.connect();
   stdin.on('data', server.feed);
-  stdin.on('end', () => { server.stop(); if (!deps.stdin) process.exit(0); });
+  stdin.on('end', () => {
+    server.stop();
+    if (!deps.stdin) process.exit(0);
+  });
   return server;
 }
 
 module.exports = {
-  SERVER_NAME, SCRIPT, HELLO, CALL, RESULT, TOKEN_ENV, INSTRUCTIONS,
-  TOOL_NAMES, LIVE_SESSION_ONLY, RUN_RULES, SERVER_RULE, DENIED_WITH_TOOLS, DENIED_WITHOUT_TOOLS, FILE_SEARCH_TOOLS,
-  fullToolName, isRunToolRule, deniedBy, toolSchemas, createRunGrants, joinGrants, launchConfig, mcpConfig, createServer, parseArgs, main,
+  SERVER_NAME,
+  SCRIPT,
+  HELLO,
+  CALL,
+  RESULT,
+  TOKEN_ENV,
+  INSTRUCTIONS,
+  TOOL_NAMES,
+  LIVE_SESSION_ONLY,
+  RUN_RULES,
+  SERVER_RULE,
+  DENIED_WITH_TOOLS,
+  DENIED_WITHOUT_TOOLS,
+  FILE_SEARCH_TOOLS,
+  fullToolName,
+  isRunToolRule,
+  deniedBy,
+  toolSchemas,
+  createRunGrants,
+  joinGrants,
+  launchConfig,
+  mcpConfig,
+  createServer,
+  parseArgs,
+  main,
 };
 
 if (require.main === module) main(process.argv.slice(2));

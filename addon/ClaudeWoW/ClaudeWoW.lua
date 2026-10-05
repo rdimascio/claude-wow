@@ -281,7 +281,7 @@ end
 
 local function HasUserMessage(c)
 	for _, m in ipairs(c.history or {}) do
-		if m.role == "user" then return true end
+		if m.role == "user" and not tostring(m.text or ""):find("^@dev ") then return true end
 	end
 	return false
 end
@@ -1808,7 +1808,7 @@ local function ApplyReplies(replies)
 			matched = true
 			MarkAcked(r.id)
 			local denied = type(r.denied) == "table" and #r.denied > 0 and r.denied or nil
-			if r.status == "done" or r.status == "error" then
+			if (r.status == "done" or r.status == "error") and r.plugin ~= Cli.DEV_PLUGIN then
 				NoteUsage(c, r)
 				if c.adoptCwd and type(r.cwd) == "string" and r.cwd ~= "" then c.cwd = r.cwd end
 				if type(r.session) == "string" and r.session ~= "" then c.session = r.session end
@@ -3322,7 +3322,7 @@ function ClaudeWoW.Send(text, allow, opts)
 		return
 	end
 	if text == "" then return end
-	text = Cli.ProjectTag(c, text)
+	if not (opts and opts.verbatim) then text = Cli.ProjectTag(c, text) end
 	if not ClaudeWoW.IsConnected() then
 		if ui.input then ui.input:SetText(text) end
 		run.sendOnConnect = { chat = c.id, text = text, allow = allow, opts = opts }
@@ -3347,7 +3347,8 @@ function ClaudeWoW.Send(text, allow, opts)
 	local id = db.lastSeq
 	local tokens = {}
 	local plugin = Cli.ChatPlugin(c)
-	if c.resetNext then table.insert(tokens, "n") end
+	local verbatim = opts and opts.verbatim
+	if c.resetNext and not verbatim then table.insert(tokens, "n") end
 	if c.agent and c.agent ~= "" then table.insert(tokens, "agent=" .. c.agent) end
 	if plugin ~= "" then table.insert(tokens, "plugin=" .. plugin) end
 	if db.settings.vision or (opts and opts.vision) then table.insert(tokens, "v") end
@@ -3363,14 +3364,19 @@ function ClaudeWoW.Send(text, allow, opts)
 		end
 	end
 	local optionTokens = Cli.ChatOptionTokens(c, opts and opts.onceDirs)
-	local wantsTitle = c.name:match("^Chat %d+$") and not HasUserMessage(c)
+	if verbatim then
+		for i = #optionTokens, 1, -1 do
+			if optionTokens[i]:find("^resume=") or optionTokens[i]:find("^live=") then table.remove(optionTokens, i) end
+		end
+	end
+	local wantsTitle = c.name:match("^Chat %d+$") and not HasUserMessage(c) and not (opts and opts.verbatim)
 	if wantsTitle then table.insert(optionTokens, "t") end
 	for _, t in ipairs(optionTokens) do table.insert(tokens, t) end
 	local flags = table.concat(tokens, ";")
 	local outboxTokens = { "ver=" .. ClaudeWoW.Version.Own(), "proto=" .. ClaudeWoW.Version.PROTO }
 	for _, t in ipairs(optionTokens) do table.insert(outboxTokens, t) end
-	local newSession = c.resetNext and true or nil
-	c.resetNext = nil
+	local newSession = (c.resetNext and not verbatim) and true or nil
+	if not verbatim then c.resetNext = nil end
 	db.outbox = {
 		id = id,
 		session = db.session,
@@ -3619,6 +3625,8 @@ function ClaudeWoW.ApplySessions(list, now)
 				title = type(e.title) == "string" and e.title or "",
 				branch = type(e.branch) == "string" and e.branch or "",
 				restart = type(e.restart) == "string" and e.restart or "",
+				handoff = e.handoff == true or nil,
+				recap = type(e.recap) == "string" and e.recap ~= "" and e.recap or nil,
 			})
 		end
 	end
@@ -6717,6 +6725,7 @@ end
 HELP = table.concat({
 	"/claude <text>                     start a new chat with that message, like claude \"<text>\" in a terminal. Bare /claude in the game chat opens the workspace window; in a chat's tab it starts a new chat",
 	"/claude -c [text]                  continue the current chat (--continue); alone it points at its tab (with the tabs off, it opens the window on it)",
+	"/claude -r all                     open one chat per session handed off with claude-wow handoff in a terminal; each resumes its session headless",
 	"/claude -r [id|name|n] [text]      resume a session (--resume). A Claude Code session started with the claude-wow channel gets the chat live; any other session is resumed headless in its folder. Bare -r lists the sessions (live ones first, marked live, running not listening, or resume): click a row or give its number; -r more lists them all",
 	"/claude -n <name> [text]           name the new chat (--name); with -c it renames the current one",
 	"/claude --model <model> [text]     the model for the chat (opus, sonnet, a full model name)",
@@ -6737,6 +6746,10 @@ HELP = table.concat({
 	"/claude copy                       open the last reply in a selectable box for Ctrl+C",
 	"/claude reset                      the next message in this chat starts a fresh session",
 	"/claude cancel                     stop waiting on this chat's reply",
+	"/claude dev [command]              dev tools for this chat's folder, run by the bridge: status, diff, log, run, test, doctor, errors, feedback (/claude dev help)",
+	"/claude wrong [#n] [note]          mark the last reply in this chat (or reply #n) as wrong; it lands in the bridge's feedback list",
+	"/claude bug <text>                 report a bug, with the addon's state and Lua errors attached",
+	"/claude errors                     the Lua errors the addon caught this UI session",
 	"/claude resend                     show the strip again if the bridge missed it",
 	"/claude reload                     reload now (also frees the slot pool)",
 	"/claude slots                      how many reply slots are still free this session",
@@ -6769,6 +6782,7 @@ end
 local COMMAND_ARGS = {
 	mini = 0, min = 0, hide = 0, quit = 0, help = 0, clear = 0, delete = 0, reset = 0, copy = 0,
 	cancel = 0, resend = 0, reload = 0, refresh = 0, slots = 0, diag = { [""] = true, copy = true },
+	dev = true, wrong = true, bug = true, errors = 0,
 	context = function(rest) return rest == "" or rest == "on" or rest == "off" or ParseTokens(rest) ~= nil end,
 	ctx = function(rest) return rest == "" or rest == "on" or rest == "off" or ParseTokens(rest) ~= nil end,
 	mode = { [""] = true, pixel = true, reload = true },
@@ -6802,6 +6816,7 @@ Cli.CLAUDE_VERBS = {
 	help = true, diag = true, cancel = true, copy = true, clear = true, rename = true, delete = true,
 	cd = true, hide = true, quit = true, mini = true, min = true, reload = true, refresh = true,
 	resend = true, slots = true, look = true, reset = true, probe = true, orders = true,
+	dev = true, wrong = true, bug = true, errors = true,
 }
 
 Cli.CONFIG_KEYS = {
@@ -7337,6 +7352,7 @@ function Cli.SessionEntries()
 					kind = kind, id = e.id, name = (chat and not e.running) and chat.name or title, alias = alias,
 					cwd = e.cwd, branch = e.branch, agent = e.agent, plugin = e.plugin, at = e.at,
 					live = e.live, running = e.running, restart = e.restart, chat = chat and chat.id or nil,
+					handoff = e.handoff, recap = e.recap,
 				}
 				table.insert(kind == "live" and live or (kind == "deaf" and deaf or rest), entry)
 				if chat then seen[chat.id] = true end
@@ -7530,6 +7546,7 @@ function Cli.AttachTo(e)
 			c.adoptCwd = (e.cwd or "") == "" or nil
 		end
 		AddHistory(c, "system", "Attached to session " .. e.id .. ((e.cwd or "") ~= "" and (" in " .. Display(e.cwd)) or "") .. ". Your next message resumes it" .. (e.unverified and " (the bridge looks the id up then)" or "") .. ".")
+		if e.recap then AddHistory(c, "system", e.recap) end
 	end
 	ClaudeWoW.SwitchChat(c.id)
 	ClaudeWoW.RenderChatList()
@@ -7597,6 +7614,10 @@ function Cli.RunResume(o)
 		ClaudeWoW.ShowResumePicker(nil, nil, true)
 		return
 	end
+	if tostring(o.resume):lower() == "all" and o.text == "" then
+		Cli.ResumeAll()
+		return
+	end
 	local hits = Cli.ResolveResume(o.resume)
 	if #hits == 0 then
 		Cli.Say(ActiveChat(), "No chat or session matches \"" .. Display(o.resume) .. "\". /claude -r lists them.")
@@ -7609,11 +7630,74 @@ function Cli.RunResume(o)
 	Cli.AttachWith(hits[1], o)
 end
 
+function Cli.ResumeAll()
+	local from = ActiveChat()
+	if db.settings.mode == "pixel" and not (run.slotsExhausted or run.slotsMissing) then TryLoadSlot("manual") end
+	local opened, busy, already = {}, {}, {}
+	for _, e in ipairs(Cli.SessionEntries()) do
+		if e.handoff then
+			if e.running then
+				table.insert(busy, e)
+			elseif e.chat then
+				table.insert(already, e)
+			else
+				local c = Cli.AttachTo(e)
+				if c then table.insert(opened, c) end
+			end
+		end
+	end
+	if #opened + #busy + #already == 0 then
+		Cli.Say(from, "No sessions were handed off. In a terminal, run: claude-wow handoff <repository folder> --stop. Then /claude -r all again (the list can take a few seconds to reach the game).")
+		return
+	end
+	local lines = {}
+	if #opened > 0 then
+		local names = {}
+		for _, c in ipairs(opened) do table.insert(names, c.name) end
+		table.insert(lines, "Opened " .. #opened .. " chat" .. (#opened == 1 and "" or "s") .. " for the handed-off sessions: " .. table.concat(names, ", ") .. ". Each resumes its session with your first message there.")
+	end
+	if #already > 0 then table.insert(lines, #already .. " already had a chat.") end
+	if #busy > 0 then
+		local names = {}
+		for _, e in ipairs(busy) do table.insert(names, Display(e.name)) end
+		table.insert(lines, "Still running in a terminal, so not opened (resuming both would fork them): " .. table.concat(names, ", ") .. ". Quit them, then /claude -r all again.")
+	end
+	Cli.Say(opened[#opened] or from, table.concat(lines, "\n"))
+end
+
 function ClaudeWoW.ResumePick(n)
 	if not n or not db then return end
 	local e = (run.resumeList or Cli.SessionEntries())[n]
 	if not e then return end
 	Cli.RunResume({ resume = tostring(n), text = "", addDir = {}, flags = 1 })
+end
+
+Cli.DEV_PLUGIN = "dev"
+Cli.DEV_ERRORS_MARK = "\n--- addon errors ---\n"
+Cli.DEV_ATTACH_MAX = 1400
+
+function Cli.DevCommand(c, cmd, rest)
+	if not c then return end
+	if c.pendingId then
+		Cli.Say(c, "This chat is still waiting on a reply. Run the dev command when it is back, or in another chat.")
+		return
+	end
+	if not (run.bridgePlugins and Contains(run.bridgePlugins, Cli.DEV_PLUGIN)) then
+		Cli.Say(c, "The bridge has not said it has dev tools: it is older than this addon, or it has not answered since you logged in. Update it (claude-wow update), send any message, then try again.")
+		return
+	end
+	local body = cmd == "dev" and (rest ~= "" and rest or "help") or (cmd .. (rest ~= "" and (" " .. rest) or ""))
+	local verb = (body:match("^(%S+)") or ""):lower()
+	if verb == "bug" and rest == "" then
+		Cli.Say(c, "Say what went wrong: /claude bug <text>.")
+		return
+	end
+	if (verb == "errors" or verb == "bug") and ClaudeWoWDev then
+		local attached = ClaudeWoWDev.Attachment(Cli.DEV_ATTACH_MAX)
+		if verb == "bug" then attached = ClaudeWoWDev.State() .. (attached ~= "" and ("\n" .. attached) or "") end
+		if attached ~= "" then body = body .. Cli.DEV_ERRORS_MARK .. attached end
+	end
+	ClaudeWoW.Send("@" .. Cli.DEV_PLUGIN .. " " .. body, nil, { chat = c.id, verbatim = true })
 end
 
 function ClaudeWoW.RunCli(o)
@@ -8079,6 +8163,10 @@ RunCommand = function(cmd, rest)
 		if rest:lower() == "copy" then ClaudeWoW.ShowCopy(report) end
 	elseif cmd == "cancel" then
 		ClaudeWoW.Cancel(c)
+	elseif cmd == "dev" or cmd == "wrong" or cmd == "bug" then
+		Cli.DevCommand(c, cmd, rest)
+	elseif cmd == "errors" then
+		Cli.Say(c, ClaudeWoWDev and ClaudeWoWDev.Report() or "Dev.lua is not loaded. Restart the game client once to load new addon files.")
 	elseif cmd == "clear" then
 		wipe(c.history)
 		ClaudeWoW.Render()

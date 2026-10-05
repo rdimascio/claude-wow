@@ -62,6 +62,7 @@ stays as an advanced setting that pins a chat by hand.
 | `ask` | General AI chat. Game questions, quest research, map routes, macros. The default. | Core behaviour today, minus the coding assumptions |
 | `claude-code` | Agent sessions in a folder. What the bridge does now. | Existing bridge |
 | `live` | A Claude Code session already open in a terminal, reached through a Claude Code channel ([LIVE-SESSION.md](LIVE-SESSION.md)). No agent run: the plugin forwards the message and waits for the session's `wow_reply`. | `bridge/plugins/live.js`, `bridge/channel.js` |
+| `dev` | Dev tools for the chat's folder: git status and diffs, `bridge.log`, the last run, tests, the doctor, Lua errors, and the feedback list ([IN-GAME-DEV.md](IN-GAME-DEV.md)). No agent run; addressed as `@dev <command>` (the addon sends it for `/claude dev`). | `bridge/plugins/dev.js`, `bridge/feedback.js` |
 | `factory` | The approval queue: drafts waiting on a stamp, judge holds, merge-ready PRs | `factory-inbox`, `factory-ledger` |
 | `studio` | The task board: what is in flight, what is blocked | `studio-board`, `studio-orchestrator` |
 | `vision` | Answers about what is on screen | New; see below |

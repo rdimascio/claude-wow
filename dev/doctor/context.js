@@ -7,7 +7,11 @@ const UPD = require('../../bridge/selfupdate');
 const LABEL = Service.LABEL;
 
 function unescapeXml(text) {
-  return String(text).replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+  return String(text)
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, '&');
 }
 
 function parsePlist(xml) {
@@ -39,7 +43,11 @@ function checkoutOf(plist) {
 
 function parseJson(text) {
   if (text === null || text === undefined) return { present: false, value: null, error: null };
-  try { return { present: true, value: JSON.parse(text), error: null }; } catch (e) { return { present: true, value: null, error: e.message }; }
+  try {
+    return { present: true, value: JSON.parse(text), error: null };
+  } catch (e) {
+    return { present: true, value: null, error: e.message };
+  }
 }
 
 function gather(sys) {

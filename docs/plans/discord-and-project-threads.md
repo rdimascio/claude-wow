@@ -5,10 +5,12 @@ Status: draft, revision 2 (2026-10-04). Revision 2 follows a two-seat review (fa
 ## 1. Goals and non-goals
 
 **Goals**
+
 - The owner learns that a long coding run finished, failed or got blocked, without the game in front of them.
 - A coding session started on one client (another account, or Forever vs Era) can be resumed from any other client the bridge serves, and two clients can never run one agent session at once.
 
 **Non-goals**
+
 - No inbound Discord (answering from a phone). Later plan.
 - No live mirror of one chat on two clients, no message catch-up between clients, no chat id migration. The agent session carries the context; each client's chat keeps its own in-game history.
 - No alt inventory or mats ledger. Separate plan.
@@ -33,10 +35,10 @@ Status: draft, revision 2 (2026-10-04). Revision 2 follows a two-seat review (fa
 
 Exactly two sites:
 
-| Site | Event | Rule |
-|---|---|---|
+| Site                                         | Event                                                                                        | Rule                                                                                                                               |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | `finish(job, status, text, session, denied)` | `done`, `failed` (`status === 'error'`, timeouts land here), `blocked` (`denied.length > 0`) | `claude-code` chats only; run time from the `running` entry's start, read before `running.delete`; skip when under `minRunSeconds` |
-| `lateReply(job, raw)` | `late` (factory results arrive here through `deliverFactoryRun`) | Always. Text says "send anything in the chat to fetch it", because a late reply raises no `sig` |
+| `lateReply(job, raw)`                        | `late` (factory results arrive here through `deliverFactoryRun`)                             | Always. Text says "send anything in the chat to fetch it", because a late reply raises no `sig`                                    |
 
 No `factory` event (it would double-fire with `late`), no coalescer, no `context` event (the 300k warning is the addon setting `db.settings.contextWarn`; the bridge has no such number).
 

@@ -60,7 +60,8 @@ class BridgeProcess {
       const m = re.exec(this.output.slice(from));
       if (m) return m;
       if (Date.now() > until) throw new Error(`bridge never logged ${re} within ${timeoutMs} ms; last output:\n${this.output.slice(-2000)}`);
-      if (!this.child && !this.supervised) throw new Error(`bridge exited (${JSON.stringify(this.exits.at(-1))}) before logging ${re}; output:\n${this.output.slice(-2000)}`);
+      if (!this.child && !this.supervised)
+        throw new Error(`bridge exited (${JSON.stringify(this.exits.at(-1))}) before logging ${re}; output:\n${this.output.slice(-2000)}`);
       await new Promise(r => setTimeout(r, 50));
     }
   }
@@ -73,9 +74,12 @@ class BridgeProcess {
   signalGroup(sig) {
     if (!this.child) return false;
     try {
-      if (process.platform !== 'win32') process.kill(-this.child.pid, sig); else this.child.kill(sig);
+      if (process.platform !== 'win32') process.kill(-this.child.pid, sig);
+      else this.child.kill(sig);
       return true;
-    } catch { return false; }
+    } catch {
+      return false;
+    }
   }
 
   async stop({ signal = 'SIGTERM', timeoutMs = 8000 } = {}) {
@@ -100,13 +104,24 @@ class BridgeProcess {
 }
 
 function readJson(file, fallback = null) {
-  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return fallback; }
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    return fallback;
+  }
 }
 
 function agentCalls(sb) {
   try {
-    return fs.readFileSync(path.join(sb.agentState, 'calls.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map(l => JSON.parse(l));
-  } catch { return []; }
+    return fs
+      .readFileSync(path.join(sb.agentState, 'calls.jsonl'), 'utf8')
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map(l => JSON.parse(l));
+  } catch {
+    return [];
+  }
 }
 
 async function start(name, opts = {}) {
@@ -131,7 +146,9 @@ async function start(name, opts = {}) {
     throw e;
   }
   const h = {
-    sb, bridge, client,
+    sb,
+    bridge,
+    client,
     state: () => readJson(sb.state, {}),
     clientState: (dir = sb.client) => ((readJson(sb.state, {}) || {}).clients || {})[CLI.keyOf(dir)] || {},
     transcripts: () => readJson(sb.transcripts, {}),

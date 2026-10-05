@@ -53,7 +53,13 @@ function scriptCommand(name, args = [], r = DEFAULT) {
   return [r.execPath, [path.join(r.root, rel), ...args]];
 }
 
-function isFile(p) { try { return fs.statSync(p).isFile(); } catch { return false; } }
+function isFile(p) {
+  try {
+    return fs.statSync(p).isFile();
+  } catch {
+    return false;
+  }
+}
 
 // { file, found, note }: a node that can run a JavaScript file. From a
 // checkout, this process's own interpreter. From the binary, the node (else
@@ -61,13 +67,19 @@ function isFile(p) { try { return fs.statSync(p).isFile(); } catch { return fals
 function node(r = DEFAULT, env = process.env, platform = process.platform) {
   if (!r.compiled) return { file: r.execPath, found: true };
   const names = platform === 'win32' ? ['node.exe', 'bun.exe'] : ['node', 'bun'];
-  for (const dir of String(env.PATH || '').split(path.delimiter).filter(Boolean)) {
+  for (const dir of String(env.PATH || '')
+    .split(path.delimiter)
+    .filter(Boolean)) {
     for (const n of names) {
       const f = path.join(dir, n);
       if (isFile(f)) return { file: f, found: true };
     }
   }
-  return { file: platform === 'win32' ? 'node.exe' : 'node', found: false, note: 'it is a JavaScript launcher and no node is on the PATH (https://nodejs.org)' };
+  return {
+    file: platform === 'win32' ? 'node.exe' : 'node',
+    found: false,
+    note: 'it is a JavaScript launcher and no node is on the PATH (https://nodejs.org)',
+  };
 }
 
 // One line for the banner and the logs.
