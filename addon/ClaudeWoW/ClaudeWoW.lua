@@ -2920,12 +2920,21 @@ function Whisper.System(chat, text, create, raw)
 	return true
 end
 
+function Q.CutLine(line, width)
+	local cut = line:sub(1, width)
+	if line:sub(width + 1, width + 1):match("%S") then
+		local whole = cut:gsub("%s+%S*$", "")
+		if whole ~= cut then cut = whole else cut = cut:gsub("https?://%S*$", "") end
+	end
+	return cut:match("%S") and cut or line
+end
+
 function Whisper.BodyLines(source, max, width)
 	local lines, total = {}, 0
 	for line in (source .. "\n"):gmatch("(.-)\n") do
 		if line:match("%S") then
 			total = total + 1
-			if width and #line > width then line = line:sub(1, width) .. "..." end
+			if width and #line > width then line = Q.CutLine(line, width) .. "..." end
 			if total <= max then table.insert(lines, line) end
 		end
 	end
@@ -2933,7 +2942,7 @@ function Whisper.BodyLines(source, max, width)
 end
 
 function Whisper.Body(text, summary)
-	local body = Display(text)
+	local body = Q.MarkFences(Display(text))
 	local mode = db.settings.echo
 	local limit = mode == "full" and WL.TEXT_MAX or tonumber(mode)
 	if limit then
@@ -2949,7 +2958,7 @@ function Whisper.Body(text, summary)
 	end
 	local all, total = Whisper.BodyLines(body, WL.SHORT_LINES)
 	if total <= WL.SHORT_LINES and #body <= WL.SHORT_CHARS then return all, nil end
-	local tldr = Display(summary or "")
+	local tldr = Q.MarkFences(Display(summary or ""))
 	if tldr:match("%S") then
 		local lines = Whisper.BodyLines(tldr, WL.TLDR_LINES, WL.LINE_MAX)
 		return lines, "TL;DR of a longer reply (" .. total .. " lines)"
@@ -4702,15 +4711,15 @@ local function EchoToChat(chat, text, agent, summary)
 	local mode = db.settings.echo
 	if mode == "off" then return end
 	local prefix = "|cff7ec8ff[" .. ReplyAgentName(chat, agent) .. " · " .. Display(chat.name) .. "]|r "
-	local body = Display(text)
+	local body = Q.MarkFences(Display(text))
 	if mode == "short" then
-		local flat = (body:gsub("%s+", " "))
-		if #flat > 200 then flat = flat:sub(1, 200) .. " ..." end
-		print(prefix .. flat .. ChatLinks(chat))
+		local flat = (body:gsub("\3[^\n]*", ""):gsub("%s+", " "))
+		if #flat > 200 then flat = Q.CutLine(flat, 200) .. " ..." end
+		print(prefix .. Q.RichText(flat) .. ChatLinks(chat))
 		return
 	end
 	if mode == "summary" then
-		local source, max = Display(summary or ""), ECHO.SUMMARY_LINES
+		local source, max = Q.MarkFences(Display(summary or "")), ECHO.SUMMARY_LINES
 		if not source:match("%S") then source, max = body, ECHO.SUMMARY_FALLBACK_LINES end
 		local lines, total = {}, 0
 		for line in (source .. "\n"):gmatch("(.-)\n") do
@@ -4720,7 +4729,7 @@ local function EchoToChat(chat, text, agent, summary)
 			end
 		end
 		for i, line in ipairs(lines) do
-			print((i == 1 and prefix or "    ") .. line)
+			print((i == 1 and prefix or "    ") .. Q.RichText(line))
 		end
 		if total > max then
 			print("    |cff888888... click [open] to read it all|r")
@@ -4736,7 +4745,7 @@ local function EchoToChat(chat, text, agent, summary)
 				print("    |cff888888... " .. (#body - shown) .. " more characters, click [open] to read it all|r")
 				break
 			end
-			print((first and prefix or "    ") .. line)
+			print((first and prefix or "    ") .. Q.RichText(line))
 			first = false
 			shown = shown + #line
 		end
@@ -4854,6 +4863,10 @@ function Cli.Links.macro(arg)
 	local m = Cli.FindMessage(FindChat(parts[1]), parts[2])
 	local macro = m and m.macros and m.macros[tonumber(parts[3]) or 0]
 	if macro then ClaudeWoW.MacroPrompt(macro) end
+end
+
+function Cli.Links.url(arg)
+	if arg ~= "" then ClaudeWoW.ShowCopy(arg) end
 end
 
 function Cli.Links.map(arg)
@@ -5170,14 +5183,84 @@ function Q.OnParchment(link)
 	end))
 end
 
-function Q.RichText(text, parchment)
-	text = tostring(text or "")
-	text = text:gsub("{(%a+):(%d+)}", function(kind, id)
+Q.URL_CHARS = "[%w%-%._~:/%?#@!%$&'%(%)%+,;=%%]"
+Q.TEXT_INK = {
+	game = { strong = "ffffffff", code = "ffa8c8d8", link = "ff71d5ff" },
+	parchment = { strong = "ff5c1a00", code = "ff1f4a5a", link = "ff00577a" },
+}
+
+function Q.UrlLabel(url)
+	local n = url:match("^https?://github%.com/[^/]+/[^/]+/pull/(%d+)")
+	if n then return "PR #" .. n end
+	n = url:match("^https?://github%.com/[^/]+/[^/]+/issues/(%d+)")
+	if n then return "Issue #" .. n end
+	local key = url:match("^https?://linear%.app/[^/]+/issue/(%u+%-%d+)")
+	if key then return key end
+	local short = url:gsub("^https?://", ""):gsub("^www%.", ""):gsub("/$", "")
+	return #short > 32 and (short:sub(1, 31) .. "\226\128\166") or short
+end
+
+function Q.UrlLink(url, label, ink)
+	return "|c" .. ink.link .. "|H" .. LINK_PREFIX .. "url:" .. url .. "|h[" .. label:gsub("[%[%]%*`]", "") .. "]|h|r"
+end
+
+function Q.SplitUrl(url)
+	local trail = ""
+	while true do
+		local last = url:sub(-1)
+		local _, opens = url:gsub("%(", "")
+		local _, closes = url:gsub("%)", "")
+		if last:match("[%.,;:!%?]") or (last == ")" and closes > opens) then
+			trail, url = last .. trail, url:sub(1, -2)
+		else
+			return url, trail
+		end
+	end
+end
+
+function Q.MarkFences(text)
+	local out, fenced = {}, false
+	for line in (tostring(text or "") .. "\n"):gmatch("(.-)\n") do
+		if line:match("^%s*```") then fenced = not fenced
+		elseif fenced and line:match("%S") then table.insert(out, "\3" .. line)
+		else table.insert(out, line) end
+	end
+	return table.concat(out, "\n")
+end
+
+function Q.MarkdownLine(line, ink, parchment)
+	if line:sub(1, 1) == "\3" then return line:sub(2) end
+	local held = {}
+	local function hold(link) table.insert(held, link) return "\1" .. #held .. "\2" end
+	line = line:gsub("^[%-%*] ", "\226\128\162 ")
+	line = line:gsub("^%s*#+%s+(.+)$", "**%1**")
+	line = line:gsub("%[([^%]]+)%]%((https?://" .. Q.URL_CHARS .. "+)%)", function(label, found)
+		local url, trail = Q.SplitUrl(found)
+		return hold(Q.UrlLink(url, label, ink)) .. trail
+	end)
+	line = line:gsub("(https?://" .. Q.URL_CHARS .. "+)", function(found)
+		local url, trail = Q.SplitUrl(found)
+		if not url:match("^https?://[%w%-]") then return found end
+		return hold(Q.UrlLink(url, Q.UrlLabel(url), ink)) .. trail
+	end)
+	line = line:gsub("%*%*([^%*]+)%*%*", "|c" .. ink.strong .. "%1|r")
+	line = line:gsub("`([^`]+)`", "|c" .. ink.code .. "%1|r")
+	line = line:gsub("\1(%d+)\2", function(k) return held[tonumber(k)] end)
+	return (line:gsub("{(%a+):(%d+)}", function(kind, id)
 		local shown = Q.RichToken(kind:lower(), id) or ("|cff9d9d9d" .. kind .. " " .. id .. "|r")
 		return parchment and Q.OnParchment(shown) or shown
-	end)
-	text = text:gsub("^[%-%*] ", "\226\128\162 "):gsub("\n[%-%*] ", "\n\226\128\162 ")
-	return text
+	end))
+end
+
+function Q.Markdown(text, parchment)
+	local ink = parchment and Q.TEXT_INK.parchment or Q.TEXT_INK.game
+	local lines = {}
+	for line in (Q.MarkFences(text) .. "\n"):gmatch("(.-)\n") do table.insert(lines, Q.MarkdownLine(line, ink, parchment)) end
+	return table.concat(lines, "\n")
+end
+
+function Q.RichText(text, parchment)
+	return Q.Markdown(tostring(text or ""), parchment)
 end
 
 function Q.WaitForLinks(text, key)
