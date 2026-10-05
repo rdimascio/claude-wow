@@ -4653,12 +4653,21 @@ function Q.PlaceEmpty(state, y, width)
 	f:SetWidth(inner)
 	f.title:SetWidth(inner)
 	f.body:SetWidth(inner)
-	f.title:SetText(Display(state.title))
-	f.body:SetText(Display(table.concat(state.lines, "\n")))
-	local h = (Try(f.title.GetStringHeight, f.title) or 14) + Q.EMPTY_LINE_GAP + (Try(f.body.GetStringHeight, f.body) or 14)
+	local below = y > 0
+	f.title:SetShown(not below)
+	f.title:SetText(below and "" or Display(state.title))
+	f.body:SetText(Display(below and state.lines[1] or table.concat(state.lines, "\n")))
+	f.body:ClearAllPoints()
+	if below then
+		f.body:SetPoint("TOP", f, "TOP", 0, 0)
+	else
+		f.body:SetPoint("TOP", f.title, "BOTTOM", 0, -Q.EMPTY_LINE_GAP)
+	end
+	local h = Try(f.body.GetStringHeight, f.body) or 14
+	if not below then h = h + (Try(f.title.GetStringHeight, f.title) or 14) + Q.EMPTY_LINE_GAP end
 	f:SetHeight(h)
 	local view = Try(ui.scroll.GetHeight, ui.scroll) or 0
-	local top = math.max(y > 0 and (y + Q.EMPTY_GAP) or 0, math.floor((view - h) / 2))
+	local top = below and (y + Q.EMPTY_GAP) or math.max(0, math.floor((view - h) / 2))
 	f:ClearAllPoints()
 	f:SetPoint("TOPLEFT", ui.content, "TOPLEFT", math.floor((width - inner) / 2), -top)
 	f:Show()
@@ -5502,16 +5511,26 @@ function Q.SummaryMarkerEnd(line)
 	return s:match("^[ \t]*:?[ \t]*()", i)
 end
 
+function Q.FenceRun(line)
+	local run, rest = line:match("^%s*(```+)(.*)$")
+	if not run then run, rest = line:match("^%s*(~~~+)(.*)$") end
+	if not run then return nil end
+	return run:sub(1, 1), #run, rest
+end
+
 function Q.StripSummary(text, summary)
 	text = tostring(text or "")
-	local lines, fenced, at, after, inFence = {}, false, nil, nil, false
+	local lines, open, at, after, inFence = {}, nil, nil, nil, false
 	for line in (text .. "\n"):gmatch("(.-)\n") do
 		table.insert(lines, line)
-		if line:match("^%s*```") then
-			fenced = not fenced
+		local mark, size, rest = Q.FenceRun(line)
+		if open and mark == open.mark and size >= open.size and rest:match("^%s*$") then
+			open = nil
+		elseif not open and mark then
+			open = { mark = mark, size = size }
 		else
 			local e = Q.SummaryMarkerEnd(line)
-			if e then at, after, inFence = #lines, e, fenced end
+			if e then at, after, inFence = #lines, e, open ~= nil end
 		end
 	end
 	if not at or inFence then return text end
@@ -7195,7 +7214,11 @@ end
 function Cli.Note(c, text)
 	if not c then return end
 	ClaudeWoW.Render()
-	Cli.Emit(c, text)
+	if Whisper.Active() then
+		Cli.Emit(c, text)
+	else
+		print("|cff66ccff[Claude WoW]|r " .. Display(text))
+	end
 end
 
 function Cli.Say(c, text)

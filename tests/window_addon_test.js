@@ -698,10 +698,14 @@ test('the window leaves out the closing TL;DR block of a reply, but not one in a
       { role = "assistant", t = 6, text = "TL;DR: Just the answer." },
       { role = "user", t = 7, text = "TL;DR: typed by the player" },
       { role = "assistant", t = 8, text = "Checked the logs.\\n## tldr: heading style" },
+      { role = "assistant", t = 9, text = "Tilde:\\n~~~\\nTL;DR: tilde fenced\\n~~~" },
+      { role = "assistant", t = 10, text = "Nested:\\n\`\`\`\`md\\n\`\`\`\\nTL;DR: long fence\\n\`\`\`\`" },
     }
     ClaudeWoW.Render()
   `);
-  const [plain, bridge, fenced, mid, mismatch, only, user, heading] = shownBodies(vm);
+  const [plain, bridge, fenced, mid, mismatch, only, user, heading, tilde, nested] = shownBodies(vm);
+  assert.ok(tilde.includes('TL;DR: tilde fenced'), 'a TL;DR inside a ~~~ fence stays: ' + tilde);
+  assert.ok(nested.includes('TL;DR: long fence'), 'a shorter backtick line does not close a longer fence: ' + nested);
   assert.ok(plain.includes('All green.') && !plain.includes('TL;DR') && !plain.includes('Helper renamed'), 'a bold TL;DR block is left out: ' + plain);
   assert.ok(bridge.includes('Renamed it.') && !bridge.includes('Bridge summary'), 'the block the bridge split off is left out: ' + bridge);
   assert.ok(fenced.includes('TL;DR: fenced line'), 'a TL;DR inside a code fence stays: ' + fenced);
@@ -751,14 +755,25 @@ test('an empty chat shows a centered empty state with the project, not a system 
   assert.equal(bodies.length, 1);
   assert.match(bodies[0], /Unknown project "nope"/, 'a system answer to a command still shows');
   e = emptyState(vm);
-  assert.equal(e.shown, 'true', 'a chat with only system lines is still empty');
+  assert.equal(e.shown, 'true', 'a chat with only system lines still gets the hint');
+  assert.equal(vm.evaluate('ClaudeWoW.UI.empty.title.shown'), 'false', 'but no "No messages yet" title under a visible message');
+  assert.match(e.body, /^Type below and press Enter/);
+  assert.ok(!e.body.includes('\n'), 'only the hint line: ' + e.body);
   assert.ok(e.top > 0, 'below the system line');
 
   vm.run('ClaudeWoW.IsConnected = function() return false end; ClaudeWoW.Render()');
   e = emptyState(vm);
+  assert.match(e.body, /^Start the bridge .*click Connect below/, 'under a system line, disconnected shows only its hint: ' + e.body);
+  vm.run('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history = {}; ClaudeWoW.Render()');
+  e = emptyState(vm);
   assert.equal(e.title, 'Not connected');
   assert.match(e.body, /click Connect below/);
 
+  vm.run('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history = {}; ClaudeWoW.IsConnected = function() return true end; ClaudeWoW.Render()');
+  e = emptyState(vm);
+  assert.equal(vm.evaluate('ClaudeWoW.UI.empty.title.shown'), 'true', 'a truly empty chat gets its title back');
+  assert.equal(e.title, 'No messages yet');
+  assert.match(e.body, /Project: /);
   vm.run('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history = { { role = "user", t = 1, text = "hi" } }; ClaudeWoW.Render()');
   assert.equal(emptyState(vm).shown, 'false', 'a chat with a message has no empty state');
 });
