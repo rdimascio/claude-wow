@@ -2,6 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
+const crypto = require('crypto');
 const os = require('os');
 const path = require('path');
 const G = require('../bridge/gamefs');
@@ -31,8 +32,108 @@ test('atomicWrite replaces a file and leaves it 0777 whatever the umask and the 
   withUmask(0o077, () => G.atomicWrite(file, 'new'));
   assert.equal(fs.readFileSync(file, 'utf8'), 'new');
   assert.equal(modeOf(file), 0o777);
-  assert.ok(!fs.existsSync(file + '.tmp'));
+  assert.deepEqual(fs.readdirSync(dir), ['Inbox.lua']);
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+function victimIn(dir) {
+  const victim = path.join(dir, 'victim');
+  fs.writeFileSync(victim, 'secret', { mode: 0o600 });
+  return victim;
+}
+
+function assertUntouched(victim) {
+  assert.equal(fs.readFileSync(victim, 'utf8'), 'secret');
+  assert.equal(modeOf(victim), 0o600);
+}
+
+test('atomicWrite never writes or chmods through a link planted at the old fixed temp name', posixOnly, () => {
+  const dir = scratch('planted-tmp');
+  const victim = victimIn(dir);
+  const folder = path.join(dir, 'ClaudeWoW_S001');
+  fs.mkdirSync(folder);
+  const file = path.join(folder, 'Inbox.lua');
+  fs.symlinkSync(victim, file + '.tmp');
+  G.atomicWrite(file, 'payload');
+  assertUntouched(victim);
+  assert.equal(fs.readFileSync(file, 'utf8'), 'payload');
+  assert.equal(fs.lstatSync(file).isSymbolicLink(), false);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('a link planted at the random temp name makes the write fail instead of following it', posixOnly, (t) => {
+  const dir = scratch('planted-random');
+  const victim = victimIn(dir);
+  const file = path.join(dir, 'Inbox.lua');
+  const fixed = Buffer.alloc(8, 0xab);
+  t.mock.method(crypto, 'randomBytes', () => fixed);
+  fs.symlinkSync(victim, `${file}.${fixed.toString('hex')}.tmp`);
+  assert.throws(() => G.atomicWrite(file, 'payload'), { code: 'EEXIST' });
+  assertUntouched(victim);
+  assert.equal(fs.existsSync(file), false);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('writeFile and copyFile replace a link at the target instead of writing through it', posixOnly, () => {
+  const dir = scratch('linked-target');
+  const victim = victimIn(dir);
+  const src = path.join(dir, 'src.lua');
+  fs.writeFileSync(src, 'copied');
+  const written = path.join(dir, 'w.lua');
+  const copied = path.join(dir, 'c.lua');
+  fs.symlinkSync(victim, written);
+  fs.symlinkSync(victim, copied);
+  G.writeFile(written, 'payload');
+  G.copyFile(src, copied);
+  assertUntouched(victim);
+  assert.equal(fs.lstatSync(written).isSymbolicLink(), false);
+  assert.equal(fs.lstatSync(copied).isSymbolicLink(), false);
+  assert.equal(fs.readFileSync(written, 'utf8'), 'payload');
+  assert.equal(fs.readFileSync(copied, 'utf8'), 'copied');
+  assert.equal(modeOf(written), 0o777);
+  assert.equal(modeOf(copied), 0o777);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('a write into a folder that is a link is refused and leaves the linked folder alone', posixOnly, () => {
+  const dir = scratch('linked-folder');
+  const home = path.join(dir, 'home');
+  fs.mkdirSync(home, { mode: 0o700 });
+  const folder = path.join(dir, 'ClaudeWoW_S001');
+  fs.symlinkSync(home, folder);
+  assert.throws(() => G.atomicWrite(path.join(folder, 'Inbox.lua'), 'payload'), { code: 'EUNSAFE' });
+  assert.throws(() => G.writeFile(path.join(folder, 'Inbox.lua'), 'payload'), { code: 'EUNSAFE' });
+  assert.deepEqual(fs.readdirSync(home), []);
+  assert.equal(modeOf(home), 0o700);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('repair does not chmod a link swapped in after the walk checked the entry', posixOnly, (t) => {
+  const addons = scratch('repair-swap');
+  const victim = victimIn(addons);
+  const folder = path.join(addons, 'ClaudeWoW_S001');
+  fs.mkdirSync(folder, { mode: 0o755 });
+  const inbox = path.join(folder, 'Inbox.lua');
+  fs.writeFileSync(inbox, 'x', { mode: 0o644 });
+  const realLstat = fs.lstatSync;
+  let swapped = false;
+  t.mock.method(fs, 'lstatSync', (target, ...rest) => {
+    const st = realLstat(target, ...rest);
+    if (target === inbox && !swapped) {
+      swapped = true;
+      fs.unlinkSync(inbox);
+      fs.symlinkSync(victim, inbox);
+    }
+    return st;
+  });
+  const result = G.repair(addons);
+  t.mock.restoreAll();
+  assert.equal(swapped, true);
+  assertUntouched(victim);
+  assert.equal(result.failed.length, 1);
+  assert.match(result.failed[0], /Inbox\.lua/);
+  assert.equal(modeOf(folder), 0o777);
+  fs.rmSync(addons, { recursive: true, force: true });
 });
 
 test('mkdir makes every missing folder 0777 and leaves existing parents alone', posixOnly, () => {
