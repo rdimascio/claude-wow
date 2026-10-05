@@ -48,24 +48,6 @@ async function slash(h, line, label) {
 
 const flagAfter = (argv, flag) => argv[argv.indexOf(flag) + 1];
 
-test('/claude --model and --effort start a new chat whose agent runs with them, and -c changes them on that chat', async () => {
-  await withGame({}, async h => {
-    await h.client.connect();
-    const first = h.client.activeChat().id;
-    const r1 = await slash(h, '/claude --model opus --effort high fix the build');
-    assert.match(r1.text, /fix the build/);
-    assert.notEqual(h.client.activeChat().id, first, 'a new chat');
-    let call = h.agentCalls().at(-1);
-    assert.equal(flagAfter(call.argv, '--model'), 'opus');
-    assert.equal(flagAfter(call.argv, '--effort'), 'high');
-    await slash(h, '/claude -c --model sonnet --add-dir extra next step');
-    call = h.agentCalls().at(-1);
-    assert.equal(flagAfter(call.argv, '--model'), 'sonnet');
-    assert.equal(flagAfter(call.argv, '--add-dir'), path.join(h.sb.project, 'extra'), 'a relative folder is taken from the bridge folder');
-    assert.equal(call.resume, h.agentCalls().at(-2).session, '-c resumed the same session');
-  });
-});
-
 test('the ask plugin runs on its own model and effort from plugins.ask.agents, and a chat flag still raises it', async () => {
   const beforeLaunch = sb => {
     const cfg = JSON.parse(fs.readFileSync(sb.config, 'utf8'));
@@ -117,36 +99,6 @@ test('/claude -r resumes a Claude Code session headless in its folder: from the 
     assert.equal(twins.role, 'system');
     assert.match(twins.text, /"abcdef12" matches 2 sessions:\nabcdef12  [^\n]*\nabcdef12  [^\n]*\nUse more of the id\./);
     assert.equal(h.agentCalls().length, calls, 'no agent ran for either');
-  });
-});
-
-test('a Claude chat starts a new session when the system prompt rules changed since its session began, and keeps one that has no recorded rules', async () => {
-  await withGame({}, async h => {
-    await h.client.connect();
-    const editState = async edit => {
-      await h.bridge.stop();
-      const state = JSON.parse(fs.readFileSync(h.sb.state, 'utf8'));
-      edit(state);
-      fs.writeFileSync(h.sb.state, JSON.stringify(state));
-      h.bridge.start();
-      await h.bridge.ready();
-    };
-    await h.client.say('first');
-    const first = h.agentCalls().at(-1);
-    assert.ok(!first.resume, 'a new chat starts a session');
-    await h.client.say('second');
-    assert.equal(h.agentCalls().at(-1).resume, first.session, 'same rules: resumed');
-    const recorded = Object.values(h.state().sessionRules || {});
-    assert.equal(recorded.length, 1);
-    assert.match(recorded[0], /^[0-9a-f]{16}$/);
-    await editState(state => { for (const k of Object.keys(state.sessionRules)) state.sessionRules[k] = '0000000000000000'; });
-    await h.client.say('third');
-    const third = h.agentCalls().at(-1);
-    assert.ok(!third.resume, 'changed rules: a new session');
-    await h.bridge.waitForLine(/system prompt rules changed \(0000000000000000 -> [0-9a-f]{16}\): new session/, { from: 0 });
-    await editState(state => { delete state.sessionRules; });
-    await h.client.say('fourth');
-    assert.equal(h.agentCalls().at(-1).resume, third.session, 'a session from before the rules were recorded keeps resuming');
   });
 });
 

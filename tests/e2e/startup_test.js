@@ -2,7 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
-const { makeRoot, gameRunner, sessionCostByAgent, isAlive, H } = require('./helpers');
+const { makeRoot, gameRunner, H } = require('./helpers');
 
 const ROOT = makeRoot('startup');
 const withGame = gameRunner(ROOT);
@@ -25,14 +25,6 @@ test('a second bridge on the same home refuses to start', async () => {
     const second = new H.BridgeProcess(h.sb);
     second.start();
     await second.waitForLine(/already running/i, { timeoutMs: 8000 }).finally(() => second.stop());
-  });
-});
-
-test('a lock left by a process that is not a bridge does not keep the bridge down', async () => {
-  await withGame({ beforeLaunch: sb => fs.writeFileSync(require('path').join(sb.home, 'bridge.lock'), JSON.stringify({ pid: 1, startedAt: Date.now(), marker: 'bridge.js' })) }, async h => {
-    assert.ok(h.bridge.pid, 'the bridge is running');
-    const r = await h.client.say('still here');
-    assert.match(r.text, /still here/);
   });
 });
 

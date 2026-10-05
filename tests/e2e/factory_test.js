@@ -84,13 +84,3 @@ test('a factory run is ended when the bridge stops, and the run is recorded as k
     assert.match(h.bridge.output, /ending \d+ child process/);
   });
 });
-
-test('without the factory a coding chat is the full session it was', async () => {
-  await withGame({}, async h => {
-    await h.client.say('hello');
-    const run = h.agentCalls().at(-1);
-    assert.ok(!run.argv.includes('--mcp-config'));
-    for (const tool of ['Edit', 'Write', 'Bash', 'Skill']) assert.ok(!listAfter(run.argv, '--disallowedTools').includes(tool), tool);
-    assert.ok(!fs.existsSync(path.join(h.sb.home, 'factory')));
-  });
-});

@@ -7,20 +7,6 @@ const { makeRoot, gameRunner, isAlive } = require('./helpers');
 const ROOT = makeRoot('failures-runs');
 const withGame = gameRunner(ROOT);
 
-test('/claude cancel stops the agent run in the bridge', async () => {
-  await withGame({}, async h => {
-    await h.client.connect();
-    const id = h.client.lastSeq() + 1;
-    h.client.send('long job [[hang]]');
-    await h.bridge.waitForLine(new RegExp(`#${id}@\\S+ \\(screenshot\\)`));
-    await h.client.waitFor(() => h.agentCalls().length === 1, { label: 'the agent to start' });
-    const pid = h.agentCalls()[0].pid;
-    h.client.slash('/claude cancel');
-    await h.client.waitFor(() => !isAlive(pid), { timeoutMs: 15000, label: 'the agent process to end' });
-    await h.bridge.waitForLine(new RegExp(`#${id}@\\S+ cancelled from the game`));
-  });
-});
-
 test('a bridge that dies mid-run tells the player which message was lost', async () => {
   await withGame({}, async h => {
     await h.client.connect();

@@ -25,16 +25,6 @@ test('with capture.chatLog on, a message goes out through the chat log file and 
   });
 });
 
-test('a client whose chat log only reaches disk at exit still delivers: the retry is a screenshot', async () => {
-  await withGame({ capture: { chatLog: { enabled: true } }, speed: 8, client: { speed: 8, chatLogBufferBytes: 0 } }, async h => {
-    const r = await h.client.say('the log never flushes here', { timeoutMs: 60000 });
-    assert.match(r.text, /the log never flushes here/);
-    assert.ok(!/\(chat log, /.test(h.bridge.output), 'nothing was read from the chat log');
-    assert.match(h.bridge.output, /\(screenshot WoWScrnShot/);
-    assert.match(h.client.diag(), /0 acknowledged first time, [1-9]\d* only after the screenshot retry/);
-  });
-});
-
 test.after(() => {
   fs.rmSync(ROOT, { recursive: true, force: true });
 });

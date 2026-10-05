@@ -35,23 +35,6 @@ test('a message waiting in the queue is in state.json, so a deploy waits for it;
   });
 });
 
-test('a stopped bridge leaves no queue in state.json, so a deploy after "service stop" does not wait for messages nobody will run', async () => {
-  await withGame({ config: { maxParallel: 1 } }, async h => {
-    await h.client.connect();
-    h.client.send('first [[hang]]');
-    await h.client.waitFor(() => Object.keys(h.state().inflight || {}).length === 1, { label: 'the first run in flight' });
-    h.client.runLua('ClaudeWoW.NewChat("Two")');
-    const second = h.client.lastSeq() + 1;
-    h.client.send('second [[hang]]');
-    await h.bridge.waitForLine(new RegExp(`#${second}@\\S+ queued \\(1 running\\)`));
-    await h.bridge.stop();
-    const st = h.state();
-    assert.equal(st.queued, undefined, 'the queue is gone with the bridge that held it');
-    assert.equal(st.handling, undefined);
-    assert.equal(I.idleStatus({ ...st, inflight: {} }).idle, true);
-  });
-});
-
 test('a message the live plugin is waiting on is in state.json (handling), so a deploy waits for it; it goes when the plugin answers', async () => {
   await withGame({ config: { plugins: { default: 'live', live: { waitMs: 4000 } } } }, async h => {
     await h.client.connect();

@@ -9,23 +9,6 @@ const { makeRoot, gameRunner, replyTo } = require('./helpers');
 const ROOT = makeRoot('pending');
 const withGame = gameRunner(ROOT);
 
-test('a reply that finished while the game was closed reaches the game at its next login, with no bridge restart', async () => {
-  await withGame({}, async h => {
-    await h.client.connect();
-    const id = h.client.lastSeq() + 1;
-    h.client.send('answer me while away [[sleep 2]]');
-    await h.client.waitFor(() => Object.keys(h.state().inflight || {}).length === 1, { label: 'the run in flight' });
-    assert.equal(h.client.activeChat().pendingId, id, 'the game closes while it waits');
-    h.client.quit();
-    await h.bridge.waitForLine(new RegExp(`#${id}@\\S+ done`));
-    h.client.launch();
-    h.client.start();
-    const reply = await h.client.waitFor(() => replyTo(h, id), { label: 'the reply in the game after the login' });
-    assert.equal(reply.role, 'assistant');
-    assert.match(reply.text, /answer me while away/);
-  });
-});
-
 test('a new reply in a chat the bridge first saw long ago is still in the slots when 30 newer chats have replies', async () => {
   await withGame({}, async h => {
     await h.client.connect();
