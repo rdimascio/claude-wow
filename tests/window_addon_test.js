@@ -709,6 +709,27 @@ test('without native frames the project button stays in the composer and never r
   assert.ok(vm.num('ClaudeWoWProjectButton:GetLeft()') >= vm.num('ClaudeWoWProjectButton:GetParent():GetLeft()'));
 });
 
+test('a quiet plugin chat stays out of the chat list, the count, the minimized badge and /claude-wow chats', () => {
+  const vm = nativeVM();
+  const quiet = vm.evaluate('ClaudeWoW.AddChat("Stream control", { cwd = "", plugin = "stream", quiet = true }).id');
+  vm.run('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].pendingId = 7; ClaudeWoW.Render()');
+  assert.equal(vm.num('#ClaudeWoWDB.chats'), 4);
+  assert.ok(!shownRows(vm).split('|').includes('Stream control'), shownRows(vm));
+  assert.equal(shownRows(vm).split('|').length, 3);
+  assert.equal(vm.evaluate('ClaudeWoW.UI.chatCount:GetText()'), 'Chats: |cffffffff3|r');
+  vm.run('ClaudeWoW.UpdateMini()');
+  assert.equal(vm.evaluate('ClaudeWoW.UI.miniBadge:GetText()'), '|cff999999Ready|r', 'a plugin send does not show as work');
+
+  vm.run('SlashCmdList.CLAUDEWOW("chats")');
+  const listing = vm.evaluate('(function() for _, ch in ipairs(ClaudeWoWDB.chats) do for _, m in ipairs(ch.history) do if tostring(m.text):find("^Chats:") then return m.text end end end end)()');
+  assert.match(listing, /^Chats:\n1\. /);
+  assert.ok(!listing.includes('Stream control'), listing);
+  vm.run('SlashCmdList.CLAUDEWOW("chat 4")');
+  assert.notEqual(vm.evaluate('ClaudeWoWDB.activeChat'), quiet, 'its index cannot open it');
+  vm.run('SlashCmdList.CLAUDEWOW("chat Stream control")');
+  assert.notEqual(vm.evaluate('ClaudeWoWDB.activeChat'), quiet, 'its name cannot open it');
+});
+
 test('the chat list shows the newest chat first, keeps its order when a chat is opened, and scrolls only to bring an opened chat into view', () => {
   const vm = nativeVM();
   vm.run('for i = 1, 20 do ClaudeWoW.NewChat() end');

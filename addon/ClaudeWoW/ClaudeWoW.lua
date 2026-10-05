@@ -333,6 +333,14 @@ local function AddChat(name, cwd)
 	return c
 end
 
+function Q.ListedChats()
+	local listed = {}
+	for _, c in ipairs(db.chats) do
+		if not c.quiet then table.insert(listed, c) end
+	end
+	return listed
+end
+
 local function AnyPending()
 	for _, c in ipairs(db.chats) do
 		if c.pendingId then return true end
@@ -4698,9 +4706,10 @@ end
 function ClaudeWoW.RenderChatList()
 	if ui.questList then return ClaudeWoW.RenderQuestList() end
 	if not ui.chatButtons then return end
-	local pages = math.max(1, math.ceil(#db.chats / Q.CHAT_PAGE))
+	local listed = Q.ListedChats()
+	local pages = math.max(1, math.ceil(#listed / Q.CHAT_PAGE))
 	if not ui.chatPage then
-		for i, ch in ipairs(db.chats) do
+		for i, ch in ipairs(listed) do
 			if ch.id == db.activeChat then ui.chatPage = math.ceil(i / Q.CHAT_PAGE) end
 		end
 	end
@@ -4714,7 +4723,7 @@ function ClaudeWoW.RenderChatList()
 		ui.pageNext:SetEnabled(ui.chatPage < pages)
 	end
 	for i, btn in ipairs(ui.chatButtons) do
-		local c = db.chats[offset + i]
+		local c = listed[offset + i]
 		if c then
 			local label = Display(c.name)
 			local folder = FolderName(ChatFolder(c))
@@ -4742,7 +4751,7 @@ end
 function ClaudeWoW.UpdateMini()
 	if not ui.miniBadge then return end
 	local unread, working = 0, 0
-	for _, c in ipairs(db.chats) do
+	for _, c in ipairs(Q.ListedChats()) do
 		unread = unread + (c.unread or 0)
 		if c.pendingId then working = working + 1 end
 	end
@@ -5786,8 +5795,9 @@ function ClaudeWoW.RenderQuestList()
 	local q = ui.questList
 	local filter = ui.chatFilter or ""
 	local collapsed = db.settings.collapsedFolders or {}
+	local listed = Q.ListedChats()
 	local groups, order = {}, {}
-	for _, c in ipairs(Q.NewestFirst(db.chats)) do
+	for _, c in ipairs(Q.NewestFirst(listed)) do
 		local key = Q.FolderKey(c)
 		if not groups[key] then
 			groups[key] = {}
@@ -5848,7 +5858,7 @@ function ClaudeWoW.RenderQuestList()
 		q.shownActive = db.activeChat
 		Q.RevealRow(q, activeTop, activeBottom)
 	end
-	ui.chatCount:SetText("Chats: |cffffffff" .. #db.chats .. "|r")
+	ui.chatCount:SetText("Chats: |cffffffff" .. #listed .. "|r")
 end
 
 function Q.LastActive(c)
@@ -7333,7 +7343,7 @@ function Cli.SessionEntries()
 			end
 		end
 	end
-	for _, ch in ipairs(db.chats) do
+	for _, ch in ipairs(Q.ListedChats()) do
 		if not seen[ch.id] then
 			table.insert(rest, { kind = "chat", id = ch.session or "", name = ch.name, cwd = ch.cwd or "", branch = "", agent = ch.agent or "", at = Cli.LastActivity(ch), chat = ch.id })
 		end
@@ -7698,8 +7708,8 @@ function ClaudeWoW.Cancel(c)
 		if not AnyPending() then keyCatcher:Hide() end
 	elseif c then
 		local waiting = {}
-		for i, ch in ipairs(db.chats) do
-			if ch.pendingId and not ch.quiet then table.insert(waiting, i .. ". " .. ch.name .. " (#" .. ch.pendingId .. ")") end
+		for i, ch in ipairs(Q.ListedChats()) do
+			if ch.pendingId then table.insert(waiting, i .. ". " .. ch.name .. " (#" .. ch.pendingId .. ")") end
 		end
 		Cli.Out(c, "Nothing to cancel: " .. c.name .. " is not waiting for a reply. "
 			.. (#waiting > 0 and ("Waiting: " .. table.concat(waiting, ", ") .. ". Pick one with /claude chat <number>, then /claude cancel.") or "No chat is waiting."))
@@ -7820,9 +7830,10 @@ RunCommand = function(cmd, rest)
 		ClaudeWoW.NewChat(rest)
 	elseif cmd == "chat" or cmd == "chats" then
 		local n = tonumber(rest)
-		local target = n and db.chats[n]
+		local listed = Q.ListedChats()
+		local target = n and listed[n]
 		if not target and rest ~= "" then
-			for _, ch in ipairs(db.chats) do
+			for _, ch in ipairs(listed) do
 				if ch.name:lower() == rest:lower() then target = ch end
 			end
 		end
@@ -7830,7 +7841,7 @@ RunCommand = function(cmd, rest)
 			ClaudeWoW.SwitchChat(target.id)
 		else
 			local lines = {}
-			for i, ch in ipairs(db.chats) do
+			for i, ch in ipairs(listed) do
 				table.insert(lines, i .. ". " .. ch.name .. (ch.id == db.activeChat and "  (current)" or "") .. (ch.pendingId and "  working" or "") .. ((ch.unread or 0) > 0 and ("  " .. ch.unread .. " new") or ""))
 			end
 			AddHistory(c, "system", "Chats:\n" .. table.concat(lines, "\n"))
