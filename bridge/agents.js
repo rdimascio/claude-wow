@@ -192,6 +192,29 @@ function toolResultText(content) {
   return content.map(c => (c && typeof c.text === 'string' ? c.text : '')).join('\n');
 }
 
+const BUDGET_STOP = 'error_max_budget_usd';
+
+function budgetStopText(ev) {
+  const said = (Array.isArray(ev.errors) ? ev.errors : []).map(String).join(' ');
+  const m = /\$([^\s)]+)/.exec(said);
+  const usd = m ? Number(m[1]) : NaN;
+  const amount = !Number.isFinite(usd) ? '' : Number(usd.toFixed(2)) === usd ? `$${usd.toFixed(2)} ` : `$${usd} `;
+  return `Stopped: this message hit the ${amount}cost cap.`;
+}
+
+function costCap(v) {
+  return Number.isFinite(v) && v > 0 ? v : null;
+}
+
+function costCapNote(id, acfg) {
+  const v = acfg && acfg.maxCostUsd;
+  if (v === undefined || v === null) return '';
+  if (id !== 'claude') return `${displayName(id)} has no cost cap, so agents.${id}.maxCostUsd is ignored.`;
+  if (costCap(v) === null)
+    return `agents.claude.maxCostUsd must be a positive number of US dollars; ${JSON.stringify(v)} is ignored, so Claude runs have no cost cap.`;
+  return '';
+}
+
 function claudeParser(opts = {}) {
   let usage = null; // the last assistant message's usage: what the next turn will carry
   let model = ''; // the model that wrote it, for pricing a result without modelUsage
@@ -251,11 +274,13 @@ function claudeParser(opts = {}) {
         }
         const missing = ev.result === undefined || ev.result === null || ev.result === '';
         const text =
-          missing && ev.is_error
-            ? `Claude Code ended with an error (${ev.subtype || 'no detail given'}) and no message.`
-            : typeof ev.result === 'string'
-              ? ev.result
-              : JSON.stringify(ev.result ?? '', null, 2);
+          ev.subtype === BUDGET_STOP
+            ? budgetStopText(ev)
+            : missing && ev.is_error
+              ? `Claude Code ended with an error (${ev.subtype || 'no detail given'}) and no message.`
+              : typeof ev.result === 'string'
+                ? ev.result
+                : JSON.stringify(ev.result ?? '', null, 2);
         const denials = Array.isArray(ev.permission_denials) ? ev.permission_denials : [];
         if (denials.length) {
           const neverOffered = new Set(Array.isArray(opts.neverOffer) ? opts.neverOffer : []);
@@ -269,7 +294,7 @@ function claudeParser(opts = {}) {
           if (again.length) out.deniedAgain = [...new Set(again.map(e => e.rule))];
           out.notes.push(...denialNotes('Claude', fresh, again));
         }
-        out.done = { text, error: !!ev.is_error };
+        out.done = { text, error: !!ev.is_error && ev.subtype !== BUDGET_STOP };
       }
       return out;
     },
@@ -662,6 +687,8 @@ const AGENTS = {
       if (mcpConfig) a.push('--mcp-config', mcpConfig);
       if (cfg.model) a.push('--model', cfg.model);
       if (cfg.effort) a.push('--effort', cfg.effort);
+      const capUsd = costCap(cfg.maxCostUsd);
+      if (capUsd !== null) a.push('--max-budget-usd', String(capUsd));
       for (const dir of addDirs(cfg)) a.push('--add-dir', dir);
       if (resume) a.push('--resume', resume);
       if (system) a.push('--append-system-prompt', system);
@@ -1037,6 +1064,8 @@ module.exports = {
   SETTING_FLAGS,
   READ_ONLY_MODES,
   unsupportedSettings,
+  costCap,
+  costCapNote,
   withChatSettings,
   withPluginSettings,
   PLUGIN_SETTINGS,

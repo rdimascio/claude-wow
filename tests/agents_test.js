@@ -899,6 +899,57 @@ test('per-chat settings from /claude flags: each agent gets the ones it has, in 
   assert.equal(A.withChatSettings({}, 'hermes', chosen).effort, undefined, 'an agent never gets a setting it cannot take');
 });
 
+test('agents.claude.maxCostUsd: a positive number becomes --max-budget-usd; anything else is left off and named once in the log', () => {
+  const argsFor = (id, maxCostUsd) =>
+    A.AGENTS[id].args({
+      cfg: { effort: 'high', maxCostUsd },
+      resume: '',
+      cwd: '/proj',
+      system: '',
+      systemShort: '',
+      promptFile: '/tmp/p.txt',
+      prompt: 'hi',
+      images: [],
+    });
+  const capped = argsFor('claude', 0.5);
+  assert.equal(capped[capped.indexOf('--max-budget-usd') + 1], '0.5');
+  assert.equal(capped.indexOf('--max-budget-usd'), capped.indexOf('--effort') + 2);
+  for (const bad of [0, -1, NaN, Infinity, '0.5', '', null, true]) {
+    assert.ok(!argsFor('claude', bad).includes('--max-budget-usd'), `${String(bad)} is not a cap`);
+  }
+  assert.ok(!argsFor('claude', undefined).includes('--max-budget-usd'));
+  for (const id of A.agentIds().filter(id => id !== 'claude')) {
+    assert.ok(!argsFor(id, 0.5).includes('--max-budget-usd'), id);
+    assert.ok(!argsFor(id, 0.5).includes('0.5'), id);
+  }
+  assert.equal(A.costCapNote('claude', { maxCostUsd: 0.5 }), '');
+  assert.equal(A.costCapNote('claude', {}), '');
+  assert.equal(A.costCapNote('claude', { maxCostUsd: null }), '', 'null is the template value for no cap');
+  assert.equal(A.costCapNote('codex', { maxCostUsd: null }), '');
+  for (const bad of [0, -1, '0.5', true]) {
+    assert.equal(
+      A.costCapNote('claude', { maxCostUsd: bad }),
+      `agents.claude.maxCostUsd must be a positive number of US dollars; ${JSON.stringify(bad)} is ignored, so Claude runs have no cost cap.`,
+    );
+  }
+  assert.equal(A.costCapNote('codex', { maxCostUsd: 0.5 }), 'Codex has no cost cap, so agents.codex.maxCostUsd is ignored.');
+  for (const id of ['grok', 'agy', 'hermes', 'local'])
+    assert.match(A.costCapNote(id, { maxCostUsd: 1 }), new RegExp(`^${A.displayName(id)} has no cost cap, so agents\\.${id}\\.maxCostUsd is ignored\\.$`));
+  assert.equal(A.costCapNote('codex', {}), '');
+});
+
+test('Claude budget stop from a real stream: the reply says the message hit the cost cap, in one plain sentence', () => {
+  const out = replayClaude('claude-budget-stop.jsonl');
+  assert.deepEqual(out.done, { text: 'Stopped: this message hit the $0.01 cost cap.', error: false }, 'a cap the player set is a reply, not a bridge error');
+  const stop = { type: 'result', subtype: 'error_max_budget_usd', is_error: true, terminal_reason: 'budget_exhausted' };
+  assert.equal(A.claudeParser().feed({ ...stop, errors: ['Reached maximum budget ($0.1)'] }).done.text, 'Stopped: this message hit the $0.10 cost cap.');
+  assert.equal(A.claudeParser().feed({ ...stop, errors: ['Reached maximum budget ($0.125)'] }).done.text, 'Stopped: this message hit the $0.125 cost cap.');
+  assert.equal(A.claudeParser().feed({ ...stop, errors: ['Reached maximum budget ($1e-7)'] }).done.text, 'Stopped: this message hit the $1e-7 cost cap.');
+  assert.equal(A.claudeParser().feed(stop).done.text, 'Stopped: this message hit the cost cap.');
+  const other = A.claudeParser().feed({ type: 'result', subtype: 'error_max_turns', is_error: true, errors: ['Reached maximum turns ($5)'] });
+  assert.equal(other.done.text, 'Claude Code ended with an error (error_max_turns) and no message.');
+});
+
 test('a plugin block sets the model and effort for its chats; a chat flag still wins; nothing else comes through', () => {
   const agentCfg = { model: 'opus[1m]', effort: 'max', permissionMode: 'acceptEdits' };
   const askOpts = { cwd: '', agents: { claude: { model: 'claude-sonnet-5-5', effort: 'medium', permissionMode: 'bypassPermissions' } } };
