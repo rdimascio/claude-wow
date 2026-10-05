@@ -10,8 +10,8 @@ const ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const URL_RE = /^https?:\/\/\S+$/i;
 const ALL_TOOLS = '*';
 const AGENT_KEYS = ['claude', 'codex'];
-const STDIO_KEYS = new Set(['type', 'command', 'args', 'envVars', 'allow', 'default']);
-const HTTP_KEYS = new Set(['type', 'url', 'bearerTokenEnvVar', 'allow', 'default']);
+const STDIO_KEYS = new Set(['type', 'command', 'args', 'envVars', 'allow', 'default', 'alwaysLoad']);
+const HTTP_KEYS = new Set(['type', 'url', 'bearerTokenEnvVar', 'allow', 'default', 'alwaysLoad']);
 const MCP_KEYS = new Set(['servers', 'strict']);
 
 const isObject = v => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -54,12 +54,14 @@ function parseServer(name, s, reserved) {
   const unknown = Object.keys(s).find(k => !keys.has(k));
   if (unknown) return { error: `${where}.${unknown} is not a key of a${http ? 'n http' : ' stdio'} server (${[...keys].join(', ')})` };
   if (s.default !== undefined && typeof s.default !== 'boolean') return { error: `${where}.default must be true or false` };
+  if (s.alwaysLoad !== undefined && typeof s.alwaysLoad !== 'boolean') return { error: `${where}.alwaysLoad must be true or false` };
+  const always = s.alwaysLoad === true ? { alwaysLoad: true } : {};
   const allow = parseAllow(s.allow, `${where}.allow`);
   if (allow.error) return allow;
   const out = { name, allow: allow.allow, default: s.default === true, envVars: [] };
   if (http) {
     if (typeof s.url !== 'string' || !URL_RE.test(s.url)) return { error: `${where}.url must be an http:// or https:// URL` };
-    out.server = { type: 'http', url: s.url };
+    out.server = { type: 'http', url: s.url, ...always };
     if (s.bearerTokenEnvVar !== undefined) {
       if (typeof s.bearerTokenEnvVar !== 'string' || !ENV_NAME_RE.test(s.bearerTokenEnvVar))
         return { error: `${where}.bearerTokenEnvVar must be an environment variable name` };
@@ -73,7 +75,7 @@ function parseServer(name, s, reserved) {
   if (s.envVars !== undefined && (!Array.isArray(s.envVars) || s.envVars.some(e => typeof e !== 'string' || !ENV_NAME_RE.test(e))))
     return { error: `${where}.envVars must be a list of environment variable names` };
   out.envVars = [...new Set(s.envVars || [])];
-  out.server = { type: 'stdio', command: s.command, args: [...(s.args || [])] };
+  out.server = { type: 'stdio', command: s.command, args: [...(s.args || [])], ...always };
   if (out.envVars.length) out.server.env = Object.fromEntries(out.envVars.map(e => [e, envRef(e)]));
   return out;
 }
@@ -118,7 +120,7 @@ function serverOf(rule) {
 function forClaude(mcp) {
   if (!mcp) return null;
   const loaded = mcp.servers.filter(s => s.default);
-  const allowed = new Map(loaded.map(s => [s.name, s.allow.claude]));
+  const allowed = new Map(mcp.servers.map(s => [s.name, s.allow.claude]));
   const allowRules = loaded.flatMap(s => s.allow.claude.map(t => toolRule(s.name, t)));
   const blocks = rule => {
     const r = serverOf(rule);
@@ -170,15 +172,23 @@ function claudeOwnServers({ home = os.homedir(), configDir = process.env.CLAUDE_
   const local = isObject(user.projects) && isObject(user.projects[cwd]) ? user.projects[cwd].mcpServers : null;
   for (const n of serverNames({ mcpServers: local })) out.push(`local:${n}`);
   for (const n of serverNames(read(path.join(cwd, '.mcp.json')))) out.push(`project:${n}`);
-  const settings = read(path.join(dir, 'settings.json')) || {};
+  const enabled = {};
+  for (const f of [path.join(dir, 'settings.json'), path.join(cwd, '.claude', 'settings.json'), path.join(cwd, '.claude', 'settings.local.json')]) {
+    const plugins = (read(f) || {}).enabledPlugins;
+    if (isObject(plugins)) Object.assign(enabled, plugins);
+  }
   const installed = (read(path.join(dir, 'plugins', 'installed_plugins.json')) || {}).plugins || {};
-  for (const [id, on] of Object.entries(isObject(settings.enabledPlugins) ? settings.enabledPlugins : {})) {
+  for (const [id, on] of Object.entries(enabled)) {
     if (on !== true) continue;
     const plugin = id.split('@')[0];
     for (const inst of Array.isArray(installed[id]) ? installed[id] : []) {
       if (!inst || typeof inst.installPath !== 'string') continue;
       const manifest = read(path.join(inst.installPath, '.claude-plugin', 'plugin.json')) || {};
-      const names = new Set([...serverNames(read(path.join(inst.installPath, '.mcp.json'))), ...serverNames({ mcpServers: manifest.mcpServers })]);
+      const declared = Array.isArray(manifest.mcpServers) ? manifest.mcpServers : [manifest.mcpServers];
+      const fromManifest = declared.flatMap(d =>
+        typeof d === 'string' ? serverNames(read(path.resolve(inst.installPath, d))) : serverNames({ mcpServers: d }),
+      );
+      const names = new Set([...serverNames(read(path.join(inst.installPath, '.mcp.json'))), ...fromManifest]);
       for (const n of names) out.push(`plugin:${plugin}:${n}`);
       break;
     }

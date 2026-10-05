@@ -295,7 +295,8 @@ test('mcp.servers end to end: servers reach --mcp-config with ${VAR} only, stric
   assert.equal(first.status, 0, out);
   assert.match(out, /mcp\.servers\.wowdata: "wowdata" is a bridge server name \(wowdata, wowgoals, wowfactory\); this server is skipped/, out);
   assert.match(out, /mcp: notion \(on by default\), github \(on by default\); strict: /, out);
-  assert.match(out, /mcp\.strict: Claude runs stop loading these servers of your own: user:mobbin, and claude\.ai connectors/, out);
+  assert.match(out, /mcp\.strict: Claude runs stop loading at least these servers of your own: user:mobbin, and claude\.ai connectors/, out);
+  assert.match(out, /#21@sess1 mcp: mcp__notion__create_page was denied and is outside mcp\.servers\.notion\.allow, so it is not offered to allow/, out);
   assert.match(out, /mcp: allowed tool rules that mcp\.servers does not allow are left out of Claude runs: mcp__notion, mcp__notion__notion-create-pages/, out);
   const { argv, mcp } = JSON.parse(fs.readFileSync(record, 'utf8'));
   assert.ok(argv.includes('--strict-mcp-config'), argv.join(' '));

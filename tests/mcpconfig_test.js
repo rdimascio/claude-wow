@@ -27,9 +27,8 @@ const SAMPLE = {
 
 function claudeArgv(agentCfg, plan, mcpConfig = '') {
   const scoped = MC.scopeAllowed(agentCfg, plan);
-  const base = plan && plan.strict ? { ...scoped.agentCfg, strictMcpConfig: true } : scoped.agentCfg;
-  const cfg = P.withRunDeniedRules(P.withRunOnlyRules(base, plan ? plan.allowRules : []), scoped.denied);
-  return A.AGENTS.claude.args({ cfg, resume: '', system: 'sys', images: [], mcpConfig });
+  const cfg = P.withRunDeniedRules(P.withRunOnlyRules(scoped.agentCfg, plan ? plan.allowRules : []), scoped.denied);
+  return A.AGENTS.claude.args({ cfg, resume: '', system: 'sys', images: [], mcpConfig, strictMcpConfig: !!(plan && plan.strict) });
 }
 
 test('an absent mcp key changes nothing: no plan, the same agent config object, the same argv and MCP JSON as an empty mcp block', () => {
@@ -45,6 +44,13 @@ test('an absent mcp key changes nothing: no plan, the same agent config object, 
     assert.equal(GM.mcpConfig({ ...plan.servers, wowdata: { type: 'stdio', command: 'node', args: ['d.js'] } }), bridgeOnly);
   }
   assert.ok(!before.includes('--strict-mcp-config'));
+});
+
+test('alwaysLoad is passed through so Claude does not defer the tools behind tool search', () => {
+  const plan = MC.forClaude(
+    parsed({ servers: { s: { command: 'x', alwaysLoad: true, default: true }, h: { type: 'http', url: 'https://h', alwaysLoad: false, default: true } } }).mcp,
+  );
+  assert.deepEqual(plan.servers, { s: { type: 'stdio', command: 'x', args: [], alwaysLoad: true }, h: { type: 'http', url: 'https://h' } });
 });
 
 test('servers translate to Claude --mcp-config entries with ${VAR} references, and only default servers load', () => {
@@ -70,6 +76,7 @@ test('allow: "*" and ["*"] allow the whole server, a list allows only its tools,
         c: { command: 'x', allow: ['one', 'two', 'one'], default: true },
         d: { command: 'x', allow: { codex: ['one'] }, default: true },
         e: { command: 'x', default: true },
+        f: { command: 'x', allow: ['one'] },
       },
     }).mcp,
   );
@@ -81,6 +88,9 @@ test('allow: "*" and ["*"] allow the whole server, a list allows only its tools,
   assert.equal(plan.blocks('mcp__c__*'), true);
   assert.equal(plan.blocks('mcp__d__one'), true);
   assert.equal(plan.blocks('mcp__e__anything'), true);
+  assert.equal(plan.blocks('mcp__f__two'), true, 'a server off by default can still load from Claude settings; its allow list still holds');
+  assert.equal(plan.blocks('mcp__f__one'), false);
+  assert.ok(!('f' in plan.servers));
   assert.equal(plan.blocks('mcp__other__tool'), false);
   assert.equal(plan.blocks('WebSearch'), false);
 });
@@ -110,6 +120,10 @@ test('--strict-mcp-config is passed only with mcp.strict true', () => {
   assert.ok(claudeArgv({}, on, '/tmp/m.json').includes('--strict-mcp-config'));
   assert.ok(!claudeArgv({}, off, '/tmp/m.json').includes('--strict-mcp-config'));
   assert.ok(!claudeArgv({}, MC.forClaude(parsed(SAMPLE).mcp), '/tmp/m.json').includes('--strict-mcp-config'));
+  assert.ok(
+    !A.AGENTS.claude.args({ cfg: { strictMcpConfig: true }, resume: '', system: '', images: [], mcpConfig: '' }).includes('--strict-mcp-config'),
+    'a config key cannot turn strict on',
+  );
   const bad = parsed({ servers: {}, strict: 'yes' });
   assert.equal(bad.mcp.strict, false);
   assert.match(bad.lines[0], /^mcp\.strict in config\.json must be true or false; "yes" is ignored/);
@@ -132,6 +146,7 @@ test('a bad entry is skipped with one log line each and never stops the others',
       badtool: { command: 'x', allow: ['ok', 'no spaces'] },
       badagent: { command: 'x', allow: { gemini: ['a'] } },
       baddefault: { command: 'x', default: 'yes' },
+      badalways: { command: 'x', alwaysLoad: 1 },
       notobj: 'npx thing',
       good: { command: 'x', allow: ['a'], default: true },
     },
@@ -140,7 +155,7 @@ test('a bad entry is skipped with one log line each and never stops the others',
     mcp.servers.map(s => s.name),
     ['good'],
   );
-  assert.equal(lines.length, 15, lines.join('\n'));
+  assert.equal(lines.length, 16, lines.join('\n'));
   assert.ok(
     lines.every(l => /; this server is skipped$/.test(l)),
     lines.join('\n'),
@@ -202,14 +217,32 @@ test('claudeOwnServers lists the user, local, project and enabled plugin servers
   const files = {
     [path.join(home, '.claude.json')]: { mcpServers: { mobbin: {}, 'claude-wow': {} }, projects: { [cwd]: { mcpServers: { localone: {} } } } },
     [path.join(cwd, '.mcp.json')]: { mcpServers: { 'claude-wow': {} } },
-    [path.join(home, '.claude', 'settings.json')]: { enabledPlugins: { 'playwright@official': true, 'off@official': false } },
+    [path.join(home, '.claude', 'settings.json')]: { enabledPlugins: { 'playwright@official': true, 'off@official': false, 'local-off@official': true } },
+    [path.join(cwd, '.claude', 'settings.json')]: { enabledPlugins: { 'proj@official': true } },
+    [path.join(cwd, '.claude', 'settings.local.json')]: { enabledPlugins: { 'local-off@official': false } },
     [path.join(home, '.claude', 'plugins', 'installed_plugins.json')]: {
-      plugins: { 'playwright@official': [{ installPath: '/pp' }], 'off@official': [{ installPath: '/po' }] },
+      plugins: {
+        'playwright@official': [{ installPath: '/pp' }],
+        'off@official': [{ installPath: '/po' }],
+        'local-off@official': [{ installPath: '/pl' }],
+        'proj@official': [{ installPath: '/pj' }],
+      },
     },
+    [path.join('/pj', '.claude-plugin', 'plugin.json')]: { mcpServers: ['./cfg/servers.json', { inline: { command: 'x' } }] },
+    [path.resolve('/pj', './cfg/servers.json')]: { mcpServers: { fromfile: { command: 'x' } } },
+    [path.join('/pl', '.mcp.json')]: { gone: { command: 'npx' } },
     [path.join('/pp', '.mcp.json')]: { playwright: { command: 'npx' } },
     [path.join('/po', '.mcp.json')]: { hidden: { command: 'npx' } },
   };
   const own = MC.claudeOwnServers({ home, configDir: '', cwd, read: f => files[f] || null });
-  assert.deepEqual(own, ['user:mobbin', 'user:claude-wow', 'local:localone', 'project:claude-wow', 'plugin:playwright:playwright']);
+  assert.deepEqual(own, [
+    'user:mobbin',
+    'user:claude-wow',
+    'local:localone',
+    'project:claude-wow',
+    'plugin:playwright:playwright',
+    'plugin:proj:fromfile',
+    'plugin:proj:inline',
+  ]);
   assert.deepEqual(MC.claudeOwnServers({ home, configDir: '', cwd, read: () => null }), []);
 });

@@ -674,7 +674,7 @@ const AGENTS = {
     install: 'https://claude.com/claude-code, then run `claude` once and log in',
     windowsPaths: () => [path.join(os.homedir(), '.local', 'bin', 'claude.exe')],
     posixPaths: () => [path.join(os.homedir(), '.local', 'bin', 'claude')],
-    args({ cfg, resume, system, images, mcpConfig }) {
+    args({ cfg, resume, system, images, mcpConfig, strictMcpConfig }) {
       const a = ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', cfg.permissionMode || 'acceptEdits'];
       // With an image the prompt is a stream-json user message (see input below).
       if (Array.isArray(images) && images.some(i => i && i.data)) a.push('--input-format', 'stream-json');
@@ -683,7 +683,7 @@ const AGENTS = {
       const denied = Array.isArray(cfg.deniedTools) ? cfg.deniedTools.filter(Boolean) : [];
       if (denied.length) a.push('--disallowedTools', ...denied);
       if (mcpConfig) a.push('--mcp-config', mcpConfig);
-      if (cfg.strictMcpConfig === true) a.push('--strict-mcp-config');
+      if (strictMcpConfig === true) a.push('--strict-mcp-config');
       if (cfg.model) a.push('--model', cfg.model);
       if (cfg.effort) a.push('--effort', cfg.effort);
       const capUsd = costCap(cfg.maxCostUsd);
