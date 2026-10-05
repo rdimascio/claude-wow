@@ -6779,52 +6779,92 @@ end
 -- Slash commands
 ---------------------------------------------------------------------------
 
-local HELP
+ClaudeWoW.HELP_MISSING = "The Commands and tips page is in a new addon file. Restart the game client once to load it: a /reload does not load new files."
+
 function ClaudeWoW.ShowHelp()
-	local c = ActiveChat()
-	if not c then return end
-	AddHistory(c, "system", HELP)
-	ClaudeWoW.Render()
+	if ClaudeWoWHelp and ClaudeWoWHelp.Open then return ClaudeWoWHelp.Open() end
+	print("|cff66ccff[Claude WoW]|r " .. ClaudeWoW.HELP_MISSING)
+	return nil
 end
-HELP = table.concat({
-	"/claude <text>                     start a new chat with that message, like claude \"<text>\" in a terminal. Bare /claude in the game chat opens the workspace window; in a chat's tab it starts a new chat",
-	"/claude -c [text]                  continue the current chat (--continue); alone it points at its tab (with the tabs off, it opens the window on it)",
-	"/claude -r all                     open one chat per session handed off with claude-wow handoff in a terminal; each resumes its session headless",
-	"/claude -r [id|name|n] [text]      resume a session (--resume). A Claude Code session started with the claude-wow channel gets the chat live; any other session is resumed headless in its folder. Bare -r lists the sessions (live ones first, marked live, running not listening, or resume): click a row or give its number; -r more lists them all",
-	"/claude -n <name> [text]           name the new chat (--name); with -c it renames the current one",
-	"/claude --model <model> [text]     the model for the chat (opus, sonnet, a full model name)",
-	"/claude --effort <level> [text]    low, medium, high, xhigh or max",
-	"/claude --project <name|path|none> [text]    attach this chat to a repo (or #name in a message); none = a general chat",
-	"/claude --permission-mode <mode>   acceptEdits, auto, plan, manual, dontAsk or bypassPermissions",
-	"/claude --add-dir <path> [text]    one more folder the agent may use (repeat the flag for more)",
-	"/claude --agent <name> [text]      which CLI runs the chat: claude, codex, grok, agy or hermes",
-	"    Flags come before the text and combine: /claude --model opus fix the build starts a new chat on opus. With -c they change the current chat. --flag=value and \"quoted values\" work, a value of - clears a setting, and a flag with no value shows it. The bridge tells you when an agent has no such option",
-	"/claude orders [on|off]            show or hide the Orders card under the quest tracker",
-	"/claude config [key] [value]       settings: voice, roast, whisper, echo, vision, roll, achievements, orders, telemetry, ui, map, macro, context, signal, mode, longchat, auto, bind, diag. Alone it lists them with their values",
-	"/claude config ui [setting]        the tabs and the window: whisper on|off, dim <10-100>|off, dodge on|off, autohide on|off, reset",
-	"/claude cd <folder>                folder this chat's agent works in (relative to the bridge's folder; alone = the default). A chat with a folder is a coding session there, one without is general in-game chat",
-	"/claude look <question>            send one message to the current chat with a picture of your screen",
-	"/claude rename [name]              rename the current chat (alone: a dialog)",
-	"/claude delete                     delete the current chat",
-	"/claude clear                      clear this chat's transcript",
-	"/claude copy                       open the last reply in a selectable box for Ctrl+C",
-	"/claude reset                      the next message in this chat starts a fresh session",
-	"/claude cancel                     stop waiting on this chat's reply",
-	"/claude dev [command]              dev tools for this chat's folder, run by the bridge: status, diff, log, run, test, doctor, errors, feedback (/claude dev help)",
-	"/claude wrong [#n] [note]          mark the last reply in this chat (or reply #n) as wrong; it lands in the bridge's feedback list",
-	"/claude bug <text>                 report a bug, with the addon's state and Lua errors attached",
-	"/claude errors                     the Lua errors the addon caught this UI session",
-	"/claude resend                     show the strip again if the bridge missed it",
-	"/claude reload                     reload now (also frees the slot pool)",
-	"/claude slots                      how many reply slots are still free this session",
-	"/claude diag [copy]                transport diagnostics; copy opens them in a box, selected for Ctrl+C",
-	"/claude probe [chatlog|asyncfile]  write test lines to the client's own logs so the bridge can measure them",
-	"/claude hide | mini               hide the window, or collapse it to the small bar",
-	"/claude help                       this list",
-	"/r <text>                          reply to the chat that answered last, until a real player whispers you",
-	"/w <agent> <text>                  send to that agent's chat when whisper tabs are on",
-	"A command word followed by something it does not take is a message: /claude delete the unused imports starts a new chat with that text.",
-}, "\n")
+
+ClaudeWoW.HELP = {
+	{
+		title = "Start and resume chats",
+		rows = {
+			{ "/claude <text>", "Start a new chat with that message, like claude \"<text>\" in a terminal. Bare /claude in the game chat opens the workspace window; in a chat's tab it starts a new chat." },
+			{ "/claude -c [text]", "Continue the current chat (--continue). Alone it points at its tab; with the tabs off, it opens the window on it." },
+			{ "/claude -r [id|name|n] [text]", "Resume a session (--resume). A Claude Code session started with the claude-wow channel gets the chat live; any other session is resumed headless in its folder. Bare -r lists the sessions (live ones first, marked live, running not listening, or resume): click a row or give its number; -r more lists them all." },
+			{ "/claude -r all", "Open one chat per session handed off with claude-wow handoff in a terminal; each resumes its session headless." },
+			{ "/claude -n <name> [text]", "Name the new chat (--name). With -c it renames the current one." },
+		},
+	},
+	{
+		title = "Chat options",
+		rows = {
+			{ "/claude --model <model> [text]", "The model for the chat: opus, sonnet or a full model name." },
+			{ "/claude --effort <level> [text]", "low, medium, high, xhigh or max." },
+			{ "/claude --project <name|path|none> [text]", "Attach this chat to a repo (or #name in a message). none makes it a general chat." },
+			{ "/claude --permission-mode <mode>", "acceptEdits, auto, plan, manual, dontAsk or bypassPermissions." },
+			{ "/claude --add-dir <path> [text]", "One more folder the agent may use. Repeat the flag for more." },
+			{ "/claude --agent <name> [text]", "Which CLI runs the chat: claude, codex, grok, agy or hermes." },
+		},
+		notes = {
+			"Flags come before the text and combine: /claude --model opus fix the build starts a new chat on opus. With -c they change the current chat.",
+			"--flag=value and \"quoted values\" work, a value of - clears a setting, and a flag with no value shows it. The bridge tells you when an agent has no such option.",
+		},
+	},
+	{
+		title = "This chat",
+		rows = {
+			{ "/claude cd <folder>", "The folder this chat's agent works in, relative to the bridge's folder; alone it goes back to the default. A chat with a folder is a coding session there, one without is general in-game chat." },
+			{ "/claude look <question>", "Send one message to the current chat with a picture of your screen." },
+			{ "/claude rename [name]", "Rename the current chat. Alone it opens a dialog." },
+			{ "/claude delete", "Delete the current chat." },
+			{ "/claude clear", "Clear this chat's transcript." },
+			{ "/claude copy", "Open the last reply in a selectable box for Ctrl+C." },
+			{ "/claude reset", "The next message in this chat starts a fresh session." },
+			{ "/claude cancel", "Stop waiting on this chat's reply." },
+			{ "/claude wrong [#n] [note]", "Mark the last reply in this chat (or reply #n) as wrong; it lands in the bridge's feedback list." },
+		},
+	},
+	{
+		title = "Whispers",
+		rows = {
+			{ "/r <text>", "Reply to the chat that answered last, until a real player whispers you." },
+			{ "/w <agent> <text>", "Send to that agent's chat when whisper tabs are on." },
+		},
+	},
+	{
+		title = "Settings and the window",
+		rows = {
+			{ "/claude config [key] [value]", "Settings: voice, roast, whisper, echo, vision, roll, achievements, orders, telemetry, ui, map, macro, context, signal, mode, longchat, auto, bind, diag. Alone it lists them with their values." },
+			{ "/claude config ui [setting]", "The tabs and the window: whisper on|off, dim <10-100>|off, dodge on|off, autohide on|off, reset." },
+			{ "/claude orders [on|off]", "Show or hide the Orders card under the quest tracker." },
+			{ "/claude hide | mini", "Hide the window, or collapse it to the small bar." },
+			{ "/claude help", "Open this page." },
+		},
+	},
+	{
+		title = "Troubleshooting",
+		rows = {
+			{ "/claude dev [command]", "Dev tools for this chat's folder, run by the bridge: status, diff, log, run, test, doctor, errors, feedback (/claude dev help)." },
+			{ "/claude bug <text>", "Report a bug, with the addon's state and Lua errors attached." },
+			{ "/claude errors", "The Lua errors the addon caught this UI session." },
+			{ "/claude resend", "Show the strip again if the bridge missed it." },
+			{ "/claude reload", "Reload now. This also frees the slot pool." },
+			{ "/claude slots", "How many reply slots are still free this session." },
+			{ "/claude diag [copy]", "Transport diagnostics; copy opens them in a box, selected for Ctrl+C." },
+			{ "/claude probe [chatlog|asyncfile]", "Write test lines to the client's own logs so the bridge can measure them." },
+		},
+	},
+	{
+		title = "Tips",
+		notes = {
+			"A command word followed by something it does not take is a message: /claude delete the unused imports starts a new chat with that text.",
+			"Shift-click an item, spell or quest to link it into your message.",
+		},
+	},
+}
 
 local function OnOffOrNumber(rest)
 	return rest == "" or rest == "on" or rest == "off" or tonumber(rest) ~= nil
@@ -7766,7 +7806,7 @@ end
 
 function ClaudeWoW.RunCli(o)
 	if o.help then
-		Cli.Say(ActiveChat(), HELP)
+		ClaudeWoW.ShowHelp()
 		return
 	end
 	local errors = Cli.CheckFlags(o)
@@ -8235,9 +8275,7 @@ RunCommand = function(cmd, rest)
 		wipe(c.history)
 		ClaudeWoW.Render()
 	elseif cmd == "help" then
-		AddHistory(c, "system", HELP)
-		ClaudeWoW.Render()
-		Cli.Show(c)
+		ClaudeWoW.ShowHelp()
 	end
 end
 

@@ -22,3 +22,4 @@ Widgets.lua
 Window.lua
 Telemetry.lua
 Observed.lua
+Help.lua

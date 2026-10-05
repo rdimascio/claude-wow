@@ -14,7 +14,7 @@ const { lua, lauxlib, lualib, to_luastring, to_jsstring } = fengari;
 const ADDON = path.join(__dirname, '..', 'addon', 'ClaudeWoW');
 const CELLS_PER_ROW = 200;
 
-function newVM() {
+function newVM({ help = true } = {}) {
   const L = lauxlib.luaL_newstate();
   lualib.luaL_openlibs(L);
   const run = (code, arg, chunk) => {
@@ -39,7 +39,8 @@ function newVM() {
   };
   const num = expr => Number(evaluate(expr));
   run(fs.readFileSync(path.join(__dirname, 'wow_stub.lua'), 'utf8'));
-  for (const f of ['Codec.lua', 'Inbox.lua', 'ClaudeWoW.lua']) run(fs.readFileSync(path.join(ADDON, f), 'utf8'), 'ClaudeWoW', 'addon/' + f);
+  for (const f of ['Codec.lua', 'Inbox.lua', 'ClaudeWoW.lua', ...(help ? ['Help.lua'] : [])])
+    run(fs.readFileSync(path.join(ADDON, f), 'utf8'), 'ClaudeWoW', 'addon/' + f);
   return { run, evaluate, num };
 }
 
@@ -116,6 +117,12 @@ function nextSlot(vm, luaBody) {
 function login(vm) {
   vm.run('STUB.FireEvent("ADDON_LOADED", "ClaudeWoW")');
   vm.run('STUB.FireEvent("PLAYER_LOGIN")');
+}
+
+function helpPage(vm) {
+  return vm.evaluate(
+    '(function() local t = {} for _, it in ipairs(ClaudeWoWHelp.Build().items) do t[#t + 1] = it.fs.text end return table.concat(t, "\\n") end)()',
+  );
 }
 
 // Let the bridge answer the login hello: its slot carries a fresh clock, which is
@@ -407,8 +414,10 @@ test('free text that starts with a command word is a message for a new chat; exa
   assert.equal(count(), 3);
   assert.equal(sentIn('help me with this macro'), active());
   vm.run('SlashCmdList.CLAUDE("cancel")');
+  const beforeHelp = last();
   vm.run('SlashCmdList.CLAUDE("help")');
-  assert.ok(last().includes('/claude -r [id|name|n] [text]'), last());
+  assert.ok(helpPage(vm).includes('/claude -r [id|name|n] [text]'), helpPage(vm));
+  assert.equal(last(), beforeHelp, 'help writes nothing into the chat');
   vm.run('SlashCmdList.CLAUDE("config context off")');
   assert.equal(vm.evaluate('ClaudeWoWDB.settings.context'), 'false');
   vm.run('SlashCmdList.CLAUDE("config context matters here")');
@@ -523,10 +532,12 @@ test('chat management commands: -n, -r, rename, delete, clear, copy', () => {
   assert.equal(vm.evaluate('ClaudeWoWDB.activeChat'), vm.evaluate('ClaudeWoWDB.chats[1].id'));
   vm.run('SlashCmdList.CLAUDE("rename Stuff")');
   assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].name'), 'Stuff');
+  const historyBefore = vm.num('#ClaudeWoWDB.chats[1].history');
   vm.run('SlashCmdList.CLAUDE("help")');
-  const help = vm.evaluate('ClaudeWoWDB.chats[1].history[1].text');
+  const help = helpPage(vm);
   assert.ok(help.includes('/claude cd'), help);
   assert.ok(!help.includes('/claude-wow'), 'help never mentions the old command');
+  assert.equal(vm.num('#ClaudeWoWDB.chats[1].history'), historyBefore, 'help is a page, not a transcript line');
   vm.run('SlashCmdList.CLAUDE("clear")');
   assert.equal(vm.num('#ClaudeWoWDB.chats[1].history'), 0);
   vm.run('SlashCmdList.CLAUDE("delete")');
@@ -1537,7 +1548,7 @@ test('plugins: /claude config plugin binds the chat like --agent, the Plugin... 
   vm.run('SlashCmdList.CLAUDE("config")');
   assert.ok(last().includes('\nplugin = claude-code  -  <name>|default: advanced'), last());
   vm.run('SlashCmdList.CLAUDE("help")');
-  assert.ok(!/\bplugin\b/.test(last()), 'help does not need the word plugin');
+  assert.ok(!/\bplugin\b/.test(helpPage(vm)), 'help does not need the word plugin');
 });
 
 function parsed(vm, msg) {
@@ -1675,8 +1686,10 @@ test('/claude flags set per-chat settings: with text on a new chat, with -c on t
   assert.equal(vm.evaluate('ClaudeWoWDB.chats[3].name'), 'Raid', '-n takes one word; quote a longer name');
   vm.run('SlashCmdList.CLAUDE("-c -n \\"Raid night\\"")');
   assert.equal(vm.evaluate('ClaudeWoWDB.chats[3].name'), 'Raid night');
+  const historyBeforeHelp = vm.num('#ClaudeWoWDB.chats[3].history');
   vm.run('SlashCmdList.CLAUDE("-h")');
-  assert.ok(vm.evaluate('ClaudeWoWDB.chats[3].history[#ClaudeWoWDB.chats[3].history].text').startsWith('/claude <text>'));
+  assert.equal(vm.evaluate('ClaudeWoWHelpPanel.shown'), 'true', '-h opens the Commands and tips page');
+  assert.equal(vm.num('#ClaudeWoWDB.chats[3].history'), historyBeforeHelp, '-h writes nothing into the chat');
 });
 
 test('/claude -r: bare lists running and recent sessions; a number, a name or an id picks one; a running session attaches live, another resumes headless, an ambiguous prefix lists the matches', () => {
@@ -2057,7 +2070,7 @@ test('/claude-wow is a hidden alias for one release: the old verbs still work, t
   vm.run('ClaudeWoW.Toggle(false); SlashCmdList.CLAUDEWOW("")');
   assert.equal(vm.evaluate('ClaudeWoWFrame.shown'), 'true', 'bare /claude-wow still toggles the window');
   vm.run('SlashCmdList.CLAUDE("help")');
-  assert.ok(!last().includes('/claude-wow'), 'help does not mention it');
+  assert.ok(!helpPage(vm).includes('/claude-wow'), 'help does not mention it');
   vm.run('SlashCmdList.CLAUDE("config")');
   assert.ok(!last().includes('/claude-wow'), 'config does not mention it');
   vm.run('ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[1].id); SlashCmdList.CLAUDE("clear"); ClaudeWoW.Render()');
@@ -2991,4 +3004,127 @@ test('/claude -r all with no handed-off session says how to hand off', () => {
     vm.evaluate('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history].text'),
     /No sessions were handed off\. In a terminal, run: claude-wow handoff/,
   );
+});
+
+const SETTINGS_API = `
+  STUB.settings = { registered = {}, addon = {}, opened = {} }
+  Settings = {
+    RegisterCanvasLayoutCategory = function(frame, name)
+      local category = { frame = frame, name = name }
+      function category:GetID() return 42 end
+      table.insert(STUB.settings.registered, category)
+      return category
+    end,
+    RegisterAddOnCategory = function(category) table.insert(STUB.settings.addon, category) end,
+    OpenToCategory = function(id) table.insert(STUB.settings.opened, id) end,
+  }`;
+
+const LEGACY_OPTIONS_API = `
+  STUB.legacy = { added = {}, opened = {} }
+  function InterfaceOptions_AddCategory(panel) table.insert(STUB.legacy.added, panel) end
+  function InterfaceOptionsFrame_OpenToCategory(panel) table.insert(STUB.legacy.opened, panel) end`;
+
+function helpVM(prelude = '', options) {
+  const vm = newVM(options);
+  if (prelude) vm.run(prelude);
+  login(vm);
+  return vm;
+}
+
+const activeHistory = vm =>
+  vm.num('#(function() for _, c in ipairs(ClaudeWoWDB.chats) do if c.id == ClaudeWoWDB.activeChat then return c end end end)().history');
+
+test('help: the page registers as an addon category in Settings at login and /claude help opens it there', () => {
+  const vm = helpVM(SETTINGS_API);
+  assert.equal(vm.num('#STUB.settings.registered'), 1, 'one category, registered at login');
+  assert.equal(vm.evaluate('STUB.settings.registered[1].name'), 'Azeroth Companion');
+  assert.equal(vm.evaluate('STUB.settings.registered[1].frame == ClaudeWoWHelpPanel'), 'true', 'the canvas is the help panel');
+  assert.equal(vm.evaluate('STUB.settings.addon[1] == STUB.settings.registered[1]'), 'true', 'listed under AddOns');
+  const before = activeHistory(vm);
+  vm.run('SlashCmdList.CLAUDE("help")');
+  vm.run('SlashCmdList.CLAUDE("--help")');
+  vm.run('ClaudeWoW.ShowHelp()');
+  assert.equal(vm.evaluate('table.concat(STUB.settings.opened, ",")'), '42,42,42', 'help, --help and the gear menu open the category by its ID');
+  assert.equal(vm.num('#STUB.settings.registered'), 1, 'opening never registers twice');
+  assert.equal(activeHistory(vm), before, 'nothing is written into the chat');
+  assert.equal(vm.evaluate('ClaudeWoWHelpWindow'), null, 'no stand-in window when Settings works');
+});
+
+test('help: the addon title from the .toc names the category', () => {
+  const vm = helpVM(SETTINGS_API + '\nSTUB.addonMeta = { ClaudeWoW = { Title = "Azeroth Companion Dev" } }');
+  assert.equal(vm.evaluate('STUB.settings.registered[1].name'), 'Azeroth Companion Dev');
+});
+
+test('help: without the Settings API the page goes through Interface Options', () => {
+  const vm = helpVM(LEGACY_OPTIONS_API);
+  assert.equal(vm.num('#STUB.legacy.added'), 1);
+  assert.equal(vm.evaluate('STUB.legacy.added[1] == ClaudeWoWHelpPanel'), 'true');
+  assert.equal(vm.evaluate('ClaudeWoWHelpPanel.name'), 'Azeroth Companion', 'Interface Options lists a panel by its name field');
+  const before = activeHistory(vm);
+  vm.run('SlashCmdList.CLAUDE("help")');
+  assert.ok(vm.num('#STUB.legacy.opened') >= 1);
+  assert.equal(vm.evaluate('STUB.legacy.opened[1] == ClaudeWoWHelpPanel'), 'true');
+  assert.equal(activeHistory(vm), before);
+  assert.equal(vm.evaluate('ClaudeWoWHelpWindow'), null);
+});
+
+test('help: with no options API, or in combat, the page opens in its own closable window', () => {
+  const vm = helpVM();
+  const before = activeHistory(vm);
+  vm.run('SlashCmdList.CLAUDE("help")');
+  assert.equal(vm.evaluate('ClaudeWoWHelpWindow.shown'), 'true');
+  assert.equal(vm.evaluate('ClaudeWoWHelpWindow.template'), 'BasicFrameTemplateWithInset');
+  assert.equal(vm.evaluate('ClaudeWoWHelpPanel.rel == ClaudeWoWHelpWindow'), 'true', 'the page fills the window');
+  assert.equal(vm.evaluate('ClaudeWoWHelpPanel.shown'), 'true');
+  assert.ok(vm.evaluate('table.concat(UISpecialFrames, ",")').split(',').includes('ClaudeWoWHelpWindow'), 'Escape closes it');
+  assert.equal(activeHistory(vm), before);
+
+  const fighting = helpVM(SETTINGS_API);
+  fighting.run('STUB.combat = true; SlashCmdList.CLAUDE("help")');
+  assert.equal(fighting.num('#STUB.settings.opened'), 0, 'Settings is not opened in combat');
+  assert.equal(fighting.evaluate('ClaudeWoWHelpWindow.shown'), 'true');
+  fighting.run('STUB.combat = false; SlashCmdList.CLAUDE("help")');
+  assert.equal(fighting.evaluate('table.concat(STUB.settings.opened, ",")'), '42');
+  assert.equal(fighting.evaluate('ClaudeWoWHelpWindow.shown'), 'false', 'the stand-in closes when Settings takes the page');
+});
+
+test('help: a client that has not loaded Help.lua yet says to restart, in the chat frame, not the transcript', () => {
+  const vm = helpVM('', { help: false });
+  const before = activeHistory(vm);
+  vm.run('SlashCmdList.CLAUDE("help")');
+  assert.equal(activeHistory(vm), before);
+  assert.match(vm.evaluate('STUB.prints[#STUB.prints]'), /Restart the game client once/);
+});
+
+test('help: the page lists every command of ClaudeWoW.HELP in its sections, command line then description', () => {
+  const vm = helpVM(SETTINGS_API);
+  vm.run(`H_ITEMS = {}
+    for _, it in ipairs(ClaudeWoWHelp.Build().items) do H_ITEMS[#H_ITEMS + 1] = it.kind .. "|" .. tostring(it.fs.text) end
+    H_WANT = {}
+    for _, section in ipairs(ClaudeWoW.HELP) do
+      H_WANT[#H_WANT + 1] = "header|" .. section.title
+      for _, row in ipairs(section.rows or {}) do
+        H_WANT[#H_WANT + 1] = "command|" .. row[1]
+        H_WANT[#H_WANT + 1] = "description|" .. row[2]
+      end
+      for _, line in ipairs(section.notes or {}) do H_WANT[#H_WANT + 1] = "note|" .. line end
+    end`);
+  assert.equal(vm.evaluate('table.concat(H_ITEMS, "\\n")'), vm.evaluate('table.concat(H_WANT, "\\n")'));
+  const page = helpPage(vm);
+  for (const cmd of [
+    '/claude <text>',
+    '/claude -c [text]',
+    '/claude cd <folder>',
+    '/claude config [key] [value]',
+    '/claude diag [copy]',
+    '/r <text>',
+    '/w <agent> <text>',
+  ])
+    assert.ok(page.includes(cmd), cmd);
+  assert.ok(vm.num('#ClaudeWoW.HELP') >= 5, 'grouped in sections');
+  vm.run('ClaudeWoWHelpScroll.width = 500; ClaudeWoWHelp.Layout()');
+  assert.equal(vm.evaluate('ClaudeWoWHelpContent.width'), '500');
+  assert.ok(vm.num('ClaudeWoWHelpContent.height') > 100, 'the content is as tall as its rows, so it scrolls');
+  assert.equal(vm.evaluate('ClaudeWoWHelp.Build().items[2].fs.width'), '500', 'a command spans the page');
+  assert.equal(vm.evaluate('ClaudeWoWHelp.Build().items[3].fs.width'), '486', 'a description is indented under its command');
 });

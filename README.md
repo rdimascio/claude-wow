@@ -227,7 +227,7 @@ The client's own commands, with the same rule: a command word followed by someth
 | `/claude reload` | reload the UI now (also frees the slot pool) |
 | `/claude diag`, `/claude slots` | transport diagnostics |
 | `/claude hide`, `/claude mini` | hide the window, or collapse it to the small bar (the minimize button or Esc does the same; click the bar to expand) |
-| `/claude help` | the full list |
+| `/claude help` | opens the Commands and tips page in the game's Options, under AddOns (the gear menu in the window opens it too) |
 | `/r <text>` | replies to the chat that answered last, with the game's own `To Claude [chat]:` header; once a real player whispers you, `/r` answers them, until the next reply |
 | `/w <agent> <text>` | sends to that agent's chat when whisper tabs are on |
 

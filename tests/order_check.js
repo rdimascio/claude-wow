@@ -37,6 +37,7 @@ for (const f of [
   'Window.lua',
   'Telemetry.lua',
   'Observed.lua',
+  'Help.lua',
 ]) {
   const src = fs.readFileSync(path.join(ADDON, f), 'utf8');
   const ast = luaparse.parse(src, { luaVersion: '5.1' });
