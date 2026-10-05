@@ -67,8 +67,8 @@ test('a coding chat with the factory on is a cheap dispatcher: it starts an allo
     await h.bridge.waitForLine(/late reply delivered/, { timeoutMs: 15000 });
 
     const status = await h.client.say(`[[mcp-call wowfactory factory_status {"runId":"${id}"}]]`);
-    assert.match(status.text, new RegExp(`Factory run ${id} \\(/fresh-eyes PR 42\\) done after`));
-    await h.client.waitFor(() => JSON.stringify(h.client.db()).includes(`Factory run ${id} (/fresh-eyes PR 42) done`), { timeoutMs: 20000, label: 'the late result in the chat' });
+    assert.match(status.text, new RegExp(`/fresh-eyes PR 42: done after .*Factory run ${id}`));
+    await h.client.waitFor(() => JSON.stringify(h.client.db()).includes(`Factory run ${id}, model`), { timeoutMs: 20000, label: 'the late result in the chat' });
   });
 });
 

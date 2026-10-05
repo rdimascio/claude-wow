@@ -27,7 +27,7 @@ const ARGS_MAX = 2000;
 const SUMMARY_LINES = 40;
 const SUMMARY_CHARS = 4000;
 const PR_URL_RE = /https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+/g;
-const RUN_SYSTEM = 'This run was started from an in-game World of Warcraft chat through the claude-wow bridge. Nobody watches it and nobody can answer a question: decide and go on, or stop and say what blocks you. End with a summary that names the URL of every pull request you opened or changed; a merge or run report may be as long as it needs, up to about 40 lines.';
+const RUN_SYSTEM = 'This run was started from an in-game World of Warcraft chat through the claude-wow bridge. Nobody watches it and nobody can answer a question: decide and go on, or stop and say what blocks you. End with a summary that names the URL of every pull request you opened or changed; a merge or run report may be as long as it needs, up to about 40 lines. The summary is shown in a game window that does not render Markdown: write plain sentences, with no bold, no backticks, no headings and no Markdown links; a list item starts with "- ".';
 const OFF_TEXT = 'The connection to the claude-wow bridge closed, so the factory tools are off for the rest of this run; the call did nothing.';
 
 function pickSetting(v, fallback) {
@@ -141,18 +141,28 @@ function resultEvent(text) {
   return null;
 }
 
+function plainLine(line) {
+  return line
+    .replace(/^#{1,6}\s+/, '')
+    .replace(/^[*+]\s+/, '- ')
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '$1 $2')
+    .replace(/(\*\*|__)(.+?)\1/g, '$2')
+    .replace(/`([^`]*)`/g, '$1')
+    .trim();
+}
+
+function cutAtBoundary(text, max) {
+  if (text.length <= max) return text;
+  const head = text.slice(0, max);
+  const sentenceEnd = Math.max(head.lastIndexOf('\n'), head.lastIndexOf('. ') + 1);
+  const wordEnd = head.lastIndexOf(' ');
+  const end = sentenceEnd > max / 2 ? sentenceEnd : wordEnd > 0 ? wordEnd : max;
+  return head.slice(0, end).trimEnd() + ' ...';
+}
+
 function summaryOf(text) {
-  const kept = [];
-  let size = 0;
-  for (const line of String(text || '').split('\n').map(l => l.trim()).filter(Boolean).slice(0, SUMMARY_LINES)) {
-    if (size + line.length + kept.length > SUMMARY_CHARS) {
-      if (!kept.length) kept.push(line.slice(0, SUMMARY_CHARS).replace(/\s+\S*$/, ''));
-      return kept.join('\n') + '\n...';
-    }
-    kept.push(line);
-    size += line.length;
-  }
-  return kept.join('\n');
+  const lines = String(text || '').split('\n').map(plainLine).filter(Boolean).slice(0, SUMMARY_LINES);
+  return cutAtBoundary(lines.join('\n'), SUMMARY_CHARS);
 }
 
 function prUrls(text) {
@@ -163,7 +173,7 @@ function describe(run, now) {
   const prompt = `/${run.skill}${run.args ? ' ' + run.args : ''}`;
   const took = duration((run.endedAt || now) - run.startedAt);
   const cost = Number.isFinite(run.costUsd) ? `, $${run.costUsd.toFixed(2)}` : '';
-  const head = `Factory run ${run.id} (${prompt.length > 80 ? prompt.slice(0, 80) + '...' : prompt}) ${run.status}${run.status === 'running' ? ` for ${took}` : ` after ${took}`}${cost}, model ${run.model}.`;
+  const head = `${prompt.length > 80 ? prompt.slice(0, 80) + '...' : prompt}: ${run.status}${run.status === 'running' ? ` for ${took}` : ` after ${took}`}${cost}. Factory run ${run.id}, model ${run.model}.`;
   const body = [head];
   if (run.why) body.push(run.why);
   if (run.summary) body.push(run.summary);
