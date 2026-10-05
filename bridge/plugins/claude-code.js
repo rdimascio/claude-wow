@@ -68,6 +68,14 @@ const plugin = {
     }
     const options = core.options('claude-code');
     const conf = FACTORY.settings(options);
+    const command = FACTORY.slashCommand(core.factory, job.text, { key: P.chatKey(job), job, cwd, conf, label: core.tag(job) });
+    if (command) {
+      core.accept(job);
+      core.log(`${core.tag(job)} slash command ${String(job.text).trim().split(/\s/)[0].slice(0, 66)}: ${command.ok ? 'done' : 'refused'}`);
+      if (command.ok) core.reply(job, command.text);
+      else core.fail(job, command.text);
+      return;
+    }
     const thread = isThread(options, cwd, core.defaultCwd);
     const rules = conf.enabled ? FACTORY.dispatcherRules(conf) : '';
     const dispatcher = conf.enabled ? { tools: thread ? '' : rules, factory: conf, deniedTools: [...FACTORY.DISPATCHER_DENIED] } : {};
