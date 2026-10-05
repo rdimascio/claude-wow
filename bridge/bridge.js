@@ -93,6 +93,7 @@ const OB = require('./observed');
 const OT = require('./observedtools');
 const MH = require('./maphold');
 const REL = require('./releases');
+const MC = require('./mcpconfig');
 
 const HERE = __dirname;
 // Config, state, transcripts, log and scratch live in the home folder (home.js:
@@ -1926,7 +1927,7 @@ const factory = FACTORY.createFactory({
   log,
   adopt: holdsLock,
   command: base => A.resolveCommand('claude', base),
-  baseConfig: () => A.agentConfig(cfg, 'claude'),
+  baseConfig: () => MC.scopeAllowed(A.agentConfig(cfg, 'claude'), MC.forClaude(USER_MCP)).agentCfg,
   env: () => A.AGENTS.claude.env({ ...process.env }),
   onDone: (run, ctx) => deliverFactoryRun(run, ctx),
 });
@@ -2074,11 +2075,12 @@ function stopPlugins() {
 // instructions (tools) go into the system prompt; its surfaces say whether the
 // run may mark the map and whether macro blocks in the reply become buttons.
 const IN_GAME_NEVER_GRANTED = LP.GOAL_WRITE_TOOLS;
-function neverOffered(denied) {
-  return rule => GM.isRunToolRule(rule) || FACTORY.isRunToolRule(rule) || GM.deniedBy(denied, rule);
+function neverOffered(denied, userMcp) {
+  const mcpBlocks = userMcp ? userMcp.blocks : () => false;
+  return rule => GM.isRunToolRule(rule) || FACTORY.isRunToolRule(rule) || GM.deniedBy(denied, rule) || mcpBlocks(rule);
 }
-function inGameGrantable(rules, denied) {
-  const blocked = neverOffered(denied);
+function inGameGrantable(rules, denied, userMcp) {
+  const blocked = neverOffered(denied, userMcp);
   return P.withoutRules(rules, IN_GAME_NEVER_GRANTED).filter(r => !blocked(r));
 }
 function homeReadDenies(plugin) {
@@ -2168,6 +2170,19 @@ function factorySocket(tag) {
   return socket;
 }
 
+const loggedMcpDropped = new Set();
+function loggedMcpBlocks(tag, never, userMcp) {
+  if (!userMcp) return never;
+  const said = new Set();
+  return rule => {
+    const blocked = never(rule);
+    if (blocked && userMcp.blocks(rule) && !said.has(rule)) {
+      said.add(rule);
+      log(`${tag} mcp: ${rule} was denied and is outside mcp.servers.${MC.serverOf(rule).server}.allow, so it is not offered to allow`);
+    }
+    return blocked;
+  };
+}
 function runAgent(job, opts = {}) {
   const key = chatKey(job);
   const cwd = opts.cwd || DEFAULT_CWD;
@@ -2194,8 +2209,9 @@ function runAgent(job, opts = {}) {
   const runDenied = [...inGameDeniedTools({ claudeRun, plugin, withRunTools: !!runToolSocket }), ...(Array.isArray(opts.deniedTools) ? opts.deniedTools : [])];
   const factoryConf = claudeRun && opts.factory && opts.factory.enabled ? opts.factory : null;
   const factoryToolSocket = factoryConf ? factorySocket(tag) : '';
-  const grantForGood = P.splitGrants(inGameGrantable(job.allow, runDenied));
-  const grantOnce = P.splitGrants(inGameGrantable(job.allowOnce, runDenied));
+  const userMcp = claudeRun ? MC.forClaude(USER_MCP) : null;
+  const grantForGood = P.splitGrants(inGameGrantable(job.allow, runDenied, userMcp));
+  const grantOnce = P.splitGrants(inGameGrantable(job.allowOnce, runDenied, userMcp));
   if (grantForGood.rules.length) {
     const added = allowRules(agentId, grantForGood.rules);
     log(`${tag} allowed for ${agentId}: ${grantForGood.rules.join(', ')}${added.length ? '' : ' (already allowed)'}`);
@@ -2209,9 +2225,14 @@ function runAgent(job, opts = {}) {
     ...(dataServer ? dataServer.rules : []),
     ...(runToolSocket ? GM.RUN_RULES : []),
     ...(factoryToolSocket ? FACTORY.RUN_RULES : []),
+    ...(userMcp ? userMcp.allowRules : []),
   ];
-  const baseCfg = A.withPluginSettings(A.agentConfig(cfg, agentId), agentId, core.options(plugin.id));
-  const acfg = A.withChatSettings(P.withRunDeniedRules(P.withRunOnlyRules(baseCfg, runOnlyRules), runDenied), agentId, chosen);
+  const scoped = MC.scopeAllowed(A.withPluginSettings(A.agentConfig(cfg, agentId), agentId, core.options(plugin.id)), userMcp);
+  if (scoped.dropped && !loggedMcpDropped.has(scoped.dropped.join(' '))) {
+    loggedMcpDropped.add(scoped.dropped.join(' '));
+    log(`${tag} mcp: allowed tool rules that mcp.servers does not allow are left out of Claude runs: ${scoped.dropped.join(', ')}`);
+  }
+  const acfg = A.withChatSettings(P.withRunDeniedRules(P.withRunOnlyRules(scoped.agentCfg, runOnlyRules), [...runDenied, ...scoped.denied]), agentId, chosen);
   const runDirs = [...grantForGood.dirs, ...grantOnce.dirs].map(d => P.resolveCwd(d, DEFAULT_CWD));
   if (runDirs.length) {
     acfg.addDirs = [...new Set([...A.addDirs(acfg), ...runDirs])];
@@ -2301,7 +2322,12 @@ function runAgent(job, opts = {}) {
     ? FACTORY.launchConfig({ runId: factoryGrant.id, token: factoryGrant.token, socket: factoryToolSocket, skills: factoryConf.skills }).server
     : null;
   if (factoryGrant) factoryChats.set(key, job);
-  const mcpJson = GM.mcpConfig({ [DM.SERVER_NAME]: dataServer && dataServer.server, [GM.SERVER_NAME]: runServer, [FACTORY.SERVER_NAME]: factoryServer });
+  const mcpJson = GM.mcpConfig({
+    ...(userMcp ? userMcp.servers : {}),
+    [DM.SERVER_NAME]: dataServer && dataServer.server,
+    [GM.SERVER_NAME]: runServer,
+    [FACTORY.SERVER_NAME]: factoryServer,
+  });
   const mcpConfigFile = mcpJson ? path.join(MCP_CONFIG_DIR, `mcp-${job.id}-${crypto.randomBytes(8).toString('hex')}.json`) : '';
   if (mcpConfigFile) {
     try {
@@ -2333,6 +2359,7 @@ function runAgent(job, opts = {}) {
       prompt,
       timeoutMs: cfg.timeoutMs,
       mcpConfig: mcpConfigFile,
+      strictMcpConfig: !!(userMcp && userMcp.strict),
     }),
   ];
   const env = agent.env({ ...process.env });
@@ -2365,6 +2392,8 @@ function runAgent(job, opts = {}) {
     dataServer && 'wowdata ' + dataServer.build + ' ' + dataServer.flavor,
     runGrant && GM.SERVER_NAME + ' for this run',
     factoryGrant && FACTORY.SERVER_NAME + ' for this run',
+    userMcp && userMcp.names.length && 'mcp ' + userMcp.names.join(' '),
+    userMcp && userMcp.strict && 'strict mcp',
   ]
     .filter(Boolean)
     .join(', ');
@@ -2402,7 +2431,7 @@ function runAgent(job, opts = {}) {
     granted,
     isDir: isDirectory,
     neverOffer: [...IN_GAME_NEVER_GRANTED, ...(acfg.deniedTools || [])],
-    neverOfferIf: neverOffered(acfg.deniedTools || []),
+    neverOfferIf: loggedMcpBlocks(tag, neverOffered(acfg.deniedTools || [], userMcp), userMcp),
   });
   job.activity = ACH.createRunLog(agentId);
   const progress = [];
@@ -3344,7 +3373,17 @@ function startSelfUpdate() {
   }
 }
 
+const USER_MCP = MC.parse(cfg.mcp, { reserved: [DM.SERVER_NAME, GM.SERVER_NAME, FACTORY.SERVER_NAME], log, env: process.env });
 banner();
+if (USER_MCP && (USER_MCP.servers.length || USER_MCP.strict)) {
+  log(`mcp: ${MC.summary(USER_MCP)}`);
+  if (USER_MCP.strict) {
+    const own = MC.claudeOwnServers({ cwd: DEFAULT_CWD });
+    log(
+      `mcp.strict: Claude runs stop loading ${own.length ? 'at least these servers of your own: ' + own.join(', ') : 'the servers of your own (none found in ~/.claude.json, .mcp.json or plugins)'}, and claude.ai connectors`,
+    );
+  }
+}
 for (const id of A.agentIds()) {
   const note = A.costCapNote(id, A.agentConfig(cfg, id));
   if (note) log(note);
