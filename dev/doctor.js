@@ -37,7 +37,11 @@ function formatText(results, ctx) {
 
 function formatJson(results, ctx) {
   const status = overallStatus(results);
-  return JSON.stringify({ status, exitCode: EXIT_CODES[status], checkout: ctx.checkout, home: ctx.homePaths.dir, at: new Date(ctx.now).toISOString(), checks: results }, null, 2);
+  return JSON.stringify(
+    { status, exitCode: EXIT_CODES[status], checkout: ctx.checkout, home: ctx.homePaths.dir, at: new Date(ctx.now).toISOString(), checks: results },
+    null,
+    2,
+  );
 }
 
 function main(argv = process.argv.slice(2), sys = createSystem(), out = console.log) {

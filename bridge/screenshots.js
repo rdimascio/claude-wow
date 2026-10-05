@@ -19,7 +19,9 @@ function statKey(file) {
   try {
     const st = fs.statSync(file);
     return `${st.size}:${st.mtimeMs}`;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 function removeUnlessRewritten(file, key) {
@@ -44,7 +46,9 @@ function watchScreenshots(dir, onFile, opts = {}) {
   let scanTimer = null;
 
   // Everything already there is the player's, or a leftover: never touched.
-  try { for (const name of fs.readdirSync(dir)) seen.set(name, { done: true }); } catch {}
+  try {
+    for (const name of fs.readdirSync(dir)) seen.set(name, { done: true });
+  } catch {}
 
   function check(name) {
     if (closed || !isScreenshotFile(name)) return;
@@ -52,7 +56,12 @@ function watchScreenshots(dir, onFile, opts = {}) {
     if (entry.done) {
       if (!entry.doneKey) return;
       let now;
-      try { now = fs.statSync(path.join(dir, name)); } catch { seen.delete(name); return; }
+      try {
+        now = fs.statSync(path.join(dir, name));
+      } catch {
+        seen.delete(name);
+        return;
+      }
       if (`${now.size}:${now.mtimeMs}` === entry.doneKey) return;
       seen.delete(name);
       check(name);
@@ -60,19 +69,35 @@ function watchScreenshots(dir, onFile, opts = {}) {
     }
     seen.set(name, entry);
     let st;
-    try { st = fs.statSync(path.join(dir, name)); } catch { seen.delete(name); return; }
+    try {
+      st = fs.statSync(path.join(dir, name));
+    } catch {
+      seen.delete(name);
+      return;
+    }
     const now = Date.now();
     if (st.size > 0 && st.size === entry.size && st.mtimeMs === entry.mtimeMs) {
       if (now - entry.at >= settleMs) entry.stable++;
-    } else { entry.size = st.size; entry.mtimeMs = st.mtimeMs; entry.at = now; entry.stable = 0; }
+    } else {
+      entry.size = st.size;
+      entry.mtimeMs = st.mtimeMs;
+      entry.at = now;
+      entry.stable = 0;
+    }
     if (entry.stable >= 1) {
       entry.done = true;
       const settledKey = `${entry.size}:${entry.mtimeMs}`;
-      try { onFile(path.join(dir, name)); } catch (e) { log(`screenshot handler failed: ${e.message}`); }
+      try {
+        onFile(path.join(dir, name));
+      } catch (e) {
+        log(`screenshot handler failed: ${e.message}`);
+      }
       const after = statKey(path.join(dir, name));
       if (after === null) seen.delete(name);
-      else if (after !== settledKey) { seen.delete(name); check(name); }
-      else entry.doneKey = after;
+      else if (after !== settledKey) {
+        seen.delete(name);
+        check(name);
+      } else entry.doneKey = after;
       return;
     }
     setTimeout(() => check(name), settleMs);
@@ -81,7 +106,11 @@ function watchScreenshots(dir, onFile, opts = {}) {
   function scan() {
     if (closed) return;
     let names = [];
-    try { names = fs.readdirSync(dir); } catch { return; }
+    try {
+      names = fs.readdirSync(dir);
+    } catch {
+      return;
+    }
     for (const name of names) {
       const entry = seen.get(name);
       if (!entry || entry.doneKey) check(name);
@@ -92,8 +121,10 @@ function watchScreenshots(dir, onFile, opts = {}) {
   }
 
   try {
-    watcher = fs.watch(dir, (event, name) => { if (name) check(String(name)); });
-    watcher.on('error', (e) => log(`screenshot watch error: ${e.message}`));
+    watcher = fs.watch(dir, (event, name) => {
+      if (name) check(String(name));
+    });
+    watcher.on('error', e => log(`screenshot watch error: ${e.message}`));
   } catch (e) {
     log(`fs.watch unavailable on ${dir} (${e.message}); polling instead`);
   }
@@ -103,7 +134,11 @@ function watchScreenshots(dir, onFile, opts = {}) {
   return {
     close() {
       closed = true;
-      if (watcher) { try { watcher.close(); } catch {} }
+      if (watcher) {
+        try {
+          watcher.close();
+        } catch {}
+      }
       if (scanTimer) clearInterval(scanTimer);
     },
     // For tests: force a scan now.
@@ -137,7 +172,11 @@ function sweepOrphans(dir, hasStrip, opts = {}) {
   let names = [];
   // Sorted: Node hands a listing back alphabetical (libuv), Bun in the order
   // the OS gives, and which files a batch takes should not depend on that.
-  try { names = fs.readdirSync(dir).sort(); } catch { return out; }
+  try {
+    names = fs.readdirSync(dir).sort();
+  } catch {
+    return out;
+  }
   const present = new Set(names);
   for (const name of [...memo.keys()]) if (!present.has(name)) memo.delete(name);
   let decodes = 0;
@@ -145,20 +184,39 @@ function sweepOrphans(dir, hasStrip, opts = {}) {
     if (!isScreenshotFile(name)) continue;
     const file = path.join(dir, name);
     let st;
-    try { st = fs.statSync(file); } catch { continue; }
+    try {
+      st = fs.statSync(file);
+    } catch {
+      continue;
+    }
     if (!st.isFile() || st.size === 0 || now - st.mtimeMs < minAgeMs) continue;
     const key = st.size + ':' + st.mtimeMs;
     let m = memo.get(name);
     if (!m || m.key !== key) {
-      if (decodes >= maxDecodes) { out.more = true; continue; }
+      if (decodes >= maxDecodes) {
+        out.more = true;
+        continue;
+      }
       decodes++;
       let ours = false;
-      try { ours = !!hasStrip(fs.readFileSync(file)); } catch (e) { log(`screenshot sweep: ${name} unreadable (${e.message}); left alone`); }
+      try {
+        ours = !!hasStrip(fs.readFileSync(file));
+      } catch (e) {
+        log(`screenshot sweep: ${name} unreadable (${e.message}); left alone`);
+      }
       m = { key, ours };
       memo.set(name, m);
     }
-    if (!m.ours) { out.kept++; continue; }
-    try { fs.unlinkSync(file); } catch (e) { log(`screenshot sweep: could not delete ${name} (${e.message})`); continue; }
+    if (!m.ours) {
+      out.kept++;
+      continue;
+    }
+    try {
+      fs.unlinkSync(file);
+    } catch (e) {
+      log(`screenshot sweep: could not delete ${name} (${e.message})`);
+      continue;
+    }
     memo.delete(name);
     out.removed.push(name);
     out.bytes += st.size;

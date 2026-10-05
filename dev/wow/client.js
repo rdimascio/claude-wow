@@ -16,9 +16,11 @@ function luaQuote(s) {
 }
 
 function crcChunk(type, data) {
-  const len = Buffer.alloc(4); len.writeUInt32BE(data.length);
+  const len = Buffer.alloc(4);
+  len.writeUInt32BE(data.length);
   const td = Buffer.concat([Buffer.from(type, 'ascii'), data]);
-  const crc = Buffer.alloc(4); crc.writeUInt32BE(zlib.crc32(td) >>> 0);
+  const crc = Buffer.alloc(4);
+  crc.writeUInt32BE(zlib.crc32(td) >>> 0);
   return Buffer.concat([len, td, crc]);
 }
 
@@ -27,22 +29,30 @@ function encodePng(width, height, rgb) {
   const raw = Buffer.alloc((stride + 1) * height);
   for (let y = 0; y < height; y++) rgb.copy(raw, y * (stride + 1) + 1, y * stride, (y + 1) * stride);
   const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(width, 0); ihdr.writeUInt32BE(height, 4);
-  ihdr[8] = 8; ihdr[9] = 2;
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 2;
   return Buffer.concat([
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-    crcChunk('IHDR', ihdr), crcChunk('IDAT', zlib.deflateSync(raw, { level: 1 })), crcChunk('IEND', Buffer.alloc(0)),
+    crcChunk('IHDR', ihdr),
+    crcChunk('IDAT', zlib.deflateSync(raw, { level: 1 })),
+    crcChunk('IEND', Buffer.alloc(0)),
   ]);
 }
 
 function encodeTga(width, height, rgb) {
   const head = Buffer.alloc(18);
   head[2] = 2;
-  head.writeUInt16LE(width, 12); head.writeUInt16LE(height, 14);
-  head[16] = 24; head[17] = 0x20;
+  head.writeUInt16LE(width, 12);
+  head.writeUInt16LE(height, 14);
+  head[16] = 24;
+  head[17] = 0x20;
   const body = Buffer.alloc(width * height * 3);
   for (let i = 0; i < width * height; i++) {
-    body[i * 3] = rgb[i * 3 + 2]; body[i * 3 + 1] = rgb[i * 3 + 1]; body[i * 3 + 2] = rgb[i * 3];
+    body[i * 3] = rgb[i * 3 + 2];
+    body[i * 3 + 1] = rgb[i * 3 + 1];
+    body[i * 3 + 2] = rgb[i * 3];
   }
   return Buffer.concat([head, body]);
 }
@@ -50,7 +60,14 @@ function encodeTga(width, height, rgb) {
 function scene(width, height, seed) {
   const rgb = Buffer.alloc(width * height * 3);
   let s = seed >>> 0 || 1;
-  const rand = () => { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; };
+  const rand = () => {
+    s ^= s << 13;
+    s >>>= 0;
+    s ^= s >>> 17;
+    s ^= s << 5;
+    s >>>= 0;
+    return s / 4294967296;
+  };
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const o = (y * width + x) * 3;
@@ -71,26 +88,29 @@ function shotName(date, ext) {
 class WowClient {
   constructor(sb, opts = {}) {
     this.sb = sb;
-    this.opts = Object.assign({
-      frameMs: 50,
-      speed: 1,
-      width: 1920,
-      height: 1080,
-      interface: 16001,
-      version: '1.60.1',
-      build: '70058',
-      loadOutOfDate: false,
-      hasScreenshot: true,
-      shotDelayMs: 120,
-      failShots: false,
-      seed: 7,
-      disabled: [],
-      fileIndex: 'launch',
-      deletionVisible: true,
-      chatDock: false,
-      hasChatLog: true,
-      chatLogBufferBytes: 49152,
-    }, opts);
+    this.opts = Object.assign(
+      {
+        frameMs: 50,
+        speed: 1,
+        width: 1920,
+        height: 1080,
+        interface: 16001,
+        version: '1.60.1',
+        build: '70058',
+        loadOutOfDate: false,
+        hasScreenshot: true,
+        shotDelayMs: 120,
+        failShots: false,
+        seed: 7,
+        disabled: [],
+        fileIndex: 'launch',
+        deletionVisible: true,
+        chatDock: false,
+        hasChatLog: true,
+        chatLogBufferBytes: 49152,
+      },
+      opts,
+    );
     this.chatLogFile = assertSafe(path.join(sb.client, 'Logs', 'WoWChatLog.txt'));
     this.chatLogBuffer = '';
     this.clientRoot = assertSafe(sb.client);
@@ -126,7 +146,11 @@ class WowClient {
     while (pending.length) {
       const dir = pending.pop();
       let entries;
-      try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { continue; }
+      try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+      } catch {
+        continue;
+      }
       for (const e of entries) {
         const full = path.join(dir, e.name);
         if (e.isDirectory()) pending.push(full);
@@ -139,7 +163,11 @@ class WowClient {
 
   visible(file) {
     let onDisk = false;
-    try { onDisk = !!file && fs.statSync(file).isFile(); } catch { onDisk = false; }
+    try {
+      onDisk = !!file && fs.statSync(file).isFile();
+    } catch {
+      onDisk = false;
+    }
     if (!this.fileIndex || !file) return onDisk;
     if (!this.fileIndex.has(file)) return false;
     return onDisk || this.opts.deletionVisible === false;
@@ -159,8 +187,13 @@ class WowClient {
     lua.lua_register(L, to_luastring('HOST_read'), S => {
       const file = this.resolveGamePath(to_jsstring(lauxlib.luaL_checkstring(S, 1)));
       let buf = null;
-      try { buf = file ? fs.readFileSync(file) : null; } catch { buf = null; }
-      if (buf) lua.lua_pushstring(S, Uint8Array.from(buf)); else lua.lua_pushnil(S);
+      try {
+        buf = file ? fs.readFileSync(file) : null;
+      } catch {
+        buf = null;
+      }
+      if (buf) lua.lua_pushstring(S, Uint8Array.from(buf));
+      else lua.lua_pushnil(S);
       return 1;
     });
     lua.lua_register(L, to_luastring('HOST_exists'), S => {
@@ -175,11 +208,13 @@ class WowClient {
     const L = this.L;
     const bytes = typeof code === 'string' ? to_luastring(code) : Uint8Array.from(code);
     if (lauxlib.luaL_loadbuffer(L, bytes, null, to_luastring(name)) !== lua.LUA_OK) {
-      const err = to_jsstring(lua.lua_tostring(L, -1)); lua.lua_pop(L, 1);
+      const err = to_jsstring(lua.lua_tostring(L, -1));
+      lua.lua_pop(L, 1);
       throw new Error(`Lua load ${name}: ${err}`);
     }
     if (lua.lua_pcall(L, 0, 0, 0) !== lua.LUA_OK) {
-      const err = to_jsstring(lua.lua_tostring(L, -1)); lua.lua_pop(L, 1);
+      const err = to_jsstring(lua.lua_tostring(L, -1));
+      lua.lua_pop(L, 1);
       throw new Error(`Lua error ${name}: ${err}`);
     }
   }
@@ -209,18 +244,26 @@ class WowClient {
   savedNames() {
     const toc = fs.readFileSync(path.join(this.clientRoot, 'Interface', 'AddOns', MAIN_ADDON, MAIN_ADDON + '.toc'), 'utf8');
     const m = /^##\s*SavedVariables:\s*(.+)$/m.exec(toc);
-    return m ? m[1].split(',').map(s => s.trim()).filter(Boolean) : [];
+    return m
+      ? m[1]
+          .split(',')
+          .map(s => s.trim())
+          .filter(Boolean)
+      : [];
   }
 
   startupAddons() {
     const loadOnDemand = /^##\s*LoadOnDemand:\s*1\s*$/m;
-    return this.indexed.filter(name => name !== MAIN_ADDON).sort().filter(name => {
-      try {
-        return !loadOnDemand.test(fs.readFileSync(path.join(this.clientRoot, 'Interface', 'AddOns', name, name + '.toc'), 'utf8'));
-      } catch {
-        return false;
-      }
-    });
+    return this.indexed
+      .filter(name => name !== MAIN_ADDON)
+      .sort()
+      .filter(name => {
+        try {
+          return !loadOnDemand.test(fs.readFileSync(path.join(this.clientRoot, 'Interface', 'AddOns', name, name + '.toc'), 'utf8'));
+        } catch {
+          return false;
+        }
+      });
   }
 
   boot() {
@@ -229,20 +272,25 @@ class WowClient {
     this.runLua(fs.readFileSync(STUB), '@wow_stub.lua');
     this.runLua(fs.readFileSync(PRELUDE), '@prelude.lua');
     const o = this.opts;
-    this.runLua(`DEV.interface = ${Number(o.interface)}; DEV.version = ${luaQuote(String(o.version))}; DEV.build = ${luaQuote(String(o.build))}; DEV.loadOutOfDate = ${!!o.loadOutOfDate}; DEV.width = ${o.width}; DEV.height = ${o.height}`);
+    this.runLua(
+      `DEV.interface = ${Number(o.interface)}; DEV.version = ${luaQuote(String(o.version))}; DEV.build = ${luaQuote(String(o.build))}; DEV.loadOutOfDate = ${!!o.loadOutOfDate}; DEV.width = ${o.width}; DEV.height = ${o.height}`,
+    );
     this.runLua(`for _, n in ipairs({${this.indexed.map(luaQuote).join(',')}}) do DEV.indexed[n] = true end`);
     this.runLua(`for _, n in ipairs({${(o.disabled || []).map(luaQuote).join(',')}}) do DEV.disabled[n] = true end`);
     if (!o.hasScreenshot) this.runLua('Screenshot = nil');
     if (!o.hasChatLog) this.runLua('SendSystemMessage = nil; LoggingChat = nil');
     if (o.chatDock) this.runLua('STUB.ChatDock()');
     this.syncClock();
-    this.runLua(`
+    this.runLua(
+      `
       local src = HOST_read("Interface/AddOns/${MAIN_ADDON}/${MAIN_ADDON}.toc")
       assert(src, "the ${MAIN_ADDON} addon is not installed in the sandbox client")
       local _, files = DEV.ParseToc(src)
       for _, f in ipairs(files) do DEV.RunAddonFile("${MAIN_ADDON}", f) end
       DEV.loaded["${MAIN_ADDON}"] = true
-    `, '@boot');
+    `,
+      '@boot',
+    );
     for (const name of this.startupAddons()) this.runLua(`DEV.LoadAddOn(${luaQuote(name)})`, '@boot-' + name);
     if (o.afterAddonLoad) this.runLua(o.afterAddonLoad, '@afterAddonLoad');
     if (fs.existsSync(this.sb.saved)) this.runLua(fs.readFileSync(this.sb.saved), '@SavedVariables');
@@ -287,7 +335,12 @@ class WowClient {
     if (this.timer) return this;
     this.lastStep = Date.now();
     this.timer = setInterval(() => {
-      try { this.step(); } catch (e) { this.note(`step error: ${e.message}`); this.fatal = e; }
+      try {
+        this.step();
+      } catch (e) {
+        this.note(`step error: ${e.message}`);
+        this.fatal = e;
+      }
     }, this.opts.frameMs);
     return this;
   }
@@ -331,7 +384,9 @@ class WowClient {
         for (let yy = y; yy < Math.min(height, y + h); yy++) {
           for (let xx = x; xx < Math.min(width, x + w); xx++) {
             const o = (yy * width + xx) * 3;
-            rgb[o] = r; rgb[o + 1] = g; rgb[o + 2] = b;
+            rgb[o] = r;
+            rgb[o + 1] = g;
+            rgb[o + 2] = b;
           }
         }
       }
@@ -395,7 +450,9 @@ class WowClient {
   }
 
   showPanel(name, left = 16, top = 1000, width = 700, height = 600) {
-    this.runLua(`if not _G[${luaQuote(name)}] then STUB.Panel(${luaQuote(name)}, ${left}, ${top}, ${width}, ${height}) end; ShowUIPanel(_G[${luaQuote(name)}])`);
+    this.runLua(
+      `if not _G[${luaQuote(name)}] then STUB.Panel(${luaQuote(name)}, ${left}, ${top}, ${width}, ${height}) end; ShowUIPanel(_G[${luaQuote(name)}])`,
+    );
   }
 
   hidePanel(name) {
@@ -419,7 +476,9 @@ class WowClient {
   }
 
   tabFor(chatId) {
-    return this.luaValue(`(function() for _, n in ipairs(CHAT_FRAMES or {}) do local f = _G[n]; if f.claudewowChatId == ${luaQuote(chatId)} and f.inUse ~= false then return n end end end)()`);
+    return this.luaValue(
+      `(function() for _, n in ipairs(CHAT_FRAMES or {}) do local f = _G[n]; if f.claudewowChatId == ${luaQuote(chatId)} and f.inUse ~= false then return n end end end)()`,
+    );
   }
 
   tabLines(chatId) {
@@ -441,7 +500,9 @@ class WowClient {
   }
 
   windowRect() {
-    return this.json('{ left = ClaudeWoWFrame:GetLeft(), top = ClaudeWoWFrame:GetTop(), right = ClaudeWoWFrame:GetRight(), bottom = ClaudeWoWFrame:GetBottom(), shown = ClaudeWoWFrame:IsShown(), alpha = ClaudeWoWFrame:GetAlpha() }');
+    return this.json(
+      '{ left = ClaudeWoWFrame:GetLeft(), top = ClaudeWoWFrame:GetTop(), right = ClaudeWoWFrame:GetRight(), bottom = ClaudeWoWFrame:GetBottom(), shown = ClaudeWoWFrame:IsShown(), alpha = ClaudeWoWFrame:GetAlpha() }',
+    );
   }
 
   setUiHidden(hidden) {
@@ -461,7 +522,9 @@ class WowClient {
   }
 
   activeChat() {
-    return this.json('(function() for _, c in ipairs(ClaudeWoWDB.chats) do if c.id == ClaudeWoWDB.activeChat then return c end end return ClaudeWoWDB.chats[1] end)()');
+    return this.json(
+      '(function() for _, c in ipairs(ClaudeWoWDB.chats) do if c.id == ClaudeWoWDB.activeChat then return c end end return ClaudeWoWDB.chats[1] end)()',
+    );
   }
 
   connected() {
@@ -498,11 +561,14 @@ class WowClient {
     await this.connect(timeoutMs);
     const id = this.lastSeq() + 1;
     this.send(text);
-    const reply = await this.waitFor(() => {
-      const c = this.activeChat();
-      if (!c || c.pendingId) return null;
-      return (c.history || []).find(m => m.id === id && m.role !== 'user') || null;
-    }, { timeoutMs, label: `the reply to #${id}` });
+    const reply = await this.waitFor(
+      () => {
+        const c = this.activeChat();
+        if (!c || c.pendingId) return null;
+        return (c.history || []).find(m => m.id === id && m.role !== 'user') || null;
+      },
+      { timeoutMs, label: `the reply to #${id}` },
+    );
     return { id, ...reply };
   }
 }

@@ -2,7 +2,7 @@
 
 class DumpError extends Error {}
 
-const ESCAPES = Object.freeze({ '0': '\0', b: '\b', n: '\n', r: '\r', t: '\t', Z: '\x1a', "'": "'", '"': '"', '\\': '\\' });
+const ESCAPES = Object.freeze({ 0: '\0', b: '\b', n: '\n', r: '\r', t: '\t', Z: '\x1a', "'": "'", '"': '"', '\\': '\\' });
 const NUMBER = /^-?\d+(\.\d+)?(e[-+]?\d+)?$/i;
 const IDENT = /^[a-z_][a-z0-9_]*$/i;
 
@@ -42,9 +42,17 @@ function* tuples(text, from, table) {
         for (;;) {
           const c = text[i];
           if (c === undefined) throw new DumpError(`${table}: unterminated string`);
-          if (c === '\\') { s += ESCAPES[text[i + 1]] ?? text[i + 1]; i += 2; continue; }
+          if (c === '\\') {
+            s += ESCAPES[text[i + 1]] ?? text[i + 1];
+            i += 2;
+            continue;
+          }
           if (c === "'") {
-            if (text[i + 1] === "'") { s += "'"; i += 2; continue; }
+            if (text[i + 1] === "'") {
+              s += "'";
+              i += 2;
+              continue;
+            }
             i++;
             break;
           }
@@ -58,8 +66,14 @@ function* tuples(text, from, table) {
         row.push(scalar(text.slice(i, j), table));
         i = j;
       }
-      if (text[i] === ',') { i++; continue; }
-      if (text[i] === ')') { i++; break; }
+      if (text[i] === ',') {
+        i++;
+        continue;
+      }
+      if (text[i] === ')') {
+        i++;
+        break;
+      }
       throw new DumpError(`${table}: malformed row at offset ${i}`);
     }
     yield row;
@@ -78,7 +92,8 @@ function* rows(text, table, wanted) {
   const any = new RegExp(`INSERT\\s+(?:IGNORE\\s+)?INTO\\s+\`?${table}\`?[\\s(]`, 'gi');
   const canonical = text.split(head).length - 1;
   const all = (text.match(any) || []).length;
-  if (all !== canonical) throw new DumpError(`${table}: ${all - canonical} INSERT statement(s) in a form this reader does not read (a column list or other spelling)`);
+  if (all !== canonical)
+    throw new DumpError(`${table}: ${all - canonical} INSERT statement(s) in a form this reader does not read (a column list or other spelling)`);
   let at = text.indexOf(head);
   while (at >= 0) {
     for (const row of tuples(text, at + head.length, table)) {

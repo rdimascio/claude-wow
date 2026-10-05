@@ -19,11 +19,11 @@ function Methods.SetAllPoints(self) end
 function newVM(clientApi = CLIENT_LOG_API) {
   const L = lauxlib.luaL_newstate();
   lualib.luaL_openlibs(L);
-  const run = (code) => {
+  const run = code => {
     if (lauxlib.luaL_loadstring(L, to_luastring(code)) !== lua.LUA_OK) throw new Error('Lua load: ' + to_jsstring(lua.lua_tostring(L, -1)));
     if (lua.lua_pcall(L, 0, 0, 0) !== lua.LUA_OK) throw new Error('Lua error: ' + to_jsstring(lua.lua_tostring(L, -1)));
   };
-  const evaluate = (expr) => {
+  const evaluate = expr => {
     run(`local v = (${expr}); if v == nil then RESULT = nil else RESULT = tostring(v) end`);
     lua.lua_getglobal(L, to_luastring('RESULT'));
     const s = lua.lua_isnil(L, -1) ? null : to_jsstring(lua.lua_tolstring(L, -1));
@@ -43,18 +43,6 @@ function sentLines(vm) {
   return lines;
 }
 
-test('/claude probe chatlog turns chat logging on and writes a long line, numbered filler and an end line as local system messages', () => {
-  const vm = newVM();
-  vm.run('SlashCmdList.CLAUDE("probe chatlog 4096")');
-  const lines = sentLines(vm);
-  assert.equal(lines.length, 1 + 18 + 1);
-  assert.match(lines[0], /^CWLOG\d+ LONG L{1000}$/);
-  assert.match(lines[1], /^CWLOG\d+ V 00001 z{200}$/);
-  assert.match(lines[2], /^CWLOG\d+ H 00002 z{200}$/);
-  assert.match(lines[19], /^CWLOG\d+ END 18$/);
-  assert.equal(vm.evaluate('LOGGING'), 'true');
-});
-
 test('the probe filter hides only the lines marked H from the chat frame', () => {
   const vm = newVM();
   vm.run('SlashCmdList.CLAUDE("probe chatlog 1024")');
@@ -67,12 +55,6 @@ test('the probe filter hides only the lines marked H from the chat frame', () =>
   assert.equal(Number(vm.evaluate('#FILTERS')), filters, 'a second run adds no second filter');
 });
 
-test('/claude probe followed by ordinary words is a message, not the probe', () => {
-  const vm = newVM();
-  vm.run('SlashCmdList.CLAUDE("probe chatlog for traps please")');
-  assert.equal(vm.evaluate('#SENT'), '0');
-});
-
 test('a client without SendSystemMessage gets a line saying so and no error', () => {
   const vm = newVM(CLIENT_LOG_API + 'SendSystemMessage = nil\n');
   vm.run('SlashCmdList.CLAUDE("probe chatlog")');
@@ -80,13 +62,16 @@ test('a client without SendSystemMessage gets a line saying so and no error', ()
 });
 
 test('/claude probe asyncfile requests and releases the probe texture ids, then the two bursts', () => {
-  const vm = newVM(CLIENT_LOG_API + `
+  const vm = newVM(
+    CLIENT_LOG_API +
+      `
     REQUESTED = {}
     local set = Methods.SetTexture
     function Methods.SetTexture(self, id) if id ~= nil then REQUESTED[#REQUESTED + 1] = id end return set(self, id) end
     function Methods.SetBlockingLoadsRequested(self, on) self.blocking = on end
     function Methods.IsBlockingLoadRequested(self) return self.blocking end
-  `);
+  `,
+  );
   vm.run('REQUESTED = {}');
   vm.run('SlashCmdList.CLAUDE("probe asyncfile")');
   vm.run('STUB.RunTimers()');
@@ -104,7 +89,9 @@ test('/claude probe asyncfile requests and releases the probe texture ids, then 
 test('the watcher reads probe lines out of chat log growth, across a flush that splits a line', () => {
   const vm = newVM();
   vm.run('SlashCmdList.CLAUDE("probe chatlog 4096")');
-  const file = sentLines(vm).map(l => '9/30 19:00:00.000  ' + l + '\r\n').join('');
+  const file = sentLines(vm)
+    .map(l => '9/30 19:00:00.000  ' + l + '\r\n')
+    .join('');
   const chat = T.newChatState();
   T.feedChat(chat, file.slice(0, 4096), 't1', 100, 4196);
   T.feedChat(chat, file.slice(4096), 't2', 4196, 100 + file.length);

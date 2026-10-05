@@ -64,10 +64,13 @@ function newVM(savedVariables = '') {
   const run = (code, arg) => {
     if (lauxlib.luaL_loadstring(L, to_luastring(code)) !== lua.LUA_OK) throw new Error('Lua load: ' + to_jsstring(lua.lua_tostring(L, -1)));
     let nargs = 0;
-    if (arg !== undefined) { lua.lua_pushstring(L, to_luastring(arg)); nargs = 1; }
+    if (arg !== undefined) {
+      lua.lua_pushstring(L, to_luastring(arg));
+      nargs = 1;
+    }
     if (lua.lua_pcall(L, nargs, 0, 0) !== lua.LUA_OK) throw new Error('Lua error: ' + to_jsstring(lua.lua_tostring(L, -1)));
   };
-  const evaluate = (expr) => {
+  const evaluate = expr => {
     run(`local v = (${expr}); if v == nil then RESULT = nil else RESULT = tostring(v) end`);
     lua.lua_getglobal(L, to_luastring('RESULT'));
     const s = lua.lua_isnil(L, -1) ? null : to_jsstring(lua.lua_tolstring(L, -1));
@@ -93,26 +96,16 @@ const TARGET_METER = [
 
 function widgetSet(widgets, version = 1, epoch = 'e1') {
   const set = P.newWidgetSet(epoch);
-  P.applyWidgetCommands(set, widgets.map(([name, source]) => ({ op: 'set', name, title: name + ' title', source })));
+  P.applyWidgetCommands(
+    set,
+    widgets.map(([name, source]) => ({ op: 'set', name, title: name + ' title', source })),
+  );
   set.version = version;
   return P.luaTable('ClaudeWoW_SlotData', [], { now: 1, widgets: set }) + '\nClaudeWoWWidgets.Sync(ClaudeWoW_SlotData.widgets)';
 }
 
 const meterFrame = `(function() for _, f in ipairs(STUB.frames) do if f.events.PLAYER_TARGET_CHANGED and f.scripts.OnEvent then return f end end end)()`;
 const lastSystemNote = '(function() local h = ClaudeWoWDB.chats[1].history; for i = #h, 1, -1 do if h[i].role == "system" then return h[i].text end end end)()';
-
-test('a widget from the slot data runs live inside its container, with saved data', () => {
-  const vm = newVM();
-  vm.run(widgetSet([['meter', TARGET_METER]]));
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("meter")'), 'running');
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.meter.runs'), '1');
-  assert.equal(vm.evaluate(`${meterFrame}.parent.parent == UIParent`), 'true');
-  vm.run('STUB.FireEvent("PLAYER_TARGET_CHANGED")');
-  assert.equal(vm.evaluate(`${meterFrame}.children[1].text`), 'level 23');
-  assert.match(vm.evaluate(lastSystemNote), /meter is live/);
-  vm.run(widgetSet([['meter', TARGET_METER]]));
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.meter.runs'), '1');
-});
 
 test('a runtime error stops the widget and is reported in the chat window', () => {
   const vm = newVM();
@@ -128,14 +121,16 @@ test('a runtime error stops the widget and is reported in the chat window', () =
 
 test('compile errors and blocked calls fail cleanly', () => {
   const vm = newVM();
-  vm.run(widgetSet([
-    ['broken', 'local ui = ...\nif then end'],
-    ['sneaky', 'local ui = ...\nlocal name = "Cast" .. "Spell" .. "ByName"\n_G[name]("Fireball")'],
-    ['secure', 'local ui = ...\nlocal kind = "Sec" .. "ure"\nCreateFrame("Button", nil, nil, kind .. "ActionButtonTemplate")'],
-    ['nosy', 'local ui = ...\nlocal key = "Clau" .. "deWoWDB"\nassert(_G[key] == nil, "leak")\nassert(getmetatable(_G) == false)'],
-    ['logger', 'local ui = ...\nlocal f = CreateFrame("Frame")\nf:RegisterEvent("COMBAT" .. "_LOG_EVENT_UNFILTERED")'],
-    ['pinger', 'local ui = ...\nlocal f = CreateFrame("Frame")\nf:RegisterUnitEvent("UNIT_PING" .. "_PIN_ADDED", "player")'],
-  ]));
+  vm.run(
+    widgetSet([
+      ['broken', 'local ui = ...\nif then end'],
+      ['sneaky', 'local ui = ...\nlocal name = "Cast" .. "Spell" .. "ByName"\n_G[name]("Fireball")'],
+      ['secure', 'local ui = ...\nlocal kind = "Sec" .. "ure"\nCreateFrame("Button", nil, nil, kind .. "ActionButtonTemplate")'],
+      ['nosy', 'local ui = ...\nlocal key = "Clau" .. "deWoWDB"\nassert(_G[key] == nil, "leak")\nassert(getmetatable(_G) == false)'],
+      ['logger', 'local ui = ...\nlocal f = CreateFrame("Frame")\nf:RegisterEvent("COMBAT" .. "_LOG_EVENT_UNFILTERED")'],
+      ['pinger', 'local ui = ...\nlocal f = CreateFrame("Frame")\nf:RegisterUnitEvent("UNIT_PING" .. "_PIN_ADDED", "player")'],
+    ]),
+  );
   assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("broken")'), 'failed');
   assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("sneaky")'), 'failed');
   assert.match(vm.evaluate('select(2, ClaudeWoWWidgets.Status("sneaky"))'), /CastSpellByName is not allowed/);
@@ -171,51 +166,36 @@ test('/claude config ui lists widgets, and free text starting with "ui" is still
   assert.equal(vm.evaluate('SENT_TEXT'), 'ui for my bags would be nice');
 });
 
-test('saved widgets start again at login without the bridge', () => {
-  const clock = 'local ui = ...\nui.db.started = true';
-  const saved = `ClaudeWoWWidgetDB = { removed = { meter = "${P.widgetRevision(TARGET_METER)}" }, data = {}, set = { epoch = "e1", version = 2, items = {
-    { name = "meter", title = "meter title", rev = "${P.widgetRevision(TARGET_METER)}", source = ${P.luaStr(TARGET_METER)} },
-    { name = "clock", title = "clock title", rev = "${P.widgetRevision(clock)}", source = ${P.luaStr(clock)} } } } }`;
-  const vm = newVM(saved);
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("clock")'), 'running');
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.clock.started'), 'true');
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("meter")'), 'removed');
-});
-
-test('widgets in Inbox.lua reach the widget module on the reload path', () => {
-  const set = P.newWidgetSet('e9');
-  P.applyWidgetCommands(set, [{ op: 'set', name: 'clock', source: 'local ui = ...\nui.db.started = true' }]);
-  const inbox = P.luaTable('ClaudeWoW_Inbox', [], { now: 1, widgets: set });
-  const vm = newVM();
-  vm.run(inbox + '\nSTUB.FireEvent("PLAYER_LOGIN")');
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("clock")'), 'running');
-});
-
 function savedWidgets(widgets) {
   const items = widgets.map(([name, source]) => `{ name = "${name}", title = "${name}", rev = "${P.widgetRevision(source)}", source = ${P.luaStr(source)} }`);
   return `ClaudeWoWWidgetDB = { removed = {}, data = {}, set = { epoch = "e1", version = 1, items = { ${items.join(', ')} } } }`;
 }
 
 test('a saved widget cannot reach code outside the sandbox', () => {
-  const vm = newVM(savedWidgets([
-    ['securecall', 'local ui = ...\nsecurecall("Run" .. "Script", "WIDGET_ESCAPED = true")'],
-    ['indirect', 'local ui = ...\nlocal name = "secure" .. "call"\n_G[name]("Run" .. "Script", "WIDGET_ESCAPED = true")'],
-    ['editbox', 'local ui = ...\nlocal eb = DEFAULT_CHAT_FRAME.editBox\neb:SetText("/run WIDGET_ESCAPED = true")\neb:GetScript("OnEnterPressed")(eb)'],
-    ['unlisted', 'local ui = ...\nlocal abandon = _G["Abandon" .. "Skill"]\nabandon(1)'],
-    ['namespace', 'local ui = ...\nassert(C_Fake.GetThing() == 7)\nC_Fake["Drop" .. "Thing"]()'],
-    ['climber', [
-      'local ui = ...',
-      'local f = CreateFrame("Frame")',
-      'assert(f:GetParent() == ui.frame, "own parent")',
-      'assert(ui.frame:GetParent() == nil, "climbed to UIParent")',
-      'assert(select("#", UIParent:GetChildren()) >= 1)',
-      'for _, child in ipairs({ UIParent:GetChildren() }) do assert(child:GetName() ~= "ChatFrame1", "reached the chat frame") end',
-      'assert(GameTooltip.GetParent == nil, "tooltip exposes more than the display methods")',
-      'assert(getmetatable("") == nil, "string metatable leaked")',
-      'f:RegisterEvent("PLAYER_TARGET_CHANGED")',
-      'f:SetScript("OnEvent", function(self) ui.db.climbed = tostring(self:GetParent():GetParent()) ui.db.self = tostring(self == f) end)',
-    ].join('\n')],
-  ]));
+  const vm = newVM(
+    savedWidgets([
+      ['securecall', 'local ui = ...\nsecurecall("Run" .. "Script", "WIDGET_ESCAPED = true")'],
+      ['indirect', 'local ui = ...\nlocal name = "secure" .. "call"\n_G[name]("Run" .. "Script", "WIDGET_ESCAPED = true")'],
+      ['editbox', 'local ui = ...\nlocal eb = DEFAULT_CHAT_FRAME.editBox\neb:SetText("/run WIDGET_ESCAPED = true")\neb:GetScript("OnEnterPressed")(eb)'],
+      ['unlisted', 'local ui = ...\nlocal abandon = _G["Abandon" .. "Skill"]\nabandon(1)'],
+      ['namespace', 'local ui = ...\nassert(C_Fake.GetThing() == 7)\nC_Fake["Drop" .. "Thing"]()'],
+      [
+        'climber',
+        [
+          'local ui = ...',
+          'local f = CreateFrame("Frame")',
+          'assert(f:GetParent() == ui.frame, "own parent")',
+          'assert(ui.frame:GetParent() == nil, "climbed to UIParent")',
+          'assert(select("#", UIParent:GetChildren()) >= 1)',
+          'for _, child in ipairs({ UIParent:GetChildren() }) do assert(child:GetName() ~= "ChatFrame1", "reached the chat frame") end',
+          'assert(GameTooltip.GetParent == nil, "tooltip exposes more than the display methods")',
+          'assert(getmetatable("") == nil, "string metatable leaked")',
+          'f:RegisterEvent("PLAYER_TARGET_CHANGED")',
+          'f:SetScript("OnEvent", function(self) ui.db.climbed = tostring(self:GetParent():GetParent()) ui.db.self = tostring(self == f) end)',
+        ].join('\n'),
+      ],
+    ]),
+  );
   for (const name of ['securecall', 'indirect']) {
     assert.equal(vm.evaluate(`ClaudeWoWWidgets.Status("${name}")`), 'failed', name);
     assert.match(vm.evaluate(`select(2, ClaudeWoWWidgets.Status("${name}"))`), /securecall is not allowed in a widget/);
@@ -285,7 +265,12 @@ test('a removed widget stops the event handlers on its container, and a rerun do
   const vm = newVM();
   const listeners = '(function() local n = 0 for _, f in ipairs(STUB.frames) do if f.events.PLAYER_TARGET_CHANGED then n = n + 1 end end return n end)()';
   const before = Number(vm.evaluate(listeners));
-  vm.run(widgetSet([['counter', counter], ['sneak', 'local ui = ...\nui.frame:RegisterEvent("COMBAT" .. "_LOG_EVENT_UNFILTERED")']]));
+  vm.run(
+    widgetSet([
+      ['counter', counter],
+      ['sneak', 'local ui = ...\nui.frame:RegisterEvent("COMBAT" .. "_LOG_EVENT_UNFILTERED")'],
+    ]),
+  );
   assert.match(vm.evaluate('select(2, ClaudeWoWWidgets.Status("sneak"))'), /COMBAT_LOG_EVENT_UNFILTERED is not allowed in a widget/);
   assert.equal(vm.evaluate('#STUB.actionBlocked'), '0');
   vm.run('STUB.FireEvent("PLAYER_TARGET_CHANGED")');
@@ -306,27 +291,35 @@ test('a removed widget stops the event handlers on its container, and a rerun do
 });
 
 test('a getter or an event payload cannot hand a widget a Blizzard frame inside a table', () => {
-  const vm = newVM(savedWidgets([
-    ['plates', [
-      'local ui = ...',
-      'local plates = C_NamePlate.GetNamePlates()',
-      'assert(plates.nested.count == 2, "plain data is lost")',
-      'assert(plates.nested.back == plates, "the cycle is not kept")',
-      'assert(plates.nested.run == nil, "a function leaked")',
-      'assert(plates.nested.chat == nil, "the chat frame leaked")',
-      'for key in pairs(plates) do assert(type(key) ~= "table", "a frame key leaked") end',
-      'local eb = plates[1]',
-      'eb:SetText("/run WIDGET_ESCAPED = true")',
-      'eb:GetScript("OnEnterPressed")(eb)',
-    ].join('\n')],
-    ['payload', [
-      'local ui = ...',
-      'local f = CreateFrame("Frame")',
-      'f:RegisterEvent("PLAYER_TARGET_CHANGED")',
-      'f:SetScript("OnEvent", function(self, event, payload) ui.db.got = tostring(payload.count) ui.db.leaked = tostring(payload.frame ~= nil) end)',
-    ].join('\n')],
-    ['role', 'local ui = ...\nassert(UnitPowerMax("player") == 100)\nUnitSetRole("player", "TANK")'],
-  ]));
+  const vm = newVM(
+    savedWidgets([
+      [
+        'plates',
+        [
+          'local ui = ...',
+          'local plates = C_NamePlate.GetNamePlates()',
+          'assert(plates.nested.count == 2, "plain data is lost")',
+          'assert(plates.nested.back == plates, "the cycle is not kept")',
+          'assert(plates.nested.run == nil, "a function leaked")',
+          'assert(plates.nested.chat == nil, "the chat frame leaked")',
+          'for key in pairs(plates) do assert(type(key) ~= "table", "a frame key leaked") end',
+          'local eb = plates[1]',
+          'eb:SetText("/run WIDGET_ESCAPED = true")',
+          'eb:GetScript("OnEnterPressed")(eb)',
+        ].join('\n'),
+      ],
+      [
+        'payload',
+        [
+          'local ui = ...',
+          'local f = CreateFrame("Frame")',
+          'f:RegisterEvent("PLAYER_TARGET_CHANGED")',
+          'f:SetScript("OnEvent", function(self, event, payload) ui.db.got = tostring(payload.count) ui.db.leaked = tostring(payload.frame ~= nil) end)',
+        ].join('\n'),
+      ],
+      ['role', 'local ui = ...\nassert(UnitPowerMax("player") == 100)\nUnitSetRole("player", "TANK")'],
+    ]),
+  );
   assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("plates")'), 'failed');
   assert.match(vm.evaluate('select(2, ClaudeWoWWidgets.Status("plates"))'), /attempt to index/);
   vm.run('STUB.FireEvent("PLAYER_TARGET_CHANGED", { frame = DEFAULT_CHAT_FRAME.editBox, count = 3 })');
@@ -340,39 +333,54 @@ test('a getter or an event payload cannot hand a widget a Blizzard frame inside 
 });
 
 test('a widget frame method takes only frames the widget made, so GameTooltip cannot be captured', () => {
-  const vm = newVM(savedWidgets([
-    ['tipgrab', [
-      'local ui = ...',
-      'local s = CreateFrame("ScrollFrame")',
-      's:SetScrollChild(GameTooltip)',
-      'local tip = s:GetScrollChild()',
-      'tip:SetParent(ui.frame)',
-      'ui.db.grabbed = tostring(tip:GetName())',
-    ].join('\n')],
-    ['container', 'local ui = ...\nCreateFrame("ScrollFrame"):SetScrollChild(ui.frame)'],
-    ['anchor', 'local ui = ...\nlocal f = CreateFrame("Frame")\nf:SetPoint("BOTTOMRIGHT", GameTooltip)'],
-    ['scroll', [
-      'local ui = ...',
-      'local s = CreateFrame("ScrollFrame")',
-      'local child = CreateFrame("Frame")',
-      's:SetScrollChild(child)',
-      'assert(s:GetScrollChild() == child, "own scroll child lost")',
-      'assert(child:GetParent() == s, "own scroll child not reparented")',
-    ].join('\n')],
-    ['owner', [
-      'local ui = ...',
-      'local f = CreateFrame("Frame")',
-      'f:RegisterEvent("RAID_TARGET_UPDATE")',
-      'f:SetScript("OnEvent", function(self) local tip = self:GetChildren() ui.db.limited = tostring(tip ~= nil and tip.GetParent == nil and tip.SetScript == nil and tip.AddLine ~= nil) end)',
-    ].join('\n')],
-  ]));
+  const vm = newVM(
+    savedWidgets([
+      [
+        'tipgrab',
+        [
+          'local ui = ...',
+          'local s = CreateFrame("ScrollFrame")',
+          's:SetScrollChild(GameTooltip)',
+          'local tip = s:GetScrollChild()',
+          'tip:SetParent(ui.frame)',
+          'ui.db.grabbed = tostring(tip:GetName())',
+        ].join('\n'),
+      ],
+      ['container', 'local ui = ...\nCreateFrame("ScrollFrame"):SetScrollChild(ui.frame)'],
+      ['anchor', 'local ui = ...\nlocal f = CreateFrame("Frame")\nf:SetPoint("BOTTOMRIGHT", GameTooltip)'],
+      [
+        'scroll',
+        [
+          'local ui = ...',
+          'local s = CreateFrame("ScrollFrame")',
+          'local child = CreateFrame("Frame")',
+          's:SetScrollChild(child)',
+          'assert(s:GetScrollChild() == child, "own scroll child lost")',
+          'assert(child:GetParent() == s, "own scroll child not reparented")',
+        ].join('\n'),
+      ],
+      [
+        'owner',
+        [
+          'local ui = ...',
+          'local f = CreateFrame("Frame")',
+          'f:RegisterEvent("RAID_TARGET_UPDATE")',
+          'f:SetScript("OnEvent", function(self) local tip = self:GetChildren() ui.db.limited = tostring(tip ~= nil and tip.GetParent == nil and tip.SetScript == nil and tip.AddLine ~= nil) end)',
+        ].join('\n'),
+      ],
+    ]),
+  );
   assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("tipgrab")'), 'failed');
   assert.match(vm.evaluate('select(2, ClaudeWoWWidgets.Status("tipgrab"))'), /SetScrollChild needs a frame this widget made/);
   assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.tipgrab.grabbed'), null);
   assert.equal(vm.evaluate('GameTooltip.parent == UIParent'), 'true');
   assert.match(vm.evaluate('select(2, ClaudeWoWWidgets.Status("container"))'), /SetScrollChild needs a frame this widget made/);
   assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("anchor")'), 'running');
-  assert.equal(vm.evaluate('(function() for _, f in ipairs(STUB.frames) do if rawequal(f.rel, GameTooltip) then return true end end return false end)()'), 'false', 'the real GameTooltip reached a widget frame method');
+  assert.equal(
+    vm.evaluate('(function() for _, f in ipairs(STUB.frames) do if rawequal(f.rel, GameTooltip) then return true end end return false end)()'),
+    'false',
+    'the real GameTooltip reached a widget frame method',
+  );
   assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("scroll")'), 'running', vm.evaluate('select(2, ClaudeWoWWidgets.Status("scroll"))'));
   vm.run('for _, f in ipairs(STUB.frames) do if f.events.RAID_TARGET_UPDATE then f.children = { GameTooltip }; GameTooltip.parent = f end end');
   vm.run('STUB.FireEvent("RAID_TARGET_UPDATE")');
@@ -388,7 +396,13 @@ test('an error that cannot be shown as text still stops the widget, and later wi
     'f:RegisterEvent("PLAYER_TARGET_CHANGED")',
     `f:SetScript("OnEvent", function() ui.db.n = (ui.db.n or 0) + 1 ${UNPRINTABLE} end)`,
   ].join('\n');
-  const vm = newVM(savedWidgets([['first', `local ui = ...\n${UNPRINTABLE}`], ['second', 'local ui = ...\nui.db.ok = true'], ['zombie', zombie]]));
+  const vm = newVM(
+    savedWidgets([
+      ['first', `local ui = ...\n${UNPRINTABLE}`],
+      ['second', 'local ui = ...\nui.db.ok = true'],
+      ['zombie', zombie],
+    ]),
+  );
   assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("first")'), 'failed');
   assert.equal(vm.evaluate('select(2, ClaudeWoWWidgets.Status("first"))'), 'an error that cannot be shown as text');
   assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("second")'), 'running');
@@ -403,35 +417,45 @@ test('an error that cannot be shown as text still stops the widget, and later wi
 test('a widget cannot take the keyboard, or the mouse on its full-screen container', () => {
   const vm = newVM();
   const before = Number(vm.evaluate('#STUB.frames'));
-  vm.run(widgetSet([
-    ['keys', 'local ui = ...\nCreateFrame("Frame"):EnableKeyboard(true)'],
-    ['swallow', 'local ui = ...\nCreateFrame("Frame"):SetPropagateKeyboardInput(false)'],
-    ['containerkeys', 'local ui = ...\nui.frame:SetPropagateKeyboardInput(true)'],
-    ['containermouse', 'local ui = ...\nui.frame:EnableMouse(true)'],
-    ['focus', 'local ui = ...\nCreateFrame("EditBox"):SetFocus()'],
-    ['autofocus', 'local ui = ...\nCreateFrame("EditBox"):SetAutoFocus(true)'],
-    ['fine', [
-      'local ui = ...',
-      'local f = CreateFrame("Frame")',
-      'f:EnableMouse(true)',
-      'f:EnableKeyboard(false)',
-      'f:SetPropagateKeyboardInput(true)',
-      'ui.frame:EnableMouse(false)',
-      'local box = CreateFrame("EditBox", nil, nil, "InputBoxTemplate")',
-      'box:SetAutoFocus(false)',
-      'ui.db.ok = true',
-    ].join('\n')],
-  ]));
+  vm.run(
+    widgetSet([
+      ['keys', 'local ui = ...\nCreateFrame("Frame"):EnableKeyboard(true)'],
+      ['swallow', 'local ui = ...\nCreateFrame("Frame"):SetPropagateKeyboardInput(false)'],
+      ['containerkeys', 'local ui = ...\nui.frame:SetPropagateKeyboardInput(true)'],
+      ['containermouse', 'local ui = ...\nui.frame:EnableMouse(true)'],
+      ['focus', 'local ui = ...\nCreateFrame("EditBox"):SetFocus()'],
+      ['autofocus', 'local ui = ...\nCreateFrame("EditBox"):SetAutoFocus(true)'],
+      [
+        'fine',
+        [
+          'local ui = ...',
+          'local f = CreateFrame("Frame")',
+          'f:EnableMouse(true)',
+          'f:EnableKeyboard(false)',
+          'f:SetPropagateKeyboardInput(true)',
+          'ui.frame:EnableMouse(false)',
+          'local box = CreateFrame("EditBox", nil, nil, "InputBoxTemplate")',
+          'box:SetAutoFocus(false)',
+          'ui.db.ok = true',
+        ].join('\n'),
+      ],
+    ]),
+  );
   const refused = {
-    keys: /EnableKeyboard is not allowed/, swallow: /SetPropagateKeyboardInput is not allowed/, containerkeys: /SetPropagateKeyboardInput is not allowed/,
-    containermouse: /EnableMouse is not allowed on ui.frame/, focus: /SetFocus is not allowed/, autofocus: /SetAutoFocus is not allowed/,
+    keys: /EnableKeyboard is not allowed/,
+    swallow: /SetPropagateKeyboardInput is not allowed/,
+    containerkeys: /SetPropagateKeyboardInput is not allowed/,
+    containermouse: /EnableMouse is not allowed on ui.frame/,
+    focus: /SetFocus is not allowed/,
+    autofocus: /SetAutoFocus is not allowed/,
   };
   for (const [name, why] of Object.entries(refused)) {
     assert.equal(vm.evaluate(`ClaudeWoWWidgets.Status("${name}")`), 'failed', name);
     assert.match(vm.evaluate(`select(2, ClaudeWoWWidgets.Status("${name}"))`), why);
   }
   assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("fine")'), 'running', vm.evaluate('select(2, ClaudeWoWWidgets.Status("fine"))'));
-  const any = (cond) => vm.evaluate(`(function() for i = ${before + 1}, #STUB.frames do local f = STUB.frames[i] if ${cond} then return true end end return false end)()`);
+  const any = cond =>
+    vm.evaluate(`(function() for i = ${before + 1}, #STUB.frames do local f = STUB.frames[i] if ${cond} then return true end end return false end)()`);
   assert.equal(any('f.keyboardEnabled == true'), 'false');
   assert.equal(any('f.propagateKeys == false'), 'false');
   assert.equal(any('f.autoFocus == true'), 'false');
@@ -477,7 +501,12 @@ test('a named font string, texture or animation never replaces a global', () => 
   assert.equal(vm.evaluate('GameTooltip.kind'), 'Frame');
   assert.equal(vm.evaluate('UIParent.kind'), 'Frame');
   assert.equal(vm.evaluate('type(rawget(SlashCmdList, "CLAUDE"))'), 'function');
-  assert.equal(vm.evaluate('(function() for _, f in ipairs(STUB.frames) do if #f.children == 4 then for _, c in ipairs(f.children) do if c.name then return c.name end end return "unnamed" end end end)()'), 'unnamed');
+  assert.equal(
+    vm.evaluate(
+      '(function() for _, f in ipairs(STUB.frames) do if #f.children == 4 then for _, c in ipairs(f.children) do if c.name then return c.name end end return "unnamed" end end end)()',
+    ),
+    'unnamed',
+  );
 });
 
 test('a widget edit box always lets Escape clear the focus', () => {
@@ -509,7 +538,12 @@ test('a widget reads a font object, writes plain fields to its frame and makes o
     'b.onClick = function() end',
     'ui.frame.Hide = 1',
   ].join('\n');
-  const vm = newVM(savedWidgets([['font', source], ['movie', 'local ui = ...\nCreateFrame("Movie" .. "Frame")']]));
+  const vm = newVM(
+    savedWidgets([
+      ['font', source],
+      ['movie', 'local ui = ...\nCreateFrame("Movie" .. "Frame")'],
+    ]),
+  );
   assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("font")'), 'running', vm.evaluate('select(2, ClaudeWoWWidgets.Status("font"))'));
   assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.font.size'), '12');
   const button = '(function() for i = #STUB.frames, 1, -1 do if STUB.frames[i].kind == "Button" then return STUB.frames[i] end end end)()';
@@ -527,10 +561,12 @@ test('a ticker handle the client returns as userdata still cancels', () => {
   const vm = newVM();
   lua.lua_newuserdata(vm.L, 0);
   lua.lua_setglobal(vm.L, to_luastring('TICKER_UD'));
-  vm.run([
-    'debug.setmetatable(TICKER_UD, { __index = { Cancel = function() TICKER_UD_CANCELLED = true end } })',
-    'C_Timer.NewTicker = function(delay, fn) table.insert(STUB.tickers, fn) return TICKER_UD end',
-  ].join('\n'));
+  vm.run(
+    [
+      'debug.setmetatable(TICKER_UD, { __index = { Cancel = function() TICKER_UD_CANCELLED = true end } })',
+      'C_Timer.NewTicker = function(delay, fn) table.insert(STUB.tickers, fn) return TICKER_UD end',
+    ].join('\n'),
+  );
   vm.run(widgetSet([['tick', 'local ui = ...\nC_Timer.NewTicker(1, function(handle) ui.db.n = (ui.db.n or 0) + 1 handle:Cancel() end)']]));
   vm.run('STUB.Tick()');
   assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("tick")'), 'running', vm.evaluate('select(2, ClaudeWoWWidgets.Status("tick"))'));

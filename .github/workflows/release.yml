@@ -18,7 +18,7 @@ jobs:
   version:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
       - name: package.json, the toc, the addon's Version.SEMVER and the tag name one version
@@ -70,11 +70,11 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: BigWigsMods/packager@v2
+      - uses: BigWigsMods/packager@e50a250f8705041e40f2fa1ddcb280a686d65aa0 # v2
         with:
           args: -d
       - name: the zip holds only the ClaudeWoW folder, with its toc
@@ -84,7 +84,7 @@ jobs:
           test -z "$(grep -v '^ClaudeWoW/' files.txt)"
           grep -qx 'ClaudeWoW/ClaudeWoW.toc' files.txt
           test -z "$(grep -E '^ClaudeWoW/(bridge|tests|dev|docs|build)/' files.txt)"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: addon-zip
           path: .release/*.zip
@@ -96,10 +96,10 @@ jobs:
     if: (github.event_name == 'push' && github.ref_type == 'tag') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: 1.4.2
       - run: bun build.js
@@ -110,7 +110,7 @@ jobs:
           cat SHA256SUMS
           test "$(wc -l < SHA256SUMS)" -eq 4
           sha256sum --check --strict SHA256SUMS
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: claude-wow-binaries
           path: dist/
@@ -123,14 +123,14 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: claude-wow-binaries
           path: dist
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: addon-zip
           path: addon-zip
@@ -161,15 +161,15 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: addon-zip
           path: ${{ runner.temp }}/released-zip
-      - uses: BigWigsMods/packager@v2
+      - uses: BigWigsMods/packager@e50a250f8705041e40f2fa1ddcb280a686d65aa0 # v2
         with:
           args: -d
       - name: a fresh package of this tag has the same files, byte for byte, as the zip on the GitHub release
@@ -180,7 +180,7 @@ jobs:
           unzip -q .release/*.zip -d "$compare/rebuilt"
           diff -r "$compare/released" "$compare/rebuilt"
       - name: upload to CurseForge and Wago
-        uses: BigWigsMods/packager@v2
+        uses: BigWigsMods/packager@e50a250f8705041e40f2fa1ddcb280a686d65aa0 # v2
         env:
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
           WAGO_API_TOKEN: ${{ secrets.WAGO_API_TOKEN }}

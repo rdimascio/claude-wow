@@ -84,7 +84,7 @@ Wiring for the `mcp` setting (all four, or reload mode silently drops it):
 ### 5. Cost cap
 
 - `agents.claude.maxCostUsd` -> `--max-budget-usd <n>` in `AGENTS.claude.args`. It applies per invocation, so resumed-session totals do not count. The reply notes a budget stop from the result event.
-- Add `maxCostUsd` to `SETTING_FLAGS` so other agents report it as unsupported. Codex has no equivalent.
+- Other agents report it as unsupported with one log line at start. `SETTING_FLAGS` reads only per-chat choices, so it never sees a config key; it was not used. Codex has no equivalent.
 
 ### Dropped
 

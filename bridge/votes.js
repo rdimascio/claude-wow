@@ -80,7 +80,10 @@ function createBallot({ options, endsAt, votersMax = VOTERS_MAX }) {
 
   function cast(user, choice) {
     if (voters.has(user)) return 'repeat';
-    if (voters.size >= votersMax) { capped = true; return 'capped'; }
+    if (voters.size >= votersMax) {
+      capped = true;
+      return 'capped';
+    }
     voters.add(user);
     counts[choice - 1] += 1;
     return 'counted';
@@ -151,7 +154,9 @@ function createVotes(opts) {
     if (UNKNOWN_ACTION_RE.test(why)) {
       if (unknownActionSaid) return;
       unknownActionSaid = true;
-      log(`votes: the stream service has no "${OVERLAY_ACTION}" action (${why}); the overlay shows votes only with a wow-stream that has it. Votes are still counted here.`);
+      log(
+        `votes: the stream service has no "${OVERLAY_ACTION}" action (${why}); the overlay shows votes only with a wow-stream that has it. Votes are still counted here.`,
+      );
       return;
     }
     if (vote.pushFailSaid) return;
@@ -177,10 +182,15 @@ function createVotes(opts) {
 
   function schedulePush(vote) {
     if (vote.pushTimer || vote !== open) return;
-    vote.pushTimer = unref(timers.set(() => {
-      vote.pushTimer = null;
-      if (vote === open && vote.dirty) { vote.dirty = false; pushDisplay(vote, true); }
-    }, pushEveryMs));
+    vote.pushTimer = unref(
+      timers.set(() => {
+        vote.pushTimer = null;
+        if (vote === open && vote.dirty) {
+          vote.dirty = false;
+          pushDisplay(vote, true);
+        }
+      }, pushEveryMs),
+    );
   }
 
   function chatMissed(vote, why) {
@@ -193,16 +203,28 @@ function createVotes(opts) {
   function onLine(vote, line) {
     const msg = parseIrcLine(line);
     if (!msg) return;
-    if (msg.type === 'ping') { write(vote, `PONG :${msg.arg}`); return; }
+    if (msg.type === 'ping') {
+      write(vote, `PONG :${msg.arg}`);
+      return;
+    }
     if (msg.channel !== vote.channel) return;
     vote.joined = true;
-    if (vote.connectTimer) { timers.clear(vote.connectTimer); vote.connectTimer = null; }
+    if (vote.connectTimer) {
+      timers.clear(vote.connectTimer);
+      vote.connectTimer = null;
+    }
     if (msg.type === 'joined') return;
     const choice = voteChoice(msg.text, vote.options.length);
     if (!choice) return;
     const r = vote.ballot.cast(msg.user, choice);
-    if (r === 'capped' && !vote.cappedSaid) { vote.cappedSaid = true; log(`votes: ${VOTERS_MAX} voters reached; later voters are not counted`); }
-    if (r === 'counted') { vote.dirty = true; schedulePush(vote); }
+    if (r === 'capped' && !vote.cappedSaid) {
+      vote.cappedSaid = true;
+      log(`votes: ${VOTERS_MAX} voters reached; later voters are not counted`);
+    }
+    if (r === 'counted') {
+      vote.dirty = true;
+      schedulePush(vote);
+    }
   }
 
   function write(vote, line) {
@@ -221,14 +243,21 @@ function createVotes(opts) {
     clearSocketTimers(vote);
     vote.socket = null;
     vote.joined = false;
-    try { socket.destroy(); } catch {}
+    try {
+      socket.destroy();
+    } catch {}
     chatMissed(vote, why);
     scheduleReconnect(vote);
   }
 
   function armIdle(vote, socket) {
     if (vote.idleTimer) timers.clear(vote.idleTimer);
-    vote.idleTimer = unref(timers.set(() => { vote.idleTimer = null; drop(vote, socket, `no data for ${idleTimeoutMs / 1000} s`); }, idleTimeoutMs));
+    vote.idleTimer = unref(
+      timers.set(() => {
+        vote.idleTimer = null;
+        drop(vote, socket, `no data for ${idleTimeoutMs / 1000} s`);
+      }, idleTimeoutMs),
+    );
   }
 
   function feed(vote, chunk) {
@@ -242,13 +271,22 @@ function createVotes(opts) {
     vote.buffer += text;
     const lines = vote.buffer.split(/\r?\n/);
     vote.buffer = lines.pop();
-    if (Buffer.byteLength(vote.buffer, 'utf8') > LINE_MAX_BYTES) { vote.buffer = ''; vote.discarding = true; }
+    if (Buffer.byteLength(vote.buffer, 'utf8') > LINE_MAX_BYTES) {
+      vote.buffer = '';
+      vote.discarding = true;
+    }
     for (const line of lines) onLine(vote, line);
   }
 
   function attach(vote) {
     let socket;
-    try { socket = connect(); } catch (e) { chatMissed(vote, `cannot connect: ${e.message}`); scheduleReconnect(vote); return; }
+    try {
+      socket = connect();
+    } catch (e) {
+      chatMissed(vote, `cannot connect: ${e.message}`);
+      scheduleReconnect(vote);
+      return;
+    }
     vote.socket = socket;
     vote.joined = false;
     vote.buffer = '';
@@ -261,7 +299,12 @@ function createVotes(opts) {
     });
     socket.on('error', e => log(`votes: Twitch chat connection error (${e && e.message ? e.message : e})`));
     socket.on('close', () => drop(vote, socket, 'the connection closed'));
-    vote.connectTimer = unref(timers.set(() => { vote.connectTimer = null; if (!vote.joined) drop(vote, socket, `no channel join within ${connectTimeoutMs / 1000} s`); }, connectTimeoutMs));
+    vote.connectTimer = unref(
+      timers.set(() => {
+        vote.connectTimer = null;
+        if (!vote.joined) drop(vote, socket, `no channel join within ${connectTimeoutMs / 1000} s`);
+      }, connectTimeoutMs),
+    );
     armIdle(vote, socket);
     write(vote, `NICK ${nick()}`);
     write(vote, `JOIN #${vote.channel}`);
@@ -269,9 +312,17 @@ function createVotes(opts) {
 
   function scheduleReconnect(vote) {
     if (vote !== open || vote.reconnectTimer) return;
-    if (vote.reconnects >= RECONNECTS_MAX) { log(`votes: Twitch chat dropped ${RECONNECTS_MAX} times; no more votes are read until the next vote`); return; }
+    if (vote.reconnects >= RECONNECTS_MAX) {
+      log(`votes: Twitch chat dropped ${RECONNECTS_MAX} times; no more votes are read until the next vote`);
+      return;
+    }
     vote.reconnects += 1;
-    vote.reconnectTimer = unref(timers.set(() => { vote.reconnectTimer = null; if (vote === open) attach(vote); }, reconnectMs));
+    vote.reconnectTimer = unref(
+      timers.set(() => {
+        vote.reconnectTimer = null;
+        if (vote === open) attach(vote);
+      }, reconnectMs),
+    );
   }
 
   function release(vote) {
@@ -282,7 +333,11 @@ function createVotes(opts) {
     }
     const socket = vote.socket;
     vote.socket = null;
-    if (socket) { try { socket.destroy(); } catch {} }
+    if (socket) {
+      try {
+        socket.destroy();
+      } catch {}
+    }
   }
 
   function finish() {
@@ -307,11 +362,18 @@ function createVotes(opts) {
     const vote = { channel, character, options, ballot: createBallot({ options, endsAt }), socket: null, reconnects: 0, dirty: false };
     open = vote;
     last = null;
-    vote.endTimer = unref(timers.set(() => { if (open === vote) finish(); }, seconds * 1000));
+    vote.endTimer = unref(
+      timers.set(() => {
+        if (open === vote) finish();
+      }, seconds * 1000),
+    );
     attach(vote);
     pushDisplay(vote, true);
     log(`votes: open on #${channel} for ${seconds} s with ${options.length} options`);
-    return { ok: true, text: `The vote is open on #${channel} for ${seconds} s: ${options.map((o, i) => `!${i + 1} ${o.title}`).join(', ')}. Viewers type !1 to !${options.length}; one vote per Twitch name. The stream overlay shows it only with a wow-stream that has the "${OVERLAY_ACTION}" action. Close it with goal_vote_close.` };
+    return {
+      ok: true,
+      text: `The vote is open on #${channel} for ${seconds} s: ${options.map((o, i) => `!${i + 1} ${o.title}`).join(', ')}. Viewers type !1 to !${options.length}; one vote per Twitch name. The stream overlay shows it only with a wow-stream that has the "${OVERLAY_ACTION}" action. Close it with goal_vote_close.`,
+    };
   }
 
   function stop() {
@@ -329,13 +391,34 @@ function createVotes(opts) {
     stop,
     isOpen: () => !!open,
     last: () => last,
-    markAdopted: () => { if (last) last.adopted = true; },
+    markAdopted: () => {
+      if (last) last.adopted = true;
+    },
     voters: () => (open ? open.ballot.voters() : 0),
   };
 }
 
 module.exports = {
-  IRC_HOST, IRC_PORT, ANON_NICK_PREFIX, OVERLAY_ACTION, OPTIONS_MIN, OPTIONS_MAX, SECONDS_MIN, SECONDS_MAX, VOTERS_MAX, TITLE_MAX, LINE_MAX_BYTES, RECONNECTS_MAX,
-  CONNECT_TIMEOUT_MS, IDLE_TIMEOUT_MS, SHUTDOWN_PUSH_WAIT_MS,
-  channelOf, parseIrcLine, voteChoice, createBallot, resultText, createVotes, settleWithin,
+  IRC_HOST,
+  IRC_PORT,
+  ANON_NICK_PREFIX,
+  OVERLAY_ACTION,
+  OPTIONS_MIN,
+  OPTIONS_MAX,
+  SECONDS_MIN,
+  SECONDS_MAX,
+  VOTERS_MAX,
+  TITLE_MAX,
+  LINE_MAX_BYTES,
+  RECONNECTS_MAX,
+  CONNECT_TIMEOUT_MS,
+  IDLE_TIMEOUT_MS,
+  SHUTDOWN_PUSH_WAIT_MS,
+  channelOf,
+  parseIrcLine,
+  voteChoice,
+  createBallot,
+  resultText,
+  createVotes,
+  settleWithin,
 };

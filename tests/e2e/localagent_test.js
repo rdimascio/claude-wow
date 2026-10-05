@@ -24,7 +24,9 @@ async function fakeModel(answer) {
   const bodies = [];
   const server = http.createServer((req, res) => {
     let raw = '';
-    req.on('data', c => { raw += c; });
+    req.on('data', c => {
+      raw += c;
+    });
     req.on('end', () => {
       const body = JSON.parse(raw);
       bodies.push(body);
@@ -40,7 +42,11 @@ const message = m => ({ model: 'qwen-test', choices: [{ message: { role: 'assist
 
 test('an ask chat on the local agent gets the wowdata tools, calls one through the real data server, and answers in game', async () => {
   const model = await fakeModel((body, n) => {
-    if (n === 1) return message({ content: '', tool_calls: [{ id: 'c1', type: 'function', function: { name: 'mcp__wowdata__wow_item', arguments: JSON.stringify({ id: 501 }) } }] });
+    if (n === 1)
+      return message({
+        content: '',
+        tool_calls: [{ id: 'c1', type: 'function', function: { name: 'mcp__wowdata__wow_item', arguments: JSON.stringify({ id: 501 }) } }],
+      });
     const tool = body.messages.find(m => m.role === 'tool');
     const found = JSON.parse(tool.content).results[0].name;
     return message({ content: `That is ${found}, {item:501}.` });
@@ -49,7 +55,9 @@ test('an ask chat on the local agent gets the wowdata tools, calls one through t
     agent: 'local',
     agents: { claude: { path: path.join(REPO, 'dev', 'fake-claude.js') }, local: { baseUrl: model.baseUrl, model: 'qwen-test', timeoutMs: 20000 } },
   };
-  const beforeLaunch = async sb => { await D.sync({ dataDir: path.join(sb.home, 'data'), build: BUILD, fetch: fixtureFetch }); };
+  const beforeLaunch = async sb => {
+    await D.sync({ dataDir: path.join(sb.home, 'data'), build: BUILD, fetch: fixtureFetch });
+  };
   try {
     await withGame({ plugin: 'ask', config, beforeLaunch }, async h => {
       const r = await h.client.say('what is item 501?');
