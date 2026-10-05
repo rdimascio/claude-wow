@@ -382,12 +382,47 @@ test('a reply names items and spells by token: the client turns each into a real
   const body = vm.evaluate('(function() for _, b in ipairs(ClaudeWoW.UI.bubbles) do if b.shown then return b.body:GetText() end end end)()');
   assert.ok(body.includes('|Hitem:2589::::::::|h[Linen Cloth]|h'), body);
   assert.ok(body.includes('|Hspell:1752|h[Sinister Strike]|h'), body);
-  assert.ok(body.includes('|cff9d9d9ditem 999999|r'), 'an ID the client does not have shows plainly, with no invented name');
+  assert.ok(body.includes('|cff5c5248item 999999|r'), 'an ID the client does not have shows plainly, with no invented name, in parchment ink');
+  assert.ok(body.includes('|cff2e1f0f|Hitem:2589'), 'a white item name is drawn dark enough to read on the parchment');
+  assert.ok(body.includes('|cff00577a|Hspell:1752'), 'and so is a spell link');
   assert.equal(vm.evaluate('STUB.itemLoads[1]'), '999999', 'and the client is asked to load it');
   assert.ok(body.includes('\u2022 spare'), 'a "- " line becomes a bullet');
   assert.ok(!body.includes('|cffff0000'), 'color codes the agent typed are neutralized');
   const b = '(function() for _, b in ipairs(ClaudeWoW.UI.bubbles) do if b.shown then return b end end end)()';
   assert.equal(vm.evaluate(`${b}.scripts.OnHyperlinkClick ~= nil`), 'true', 'the bubble handles link clicks');
+});
+
+test('a quest token is a real quest link in parchment ink, and clicking it opens that quest in the quest log', () => {
+  const vm = nativeVM();
+  vm.run(`
+    STUB.refs, STUB.selected, STUB.panels = {}, {}, {}
+    SetItemRef = function(link) table.insert(STUB.refs, link) end
+    GetNumQuestLogEntries = function() return 2 end
+    GetQuestLogTitle = function(i)
+      if i == 1 then return "The Barrens", 0, nil, true, false, false, nil, 0 end
+      if i == 2 then return "Tribes at War", 21, nil, false, false, false, nil, 855 end
+    end
+    QuestLogFrame = { shown = false, IsShown = function(self) return self.shown end }
+    ShowUIPanel = function(f) f.shown = true table.insert(STUB.panels, f) end
+    QuestLog_SetSelection = function(i) table.insert(STUB.selected, i) end
+    local c = ClaudeWoWDB.chats[1]
+    ClaudeWoW.SwitchChat(c.id)
+    c.history = { { role = "assistant", t = 1, text = "turn in {quest:855} and {quest:999}" } }
+    ClaudeWoW.Render()
+    STUB.bubble = (function() for _, b in ipairs(ClaudeWoW.UI.bubbles) do if b.shown then return b end end end)()
+  `);
+  const body = vm.evaluate('STUB.bubble.body:GetText()');
+  assert.ok(body.includes('|cff7a3b00|Hquest:855:21|h[Tribes at War]|h|r'), 'a clickable quest link with its level, in dark ink: ' + body);
+  assert.ok(body.includes('|cff5c5248quest 999|r'), 'a quest not in the log stays plain');
+  vm.run('STUB.bubble.scripts.OnHyperlinkClick(STUB.bubble, "quest:855:21", "[Tribes at War]", "LeftButton")');
+  assert.equal(vm.num('#STUB.panels'), 1, 'the quest log opens');
+  assert.equal(vm.num('STUB.selected[1]'), 2, 'on that quest\'s row');
+  assert.equal(vm.num('#STUB.refs'), 0, 'and the click is not also sent to the game');
+  vm.run('STUB.bubble.scripts.OnHyperlinkClick(STUB.bubble, "quest:777:5", "[Gone]", "LeftButton")');
+  assert.equal(vm.evaluate('STUB.refs[1]'), 'quest:777:5', 'a quest no longer in the log falls back to the game');
+  vm.run('STUB.mapped = {}; QuestMapFrame_OpenToQuestDetails = function(id) table.insert(STUB.mapped, id) end; STUB.bubble.scripts.OnHyperlinkClick(STUB.bubble, "quest:855:21", "[Tribes at War]", "LeftButton")');
+  assert.equal(vm.num('STUB.mapped[1]'), 855, 'on a client with the quest map (Forever) it opens the quest details there');
+  assert.equal(vm.num('#STUB.selected'), 1, 'and not the old quest log');
 });
 
 test('clicking a link in a reply opens the link, not the copy box; clicking the text around it still opens the copy box', () => {

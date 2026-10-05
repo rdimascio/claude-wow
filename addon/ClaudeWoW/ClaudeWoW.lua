@@ -4455,7 +4455,7 @@ function ClaudeWoW.Render()
 			b.who:SetTextColor(look.color[1], look.color[2], look.color[3])
 			b.when:SetText(when or "")
 			b.body:SetWidth(width - 18)
-			b.body:SetText(role == "assistant" and Q.RichText(Display(text)) or Display(text))
+			b.body:SetText(role == "assistant" and Q.RichText(Display(text), ui.parchment ~= nil) or Display(text))
 			local ink = ui.parchment and (dim and Q.PARCHMENT_DIM or Q.PARCHMENT_TEXT) or (dim and { 0.72, 0.72, 0.72 } or { 0.93, 0.93, 0.93 })
 			b.body:SetTextColor(ink[1], ink[2], ink[3])
 			local h = b.body:GetStringHeight()
@@ -5125,10 +5125,10 @@ function Q.QuestTitle(id)
 	for i = 1, math.min(tonumber(n) or 0, 60) do
 		local info = Try(C_QuestLog and C_QuestLog.GetInfo, i)
 		if type(info) == "table" then
-			if tonumber(info.questID) == id and not info.isHeader then return info.title end
+			if tonumber(info.questID) == id and not info.isHeader then return info.title, info.level, i end
 		else
-			local title, _, _, isHeader, _, _, _, qid = Try(GetQuestLogTitle, i)
-			if tonumber(qid) == id and not isHeader then return title end
+			local title, level, _, isHeader, _, _, _, qid = Try(GetQuestLogTitle, i)
+			if tonumber(qid) == id and not isHeader then return title, level, i end
 		end
 	end
 	return nil
@@ -5140,16 +5140,29 @@ function Q.RichToken(kind, id)
 	if kind == "item" then return Q.ItemLink(id) end
 	if kind == "spell" then return Q.SpellLink(id) end
 	if kind == "quest" then
-		local title = Q.QuestTitle(id)
-		return title and ("|cffffd100[" .. Display(title) .. "]|r") or nil
+		local title, level = Q.QuestTitle(id)
+		return title and ("|cffffff00|Hquest:" .. id .. ":" .. math.floor(tonumber(level) or 0) .. "|h[" .. Display(title):gsub("[%[%]]", "") .. "]|h|r") or nil
 	end
 	return nil
 end
 
-function Q.RichText(text)
+Q.PARCHMENT_LINK_COLORS = {
+	ff9d9d9d = "ff5c5248", ffffffff = "ff2e1f0f", ff1eff00 = "ff0d6b00", ff0070dd = "ff004c99", ffa335ee = "ff6a1b9a",
+	ffff8000 = "ff9a4a00", ffe6cc80 = "ff7a5c1e", ffffff00 = "ff7a3b00", ffffd100 = "ff7a3b00", ff71d5ff = "ff00577a",
+}
+
+function Q.OnParchment(link)
+	return (link:gsub("|c(%x%x%x%x%x%x%x%x)", function(hex)
+		local dark = Q.PARCHMENT_LINK_COLORS[hex:lower()]
+		return dark and ("|c" .. dark) or nil
+	end))
+end
+
+function Q.RichText(text, parchment)
 	text = tostring(text or "")
 	text = text:gsub("{(%a+):(%d+)}", function(kind, id)
-		return Q.RichToken(kind:lower(), id) or ("|cff9d9d9d" .. kind .. " " .. id .. "|r")
+		local shown = Q.RichToken(kind:lower(), id) or ("|cff9d9d9d" .. kind .. " " .. id .. "|r")
+		return parchment and Q.OnParchment(shown) or shown
 	end)
 	text = text:gsub("^[%-%*] ", "\226\128\162 "):gsub("\n[%-%*] ", "\n\226\128\162 ")
 	return text
@@ -5176,14 +5189,27 @@ Q.linkEvents:SetScript("OnEvent", function()
 	end)
 end)
 
+function Q.OpenQuest(id)
+	local _, _, index = Q.QuestTitle(id)
+	if not index then return false end
+	if type(QuestMapFrame_OpenToQuestDetails) == "function" then return (pcall(QuestMapFrame_OpenToQuestDetails, id)) end
+	if type(QuestLog_SetSelection) ~= "function" or not QuestLogFrame then return false end
+	if not QuestLogFrame:IsShown() then pcall(ShowUIPanel, QuestLogFrame) end
+	local ok = pcall(QuestLog_SetSelection, index)
+	if type(QuestLog_Update) == "function" then pcall(QuestLog_Update) end
+	return ok
+end
+
 function Q.LinkClick(self, link, text, button)
 	self.linkClickAt = GetTime()
+	local quest = tonumber(tostring(link or ""):match("^quest:(%d+)"))
+	if quest and Q.OpenQuest(quest) then return end
 	if type(SetItemRef) == "function" then SetItemRef(link, text, button, self) end
 end
 
 function Q.LinkEnter(self, link)
 	local kind = tostring(link or ""):match("^(%a+):")
-	if kind ~= "item" and kind ~= "spell" then return end
+	if kind ~= "item" and kind ~= "spell" and kind ~= "quest" then return end
 	GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
 	if pcall(GameTooltip.SetHyperlink, GameTooltip, link) then GameTooltip:Show() else GameTooltip:Hide() end
 end

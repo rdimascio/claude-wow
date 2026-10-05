@@ -6,6 +6,7 @@ All notable changes to this project are recorded here. The format follows [Keep 
 
 ### Changed
 
+- Quest links in Claude's replies are real quest links now: clicking one opens that quest in the quest log (on Forever, the quest details on the map), and hovering shows its tooltip. A quest not in the log still goes to the game as before. On the parchment window, link colors are drawn in darker inks so quest gold, white and green item names are readable; the whisper tab keeps the game's colors. Needs a full WoW restart.
 - A loot answer in game is now a list in every voice, the casual player voice included: a lead line that names the source (community 1.12 data, not checked on Forever), one item link per line with the best items first, kinds under short labels, and how many more, all within 8 lines (labels and the TL;DR counted), so the whisper tab shows the whole answer. Before, the player voice ran every link together on one line.
 - Game-data lookups show what they found while Claude works. A `wowdata` call shows a loading line ("Looking up a dungeon or raid") instead of "wowdata: wow instance", then a result line built from verified rows, such as "Molten Core: 11 encounters, 1 chest in 1.12 data" or "Dropped by 359 NPCs in 1.12 data:" and the item link. Item names are real links in the window; the whisper tab shows the newest line with the link as plain text until the addon renders links there. NPC names, quest titles and faction names are never shown there.
 
