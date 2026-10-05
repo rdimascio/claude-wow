@@ -24,6 +24,20 @@ function siblingFolders(dir) {
   }
 }
 
+function realFolder(p) {
+  try {
+    return fs.realpathSync.native(p);
+  } catch {
+    return p;
+  }
+}
+
+function isThread(options, cwd, defaultCwd) {
+  const threads = options && Array.isArray(options.threads) ? options.threads : [];
+  const here = realFolder(cwd);
+  return threads.some(d => typeof d === 'string' && d.trim() !== '' && P.sameFolder(realFolder(P.resolveCwd(d.trim(), defaultCwd)), here));
+}
+
 const plugin = {
   id: 'claude-code',
   label: 'Code',
@@ -52,7 +66,8 @@ const plugin = {
       );
       return;
     }
-    const conf = FACTORY.settings(core.options('claude-code'));
+    const options = core.options('claude-code');
+    const conf = FACTORY.settings(options);
     const command = FACTORY.slashCommand(core.factory, job.text, { key: P.chatKey(job), job, cwd, conf, label: core.tag(job) });
     if (command) {
       core.accept(job);
@@ -61,9 +76,12 @@ const plugin = {
       else core.fail(job, command.text);
       return;
     }
-    const dispatcher = conf.enabled ? { tools: FACTORY.dispatcherRules(conf), factory: conf, deniedTools: [...FACTORY.DISPATCHER_DENIED] } : {};
+    const thread = isThread(options, cwd, core.defaultCwd);
+    const rules = conf.enabled ? FACTORY.dispatcherRules(conf) : '';
+    const dispatcher = conf.enabled ? { tools: thread ? '' : rules, factory: conf, deniedTools: [...FACTORY.DISPATCHER_DENIED] } : {};
     core.runAgent(job, {
       ...dispatcher,
+      ...(thread ? { thread: true, turnRules: rules } : {}),
       cwd,
       // Agents keep sessions per project folder, so a chat that changed folder starts fresh.
       freshSession: () => {
@@ -73,5 +91,7 @@ const plugin = {
     });
   },
 };
+
+plugin.isThread = isThread;
 
 module.exports = plugin;

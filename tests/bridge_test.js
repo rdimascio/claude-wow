@@ -198,6 +198,15 @@ test('messagePrompt puts the situation and the vision paragraph before the text,
   assert.ok(!P.visionHint({}).includes('downscaled)'), 'no size when unknown');
 });
 
+test("messagePrompt puts a thread chat's turn rules first, before the situation and the text", () => {
+  const ctx = 'Character: Testchar';
+  assert.equal(P.messagePrompt('go', '', { rules: '  \n' }), 'go', 'blank rules add nothing');
+  const m = P.messagePrompt('go', ctx, { rules: 'Skills you may dispatch: fresh-eyes.\n' });
+  assert.ok(m.startsWith('Skills you may dispatch: fresh-eyes.\n\n[In-game situation'), m);
+  assert.ok(m.endsWith('\n\ngo'));
+  assert.equal(P.messagePrompt('go', '', { rules: 'R' }), 'R\n\ngo');
+});
+
 test('splitSummary takes the last TL;DR block for the game chat and keeps the whole reply for the window', () => {
   const reply = 'Renamed the function.\n\nDetails:\n- foo.js\n- bar.js\n\n---\n**TL;DR:** Renamed doIt to run in foo.js and bar.js.\nTests pass.';
   const r = P.splitSummary(reply);
