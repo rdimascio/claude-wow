@@ -11,6 +11,7 @@ const DEFAULTS = { waitMs: 3000, permissionTimeoutMs: 120000, helloTimeoutMs: 50
 const CLAUDE_INFO_TTL_MS = 5000;
 const DETECT_WAIT_MS = 25000;
 const ANCESTRY_DEPTH_MAX = 64;
+const LATE_REPLIES_MAX = 32;
 
 function pickupMarkers(chatId, messageId) {
   const plain = `chat_id="${chatId}" message_id="${messageId}"`;
@@ -21,6 +22,7 @@ function createLive(overrides = {}) {
   const sessions = new Map();
   const pending = new Map();
   const permissions = new Map();
+  const lateReplies = new Map();
   const waiters = new Set();
   const runSockets = new Set();
   let server = null;
@@ -146,6 +148,44 @@ function createLive(overrides = {}) {
     return p;
   }
 
+  function lateKey(chatId, messageId) {
+    return `${chatId}\n${messageId}`;
+  }
+
+  function dropLate(key) {
+    const kept = lateReplies.get(key);
+    if (!kept) return null;
+    clearTimeout(kept.timer);
+    lateReplies.delete(key);
+    return kept;
+  }
+
+  function keepLate(chatId, p) {
+    if (!p.messageId) return;
+    const key = lateKey(chatId, p.messageId);
+    dropLate(key);
+    while (lateReplies.size >= LATE_REPLIES_MAX) dropLate(lateReplies.keys().next().value);
+    const timer = setTimeout(() => {
+      if (lateReplies.get(key) === kept) dropLate(key);
+    }, replyTimeoutMs());
+    if (timer.unref) timer.unref();
+    const kept = { job: p.job, conn: p.conn, messageId: p.messageId, timer };
+    lateReplies.set(key, kept);
+  }
+
+  function holdLateReply(chatId, entry) {
+    if (pending.has(chatId)) {
+      keepLate(chatId, entry);
+      return;
+    }
+    const timer = setTimeout(() => {
+      if (pending.get(chatId) === held) clearPending(chatId);
+    }, replyTimeoutMs());
+    if (timer.unref) timer.unref();
+    const held = { ...entry, sentAt: Date.now(), timer, watch: null, late: true };
+    pending.set(chatId, held);
+  }
+
   function clearPermission(chatId) {
     const perm = permissions.get(chatId);
     if (!perm) return null;
@@ -222,9 +262,12 @@ function createLive(overrides = {}) {
     step();
   }
 
-  function expectReply(job, chatId, s, watch) {
+  function expectReply(job, chatId, s, { watch, messageId }) {
     const prev = clearPending(chatId);
-    if (prev && prev.job !== job && !prev.late) core.fail(prev.job, 'A newer message in this chat replaced this one before the live session answered.');
+    if (prev && prev.job !== job) {
+      keepLate(chatId, prev);
+      if (!prev.late) core.fail(prev.job, 'A newer message in this chat replaced this one before the live session answered.');
+    }
     const ms = replyTimeoutMs();
     const timer = setTimeout(() => {
       const p = pending.get(chatId);
@@ -235,7 +278,7 @@ function createLive(overrides = {}) {
       core.fail(job, `The live Claude Code session "${s.name}" did not answer within ${Math.round(ms / 60000) || 1} min.`);
     }, ms);
     if (timer.unref) timer.unref();
-    pending.set(chatId, { job, conn: s.id, sentAt: Date.now(), timer, watch: null, late: false });
+    pending.set(chatId, { job, conn: s.id, messageId: String(messageId), sentAt: Date.now(), timer, watch: null, late: false });
     if (watch) watchPickup(job, chatId, s);
   }
 
@@ -244,10 +287,34 @@ function createLive(overrides = {}) {
     else if (core) core.reply(job, text);
   }
 
+  function deliverKeptLate(s, chatId, messageId, text, answer) {
+    const key = lateKey(chatId, messageId);
+    const kept = lateReplies.get(key);
+    if (!kept) return false;
+    if (kept.conn !== s.id) {
+      answer(false)(`chat_id "${chatId}" belongs to another Claude Code session.`);
+      return true;
+    }
+    dropLate(key);
+    log(`${core.tag(kept.job)} late reply from "${s.name}" to message_id ${messageId} (${text.length} chars)`);
+    deliverLate(kept.job, text);
+    answer(true)("Delivered to the player's in-game whisper tab.");
+    return true;
+  }
+
   function onReply(s, msg) {
     const chatId = String(msg.chat_id || '');
+    const messageId = String(msg.message_id || '').trim();
     const answer = ok => text => sendTo(s, { type: 'reply_result', call: msg.call, ok, text });
     const p = pending.get(chatId);
+    const answersAnotherMessage = !!(messageId && p && p.messageId && p.messageId !== messageId);
+    if (messageId && (!p || answersAnotherMessage)) {
+      if (deliverKeptLate(s, chatId, messageId, String(msg.text || '').trim(), answer)) return;
+      if (answersAnotherMessage) {
+        answer(false)(`message_id "${messageId}" is not waiting for a reply in chat_id "${chatId}". The message waiting there is message_id "${p.messageId}".`);
+        return;
+      }
+    }
     if (!p) {
       answer(false)(
         `No player message is waiting for a reply in chat_id "${chatId}". Each player message takes exactly one ${LP.REPLY_TOOL} call, with the chat_id from its <channel> tag.`,
@@ -287,10 +354,11 @@ function createLive(overrides = {}) {
       if (!perm || perm.requestId !== requestId) return;
       permissions.delete(chatId);
       sendTo(sessions.get(perm.conn), { type: 'permission', request_id: requestId, behavior: 'deny' });
-      log(`${core.tag(p.job)} permission ${requestId} (${rule}) timed out after ${ms} ms: denied`);
+      log(`${core.tag(p.job)} permission ${requestId} (${rule}) timed out after ${ms} ms: denied, a late reply still lands`);
+      holdLateReply(chatId, { job: perm.job, conn: perm.conn, messageId: perm.messageId });
     }, ms);
     if (timer.unref) timer.unref();
-    permissions.set(chatId, { requestId, conn: s.id, rule, timer });
+    permissions.set(chatId, { requestId, conn: s.id, rule, timer, job: p.job, messageId: p.messageId });
     log(`${core.tag(p.job)} permission ${requestId} for ${rule} relayed to the game`);
     core.reply(p.job, LP.permissionPrompt(msg, s.name), [rule]);
   }
@@ -478,6 +546,7 @@ function createLive(overrides = {}) {
         if (!p.late) core.fail(p.job, `The live Claude Code session "${s.name}" disconnected before it answered.`);
       }
       for (const [chatId, perm] of [...permissions]) if (perm.conn === s.id) clearPermission(chatId);
+      for (const [key, kept] of [...lateReplies]) if (kept.conn === s.id) dropLate(key);
       changed();
     });
   }
@@ -518,6 +587,7 @@ function createLive(overrides = {}) {
   function stop() {
     for (const [chatId] of [...pending]) clearPending(chatId);
     for (const [chatId] of [...permissions]) clearPermission(chatId);
+    for (const key of [...lateReplies.keys()]) dropLate(key);
     for (const s of sessions.values()) s.sock.destroy();
     sessions.clear();
     for (const sock of [...runSockets]) sock.destroy();
@@ -616,10 +686,11 @@ function createLive(overrides = {}) {
           c.fail(job, 'The live Claude Code session that asked is no longer connected.');
           return;
         }
-        expectReply(job, chatId, s, false);
+        expectReply(job, chatId, s, { watch: false, messageId: perm.messageId });
         c.progress(job, `${verdict.allow ? 'Allowed' : 'Denied'} ${perm.rule}; Claude Code carries on.`);
         return;
       }
+      if (sent) keepLate(chatId, { job: perm.job, conn: perm.conn, messageId: perm.messageId });
     }
     if (!server) {
       c.fail(job, 'The live plugin is off on this bridge (plugins.live.enabled is false).');
@@ -647,7 +718,7 @@ function createLive(overrides = {}) {
       return;
     }
     (s.chats = s.chats || new Set()).add(chatId);
-    expectReply(job, chatId, s, true);
+    expectReply(job, chatId, s, { watch: true, messageId: job.id });
     log(`${c.tag(job)} sent to "${s.name}" as chat_id ${chatId}`);
     c.progress(job, `Sent to the live Claude Code session "${s.name}".`);
   }
@@ -670,6 +741,7 @@ function createLive(overrides = {}) {
       sessions,
       pending,
       permissions,
+      lateReplies,
       runSockets,
       get address() {
         return address;
