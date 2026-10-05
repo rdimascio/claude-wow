@@ -13,7 +13,7 @@ addon/ClaudeWoW/     the in-game addon (Lua 5.1, WoW API)
   Window.lua            the workspace window's behaviour: dodging Blizzard panels, dimming, per-character layout
   Bindings.xml          the "open or close the workspace" key binding
   ClaudeWoW.toc
-bridge/               the companion process (Node.js, no runtime dependencies)
+bridge/               the companion process (Node.js; the Chat SDK packages are its only runtime dependencies)
   bridge.js             I/O, processes, publishing
   protocol.js           pure functions: strip records, slot files, folders, dedup
   agents.js             one entry per agent (Claude, Codex, Grok, Antigravity, Hermes, Local): command line, prompt delivery, stream parser

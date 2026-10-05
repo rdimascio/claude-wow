@@ -69,7 +69,7 @@ function Methods.SetFrameLevel(self, l) self.level = l end
   run(stub);
   run(MAP_STUB);
   if (before) run(before);
-  for (const f of ['Codec.lua', 'Inbox.lua', 'ClaudeWoW.lua', 'Map.lua']) run(fs.readFileSync(path.join(ADDON, f), 'utf8'), 'ClaudeWoW');
+  for (const f of ['Codec.lua', 'Inbox.lua', 'ClaudeWoW.lua', 'Map.lua', 'Orders.lua']) run(fs.readFileSync(path.join(ADDON, f), 'utf8'), 'ClaudeWoW');
   run('STUB.FireEvent("ADDON_LOADED", "ClaudeWoW"); STUB.FireEvent("PLAYER_LOGIN")');
   return { run, evaluate, num };
 }
@@ -91,7 +91,7 @@ function shownPins(vm) {
   return s ? s.split(';') : [];
 }
 
-const LAYER = `{ epoch = "e1", version = 1, layers = { { name = "mining", title = "Copper loop", ordered = true, loop = true, points = {
+const LAYER = `{ epoch = "e1", version = 1, char = "Testchar-TestRealm", layers = { { name = "mining", title = "Copper loop", ordered = true, loop = true, points = {
   { 1432, 50, 40, "1. Copper Vein", "ore" }, { 1432, 60, 50, "2. Copper Vein", "ore" }, { 1432, 55, 70, "3. Tin Vein", "ore" } } } } }`;
 
 test('pins land where the points are, on the zone map and on the continent', () => {
@@ -199,4 +199,15 @@ test('a route from the agent is a link in its chat tab that opens the map at the
   assert.equal(vm.num('STUB.openedMap'), 1432, "the map opens on the route's first stop");
   assert.equal(vm.evaluate('ClaudeWoWMapDB.hidden.mining'), null, 'the layer is shown again');
   assert.equal(vm.evaluate('ClaudeWoWMapDB.nav.layer'), 'mining', 'and the navigator follows it');
+});
+
+test('a map for another character is never applied; a map with no character (game context off) is', () => {
+  const vm = newVM();
+  vm.run(`ClaudeWoWMap.Sync(${LAYER.replace('Testchar-TestRealm', 'Bone-TestRealm')})`);
+  assert.equal(vm.evaluate('ClaudeWoWMapDB.map'), null, "another character's route is dropped");
+  vm.run(`ClaudeWoWMap.Sync(${LAYER})`);
+  assert.equal(vm.evaluate('#ClaudeWoWMapDB.map.layers'), '1', 'the own map is applied');
+  const other = newVM();
+  other.run(`ClaudeWoWMap.Sync(${LAYER.replace('char = "Testchar-TestRealm", ', '')})`);
+  assert.equal(other.evaluate('#ClaudeWoWMapDB.map.layers'), '1', 'a map the bridge could not tag is applied');
 });

@@ -132,6 +132,7 @@ A `config.json` from before agents existed kept Claude's settings at the top lev
 | `plugins.claude-code.factory.allowedTools` | `[]` | Rules a skill run gets on top of `agents.claude.allowedTools` (for example `Bash(gh:*)`). The dispatcher chat never gets them. |
 | `plugins.claude-code.factory.maxRunning` | `2` | How many skill runs may go at once; a dispatch past it is refused. |
 | `plugins.claude-code.factory.timeoutMs` | `7200000` | A skill run that takes longer is ended and reported failed. |
+| `plugins.claude-code.threads` | `[]` | Project folders whose coding chats are long-lived threads (relative to the bridge's folder, `~` allowed). A thread chat keeps its Claude session when the system prompt rules change (game context turned on or off, a release that edits the rules), so its first system prompt stays for good; `/claude n` starts a fresh one. With the factory on, a chat that had a session before its folder was added keeps that session, with the dispatcher rules still in its old system prompt: send `/claude n` in it once. While the live rules differ from the first turn's, every turn logs `system prompt rules changed (...): thread chat, the session is kept`. Folders are compared after links are resolved, so `/tmp/x` and `/private/tmp/x` match. With the factory on, its dispatcher rules and skill list go in each turn's prompt instead of the system prompt. |
 
 | `plugins.live.enabled` | `true` | `false` keeps the bridge from opening the live-session socket (`live.sock` in the home folder). |
 | `plugins.live.waitMs` | `3000` | How long a message on a `live` chat waits for a Claude Code session to connect before the chat is told there is none. |
@@ -151,7 +152,9 @@ With `plugins.claude-code.factory.enabled`, a coding chat does not work on the c
 
 The dispatcher run is denied `Edit`, `Write`, `MultiEdit`, `NotebookEdit`, `Bash`, `Skill`, `Agent` and `Task`, whatever `agents.claude.allowedTools` says, and its prompt tells it to dispatch one skill, ask one short question back, or answer a status question. A skill must run in its own session: a skill invoked with the Skill tool runs on the model of the session that calls it, so a cheap dispatcher model cannot call it itself.
 
-When a run ends, the bridge sends its result to the chat that started it as a late reply. The addon reads it the next time it reads its slots: when the player sends any message, or at the 10-minute idle check in pixel mode. It is not pushed while the addon is idle. Until then, `factory_status` has it. Two runs that end before the addon reads its slots share one late slot per chat, so only the newer one shows; `factory_status` has both. A run that the bridge ended when it stopped is recorded as `killed` and sends nothing.
+Slash commands skip the dispatcher. In a coding chat, a message that is `/<skill> <args>` for a skill in `factory.skills` starts that run at once, with no agent turn and no dispatcher cost, and the reply names the run id. `/runs` lists the latest runs, `/runs <id>` shows one, and `/stop <id>` ends a running one (recorded as `stopped`; its result still comes back as a late reply). Any other message that starts with `/` goes to the dispatcher as before. These commands do not need the live socket. The bridge sends the skill names in every slot file and `Inbox.lua` (slot field `skills`, at most 24). The addon registers each name, plus `/runs` and `/stop`, as a game slash command, so they also work in the chat box and in a whisper tab: the command goes to the coding chat of that whisper tab, else the open chat, and is refused in a general chat. A name another addon or the game already uses is left to it. In the Claude window, Tab after `/` completes a command name.
+
+When a run ends, the bridge sends its result to the chat that started it as a late reply. The addon reads it the next time it reads its slots: when the player sends any message, or at the 10-minute idle check in pixel mode. It is not pushed while the addon is idle. Until then, `factory_status` has it. Two runs that end before the addon reads its slots share one late slot per chat, so only the newer one shows. A late reply also carries the id of the chat's latest message, and the addon shows one late reply per id: once one has shown, another with the same id (a run that ends before the player's next message in that chat) does not show, even on a later read. `factory_status` lists the latest five runs and gives any kept run by its id. A run that the bridge ended when it stopped is recorded as `killed` and sends nothing.
 
 Add this to the `plugins` block of `~/.claude-wow/config.json`, then restart the bridge:
 
@@ -273,6 +276,29 @@ Environment: `CLAUDE_WOW_SERVICE=1` is set by the service definitions and tells 
 
 Exit codes: `0` normal, `1` the injected or one-shot job failed, `2` config missing, unreadable or naming an unknown agent, `75` stopped to run an installed update. The supervisor only restarts on codes other than `0` and `2`, and on `75` at once instead of after 3 s.
 
+## Discord sync
+
+A coding chat can live in a Discord thread too. A message in the thread runs the same Claude session as the game chat, and the reply and progress post to the thread. One owner, one private server.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `discord.enabled` | `false` | Turn Discord sync on. It also needs the three keys below and a bot token, or the bridge logs why it stays off. |
+| `discord.applicationId` | `""` | The Discord application id of your bot. |
+| `discord.channelId` | `""` | The text channel the bot works in. A message there starts a new coding chat in its own thread; messages in a linked thread continue that chat. |
+| `discord.userIds` | `[]` | The Discord user ids that may run Claude. Required: anyone else, any bot and any webhook is ignored and logged by user id. |
+| `discord.publicKey` | `""` | Optional; only the forwarded Gateway path is used. |
+
+The bot token comes from `CLAUDE_WOW_DISCORD_BOT_TOKEN`, else from `~/.claude-wow/discord.token` (make it mode 0600). It never goes in `config.json`. The bridge removes the variable from its own environment at start, and every agent run is denied `Read` on the token file. That does not stop a run allowed `Bash(node:*)` from reading it; keep the server private and the user list short. The bot needs the Message Content intent and these permissions: Send Messages, Send Messages in Threads, Create Public Threads, Manage Threads, Read Message History.
+
+- The bridge holds the Discord Gateway connection itself and forwards its events to a local endpoint on `127.0.0.1` with a random port and path, written to `~/.claude-wow/discord-webhook.json` (0600). Each event must carry the bot token, or it is refused.
+- In Discord: a message in `discord.channelId` starts a chat in the bridge's default folder. Start it with `#name` to pick a project by its repo label (an unknown name starts nothing). A Discord-started chat shows in game in the `/claude -r` list.
+- In game: `/claude discord` on a coding chat creates a thread, posts the last 5 messages as a recap, and links the two. Game replies then post to the thread too.
+- Replies go out in pieces of at most 1900 characters. `@everyone`, `@here` and user and role mentions are defused, and game tokens are stripped. A run that hits a denied tool says so and asks you to grant it in game.
+- A linked chat whose session started without game context (for example from Discord while the game was closed) keeps running without it, so starting the game does not start a new session.
+- Messages typed in Discord, and their replies, show in the game chat tagged "(Discord)" on the addon's next slot read, which can be after your next message. The bridge sends the last 10 per linked chat (slot field `mirror`); when more came in than that, the chat says how many are only in Discord. A permission ask from a Discord turn keeps its Allow button in game. Attaching a Discord-started chat with `/claude -r` keeps its chat id, so both sides stay linked.
+- Deleting a chat in game unlinks its thread and says so there.
+- What leaves the machine: reply and progress text, which can include file contents and paths. No game context, image or file is posted.
+
 ## Environment
 
 | Variable | Meaning |
@@ -280,6 +306,7 @@ Exit codes: `0` normal, `1` the injected or one-shot job failed, `2` config miss
 | `CLAUDE_WOW_HOME` | Where `config.json`, `state.json`, `transcripts.json`, `bridge.log`, `tmp/`, `mapjobs/`, `uijobs/`, `goals/` and `data/` live. Default `~/.claude-wow`; see [Where the bridge keeps its files](#where-the-bridge-keeps-its-files). |
 | `CLAUDE_WOW_PROJECT` | Default working folder, below `--project` and above the start folder in precedence. The old name `WOW_AI_PROJECT` is still read. |
 | `CLAUDE_WOW_UPDATE_API` | The GitHub API repository URL the update check reads `releases/latest` from. Default `https://api.github.com/repos/rdimascio/wow-ai`; set it for a fork. |
+| `CLAUDE_WOW_DISCORD_BOT_TOKEN` | The Discord bot token for [Discord sync](#discord-sync), over the token file. The bridge removes it from its environment at start, so agent runs never see it. The background service does not carry shell variables: use the token file there. |
 | `CLAUDE_WOW_SUPERVISED` | Set to `1` by the supervisor for the bridge it starts. Only a supervised bridge restarts itself for an update. |
 | `CLAUDE_WOW_MAC_BACKEND` | macOS pixel capture: `native`, `screencapture` or `auto` (`capture_mac.py --backend`). The old name `WOWAI_MAC_BACKEND` is still read. |
 | `CLAUDECODE` | Removed from Claude's environment so a bridge started from inside a Claude Code session can still launch `claude -p`. |
@@ -317,7 +344,7 @@ The bridge's banner prints the folder it chose (`home :`). The one-line installe
 | `~/.claude-wow/state.json` | Agent session ids per chat, the folder and the agent each session ran with, each session's context growth (`sessionUsage`: the tokens the next message carries, turns, the model's window, when it started, its runs at API list prices), handled message ids per addon session token, the presence ring and position (`presence`), the last signal self-test result the addon reported (`presenceTest`), and the latest game context the addon sent (`context`). Delete it to forget all sessions. |
 | `~/.claude-wow/transcripts.json` | The last 200 messages of every chat, with the agent that wrote each reply, so the addon can recover its chats after the client wipes saved data. |
 | `~/.claude-wow/uijobs/` | One widget command file per running job (`CLAUDE_WOW_UI_FILE`), read and deleted when the job ends. The widgets themselves live in `state.json` (`widgets`). |
-| `~/.claude-wow/mapjobs/` | One map command file per running job (`CLAUDE_WOW_MAP_FILE`), read and deleted when the job ends. Map layers themselves live in `state.json` (`map`). |
+| `~/.claude-wow/mapjobs/` | One map command file per running job (`CLAUDE_WOW_MAP_FILE`), read and deleted when the job ends. Map layers themselves live in `state.json` (`maps`, one set per character key). |
 | `~/.claude-wow/goals/` | One folder per character (`<Name-Realm>/goals.json`): the profession goals and the current order plus the last 20, written only by the bridge when a live session or an in-game `ask` run (through its per-run `wowgoals` server) calls `goal_set` or `order_issue`. A file the bridge cannot read is left alone. In-game agent runs may not edit this folder (`--disallowedTools`). See [LIVE-SESSION.md](LIVE-SESSION.md#goals-and-orders-phase-0). The same folder holds `snapshot.json` (the latest game state, one entry per section with its sequence and hash) `events.jsonl` (rotated to `events.1.jsonl` at 5 MB; 2 files kept) and `observed.jsonl` (vendor prices, auction results and loot samples with their map position, one line each with trust `observed`; rotated to `observed.1.jsonl` at 5 MB; 2 files kept), all written only by the bridge. See [Game state telemetry](#game-state-telemetry). |
 | `~/.claude-wow/update.json` | The last update check (`attemptAt`, `ok`, `status`, `message`, `latest`) and an installed update that waits for its restart (`pendingRestart`, `version`, `from`, `binary`, `restartFrom`). `claude-wow service status` and `npm run doctor` show it. Delete it to check again at the next start. |
 | `~/.claude-wow/update-skip.json` | A release version the daily update check must not install (`version`, `reason`, `at`), until a newer release is out or `claude-wow update` runs. Delete it to lift the skip. |
