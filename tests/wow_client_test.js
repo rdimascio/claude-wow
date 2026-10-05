@@ -145,6 +145,18 @@ test('ClaudeWoW whose TOC lists no matching interface loads only with out-of-dat
   assert.notEqual(allowed.luaValue('ClaudeWoW'), null);
 });
 
+test('a ClaudeWoW whose TOC lists a missing file fails the launch and names the file', () => {
+  const sb = sandbox();
+  const file = path.join(sb.addons, 'ClaudeWoW', 'Widgets.lua');
+  const before = fs.readFileSync(file);
+  fs.rmSync(file);
+  try {
+    assert.throws(() => new WowClient(sb).launch(), /ClaudeWoW did not load: MISSING_FILE Widgets\.lua/);
+  } finally {
+    fs.writeFileSync(file, before);
+  }
+});
+
 test('gameRunner fails a test whose addon raised a Lua error before a reload', async () => {
   const withGame = gameRunner(ROOT);
   sandbox();

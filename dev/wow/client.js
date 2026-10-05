@@ -10,6 +10,7 @@ const REPO = path.resolve(__dirname, '..', '..');
 const STUB = path.join(REPO, 'tests', 'wow_stub.lua');
 const PRELUDE = path.join(__dirname, 'prelude.lua');
 const MAIN_ADDON = 'ClaudeWoW';
+const QUIET_NOT_LOADED = ['DISABLED', 'INTERFACE_VERSION'];
 
 function luaQuote(s) {
   return '"' + [...Buffer.from(String(s), 'utf8')].map(b => '\\' + b).join('') + '"';
@@ -248,7 +249,9 @@ class WowClient {
     if (!this.indexed.includes(MAIN_ADDON)) throw new Error(`the ${MAIN_ADDON} addon is not installed in the sandbox client`);
     this.runLua(`DEV.mainLoadResult = { DEV.LoadAddOn("${MAIN_ADDON}") }`, '@boot');
     this.mainAddonLoaded = this.luaValue('DEV.mainLoadResult[1]') === 'true';
-    if (!this.mainAddonLoaded) this.note(`${MAIN_ADDON} not loaded: ${this.luaValue('DEV.mainLoadResult[2]')}`);
+    const notLoadedReason = this.luaValue('DEV.mainLoadResult[2]');
+    if (!this.mainAddonLoaded && !QUIET_NOT_LOADED.includes(notLoadedReason)) throw new Error(`${MAIN_ADDON} did not load: ${notLoadedReason}`);
+    if (!this.mainAddonLoaded) this.note(`${MAIN_ADDON} not loaded: ${notLoadedReason}`);
     for (const name of this.startupAddons()) this.runLua(`DEV.LoadAddOn(${luaQuote(name)})`, '@boot-' + name);
     if (o.afterAddonLoad) this.runLua(o.afterAddonLoad, '@afterAddonLoad');
     if (this.mainAddonLoaded && fs.existsSync(this.sb.saved)) this.runLua(fs.readFileSync(this.sb.saved), '@SavedVariables');
