@@ -3798,11 +3798,38 @@ function Cli.ProjectMenu(anchor)
 	Cli.Out(c, "project: " .. Cli.ProjectLabel(c) .. " (known: " .. Cli.ProjectNames() .. "). Use /claude --project <name|path|none>.")
 end
 
+Cli.PROJECT_W_MIN = 60
+Cli.PROJECT_W_MAX = 240
+Cli.PROJECT_HEADER_SHARE = 0.5
+Cli.PROJECT_PAD = 8
+
+function Cli.ProjectButtonRoom(b)
+	local host = b:GetParent()
+	local hostWidth = (host and Try(host.GetWidth, host)) or 0
+	if ui.chatTitle then
+		return math.max(Cli.PROJECT_W_MIN, math.min(Cli.PROJECT_W_MAX, math.floor(hostWidth * Cli.PROJECT_HEADER_SHARE)))
+	end
+	return math.max(Cli.PROJECT_W_MIN, hostWidth - 2 * Cli.PROJECT_PAD)
+end
+
 function Cli.UpdateProjectButton()
 	local b = ui.projectButton
 	if not b then return end
-	b.text:SetText("Project: |cffffffff" .. Display(Cli.ProjectLabel(ActiveChat())) .. "|r")
-	b:SetWidth(math.max(60, (Try(b.text.GetStringWidth, b.text) or 100) + 8))
+	b.fullName = Display(Cli.ProjectLabel(ActiveChat()))
+	b.text:SetWidth(0)
+	b.text:SetText("Project: |cffffffff" .. b.fullName .. "|r")
+	local natural = (Try(b.text.GetStringWidth, b.text) or 100) + Cli.PROJECT_PAD
+	local width = math.min(Cli.ProjectButtonRoom(b), math.max(Cli.PROJECT_W_MIN, natural))
+	b.truncated = natural > width
+	b:SetWidth(width)
+	b.text:SetWidth(width - Cli.PROJECT_PAD)
+end
+
+function Cli.ProjectButtonTooltip(b)
+	GameTooltip:SetOwner(b, ui.chatTitle and "ANCHOR_BOTTOMRIGHT" or "ANCHOR_TOP")
+	GameTooltip:SetText("Project: " .. (b.fullName or Cli.NO_PROJECT))
+	GameTooltip:AddLine("The repo this chat works in. No project = a general chat. You can also type #name in a message or use /claude --project <name>.", 0.8, 0.8, 0.8, true)
+	GameTooltip:Show()
 end
 
 -- Folder this chat's agent works in. Empty (or "-" / "default") = the bridge's
@@ -6405,24 +6432,32 @@ local function BuildUI()
 	inputBg:SetScript("OnMouseDown", function() input:SetFocus() end)
 	ui.input = input
 
-	local projectButton = CreateFrame("Button", "ClaudeWoWProjectButton", inputBg)
-	projectButton:SetSize(120, 16)
-	projectButton:SetPoint("BOTTOMRIGHT", inputBg, "BOTTOMRIGHT", -6, 4)
-	projectButton:SetFrameLevel((Try(inputBg.GetFrameLevel, inputBg) or 1) + 5)
+	local projectHost = ui.titleBar or inputBg
+	local projectButton = CreateFrame("Button", "ClaudeWoWProjectButton", projectHost)
+	if ui.titleBar then
+		projectButton:SetSize(120, Q.NAV_H - 10)
+		projectButton:SetPoint("RIGHT", projectHost, "RIGHT", -Cli.PROJECT_PAD, 0)
+		ui.chatTitle:SetPoint("RIGHT", projectButton, "LEFT", -Cli.PROJECT_PAD, 0)
+	else
+		projectButton:SetSize(120, 16)
+		projectButton:SetPoint("BOTTOMRIGHT", projectHost, "BOTTOMRIGHT", -6, 4)
+	end
+	projectButton:SetFrameLevel((Try(projectHost.GetFrameLevel, projectHost) or 1) + 5)
 	projectButton.text = projectButton:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 	projectButton.text:SetPoint("RIGHT", projectButton, "RIGHT", -2, 0)
 	projectButton.text:SetJustifyH("RIGHT")
+	projectButton.text:SetWordWrap(false)
 	local projectHl = projectButton:CreateTexture(nil, "HIGHLIGHT")
 	projectHl:SetAllPoints()
 	projectHl:SetColorTexture(1, 1, 1, 0.08)
-	projectButton:SetScript("OnClick", function(self) Cli.ProjectMenu(self) end)
-	projectButton:SetScript("OnEnter", function(self)
-		GameTooltip:SetOwner(self, "ANCHOR_TOP")
-		GameTooltip:SetText("Project")
-		GameTooltip:AddLine("The repo this chat works in. No project = a general chat. You can also type #name in a message or use /claude --project <name>.", 0.8, 0.8, 0.8, true)
-		GameTooltip:Show()
+	projectButton:RegisterForClicks("LeftButtonUp")
+	projectButton:SetScript("OnClick", function(self)
+		GameTooltip:Hide()
+		Cli.ProjectMenu(self)
 	end)
+	projectButton:SetScript("OnEnter", Cli.ProjectButtonTooltip)
 	projectButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
+	projectHost:HookScript("OnSizeChanged", function() Cli.UpdateProjectButton() end)
 	ui.projectButton = projectButton
 
 	-- Send sits to the right of the input box, vertically centred on it.
