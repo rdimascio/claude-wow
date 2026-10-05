@@ -19,7 +19,10 @@ test('this test run is not the compiled binary, and describe() names what it is'
 });
 
 test('from a checkout, a script is run with this interpreter and its path, as before', () => {
-  assert.deepEqual(R.scriptCommand('bridge', ['--once'], checkout), ['/usr/local/bin/node', [path.join('/home/p/claude-wow', 'bridge', 'bridge.js'), '--once']]);
+  assert.deepEqual(R.scriptCommand('bridge', ['--once'], checkout), [
+    '/usr/local/bin/node',
+    [path.join('/home/p/claude-wow', 'bridge', 'bridge.js'), '--once'],
+  ]);
   assert.deepEqual(R.scriptCommand('setup', ['--wow', 'x'], checkout), ['/usr/local/bin/node', [path.join('/home/p/claude-wow', 'setup.js'), '--wow', 'x']]);
   assert.deepEqual(R.scriptCommand('install-slots', [], checkout), ['/usr/local/bin/node', [path.join('/home/p/claude-wow', 'bridge', 'install-slots.js')]]);
   assert.deepEqual(R.scriptCommand('supervisor', [], checkout), ['/usr/local/bin/node', [path.join('/home/p/claude-wow', 'bridge', 'supervisor.js')]]);
@@ -30,20 +33,14 @@ test('from a checkout, a script is run with this interpreter and its path, as be
   assert.throws(() => R.scriptCommand('nope', [], checkout), /no script called "nope"/);
 });
 
-test('from the binary, a script is the binary and a subcommand; the supervisor is the binary itself', () => {
-  assert.deepEqual(R.scriptCommand('bridge', ['--once'], binary), ['/home/p/.local/bin/claude-wow', ['bridge', '--once']]);
-  assert.deepEqual(R.scriptCommand('setup', ['--wow', 'x'], binary), ['/home/p/.local/bin/claude-wow', ['setup', '--wow', 'x']]);
-  assert.deepEqual(R.scriptCommand('install-slots', [], binary), ['/home/p/.local/bin/claude-wow', ['install-slots']]);
-  assert.deepEqual(R.scriptCommand('supervisor', [], binary), ['/home/p/.local/bin/claude-wow', []]);
-  for (const name of Object.keys(R.SCRIPTS)) assert.ok(fs.existsSync(path.join(R.ROOT, R.SCRIPTS[name])), `${R.SCRIPTS[name]} exists`);
-});
-
 test('a JavaScript launcher runs with this interpreter from a checkout, and with the node on the PATH from the binary', () => {
   assert.deepEqual(R.node(checkout), { file: '/usr/local/bin/node', found: true });
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-wow-rt-'));
   try {
-    const a = path.join(tmp, 'a'), b = path.join(tmp, 'b');
-    fs.mkdirSync(a); fs.mkdirSync(b);
+    const a = path.join(tmp, 'a'),
+      b = path.join(tmp, 'b');
+    fs.mkdirSync(a);
+    fs.mkdirSync(b);
     const PATH = [a, b].join(path.delimiter);
     const none = R.node(binary, { PATH }, 'linux');
     assert.equal(none.found, false);

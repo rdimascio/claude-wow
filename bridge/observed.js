@@ -148,7 +148,14 @@ function entriesOf(name, value) {
 function lineFor(name, entry) {
   const base = { v: LINE_VERSION, kind: KINDS[name], trust: TRUST, n: 1, at: entry.at * 1000, key: `${name}|${entry.key}` };
   if (name === 'vendor') return { ...base, npcID: entry.npcID, mapID: entry.mapID, items: entry.items };
-  if (name === 'ah') return { ...base, itemID: entry.itemID, price: entry.price, quantity: entry.quantity, ...(entry.rows && entry.stack ? { rows: entry.rows, stack: entry.stack } : {}) };
+  if (name === 'ah')
+    return {
+      ...base,
+      itemID: entry.itemID,
+      price: entry.price,
+      quantity: entry.quantity,
+      ...(entry.rows && entry.stack ? { rows: entry.rows, stack: entry.stack } : {}),
+    };
   return { ...base, source: entry.source, map: entry.map, items: entry.items };
 }
 
@@ -156,29 +163,55 @@ function fileStamp(file) {
   try {
     const st = fs.statSync(file);
     return [st.mtimeMs, st.ctimeMs, st.size, st.ino].join(':');
-  } catch { return 'none'; }
+  } catch {
+    return 'none';
+  }
 }
 
 function validLine(doc) {
   if (!doc || typeof doc !== 'object' || doc.v !== LINE_VERSION || doc.trust !== TRUST) return false;
   if (!Number.isSafeInteger(doc.at) || doc.at <= 0 || doc.n !== 1) return false;
-  if (doc.kind === KINDS.ah) return Number.isSafeInteger(doc.itemID) && doc.itemID > 0 && Number.isSafeInteger(doc.price) && doc.price > 0 && ((doc.rows === undefined && doc.stack === undefined) || (Number.isSafeInteger(doc.rows) && doc.rows > 0 && Number.isSafeInteger(doc.stack) && doc.stack > 0));
+  if (doc.kind === KINDS.ah)
+    return (
+      Number.isSafeInteger(doc.itemID) &&
+      doc.itemID > 0 &&
+      Number.isSafeInteger(doc.price) &&
+      doc.price > 0 &&
+      ((doc.rows === undefined && doc.stack === undefined) ||
+        (Number.isSafeInteger(doc.rows) && doc.rows > 0 && Number.isSafeInteger(doc.stack) && doc.stack > 0))
+    );
   if (doc.kind === KINDS.vendor) return Number.isSafeInteger(doc.npcID) && doc.npcID > 0 && Array.isArray(doc.items);
   if (doc.kind === KINDS.loot) {
     const s = doc.source;
-    return !!s && Object.values(SOURCE_TYPES).includes(s.type) && Number.isSafeInteger(s.id) && s.id > 0 && Number.isSafeInteger(s.spell) && !!doc.items && typeof doc.items === 'object';
+    return (
+      !!s &&
+      Object.values(SOURCE_TYPES).includes(s.type) &&
+      Number.isSafeInteger(s.id) &&
+      s.id > 0 &&
+      Number.isSafeInteger(s.spell) &&
+      !!doc.items &&
+      typeof doc.items === 'object'
+    );
   }
   return false;
 }
 
 function readLines(file) {
   let text = '';
-  try { text = fs.readFileSync(file, 'utf8'); } catch { return []; }
+  try {
+    text = fs.readFileSync(file, 'utf8');
+  } catch {
+    return [];
+  }
   const out = [];
   for (const line of text.split('\n')) {
     if (!line) continue;
     let doc;
-    try { doc = JSON.parse(line); } catch { continue; }
+    try {
+      doc = JSON.parse(line);
+    } catch {
+      continue;
+    }
     if (validLine(doc)) out.push(doc);
   }
   return out;
@@ -194,7 +227,10 @@ function medoid(points) {
   let bestCost = Infinity;
   for (const p of pool) {
     const cost = pool.reduce((sum, q) => sum + Math.hypot(p.x - q.x, p.y - q.y), 0);
-    if (cost < bestCost) { best = p; bestCost = cost; }
+    if (cost < bestCost) {
+      best = p;
+      bestCost = cost;
+    }
   }
   return best;
 }
@@ -223,12 +259,17 @@ function dropRates(lines, itemID, minSamples = MIN_SAMPLES) {
   const hidden = [];
   for (const g of groups.values()) {
     if (!g.k && g.n < minSamples) continue;
-    const spots = [...g.spots.values()].sort((a, b) => b.n - a.n).map(s => {
-      const point = medoid(s.points);
-      return { mapID: s.mapID, n: s.n, x: point ? point.x : null, y: point ? point.y : null };
-    });
+    const spots = [...g.spots.values()]
+      .sort((a, b) => b.n - a.n)
+      .map(s => {
+        const point = medoid(s.points);
+        return { mapID: s.mapID, n: s.n, x: point ? point.x : null, y: point ? point.y : null };
+      });
     const row = { source: g.source, n: g.n, k: g.k, asOf: g.asOf, spots };
-    if (g.n < minSamples) { hidden.push({ source: g.source, n: g.n }); continue; }
+    if (g.n < minSamples) {
+      hidden.push({ source: g.source, n: g.n });
+      continue;
+    }
     shown.push({ ...row, rate: Math.round((g.k / g.n) * 1000) / 1000, perLoot: Math.round((g.qty / g.n) * 100) / 100 });
   }
   shown.sort((a, b) => b.rate - a.rate || b.n - a.n);
@@ -239,12 +280,21 @@ function prices(lines, itemID) {
   const quotes = lines.filter(d => d.kind === KINDS.ah && d.itemID === itemID).sort((a, b) => a.at - b.at);
   const last = quotes[quotes.length - 1];
   const recent = last ? quotes.filter(q => q.at > last.at - PRICE_WINDOW_MS) : [];
-  const ah = last ? {
-    n: quotes.length,
-    asOf: last.at,
-    latest: { price: last.price, quantity: last.quantity, ...(last.rows ? { rows: last.rows, stack: last.stack } : {}) },
-    recent: { n: recent.length, from: recent[0].at, asOf: last.at, low: Math.min(...recent.map(q => q.price)), high: Math.max(...recent.map(q => q.price)), hours: PRICE_WINDOW_MS / 3600000 },
-  } : null;
+  const ah = last
+    ? {
+        n: quotes.length,
+        asOf: last.at,
+        latest: { price: last.price, quantity: last.quantity, ...(last.rows ? { rows: last.rows, stack: last.stack } : {}) },
+        recent: {
+          n: recent.length,
+          from: recent[0].at,
+          asOf: last.at,
+          low: Math.min(...recent.map(q => q.price)),
+          high: Math.max(...recent.map(q => q.price)),
+          hours: PRICE_WINDOW_MS / 3600000,
+        },
+      }
+    : null;
   const byNpc = new Map();
   for (const d of lines) {
     if (d.kind !== KINDS.vendor) continue;
@@ -268,11 +318,16 @@ function gatherFail(why) {
 
 function gatherSpells(store) {
   if (!store || !store.build) return gatherFail('no synced game data');
-  if (store.rowTrust !== 'client-data') return gatherFail(`the synced data (build ${store.build}) is not checked against the client build (${store.buildCheck})`);
+  if (store.rowTrust !== 'client-data')
+    return gatherFail(`the synced data (build ${store.build}) is not checked against the client build (${store.buildCheck})`);
   const m = store.manifest || {};
   const key = [store.dir, store.build, m.fetchedAt || '', m.tableHash || '', store.rowTrust].join('|');
   if (gatherCache.key === key) return gatherCache.result;
-  const remember = result => { gatherCache.key = key; gatherCache.result = result; return result; };
+  const remember = result => {
+    gatherCache.key = key;
+    gatherCache.result = result;
+    return result;
+  };
   const missing = ['skilllines', 'skilllineabilities', 'spellreagents'].filter(e => !store.has(e));
   if (missing.length) return remember(gatherFail(`the synced data has no usable ${missing.join(', ')} table`));
   const skillRows = store.rows('skilllines');
@@ -297,7 +352,12 @@ function gatherSpells(store) {
   for (const a of kept) if (!rootOf.has(topOf.get(a.skillLine))) rootOf.set(topOf.get(a.skillLine), a.spell);
   const spells = {};
   for (const a of kept.slice(0, GATHER_SPELLS_MAX)) spells[a.spell] = rootOf.get(topOf.get(a.skillLine));
-  return remember({ spells, count: Math.min(kept.length, GATHER_SPELLS_MAX), cut: Math.max(0, kept.length - GATHER_SPELLS_MAX), why: kept.length ? '' : 'the synced data has no gathering spells' });
+  return remember({
+    spells,
+    count: Math.min(kept.length, GATHER_SPELLS_MAX),
+    cut: Math.max(0, kept.length - GATHER_SPELLS_MAX),
+    why: kept.length ? '' : 'the synced data has no gathering spells',
+  });
 }
 
 function createObserved(opts) {
@@ -321,9 +381,16 @@ function createObserved(opts) {
         const start = Math.max(0, size - SEEN_PRIME_BYTES);
         const fd = fs.openSync(file, 'r');
         const buf = Buffer.alloc(size - start);
-        try { fs.readSync(fd, buf, 0, buf.length, start); } finally { fs.closeSync(fd); }
+        try {
+          fs.readSync(fd, buf, 0, buf.length, start);
+        } finally {
+          fs.closeSync(fd);
+        }
         for (const line of buf.toString('utf8').split('\n')) {
-          try { const doc = JSON.parse(line); if (doc && typeof doc.key === 'string') keys.add(doc.key); } catch {}
+          try {
+            const doc = JSON.parse(line);
+            if (doc && typeof doc.key === 'string') keys.add(doc.key);
+          } catch {}
         }
       } catch {}
     }
@@ -344,7 +411,9 @@ function createObserved(opts) {
     const out = path.join(folder(character), OBSERVED_FILE);
     fs.mkdirSync(folder(character), { recursive: true });
     let size = 0;
-    try { size = fs.statSync(out).size; } catch {}
+    try {
+      size = fs.statSync(out).size;
+    } catch {}
     if (size >= rotateBytes) {
       fs.renameSync(out, path.join(folder(character), OBSERVED_ROTATED_FILE));
       log(`observed: ${OBSERVED_FILE} for ${character} reached ${rotateBytes} bytes; rotated to ${OBSERVED_ROTATED_FILE}`);
@@ -368,7 +437,33 @@ function createObserved(opts) {
 }
 
 module.exports = {
-  OBSERVED_FILE, OBSERVED_ROTATED_FILE, OBSERVED_ROTATE_BYTES, LINE_VERSION, TRUST, SECTIONS, PARSERS, MIN_SAMPLES,
-  VENDOR_ITEMS_MAX, AH_QUOTES_MAX, LOOT_ENTRIES_MAX, LOOT_ITEMS_MAX, SOURCE_TYPES, KINDS,
-  GATHER_SKILL_NAMES, GATHER_SPELLS_MAX, PRICE_WINDOW_MS, parseVendor, parseAh, parseLoot, entriesOf, gatherSpells, medoid, lineFor, validLine, readLines, dropRates, prices, createObserved,
+  OBSERVED_FILE,
+  OBSERVED_ROTATED_FILE,
+  OBSERVED_ROTATE_BYTES,
+  LINE_VERSION,
+  TRUST,
+  SECTIONS,
+  PARSERS,
+  MIN_SAMPLES,
+  VENDOR_ITEMS_MAX,
+  AH_QUOTES_MAX,
+  LOOT_ENTRIES_MAX,
+  LOOT_ITEMS_MAX,
+  SOURCE_TYPES,
+  KINDS,
+  GATHER_SKILL_NAMES,
+  GATHER_SPELLS_MAX,
+  PRICE_WINDOW_MS,
+  parseVendor,
+  parseAh,
+  parseLoot,
+  entriesOf,
+  gatherSpells,
+  medoid,
+  lineFor,
+  validLine,
+  readLines,
+  dropRates,
+  prices,
+  createObserved,
 };

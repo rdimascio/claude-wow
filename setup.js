@@ -23,10 +23,10 @@ const { spawnSync } = require('child_process');
 
 // Literal requires: the compiled binary bundles what it can see (runtime.js).
 const P = require('./bridge/protocol'); // the addon's name, and its old names
-const H = require('./bridge/home');     // CLAUDE_WOW_HOME: where config.json and the state live
-const R = require('./bridge/runtime');  // node, bun, or the compiled binary
-const A = require('./bridge/agents');   // which agent CLIs this PC has
-const AS = require('./bridge/assets');  // the addon, the config template and the capture scripts, by path
+const H = require('./bridge/home'); // CLAUDE_WOW_HOME: where config.json and the state live
+const R = require('./bridge/runtime'); // node, bun, or the compiled binary
+const A = require('./bridge/agents'); // which agent CLIs this PC has
+const AS = require('./bridge/assets'); // the addon, the config template and the capture scripts, by path
 const G = require('./bridge/gamefs');
 const SIG = require('./bridge/signals');
 const CLI = require('./bridge/clients');
@@ -51,8 +51,9 @@ function checkNode() {
   if (R.bun) return;
   const [maj, min] = process.versions.node.split('.').map(Number);
   if (maj > MIN_NODE[0] || (maj === MIN_NODE[0] && min >= MIN_NODE[1])) return;
-  throw new Error(`Node ${MIN_NODE.join('.')} or newer is required; this is ${process.versions.node}. ` +
-    'Install a newer Node (https://nodejs.org) and run setup again.');
+  throw new Error(
+    `Node ${MIN_NODE.join('.')} or newer is required; this is ${process.versions.node}. ` + 'Install a newer Node (https://nodejs.org) and run setup again.',
+  );
 }
 
 // The default work folder. Validated, because the README's example is a Windows
@@ -63,13 +64,14 @@ function resolveProject(raw) {
   if (!p) throw new Error('--project needs a folder (e.g. --project ~/code/my-game)');
   const windowsShaped = /^[A-Za-z]:[\\/]/.test(p) || p.startsWith('\\\\');
   if (windowsShaped && process.platform !== 'win32') {
-    throw new Error(`--project "${p}" is a Windows path, but this is ${process.platform}. ` +
-      'Pass a path for this machine, e.g. --project ~/code/my-game');
+    throw new Error(`--project "${p}" is a Windows path, but this is ${process.platform}. ` + 'Pass a path for this machine, e.g. --project ~/code/my-game');
   }
   const abs = path.resolve(p.replace(/^~(?=[\\/]|$)/, os.homedir()));
   if (!fs.existsSync(abs)) {
-    throw new Error(`--project "${p}" does not exist (looked in ${abs}). ` +
-      'Pass the folder you want the agents to work in, or leave --project off to use the current folder.');
+    throw new Error(
+      `--project "${p}" does not exist (looked in ${abs}). ` +
+        'Pass the folder you want the agents to work in, or leave --project off to use the current folder.',
+    );
   }
   if (!fs.statSync(abs).isDirectory()) throw new Error(`--project "${p}" is not a folder (${abs})`);
   return abs;
@@ -86,7 +88,9 @@ function isClient(dir) {
     const items = listDir(dir);
     // Windows: the game exe. macOS: the .app bundle. Linux (Wine): the Wine exe.
     return items.some(f => /^Wow.*\.exe$/i.test(f) || /\.app$/i.test(f));
-  } catch { return false; }
+  } catch {
+    return false;
+  }
 }
 
 function namedClient() {
@@ -98,14 +102,15 @@ function detectClients() {
   let roots;
   if (process.platform === 'win32') {
     roots = [process.env['ProgramFiles(x86)'], process.env.ProgramFiles, 'D:\\', 'E:\\', 'D:\\Games', 'E:\\Games', 'C:\\Games']
-      .filter(Boolean).map(r => path.join(r, 'World of Warcraft'));
+      .filter(Boolean)
+      .map(r => path.join(r, 'World of Warcraft'));
   } else if (process.platform === 'darwin') {
     roots = ['/Applications/World of Warcraft', path.join(os.homedir(), 'Applications', 'World of Warcraft')];
   } else {
     // Linux: the client lives inside a Wine prefix.
-    roots = [process.env.WINEPREFIX, path.join(os.homedir(), '.wine'),
-      path.join(os.homedir(), 'Games', 'battlenet')]
-      .filter(Boolean).flatMap(p => ['Program Files (x86)', 'Program Files'].map(pf => path.join(p, 'drive_c', pf, 'World of Warcraft')));
+    roots = [process.env.WINEPREFIX, path.join(os.homedir(), '.wine'), path.join(os.homedir(), 'Games', 'battlenet')]
+      .filter(Boolean)
+      .flatMap(p => ['Program Files (x86)', 'Program Files'].map(pf => path.join(p, 'drive_c', pf, 'World of Warcraft')));
   }
   const found = [];
   for (const root of roots) {
@@ -121,7 +126,11 @@ const NO_CLIENT = 'Could not find the WoW client. Pass --wow "<path to World of 
 
 function accountsIn(client) {
   const base = path.join(client, 'WTF', 'Account');
-  try { return listDir(base).filter(n => n !== 'SavedVariables' && fs.statSync(path.join(base, n)).isDirectory()); } catch { return []; }
+  try {
+    return listDir(base).filter(n => n !== 'SavedVariables' && fs.statSync(path.join(base, n)).isDirectory());
+  } catch {
+    return [];
+  }
 }
 
 function findAccount(client, { wanted = '', current = '', strict = true } = {}) {
@@ -134,7 +143,8 @@ function findAccount(client, { wanted = '', current = '', strict = true } = {}) 
   }
   if (current && names.includes(current)) return current;
   if (!names.length) return '';
-  if (names.length > 1) console.log(`Several accounts found in ${CLI.labelOf(client)} (${names.join(', ')}); using "${names[0]}". Pass --account to choose another.`);
+  if (names.length > 1)
+    console.log(`Several accounts found in ${CLI.labelOf(client)} (${names.join(', ')}); using "${names[0]}". Pass --account to choose another.`);
   return names[0];
 }
 
@@ -155,7 +165,8 @@ function migrateOldInstall(client, account) {
   const addons = path.join(client, 'Interface', 'AddOns');
   const savedDir = path.join(client, 'WTF', 'Account', account, 'SavedVariables');
   const newSaved = path.join(savedDir, P.ADDON + '.lua');
-  for (const old of P.OLD_ADDONS) { // newest first: WoWAI.lua wins over WoWClaude.lua when both exist
+  for (const old of P.OLD_ADDONS) {
+    // newest first: WoWAI.lua wins over WoWClaude.lua when both exist
     const oldSaved = path.join(savedDir, old + '.lua');
     if (fs.existsSync(oldSaved) && !fs.existsSync(newSaved)) {
       migrateSavedData(old, oldSaved, newSaved);
@@ -263,7 +274,10 @@ function loadConfig() {
   for (const n of CLI.migrateConfig(cfg)) noteOnce(notes, n);
   if (args.project) {
     const want = resolveProject(args.project);
-    if (cfg.defaultCwd !== want) { cfg.defaultCwd = want; notes.push('defaultCwd'); }
+    if (cfg.defaultCwd !== want) {
+      cfg.defaultCwd = want;
+      notes.push('defaultCwd');
+    }
   }
   return { cfg, notes, fresh: false };
 }
@@ -320,7 +334,9 @@ function transportReport(cfg) {
   if (t.transport === 'screenshot') {
     console.log('transport: screenshot (the default): the addon calls Screenshot(), the bridge reads the file; no screen capture, no permissions, no python');
   } else if (t.transport === 'pixel') {
-    console.log('transport: pixel (capture.mode in config.json): DEPRECATED screen capture, kept only until Screenshot() is confirmed on Windows and on Linux under Wine; remove capture.mode (or set it to "screenshot") to use the screenshot transport');
+    console.log(
+      'transport: pixel (capture.mode in config.json): DEPRECATED screen capture, kept only until Screenshot() is confirmed on Windows and on Linux under Wine; remove capture.mode (or set it to "screenshot") to use the screenshot transport',
+    );
   }
   return t.transport;
 }
@@ -335,17 +351,22 @@ function pythonReport(cfg, transport) {
   const r = spawnSync(py, ['--version'], { encoding: 'utf8' });
   const os = process.platform === 'darwin' ? 'macOS' : 'Linux';
   if (r.error || r.status !== 0) {
-    const how = process.platform === 'darwin'
-      ? 'Install it with: xcode-select --install (or brew install python3), then run setup again.'
-      : 'Install python3 from your package manager, then run setup again.';
+    const how =
+      process.platform === 'darwin'
+        ? 'Install it with: xcode-select --install (or brew install python3), then run setup again.'
+        : 'Install python3 from your package manager, then run setup again.';
     if (transport === 'screenshot') {
-      console.log(`python   : not found ("${py}"); only the deprecated pixel-capture fallback needs it (the ${os} screen capture is a python script), the screenshot transport does not. ${how.replace('Install it', 'If you want that fallback, install it')}`);
+      console.log(
+        `python   : not found ("${py}"); only the deprecated pixel-capture fallback needs it (the ${os} screen capture is a python script), the screenshot transport does not. ${how.replace('Install it', 'If you want that fallback, install it')}`,
+      );
     } else {
       warn(`python3 not found ("${py}"), and the ${os} screen capture is a python script`, how);
     }
     return;
   }
-  console.log(`python   : ${(r.stdout || r.stderr).trim()} (${py})${transport === 'screenshot' ? '; only the deprecated pixel-capture fallback needs it' : ''}`);
+  console.log(
+    `python   : ${(r.stdout || r.stderr).trim()} (${py})${transport === 'screenshot' ? '; only the deprecated pixel-capture fallback needs it' : ''}`,
+  );
 }
 
 // macOS: the two permissions the pixel capture cannot work without, checked for
@@ -355,16 +376,28 @@ function pythonReport(cfg, transport) {
 function macCaptureReport(cfg, transport) {
   if (process.platform !== 'darwin') return;
   if (transport === 'screenshot') {
-    console.log('capture  : screenshot transport, so no Screen Recording or Automation permission is needed (npm run check:mac checks them for the deprecated pixel fallback)');
+    console.log(
+      'capture  : screenshot transport, so no Screen Recording or Automation permission is needed (npm run check:mac checks them for the deprecated pixel fallback)',
+    );
     return;
   }
   const py = (cfg.capture && cfg.capture.python) || 'python3';
-  const r = spawnSync(py, [AS.file('bridge/capture_mac.py'), '--check',
-    '--process-name', (CLI.clientsOf(cfg)[0] || { processName: 'WowB' }).processName], { encoding: 'utf8' });
+  const r = spawnSync(py, [AS.file('bridge/capture_mac.py'), '--check', '--process-name', (CLI.clientsOf(cfg)[0] || { processName: 'WowB' }).processName], {
+    encoding: 'utf8',
+  });
   if (r.error) return; // python already reported missing
-  const rows = String(r.stdout || '').trim().split('\n').filter(Boolean).map(l => {
-    try { return JSON.parse(l); } catch { return null; }
-  }).filter(Boolean);
+  const rows = String(r.stdout || '')
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .map(l => {
+      try {
+        return JSON.parse(l);
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean);
   if (!rows.length) {
     warn('could not check the macOS screen-capture permissions', `Run it yourself: ${py} bridge/capture_mac.py --check`);
     return;
@@ -382,85 +415,110 @@ function agentReport(cfg) {
   const lines = [];
   for (const id of A.agentIds()) {
     const r = A.resolveCommand(id, A.agentConfig(cfg, id));
-    lines.push(`  ${A.AGENTS[id].name.padEnd(7)}: ${r.found ? r.file + (r.args.length ? ' ' + r.args.join(' ') : '') : 'not found (' + A.AGENTS[id].install + ')'}`);
+    lines.push(
+      `  ${A.AGENTS[id].name.padEnd(7)}: ${r.found ? r.file + (r.args.length ? ' ' + r.args.join(' ') : '') : 'not found (' + A.AGENTS[id].install + ')'}`,
+    );
   }
   return lines.join('\n');
 }
 
 function main() {
-try {
-  parseArgs(process.argv);
-  checkNode();
-  // Validate arguments before copying anything, so a bad --project costs nothing.
-  if (args.project) args.project = resolveProject(args.project);
-  // Config, state and transcripts from a checkout that kept them in bridge/ move
-  // to the home folder first, so the config written below lands in one place.
-  const carried = H.migrateLegacy();
-  const home = H.resolve();
-  CONFIG = home.config;
-  console.log(`home     : ${home.dir}${home.source === 'CLAUDE_WOW_HOME' ? '  (CLAUDE_WOW_HOME)' : ''}`);
-  if (carried.length) console.log(`migrate  : ${carried.join(', ')} copied from ${H.LEGACY_DIR} to ${home.dir}; the bridge reads them there from now on (the copies in bridge/ are no longer used)`);
-  const { cfg, notes, fresh } = loadConfig();
-  chooseClients(cfg, notes);
-  const targets = CLI.clientsOf(cfg);
-  if (!targets.length) throw new Error(NO_CLIENT);
-  const several = targets.length > 1;
-  for (const listed of targets) {
-    const client = refreshClient(cfg, listed, notes);
-    const tag = several ? `${client.label}: ` : '';
-    console.log(`client   : ${client.dir}`);
-    if (client.account) {
-      console.log(`account  : ${tag}${client.account}`);
-      migrateOldInstall(client.dir, client.account);
-    } else {
-      warn(`${client.label} has no account folder under ${path.join(client.dir, 'WTF', 'Account')}, so the bridge cannot read its /reload outbox`, 'Log into that game once, then run setup again.');
+  try {
+    parseArgs(process.argv);
+    checkNode();
+    // Validate arguments before copying anything, so a bad --project costs nothing.
+    if (args.project) args.project = resolveProject(args.project);
+    // Config, state and transcripts from a checkout that kept them in bridge/ move
+    // to the home folder first, so the config written below lands in one place.
+    const carried = H.migrateLegacy();
+    const home = H.resolve();
+    CONFIG = home.config;
+    console.log(`home     : ${home.dir}${home.source === 'CLAUDE_WOW_HOME' ? '  (CLAUDE_WOW_HOME)' : ''}`);
+    if (carried.length)
+      console.log(
+        `migrate  : ${carried.join(', ')} copied from ${H.LEGACY_DIR} to ${home.dir}; the bridge reads them there from now on (the copies in bridge/ are no longer used)`,
+      );
+    const { cfg, notes, fresh } = loadConfig();
+    chooseClients(cfg, notes);
+    const targets = CLI.clientsOf(cfg);
+    if (!targets.length) throw new Error(NO_CLIENT);
+    const several = targets.length > 1;
+    for (const listed of targets) {
+      const client = refreshClient(cfg, listed, notes);
+      const tag = several ? `${client.label}: ` : '';
+      console.log(`client   : ${client.dir}`);
+      if (client.account) {
+        console.log(`account  : ${tag}${client.account}`);
+        migrateOldInstall(client.dir, client.account);
+      } else {
+        warn(
+          `${client.label} has no account folder under ${path.join(client.dir, 'WTF', 'Account')}, so the bridge cannot read its /reload outbox`,
+          'Log into that game once, then run setup again.',
+        );
+      }
+      const { dest, copied, build } = copyAddon(client.dir);
+      console.log(`addon    : ${tag}${copied} file(s) -> ${dest} (build ${build}, /claude diag shows it)`);
     }
-    const { dest, copied, build } = copyAddon(client.dir);
-    console.log(`addon    : ${tag}${copied} file(s) -> ${dest} (build ${build}, /claude diag shows it)`);
-  }
-  const skipped = CLI.allClients(cfg).filter(c => !c.enabled);
-  for (const c of skipped) console.log(`client   : ${c.dir} skipped ("enabled": false in config.json)`);
-  saveConfig(cfg, notes, fresh);
-  console.log(`project  : ${cfg.defaultCwd}  (change with /claude-wow cd in game, or defaultCwd in config.json)`);
-  // A defaultCwd that no longer exists (moved folder, or a bad --project from an
-  // earlier run) makes every chat fail with "Folder does not exist" in game.
-  if (!fs.existsSync(cfg.defaultCwd)) {
-    warn(`the default project folder does not exist: ${cfg.defaultCwd}`,
-      'Every chat that has not picked its own folder will fail. Fix it with: ' +
-      'node setup.js --project "<folder>"');
-  }
-  console.log(`agent    : ${cfg.agent} by default (change with /claude-wow agent in game, or "agent" in config.json)`);
-  console.log(agentReport(cfg));
-  const transport = transportReport(cfg);
-  pythonReport(cfg, transport);
-  macCaptureReport(cfg, transport);
-  console.log('slots    : building the reply-slot pool and signal files...');
-  const movesSignals = CLI.clientsOf(cfg).some(c => SIG.legacySignalFolders(c.addonDir).length > 0);
-  const r = spawnSync(...R.scriptCommand('install-slots'), { stdio: 'inherit' });
-  if (r.status !== 0) throw new Error('install-slots.js failed');
-  if (movesSignals) warn(SIG.RESTART_NOTE, 'A /reload is not enough: the game only sees files that existed when it started.');
-  if (warnings.length) {
-    console.log(`\n${warnings.length} warning(s) to deal with first:`);
-    for (const w of warnings) console.log(`  - ${w}`);
-  }
-  console.log(`
+    const skipped = CLI.allClients(cfg).filter(c => !c.enabled);
+    for (const c of skipped) console.log(`client   : ${c.dir} skipped ("enabled": false in config.json)`);
+    saveConfig(cfg, notes, fresh);
+    console.log(`project  : ${cfg.defaultCwd}  (change with /claude-wow cd in game, or defaultCwd in config.json)`);
+    // A defaultCwd that no longer exists (moved folder, or a bad --project from an
+    // earlier run) makes every chat fail with "Folder does not exist" in game.
+    if (!fs.existsSync(cfg.defaultCwd)) {
+      warn(
+        `the default project folder does not exist: ${cfg.defaultCwd}`,
+        'Every chat that has not picked its own folder will fail. Fix it with: ' + 'node setup.js --project "<folder>"',
+      );
+    }
+    console.log(`agent    : ${cfg.agent} by default (change with /claude-wow agent in game, or "agent" in config.json)`);
+    console.log(agentReport(cfg));
+    const transport = transportReport(cfg);
+    pythonReport(cfg, transport);
+    macCaptureReport(cfg, transport);
+    console.log('slots    : building the reply-slot pool and signal files...');
+    const movesSignals = CLI.clientsOf(cfg).some(c => SIG.legacySignalFolders(c.addonDir).length > 0);
+    const r = spawnSync(...R.scriptCommand('install-slots'), { stdio: 'inherit' });
+    if (r.status !== 0) throw new Error('install-slots.js failed');
+    if (movesSignals) warn(SIG.RESTART_NOTE, 'A /reload is not enough: the game only sees files that existed when it started.');
+    if (warnings.length) {
+      console.log(`\n${warnings.length} warning(s) to deal with first:`);
+      for (const w of warnings) console.log(`  - ${w}`);
+    }
+    console.log(`
 Done. Next:
   1. Fully quit and relaunch each World of Warcraft client above that is running (it only discovers new addon folders at launch).
   2. Enable "Azeroth Companion" at the character select AddOns screen (the Azeroth Companion slot ### entries stay enabled).
   3. Start the bridge:  ${R.compiled ? 'claude-wow' : 'npm start'}   (in this terminal${
-    process.platform === 'win32' ? '; bridge\\start-window.cmd opens its own window'
-    : transport === 'screenshot' ? ''
-    : process.platform === 'darwin' ? '; keep the game windowed or borderless, and check the capture with: npm run probe:mac'
-    : '; keep the game borderless/windowed and check the capture with: npm run probe'})
+    process.platform === 'win32'
+      ? '; bridge\\start-window.cmd opens its own window'
+      : transport === 'screenshot'
+        ? ''
+        : process.platform === 'darwin'
+          ? '; keep the game windowed or borderless, and check the capture with: npm run probe:mac'
+          : '; keep the game borderless/windowed and check the capture with: npm run probe'
+  })
   4. In game:  /claude
 `);
-} catch (e) {
-  console.error('setup failed:', e.message);
-  process.exit(1);
-}
+  } catch (e) {
+    console.error('setup failed:', e.message);
+    process.exit(1);
+  }
 }
 
 // Run as a script this is the installer; required (tests/setup_test.js) it only
 // lends out the pieces, the migration above all.
 if (require.main === module) main();
-module.exports = { migrateOldInstall, migrateSavedData, copyAddon, upgradeConfig, entryFor, isClient, detectClients, findAccount, parseArgs, transportReport, main };
+module.exports = {
+  migrateOldInstall,
+  migrateSavedData,
+  copyAddon,
+  upgradeConfig,
+  entryFor,
+  isClient,
+  detectClients,
+  findAccount,
+  parseArgs,
+  transportReport,
+  main,
+};

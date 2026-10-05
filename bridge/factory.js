@@ -13,7 +13,17 @@ const TOOL_NAMES = Object.freeze([TOOL.dispatch, TOOL.status]);
 const SERVER_RULE = `mcp__${SERVER_NAME}`;
 const fullToolName = tool => `${SERVER_RULE}__${tool}`;
 const RUN_RULES = Object.freeze(TOOL_NAMES.map(fullToolName));
-const DEFAULT_SKILLS = Object.freeze(['every-ai-lead', 'babysit-prs', 'babysit-pr', 'merge-train', 'implementation-engineer', 'adversarial-review', 'factory-intake', 'fresh-eyes', 'review-prs']);
+const DEFAULT_SKILLS = Object.freeze([
+  'every-ai-lead',
+  'babysit-prs',
+  'babysit-pr',
+  'merge-train',
+  'implementation-engineer',
+  'adversarial-review',
+  'factory-intake',
+  'fresh-eyes',
+  'review-prs',
+]);
 const DISPATCHER_DENIED = Object.freeze(['Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Bash', 'Skill', 'Agent', 'Task']);
 const DEFAULT_MODEL = 'opus';
 const DEFAULT_MAX_RUNNING = 2;
@@ -21,13 +31,14 @@ const DEFAULT_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 const KEEP_RUNS = 50;
 const STATUS_LIST = 5;
 const SKILL_RE = /^[a-z0-9][a-z0-9:_-]{0,63}$/;
-const SETTING_RE = /^[A-Za-z0-9._:\[\]-]{1,80}$/;
+const SETTING_RE = /^[A-Za-z0-9._:[\]-]{1,80}$/;
 const RUN_ID_RE = /^[0-9a-f]{8}$/;
 const ARGS_MAX = 2000;
 const SUMMARY_LINES = 40;
 const SUMMARY_CHARS = 4000;
 const PR_URL_RE = /https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+/g;
-const RUN_SYSTEM = 'This run was started from an in-game World of Warcraft chat through the claude-wow bridge. Nobody watches it and nobody can answer a question: decide and go on, or stop and say what blocks you. End with a summary that names the URL of every pull request you opened or changed; a merge or run report may be as long as it needs, up to about 40 lines. The summary is shown in a game window that does not render Markdown: write plain sentences, with no bold, no backticks, no headings and no Markdown links; a list item starts with "- ".';
+const RUN_SYSTEM =
+  'This run was started from an in-game World of Warcraft chat through the claude-wow bridge. Nobody watches it and nobody can answer a question: decide and go on, or stop and say what blocks you. End with a summary that names the URL of every pull request you opened or changed; a merge or run report may be as long as it needs, up to about 40 lines. The summary is shown in a game window that does not render Markdown: write plain sentences, with no bold, no backticks, no headings and no Markdown links; a list item starts with "- ".';
 const OFF_TEXT = 'The connection to the claude-wow bridge closed, so the factory tools are off for the rest of this run; the call did nothing.';
 
 function pickSetting(v, fallback) {
@@ -85,7 +96,8 @@ function toolSchemas(skills) {
   return [
     {
       name: TOOL.dispatch,
-      description: 'Start one factory skill as a background Claude Code run in this chat\'s project folder. Returns the run id at once; the run goes on after this turn ends.',
+      description:
+        "Start one factory skill as a background Claude Code run in this chat's project folder. Returns the run id at once; the run goes on after this turn ends.",
       inputSchema: {
         type: 'object',
         properties: {
@@ -98,7 +110,8 @@ function toolSchemas(skills) {
     },
     {
       name: TOOL.status,
-      description: 'The state of factory runs: running, done or failed, how long, the cost, the first lines of the result and any pull request URLs. Without runId: the latest runs.',
+      description:
+        'The state of factory runs: running, done or failed, how long, the cost, the first lines of the result and any pull request URLs. Without runId: the latest runs.',
       inputSchema: {
         type: 'object',
         properties: { runId: { type: 'string', description: 'A run id from factory_dispatch.' } },
@@ -109,7 +122,9 @@ function toolSchemas(skills) {
 }
 
 function isRunToolRule(rule) {
-  return String(rule || '').trim().startsWith(SERVER_RULE);
+  return String(rule || '')
+    .trim()
+    .startsWith(SERVER_RULE);
 }
 
 function launchConfig({ runId, token, socket, skills = [], runtime } = {}) {
@@ -125,7 +140,9 @@ function duration(ms) {
 }
 
 function cleanArgs(raw) {
-  return String(raw === undefined || raw === null ? '' : raw).replace(/\s+/g, ' ').trim();
+  return String(raw === undefined || raw === null ? '' : raw)
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function resultEvent(text) {
@@ -152,17 +169,36 @@ function plainLine(line) {
 }
 
 function cutAtBoundary(text, max) {
-  if (text.length <= max) return text;
+  if (text.length <= max) return { text, cut: false };
   const head = text.slice(0, max);
-  const sentenceEnd = Math.max(head.lastIndexOf('\n'), head.lastIndexOf('. ') + 1);
+  const lineEnd = head.lastIndexOf('\n');
+  const sentenceEnd = Math.max(...['. ', '! ', '? '].map(mark => head.lastIndexOf(mark) + 1));
+  const boundary = Math.max(lineEnd, sentenceEnd);
   const wordEnd = head.lastIndexOf(' ');
-  const end = sentenceEnd > max / 2 ? sentenceEnd : wordEnd > 0 ? wordEnd : max;
-  return head.slice(0, end).trimEnd() + ' ...';
+  const end = boundary > 0 ? boundary : wordEnd > 0 ? wordEnd : max;
+  return { text: head.slice(0, end).trimEnd(), cut: true };
+}
+
+function summarize(text) {
+  const lines = [];
+  for (const line of String(text || '')
+    .split('\n')
+    .map(plainLine)) {
+    if (line || (lines.length && lines[lines.length - 1])) lines.push(line);
+  }
+  while (lines.length && !lines[lines.length - 1]) lines.pop();
+  const kept = lines.slice(0, SUMMARY_LINES);
+  while (kept.length && !kept[kept.length - 1]) kept.pop();
+  const capped = cutAtBoundary(kept.join('\n'), SUMMARY_CHARS);
+  return { text: capped.text, cut: capped.cut || lines.length > SUMMARY_LINES };
 }
 
 function summaryOf(text) {
-  const lines = String(text || '').split('\n').map(plainLine).filter(Boolean).slice(0, SUMMARY_LINES);
-  return cutAtBoundary(lines.join('\n'), SUMMARY_CHARS);
+  return summarize(text).text;
+}
+
+function cutNote(run) {
+  return `Cut for chat. The full output is in ${run.log} on the bridge computer.`;
 }
 
 function prUrls(text) {
@@ -178,10 +214,22 @@ function describe(run, now) {
   if (run.why) body.push(run.why);
   if (run.summary) body.push(run.summary);
   for (const url of run.prUrls || []) if (!run.summary || !run.summary.includes(url)) body.push(url);
+  if (run.summary && run.summaryCut && run.log) body.push(cutNote(run));
   return body.join('\n');
 }
 
-function createFactory({ dir, log = () => {}, command, baseConfig, env, onDone = () => {}, now = Date.now, adopt = true, spawn = PR.spawnChild, killTree = PR.killTree } = {}) {
+function createFactory({
+  dir,
+  log = () => {},
+  command,
+  baseConfig,
+  env,
+  onDone = () => {},
+  now = Date.now,
+  adopt = true,
+  spawn = PR.spawnChild,
+  killTree = PR.killTree,
+} = {}) {
   const runsFile = path.join(dir, 'runs.json');
   const logsDir = path.join(dir, 'logs');
   const live = new Map();
@@ -204,7 +252,9 @@ function createFactory({ dir, log = () => {}, command, baseConfig, env, onDone =
     try {
       const data = JSON.parse(fs.readFileSync(runsFile, 'utf8'));
       runs = Array.isArray(data.runs) ? data.runs.filter(r => r && RUN_ID_RE.test(r.id)) : [];
-    } catch { runs = []; }
+    } catch {
+      runs = [];
+    }
     if (!adopt) return;
     let lost = 0;
     for (const r of runs) {
@@ -214,7 +264,10 @@ function createFactory({ dir, log = () => {}, command, baseConfig, env, onDone =
       r.endedAt = r.endedAt || now();
       lost++;
     }
-    if (lost) { log(`factory: ${lost} run(s) from before this bridge started are marked lost`); save(); }
+    if (lost) {
+      log(`factory: ${lost} run(s) from before this bridge started are marked lost`);
+      save();
+    }
   }
 
   function find(id) {
@@ -233,7 +286,9 @@ function createFactory({ dir, log = () => {}, command, baseConfig, env, onDone =
     const conf = ctx && ctx.conf;
     if (!conf || !conf.enabled) return refuse('The factory is off: plugins.claude-code.factory.enabled is not true in config.json.');
     if (stopping) return refuse('The bridge is stopping, so no factory run was started.');
-    const skill = String((input && input.skill) || '').trim().replace(/^\//, '');
+    const skill = String((input && input.skill) || '')
+      .trim()
+      .replace(/^\//, '');
     if (!conf.skills.includes(skill)) {
       log(`factory: refused skill "${skill.slice(0, 64)}" (not in plugins.claude-code.factory.skills)`);
       return refuse(`"${skill.slice(0, 64)}" is not a factory skill this bridge may run. Allowed: ${conf.skills.join(', ') || 'none'}.`);
@@ -241,7 +296,11 @@ function createFactory({ dir, log = () => {}, command, baseConfig, env, onDone =
     const args = cleanArgs(input && input.args);
     if (args.length > ARGS_MAX) return refuse(`The arguments are ${args.length} characters long; the limit is ${ARGS_MAX}.`);
     if (running().length >= conf.maxRunning) {
-      return refuse(`${running().length} factory run(s) are going already, the limit set by plugins.claude-code.factory.maxRunning. Wait for one to end: ${running().map(r => r.id).join(', ')}.`);
+      return refuse(
+        `${running().length} factory run(s) are going already, the limit set by plugins.claude-code.factory.maxRunning. Wait for one to end: ${running()
+          .map(r => r.id)
+          .join(', ')}.`,
+      );
     }
     const cwd = ctx.cwd;
     if (!cwd || !fs.existsSync(cwd)) return refuse(`The chat's folder does not exist: ${cwd || '(none)'}.`);
@@ -256,10 +315,13 @@ function createFactory({ dir, log = () => {}, command, baseConfig, env, onDone =
       permissionMode: conf.permissionMode || base.permissionMode || 'acceptEdits',
       allowedTools: [...new Set([...(Array.isArray(base.allowedTools) ? base.allowedTools : []), ...conf.allowedTools])],
       addDirs: [],
+      maxCostUsd: undefined,
     };
     const argv = [...cmd.args, ...A.AGENTS.claude.args({ cfg: runCfg, resume: '', system: RUN_SYSTEM, images: [], mcpConfig: '' })];
     let id;
-    do { id = crypto.randomBytes(4).toString('hex'); } while (find(id));
+    do {
+      id = crypto.randomBytes(4).toString('hex');
+    } while (find(id));
     const logFile = path.join(logsDir, `${id}.log`);
     let fd;
     try {
@@ -276,7 +338,24 @@ function createFactory({ dir, log = () => {}, command, baseConfig, env, onDone =
       return refuse(`Could not start Claude Code (${cmd.file}): ${e.message}`);
     }
     fs.closeSync(fd);
-    const run = { id, skill, args, cwd, model: picked.model, effort: picked.effort, status: 'running', startedAt: now(), endedAt: 0, pid: child.pid || 0, log: logFile, chat: String((ctx && ctx.label) || ''), costUsd: null, summary: '', prUrls: [], why: '' };
+    const run = {
+      id,
+      skill,
+      args,
+      cwd,
+      model: picked.model,
+      effort: picked.effort,
+      status: 'running',
+      startedAt: now(),
+      endedAt: 0,
+      pid: child.pid || 0,
+      log: logFile,
+      chat: String((ctx && ctx.label) || ''),
+      costUsd: null,
+      summary: '',
+      prUrls: [],
+      why: '',
+    };
     runs.push(run);
     live.set(id, child);
     save();
@@ -294,22 +373,41 @@ function createFactory({ dir, log = () => {}, command, baseConfig, env, onDone =
       clearTimeout(timer);
       live.delete(id);
       let text = '';
-      try { text = fs.readFileSync(logFile, 'utf8'); } catch {}
+      try {
+        text = fs.readFileSync(logFile, 'utf8');
+      } catch {}
       const ev = resultEvent(text);
       const said = ev && typeof ev.result === 'string' ? ev.result : '';
       run.endedAt = now();
       run.costUsd = ev && Number.isFinite(ev.total_cost_usd) ? ev.total_cost_usd : null;
-      run.summary = summaryOf(said);
+      const summary = summarize(said);
+      run.summary = summary.text;
+      run.summaryCut = summary.cut;
       run.prUrls = prUrls(said);
-      if (stopping) { run.status = 'killed'; run.why = 'The bridge was stopped while it ran.'; }
-      else if (stopReason) { run.status = 'failed'; run.why = stopReason; }
-      else if (err) { run.status = 'failed'; run.why = `Claude Code did not start: ${err.message}`; }
-      else if (ev && !ev.is_error) run.status = 'done';
-      else { run.status = 'failed'; run.why = ev ? '' : `Claude Code exited with code ${code} and no result. See ${logFile}.`; }
+      if (stopping) {
+        run.status = 'killed';
+        run.why = 'The bridge was stopped while it ran.';
+      } else if (stopReason) {
+        run.status = 'failed';
+        run.why = stopReason;
+      } else if (err) {
+        run.status = 'failed';
+        run.why = `Claude Code did not start: ${err.message}`;
+      } else if (ev && !ev.is_error) run.status = 'done';
+      else {
+        run.status = 'failed';
+        run.why = ev ? '' : `Claude Code exited with code ${code} and no result. See ${logFile}.`;
+      }
       save();
-      log(`factory: run ${id} /${skill} ${run.status} after ${duration(run.endedAt - run.startedAt)}${run.costUsd !== null ? `, $${run.costUsd.toFixed(2)}` : ''}`);
+      log(
+        `factory: run ${id} /${skill} ${run.status} after ${duration(run.endedAt - run.startedAt)}${run.costUsd !== null ? `, $${run.costUsd.toFixed(2)}` : ''}`,
+      );
       if (!stopping) {
-        try { onDone(run, ctx); } catch (e) { log(`factory: delivering run ${id} failed (${e.message})`); }
+        try {
+          onDone(run, ctx);
+        } catch (e) {
+          log(`factory: delivering run ${id} failed (${e.message})`);
+        }
       }
     };
     child.on('error', err => end(null, err));
@@ -318,8 +416,13 @@ function createFactory({ dir, log = () => {}, command, baseConfig, env, onDone =
       child.stdin.on('error', () => {});
       child.stdin.end(`/${skill}${args ? ' ' + args : ''}`);
     }
-    log(`factory: run ${id} /${skill} started in ${cwd} [model ${picked.model}${picked.effort ? ', effort ' + picked.effort : ''}] for ${run.chat || 'a chat'}, log ${logFile}`);
-    return { ok: true, text: `Started factory run ${id}: /${skill}${args ? ' ' + args : ''} in ${cwd} on model ${picked.model}. The result comes back to this chat when it ends; factory_status ${id} shows it before then.` };
+    log(
+      `factory: run ${id} /${skill} started in ${cwd} [model ${picked.model}${picked.effort ? ', effort ' + picked.effort : ''}] for ${run.chat || 'a chat'}, log ${logFile}`,
+    );
+    return {
+      ok: true,
+      text: `Started factory run ${id}: /${skill}${args ? ' ' + args : ''} in ${cwd} on model ${picked.model}. The result comes back to this chat when it ends; factory_status ${id} shows it before then.`,
+    };
   }
 
   function status(input) {
@@ -357,7 +460,11 @@ function parseArgs(argv) {
     const a = argv[k];
     if (a === '--socket') opts.socket = argv[++k] || '';
     else if (a === '--run') opts.runId = argv[++k] || '';
-    else if (a === '--skills') opts.skills = String(argv[++k] || '').split(',').map(s => s.trim()).filter(s => SKILL_RE.test(s));
+    else if (a === '--skills')
+      opts.skills = String(argv[++k] || '')
+        .split(',')
+        .map(s => s.trim())
+        .filter(s => SKILL_RE.test(s));
     else throw new Error(`unknown option ${JSON.stringify(a)}`);
   }
   return opts;
@@ -368,7 +475,8 @@ function spec(skills) {
     name: SERVER_NAME,
     tools: TOOL_NAMES,
     schemas: () => toolSchemas(skills),
-    instructions: 'Start factory skills as background Claude Code runs and read their status. The claude-wow bridge owns the runs, and the grant ends when this chat run ends.',
+    instructions:
+      'Start factory skills as background Claude Code runs and read their status. The claude-wow bridge owns the runs, and the grant ends when this chat run ends.',
     label: 'factory',
     offText: OFF_TEXT,
   };
@@ -380,18 +488,55 @@ function main(argv, deps = {}) {
   const env = deps.env || process.env;
   const log = deps.log || (line => process.stderr.write(`[claude-wow factory-mcp] ${line}\n`));
   let opts;
-  try { opts = parseArgs(argv); } catch (e) { log(e.message); process.exitCode = 2; return null; }
+  try {
+    opts = parseArgs(argv);
+  } catch (e) {
+    log(e.message);
+    process.exitCode = 2;
+    return null;
+  }
   const token = String(env[GM.TOKEN_ENV] || '');
   const server = GM.createServer({ stdout, socket: opts.socket, runId: opts.runId, token, log, spec: spec(opts.skills) });
   server.connect();
   stdin.on('data', server.feed);
-  stdin.on('end', () => { server.stop(); if (!deps.stdin) process.exit(0); });
+  stdin.on('end', () => {
+    server.stop();
+    if (!deps.stdin) process.exit(0);
+  });
   return server;
 }
 
 module.exports = {
-  SERVER_NAME, SCRIPT, TOOL, TOOL_NAMES, SERVER_RULE, RUN_RULES, DEFAULT_SKILLS, DISPATCHER_DENIED, DEFAULT_MODEL, DEFAULT_MAX_RUNNING, DEFAULT_TIMEOUT_MS, RUN_SYSTEM, KEEP_RUNS,
-  fullToolName, settings, modelFor, dispatcherRules, toolSchemas, isRunToolRule, launchConfig, duration, resultEvent, summaryOf, prUrls, describe, createFactory, parseArgs, spec, main,
+  SERVER_NAME,
+  SCRIPT,
+  TOOL,
+  TOOL_NAMES,
+  SERVER_RULE,
+  RUN_RULES,
+  DEFAULT_SKILLS,
+  DISPATCHER_DENIED,
+  DEFAULT_MODEL,
+  DEFAULT_MAX_RUNNING,
+  DEFAULT_TIMEOUT_MS,
+  RUN_SYSTEM,
+  KEEP_RUNS,
+  fullToolName,
+  settings,
+  modelFor,
+  dispatcherRules,
+  toolSchemas,
+  isRunToolRule,
+  launchConfig,
+  duration,
+  resultEvent,
+  summarize,
+  summaryOf,
+  prUrls,
+  describe,
+  createFactory,
+  parseArgs,
+  spec,
+  main,
 };
 
 if (require.main === module) main(process.argv.slice(2));

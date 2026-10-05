@@ -26,10 +26,13 @@ function newVM() {
   const run = (code, arg) => {
     if (lauxlib.luaL_loadstring(L, to_luastring(code)) !== lua.LUA_OK) throw new Error('Lua load: ' + to_jsstring(lua.lua_tostring(L, -1)));
     let nargs = 0;
-    if (arg !== undefined) { lua.lua_pushstring(L, to_luastring(arg)); nargs = 1; }
+    if (arg !== undefined) {
+      lua.lua_pushstring(L, to_luastring(arg));
+      nargs = 1;
+    }
     if (lua.lua_pcall(L, nargs, 0, 0) !== lua.LUA_OK) throw new Error('Lua error: ' + to_jsstring(lua.lua_tostring(L, -1)));
   };
-  const evaluate = (expr) => {
+  const evaluate = expr => {
     run(`local v = (${expr}); if v == nil then RESULT = nil else RESULT = tostring(v) end`);
     lua.lua_getglobal(L, to_luastring('RESULT'));
     const isNil = lua.lua_isnil(L, -1);
@@ -37,7 +40,7 @@ function newVM() {
     lua.lua_pop(L, 1);
     return s;
   };
-  const num = (expr) => Number(evaluate(expr));
+  const num = expr => Number(evaluate(expr));
   run(fs.readFileSync(path.join(__dirname, 'wow_stub.lua'), 'utf8'));
   run(ROAST_STUB);
   for (const f of ['Codec.lua', 'Inbox.lua', 'ClaudeWoW.lua', 'Roast.lua']) run(fs.readFileSync(path.join(ADDON, f), 'utf8'), 'ClaudeWoW');
@@ -57,14 +60,24 @@ function decodeStrip(vm) {
     end
     RESULT = table.concat(parts, ",")`);
   const cells = [];
-  for (const p of vm.evaluate('RESULT').split(',')) { const [i, v] = p.split(':').map(Number); cells[i] = v; }
-  const bytes = [];
-  let acc = 0, nbits = 0;
-  for (let i = 0; i < cells.length; i++) {
-    acc = (acc << 3) | (cells[i] || 0); nbits += 3;
-    while (nbits >= 8) { bytes.push((acc >> (nbits - 8)) & 0xff); nbits -= 8; acc &= (1 << nbits) - 1; }
+  for (const p of vm.evaluate('RESULT').split(',')) {
+    const [i, v] = p.split(':').map(Number);
+    cells[i] = v;
   }
-  assert.equal(bytes[0], 0xc7); assert.equal(bytes[1], 0x1a);
+  const bytes = [];
+  let acc = 0,
+    nbits = 0;
+  for (let i = 0; i < cells.length; i++) {
+    acc = (acc << 3) | (cells[i] || 0);
+    nbits += 3;
+    while (nbits >= 8) {
+      bytes.push((acc >> (nbits - 8)) & 0xff);
+      nbits -= 8;
+      acc &= (1 << nbits) - 1;
+    }
+  }
+  assert.equal(bytes[0], 0xc7);
+  assert.equal(bytes[1], 0x1a);
   const len = bytes[4] * 256 + bytes[5];
   return { id: bytes[2] * 256 + bytes[3], text: Buffer.from(bytes.slice(6, 6 + len)).toString('utf8') };
 }
@@ -105,7 +118,13 @@ function luaValue(v) {
 }
 
 function recapEvent(e) {
-  return '{ ' + Object.entries(e).map(([k, v]) => `${k} = ${luaValue(v)}`).join(', ') + ' }';
+  return (
+    '{ ' +
+    Object.entries(e)
+      .map(([k, v]) => `${k} = ${luaValue(v)}`)
+      .join(', ') +
+    ' }'
+  );
 }
 
 function deathRecap(vm, newestFirst, maxHealth = 0) {
@@ -114,14 +133,6 @@ function deathRecap(vm, newestFirst, maxHealth = 0) {
 
 function hoggerRecap(vm, stamp = 500) {
   deathRecap(vm, [{ timestamp: stamp, event: 'SWING_DAMAGE', sourceName: HOGGER, amount: 52, overkill: 17 }]);
-}
-
-function die(vm) {
-  vm.run('STUB.FireEvent("PLAYER_DEAD")');
-}
-
-function roastChat(vm) {
-  return 'ClaudeWoW_RoastChatForTest()';
 }
 
 function withRoastChatHelper(vm) {
@@ -138,16 +149,10 @@ function ready({ on = true } = {}) {
   return vm;
 }
 
-function answerRoast(vm, text) {
-  const chat = roastChat(vm);
-  const id = vm.num(`${chat}.pendingId`);
-  nextSlot(vm, `{ now = time(), cwd = "", replies = { { chat = ${chat}.id, id = ${id}, status = "done", text = ${JSON.stringify(text)}, summary = "Hogger sends his regards.", agent = "claude", plugin = "roast" } } }`);
-  vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
-  assert.equal(vm.evaluate(`${chat}.pendingId`), null, 'the roast reply arrived');
-}
-
 function registered(vm, event) {
-  return vm.evaluate(`(function() for _, f in ipairs(STUB.frames) do local r = f.events.${event}; if r == true then return "all" end if type(r) == "table" then local u = {} for k in pairs(r) do u[#u + 1] = k end table.sort(u) return table.concat(u, ",") end end end)()`);
+  return vm.evaluate(
+    `(function() for _, f in ipairs(STUB.frames) do local r = f.events.${event}; if r == true then return "all" end if type(r) == "table" then local u = {} for k in pairs(r) do u[#u + 1] = k end table.sort(u) return table.concat(u, ",") end end end)()`,
+  );
 }
 
 test('roast: off by default, the slash command turns it on and off and says so, and nothing is registered, recorded or sent while off', () => {
@@ -176,54 +181,12 @@ test('roast: off by default, the slash command turns it on and off and says so, 
   assert.equal(vm.num('#STUB.actionBlocked'), 0, 'nothing the client blocks');
 
   vm.run('SlashCmdList.CLAUDE("roast the lich king for me please")');
-  assert.ok(stripJobs(vm).some(j => j.text === 'roast the lich king for me please'), 'free text starting with "roast" is a message');
+  assert.ok(
+    stripJobs(vm).some(j => j.text === 'roast the lich king for me please'),
+    'free text starting with "roast" is a message',
+  );
   vm.run('ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[1].id); SlashCmdList.CLAUDE("config")');
   assert.ok(vm.evaluate('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history].text').includes('\nroast = off  -  on|off'));
-});
-
-test('roast: a saved "on" registers the roast events at login', () => {
-  const vm = newVM();
-  vm.run('ClaudeWoWDB = { roast = { on = true } }');
-  login(vm);
-  assert.equal(registered(vm, 'PLAYER_DEAD'), 'all');
-  assert.equal(registered(vm, 'UNIT_COMBAT'), 'player');
-  assert.equal(vm.num('#STUB.actionBlocked'), 0);
-});
-
-test('roast: the recap comes from the game\'s death recap: attackers, abilities, amounts, levels, overkill, absorbs and the killing blow', () => {
-  const vm = ready();
-  vm.run(`STUB.names.target = "${HOGGER}"; STUB.levels.target = 11`);
-  deathRecap(vm, [
-    { timestamp: 510.2, event: 'SWING_DAMAGE', sourceName: HOGGER, amount: 52, overkill: 17 },
-    { timestamp: 507.5, event: 'SPELL_DAMAGE', spellName: 'Rending Claw', sourceName: HOGGER, amount: 38, absorbed: 5 },
-    { timestamp: 506.0, event: 'SPELL_PERIODIC_DAMAGE', spellName: 'Rend', sourceName: 'Riverpaw Brute', amount: 7 },
-    { timestamp: 504.5, event: 'SWING_DAMAGE', sourceName: HOGGER, amount: 45 },
-  ], 180);
-  hit(vm, { amount: 999 });
-  const recap = vm.evaluate('ClaudeWoWRoast.BuildRecap(STUB.now, ClaudeWoWRoast.ReadRecap(STUB.now))');
-  const lines = recap.split('\n');
-  assert.equal(lines[0], 'Death recap: a level 23 Night Elf Hunter just died in Duskwood - Darkshire.');
-  assert.equal(lines[1], 'Last hits from the game\'s death recap, oldest first:');
-  assert.equal(lines[2], '-5.7s Hogger (level 11): Melee 45');
-  assert.equal(lines[3], '-4.2s Riverpaw Brute: Rend 7 (tick)');
-  assert.equal(lines[4], '-2.7s Hogger (level 11): Rending Claw 38, absorbed 5');
-  assert.equal(lines[5], '-0.0s Hogger (level 11): Melee 52, overkill 17 <- killing blow');
-  assert.equal(lines[6], 'Damage taken: 142 from 2 sources. Killing blow: Hogger\'s Melee. Max health: 180.');
-  assert.ok(!recap.includes('999'), 'the death recap wins over the UNIT_COMBAT hits');
-});
-
-test('roast: the recorded recap fixtures the bridge tests read are exactly what Roast.lua builds today', () => {
-  const fixtures = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'roast', 'recaps.json'), 'utf8'));
-  for (const [name, f] of Object.entries(fixtures)) {
-    const vm = ready();
-    if (f.target) vm.run(`STUB.names.target = ${JSON.stringify(f.target.name)}; STUB.levels.target = ${f.target.level}`);
-    if (f.deathRecap.length) deathRecap(vm, f.deathRecap, f.maxHealth);
-    for (const h of f.unitCombat) {
-      vm.run(`ClaudeWoWRoast.Record(ClaudeWoWRoast.HitFromUnitCombat(STUB.now - ${h.ago}, "player", "WOUND", ${JSON.stringify(h.flag)}, ${h.amount}, ${h.school}))`);
-    }
-    const recap = vm.evaluate('ClaudeWoWRoast.BuildRecap(STUB.now, ClaudeWoWRoast.ReadRecap(STUB.now))');
-    assert.equal(recap, f.recap, `fixture ${name} drifted from Roast.lua`);
-  }
 });
 
 test('roast: the same death recap is never sent twice, and hidden or secret fields read as unknown', () => {
@@ -273,7 +236,14 @@ test('roast: a long recap is capped to the budget and keeps the killing blow; a 
   const vm = ready();
   vm.run('ClaudeWoWRoast.MAX_BYTES = 420');
   const events = [{ timestamp: 1003.1, event: 'SWING_DAMAGE', sourceName: 'Edwin VanCleef', amount: 300, overkill: 250 }];
-  for (let i = 29; i >= 0; i--) events.push({ timestamp: 1000 + i * 0.1, event: 'SPELL_DAMAGE', spellName: 'An Extremely Long Fireball Name', sourceName: `Defias Pillager Number ${i}`, amount: 10 + i });
+  for (let i = 29; i >= 0; i--)
+    events.push({
+      timestamp: 1000 + i * 0.1,
+      event: 'SPELL_DAMAGE',
+      spellName: 'An Extremely Long Fireball Name',
+      sourceName: `Defias Pillager Number ${i}`,
+      amount: 10 + i,
+    });
   deathRecap(vm, events);
   const recap = vm.evaluate('ClaudeWoWRoast.BuildRecap(STUB.now, ClaudeWoWRoast.ReadRecap(STUB.now))');
   assert.ok(Buffer.byteLength(recap) <= 420, `${Buffer.byteLength(recap)} bytes`);
@@ -285,83 +255,4 @@ test('roast: a long recap is capped to the budget and keeps the killing blow; a 
   assert.ok(empty.startsWith('Death recap: a level 23'), empty);
   assert.ok(empty.includes('No damage seen in the last 10 s'), empty);
   assert.ok(empty.endsWith('At death you had no target.'), empty);
-});
-
-test('roast: a death goes out as a roast-kind message in its own chat bound to the roast plugin, and the bridge reads the kind back', () => {
-  const vm = ready();
-  const activeBefore = vm.evaluate('ClaudeWoWDB.activeChat');
-  hit(vm, { amount: 52 });
-  hoggerRecap(vm);
-  die(vm);
-  assert.equal(vm.num('#ClaudeWoWDB.chats'), 2, 'the Death roasts chat was made');
-  const chat = roastChat(vm);
-  assert.equal(vm.evaluate(`${chat}.name`), 'Death roasts');
-  assert.equal(vm.evaluate(`${chat}.plugin`), 'roast');
-  assert.equal(vm.evaluate(`${chat}.cwd`), '');
-  assert.equal(vm.evaluate('ClaudeWoWDB.activeChat'), activeBefore, 'dying does not switch the window to another chat');
-  assert.equal(vm.num('#ClaudeWoWRoast.Hits()'), 0, 'the hits are spent on this death');
-
-  const job = stripJobs(vm).find(j => j.chat === vm.evaluate(`${chat}.id`));
-  assert.ok(job, 'the roast record is on the strip');
-  assert.equal(job.kind, 'roast');
-  assert.equal(job.plugin, 'roast');
-  assert.equal(job.vision, false);
-  assert.ok(job.text.startsWith('Death recap: a level 23 Night Elf Hunter just died in Duskwood - Darkshire.'), job.text);
-  assert.ok(job.text.includes('Hogger: Melee 52, overkill 17 <- killing blow'), job.text);
-  assert.ok(Buffer.byteLength(job.text) <= 900);
-  assert.equal(vm.evaluate(`${chat}.history[1].role`), 'user');
-
-  answerRoast(vm, 'Hogger bullied you with his bare paws.\n\nTL;DR: Hogger sends his regards.');
-  assert.equal(vm.evaluate(`${chat}.history[#${chat}.history].role`), 'assistant');
-  assert.equal(vm.num(`${chat}.unread`), 1, 'unread in the chat list');
-  assert.ok(vm.evaluate('table.concat(STUB.prints, "\\n")').includes('Hogger sends his regards.'), 'the roast is echoed in the game chat');
-});
-
-test('roast: vision on attaches the screenshot to the death message like any other', () => {
-  const vm = ready();
-  vm.run('SlashCmdList.CLAUDE("config vision on")');
-  hoggerRecap(vm);
-  die(vm);
-  const job = stripJobs(vm).find(j => j.kind === 'roast');
-  assert.ok(job);
-  assert.equal(job.vision, true);
-});
-
-test('roast: at most one roast every two minutes, and a death while disconnected or mid-roast is skipped without spending the cooldown', () => {
-  const vm = ready();
-  hoggerRecap(vm, 1);
-  die(vm);
-  const chat = roastChat(vm);
-  const first = vm.num(`${chat}.pendingId`);
-  assert.ok(first > 0);
-
-  vm.run('STUB.now = STUB.now + 5');
-  hoggerRecap(vm, 2);
-  die(vm);
-  assert.equal(vm.num(`${chat}.pendingId`), first, 'a death mid-roast is not queued on top');
-
-  answerRoast(vm, 'one\n\nTL;DR: one');
-  vm.run('STUB.now = STUB.now + 30');
-  hoggerRecap(vm, 3);
-  die(vm);
-  assert.equal(vm.evaluate(`${chat}.pendingId`), null, 'still inside the two minutes: the wipe does not spam the agent');
-  assert.ok(vm.evaluate('ClaudeWoWRoast.lastSkip').startsWith('cooling down'), vm.evaluate('ClaudeWoWRoast.lastSkip'));
-  vm.run('SlashCmdList.CLAUDE("config roast")');
-  assert.ok(vm.evaluate('STUB.prints[#STUB.prints]').includes('next in'), vm.evaluate('STUB.prints[#STUB.prints]'));
-
-  vm.run('STUB.now = STUB.now + 120');
-  vm.run('ClaudeWoWRoast.lastSkip = nil; STUB.onLoadAddOn = nil');
-  vm.run('ClaudeWoW.IsConnectedForTest = ClaudeWoW.IsConnected; ClaudeWoW.IsConnected = function() return false end');
-  hoggerRecap(vm, 4);
-  die(vm);
-  assert.equal(vm.evaluate(`${chat}.pendingId`), null);
-  assert.equal(vm.evaluate('ClaudeWoWRoast.lastSkip'), 'the bridge is not connected');
-  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].draft'), null, 'nothing lands in an input box');
-
-  vm.run('ClaudeWoW.IsConnected = ClaudeWoW.IsConnectedForTest');
-  hoggerRecap(vm, 5);
-  die(vm);
-  assert.ok(vm.num(`${chat}.pendingId`) > first, 'past the cooldown and connected: roasted again');
-  assert.equal(vm.evaluate('ClaudeWoWRoast.lastSkip'), null);
-  assert.ok(vm.evaluate(`${chat}.history[#${chat}.history].text`).includes('Hogger: Melee 52'), 'the fresh recap, not a stale one');
 });

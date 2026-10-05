@@ -27,9 +27,31 @@ const MAIN_HAND_SLOT = 16;
 const OFF_HAND_SLOT = 17;
 const EQUIP_SLOT_MAX = 19;
 const INVENTORY_TYPE_SLOTS = Object.freeze({
-  1: [1], 2: [2], 3: [3], 4: [4], 5: [5], 20: [5], 6: [6], 7: [7], 8: [8], 9: [9], 10: [10],
-  11: [11, 12], 12: [13, 14], 13: [16, 17], 21: [16], 17: [16], 14: [17], 22: [17], 23: [17],
-  15: [18], 25: [18], 26: [18], 28: [18], 16: [15], 19: [19],
+  1: [1],
+  2: [2],
+  3: [3],
+  4: [4],
+  5: [5],
+  20: [5],
+  6: [6],
+  7: [7],
+  8: [8],
+  9: [9],
+  10: [10],
+  11: [11, 12],
+  12: [13, 14],
+  13: [16, 17],
+  21: [16],
+  17: [16],
+  14: [17],
+  22: [17],
+  23: [17],
+  15: [18],
+  25: [18],
+  26: [18],
+  28: [18],
+  16: [15],
+  19: [19],
 });
 const OVERLAY_ACTION = 'orders';
 
@@ -77,7 +99,9 @@ function contextLine(ctxText, label) {
 }
 
 function skillIdForName(name) {
-  const want = String(name || '').trim().toLowerCase();
+  const want = String(name || '')
+    .trim()
+    .toLowerCase();
   const hit = Object.entries(PROFESSION_SKILL_IDS).find(([, n]) => n.toLowerCase() === want);
   return hit ? Number(hit[0]) : null;
 }
@@ -93,12 +117,14 @@ function parseProfessions(ctxText) {
   if (!line) return [];
   const parts = line.split(/,\s*/);
   if (professionsCutByAddon(ctxText)) parts.pop();
-  return parts.map(part => {
-    const m = /^(.+?)(?:\s+(\d+)(?:\/(\d+))?)?$/.exec(part.trim());
-    if (!m) return null;
-    const name = m[1].trim();
-    return { name, rank: m[2] ? Number(m[2]) : null, maxRank: m[3] ? Number(m[3]) : null, skillID: skillIdForName(name) };
-  }).filter(Boolean);
+  return parts
+    .map(part => {
+      const m = /^(.+?)(?:\s+(\d+)(?:\/(\d+))?)?$/.exec(part.trim());
+      if (!m) return null;
+      const name = m[1].trim();
+      return { name, rank: m[2] ? Number(m[2]) : null, maxRank: m[3] ? Number(m[3]) : null, skillID: skillIdForName(name) };
+    })
+    .filter(Boolean);
 }
 
 function characterOf(ctxText) {
@@ -107,7 +133,10 @@ function characterOf(ctxText) {
   if (!m) return null;
   const name = m[1];
   const realm = (m[2] || '').trim();
-  const key = [name, realm.replace(/\s+/g, '')].filter(Boolean).join('-').replace(/[^\p{L}\p{N}_-]/gu, '');
+  const key = [name, realm.replace(/\s+/g, '')]
+    .filter(Boolean)
+    .join('-')
+    .replace(/[^\p{L}\p{N}_-]/gu, '');
   return key ? { name, realm, key } : null;
 }
 
@@ -183,12 +212,18 @@ function emptyStore(character) {
 
 function readStore(file, character) {
   let raw;
-  try { raw = fs.readFileSync(file, 'utf8'); } catch (e) {
+  try {
+    raw = fs.readFileSync(file, 'utf8');
+  } catch (e) {
     if (e.code === 'ENOENT') return emptyStore(character);
     throw new Error(`cannot read ${file}: ${e.message}`);
   }
   let doc;
-  try { doc = JSON.parse(raw); } catch (e) { throw new Error(`${file} is not valid JSON (${e.message}); fix or move it before setting goals`); }
+  try {
+    doc = JSON.parse(raw);
+  } catch (e) {
+    throw new Error(`${file} is not valid JSON (${e.message}); fix or move it before setting goals`);
+  }
   if (!doc || doc.v !== STORE_VERSION || !Array.isArray(doc.goals)) throw new Error(`${file} is not a version ${STORE_VERSION} goal store`);
   const orders = doc.orders && typeof doc.orders === 'object' ? doc.orders : {};
   return {
@@ -217,7 +252,10 @@ function gearsetProgress(goal, snap) {
   let have = 0;
   for (const id of wanted) {
     const at = pool.indexOf(id);
-    if (at >= 0) { have += 1; pool.splice(at, 1); }
+    if (at >= 0) {
+      have += 1;
+      pool.splice(at, 1);
+    }
   }
   return { have, of: wanted.length, pct: Math.floor((have / wanted.length) * 100) };
 }
@@ -233,12 +271,15 @@ function progressOf(goal, snap) {
 function resolveProfession(args, snap) {
   if (args.skillID !== undefined && args.skillID !== null) {
     const id = Number(args.skillID);
-    if (!Number.isInteger(id) || !PROFESSION_SKILL_IDS[id]) return fail(`skillID ${args.skillID} is not a profession skill line this bridge knows (${Object.keys(PROFESSION_SKILL_IDS).join(', ')}).`);
+    if (!Number.isInteger(id) || !PROFESSION_SKILL_IDS[id])
+      return fail(`skillID ${args.skillID} is not a profession skill line this bridge knows (${Object.keys(PROFESSION_SKILL_IDS).join(', ')}).`);
     const reported = reportedProfession(snap, id);
     if (!reported) return fail(`The game has not reported skill line ${id} for this character. Phase 0 goals need a profession the character already has.`);
     return { ok: true, skillID: id, reported };
   }
-  const want = String(args.profession || '').trim().toLowerCase();
+  const want = String(args.profession || '')
+    .trim()
+    .toLowerCase();
   if (!want) return fail('goal_set needs profession (as the game names it) or skillID.');
   const reported = snap.professions.find(p => p.name.toLowerCase() === want);
   if (!reported) {
@@ -252,8 +293,10 @@ function resolveProfession(args, snap) {
 function itemProblem(store, slot, itemID) {
   if (!Number.isInteger(itemID) || itemID <= 0) return `slot ${slot}: the item ID must be a whole number above 0.`;
   const row = store.byId('items', itemID);
-  if (!row) return `slot ${slot}: {item:${itemID}} is not in the ${store.flavorLabel || 'synced'} client data for build ${store.build}. Look the ID up with the wowdata tools; never use an ID from memory or from another game version.`;
-  if (!Number.isInteger(row.inventoryType)) return `slot ${slot}: the synced data does not say where {item:${itemID}} is worn (${store.syncCommand || 'claude-wow data sync'} --force).`;
+  if (!row)
+    return `slot ${slot}: {item:${itemID}} is not in the ${store.flavorLabel || 'synced'} client data for build ${store.build}. Look the ID up with the wowdata tools; never use an ID from memory or from another game version.`;
+  if (!Number.isInteger(row.inventoryType))
+    return `slot ${slot}: the synced data does not say where {item:${itemID}} is worn (${store.syncCommand || 'claude-wow data sync'} --force).`;
   const fits = INVENTORY_TYPE_SLOTS[row.inventoryType];
   if (!fits) return `slot ${slot}: {item:${itemID}} cannot be equipped (inventory type ${row.inventoryType}).`;
   if (!fits.includes(slot)) return `slot ${slot}: {item:${itemID}} goes in slot ${fits.join(' or ')}, not ${slot}.`;
@@ -275,7 +318,10 @@ function gearsetTitle(store, refs) {
   const groups = [...counts].map(([name, n]) => ({ text: n > 1 ? `${n}x ${name}` : name, n }));
   for (let k = groups.length; k >= 1; k--) {
     const hidden = groups.slice(k).reduce((sum, g) => sum + g.n, 0);
-    const text = `${GEARSET_TITLE_PREFIX}${groups.slice(0, k).map(g => g.text).join(', ')}${hidden ? ` and ${hidden} more` : ''}`;
+    const text = `${GEARSET_TITLE_PREFIX}${groups
+      .slice(0, k)
+      .map(g => g.text)
+      .join(', ')}${hidden ? ` and ${hidden} more` : ''}`;
     if (text.length <= GOAL_TITLE_MAX) return text;
   }
   return countTitle(refs.length);
@@ -294,15 +340,22 @@ function checkGearset(args, snap, gameData) {
   const problems = [];
   for (const [key, value] of entries) {
     const slot = Number(key);
-    if (!Number.isInteger(slot) || slot < 1 || slot > EQUIP_SLOT_MAX) { problems.push(`"${key}" is not an equipment slot (1 to ${EQUIP_SLOT_MAX}).`); continue; }
+    if (!Number.isInteger(slot) || slot < 1 || slot > EQUIP_SLOT_MAX) {
+      problems.push(`"${key}" is not an equipment slot (1 to ${EQUIP_SLOT_MAX}).`);
+      continue;
+    }
     const itemID = Number(value);
     const r = itemProblem(store, slot, itemID);
-    if (typeof r === 'string') { problems.push(r); continue; }
+    if (typeof r === 'string') {
+      problems.push(r);
+      continue;
+    }
     slots[slot] = itemID;
     rows[slot] = r.row;
     refs.push({ kind: 'item', id: itemID, name: r.row.name, trust: store.rowTrust, build: store.build, slot });
   }
-  if (rows[MAIN_HAND_SLOT] && rows[MAIN_HAND_SLOT].inventoryType === TWO_HAND_TYPE && rows[OFF_HAND_SLOT]) problems.push(`slot ${OFF_HAND_SLOT}: slot ${MAIN_HAND_SLOT} holds a two-hand item, so slot ${OFF_HAND_SLOT} stays empty.`);
+  if (rows[MAIN_HAND_SLOT] && rows[MAIN_HAND_SLOT].inventoryType === TWO_HAND_TYPE && rows[OFF_HAND_SLOT])
+    problems.push(`slot ${OFF_HAND_SLOT}: slot ${MAIN_HAND_SLOT} holds a two-hand item, so slot ${OFF_HAND_SLOT} stays empty.`);
   if (problems.length) return fail(`The gearset was refused and nothing was saved. ${problems.join(' ')}`);
   return { ok: true, goal: { id: GEARSET_ID, type: GEARSET_TYPE, target: { slots }, title: gearsetTitle(store, refs), refs }, label: 'the gear set' };
 }
@@ -314,7 +367,11 @@ function checkProfession(args, snap) {
   if (args.drop === true) return { ok: true, goal: { id }, label: prof.reported.name };
   const rank = Number(args.rank);
   if (!Number.isInteger(rank) || rank < 1 || rank > TARGET_RANK_LIMIT) return fail(`rank must be a whole number from 1 to ${TARGET_RANK_LIMIT}.`);
-  return { ok: true, goal: { id, type: PROFESSION_TYPE, target: { skillID: prof.skillID, rank }, title: clip(`${prof.reported.name} ${rank}`, GOAL_TITLE_MAX) }, label: prof.reported.name };
+  return {
+    ok: true,
+    goal: { id, type: PROFESSION_TYPE, target: { skillID: prof.skillID, rank }, title: clip(`${prof.reported.name} ${rank}`, GOAL_TITLE_MAX) },
+    label: prof.reported.name,
+  };
 }
 
 function checkGoalSpec(args, snap, gameData) {
@@ -366,7 +423,14 @@ function issueOrder(doc, args, snap, now, gameData) {
   const stale = staleContextText(snap, stamp);
   if (stale) return fail(stale);
   let phraseNote = '';
-  const checked = validateOrderText(args.text, knownNames(snap), () => gameData(snap.text), note => { phraseNote = note; });
+  const checked = validateOrderText(
+    args.text,
+    knownNames(snap),
+    () => gameData(snap.text),
+    note => {
+      phraseNote = note;
+    },
+  );
   if (!checked.ok) return checked;
   const unchecked = phraseNote ? ` ${phraseNote}` : '';
   const goalId = args.goalId === undefined || args.goalId === null || args.goalId === '' ? null : String(args.goalId);
@@ -378,7 +442,8 @@ function issueOrder(doc, args, snap, now, gameData) {
 
 function goalView(goal, snap) {
   const p = progressOf(goal, snap);
-  if (goal.type === GEARSET_TYPE) return { id: goal.id, type: goal.type, title: goal.title, slots: goal.target.slots, items: goal.refs || [], equipped: p.have, of: p.of, pct: p.pct };
+  if (goal.type === GEARSET_TYPE)
+    return { id: goal.id, type: goal.type, title: goal.title, slots: goal.target.slots, items: goal.refs || [], equipped: p.have, of: p.of, pct: p.pct };
   return { id: goal.id, title: goal.title, skillID: goal.target.skillID, targetRank: goal.target.rank, rank: p.rank, maxRank: p.maxRank, pct: p.pct };
 }
 
@@ -402,11 +467,13 @@ function overlayPayload(doc, snap) {
     .filter(g => g.pct !== null)
     .slice(0, OVERLAY_GOALS_MAX);
   return {
-    order: current ? {
-      text: clip(current.text, ORDER_TEXT_MAX),
-      goal: orderGoal ? clip(orderGoal.title, GOAL_TITLE_MAX) : '',
-      pct: orderGoal ? progressOf(orderGoal, snap).pct : null,
-    } : null,
+    order: current
+      ? {
+          text: clip(current.text, ORDER_TEXT_MAX),
+          goal: orderGoal ? clip(orderGoal.title, GOAL_TITLE_MAX) : '',
+          pct: orderGoal ? progressOf(orderGoal, snap).pct : null,
+        }
+      : null,
     goals,
     asOf: snap.at || null,
   };
@@ -436,11 +503,13 @@ function slotOrder(doc, snap, names, orderGoal) {
   if (!current) return { order: null };
   const checked = validateOrderText(current.text, names.concat(storedRefNames(current)));
   if (!checked.ok) return { order: null, withheld: `order ${current.id} is not shown: ${checked.text}` };
-  return { order: {
-    id: ORDER_ID_RE.test(String(current.id)) ? String(current.id) : `o_${doc.rev}`,
-    text: checked.text,
-    pct: orderGoal ? slotPct(progressOf(orderGoal, snap).pct) : null,
-  } };
+  return {
+    order: {
+      id: ORDER_ID_RE.test(String(current.id)) ? String(current.id) : `o_${doc.rev}`,
+      text: checked.text,
+      pct: orderGoal ? slotPct(progressOf(orderGoal, snap).pct) : null,
+    },
+  };
 }
 
 function slotPayload(doc, snap) {
@@ -454,7 +523,13 @@ function slotPayload(doc, snap) {
     .map(g => ({ title: slotTitle(g, names), pct: slotPct(progressOf(g, snap).pct) }))
     .filter(g => g.title && g.pct !== null)
     .slice(0, SLOT_GOALS_MAX);
-  return { rev: Math.max(0, Math.floor(Number(doc.rev) || 0)), char: snap.character ? snap.character.key : '', order, goals, ...(withheld ? { withheld } : {}) };
+  return {
+    rev: Math.max(0, Math.floor(Number(doc.rev) || 0)),
+    char: snap.character ? snap.character.key : '',
+    order,
+    goals,
+    ...(withheld ? { withheld } : {}),
+  };
 }
 
 function luaSlotOrder(order) {
@@ -466,7 +541,8 @@ function luaSlotOrder(order) {
 function luaGoals(payload) {
   const order = luaSlotOrder(payload.order);
   const goals = payload.goals.slice(0, SLOT_GOALS_MAX);
-  const render = () => `\tgoals = { rev = ${payload.rev}, char = ${luaStr(payload.char || '')}, ${order}goals = { ${goals.map(g => `{ title = ${luaStr(g.title)}, pct = ${g.pct} }`).join(', ')} } },`;
+  const render = () =>
+    `\tgoals = { rev = ${payload.rev}, char = ${luaStr(payload.char || '')}, ${order}goals = { ${goals.map(g => `{ title = ${luaStr(g.title)}, pct = ${g.pct} }`).join(', ')} } },`;
   let lua = render();
   while (Buffer.byteLength(lua, 'utf8') > SLOT_LUA_MAX_BYTES && goals.length) {
     goals.pop();
@@ -500,7 +576,9 @@ function createGoals(opts) {
   function currentSnap() {
     const snap = snapshotOf(context());
     if (!snap.character) return snap;
-    try { snap.equip = equipped(snap.character.key) || null; } catch (e) {
+    try {
+      snap.equip = equipped(snap.character.key) || null;
+    } catch (e) {
       snap.equip = null;
       log(`goals: cannot read the equipped items for ${snap.character.key} (${e.message})`);
     }
@@ -511,13 +589,17 @@ function createGoals(opts) {
     let opened = false;
     let store = null;
     return () => {
-      if (!opened) { opened = true; store = gameData(snap.text); }
+      if (!opened) {
+        opened = true;
+        store = gameData(snap.text);
+      }
       return store;
     };
   }
 
   function voteOptions(raw, snap, doc) {
-    if (!Array.isArray(raw) || raw.length < V.OPTIONS_MIN || raw.length > V.OPTIONS_MAX) return fail(`A vote needs ${V.OPTIONS_MIN} to ${V.OPTIONS_MAX} options.`);
+    if (!Array.isArray(raw) || raw.length < V.OPTIONS_MIN || raw.length > V.OPTIONS_MAX)
+      return fail(`A vote needs ${V.OPTIONS_MIN} to ${V.OPTIONS_MAX} options.`);
     const names = knownNames(snap);
     const data = dataOnce(snap);
     const out = [];
@@ -531,10 +613,12 @@ function createGoals(opts) {
       const key = JSON.stringify([checked.goal.id, checked.goal.target]);
       if (seen.has(key)) return fail(`Option ${i + 1} is the same goal as an earlier option.`);
       seen.add(key);
-      if (!doc.goals.some(g => g.id === checked.goal.id) && doc.goals.length >= ACTIVE_GOALS_MAX) return fail(`Option ${i + 1} would be a new goal, and there are already ${ACTIVE_GOALS_MAX} goals. Drop one first.`);
+      if (!doc.goals.some(g => g.id === checked.goal.id) && doc.goals.length >= ACTIVE_GOALS_MAX)
+        return fail(`Option ${i + 1} would be a new goal, and there are already ${ACTIVE_GOALS_MAX} goals. Drop one first.`);
       const shown = validateOrderText(checked.goal.title, names.concat(storedRefNames(checked.goal)));
       if (!shown.ok || shown.text.length > GOAL_TITLE_MAX) return fail(`Option ${i + 1}: its title "${checked.goal.title}" cannot be shown to viewers.`);
-      if (titles.has(shown.text)) return fail(`Option ${i + 1} has the same title as an earlier option ("${shown.text}"), so viewers could not tell them apart.`);
+      if (titles.has(shown.text))
+        return fail(`Option ${i + 1} has the same title as an earlier option ("${shown.text}"), so viewers could not tell them apart.`);
       titles.add(shown.text);
       out.push({ title: shown.text, spec });
     }
@@ -544,9 +628,14 @@ function createGoals(opts) {
   function openVote(args, snap, file) {
     if (!votes) return fail('This bridge has no vote collector.');
     const seconds = Number(args.seconds);
-    if (!Number.isInteger(seconds) || seconds < V.SECONDS_MIN || seconds > V.SECONDS_MAX) return fail(`seconds must be a whole number from ${V.SECONDS_MIN} to ${V.SECONDS_MAX}.`);
+    if (!Number.isInteger(seconds) || seconds < V.SECONDS_MIN || seconds > V.SECONDS_MAX)
+      return fail(`seconds must be a whole number from ${V.SECONDS_MIN} to ${V.SECONDS_MAX}.`);
     let doc;
-    try { doc = readStore(file, snap.character.key); } catch (e) { return fail(`A vote needs a readable goal store to adopt into: ${e.message}`); }
+    try {
+      doc = readStore(file, snap.character.key);
+    } catch (e) {
+      return fail(`A vote needs a readable goal store to adopt into: ${e.message}`);
+    }
     const checked = voteOptions(args.options, snap, doc);
     if (!checked.ok) return checked;
     return votes.start({ options: checked.options, seconds, character: snap.character.key });
@@ -561,7 +650,12 @@ function createGoals(opts) {
     if (args.adopt !== true) return { result: done(summary) };
     if (rec.adopted) return { result: fail(`${summary} Its winner was already adopted.`) };
     if (!rec.result.winner) return { result: done(`${summary} Nothing was adopted.`) };
-    if (rec.character !== snap.character.key) return { result: fail(`${summary} The vote was opened for ${rec.character || 'no character'}, but the game now reports ${snap.character.key}; nothing was adopted. Log back in to that character to adopt it.`) };
+    if (rec.character !== snap.character.key)
+      return {
+        result: fail(
+          `${summary} The vote was opened for ${rec.character || 'no character'}, but the game now reports ${snap.character.key}; nothing was adopted. Log back in to that character to adopt it.`,
+        ),
+      };
     return { rec, summary };
   }
 
@@ -580,7 +674,9 @@ function createGoals(opts) {
 
   function storedDoc(file, key) {
     let stat;
-    try { stat = fs.statSync(file); } catch (e) {
+    try {
+      stat = fs.statSync(file);
+    } catch (e) {
       if (e.code === 'ENOENT') return emptyStore(key);
       throw new Error(`cannot read ${file}: ${e.message}`);
     }
@@ -640,7 +736,11 @@ function createGoals(opts) {
     const taken = tool === TOOL.voteClose ? takeVote(args, snap) : null;
     if (taken && taken.result) return taken.result;
     let doc;
-    try { doc = readStore(file, snap.character.key); } catch (e) { return fail(taken ? `${taken.summary} ${e.message}` : e.message); }
+    try {
+      doc = readStore(file, snap.character.key);
+    } catch (e) {
+      return fail(taken ? `${taken.summary} ${e.message}` : e.message);
+    }
     if (tool === TOOL.list) return done(JSON.stringify(listView(doc, snap), null, 2));
     let change;
     let afterWrite = () => {};
@@ -652,7 +752,11 @@ function createGoals(opts) {
     }
     if (!change.ok) return change;
     doc.rev += 1;
-    try { writeStore(file, doc); } catch (e) { return fail(`Could not save ${file}: ${e.message}`); }
+    try {
+      writeStore(file, doc);
+    } catch (e) {
+      return fail(`Could not save ${file}: ${e.message}`);
+    }
     afterWrite();
     cached = { file: '', stamp: '', doc: null };
     log(`goals: ${tool} for ${snap.character.key}, rev ${doc.rev}`);
@@ -704,7 +808,12 @@ function toolSchemas() {
       inputSchema: {
         type: 'object',
         properties: {
-          text: { type: 'string', maxLength: GR.TOKEN_TEXT_MAX, description: 'The order in plain words with reference tokens for game names, for example "Skin 30 more, then train Skinning" or "Buy 20 {item:ID} at {map:ID,45.6,42.4}"' },
+          text: {
+            type: 'string',
+            maxLength: GR.TOKEN_TEXT_MAX,
+            description:
+              'The order in plain words with reference tokens for game names, for example "Skin 30 more, then train Skinning" or "Buy 20 {item:ID} at {map:ID,45.6,42.4}"',
+          },
           goalId: { type: 'string', description: 'The goal this order serves (an id from goal_list)' },
           clear: { type: 'boolean', description: 'true clears the current order' },
         },
@@ -724,7 +833,8 @@ function toolSchemas() {
     },
     {
       name: TOOL.voteClose,
-      description: 'Close the open vote (or read the result of one that timed out) and return the counts. With adopt true, the single winner is checked again like goal_set and saved as a goal for the character the vote was opened for; a tie, no votes or another logged-in character adopts nothing.',
+      description:
+        'Close the open vote (or read the result of one that timed out) and return the counts. With adopt true, the single winner is checked again like goal_set and saved as a goal for the character the vote was opened for; a tie, no votes or another logged-in character adopts nothing.',
       inputSchema: { type: 'object', properties: { adopt: { type: 'boolean', description: 'true saves the winning option as a goal' } } },
     },
   ];
@@ -738,17 +848,56 @@ function goalSpecSchema(extra) {
       profession: { type: 'string', description: 'profession: the name exactly as the Professions line reports it' },
       skillID: { type: 'integer', description: 'profession: the skill line ID, instead of profession' },
       rank: { type: 'integer', minimum: 1, maximum: TARGET_RANK_LIMIT, description: 'profession: the target skill rank' },
-      slots: { type: 'object', description: `gearset: equipment slot (1 to ${EQUIP_SLOT_MAX}) to item ID, for example {"16": 1234}`, additionalProperties: { type: 'integer' } },
+      slots: {
+        type: 'object',
+        description: `gearset: equipment slot (1 to ${EQUIP_SLOT_MAX}) to item ID, for example {"16": 1234}`,
+        additionalProperties: { type: 'integer' },
+      },
       ...extra,
     },
   };
 }
 
 module.exports = {
-  STORE_VERSION, GOALS_FILE, ACTIVE_GOALS_MAX, ORDER_HISTORY_MAX, ORDER_TEXT_MAX, GOAL_TITLE_MAX, OVERLAY_GOALS_MAX, TARGET_RANK_LIMIT,
-  SLOT_GOALS_MAX, SLOT_LUA_MAX_BYTES,
-  TOOL, TOOL_NAMES, WRITE_TOOL_NAMES, PROFESSION_SKILL_IDS, ORDER_WORDS, CONTEXT_STALE_MS, ADDON_CONTEXT_MAX_BYTES,
-  GOAL_TYPES, GEARSET_TYPE, GEARSET_ID, EQUIP_SLOT_MAX, INVENTORY_TYPE_SLOTS,
-  parseProfessions, characterOf, snapshotOf, skillIdForName, validateOrderText, orderWords, checkGoalSpec, progressOf,
-  readStore, writeStore, overlayPayload, overlayCommand, slotPayload, luaGoals, listView, storeFile, createGoals, createBridgeGoals, toolSchemas,
+  STORE_VERSION,
+  GOALS_FILE,
+  ACTIVE_GOALS_MAX,
+  ORDER_HISTORY_MAX,
+  ORDER_TEXT_MAX,
+  GOAL_TITLE_MAX,
+  OVERLAY_GOALS_MAX,
+  TARGET_RANK_LIMIT,
+  SLOT_GOALS_MAX,
+  SLOT_LUA_MAX_BYTES,
+  TOOL,
+  TOOL_NAMES,
+  WRITE_TOOL_NAMES,
+  PROFESSION_SKILL_IDS,
+  ORDER_WORDS,
+  CONTEXT_STALE_MS,
+  ADDON_CONTEXT_MAX_BYTES,
+  GOAL_TYPES,
+  GEARSET_TYPE,
+  GEARSET_ID,
+  EQUIP_SLOT_MAX,
+  INVENTORY_TYPE_SLOTS,
+  parseProfessions,
+  characterOf,
+  snapshotOf,
+  skillIdForName,
+  validateOrderText,
+  orderWords,
+  checkGoalSpec,
+  progressOf,
+  readStore,
+  writeStore,
+  overlayPayload,
+  overlayCommand,
+  slotPayload,
+  luaGoals,
+  listView,
+  storeFile,
+  createGoals,
+  createBridgeGoals,
+  toolSchemas,
 };

@@ -25,6 +25,7 @@ Every agent's block in `config.json` has the same keys, and the bridge maps them
 | `model` | Passed through to the CLI when non-empty. |
 | `path` | The executable, when the bridge can't find it on its own. A `.js` path is run with the bridge's own Node; a Windows `.cmd` npm shim is unwrapped. |
 | `extraArgs` | Anything else to put on the command line, verbatim. |
+| `maxCostUsd` | Claude only: a cost cap in US dollars for each chat message, as `--max-budget-usd`. The other agents have none and log one line when it is set. |
 
 How each one finds its executable on Windows: a configured `path`; else the installer's folder (`%UserProfile%\.local\bin\claude.exe`, `%UserProfile%\.grok\bin\grok.exe`); else `<name>.exe` on the `PATH`; else npm's `<name>.cmd` launcher, which the bridge unwraps (Node can't spawn `.cmd` files, and going through `cmd.exe` would mangle a system prompt) into the script it runs or the native binary next to it.
 
@@ -33,7 +34,7 @@ Codex also checks `CODEX_BIN` before searching `PATH`, so a newer launcher can o
 ## Claude Code
 
 - **Install:** [claude.com/claude-code](https://claude.com/claude-code). Run `claude` once and log in. `claude --version` must work in a terminal.
-- **Command line:** `claude -p --output-format stream-json --verbose --permission-mode <mode> --allowedTools <rules…> [--model <m>] [--resume <session>] [--append-system-prompt <context>]`, prompt on stdin. The `CLAUDECODE` variable is removed from the environment so a bridge started from inside a Claude Code session can still launch it.
+- **Command line:** `claude -p --output-format stream-json --verbose --permission-mode <mode> --allowedTools <rules…> [--model <m>] [--max-budget-usd <n>] [--resume <session>] [--append-system-prompt <context>]`, prompt on stdin. The `CLAUDECODE` variable is removed from the environment so a bridge started from inside a Claude Code session can still launch it.
 - **Game data (`ask` runs):** when game data is synced, an `ask` run also gets `--mcp-config` with the read-only `wowdata` server (the bridge's own command, `alwaysLoad: true`) and `mcp__wowdata` added to `--allowedTools` for that run only. See [CONFIGURATION.md](CONFIGURATION.md#the-wowdata-server). While the live socket listens, the same `--mcp-config` holds the per-run `wowgoals` server (goals, orders, campaigns and routes, written by the bridge) with its `mcp__wowgoals__<tool>` rules for that run only ([LIVE-SESSION.md](LIVE-SESSION.md#goals-orders-and-campaigns-from-in-game-chats)). The other agents do not get either yet.
 - **Permissions:** `permissionMode` and `allowedTools` are Claude's own concepts, passed as they are. Denied tools come back in the result as `permission_denials`; the bridge turns them into rules (`Bash(cargo:*)`, `WebSearch`) for the **Allow & retry** button.
 - **Session:** the `session_id` on the stream; `--resume` on later runs. Claude keeps sessions per folder.

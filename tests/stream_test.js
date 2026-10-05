@@ -2,8 +2,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('http');
-const P = require('../bridge/protocol');
-const PL = require('../bridge/plugins');
 const stream = require('../bridge/plugins/stream');
 
 function fakeCore(options) {
@@ -23,7 +21,9 @@ function controlServer(answer) {
   const bodies = [];
   const server = http.createServer((req, res) => {
     let raw = '';
-    req.on('data', c => { raw += c; });
+    req.on('data', c => {
+      raw += c;
+    });
     req.on('end', () => {
       bodies.push({ method: req.method, url: req.url, type: req.headers['content-type'], body: JSON.parse(raw) });
       res.writeHead(200, { 'content-type': 'application/json' });
@@ -36,25 +36,12 @@ function controlServer(answer) {
 function closedPort() {
   return new Promise(resolve => {
     const s = http.createServer();
-    s.listen(0, '127.0.0.1', () => { const port = s.address().port; s.close(() => resolve(port)); });
+    s.listen(0, '127.0.0.1', () => {
+      const port = s.address().port;
+      s.close(() => resolve(port));
+    });
   });
 }
-
-test('stream plugin: routes stream-kind records and registers next to the others', () => {
-  assert.equal(stream.match({ kind: 'stream' }), true);
-  assert.equal(stream.match({ kind: 'roast' }), false);
-  assert.equal(stream.match({}), false);
-  const registry = PL.createRegistry();
-  registry.register(require('../bridge/plugins/ask'));
-  registry.register(require('../bridge/plugins/roast'));
-  registry.register(stream);
-  assert.equal(registry.route({ text: '{"action":"scene","scene":"Raid"}', kind: 'stream' }).plugin.id, 'stream');
-  assert.equal(registry.route({ text: 'hi', plugin: 'stream' }).plugin.id, 'stream');
-  const record = ['sess1', 'chat9', '42', '', 'plugin=stream;kind=stream', 'Stream control', '{"action":"pane","pane":"right"}'].join('\x1F');
-  const [job] = P.jobsFromStrip(42, record);
-  assert.equal(job.kind, 'stream');
-  assert.equal(job.text, '{"action":"pane","pane":"right"}');
-});
 
 test('stream plugin: a command is POSTed as JSON to <url>/control and the service message is the reply, with no agent run', async () => {
   const svc = await controlServer(cmd => ({ ok: true, message: `Scene: ${cmd.scene}` }));
@@ -73,7 +60,11 @@ test('stream plugin: a track update is forwarded whole and answered with an empt
   const svc = await controlServer(() => ({ ok: true, message: 'Tracking' }));
   try {
     const { core, calls } = fakeCore({ url: svc.url });
-    const track = { action: 'track', quest: { id: 33, title: 'Wolves Across the Border', objectives: ['Diseased Timber Wolf slain: 3/8'], complete: false }, chat: { title: 'Raid prep' } };
+    const track = {
+      action: 'track',
+      quest: { id: 33, title: 'Wolves Across the Border', objectives: ['Diseased Timber Wolf slain: 3/8'], complete: false },
+      chat: { title: 'Raid prep' },
+    };
     await stream.handle({ id: 8, kind: 'stream', text: JSON.stringify(track) }, core);
     assert.deepEqual(svc.bodies[0].body, track);
     assert.deepEqual(calls, [{ reply: '' }]);

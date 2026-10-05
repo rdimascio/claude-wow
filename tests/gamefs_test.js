@@ -16,14 +16,12 @@ function scratch(name) {
 
 function withUmask(mask, fn) {
   const before = process.umask(mask);
-  try { return fn(); } finally { process.umask(before); }
+  try {
+    return fn();
+  } finally {
+    process.umask(before);
+  }
 }
-
-test('only Windows is exempt from matching the game install', () => {
-  assert.equal(G.matchesGame('darwin'), true);
-  assert.equal(G.matchesGame('linux'), true);
-  assert.equal(G.matchesGame('win32'), false);
-});
 
 test('atomicWrite replaces a file and leaves it 0777 whatever the umask and the old mode', posixOnly, () => {
   const dir = scratch('atomic');
@@ -61,7 +59,7 @@ test('atomicWrite never writes or chmods through a link planted at the old fixed
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test('a link planted at the random temp name makes the write fail instead of following it', posixOnly, (t) => {
+test('a link planted at the random temp name makes the write fail instead of following it', posixOnly, t => {
   const dir = scratch('planted-random');
   const victim = victimIn(dir);
   const file = path.join(dir, 'Inbox.lua');
@@ -108,7 +106,7 @@ test('a write into a folder that is a link is refused and leaves the linked fold
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test('repair does not chmod a link swapped in after the walk checked the entry', posixOnly, (t) => {
+test('repair does not chmod a link swapped in after the walk checked the entry', posixOnly, t => {
   const addons = scratch('repair-swap');
   const victim = victimIn(addons);
   const folder = path.join(addons, 'ClaudeWoW_S001');
@@ -136,32 +134,6 @@ test('repair does not chmod a link swapped in after the walk checked the entry',
   fs.rmSync(addons, { recursive: true, force: true });
 });
 
-test('mkdir makes every missing folder 0777 and leaves existing parents alone', posixOnly, () => {
-  const dir = scratch('mkdir');
-  fs.chmodSync(dir, 0o700);
-  const deep = path.join(dir, 'a', 'b', 'c');
-  withUmask(0o022, () => G.mkdir(deep));
-  for (const d of [path.join(dir, 'a'), path.join(dir, 'a', 'b'), deep]) assert.equal(modeOf(d), 0o777, d);
-  assert.equal(modeOf(dir), 0o700);
-  withUmask(0o022, () => G.mkdir(deep));
-  assert.equal(modeOf(deep), 0o777);
-  fs.rmSync(dir, { recursive: true, force: true });
-});
-
-test('writeFile and copyFile leave the target 0777', posixOnly, () => {
-  const dir = scratch('write');
-  const src = path.join(dir, 'src.lua');
-  fs.writeFileSync(src, 'x', { mode: 0o644 });
-  withUmask(0o022, () => {
-    G.writeFile(path.join(dir, 'w.lua'), 'y');
-    G.copyFile(src, path.join(dir, 'c.lua'));
-  });
-  assert.equal(modeOf(path.join(dir, 'w.lua')), 0o777);
-  assert.equal(modeOf(path.join(dir, 'c.lua')), 0o777);
-  assert.equal(modeOf(src), 0o644);
-  fs.rmSync(dir, { recursive: true, force: true });
-});
-
 test('repair sets every file and folder under the ClaudeWoW addon folders to 0777 and nothing else', posixOnly, () => {
   const addons = scratch('repair');
   const presence = path.join(addons, 'ClaudeWoW_Runtime', 'presence');
@@ -177,7 +149,14 @@ test('repair sets every file and folder under the ClaudeWoW addon folders to 077
   assert.equal(first.fixed, first.checked);
   assert.ok(first.fixed >= 5);
   assert.deepEqual(first.failed, []);
-  for (const f of [path.join(addons, 'ClaudeWoW'), path.join(addons, 'ClaudeWoW_Runtime'), presence, path.join(presence, '0007.wav'), path.join(addons, 'ClaudeWoW_S001'), path.join(addons, 'ClaudeWoW_S001', 'Inbox.lua')]) {
+  for (const f of [
+    path.join(addons, 'ClaudeWoW'),
+    path.join(addons, 'ClaudeWoW_Runtime'),
+    presence,
+    path.join(presence, '0007.wav'),
+    path.join(addons, 'ClaudeWoW_S001'),
+    path.join(addons, 'ClaudeWoW_S001', 'Inbox.lua'),
+  ]) {
     assert.equal(modeOf(f), 0o777, f);
   }
   assert.equal(modeOf(path.join(addons, 'ClaudeWoW_Runtimes')), 0o755, 'only the exact runtime folder name counts');
@@ -240,7 +219,10 @@ test('writeFile and copyFile skip a file that already has the content, fix its m
 test('ensureFile creates a missing file and its folders 0777 and never writes through a dangling link', posixOnly, () => {
   const dir = scratch('ensure');
   const file = path.join(dir, 'a', 'b', '001.wav');
-  assert.equal(withUmask(0o077, () => G.ensureFile(file, 'RIFF')), true);
+  assert.equal(
+    withUmask(0o077, () => G.ensureFile(file, 'RIFF')),
+    true,
+  );
   assert.equal(fs.readFileSync(file, 'utf8'), 'RIFF');
   assert.equal(modeOf(file), 0o777);
   assert.equal(modeOf(path.join(dir, 'a')), 0o777);

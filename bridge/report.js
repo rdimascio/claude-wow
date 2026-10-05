@@ -34,8 +34,9 @@ function parseArgs(argv) {
   const o = { day: '', character: '' };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === '--day') { if (argv[i + 1] && !argv[i + 1].startsWith('-')) o.day = argv[++i]; }
-    else if (a.startsWith('--day=')) o.day = a.slice(6);
+    if (a === '--day') {
+      if (argv[i + 1] && !argv[i + 1].startsWith('-')) o.day = argv[++i];
+    } else if (a.startsWith('--day=')) o.day = a.slice(6);
     else if (a === '--character') o.character = String(argv[++i] || '');
     else if (a.startsWith('--character=')) o.character = a.slice(12);
     else if (a === '--help' || a === '-h') o.help = true;
@@ -76,7 +77,11 @@ function readEventLines(folder) {
   const out = [];
   for (const name of [TL.EVENTS_ROTATED_FILE, TL.EVENTS_FILE]) {
     let text = '';
-    try { text = fs.readFileSync(path.join(folder, name), 'utf8'); } catch { continue; }
+    try {
+      text = fs.readFileSync(path.join(folder, name), 'utf8');
+    } catch {
+      continue;
+    }
     for (const line of text.split('\n')) {
       if (!line) continue;
       try {
@@ -89,7 +94,11 @@ function readEventLines(folder) {
 }
 
 function readGoals(folder) {
-  try { return G.readStore(path.join(folder, G.GOALS_FILE), path.basename(folder)); } catch (e) { return { error: e.message }; }
+  try {
+    return G.readStore(path.join(folder, G.GOALS_FILE), path.basename(folder));
+  } catch (e) {
+    return { error: e.message };
+  }
 }
 
 function money(copper) {
@@ -137,7 +146,8 @@ function eventLines(events) {
   const levels = of('level_up');
   if (levels.length) lines.push(`Level: ${levels[0].data.from} to ${levels[levels.length - 1].data.to}`);
   const moneyEvents = of('money');
-  if (moneyEvents.length) lines.push(`Money: ${money(moneyEvents.reduce((sum, e) => sum + (Number(e.data.delta) || 0), 0))} over ${moneyEvents.length} changes`);
+  if (moneyEvents.length)
+    lines.push(`Money: ${money(moneyEvents.reduce((sum, e) => sum + (Number(e.data.delta) || 0), 0))} over ${moneyEvents.length} changes`);
   const deaths = of('death');
   if (deaths.length) lines.push(`Deaths: ${deaths.length}`);
   const zones = of('zone');
@@ -160,7 +170,8 @@ function orderLines(doc, range, names) {
   const all = [doc.orders.current, ...doc.orders.history].filter(o => o && Number(o.issuedAt) >= range.start && Number(o.issuedAt) < range.end);
   if (!all.length) return [];
   const lines = [`Orders issued: ${all.length}`];
-  for (const o of all.sort((a, b) => Number(a.issuedAt) - Number(b.issuedAt))) lines.push(`  ${shownText(o.text, names.concat(orderNames(o)))} (${o === doc.orders.current ? 'current' : o.status || 'ended'})`);
+  for (const o of all.sort((a, b) => Number(a.issuedAt) - Number(b.issuedAt)))
+    lines.push(`  ${shownText(o.text, names.concat(orderNames(o)))} (${o === doc.orders.current ? 'current' : o.status || 'ended'})`);
   return lines;
 }
 
@@ -199,11 +210,23 @@ function defaultCharacter(goalsDir) {
 
 function main(argv, { goalsDir = require('./home').resolve().goals, out = process.stdout, err = process.stderr, now = Date.now } = {}) {
   const o = parseArgs(argv);
-  if (o.help) { out.write(USAGE + '\n'); return 0; }
-  if (o.error) { err.write(`report: ${o.error}\n${USAGE}\n`); return 2; }
+  if (o.help) {
+    out.write(USAGE + '\n');
+    return 0;
+  }
+  if (o.error) {
+    err.write(`report: ${o.error}\n${USAGE}\n`);
+    return 2;
+  }
   const character = o.character || defaultCharacter(goalsDir);
-  if (!character) { err.write(`report: no ${TL.EVENTS_FILE} under ${goalsDir} yet\n`); return 1; }
-  if (!fs.existsSync(path.join(goalsDir, character))) { err.write(`report: no folder for ${character} under ${goalsDir}\n`); return 1; }
+  if (!character) {
+    err.write(`report: no ${TL.EVENTS_FILE} under ${goalsDir} yet\n`);
+    return 1;
+  }
+  if (!fs.existsSync(path.join(goalsDir, character))) {
+    err.write(`report: no folder for ${character} under ${goalsDir}\n`);
+    return 1;
+  }
   out.write(build({ goalsDir, character, range: dayRange(o.day || localDay(now())) }));
   return 0;
 }

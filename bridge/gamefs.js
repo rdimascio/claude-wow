@@ -36,7 +36,11 @@ function openEntryNoLink(target) {
     return fs.openSync(target, EXISTING_ENTRY_NO_LINK);
   } catch (unreadable) {
     if (unreadable.code !== 'EACCES') throw unreadable;
-    try { return fs.openSync(target, WRITABLE_ENTRY_NO_LINK); } catch { throw unreadable; }
+    try {
+      return fs.openSync(target, WRITABLE_ENTRY_NO_LINK);
+    } catch {
+      throw unreadable;
+    }
   }
 }
 
@@ -199,8 +203,15 @@ function copyFile(from, to) {
 
 function addonFolders(addonDir) {
   let names;
-  try { names = fs.readdirSync(addonDir); } catch { return []; }
-  return names.filter(n => ADDON_FOLDER.test(n)).sort().map(n => path.join(addonDir, n));
+  try {
+    names = fs.readdirSync(addonDir);
+  } catch {
+    return [];
+  }
+  return names
+    .filter(n => ADDON_FOLDER.test(n))
+    .sort()
+    .map(n => path.join(addonDir, n));
 }
 
 function walk(root, visit) {
@@ -208,12 +219,20 @@ function walk(root, visit) {
   while (pending.length) {
     const current = pending.pop();
     let st;
-    try { st = fs.lstatSync(current); } catch { continue; }
+    try {
+      st = fs.lstatSync(current);
+    } catch {
+      continue;
+    }
     if (st.isSymbolicLink()) continue;
     visit(current, st);
     if (!st.isDirectory()) continue;
     let entries;
-    try { entries = fs.readdirSync(current); } catch { continue; }
+    try {
+      entries = fs.readdirSync(current);
+    } catch {
+      continue;
+    }
     for (const name of entries) pending.push(path.join(current, name));
   }
 }
@@ -225,10 +244,29 @@ function repair(addonDir) {
     walk(folder, (target, st) => {
       result.checked++;
       if ((st.mode & PERMISSION_BITS) === GAME_MODE) return;
-      try { openUpEntry(target, st); result.fixed++; } catch (e) { result.failed.push(`${target} (${e.code || e.message})`); }
+      try {
+        openUpEntry(target, st);
+        result.fixed++;
+      } catch (e) {
+        result.failed.push(`${target} (${e.code || e.message})`);
+      }
     });
   }
   return result;
 }
 
-module.exports = { GAME_MODE, PERMISSION_BITS, WORLD_WRITABLE, ADDON_FOLDER, matchesGame, mkdir, writeFile, atomicWrite: replaceFile, ensureFile, remove, copyFile, addonFolders, repair };
+module.exports = {
+  GAME_MODE,
+  PERMISSION_BITS,
+  WORLD_WRITABLE,
+  ADDON_FOLDER,
+  matchesGame,
+  mkdir,
+  writeFile,
+  atomicWrite: replaceFile,
+  ensureFile,
+  remove,
+  copyFile,
+  addonFolders,
+  repair,
+};

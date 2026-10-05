@@ -125,21 +125,35 @@ function namedLine(result, noun, many) {
 
 function resultLine(tool, text) {
   let result;
-  try { result = JSON.parse(text); } catch { return null; }
+  try {
+    result = JSON.parse(text);
+  } catch {
+    return null;
+  }
   if (!result || typeof result !== 'object' || result.error || !Array.isArray(result.results)) return null;
   if (!result.found || !result.results.length) return 'Nothing found';
   if (!result.results[0] || typeof result.results[0] !== 'object') return null;
   switch (tool) {
-    case 'wow_item': return itemLine(result);
-    case 'wow_instance': return instanceLine(result);
-    case 'wow_npc': return npcLine(result);
-    case 'wow_where': return namedLine(result, 'place');
-    case 'wow_flights': return namedLine(result, 'flight path');
-    case 'wow_faction': return plural(totalOf(result), 'faction');
-    case 'wow_spell': return plural(totalOf(result), 'spell');
-    case 'wow_quest': return plural(totalOf(result), 'quest');
-    case 'wow_sources': return 'Game data checked';
-    default: return null;
+    case 'wow_item':
+      return itemLine(result);
+    case 'wow_instance':
+      return instanceLine(result);
+    case 'wow_npc':
+      return npcLine(result);
+    case 'wow_where':
+      return namedLine(result, 'place');
+    case 'wow_flights':
+      return namedLine(result, 'flight path');
+    case 'wow_faction':
+      return plural(totalOf(result), 'faction');
+    case 'wow_spell':
+      return plural(totalOf(result), 'spell');
+    case 'wow_quest':
+      return plural(totalOf(result), 'quest');
+    case 'wow_sources':
+      return 'Game data checked';
+    default:
+      return null;
   }
 }
 

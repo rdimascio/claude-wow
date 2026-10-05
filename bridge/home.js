@@ -37,12 +37,17 @@ function defaultDir(home = os.homedir()) {
 
 function hasConfig(dir) {
   if (!dir) return false;
-  try { return fs.statSync(path.join(dir, 'config.json')).isFile(); } catch { return false; }
+  try {
+    return fs.statSync(path.join(dir, 'config.json')).isFile();
+  } catch {
+    return false;
+  }
 }
 
 function paths(dir, source) {
   return {
-    dir, source,
+    dir,
+    source,
     config: path.join(dir, 'config.json'),
     state: path.join(dir, 'state.json'),
     transcripts: path.join(dir, 'transcripts.json'),
