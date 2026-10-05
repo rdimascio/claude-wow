@@ -13,6 +13,7 @@ const OWNER_ONLY = 0o600;
 const { O_RDONLY, O_WRONLY, O_CREAT, O_EXCL, O_NOFOLLOW = 0, O_NONBLOCK = 0 } = fs.constants;
 const EXCLUSIVE_NEW_FILE = O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW;
 const EXISTING_ENTRY_NO_LINK = O_RDONLY | O_NOFOLLOW | O_NONBLOCK;
+const WRITABLE_ENTRY_NO_LINK = O_WRONLY | O_NOFOLLOW | O_NONBLOCK;
 
 const matchesGame = (platform = process.platform) => platform !== 'win32';
 
@@ -28,10 +29,23 @@ function realFolder(dir) {
   return st;
 }
 
-function openUpEntry(target, expected) {
-  const fd = fs.openSync(target, EXISTING_ENTRY_NO_LINK);
+const sharedFile = st => st.isFile() && st.nlink > 1;
+
+function openEntryNoLink(target) {
   try {
-    if (expected && !sameEntry(fs.fstatSync(fd), expected)) throw unsafe(target, 'changed while it was opened');
+    return fs.openSync(target, EXISTING_ENTRY_NO_LINK);
+  } catch (unreadable) {
+    if (unreadable.code !== 'EACCES') throw unreadable;
+    try { return fs.openSync(target, WRITABLE_ENTRY_NO_LINK); } catch { throw unreadable; }
+  }
+}
+
+function openUpEntry(target, expected) {
+  const fd = openEntryNoLink(target);
+  try {
+    const st = fs.fstatSync(fd);
+    if (expected && !sameEntry(st, expected)) throw unsafe(target, 'changed while it was opened');
+    if (sharedFile(st)) throw unsafe(target, 'hard link');
     fs.fchmodSync(fd, GAME_MODE);
   } finally {
     fs.closeSync(fd);
@@ -107,7 +121,7 @@ function keepIfSame(file, wanted) {
   }
   try {
     const st = fs.fstatSync(fd);
-    if (!st.isFile() || st.size !== wanted.length) return 'differs';
+    if (!st.isFile() || sharedFile(st) || st.size !== wanted.length) return 'differs';
     if (!fs.readFileSync(fd).equals(wanted)) return 'differs';
     if (!matchesGame() || (st.mode & PERMISSION_BITS) === GAME_MODE) return 'same';
     try {

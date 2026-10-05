@@ -188,6 +188,30 @@ test('repair sets every file and folder under the ClaudeWoW addon folders to 077
   fs.rmSync(addons, { recursive: true, force: true });
 });
 
+test('repair fixes a file its owner cannot read and never chmods a hard link to a file outside the addon folders', posixOnly, () => {
+  const addons = scratch('repair-links');
+  const slot = path.join(addons, 'ClaudeWoW_S001');
+  fs.mkdirSync(slot, { mode: 0o777 });
+  fs.chmodSync(slot, 0o777);
+  const unreadable = path.join(slot, 'Inbox.lua');
+  fs.writeFileSync(unreadable, 'x');
+  fs.chmodSync(unreadable, 0o200);
+  const outside = path.join(addons, 'outside.lua');
+  fs.writeFileSync(outside, 'secret');
+  fs.chmodSync(outside, 0o644);
+  const linked = path.join(slot, 'Linked.lua');
+  fs.linkSync(outside, linked);
+  const result = G.repair(addons);
+  assert.equal(modeOf(unreadable), 0o777);
+  assert.equal(modeOf(outside), 0o644);
+  assert.deepEqual(result.failed, [`${linked} (EUNSAFE)`]);
+  assert.equal(G.writeFile(linked, 'secret'), true);
+  assert.equal(modeOf(outside), 0o644);
+  assert.notEqual(fs.statSync(linked).ino, fs.statSync(outside).ino);
+  assert.equal(modeOf(linked), 0o777);
+  fs.rmSync(addons, { recursive: true, force: true });
+});
+
 test('writeFile and copyFile skip a file that already has the content, fix its mode, and still rewrite a changed one', () => {
   const dir = scratch('unchanged');
   const file = path.join(dir, 'w.lua');
