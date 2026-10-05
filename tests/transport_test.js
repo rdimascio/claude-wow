@@ -296,7 +296,11 @@ test('mcp.servers end to end: servers reach --mcp-config with ${VAR} only, stric
   assert.match(out, /mcp\.servers\.wowdata: "wowdata" is a bridge server name \(wowdata, wowgoals, wowfactory\); this server is skipped/, out);
   assert.match(out, /mcp: notion \(on by default\), github \(on by default\); strict: /, out);
   assert.match(out, /mcp\.strict: Claude runs stop loading at least these servers of your own: user:mobbin, and claude\.ai connectors/, out);
-  assert.match(out, /#21@sess1 mcp: mcp__notion__create_page was denied and is outside mcp\.servers\.notion\.allow, so it is not offered to allow/, out);
+  assert.match(
+    out,
+    /#21@sess1 mcp: mcp__notion__create_page was denied; its server is off for this chat or the tool is outside its allow list, so it is not offered to allow/,
+    out,
+  );
   assert.match(out, /mcp: allowed tool rules that mcp\.servers does not allow are left out of Claude runs: mcp__notion, mcp__notion__notion-create-pages/, out);
   const { argv, mcp } = JSON.parse(fs.readFileSync(record, 'utf8'));
   assert.ok(argv.includes('--strict-mcp-config'), argv.join(' '));
@@ -327,9 +331,12 @@ test('mcp.servers end to end: servers reach --mcp-config with ${VAR} only, stric
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test('per-chat MCP end to end: the chat choice from the reload outbox picks the servers, and the run health reaches the slot files', () => {
+test('per-chat MCP end to end: discovered servers are listed, a chat turns one off and on, and the run health reaches the slot files', () => {
   const dir = scratch('mcp-chat');
   const { home, saved, project, cfg, addons } = fakeInstall(dir);
+  const userHome = path.join(dir, 'user');
+  fs.mkdirSync(userHome, { recursive: true });
+  fs.writeFileSync(path.join(userHome, '.claude.json'), JSON.stringify({ mcpServers: { mobbin: { type: 'http', url: 'https://m' } } }));
   const argvFile = path.join(dir, 'argv.json');
   const init = {
     type: 'system',
@@ -338,6 +345,7 @@ test('per-chat MCP end to end: the chat choice from the reload outbox picks the 
     mcp_servers: [
       { name: 'linear', status: 'needs-auth', source: 'dynamic' },
       { name: 'mobbin', status: 'connected', source: 'user' },
+      { name: 'claude.ai Slack', status: 'connected', source: 'claudeai' },
     ],
   };
   const done = { type: 'result', result: 'pong', session_id: 'sess-1' };
@@ -358,19 +366,35 @@ test('per-chat MCP end to end: the chat choice from the reload outbox picks the 
     }),
   );
   const hex = s => Buffer.from(s, 'utf8').toString('hex');
-  const opts = hex('mcp=linear');
-  fs.writeFileSync(
-    saved,
-    `ClaudeWoWDB = {\n["outbox"] = {\n["id"] = 31,\n["session"] = "sess1",\n["chat"] = "chat1",\n["text"] = "${hex('ping')}",\n["cwd"] = "",\n["opts"] = "${opts}",\n["t"] = 1,\n},\n}\n`,
-  );
-  const r = runOnce(home, project);
-  assert.equal(r.status, 0, r.out);
-  assert.match(r.out, /#31@sess1 .* \[mcp linear\]/, r.out);
-  const argv = JSON.parse(fs.readFileSync(argvFile, 'utf8'));
+  const send = (id, choice) =>
+    fs.writeFileSync(
+      saved,
+      `ClaudeWoWDB = {\n["outbox"] = {\n["id"] = ${id},\n["session"] = "sess1",\n["chat"] = "chat1",\n["text"] = "${hex('ping')}",\n["cwd"] = "",\n["opts"] = "${hex(`mcp=${choice}`)}",\n["t"] = 1,\n},\n}\n`,
+    );
+  const env = { ...process.env, CLAUDE_WOW_HOME: home, HOME: userHome, USERPROFILE: userHome, CLAUDE_CONFIG_DIR: '' };
+  const run = () => spawnSync(process.execPath, [BRIDGE, '--once', '--project', project], { encoding: 'utf8', env, timeout: 60000 });
+
+  send(31, '+linear,-notion,-mobbin');
+  const r = run();
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout + r.stderr, /#31@sess1 .* \[mcp linear\]/);
+  let argv = JSON.parse(fs.readFileSync(argvFile, 'utf8'));
   const allowed = argv.slice(argv.indexOf('--allowedTools') + 1, argv.indexOf('--disallowedTools'));
   assert.ok(allowed.includes('mcp__linear__list_issues') && !allowed.includes('mcp__notion'), allowed.join(' '));
-  assert.ok(argv.slice(argv.indexOf('--disallowedTools')).includes('mcp__notion'), 'the server the chat left off is denied for the run');
+  const denied = argv.slice(argv.indexOf('--disallowedTools') + 1);
+  assert.ok(denied.includes('mcp__notion') && denied.includes('mcp__mobbin'), 'the config server and the discovered one the chat left off are denied');
+  assert.ok(!denied.includes('mcp__claude_ai_Slack'), 'untouched: not denied');
   const slot = fs.readFileSync(path.join(addons, 'ClaudeWoW_S001', 'Inbox.lua'), 'utf8');
-  assert.match(slot, /^\tmcp = \{ \{ name = "notion", on = true, health = "unknown" \}, \{ name = "linear", on = false, health = "needs-auth" \} \},$/m, slot);
+  assert.match(
+    slot,
+    /^\tmcp = \{ \{ id = "notion", label = "notion", src = "config", on = true, health = "unknown" \}, \{ id = "linear", label = "linear", src = "config", on = false, health = "needs-auth" \}, \{ id = "mobbin", label = "mobbin", src = "claude", on = true, health = "connected" \}, \{ id = "claude_ai_Slack", label = "Slack", src = "claude\.ai", on = true, health = "connected" \} \},$/m,
+    slot,
+  );
+  assert.ok(JSON.parse(fs.readFileSync(path.join(home, 'state.json'), 'utf8')).mcpSeen.claude_ai_Slack, 'what Claude reported is kept for the next start');
+
+  send(32, '-claude_ai_Slack');
+  assert.equal(run().status, 0);
+  argv = JSON.parse(fs.readFileSync(argvFile, 'utf8'));
+  assert.ok(argv.slice(argv.indexOf('--disallowedTools') + 1).includes('mcp__claude_ai_Slack'), 'a connector the last run reported can be turned off');
   fs.rmSync(dir, { recursive: true, force: true });
 });

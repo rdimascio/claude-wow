@@ -2098,13 +2098,11 @@ function factorySocket(tag) {
 }
 
 const loggedMcpDropped = new Set();
-const mcpHealth = new Map();
 function noteMcpHealth(servers) {
-  for (const s of servers) mcpHealth.set(s.name, s.status);
+  state.mcpSeen = MC.noteSeen(state.mcpSeen || {}, servers);
 }
 function mcpSlotList() {
-  if (!USER_MCP) return [];
-  return USER_MCP.servers.map(s => ({ name: s.name, on: s.default, health: mcpHealth.get(s.name) || 'unknown' }));
+  return MC.catalog({ mcp: USER_MCP, seen: state.mcpSeen || {}, codexOwn: CODEX_ALL_MCP, reserved: [DM.SERVER_NAME, GM.SERVER_NAME, FACTORY.SERVER_NAME] });
 }
 function loggedMcpBlocks(tag, never, userMcp) {
   if (!userMcp) return never;
@@ -2113,7 +2111,7 @@ function loggedMcpBlocks(tag, never, userMcp) {
     const blocked = never(rule);
     if (blocked && userMcp.blocks(rule) && !said.has(rule)) {
       said.add(rule);
-      log(`${tag} mcp: ${rule} was denied and is outside mcp.servers.${MC.serverOf(rule).server}.allow, so it is not offered to allow`);
+      log(`${tag} mcp: ${rule} was denied; its server is off for this chat or the tool is outside its allow list, so it is not offered to allow`);
     }
     return blocked;
   };
@@ -2145,9 +2143,11 @@ function runAgent(job, opts = {}) {
   const runDenied = [...inGameDeniedTools({ claudeRun, plugin, withRunTools: !!runToolSocket }), ...(Array.isArray(opts.deniedTools) ? opts.deniedTools : [])];
   const factoryConf = claudeRun && opts.factory && opts.factory.enabled ? opts.factory : null;
   const factoryToolSocket = factoryConf ? factorySocket(tag) : '';
-  const userMcp = claudeRun ? MC.forClaude(USER_MCP, { on: chosen.mcp }) : null;
-  const grantForGood = P.splitGrants(inGameGrantable(job.allow, runDenied, userMcp));
-  const grantOnce = P.splitGrants(inGameGrantable(job.allowOnce, runDenied, userMcp));
+  const userMcp = claudeRun ? MC.forClaude(USER_MCP, { choice: chosen.mcp }) : null;
+  const seenOff = claudeRun ? MC.discoveredOff(chosen.mcp, Object.keys(state.mcpSeen || {}), userMcp ? USER_MCP.servers.map(s => s.name) : []) : null;
+  const mcpGuard = claudeRun ? { blocks: rule => (userMcp ? userMcp.blocks(rule) : false) || seenOff.blocks(rule) } : null;
+  const grantForGood = P.splitGrants(inGameGrantable(job.allow, runDenied, mcpGuard));
+  const grantOnce = P.splitGrants(inGameGrantable(job.allowOnce, runDenied, mcpGuard));
   if (grantForGood.rules.length) {
     const added = allowRules(agentId, grantForGood.rules);
     log(`${tag} allowed for ${agentId}: ${grantForGood.rules.join(', ')}${added.length ? '' : ' (already allowed)'}`);
@@ -2157,7 +2157,10 @@ function runAgent(job, opts = {}) {
   }
   const dataServer = opts.gameData && (claudeRun || codexRun || agent.mcp) ? gameDataServer(tag, job) : null;
   const codexMcp = codexRun
-    ? [...(dataServer ? [{ name: DM.SERVER_NAME, server: dataServer.server }] : []), ...MC.forCodex(USER_MCP, { skip: CODEX_OWN_MCP, on: chosen.mcp })]
+    ? [
+        ...(dataServer ? [{ name: DM.SERVER_NAME, server: dataServer.server }] : []),
+        ...MC.forCodex(USER_MCP, { skip: CODEX_OWN_MCP, choice: chosen.mcp, own: CODEX_ALL_MCP }),
+      ]
     : [];
   const runOnlyRules = [
     ...grantOnce.rules,
@@ -2172,7 +2175,12 @@ function runAgent(job, opts = {}) {
     log(`${tag} mcp: allowed tool rules that mcp.servers does not allow are left out of Claude runs: ${scoped.dropped.join(', ')}`);
   }
   const acfg = A.withChatSettings(
-    P.withRunDeniedRules(P.withRunOnlyRules(scoped.agentCfg, runOnlyRules), [...runDenied, ...scoped.denied, ...(userMcp ? userMcp.offRules : [])]),
+    P.withRunDeniedRules(P.withRunOnlyRules(scoped.agentCfg, runOnlyRules), [
+      ...runDenied,
+      ...scoped.denied,
+      ...(userMcp ? userMcp.offRules : []),
+      ...(seenOff ? seenOff.rules : []),
+    ]),
     agentId,
     chosen,
   );
@@ -2384,7 +2392,7 @@ function runAgent(job, opts = {}) {
     granted,
     isDir: isDirectory,
     neverOffer: [...IN_GAME_NEVER_GRANTED, ...(acfg.deniedTools || [])],
-    neverOfferIf: loggedMcpBlocks(tag, neverOffered(acfg.deniedTools || [], userMcp), userMcp),
+    neverOfferIf: loggedMcpBlocks(tag, neverOffered(acfg.deniedTools || [], mcpGuard), mcpGuard),
   });
   job.activity = ACH.createRunLog(agentId);
   const progress = [];
@@ -2640,7 +2648,7 @@ function chatSettings(job) {
     effort: job.effort || '',
     permissionMode: job.permissionMode || '',
     addDirs: (Array.isArray(job.addDirs) ? job.addDirs : []).map(d => P.resolveCwd(d, DEFAULT_CWD)),
-    ...(Array.isArray(job.mcp) ? { mcp: job.mcp } : {}),
+    ...(job.mcp && typeof job.mcp === 'object' ? { mcp: job.mcp } : {}),
   };
 }
 
@@ -3341,7 +3349,9 @@ function startSelfUpdate() {
 }
 
 const USER_MCP = MC.parse(cfg.mcp, { reserved: [DM.SERVER_NAME, GM.SERVER_NAME, FACTORY.SERVER_NAME], log, env: process.env });
-const CODEX_OWN_MCP = USER_MCP ? MC.codexOwnServers().filter(n => USER_MCP.servers.some(s => s.name === n)) : [];
+const CODEX_ALL_MCP = MC.codexOwnServers();
+const CODEX_OWN_MCP = USER_MCP ? CODEX_ALL_MCP.filter(n => USER_MCP.servers.some(s => s.name === n)) : [];
+state.mcpSeen = MC.seedSeen(state.mcpSeen || {}, MC.claudeOwnServers({ cwd: DEFAULT_CWD }));
 banner();
 for (const n of CODEX_OWN_MCP)
   log(

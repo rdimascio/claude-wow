@@ -2993,68 +2993,69 @@ test('/claude -r all with no handed-off session says how to hand off', () => {
   );
 });
 
-test('mcp: the bridge list arrives in a slot, /claude mcp turns servers on and off per chat, and the wire carries mcp= only after a choice', () => {
+test('mcp: the bridge list arrives in a slot, /claude mcp overrides servers per chat, and the wire carries mcp= only after a change', () => {
   const vm = newVM();
   login(vm);
   vm.run('STUB.RunTimers()');
-  const list =
-    '{ { name = "notion", on = true, health = "connected" }, { name = "github", on = false, health = "nope" }, { name = "bad name", on = true }, "junk" }';
-  vm.run('SlashCmdList.CLAUDE("mcp")');
-  assert.equal(
-    vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history[#ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history].text'),
-    'MCP: not connected to the bridge yet.',
-  );
-  nextSlot(vm, `{ now = time(), cwd = "/p", mcp = ${list}, replies = {} }`);
-  vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
-  assert.equal(vm.evaluate('ClaudeWoW.IsConnected()'), 'true');
   const last = () => vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history[#ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history].text');
   const mcpToken = text =>
     flagsOf(stripRecords(vm).find(r => r.text === text))
       .split(';')
       .find(t => t.startsWith('mcp=')) || null;
-  const answer = () => {
+  const list =
+    '{ { id = "notion", label = "notion", src = "config", on = false, health = "connected" }, { id = "claude_ai_Slack", label = "Slack", src = "claude.ai", on = true, health = "needs-auth" }, { id = "mobbin", label = "mobbin", src = "claude", on = true, health = "nope" }, { id = "bad id", label = "x", src = "claude", on = true }, { id = "x", label = "x", src = "elsewhere", on = true }, "junk" }';
+  const answer = (withList = true) => {
     const id = vm.num('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].pendingId');
     const chat = vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].id');
-    nextSlot(vm, `{ now = time(), cwd = "/p", mcp = ${list}, replies = { { chat = "${chat}", id = ${id}, status = "done", text = "ok", agent = "claude" } } }`);
+    nextSlot(
+      vm,
+      `{ now = time(), cwd = "/p", ${withList ? `mcp = ${list},` : ''} replies = { { chat = "${chat}", id = ${id}, status = "done", text = "ok", agent = "claude" } } }`,
+    );
     vm.run('STUB.now = STUB.now + 10; STUB.Tick()');
   };
+  vm.run('SlashCmdList.CLAUDE("mcp")');
+  assert.equal(last(), 'MCP: not connected to the bridge yet.');
+  nextSlot(vm, `{ now = time(), cwd = "/p", mcp = ${list}, replies = {} }`);
+  vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
+  assert.equal(vm.evaluate('ClaudeWoW.IsConnected()'), 'true');
 
   vm.run('SlashCmdList.CLAUDE("first")');
-  assert.equal(mcpToken('first'), null, 'no choice yet: the bridge defaults apply and nothing extra goes out');
+  assert.equal(mcpToken('first'), null, 'no change: the defaults apply and nothing extra goes out');
   answer();
   vm.run('SlashCmdList.CLAUDE("mcp")');
-  assert.match(
+  assert.equal(
     last(),
-    /^MCP servers for this chat \(the bridge's defaults\):\n {2}on {3}notion {2}\|cff33cc33ok\|r\n {2}off {2}github {2}\|cff999999not seen yet\|r\n/,
+    'MCP servers for this chat (the defaults):\nFrom config.json:\n  off  notion  |cff33cc33ok|r\nYour Claude servers:\n  on   mobbin  |cff999999not seen yet|r\nclaude.ai connectors:\n  on   Slack  |cffff9933needs login|r\n/claude mcp on|off <name> changes one; /claude mcp none turns all off; /claude mcp default goes back to the defaults.',
   );
-  assert.ok(!last().includes('bad name'), 'a name the bridge could not have sent is dropped');
 
-  vm.run('SlashCmdList.CLAUDE("mcp on github")');
-  assert.equal(last(), 'MCP: github is on for this chat.');
+  vm.run('SlashCmdList.CLAUDE("mcp off slack")');
+  assert.equal(last(), 'MCP: Slack is off for this chat.', 'a label finds the server, in any case');
+  vm.run('SlashCmdList.CLAUDE("mcp on notion")');
   vm.run('SlashCmdList.CLAUDE("-c second")');
-  assert.equal(mcpToken('second'), 'mcp=notion,github');
+  assert.equal(mcpToken('second'), 'mcp=-claude_ai_Slack,+notion');
   answer();
+  vm.run('SlashCmdList.CLAUDE("mcp on slack")');
+  vm.run('SlashCmdList.CLAUDE("mcp off notion")');
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].mcpSet == nil'), 'true', 'back to the defaults drops the overrides');
 
   vm.run('SlashCmdList.CLAUDE("mcp none")');
   assert.equal(last(), 'MCP: every server is off for this chat.');
+  vm.run('SlashCmdList.CLAUDE("mcp on mobbin")');
   vm.run('SlashCmdList.CLAUDE("-c third")');
-  assert.equal(mcpToken('third'), 'mcp=', 'every server off is an explicit empty set');
+  assert.equal(mcpToken('third'), 'mcp=-*,+mobbin');
   answer();
 
   vm.run('SlashCmdList.CLAUDE("mcp off linear")');
-  assert.match(last(), /^MCP: no MCP server named "linear" \(servers: notion, github\)\.$/);
+  assert.match(last(), /^MCP: no MCP server named "linear" \(servers: notion, Slack, mobbin\)\.$/);
   vm.run('SlashCmdList.CLAUDE("mcp default")');
   vm.run('SlashCmdList.CLAUDE("-c fourth")');
   assert.equal(mcpToken('fourth'), null, 'default drops the choice');
   answer();
 
-  vm.run('SlashCmdList.CLAUDE("mcp on notion")');
+  vm.run('SlashCmdList.CLAUDE("mcp off mobbin")');
   vm.run('SlashCmdList.CLAUDE("-c fifth")');
-  assert.equal(mcpToken('fifth'), 'mcp=notion');
-  const id = vm.num('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].pendingId');
-  const chat = vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].id');
-  nextSlot(vm, `{ now = time(), cwd = "/p", replies = { { chat = "${chat}", id = ${id}, status = "done", text = "ok", agent = "claude" } } }`);
-  vm.run('STUB.now = STUB.now + 10; STUB.Tick()');
+  assert.equal(mcpToken('fifth'), 'mcp=-mobbin');
+  answer(false);
   vm.run('SlashCmdList.CLAUDE("-c sixth")');
   assert.equal(mcpToken('sixth'), null, 'a slot without the list (an older bridge took over) withdraws the token');
 });
@@ -3066,7 +3067,7 @@ test('mcp: an older bridge that sends no list gets no mcp= token, and the comman
   vm.run('SlashCmdList.CLAUDE("mcp off notion")');
   const said = vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history[#ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history].text');
   assert.match(said, /this bridge sends no MCP server list\. Update the bridge/);
-  vm.run('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].mcp = { "notion" }');
+  vm.run('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].mcpAllOff = true');
   vm.run('SlashCmdList.CLAUDE("-c hi")');
   const rec = stripRecords(vm).find(r => r.text === 'hi');
   assert.ok(
@@ -3077,13 +3078,12 @@ test('mcp: an older bridge that sends no list gets no mcp= token, and the comman
   );
 });
 
-test('mcp: Inbox.lua carries the list after a /reload, and a chat is capped at 8 servers', () => {
+test('mcp: Inbox.lua carries the list after a /reload only while fresh, and a chat changes at most 16 servers', () => {
   const vm = newVM();
   login(vm);
-  const names = Array.from({ length: 9 }, (_, i) => `s${i}`);
-  const list = `{ ${names.map(n => `{ name = "${n}", on = false, health = "unknown", at = 0 }`).join(', ')} }`;
+  const names = Array.from({ length: 17 }, (_, i) => `s${i}`);
+  const list = `{ ${names.map(n => `{ id = "${n}", label = "${n}", src = "claude", on = true, health = "unknown" }`).join(', ')} }`;
   const stale = reloaded(vm, `ClaudeWoW_Inbox = { now = time() - 301, cwd = "", mcp = ${list}, replies = {} }`);
-  assert.equal(stale.evaluate('ClaudeWoW.UI and ClaudeWoWMcpButton and ClaudeWoWMcpButton:IsShown() or false'), 'false');
   stale.run('ClaudeWoW.NewChat(); SlashCmdList.CLAUDE("mcp")');
   assert.doesNotMatch(
     stale.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history[#ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history].text'),
@@ -3092,26 +3092,29 @@ test('mcp: Inbox.lua carries the list after a /reload, and a chat is capped at 8
   );
   const next = reloaded(vm, `ClaudeWoW_Inbox = { now = time(), cwd = "", mcp = ${list}, replies = {} }`);
   next.run('ClaudeWoW.NewChat()');
-  for (const n of names.slice(0, 8)) next.run(`SlashCmdList.CLAUDE("mcp on ${n}")`);
-  assert.equal(next.evaluate('#ClaudeWoWDB.chats[#ClaudeWoWDB.chats].mcp'), '8');
-  next.run('SlashCmdList.CLAUDE("mcp on s8")');
+  for (const n of names.slice(0, 16)) next.run(`SlashCmdList.CLAUDE("mcp off ${n}")`);
+  next.run('SlashCmdList.CLAUDE("mcp off s16")');
   const said = next.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history[#ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history].text');
-  assert.equal(said, 'MCP: a chat can use at most 8 MCP servers. Turn them all off with /claude mcp none, then turn on the ones you want.');
-  assert.equal(next.evaluate('#ClaudeWoWDB.chats[#ClaudeWoWDB.chats].mcp'), '8');
+  assert.equal(said, 'MCP: this chat already changes 16 servers. Use /claude mcp none, then turn on the ones you want, or /claude mcp default.');
+  assert.equal(next.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].mcpSet.s16 == nil'), 'true');
+  next.run('SlashCmdList.CLAUDE("mcp none"); SlashCmdList.CLAUDE("mcp on s16")');
+  assert.equal(next.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].mcpSet.s16'), 'true', 'none frees the room');
 });
 
-test('mcp: the send limit counts the mcp= token, so a long message with many servers is refused instead of never reaching the strip', () => {
+test('mcp: the send limit counts the mcp= token, so a long message with many changes is refused instead of never reaching the strip', () => {
   const vm = newVM();
   login(vm);
   vm.run('STUB.RunTimers()');
-  const names = Array.from({ length: 8 }, (_, i) => `s${i}-${'x'.repeat(58)}`);
-  nextSlot(vm, `{ now = time(), cwd = "/p", mcp = { ${names.map(n => `{ name = "${n}", on = true, health = "unknown" }`).join(', ')} }, replies = {} }`);
+  const names = Array.from({ length: 16 }, (_, i) => `s${i}-${'x'.repeat(58)}`);
+  nextSlot(
+    vm,
+    `{ now = time(), cwd = "/p", mcp = { ${names.map(n => `{ id = "${n}", label = "${n}", src = "claude", on = true, health = "unknown" }`).join(', ')} }, replies = {} }`,
+  );
   vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
   vm.run('ClaudeWoW.NewChat()');
-  for (const n of names) vm.run(`SlashCmdList.CLAUDE("mcp on ${n}")`);
+  for (const n of names) vm.run(`SlashCmdList.CLAUDE("mcp off ${n}")`);
   const room = Number(/^C\.MAX_PAYLOAD = (\d+)$/m.exec(fs.readFileSync(path.join(__dirname, '..', 'addon', 'ClaudeWoW', 'Codec.lua'), 'utf8'))[1]) - 300 - 1;
-  const text = 'a'.repeat(room - 200);
-  vm.run(`ClaudeWoW.Send("${text}")`);
+  vm.run(`ClaudeWoW.Send("${'a'.repeat(room - 200)}")`);
   const said = vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history[#ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history].text');
   assert.match(said, /^That message is too long for one send/);
   assert.equal(vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].pendingId == nil'), 'true');

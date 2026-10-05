@@ -348,55 +348,101 @@ test('Codex: a server named like one in ~/.codex/config.toml is left out, since 
   );
 });
 
-test('per chat: mcp= names the servers a chat turned on, an empty value turns all off, and a bad name is dropped', () => {
+test('per chat: mcp= carries overrides (+id, -id, -* for all off), a bad id is dropped, and at most 16 count', () => {
   const hex = s => Buffer.from(s, 'utf8').toString('hex');
-  assert.equal(P.parseFlags('agent=claude').mcp, undefined, 'no token: the config defaults');
-  assert.deepEqual(P.parseFlags('mcp=').mcp, [], 'an explicit empty set');
-  assert.deepEqual(P.parseFlags('mcp=notion,github,notion,bad name,a__b').mcp, ['notion', 'github']);
-  assert.deepEqual(P.parseFlags(`mcp=${Array.from({ length: 12 }, (_, i) => `s${i}`).join(',')}`).mcp.length, 8);
-  const outbox = `ClaudeWoWDB = {\n["outbox"] = {\n["id"] = 3,\n["session"] = "s",\n["chat"] = "c",\n["text"] = "${hex('hi')}",\n["cwd"] = "",\n["opts"] = "${hex('mcp=github')}",\n["t"] = 1,\n},\n}\n`;
-  assert.deepEqual(P.parseOutbox(outbox).mcp, ['github'], 'reload mode carries it too');
+  assert.equal(P.parseFlags('agent=claude').mcp, undefined, 'no token: the defaults');
+  assert.deepEqual(P.parseFlags('mcp=-*').mcp, { allOff: true, on: [], off: [] });
+  assert.deepEqual(P.parseFlags('mcp=+notion,-claude_ai_Slack,notion,-bad id,+a.b,-notion').mcp, { allOff: false, on: ['notion'], off: ['claude_ai_Slack'] });
+  assert.equal(P.parseFlags(`mcp=${Array.from({ length: 20 }, (_, i) => `-s${i}`).join(',')}`).mcp.off.length, 16);
+  const outbox = `ClaudeWoWDB = {\n["outbox"] = {\n["id"] = 3,\n["session"] = "s",\n["chat"] = "c",\n["text"] = "${hex('hi')}",\n["cwd"] = "",\n["opts"] = "${hex('mcp=-github')}",\n["t"] = 1,\n},\n}\n`;
+  assert.deepEqual(P.parseOutbox(outbox).mcp, { allOff: false, on: [], off: ['github'] }, 'reload mode carries it too');
 
   const mcp = parsed(SAMPLE).mcp;
-  assert.deepEqual(MC.forClaude(mcp, { on: ['notion', 'quiet'] }).names, ['notion', 'quiet'], 'a chat can turn on a server that is off by default');
-  const none = MC.forClaude(mcp, { on: [] });
-  assert.deepEqual(none.names, []);
-  assert.equal(none.blocks('mcp__notion__notion-search'), true, 'a server the chat turned off is never offered, even a tool its allow list names');
+  const choice = v => MC.parseChoice(v);
   assert.deepEqual(
-    none.offRules,
-    ['mcp__github', 'mcp__notion', 'mcp__linear', 'mcp__quiet'],
-    "and it is denied, so a same-name server of Claude's own settings is off too",
+    MC.forClaude(mcp, { choice: choice('+quiet,-linear') }).names,
+    ['github', 'notion', 'quiet'],
+    'a chat can turn on a server that is off by default, and off one that is on',
   );
+  const none = MC.forClaude(mcp, { choice: choice('-*,+github') });
+  assert.deepEqual(none.names, ['github']);
+  assert.equal(none.blocks('mcp__notion__notion-search'), true, 'a server the chat turned off is never offered, even a tool its allow list names');
+  assert.deepEqual(none.offRules, ['mcp__notion', 'mcp__linear', 'mcp__quiet'], "and it is denied, so a same-name server of Claude's own settings is off too");
   assert.deepEqual(MC.forClaude(mcp).names, ['github', 'notion', 'linear']);
   assert.deepEqual(MC.forClaude(mcp).offRules, [], 'no choice: nothing extra is denied');
-  assert.equal(MC.forClaude(mcp).blocks('mcp__quiet__x'), false);
+  assert.deepEqual(MC.forClaude(mcp, { choice: choice('+notion') }).offRules, [], 'a server off by default and untouched is not denied');
+
+  const seen = ['mobbin', 'claude_ai_Slack', 'plugin_Notion_notion', 'notion'];
+  const off = MC.discoveredOff(choice('-claude_ai_Slack,-notion'), seen, ['notion']);
+  assert.deepEqual(off.rules, ['mcp__claude_ai_Slack'], 'a discovered server the chat turned off is denied; a configured name is left to forClaude');
+  assert.equal(off.blocks('mcp__claude_ai_Slack__post'), true);
+  assert.equal(off.blocks('mcp__mobbin__search'), false);
+  assert.deepEqual(MC.discoveredOff(choice('-*,+mobbin'), seen, []).rules, ['mcp__claude_ai_Slack', 'mcp__plugin_Notion_notion', 'mcp__notion']);
+  assert.deepEqual(MC.discoveredOff(undefined, seen, []).rules, [], 'no choice: Claude loads them as it always did');
+
   assert.deepEqual(
-    MC.forCodex(mcp, { on: ['quiet', 'github'] }).map(e => e.name),
-    ['github', 'quiet'],
+    MC.forCodex(mcp, { choice: choice('+quiet,-linear') }).map(e => e.name),
+    ['github', 'notion', 'quiet'],
   );
-  const own = MC.forCodex(mcp, { on: ['github'], skip: ['notion', 'github', 'elsewhere'] });
-  assert.deepEqual(own, [{ name: 'notion', off: true }], 'a config.toml server the chat turned off is disabled; one it keeps on loads from config.toml');
-  assert.deepEqual(MC.codexArgs(own), ['-c', 'mcp_servers.notion.enabled=false']);
+  const own = MC.forCodex(mcp, { choice: choice('-notion,-mobbin'), skip: ['notion'], own: ['notion', 'mobbin', 'elsewhere'] });
   assert.deepEqual(
-    MC.forCodex(mcp, { skip: ['notion'] }).filter(e => e.off),
-    [],
-    'no choice: config.toml decides',
+    own.slice(-2),
+    [
+      { name: 'notion', off: true },
+      { name: 'mobbin', off: true },
+    ],
+    "Codex's own servers the chat turned off get enabled=false",
   );
-  assert.deepEqual(A.unsupportedSettings('grok', { mcp: ['notion'] }), ['mcp notion']);
-  assert.deepEqual(A.unsupportedSettings('claude', { mcp: ['notion'] }), []);
-  assert.deepEqual(A.unsupportedSettings('codex', { mcp: ['notion'] }), []);
-  assert.equal(A.withChatSettings({}, 'claude', { mcp: ['notion'] }).mcp, undefined, 'the choice drives the server list, not an agent config key');
+  assert.ok(!own.some(e => e.name === 'elsewhere'));
+  assert.deepEqual(MC.codexArgs([{ name: 'mobbin', off: true }]), ['-c', 'mcp_servers.mobbin.enabled=false']);
+  assert.deepEqual(MC.forCodex(null, { own: ['mobbin'] }), [], 'no choice and no mcp key: Codex is untouched');
+  assert.deepEqual(A.unsupportedSettings('grok', { mcp: choice('-x') }), ['mcp choice']);
+  assert.deepEqual(A.unsupportedSettings('claude', { mcp: choice('-x') }), []);
+  assert.equal(A.withChatSettings({}, 'claude', { mcp: choice('-x') }).mcp, undefined, 'the choice drives the server list, not an agent config key');
 });
 
-test('slot field mcp: each server with its default and last health; a bad name or health never reaches Lua', () => {
+test('catalog: config servers first, then what Claude reported or its files list, then Codex; ids are rule prefixes and labels are readable', () => {
+  const seen = MC.noteSeen({}, [
+    { name: 'claude.ai Slack', status: 'connected', source: 'claudeai' },
+    { name: 'plugin:Notion:notion', status: 'needs-auth', source: 'plugin' },
+    { name: 'plugin:engineering:google calendar', status: 'failed', source: 'plugin' },
+    { name: 'notion', status: 'connected', source: 'dynamic' },
+    { name: 'wowdata', status: 'connected', source: 'dynamic' },
+    { name: 'removed-from-config', status: 'connected', source: 'dynamic' },
+    { name: 'mobbin', status: 'connected', source: 'user' },
+  ]);
+  MC.seedSeen(seen, ['user:mobbin', 'project:claude-wow', 'plugin:playwright:playwright']);
+  const list = MC.catalog({ mcp: parsed(SAMPLE).mcp, seen, codexOwn: ['mobbin', 'node_repl'], reserved: ['wowdata'] });
+  assert.deepEqual(list, [
+    { id: 'github', label: 'github', src: 'config', on: true, health: 'unknown' },
+    { id: 'notion', label: 'notion', src: 'config', on: true, health: 'connected' },
+    { id: 'linear', label: 'linear', src: 'config', on: true, health: 'unknown' },
+    { id: 'quiet', label: 'quiet', src: 'config', on: false, health: 'unknown' },
+    { id: 'claude-wow', label: 'claude-wow', src: 'claude', on: true, health: 'unknown' },
+    { id: 'plugin_engineering_google_calendar', label: 'google calendar (engineering)', src: 'plugin', on: true, health: 'failed' },
+    { id: 'mobbin', label: 'mobbin', src: 'claude', on: true, health: 'connected' },
+    { id: 'plugin_Notion_notion', label: 'Notion', src: 'plugin', on: true, health: 'needs-auth' },
+    { id: 'plugin_playwright_playwright', label: 'playwright', src: 'plugin', on: true, health: 'unknown' },
+    { id: 'claude_ai_Slack', label: 'Slack', src: 'claude.ai', on: true, health: 'connected' },
+    { id: 'node_repl', label: 'node_repl', src: 'codex', on: true, health: 'unknown' },
+  ]);
+  const many = {};
+  for (let i = 0; i < 70; i++) MC.noteSeen(many, [{ name: `s${i}`, status: 'connected', source: 'user' }], i);
+  assert.equal(Object.keys(many).length, 64, 'the seen list is bounded, oldest out');
+  assert.ok(!many.s0 && many.s69);
+
   const lua = P.luaTable('X', [], {
     mcp: [
-      { name: 'notion', on: true, health: 'connected' },
-      { name: 'linear', on: false, health: 'weird' },
-      { name: 'bad name"', on: true, health: 'connected' },
+      { id: 'claude_ai_Slack', label: 'Slack|cff', src: 'claude.ai', on: true, health: 'connected' },
+      { id: 'linear', label: 'linear', src: 'config', on: false, health: 'weird' },
+      { id: 'bad id', label: 'x', src: 'claude', on: true, health: 'connected' },
+      { id: 'x', label: 'x', src: 'elsewhere', on: true, health: 'connected' },
     ],
   });
-  assert.match(lua, /^\tmcp = \{ \{ name = "notion", on = true, health = "connected" \}, \{ name = "linear", on = false, health = "unknown" \} \},$/m);
+  assert.match(
+    lua,
+    /^\tmcp = \{ \{ id = "claude_ai_Slack", label = "Slackcff", src = "claude.ai", on = true, health = "connected" \}, \{ id = "linear", label = "linear", src = "config", on = false, health = "unknown" \} \},$/m,
+  );
   assert.match(P.luaTable('X', [], { mcp: [] }), /^\tmcp = \{ {2}\},$/m, 'a new bridge with no servers says so');
   assert.ok(!/mcp =/.test(P.luaTable('X', [], {})));
 });
@@ -408,8 +454,8 @@ test('health: the Claude init event reports every server with its status', () =>
     mcp_servers: [{ name: 'notion', status: 'connected' }, { name: 'linear', status: 'needs-auth' }, { status: 'failed' }],
   });
   assert.deepEqual(r.mcpStatus, [
-    { name: 'notion', status: 'connected' },
-    { name: 'linear', status: 'needs-auth' },
+    { name: 'notion', status: 'connected', source: '' },
+    { name: 'linear', status: 'needs-auth', source: '' },
   ]);
   assert.deepEqual(r.mcpDown, [
     { name: 'linear', status: 'needs-auth' },
