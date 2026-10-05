@@ -276,9 +276,30 @@ function Cli.ChatOptionTokens(c, extraDirs)
 	if #dirs > 0 then table.insert(tokens, "dirs=" .. ToHex(table.concat(dirs, "\31"))) end
 	if c.resumeId and c.resumeId ~= "" then table.insert(tokens, "resume=" .. c.resumeId) end
 	if c.liveTarget and c.liveTarget ~= "" then table.insert(tokens, "live=" .. ToHex(c.liveTarget)) end
+	if c.discordLinkPending then table.insert(tokens, "discord=link") end
 	local mcp = Cli.McpToken(c)
 	if mcp ~= "" then table.insert(tokens, mcp) end
 	return tokens
+end
+
+function Cli.LinkDiscord(c)
+	if not run.bridgeDiscord then
+		Cli.Out(c, "Discord is not on in this bridge. Set discord.enabled in the bridge's config.json and restart it.")
+		return
+	end
+	local plugin = Cli.ChatPlugin(c)
+	if plugin == "" then plugin = run.bridgePlugin or "" end
+	if plugin ~= "claude-code" then
+		Cli.Out(c, "Only a coding chat can live in Discord. Pick a project for this chat first (/claude --project <name>).")
+		return
+	end
+	if c.pendingId then
+		Cli.Out(c, "Wait for the reply first, then link the chat.")
+		return
+	end
+	c.discordLinkPending = true
+	ClaudeWoW.Send("/claude discord", nil, { chat = c.id, verbatim = true })
+	c.discordLinkPending = nil
 end
 
 local function HasUserMessage(c)
@@ -2080,6 +2101,7 @@ local function TryLoadSlot(why)
 		ClaudeWoW.ApplySessions(data.sessions, data.now)
 		ClaudeWoW.ApplyProjects(data.projects, data.home)
 		ClaudeWoW.ApplySkills(data.skills)
+		run.bridgeDiscord = data.discord == true
 		ClaudeWoW.ApplyMcp(data.mcp)
 		local acked = ClaudeWoW.ApplyAcks(data.acks)
 		ApplyTransport(data)
@@ -2309,6 +2331,7 @@ local function ProcessInbox()
 	ClaudeWoW.ApplySessions(inbox.sessions, inbox.now)
 	ClaudeWoW.ApplyProjects(inbox.projects, inbox.home)
 	ClaudeWoW.ApplySkills(inbox.skills)
+	run.bridgeDiscord = inbox.discord == true
 	ClaudeWoW.ApplyMcp((tonumber(inbox.now) or 0) >= time() - Q.INBOX_FRESH_SECONDS and inbox.mcp or nil)
 	ApplyTransport(inbox)
 	ClaudeWoW.Version.Apply(inbox.bridge, inbox.now)
@@ -7162,7 +7185,7 @@ end
 local COMMAND_ARGS = {
 	mini = 0, min = 0, hide = 0, quit = 0, help = 0, clear = 0, delete = 0, reset = 0, copy = 0,
 	cancel = 0, resend = 0, reload = 0, refresh = 0, slots = 0, diag = { [""] = true, copy = true },
-	dev = true, wrong = true, bug = true, errors = 0, mcp = function(rest) return Cli.IsMcpCommand(rest) end,
+	dev = true, wrong = true, bug = true, errors = 0, discord = 0, mcp = function(rest) return Cli.IsMcpCommand(rest) end,
 	context = function(rest) return rest == "" or rest == "on" or rest == "off" or ParseTokens(rest) ~= nil end,
 	ctx = function(rest) return rest == "" or rest == "on" or rest == "off" or ParseTokens(rest) ~= nil end,
 	mode = { [""] = true, pixel = true, reload = true },
@@ -7196,7 +7219,7 @@ Cli.CLAUDE_VERBS = {
 	help = true, diag = true, cancel = true, copy = true, clear = true, rename = true, delete = true,
 	cd = true, hide = true, quit = true, mini = true, min = true, reload = true, refresh = true,
 	resend = true, slots = true, look = true, reset = true, probe = true, orders = true,
-	dev = true, wrong = true, bug = true, errors = true, mcp = true,
+	dev = true, wrong = true, bug = true, errors = true, mcp = true, discord = true,
 }
 
 Cli.CONFIG_KEYS = {
@@ -8473,6 +8496,8 @@ RunCommand = function(cmd, rest)
 		Cli.Show(c)
 	elseif cmd == "probe" then
 		ClaudeWoW.Probe.Run(rest)
+	elseif cmd == "discord" then
+		Cli.LinkDiscord(c)
 	elseif cmd == "diag" then
 		local free = 0
 		for i = 1, SLOT_COUNT do

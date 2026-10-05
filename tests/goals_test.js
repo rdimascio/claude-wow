@@ -652,6 +652,8 @@ test(
       const homes = [...new Set([home, fs.realpathSync(home)])];
       const guards = homes.flatMap(h => [
         P.absolutePathRule('Read', path.join(h, 'live.token')),
+        P.absolutePathRule('Read', path.join(h, 'discord.token')),
+        P.absolutePathRule('Read', path.join(h, 'discord-webhook.json')),
         P.absolutePathRule('Edit', path.join(h, 'goals', '**')),
         P.absolutePathRule('Read', path.join(h, 'tmp', 'mcp', '**')),
       ]);
