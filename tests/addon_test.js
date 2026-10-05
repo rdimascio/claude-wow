@@ -1176,7 +1176,7 @@ test('whisper default for existing installs: an explicit "off" stays off, an old
   const offMsg = '{ role = "system", text = "Whisper tabs are off; replies go to the game chat as before", t = 1700000100 }';
   const onMsg = '{ role = "system", text = "Whisper tabs are ON: this chat is the \\"x\\" tab", t = 1700000000 }';
   const saved = (whisper, history) =>
-    `ClaudeWoWDB = { settings = { whisper = ${whisper}, echoV2 = true, pluginsV1 = true }, lastSeq = 3, session = "s1", forget = {}, activeChat = "c1", chats = { { id = "c1", name = "Chat 1", cwd = "", agent = "", plugin = "", unread = 0, history = { ${history} } } } }`;
+    `ClaudeWoWDB = { settings = { whisper = ${whisper}, echoV2 = true, pluginsV1 = true, chatsPerCharacterV1 = true }, lastSeq = 3, session = "s1", forget = {}, activeChat = "c1", chats = { { id = "c1", name = "Chat 1", cwd = "", agent = "", plugin = "", unread = 0, history = { ${history} } } } }`;
 
   let vm = dockVM(saved('false', `${onMsg}, ${offMsg}`));
   assert.equal(vm.evaluate('ClaudeWoWDB.settings.whisper'), 'false', 'turned off by hand before: kept off');
@@ -1485,7 +1485,9 @@ test("plugins: a fresh install follows the bridge's default and sends no flag; c
   // Saved data from before plugins existed: every chat was a coding chat, and
   // says so on the wire from now on; the migration runs once.
   const old = newVM();
-  old.run('ClaudeWoWDB = { chats = { { id = "c1", name = "Old", cwd = "realms", history = {}, unread = 0, created = 1 } }, activeChat = "c1", settings = {} }');
+  old.run(
+    'ClaudeWoWDB = { chats = { { id = "c1", name = "Old", cwd = "realms", history = {}, unread = 0, created = 1 } }, activeChat = "c1", settings = { chatsPerCharacterV1 = true } }',
+  );
   login(old);
   assert.equal(old.evaluate('ClaudeWoWDB.chats[1].plugin'), 'claude-code');
   connect(old);
@@ -2151,7 +2153,7 @@ test('context growth: the footer, /claude-wow context and diag show ctx and turn
   vm.run('SlashCmdList.CLAUDE("config context")');
   assert.ok(last().includes('Context: 1 turn in this session; AI does not report its context size.'), last());
   // A restore bundle (read with the next reply) brings the numbers back with the chat.
-  vm.run('ClaudeWoWDB.restored = nil');
+  vm.run('ClaudeWoWCharDB.restored = nil');
   const token = vm.evaluate('ClaudeWoWDB.session');
   vm.run('ClaudeWoW.Send("one more")');
   id = vm.num('ClaudeWoWDB.chats[1].pendingId');
@@ -2160,7 +2162,7 @@ test('context growth: the footer, /claude-wow context and diag show ctx and turn
     `{ now = time(), cwd = "", replies = { { chat = "${vm.evaluate('ClaudeWoWDB.activeChat')}", id = ${id}, status = "done", text = "ok", turns = 2 } }, restore = { token = "${token}", chats = { { id = "r1", name = "Old", cwd = "", plugin = "ask", ctx = 312458, turns = 213, since = time() - 3725, cost = 7.5, messages = { { role = "user", id = 1, t = 1, agent = "", text = "hey" } } } } } }`,
   );
   vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
-  assert.equal(vm.evaluate('ClaudeWoWDB.restored'), 'true', 'the bundle was read');
+  assert.equal(vm.evaluate('ClaudeWoWCharDB.restored'), 'true', 'the bundle was read');
   vm.run('SlashCmdList.CLAUDE("-r Old")');
   assert.equal(vm.num('(function() for _, ch in ipairs(ClaudeWoWDB.chats) do if ch.id == "r1" then return ch.ctx end end end)()'), 312458);
   assert.ok(footerText(vm).endsWith('   1h 02m · ↓ 312.5k tokens · ≈$7.50 API'), footerText(vm));
@@ -2815,7 +2817,7 @@ test('a message the bridge still lists as queued or running keeps its chat waiti
 
 test('in reload mode the auto refresh does not renew the login grace: a chat left pending by an earlier session is freed about two minutes after the first login', () => {
   let vm = newVM();
-  vm.run(`ClaudeWoWDB = { session = "feedc0de", lastSeq = 361, settings = { mode = "reload" }, chats = {
+  vm.run(`ClaudeWoWDB = { session = "feedc0de", lastSeq = 361, settings = { mode = "reload", chatsPerCharacterV1 = true }, chats = {
     { id = "lead", name = "Every AI Lead", cwd = "", agent = "", plugin = "", unread = 0, pendingId = 361, history = { { role = "user", text = "lead the work", id = 361, t = time() - 86400 } } },
   }, activeChat = "lead" }`);
   login(vm);
@@ -2835,7 +2837,7 @@ test('in reload mode the auto refresh does not renew the login grace: a chat lef
   let slow = newVM();
   slow.run(`ClaudeWoWDB = { session = "feedc0de", lastSeq = 361, chats = {
     { id = "lead", name = "Every AI Lead", cwd = "", agent = "", plugin = "", unread = 0, pendingId = 361, history = { { role = "user", text = "lead the work", id = 361, t = time() - 86400 } } },
-  }, activeChat = "lead" }`);
+  }, activeChat = "lead", settings = { chatsPerCharacterV1 = true } }`);
   login(slow);
   enterWorld(slow, true);
   slow.run('STUB.now = STUB.now + 300');
@@ -3238,4 +3240,79 @@ test('mcp: the send limit counts the mcp= token, so a long message with many ser
   const said = vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history[#ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history].text');
   assert.match(said, /^That message is too long for one send/);
   assert.equal(vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].pendingId == nil'), 'true');
+});
+
+test('general chats belong to the character: logout stashes them per character, an alt sees only project chats, and the first load drops the old account-wide chats', () => {
+  const chatRow = (id, cwd) => `{ id = "${id}", name = "${id}", cwd = "${cwd}", agent = "", plugin = "", unread = 0, history = {}, created = 1 }`;
+  const main = newVM();
+  main.run(
+    `ClaudeWoWDB = { session = "s1", lastSeq = 3, settings = { pluginsV1 = true }, activeChat = "old", chats = { ${chatRow('old', '')}, ${chatRow('oldrepo', 'realms')} } }`,
+  );
+  login(main);
+  assert.equal(main.evaluate('ClaudeWoWDB.settings.chatsPerCharacterV1'), 'true');
+  assert.equal(main.evaluate('#ClaudeWoWDB.chats'), '1', 'every old chat is dropped; only a fresh chat is left');
+  assert.notEqual(main.evaluate('ClaudeWoWDB.chats[1].id'), 'old');
+  assert.equal(main.evaluate('next(ClaudeWoWDB.forget)'), null, 'no forget records: the bridge drops its copies itself');
+
+  const legacy = newVM();
+  legacy.run('ClaudeWoWDB = { session = "s0", settings = {}, history = { { role = "user", text = "ancient", t = 1 } }, pendingId = 4 }');
+  login(legacy);
+  assert.equal(legacy.evaluate('#ClaudeWoWDB.chats[1].history'), '0', 'the single-chat layout is not migrated back in');
+  assert.equal(legacy.evaluate('ClaudeWoWDB.history'), null);
+
+  main.run(
+    `table.insert(ClaudeWoWDB.chats, ${chatRow('repo', 'realms')}); table.insert(ClaudeWoWDB.chats, ${chatRow('mine', '')}); ClaudeWoWDB.activeChat = "mine"`,
+  );
+  main.run('STUB.FireEvent("PLAYER_LOGOUT")');
+  const ids = vm => vm.evaluate('(function() local t = {} for _, c in ipairs(ClaudeWoWDB.chats) do t[#t + 1] = c.id end return table.concat(t, ",") end)()');
+  assert.equal(ids(main), 'repo', 'only the project chat stays account-wide');
+  assert.equal(main.evaluate('#ClaudeWoWCharDB.chats'), '2', 'the fresh chat and "mine" go with the character');
+  assert.equal(main.evaluate('ClaudeWoWCharDB.activeChat'), 'mine');
+
+  main.run(SAVE_DB + '\nSAVED_CHAR = ser(ClaudeWoWCharDB)');
+  const account = main.evaluate('SAVED_DB');
+  const own = main.evaluate('SAVED_CHAR');
+
+  const alt = newVM();
+  alt.run(`ClaudeWoWDB = ${account}`);
+  login(alt);
+  const altIds = ids(alt).split(',');
+  assert.ok(altIds.includes('repo'), 'the alt sees the project chat');
+  assert.ok(!altIds.includes('mine'), "the alt never sees the main's general chat");
+
+  const back = newVM();
+  back.run(`ClaudeWoWDB = ${account}; ClaudeWoWCharDB = ${own}`);
+  login(back);
+  assert.ok(ids(back).split(',').includes('mine'), 'the main gets its general chat back');
+  assert.equal(back.evaluate('ClaudeWoWDB.activeChat'), 'mine', 'and it is active again');
+});
+
+test('the hello names the character, and a restore bundle is read once per character and only by its own character', () => {
+  const orders = fs.readFileSync(path.join(ADDON, 'Orders.lua'), 'utf8');
+  const hexOf = s => Buffer.from(s, 'utf8').toString('hex');
+  const bundle = (char, id) =>
+    `ClaudeWoW_Inbox = { now = time(), cwd = "", replies = {}, restore = { token = "tok", char = "${char}", chats = { { id = "${id}", name = "${id}", cwd = "", plugin = "ask", messages = { { role = "user", id = 1, t = 1, agent = "", text = "hey" } } } } } }`;
+  const boot = (seed, who) => {
+    const vm = newVM();
+    vm.run(orders, 'ClaudeWoW', 'addon/Orders.lua');
+    if (who) vm.run(`UnitName = function(unit) if unit == "player" then return "${who}" end end`);
+    vm.run(`ClaudeWoWDB = { session = "tok", lastSeq = 1, settings = { chatsPerCharacterV1 = true } }; ${seed}`);
+    login(vm);
+    return vm;
+  };
+  const has = (vm, id) => vm.evaluate(`(function() for _, c in ipairs(ClaudeWoWDB.chats) do if c.id == "${id}" then return "yes" end end end)()`) === 'yes';
+
+  const main = boot(bundle('Helen-TestRealm', 'helens'));
+  assert.ok(!has(main, 'helens'), 'the main never imports a bundle made for Helen');
+  assert.equal(main.evaluate('ClaudeWoWCharDB.restored'), null, 'and can still take its own');
+  main.run('STUB.RunTimers()');
+  const hello = stripRecords(main).find(r => r.flags.split(';').includes('h'));
+  assert.ok(hello && hello.flags.split(';').includes('char=' + hexOf('Testchar-TestRealm')), hello && hello.flags);
+
+  const own = boot(bundle('Testchar-TestRealm', 'mains'));
+  assert.ok(has(own, 'mains'), 'the main imports its own bundle');
+  assert.equal(own.evaluate('ClaudeWoWCharDB.restored'), 'true');
+
+  const alt = boot(bundle('Helen-TestRealm', 'helens'), 'Helen');
+  assert.ok(has(alt, 'helens'), 'Helen still gets her restore after the main took his on the same account session');
 });

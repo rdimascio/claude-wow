@@ -356,6 +356,47 @@ local function AddChat(name, cwd)
 	return c
 end
 
+function Q.IsCharacterChat(c)
+	return not c.quiet and (c.cwd or "") == "" and Cli.ChatPlugin(c) ~= "claude-code"
+end
+
+function Q.LoadCharacterChats(data, own)
+	own = type(own) == "table" and own or {}
+	local seen = {}
+	for _, c in ipairs(data.chats) do seen[c.id] = true end
+	for _, c in ipairs(type(own.chats) == "table" and own.chats or {}) do
+		if type(c) == "table" and c.id and not seen[c.id] then
+			table.insert(data.chats, c)
+			seen[c.id] = true
+		end
+	end
+	if own.activeChat and seen[own.activeChat] then data.activeChat = own.activeChat end
+	return { chats = {}, restored = own.restored }
+end
+
+function Q.StashCharacterChats(data, own)
+	local shared, mine = {}, {}
+	for _, c in ipairs(data.chats) do
+		table.insert(Q.IsCharacterChat(c) and mine or shared, c)
+	end
+	data.chats = shared
+	return { chats = mine, activeChat = data.activeChat, restored = type(own) == "table" and own.restored or nil }
+end
+
+function Q.CharacterKey()
+	return ClaudeWoWOrders and ClaudeWoWOrders.CharacterKey() or nil
+end
+
+function Q.CharacterFlag()
+	local key = Q.CharacterKey()
+	return key and ("char=" .. ToHex(key)) or nil
+end
+
+function Q.ResetChats(data)
+	data.chats = {}
+	data.activeChat, data.history, data.pendingId, data.unread, data.draft, data.restored = nil, nil, nil, nil, nil, nil
+end
+
 function Q.ListedChats()
 	local listed = {}
 	for _, c in ipairs(db.chats) do
@@ -421,6 +462,10 @@ local function InitDB()
 	if not db.session then
 		db.session = string.format("%x%04x%04x", time() % 0xFFFFFF, math.random(0, 0xFFFF), math.random(0, 0xFFFF))
 	end
+	if not s.chatsPerCharacterV1 then
+		s.chatsPerCharacterV1 = true
+		Q.ResetChats(db)
+	end
 	if not db.chats then
 		-- Migrate the single-chat layout into the first chat.
 		db.chats = {}
@@ -438,6 +483,7 @@ local function InitDB()
 		db.activeChat = c.id
 		db.history, db.pendingId, db.unread, db.draft = nil, nil, nil, nil
 	end
+	ClaudeWoWCharDB = Q.LoadCharacterChats(db, ClaudeWoWCharDB)
 	if #db.chats == 0 then AddChat() end
 	if not FindChat(db.activeChat) then db.activeChat = db.chats[1].id end
 	-- Chats from before agents had names: replies were stored with role "claude".
@@ -1868,8 +1914,9 @@ end
 -- The bridge keeps every chat's transcript. After the client wipes our saved data,
 -- it sends them back once, addressed to our new session token.
 local function ImportRestore(r)
-	if type(r) ~= "table" or r.token ~= db.session or db.restored then return end
-	db.restored = true
+	if type(r) ~= "table" or r.token ~= db.session or ClaudeWoWCharDB.restored then return end
+	if type(r.char) == "string" and r.char ~= "" and r.char ~= Q.CharacterKey() then return end
+	ClaudeWoWCharDB.restored = true
 	local added = 0
 	local current = ActiveChat()
 	for _, rc in ipairs(r.chats or {}) do
@@ -3402,7 +3449,7 @@ function ClaudeWoW.Send(text, allow, opts)
 	if wantsTitle then table.insert(optionTokens, "t") end
 	for _, t in ipairs(optionTokens) do table.insert(tokens, t) end
 	local flags = table.concat(tokens, ";")
-	local outboxTokens = { "ver=" .. ClaudeWoW.Version.Own(), "proto=" .. ClaudeWoW.Version.PROTO }
+	local outboxTokens = { "ver=" .. ClaudeWoW.Version.Own(), "proto=" .. ClaudeWoW.Version.PROTO, Q.CharacterFlag() }
 	for _, t in ipairs(optionTokens) do table.insert(outboxTokens, t) end
 	local newSession = (c.resetNext and not verbatim) and true or nil
 	if not verbatim then c.resetNext = nil end
@@ -3517,6 +3564,7 @@ function ClaudeWoW.SayHello()
 	local c = ActiveChat()
 	local ctx = db.settings.context and ClaudeWoW.GameContext() or ""
 	local flags = "h;ver=" .. ClaudeWoW.Version.Own() .. ";proto=" .. ClaudeWoW.Version.PROTO
+	if Q.CharacterFlag() then flags = flags .. ";" .. Q.CharacterFlag() end
 	if Presence.Channel() and not (run.lateProbe and run.lateProbe.result) then
 		run.lateProbe = run.lateProbe or { token = string.format("%06x%04x", time() % 16777216, math.floor(now * 1000) % 65536) }
 		flags = flags .. ";probe=" .. run.lateProbe.token
@@ -3527,7 +3575,7 @@ function ClaudeWoW.SayHello()
 	-- Deletions the bridge never confirmed ride along with the hello.
 	for id in pairs(db.forget) do SendForget(id) end
 	-- Fresh saved data: show "restoring" instead of an empty panel until we hear back.
-	if not db.restored then
+	if not ClaudeWoWCharDB.restored then
 		local empty = true
 		for _, ch in ipairs(db.chats) do
 			if #ch.history > 0 then empty = false end
@@ -8614,7 +8662,10 @@ ev:SetScript("OnEvent", function(self, event, arg1)
 		ScreenshotDone(false, true)
 	elseif event == "PLAYER_LOGOUT" then
 		-- The player's screenshot format goes back before the client saves its CVars.
-		if db then ScreenshotCVarsOff() end
+		if db then
+			ScreenshotCVarsOff()
+			ClaudeWoWCharDB = Q.StashCharacterChats(db, ClaudeWoWCharDB)
+		end
 	elseif event == "PLAYER_LOGIN" then
 		if not db then InitDB() end
 		BuildUI()
