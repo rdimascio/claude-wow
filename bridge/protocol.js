@@ -313,8 +313,9 @@ function parseFlags(flags) {
         .slice(0, ADD_DIRS_MAX);
       if (dirs.length) out.addDirs = dirs;
     } else if (tok.startsWith('mcp=')) {
-      const names = fromHex(tok.slice(4).trim())
-        .split('\x1F')
+      const names = tok
+        .slice(4)
+        .split(',')
         .map(s => s.trim())
         .filter(s => MCP_NAME_RE.test(s));
       out.mcp = [...new Set(names)].slice(0, MCP_CHAT_MAX);
@@ -1194,10 +1195,7 @@ function luaTable(globalName, records, opts = {}) {
   if (Array.isArray(opts.mcp)) {
     const rows = opts.mcp
       .filter(s => s && MCP_NAME_RE.test(String(s.name || '')))
-      .map(
-        s =>
-          `{ name = ${luaStr(s.name)}, on = ${s.on ? 'true' : 'false'}, health = ${luaStr(MCP_HEALTH.includes(s.health) ? s.health : 'unknown')}, at = ${Number.isInteger(s.at) && s.at > 0 ? s.at : 0} }`,
-      );
+      .map(s => `{ name = ${luaStr(s.name)}, on = ${s.on ? 'true' : 'false'}, health = ${luaStr(MCP_HEALTH.includes(s.health) ? s.health : 'unknown')} }`);
     lines.splice(lines.length - 1, 0, `\tmcp = { ${rows.join(', ')} },`);
   }
   if (opts.home) lines.splice(lines.length - 1, 0, `\thome = ${luaStr(opts.home)},`);

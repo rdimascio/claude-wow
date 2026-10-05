@@ -127,9 +127,11 @@ function forClaude(mcp, { on } = {}) {
   const loaded = mcp.servers.filter(s => chosen(s, on));
   const allowed = new Map(mcp.servers.map(s => [s.name, s.allow.claude]));
   const allowRules = loaded.flatMap(s => s.allow.claude.map(t => toolRule(s.name, t)));
+  const off = Array.isArray(on) ? mcp.servers.filter(s => !on.includes(s.name)).map(s => s.name) : [];
   const blocks = rule => {
     const r = serverOf(rule);
     if (!r || !allowed.has(r.server)) return false;
+    if (off.includes(r.server)) return true;
     const tools = allowed.get(r.server);
     return !tools.includes(ALL_TOOLS) && !tools.includes(r.tool);
   };
@@ -137,6 +139,7 @@ function forClaude(mcp, { on } = {}) {
     servers: Object.fromEntries(loaded.map(s => [s.name, s.server])),
     names: loaded.map(s => s.name),
     allowRules,
+    offRules: off.map(n => `mcp__${n}`),
     strict: mcp.strict,
     blocks,
   };
@@ -216,6 +219,7 @@ function codexOwnServers({ home = os.homedir(), codexHome = process.env.CODEX_HO
 
 function forCodex(mcp, { skip = [], on } = {}) {
   if (!mcp) return [];
+  const turnedOff = Array.isArray(on) ? skip.filter(n => !on.includes(n) && mcp.servers.some(s => s.name === n)).map(name => ({ name, off: true })) : [];
   return mcp.servers
     .filter(s => chosen(s, on) && !skip.includes(s.name))
     .map(s => ({
@@ -224,7 +228,8 @@ function forCodex(mcp, { skip = [], on } = {}) {
       envVars: s.server.type === 'http' ? [] : s.envVars,
       bearerTokenEnvVar: s.bearerTokenEnvVar || '',
       enabledTools: s.allow.codex.includes(ALL_TOOLS) ? null : s.allow.codex,
-    }));
+    }))
+    .concat(turnedOff);
 }
 
 const tomlString = v => JSON.stringify(String(v).replace(/[\ud800-\udfff]/gu, '\ufffd')).replace(/\u007f/g, '\\u007f');
@@ -235,6 +240,10 @@ function codexArgs(entries) {
   for (const e of entries || []) {
     const key = `mcp_servers.${e.name}`;
     const set = (k, v) => out.push('-c', `${key}.${k}=${v}`);
+    if (e.off) {
+      set('enabled', 'false');
+      continue;
+    }
     if (e.server.type === 'http') {
       set('url', tomlString(e.server.url));
       if (e.bearerTokenEnvVar) set('bearer_token_env_var', tomlString(e.bearerTokenEnvVar));

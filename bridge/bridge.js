@@ -2099,16 +2099,11 @@ function factorySocket(tag) {
 const loggedMcpDropped = new Set();
 const mcpHealth = new Map();
 function noteMcpHealth(servers) {
-  for (const s of servers) mcpHealth.set(s.name, { status: s.status, at: Math.floor(Date.now() / 1000) });
+  for (const s of servers) mcpHealth.set(s.name, s.status);
 }
 function mcpSlotList() {
   if (!USER_MCP) return [];
-  return USER_MCP.servers.map(s => ({
-    name: s.name,
-    on: s.default,
-    health: (mcpHealth.get(s.name) || {}).status || 'unknown',
-    at: (mcpHealth.get(s.name) || {}).at || 0,
-  }));
+  return USER_MCP.servers.map(s => ({ name: s.name, on: s.default, health: mcpHealth.get(s.name) || 'unknown' }));
 }
 function loggedMcpBlocks(tag, never, userMcp) {
   if (!userMcp) return never;
@@ -2175,7 +2170,11 @@ function runAgent(job, opts = {}) {
     loggedMcpDropped.add(scoped.dropped.join(' '));
     log(`${tag} mcp: allowed tool rules that mcp.servers does not allow are left out of Claude runs: ${scoped.dropped.join(', ')}`);
   }
-  const acfg = A.withChatSettings(P.withRunDeniedRules(P.withRunOnlyRules(scoped.agentCfg, runOnlyRules), [...runDenied, ...scoped.denied]), agentId, chosen);
+  const acfg = A.withChatSettings(
+    P.withRunDeniedRules(P.withRunOnlyRules(scoped.agentCfg, runOnlyRules), [...runDenied, ...scoped.denied, ...(userMcp ? userMcp.offRules : [])]),
+    agentId,
+    chosen,
+  );
   const runDirs = [...grantForGood.dirs, ...grantOnce.dirs].map(d => P.resolveCwd(d, DEFAULT_CWD));
   if (runDirs.length) {
     acfg.addDirs = [...new Set([...A.addDirs(acfg), ...runDirs])];
@@ -2340,10 +2339,10 @@ function runAgent(job, opts = {}) {
     runGrant && GM.SERVER_NAME + ' for this run',
     factoryGrant && FACTORY.SERVER_NAME + ' for this run',
     userMcp && userMcp.names.length && 'mcp ' + userMcp.names.join(' '),
-    codexMcp.some(e => e.name !== DM.SERVER_NAME) &&
+    codexMcp.some(e => e.name !== DM.SERVER_NAME && !e.off) &&
       'mcp ' +
         codexMcp
-          .filter(e => e.name !== DM.SERVER_NAME)
+          .filter(e => e.name !== DM.SERVER_NAME && !e.off)
           .map(e => e.name)
           .join(' '),
     userMcp && userMcp.strict && 'strict mcp',

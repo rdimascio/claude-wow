@@ -891,6 +891,7 @@ function withChatSettings(agentCfg, id, chosen) {
   if (!agent || !chosen) return agentCfg;
   const out = { ...agentCfg };
   for (const key of agent.settings) {
+    if (key === 'mcp') continue;
     const v = chosen[key];
     if (Array.isArray(v) ? v.length : v) out[key] = v;
   }

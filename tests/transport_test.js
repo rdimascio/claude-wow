@@ -358,7 +358,7 @@ test('per-chat MCP end to end: the chat choice from the reload outbox picks the 
     }),
   );
   const hex = s => Buffer.from(s, 'utf8').toString('hex');
-  const opts = hex(`mcp=${hex('linear')}`);
+  const opts = hex('mcp=linear');
   fs.writeFileSync(
     saved,
     `ClaudeWoWDB = {\n["outbox"] = {\n["id"] = 31,\n["session"] = "sess1",\n["chat"] = "chat1",\n["text"] = "${hex('ping')}",\n["cwd"] = "",\n["opts"] = "${opts}",\n["t"] = 1,\n},\n}\n`,
@@ -367,14 +367,10 @@ test('per-chat MCP end to end: the chat choice from the reload outbox picks the 
   assert.equal(r.status, 0, r.out);
   assert.match(r.out, /#31@sess1 .* \[mcp linear\]/, r.out);
   const argv = JSON.parse(fs.readFileSync(argvFile, 'utf8'));
-  const allowed = argv.slice(argv.indexOf('--allowedTools') + 1);
+  const allowed = argv.slice(argv.indexOf('--allowedTools') + 1, argv.indexOf('--disallowedTools'));
   assert.ok(allowed.includes('mcp__linear__list_issues') && !allowed.includes('mcp__notion'), allowed.join(' '));
+  assert.ok(argv.slice(argv.indexOf('--disallowedTools')).includes('mcp__notion'), 'the server the chat left off is denied for the run');
   const slot = fs.readFileSync(path.join(addons, 'ClaudeWoW_S001', 'Inbox.lua'), 'utf8');
-  assert.match(
-    slot,
-    /^\tmcp = \{ \{ name = "notion", on = true, health = "unknown", at = 0 \}, \{ name = "linear", on = false, health = "needs-auth", at = \d{10} \} \},$/m,
-    slot,
-  );
-  assert.ok(!slot.includes('mobbin'), 'a server outside mcp.servers is not listed');
+  assert.match(slot, /^\tmcp = \{ \{ name = "notion", on = true, health = "unknown" \}, \{ name = "linear", on = false, health = "needs-auth" \} \},$/m, slot);
   fs.rmSync(dir, { recursive: true, force: true });
 });
