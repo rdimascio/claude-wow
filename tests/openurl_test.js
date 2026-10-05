@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { EventEmitter } = require('events');
 const OU = require('../bridge/openurl');
 const P = require('../bridge/protocol');
 
@@ -149,7 +150,7 @@ const chatWith = (text, extra = {}) => {
 };
 const job = (text, extra = {}) => ({ kind: 'url', chat: 'c1', session: 's', id: 5, text, via: 'pixel', client: 'k1', ...extra });
 
-test('an agent link opens with no shell: open on macOS, xdg-open on Linux, rundll32 on Windows', () => {
+test('an agent link opens with no shell: open on macOS, xdg-open on Linux, rundll32 on Windows', async () => {
   const cases = [
     ['darwin', {}, '/usr/bin/open', [PR]],
     ['linux', {}, 'xdg-open', [PR]],
@@ -159,7 +160,7 @@ test('an agent link opens with no shell: open on macOS, xdg-open on Linux, rundl
   for (const [platform, env, command, args] of cases) {
     const { o, calls } = opener({ platform, env });
     assert.equal(o.available, true);
-    const r = o.request(job(PR), chatWith(`see ${PR}.`));
+    const r = await o.request(job(PR), chatWith(`see ${PR}.`));
     assert.equal(r.opened, true, r.text);
     assert.equal(calls.length, 1);
     assert.equal(calls[0].command, command);
@@ -170,14 +171,14 @@ test('an agent link opens with no shell: open on macOS, xdg-open on Linux, rundl
   }
 });
 
-test('the parsed href is what is opened, never the raw text', () => {
+test('the parsed href is what is opened, never the raw text', async () => {
   const { o, calls } = opener();
   const raw = 'https://Example.COM';
-  assert.equal(o.request(job(raw), chatWith(`go to ${raw} now`)).opened, true);
+  assert.equal((await o.request(job(raw), chatWith(`go to ${raw} now`))).opened, true);
   assert.deepEqual(calls[0].args, ['https://example.com/']);
 });
 
-test('a link the bridge never sent in that chat is refused and nothing is spawned', () => {
+test('a link the bridge never sent in that chat is refused and nothing is spawned', async () => {
   const refusals = [
     ['in the player message only', job('https://evil.example/'), { id: 'c1', messages: [{ role: 'user', text: 'https://evil.example/' }] }],
     ['in a bridge error only', job('https://evil.example/'), { id: 'c1', messages: [{ role: 'system', text: 'https://evil.example/' }] }],
@@ -196,14 +197,14 @@ test('a link the bridge never sent in that chat is refused and nothing is spawne
   ];
   for (const [name, j, chat] of refusals) {
     const { o, calls } = opener();
-    const r = o.request(j, chat);
+    const r = await o.request(j, chat);
     assert.equal(r.opened, false, name);
     assert.match(r.text, /^open link refused \(/, name);
     assert.equal(calls.length, 0, `${name}: nothing spawned`);
   }
 });
 
-test('a link that passes the provenance check but not checkUrl is refused for the checkUrl reason, before anything else', () => {
+test('a link that passes the provenance check but not checkUrl is refused for the checkUrl reason, before anything else', async () => {
   const hostile = [
     'file:///etc/passwd',
     'javascript:alert(1)',
@@ -216,7 +217,7 @@ test('a link that passes the provenance check but not checkUrl is refused for th
   ];
   for (const raw of hostile) {
     const { o, calls } = opener();
-    const r = o.request(job(raw), { id: 'c1', links: [raw] });
+    const r = await o.request(job(raw), { id: 'c1', links: [raw] });
     assert.equal(r.opened, false, JSON.stringify(raw));
     assert.equal(r.why, OU.checkUrl(raw).why, JSON.stringify(raw));
     assert.notEqual(r.why, 'not a link from a reply in this chat');
@@ -224,85 +225,158 @@ test('a link that passes the provenance check but not checkUrl is refused for th
   }
 });
 
-test('the refusal log line shows the input as one escaped, cut line', () => {
+test('the refusal log line shows the input as one escaped, cut line', async () => {
   const { o } = opener();
-  const r = o.request(job('x\n\x1b[31m' + 'y'.repeat(500)), chatWith(''));
+  const r = await o.request(job('x\n\x1b[31m' + 'y'.repeat(500)), chatWith(''));
   assert.ok(!/[\n\x1b]/.test(r.text), r.text);
   assert.ok(r.text.length < 220, r.text);
 });
 
-test('a link from the transcript links list counts, also after the message text was cut', () => {
+test('a link from the transcript links list counts, also after the message text was cut', async () => {
   const { o, calls } = opener();
   const chat = { id: 'c1', messages: [{ role: 'assistant', text: PR.slice(0, 20) }], links: [PR] };
-  assert.equal(o.request(job(PR), chat).opened, true);
+  assert.equal((await o.request(job(PR), chat)).opened, true);
   assert.equal(calls.length, 1);
 });
 
-test('rate limit: one link every 2 s and 20 an hour; refusals do not count', () => {
+test('rate limit: one link every 2 s and 20 an hour; refusals do not count', async () => {
   const { o, calls, advance } = opener();
   const chat = chatWith(Array.from({ length: 30 }, (_, i) => `https://x.example/${i}`).join(' '));
-  assert.equal(o.request(job('https://x.example/0'), chat).opened, true);
-  const soon = o.request(job('https://x.example/1'), chat);
+  assert.equal((await o.request(job('https://x.example/0'), chat)).opened, true);
+  const soon = await o.request(job('https://x.example/1'), chat);
   assert.equal(soon.opened, false);
   assert.match(soon.text, /rate limit: one link every 2 s/);
   advance(1999);
-  assert.equal(o.request(job('https://x.example/1'), chat).opened, false);
+  assert.equal((await o.request(job('https://x.example/1'), chat)).opened, false);
   advance(1);
-  assert.equal(o.request(job('https://x.example/1'), chat).opened, true);
-  assert.equal(o.request(job('https://evil.example/'), chat).opened, false);
+  assert.equal((await o.request(job('https://x.example/1'), chat)).opened, true);
+  assert.equal((await o.request(job('https://evil.example/'), chat)).opened, false);
   for (let i = 2; i < 20; i++) {
     advance(OU.MIN_GAP_MS);
-    assert.equal(o.request(job(`https://x.example/${i}`), chat).opened, true, `open ${i}`);
+    assert.equal((await o.request(job(`https://x.example/${i}`), chat)).opened, true, `open ${i}`);
   }
   advance(OU.MIN_GAP_MS);
-  const capped = o.request(job('https://x.example/20'), chat);
+  const capped = await o.request(job('https://x.example/20'), chat);
   assert.equal(capped.opened, false);
   assert.match(capped.text, /20 links an hour/);
   assert.equal(calls.length, OU.PER_HOUR);
   advance(3600000);
-  assert.equal(o.request(job('https://x.example/21'), chat).opened, true, 'the hour window slides');
+  assert.equal((await o.request(job('https://x.example/21'), chat)).opened, true, 'the hour window slides');
 });
 
-test('off by config, or on a platform with no launcher, the capability is not offered and nothing opens', () => {
+test('off by config, or on a platform with no launcher, the capability is not offered and nothing opens', async () => {
   for (const over of [{ enabled: false }, { platform: 'aix' }, { enabled: 'yes' }]) {
     const { o, calls } = opener(over);
     assert.equal(o.available, false);
-    assert.equal(o.request(job(PR), chatWith(PR)).opened, false);
+    assert.equal((await o.request(job(PR), chatWith(PR))).opened, false);
     assert.equal(calls.length, 0);
   }
 });
 
-test('a launcher that fails is logged, and a spawn that throws is a refusal, not a crash', () => {
+function fakeChild(emit) {
+  const child = new EventEmitter();
+  child.unref = () => {
+    child.unrefed = true;
+  };
+  if (emit) setImmediate(() => emit(child));
+  return child;
+}
+
+test('the result waits for the launcher: an error event is a refusal with a fixed reason, a spawn event is ok', async () => {
+  const failing = OU.createOpener({ platform: 'linux', spawnFn: () => fakeChild(c => c.emit('error', new Error('spawn xdg-open ENOENT'))) });
+  const r = await failing.request(job(PR), chatWith(PR));
+  assert.equal(r.opened, false);
+  assert.equal(r.why, OU.LAUNCH_FAILED);
+  assert.match(r.text, /open link failed \(xdg-open: spawn xdg-open ENOENT\)/);
+  let started;
+  const ok = OU.createOpener({ platform: 'linux', spawnFn: () => (started = fakeChild(c => c.emit('spawn'))) });
+  const r2 = await ok.request(job(PR), chatWith(PR));
+  assert.equal(r2.opened, true);
+  assert.equal(started.unrefed, true);
+  assert.doesNotThrow(() => started.emit('error', new Error('late')), 'a late error after the start is swallowed');
+});
+
+test('with neither event within the start timeout the link counts as opened and a line is logged', async () => {
   const logs = [];
-  let onError;
+  const timers = [];
   const o = OU.createOpener({
-    platform: 'linux',
+    platform: 'darwin',
     log: l => logs.push(l),
-    spawnFn: () => ({
-      on: (ev, fn) => {
-        if (ev === 'error') onError = fn;
-      },
-      unref() {},
-    }),
+    spawnFn: () => fakeChild(),
+    setTimer: (fn, ms) => {
+      timers.push({ fn, ms });
+      return timers.length;
+    },
+    clearTimer: () => {},
   });
-  assert.equal(o.request(job(PR), chatWith(PR)).opened, true);
-  onError(new Error('ENOENT'));
-  assert.match(logs[0], /xdg-open failed \(ENOENT\)/);
+  const pending = o.request(job(PR), chatWith(PR));
+  await new Promise(r => setImmediate(r));
+  assert.equal(timers.length, 1);
+  assert.equal(timers[0].ms, OU.START_TIMEOUT_MS);
+  timers[0].fn();
+  const r = await pending;
+  assert.equal(r.opened, true);
+  assert.match(logs[0], /no spawn or error event in 2000 ms; counted as opened/);
+});
+
+test('a spawn that throws is a refusal, not a crash', async () => {
   const t = OU.createOpener({
     platform: 'linux',
     spawnFn: () => {
       throw new Error('EACCES');
     },
   });
-  const r = t.request(job(PR), chatWith(PR));
+  const r = await t.request(job(PR), chatWith(PR));
   assert.equal(r.opened, false);
+  assert.equal(r.why, OU.LAUNCH_FAILED);
   assert.match(r.text, /open link failed \(EACCES\)/);
 });
 
-test('recordingSpawn writes the launch instead of starting it', () => {
+test('chat ids that name Object.prototype members are dropped off the strip, and own-property reads keep inherited fields out', () => {
+  for (const chat of ['__proto__', 'a-b', 'c.d', '../x']) {
+    const payload = ['sess', chat, '9', '', 'kind=url', '', PR].join('\x1F');
+    assert.deepEqual(P.jobsFromStrip(0, payload), [], chat);
+  }
+  assert.equal(P.jobsFromStrip(0, ['sess', 'abc123', '9', '', 'kind=url', '', PR].join('\x1F')).length, 1);
+  assert.equal(OU.chatFor({}, 'constructor'), null, 'constructor parses as a chat id, but no transcript has it as its own');
+  assert.equal(OU.chatFor({}, '__proto__'), null);
+  assert.equal(OU.chatFor({ toString: 'x' }, 'toString'), null, 'an own field that is not a chat');
+  const real = { id: 'c1', links: [PR] };
+  assert.equal(OU.chatFor({ c1: real }, 'c1'), real);
+  assert.equal(P.jobsFromStrip(0, ['sess', '', '9', '', 'kind=dm', 'Name-Realm', 'next'].join('\x1F')).length, 1, 'an empty chat stays valid');
+  const inherited = Object.create({ links: [PR], client: 'k9' });
+  assert.equal(OU.agentLinks(inherited).size, 0);
+  OU.claimChat(inherited, 'k1');
+  assert.equal(Object.hasOwn(inherited, 'client'), true);
+  assert.equal(Object.prototype.client, undefined);
+  assert.equal(Object.prototype.links, undefined);
+});
+
+test('a request whose chat resolves to Object.prototype is refused', async () => {
+  const { o, calls } = opener();
+  for (const chat of ['__proto__', 'constructor', 'hasOwnProperty']) {
+    const r = await o.request(job(PR, { chat }), OU.chatFor({}, chat));
+    assert.equal(r.opened, false, chat);
+    assert.equal(r.why, 'no such chat', chat);
+  }
+  const borrowed = Object.assign(Object.create({ client: 'k2' }), { id: 'c1', links: [PR] });
+  const owned = await o.request(job(PR, { client: 'k1' }), borrowed);
+  assert.equal(owned.opened, true, 'an inherited client field is not the owner of the chat');
+  calls.length = 0;
+  Object.prototype.links = [PR];
+  try {
+    const r = await o.request(job(PR), {});
+    assert.equal(r.opened, false, "an inherited links list is not the chat's");
+  } finally {
+    delete Object.prototype.links;
+  }
+  assert.equal(calls.length, 0);
+});
+
+test('recordingSpawn writes the launch instead of starting it', async () => {
   const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'openurl-')), 'opened.jsonl');
   const o = OU.createOpener({ platform: 'darwin', spawnFn: OU.recordingSpawn(file) });
-  assert.equal(o.request(job(PR), chatWith(PR)).opened, true);
+  assert.equal((await o.request(job(PR), chatWith(PR))).opened, true);
   const line = JSON.parse(fs.readFileSync(file, 'utf8').trim());
   assert.equal(line.command, '/usr/bin/open');
   assert.deepEqual(line.args, [PR]);

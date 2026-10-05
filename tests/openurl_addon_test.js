@@ -13,6 +13,17 @@ const STRIP_SECONDS = 40;
 const PR = 'https://github.com/o/r/pull/7';
 
 const SPIES = `
+STUB.codecFrames = {}
+local plainEncode = ClaudeWoW_Codec.Encode
+ClaudeWoW_Codec.Encode = function(id, payload, ...)
+  table.insert(STUB.codecFrames, { kind = "strip", payload = payload })
+  return plainEncode(id, payload, ...)
+end
+local plainLogLines = ClaudeWoW_Codec.LogLines
+ClaudeWoW_Codec.LogLines = function(id, payload, ...)
+  table.insert(STUB.codecFrames, { kind = "log", payload = payload })
+  return plainLogLines(id, payload, ...)
+end
 STUB.copied = {}
 ClaudeWoW.ShowCopy = function(text) table.insert(STUB.copied, text) end
 STUB.ctrl, STUB.shift = false, false
@@ -324,20 +335,46 @@ test('an ack file arms one slot read for the result', () => {
   assert.deepEqual(copied(vm), [PR]);
 });
 
-test('without presence signals the result is polled at 4, 12 and 25 s, never more', () => {
+function loadsPerSecond(vm, seconds, onSecond = () => {}) {
+  const loads = {};
+  for (let t = 1; t <= seconds; t++) {
+    const before = vm.num('STUB.slotLoads');
+    onSecond(t);
+    tick(vm, 1);
+    const n = vm.num('STUB.slotLoads') - before;
+    if (n) loads[t] = n;
+  }
+  return loads;
+}
+
+test('without presence signals the result is polled at 4, 12 and 25 s, one slot each, three in all', () => {
   const vm = newVM();
   vm.run('ClaudeWoW.PresenceWorks = function() return false end');
   askAndReply(vm, 'which PR?', `It is ${PR}.`);
   tick(vm, 120);
   click(vm, PR);
   vm.run('STUB.slotLoads = 0');
-  const loadsAt = [];
-  for (let t = 1; t <= 39; t++) {
-    const before = vm.num('STUB.slotLoads');
-    tick(vm, 1);
-    if (vm.num('STUB.slotLoads') > before) loadsAt.push(t);
-  }
-  assert.deepEqual(loadsAt, [4, 12, 25]);
+  assert.deepEqual(loadsPerSecond(vm, 39), { 4: 1, 12: 1, 25: 1 });
+  tick(vm, 1);
+  assert.equal(vm.num('STUB.slotLoads'), 3);
+  assert.deepEqual(copied(vm), [PR]);
+  assert.deepEqual(loadsPerSecond(vm, 30), {}, 'nothing after the 40 s');
+});
+
+test('one click costs at most four slot reads: the ack read and the three timed ones', () => {
+  const vm = newVM({ beforeLogin: ARMED });
+  vm.run('ClaudeWoW.PresenceWorks = function() return true end');
+  askAndReply(vm, 'which PR?', `It is ${PR}.`);
+  tick(vm, 120);
+  click(vm, PR);
+  const [rec] = urlRecords(vm);
+  vm.run('STUB.slotLoads = 0');
+  const loads = loadsPerSecond(vm, 39, t => {
+    if (t === 2) ack(vm, rec.id);
+  });
+  assert.deepEqual(loads, { 3: 1, 4: 1, 12: 1, 25: 1 });
+  tick(vm, 1);
+  assert.equal(vm.num('STUB.slotLoads'), 4);
 });
 
 test('unanswered for 40 s after the click, the record is dropped, never sent again, and the link goes to the copy box', () => {
@@ -393,6 +430,144 @@ test('on the chat log transport a url record is written once, never retried by s
   for (let t = 0; t < 60; t++) step();
   assert.equal(frameLines(), written);
   assert.equal(vm.num('STUB.screenshots'), shotsBefore);
+});
+
+function framesSince(vm, from) {
+  const n = vm.num('#STUB.codecFrames');
+  const out = [];
+  for (let i = from + 1; i <= n; i++) {
+    const payload = vm.evaluate(`STUB.codecFrames[${i}].payload`);
+    const records = payload.split('\x1E').map(r => {
+      const p = r.split('\x1F');
+      return { id: Number(p[2]), flags: p[4] || '' };
+    });
+    out.push({ kind: vm.evaluate(`STUB.codecFrames[${i}].kind`), records });
+  }
+  return out;
+}
+
+const carriesUrl = (frame, id) => frame.records.some(r => r.id === id && r.flags.split(';').includes(`kind=${OU.KIND}`));
+
+function drive(vm, n = 3) {
+  for (let i = 0; i < n; i++) vm.run('local f = ClaudeWoWStrip; if f and f.shown and f.scripts.OnUpdate then f.scripts.OnUpdate(f, 0.016) end');
+}
+
+function screenshotVM() {
+  const vm = newVM({ beforeLogin: ARMED });
+  nextSlot(vm, { extra: ', transport = "screenshot"' });
+  tick(vm);
+  drive(vm);
+  vm.run('STUB.FireEvent("SCREENSHOT_SUCCEEDED")');
+  ack(vm, vm.num('ClaudeWoWDB.lastSeq'));
+  tick(vm, 2);
+  vm.run(`ClaudeWoWDB.chats[1].history = { { role = "assistant", t = 1, text = ${q('see ' + PR)} } }`);
+  return vm;
+}
+
+test('screenshot transport: a url record rides in one shot only; a later message and its retry shoot frames without it', () => {
+  const vm = screenshotVM();
+  const from = vm.num('#STUB.codecFrames');
+  const settle = () => {
+    drive(vm);
+    vm.run('if STUB.screenshots > (STUB.lastShots or 0) then STUB.lastShots = STUB.screenshots; STUB.FireEvent("SCREENSHOT_SUCCEEDED") end');
+  };
+  vm.run('STUB.lastShots = STUB.screenshots; ClaudeWoW.Send("hello there")');
+  const message = vm.num('ClaudeWoWDB.lastSeq');
+  settle();
+  tick(vm, 20);
+  click(vm, PR);
+  const id = vm.num('ClaudeWoWDB.lastSeq');
+  settle();
+  for (let t = 0; t < 30; t++) {
+    tick(vm, 1);
+    settle();
+  }
+  const frames = framesSince(vm, from);
+  assert.ok(frames.filter(f => f.records.some(r => r.id === message)).length >= 2, 'the message went out and was retried');
+  assert.equal(frames.filter(f => carriesUrl(f, id)).length, 1, 'the url record is in exactly one frame');
+});
+
+test('screenshot transport: only a shot the game reported failed is taken again with the url record', () => {
+  const vm = screenshotVM();
+  const from = vm.num('#STUB.codecFrames');
+  click(vm, PR);
+  const id = vm.num('ClaudeWoWDB.lastSeq');
+  drive(vm);
+  vm.run('STUB.FireEvent("SCREENSHOT_FAILED")');
+  drive(vm);
+  vm.run('STUB.FireEvent("SCREENSHOT_SUCCEEDED")');
+  vm.run('ClaudeWoW.Send("hello there")');
+  drive(vm);
+  vm.run('STUB.FireEvent("SCREENSHOT_SUCCEEDED")');
+  const frames = framesSince(vm, from);
+  assert.equal(frames.filter(f => carriesUrl(f, id)).length, 2, 'the failed shot and its retake');
+  assert.ok(
+    frames.some(f => f.records.some(r => r.id === id + 1) && !carriesUrl(f, id)),
+    'the message after it goes alone',
+  );
+});
+
+test('a transport change while a url record waits does not draw, shoot or log it again', () => {
+  const shot = screenshotVM();
+  click(shot, PR);
+  const id = shot.num('ClaudeWoWDB.lastSeq');
+  drive(shot);
+  shot.run('STUB.FireEvent("SCREENSHOT_SUCCEEDED")');
+  const from = shot.num('#STUB.codecFrames');
+  const shotsBefore = shot.num('STUB.screenshots');
+  nextSlot(shot, { extra: ', transport = "pixel"' });
+  shot.run('ClaudeWoW.Connect(true)');
+  tick(shot, 6);
+  drive(shot);
+  assert.equal(shot.evaluate('ClaudeWoWDB.settings.transport'), 'pixel');
+  assert.equal(framesSince(shot, from).filter(f => carriesUrl(f, id)).length, 0, 'not drawn again on the pixel strip');
+  assert.equal(shot.num('STUB.screenshots'), shotsBefore);
+
+  const logged = newVM({ prelude: CLIENT_LOG_API, beforeLogin: ARMED });
+  nextSlot(logged, { extra: `, transport = "screenshot", chatlog = { line = 200, filler = 400, key = "${KEY}" }` });
+  tick(logged);
+  ack(logged, logged.num('ClaudeWoWDB.lastSeq'));
+  tick(logged, 2);
+  logged.run(`ClaudeWoWDB.chats[1].history = { { role = "assistant", t = 1, text = ${q('see ' + PR)} } }`);
+  click(logged, PR);
+  const logId = logged.num('ClaudeWoWDB.lastSeq');
+  const logFrom = logged.num('#STUB.codecFrames');
+  nextSlot(logged, { extra: `, transport = "screenshot", chatlog = { line = 200, filler = 400, key = "${'f'.repeat(32)}" }` });
+  logged.run('ClaudeWoW.Connect(true)');
+  tick(logged, 6);
+  drive(logged);
+  assert.equal(framesSince(logged, logFrom).filter(f => carriesUrl(f, logId)).length, 0, 'not logged or shot again under the new key');
+});
+
+test('chat log transport: a message sent while a url record waits, and its screenshot retry, go without it', () => {
+  const vm = newVM({ prelude: CLIENT_LOG_API, beforeLogin: ARMED });
+  nextSlot(vm, { extra: `, transport = "screenshot", chatlog = { line = 200, filler = 400, key = "${KEY}" }` });
+  tick(vm);
+  ack(vm, vm.num('ClaudeWoWDB.lastSeq'));
+  tick(vm, 2);
+  vm.run(`ClaudeWoWDB.chats[1].history = { { role = "assistant", t = 1, text = ${q('see ' + PR)} } }`);
+  const from = vm.num('#STUB.codecFrames');
+  click(vm, PR);
+  const id = vm.num('ClaudeWoWDB.lastSeq');
+  vm.run('ClaudeWoW.Send("hello there")');
+  for (let t = 0; t < 39; t++) {
+    tick(vm, 1);
+    drive(vm);
+  }
+  const frames = framesSince(vm, from);
+  assert.ok(
+    frames.some(f => f.kind === 'log' && f.records.some(r => r.id === id + 1)),
+    'the message went on the chat log',
+  );
+  assert.ok(
+    frames.some(f => f.kind === 'strip' && f.records.some(r => r.id === id + 1)),
+    'and was retried by screenshot',
+  );
+  assert.deepEqual(
+    frames.filter(f => carriesUrl(f, id)).map(f => f.kind),
+    ['log'],
+    'the url record went once, on the chat log',
+  );
 });
 
 test('the capability from Inbox.lua counts only when the file is fresh', () => {

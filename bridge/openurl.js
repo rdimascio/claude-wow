@@ -15,6 +15,8 @@ const HOUR_MS = 3600000;
 const PER_HOUR = 20;
 const LINKS_KEPT = 200;
 const LOGGED_INPUT_MAX = 120;
+const START_TIMEOUT_MS = 2000;
+const LAUNCH_FAILED = 'the browser opener failed to start';
 
 function isOpenRecord(job) {
   return !!job && job.kind === KIND;
@@ -69,7 +71,8 @@ function checkUrl(raw) {
 
 function noteLinks(chat, texts) {
   if (!chat || typeof chat !== 'object') return;
-  const list = Array.isArray(chat.links) ? chat.links.filter(s => typeof s === 'string') : [];
+  const kept = own(chat, 'links');
+  const list = Array.isArray(kept) ? kept.filter(s => typeof s === 'string') : [];
   for (const text of texts) {
     for (const url of linksIn(text)) {
       const at = list.indexOf(url);
@@ -83,13 +86,15 @@ function noteLinks(chat, texts) {
 
 function claimChat(chat, client) {
   if (!chat || typeof chat !== 'object' || !client) return;
-  if (chat.client && chat.client !== client) chat.links = [];
+  const owner = own(chat, 'client');
+  if (owner && owner !== client) chat.links = [];
   chat.client = client;
 }
 
 function agentLinks(chat) {
   const known = new Set();
-  if (chat && typeof chat === 'object' && Array.isArray(chat.links)) for (const url of chat.links) if (typeof url === 'string') known.add(url);
+  const links = own(chat, 'links');
+  if (Array.isArray(links)) for (const url of links) if (typeof url === 'string') known.add(url);
   return known;
 }
 
@@ -130,31 +135,79 @@ function shownInput(raw) {
   return JSON.stringify(cut.replace(/[^\x20-\x7e]/g, '?'));
 }
 
-function createOpener({ enabled = true, platform = process.platform, env = process.env, spawnFn = spawn, now = Date.now, log = () => {} } = {}) {
+function own(obj, key) {
+  return !!obj && typeof obj === 'object' && Object.hasOwn(obj, key) ? obj[key] : undefined;
+}
+
+function chatFor(chats, id) {
+  if (typeof id !== 'string' || id === '' || !chats || typeof chats !== 'object' || !Object.hasOwn(chats, id)) return null;
+  const chat = chats[id];
+  return chat && typeof chat === 'object' ? chat : null;
+}
+
+function startOutcome(child, { timeoutMs, setTimer, clearTimer }) {
+  if (!child || typeof child.once !== 'function') return Promise.resolve({ started: true, how: 'no child to watch' });
+  return new Promise(resolve => {
+    let done = false;
+    const settle = outcome => {
+      if (done) return;
+      done = true;
+      clearTimer(timer);
+      resolve(outcome);
+    };
+    const timer = setTimer(() => settle({ started: true, how: `no spawn or error event in ${timeoutMs} ms` }), timeoutMs);
+    child.once('spawn', () => settle({ started: true }));
+    child.once('error', e => settle({ started: false, how: e && e.message ? e.message : String(e) }));
+  });
+}
+
+function createOpener({
+  enabled = true,
+  platform = process.platform,
+  env = process.env,
+  spawnFn = spawn,
+  now = Date.now,
+  log = () => {},
+  startTimeoutMs = START_TIMEOUT_MS,
+  setTimer = setTimeout,
+  clearTimer = clearTimeout,
+} = {}) {
   const launch = launcherFor(platform, env);
   const limiter = createLimiter({ now });
   const available = enabled === true && !!launch;
 
-  function request(job, chat) {
+  function decide(job, chat) {
     const no = why => ({ opened: false, why, text: `open link refused (${why}): ${shownInput(job && job.text)}` });
     if (!available) return no(enabled === true ? `no browser launcher on ${platform}` : 'openLinks is off');
     if (!job || job.via === 'reload') return no('not a strip record');
     const checked = checkUrl(job.text);
     if (!checked.ok) return no(checked.why);
-    if (!chat || !job.chat) return no('no such chat');
-    if (chat.client && job.client && chat.client !== job.client) return no('the chat belongs to another client');
+    if (!chat || typeof chat !== 'object' || !job.chat) return no('no such chat');
+    const owner = own(chat, 'client');
+    if (owner && job.client && owner !== job.client) return no('the chat belongs to another client');
     if (!agentLinks(chat).has(job.text)) return no('not a link from a reply in this chat');
     const wait = limiter.take();
     if (wait) return no(`rate limit: ${wait}`);
-    const { command, args } = launch(checked.href);
+    return { href: checked.href };
+  }
+
+  async function request(job, chat) {
+    const plan = decide(job, chat);
+    if (!plan.href) return plan;
+    const { command, args } = launch(plan.href);
+    const failed = how => ({ opened: false, why: LAUNCH_FAILED, text: `open link failed (${how}): ${shownInput(plan.href)}` });
+    let child;
     try {
-      const child = spawnFn(command, args, { stdio: 'ignore', detached: platform !== 'win32', windowsHide: true, shell: false });
-      if (child && typeof child.on === 'function') child.on('error', e => log(`open link: ${command} failed (${e && e.message ? e.message : e})`));
-      if (child && typeof child.unref === 'function') child.unref();
+      child = spawnFn(command, args, { stdio: 'ignore', detached: platform !== 'win32', windowsHide: true, shell: false });
     } catch (e) {
-      return { opened: false, why: 'the browser launcher failed', text: `open link failed (${e && e.message ? e.message : e}): ${shownInput(checked.href)}` };
+      return failed(e && e.message ? e.message : String(e));
     }
-    return { opened: true, text: `open link: ${shownInput(checked.href)} for chat ${shownInput(job.chat)}` };
+    if (child && typeof child.on === 'function') child.on('error', () => {});
+    const outcome = await startOutcome(child, { timeoutMs: startTimeoutMs, setTimer, clearTimer });
+    if (child && typeof child.unref === 'function') child.unref();
+    if (!outcome.started) return failed(`${command}: ${outcome.how}`);
+    if (outcome.how) log(`open link: ${command} started with ${outcome.how}; counted as opened`);
+    return { opened: true, text: `open link: ${shownInput(plan.href)} for chat ${shownInput(job.chat)}` };
   }
 
   return { available, request };
@@ -164,6 +217,8 @@ module.exports = {
   KIND,
   MAX_LENGTH,
   MIN_GAP_MS,
+  START_TIMEOUT_MS,
+  LAUNCH_FAILED,
   PER_HOUR,
   LINKS_KEPT,
   isOpenRecord,
@@ -171,6 +226,7 @@ module.exports = {
   checkUrl,
   noteLinks,
   claimChat,
+  chatFor,
   agentLinks,
   launcherFor,
   createLimiter,

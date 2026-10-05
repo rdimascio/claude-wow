@@ -945,6 +945,7 @@ local function ScreenshotDone(ok, fromEvent)
 				rec.shotFails = (rec.shotFails or 0) + 1
 				if rec.shotFails < SHOT_RETRIES then
 					rec.shot = nil
+					rec.sentOnce = nil
 				else
 					-- Every try failed: the bridge should fall back to the pixel
 					-- capture. Said on the record (the reload fallback carries it
@@ -1019,7 +1020,7 @@ end
 RefreshStrip = function()
 	local ids = {}
 	for id, rec in pairs(run.outbound) do
-		if not rec.acked then table.insert(ids, id) end
+		if not rec.acked and not (rec.openUrl and rec.sentOnce) then table.insert(ids, id) end
 	end
 	if #ids == 0 then
 		-- Nothing left to send. A shot still counting frames is called off; one
@@ -1071,6 +1072,7 @@ RefreshStrip = function()
 			if unsent then
 				for _, rec in ipairs(included) do
 					rec.shot = "log"
+					rec.sentOnce = rec.openUrl or nil
 					rec.logged = true
 					rec.loggedAt = GetTime()
 					if (rec.forget or rec.cancelOf or rec.dm) and not run.helloPollAt and not run.ackPollAt then
@@ -1137,7 +1139,10 @@ RefreshStrip = function()
 	ShowStrip(latest, table.concat(parts, RS))
 	local gen = TakeScreenshot()
 	run.shot.telemetry = rider
-	for _, rec in ipairs(included) do rec.shot = gen end
+	for _, rec in ipairs(included) do
+		rec.shot = gen
+		rec.sentOnce = rec.openUrl or nil
+	end
 end
 
 -- The two levels the bridge wants the strip drawn at on the screenshot transport
@@ -1171,9 +1176,7 @@ local function ApplyTransport(data)
 	db.settings.chatlog = logSpec
 	SyncScreenshotMode()
 	-- Whatever is still unacknowledged goes out again the new way.
-	for _, rec in pairs(run.outbound) do
-		if not rec.openUrl then rec.shot = nil end
-	end
+	for _, rec in pairs(run.outbound) do rec.shot = nil end
 	RefreshStrip()
 	ClaudeWoW.UpdateStatus()
 end
