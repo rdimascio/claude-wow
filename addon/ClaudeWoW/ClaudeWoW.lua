@@ -3901,6 +3901,15 @@ function ClaudeWoW.ApplyMcp(list)
 		end
 	end
 	run.bridgeMcp = out
+	for _, c in ipairs(db and db.chats or {}) do
+		if type(c.mcp) == "table" then
+			local set = {}
+			for _, id in ipairs(c.mcp) do
+				if type(id) == "string" then set[id] = true end
+			end
+			c.mcp, c.mcpSet, c.mcpAllOff = nil, next(set) and set or nil, true
+		end
+	end
 	Cli.UpdateMcpButton()
 end
 
@@ -3957,25 +3966,40 @@ function Cli.McpMissing()
 end
 
 function Cli.McpFind(name)
-	local want = tostring(name or ""):lower()
+	name = tostring(name or "")
 	for _, s in ipairs(run.bridgeMcp or {}) do
-		if s.id:lower() == want or s.label:lower() == want then return s end
+		if s.id == name then return s end
+	end
+	local want = name:lower()
+	for _, field in ipairs({ "id", "label" }) do
+		local hits, ids = {}, {}
+		for _, s in ipairs(run.bridgeMcp or {}) do
+			if s[field]:lower() == want then
+				table.insert(hits, s)
+				table.insert(ids, s.id)
+			end
+		end
+		if #hits > 1 then return nil, "more than one server is called " .. name .. "; name one of " .. table.concat(ids, ", ") .. "." end
+		if hits[1] then return hits[1] end
 	end
 end
 
 function Cli.SetMcp(c, name, on)
 	local missing = Cli.McpMissing()
 	if missing then return nil, missing end
-	local s = Cli.McpFind(name)
+	local s, ambiguous = Cli.McpFind(name)
+	if ambiguous then return nil, ambiguous end
 	if not s then return nil, "no MCP server named \"" .. tostring(name) .. "\" (servers: " .. Cli.McpNames() .. ")." end
 	local set = {}
 	for id, v in pairs(c.mcpSet or {}) do set[id] = v end
 	local plain = s.on
 	if c.mcpAllOff then plain = false end
-	if on == plain then set[s.id] = nil else set[s.id] = on end
+	if on == plain and on then set[s.id] = nil else set[s.id] = on end
+	local count = 0
+	for _ in pairs(set) do count = count + 1 end
 	local before = c.mcpSet
 	c.mcpSet = set
-	if #Cli.McpChoiceParts(c) > Cli.MCP_MAX then
+	if count > Cli.MCP_MAX then
 		c.mcpSet = before
 		return nil, "this chat already changes " .. Cli.MCP_MAX .. " servers. Use /claude mcp none, then turn on the ones you want, or /claude mcp default."
 	end

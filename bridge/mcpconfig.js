@@ -135,7 +135,7 @@ function parseChoice(value) {
     .split(',')
     .map(t => t.trim())
     .filter(Boolean)
-    .slice(0, CHOICE_MAX)) {
+    .slice(0, CHOICE_MAX + 1)) {
     if (raw === ALL_OFF) {
       choice.allOff = true;
       continue;
@@ -259,11 +259,12 @@ function codexOwnServers({ home = os.homedir(), codexHome = process.env.CODEX_HO
   return [...names];
 }
 
-function forCodex(mcp, { skip = [], choice, own = [] } = {}) {
+function forCodex(mcp, { choice, own = [] } = {}) {
   const configured = mcp ? mcp.servers : [];
-  const turnedOff = [...new Set([...own, ...skip])].filter(n => explicitOff(choice, n)).map(name => ({ name, off: true }));
+  const turnedOff = own.filter(n => ID_RE.test(n) && explicitOff(choice, n)).map(name => ({ name, off: true }));
+  const turnedOn = own.filter(n => ID_RE.test(n) && choice && choice.on.includes(n)).map(name => ({ name, on: true }));
   return configured
-    .filter(s => isOn(choice, s.name, s.default) && !skip.includes(s.name) && !own.includes(s.name))
+    .filter(s => isOn(choice, s.name, s.default) && !own.includes(s.name))
     .map(s => ({
       name: s.name,
       server: s.server,
@@ -271,7 +272,7 @@ function forCodex(mcp, { skip = [], choice, own = [] } = {}) {
       bearerTokenEnvVar: s.bearerTokenEnvVar || '',
       enabledTools: s.allow.codex.includes(ALL_TOOLS) ? null : s.allow.codex,
     }))
-    .concat(turnedOff);
+    .concat(turnedOff, turnedOn);
 }
 
 const tomlString = v => JSON.stringify(String(v).replace(/[\ud800-\udfff]/gu, '\ufffd')).replace(/\u007f/g, '\\u007f');
@@ -282,8 +283,8 @@ function codexArgs(entries) {
   for (const e of entries || []) {
     const key = `mcp_servers.${e.name}`;
     const set = (k, v) => out.push('-c', `${key}.${k}=${v}`);
-    if (e.off) {
-      set('enabled', 'false');
+    if (e.off || e.on) {
+      set('enabled', e.on ? 'true' : 'false');
       continue;
     }
     if (e.server.type === 'http') {
@@ -322,12 +323,14 @@ function describe(name) {
 
 const SEEN_MAX = 64;
 
-function noteSeen(seen, servers, now = Date.now()) {
-  for (const s of servers || []) {
-    if (!s || typeof s.name !== 'string') continue;
-    const id = serverId(s.name);
-    if (!ID_RE.test(id)) continue;
-    seen[id] = { ...describe(s.name), status: String(s.status || 'unknown'), at: now, ...(s.source === 'dynamic' ? { dynamic: true } : {}) };
+const CWD_SOURCES = ['project', 'local'];
+
+function noteSeen(seen, servers, { cwd = '', now = Date.now() } = {}) {
+  const reported = (servers || []).filter(s => s && typeof s.name === 'string' && ID_RE.test(serverId(s.name)));
+  if (reported.some(s => s.source !== 'dynamic')) for (const [id, e] of Object.entries(seen)) if (!e.dynamic && (!e.cwd || e.cwd === cwd)) delete seen[id];
+  for (const s of reported) {
+    const scope = s.source === 'dynamic' ? { dynamic: true } : CWD_SOURCES.includes(s.source) ? { cwd } : {};
+    seen[serverId(s.name)] = { ...describe(s.name), status: String(s.status || 'unknown'), at: now, ...scope };
   }
   const ids = Object.keys(seen);
   if (ids.length > SEEN_MAX)
@@ -338,11 +341,12 @@ function noteSeen(seen, servers, now = Date.now()) {
   return seen;
 }
 
-function seedSeen(seen, own, now = 0) {
+function seedSeen(seen, own, { cwd = '', now = 0 } = {}) {
   for (const entry of own || []) {
-    const name = entry.startsWith('plugin:') ? entry : entry.replace(/^[a-z]+:/, '');
+    const [kind] = entry.split(':');
+    const name = kind === 'plugin' ? entry : entry.slice(kind.length + 1);
     const id = serverId(name);
-    if (ID_RE.test(id) && !seen[id]) seen[id] = { ...describe(name), status: 'unknown', at: now };
+    if (ID_RE.test(id) && !seen[id]) seen[id] = { ...describe(name), status: 'unknown', at: now, ...(CWD_SOURCES.includes(kind) ? { cwd } : {}) };
   }
   return seen;
 }
@@ -361,14 +365,12 @@ function catalog({ mcp, seen = {}, codexOwn = [], reserved = [] }) {
 }
 
 module.exports = {
-  serverId,
   parseChoice,
   discoveredOff,
   noteSeen,
   seedSeen,
   catalog,
   SOURCES,
-  CHOICE_MAX,
   parse,
   forClaude,
   forCodex,

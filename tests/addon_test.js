@@ -3036,7 +3036,11 @@ test('mcp: the bridge list arrives in a slot, /claude mcp overrides servers per 
   answer();
   vm.run('SlashCmdList.CLAUDE("mcp on slack")');
   vm.run('SlashCmdList.CLAUDE("mcp off notion")');
-  assert.equal(vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].mcpSet == nil'), 'true', 'back to the defaults drops the overrides');
+  assert.equal(
+    vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].mcpSet.claude_ai_Slack == nil and ClaudeWoWDB.chats[#ClaudeWoWDB.chats].mcpSet.notion == false'),
+    'true',
+    'turning one back on drops its override; an off is kept',
+  );
 
   vm.run('SlashCmdList.CLAUDE("mcp none")');
   assert.equal(last(), 'MCP: every server is off for this chat.');
@@ -3097,8 +3101,9 @@ test('mcp: Inbox.lua carries the list after a /reload only while fresh, and a ch
   const said = next.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history[#ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history].text');
   assert.equal(said, 'MCP: this chat already changes 16 servers. Use /claude mcp none, then turn on the ones you want, or /claude mcp default.');
   assert.equal(next.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].mcpSet.s16 == nil'), 'true');
-  next.run('SlashCmdList.CLAUDE("mcp none"); SlashCmdList.CLAUDE("mcp on s16")');
-  assert.equal(next.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].mcpSet.s16'), 'true', 'none frees the room');
+  next.run('SlashCmdList.CLAUDE("mcp none")');
+  for (const n of names.slice(1)) next.run(`SlashCmdList.CLAUDE("mcp on ${n}")`);
+  assert.equal(next.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].mcpSet.s16'), 'true', 'after none, 16 servers can be turned back on');
 });
 
 test('mcp: the send limit counts the mcp= token, so a long message with many changes is refused instead of never reaching the strip', () => {
@@ -3118,4 +3123,49 @@ test('mcp: the send limit counts the mcp= token, so a long message with many cha
   const said = vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history[#ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history].text');
   assert.match(said, /^That message is too long for one send/);
   assert.equal(vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].pendingId == nil'), 'true');
+});
+
+test('mcp: two servers with one label are told apart by id', () => {
+  const vm = newVM();
+  login(vm);
+  vm.run('STUB.RunTimers()');
+  nextSlot(
+    vm,
+    '{ now = time(), cwd = "/p", mcp = { { id = "notion", label = "notion", src = "config", on = true, health = "unknown" }, { id = "plugin_Notion_notion", label = "Notion", src = "plugin", on = true, health = "unknown" }, { id = "a", label = "Twin", src = "claude", on = true, health = "unknown" }, { id = "b", label = "twin", src = "claude", on = true, health = "unknown" } }, replies = {} }',
+  );
+  vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
+  vm.run('ClaudeWoW.NewChat()');
+  const last = () => vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history[#ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history].text');
+  vm.run('SlashCmdList.CLAUDE("mcp off notion")');
+  assert.equal(last(), 'MCP: notion is off for this chat.', 'an exact id wins over a label');
+  vm.run('SlashCmdList.CLAUDE("mcp off twin")');
+  assert.equal(last(), 'MCP: more than one server is called twin; name one of a, b.');
+  vm.run('SlashCmdList.CLAUDE("mcp off plugin_notion_notion")');
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].mcpSet.plugin_Notion_notion'), 'false');
+});
+
+test('mcp: an off choice is kept even when the server is off by default, ids match exactly first, old saved choices carry over, and the cap counts every stored change', () => {
+  const vm = newVM();
+  login(vm);
+  vm.run('ClaudeWoW.NewChat(); ClaudeWoWDB.chats[#ClaudeWoWDB.chats].mcp = { "mobbin" }');
+  vm.run('STUB.RunTimers()');
+  nextSlot(
+    vm,
+    '{ now = time(), cwd = "/p", mcp = { { id = "notion", label = "notion", src = "config", on = false, health = "unknown" }, { id = "Foo", label = "Foo", src = "claude", on = true, health = "unknown" }, { id = "foo", label = "foo", src = "claude", on = true, health = "unknown" }, { id = "mobbin", label = "mobbin", src = "claude", on = true, health = "unknown" } }, replies = {} }',
+  );
+  vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
+  const chat = 'ClaudeWoWDB.chats[#ClaudeWoWDB.chats]';
+  assert.equal(
+    vm.evaluate(`${chat}.mcp == nil and ${chat}.mcpAllOff == true and ${chat}.mcpSet.mobbin == true`),
+    'true',
+    'an exact on-list from the last build becomes all off plus those on',
+  );
+  vm.run(`${chat}.mcpAllOff = nil; ${chat}.mcpSet = nil`);
+  vm.run('SlashCmdList.CLAUDE("mcp off notion")');
+  assert.equal(vm.evaluate(`${chat}.mcpSet.notion`), 'false', 'off is kept so a same-name server of your own is denied too');
+  vm.run('SlashCmdList.CLAUDE("mcp off foo")');
+  assert.equal(vm.evaluate(`${chat}.mcpSet.foo == false and ${chat}.mcpSet.Foo == nil`), 'true');
+  vm.run(`for i = 1, 14 do ${chat}.mcpSet["gone" .. i] = false end`);
+  vm.run('SlashCmdList.CLAUDE("mcp off mobbin")');
+  assert.match(vm.evaluate(`${chat}.history[#${chat}.history].text`), /already changes 16 servers/, 'choices for servers not listed right now still count');
 });

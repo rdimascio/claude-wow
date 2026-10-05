@@ -346,6 +346,8 @@ test('per-chat MCP end to end: discovered servers are listed, a chat turns one o
       { name: 'linear', status: 'needs-auth', source: 'dynamic' },
       { name: 'mobbin', status: 'connected', source: 'user' },
       { name: 'claude.ai Slack', status: 'connected', source: 'claudeai' },
+      { name: 'wowdata', status: 'connected', source: 'dynamic' },
+      { name: 'wowgoals', status: 'connected', source: 'dynamic' },
     ],
   };
   const done = { type: 'result', result: 'pong', session_id: 'sess-1' };
@@ -366,10 +368,13 @@ test('per-chat MCP end to end: discovered servers are listed, a chat turns one o
     }),
   );
   const hex = s => Buffer.from(s, 'utf8').toString('hex');
-  const send = (id, choice) =>
+  const other = path.join(dir, 'other-repo');
+  fs.mkdirSync(other, { recursive: true });
+  fs.writeFileSync(path.join(other, '.mcp.json'), JSON.stringify({ mcpServers: { 'repo-srv': { command: 'node', args: ['x.js'] } } }));
+  const send = (id, choice, cwd = '') =>
     fs.writeFileSync(
       saved,
-      `ClaudeWoWDB = {\n["outbox"] = {\n["id"] = ${id},\n["session"] = "sess1",\n["chat"] = "chat1",\n["text"] = "${hex('ping')}",\n["cwd"] = "",\n["opts"] = "${hex(`mcp=${choice}`)}",\n["t"] = 1,\n},\n}\n`,
+      `ClaudeWoWDB = {\n["outbox"] = {\n["id"] = ${id},\n["session"] = "sess1",\n["chat"] = "chat1",\n["text"] = "${hex('ping')}",\n["cwd"] = "${hex(cwd)}",\n["opts"] = "${hex(`mcp=${choice}`)}",\n["t"] = 1,\n},\n}\n`,
     );
   const env = { ...process.env, CLAUDE_WOW_HOME: home, HOME: userHome, USERPROFILE: userHome, CLAUDE_CONFIG_DIR: '' };
   const run = () => spawnSync(process.execPath, [BRIDGE, '--once', '--project', project], { encoding: 'utf8', env, timeout: 60000 });
@@ -396,5 +401,20 @@ test('per-chat MCP end to end: discovered servers are listed, a chat turns one o
   assert.equal(run().status, 0);
   argv = JSON.parse(fs.readFileSync(argvFile, 'utf8'));
   assert.ok(argv.slice(argv.indexOf('--disallowedTools') + 1).includes('mcp__claude_ai_Slack'), 'a connector the last run reported can be turned off');
+
+  send(33, '-*');
+  assert.equal(run().status, 0);
+  argv = JSON.parse(fs.readFileSync(argvFile, 'utf8'));
+  const allOff = argv.slice(argv.indexOf('--disallowedTools') + 1);
+  assert.ok(allOff.includes('mcp__mobbin') && allOff.includes('mcp__claude_ai_Slack') && allOff.includes('mcp__notion'), allOff.join(' '));
+  assert.ok(!allOff.includes('mcp__wowdata'), 'all off never denies a bridge server the last run reported: ' + allOff.join(' '));
+
+  send(34, '-*', other);
+  assert.equal(run().status, 0);
+  argv = JSON.parse(fs.readFileSync(argvFile, 'utf8'));
+  assert.ok(
+    argv.slice(argv.indexOf('--disallowedTools') + 1).includes('mcp__repo-srv'),
+    "all off also covers a server in the chat folder's .mcp.json that no run reported yet",
+  );
   fs.rmSync(dir, { recursive: true, force: true });
 });

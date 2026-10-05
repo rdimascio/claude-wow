@@ -343,7 +343,7 @@ test('Codex: a server named like one in ~/.codex/config.toml is left out, since 
   );
   const mcp = parsed(SAMPLE).mcp;
   assert.deepEqual(
-    MC.forCodex(mcp, { skip: ['notion'] }).map(e => e.name),
+    MC.forCodex(mcp, { own: ['notion'] }).map(e => e.name),
     ['github', 'linear'],
   );
 });
@@ -353,7 +353,8 @@ test('per chat: mcp= carries overrides (+id, -id, -* for all off), a bad id is d
   assert.equal(P.parseFlags('agent=claude').mcp, undefined, 'no token: the defaults');
   assert.deepEqual(P.parseFlags('mcp=-*').mcp, { allOff: true, on: [], off: [] });
   assert.deepEqual(P.parseFlags('mcp=+notion,-claude_ai_Slack,notion,-bad id,+a.b,-notion').mcp, { allOff: false, on: ['notion'], off: ['claude_ai_Slack'] });
-  assert.equal(P.parseFlags(`mcp=${Array.from({ length: 20 }, (_, i) => `-s${i}`).join(',')}`).mcp.off.length, 16);
+  assert.equal(P.parseFlags(`mcp=${Array.from({ length: 20 }, (_, i) => `-s${i}`).join(',')}`).mcp.off.length, 17, 'all off plus 16 changes');
+  assert.equal(P.parseFlags(`mcp=-*,${Array.from({ length: 20 }, (_, i) => `+s${i}`).join(',')}`).mcp.on.length, 16);
   const outbox = `ClaudeWoWDB = {\n["outbox"] = {\n["id"] = 3,\n["session"] = "s",\n["chat"] = "c",\n["text"] = "${hex('hi')}",\n["cwd"] = "",\n["opts"] = "${hex('mcp=-github')}",\n["t"] = 1,\n},\n}\n`;
   assert.deepEqual(P.parseOutbox(outbox).mcp, { allOff: false, on: [], off: ['github'] }, 'reload mode carries it too');
 
@@ -384,16 +385,25 @@ test('per chat: mcp= carries overrides (+id, -id, -* for all off), a bad id is d
     MC.forCodex(mcp, { choice: choice('+quiet,-linear') }).map(e => e.name),
     ['github', 'notion', 'quiet'],
   );
-  const own = MC.forCodex(mcp, { choice: choice('-notion,-mobbin'), skip: ['notion'], own: ['notion', 'mobbin', 'elsewhere'] });
+  const own = MC.forCodex(mcp, { choice: choice('-notion,-mobbin,+node_repl'), own: ['notion', 'mobbin', 'elsewhere', 'node_repl'] });
   assert.deepEqual(
-    own.slice(-2),
-    [
-      { name: 'notion', off: true },
-      { name: 'mobbin', off: true },
-    ],
-    "Codex's own servers the chat turned off get enabled=false",
+    own.map(e => e.name),
+    ['github', 'linear', 'notion', 'mobbin', 'node_repl'],
+    "a config.toml name is not defined again; Codex's own servers the chat turned off or on get enabled=false or true",
   );
-  assert.ok(!own.some(e => e.name === 'elsewhere'));
+  assert.deepEqual(MC.codexArgs(own.slice(-3)), [
+    '-c',
+    'mcp_servers.notion.enabled=false',
+    '-c',
+    'mcp_servers.mobbin.enabled=false',
+    '-c',
+    'mcp_servers.node_repl.enabled=true',
+  ]);
+  assert.deepEqual(
+    MC.forCodex(null, { choice: choice('-*'), own: ['my.srv', 'ok'] }),
+    [{ name: 'ok', off: true }],
+    'a name that is not a plain id never reaches argv',
+  );
   assert.deepEqual(MC.codexArgs([{ name: 'mobbin', off: true }]), ['-c', 'mcp_servers.mobbin.enabled=false']);
   assert.deepEqual(MC.forCodex(null, { own: ['mobbin'] }), [], 'no choice and no mcp key: Codex is untouched');
   assert.deepEqual(A.unsupportedSettings('grok', { mcp: choice('-x') }), ['mcp choice']);
@@ -427,7 +437,7 @@ test('catalog: config servers first, then what Claude reported or its files list
     { id: 'node_repl', label: 'node_repl', src: 'codex', on: true, health: 'unknown' },
   ]);
   const many = {};
-  for (let i = 0; i < 70; i++) MC.noteSeen(many, [{ name: `s${i}`, status: 'connected', source: 'user' }], i);
+  for (let i = 0; i < 70; i++) MC.noteSeen(many, [{ name: `s${i}`, status: 'connected', source: 'project' }], { cwd: `/p${i}`, now: i });
   assert.equal(Object.keys(many).length, 64, 'the seen list is bounded, oldest out');
   assert.ok(!many.s0 && many.s69);
 
@@ -461,4 +471,24 @@ test('health: the Claude init event reports every server with its status', () =>
     { name: 'linear', status: 'needs-auth' },
     { name: '?', status: 'failed' },
   ]);
+});
+
+test('the seen list follows the latest report: a server gone from Claude is dropped, one from another folder is kept', () => {
+  const seen = MC.seedSeen({}, ['user:mobbin', 'project:repo-a', 'plugin:p:gone'], { cwd: '/a' });
+  assert.deepEqual(Object.keys(seen).sort(), ['mobbin', 'plugin_p_gone', 'repo-a']);
+  MC.noteSeen(
+    seen,
+    [
+      { name: 'repo-b', status: 'connected', source: 'project' },
+      { name: 'claude.ai Slack', status: 'connected', source: 'claudeai' },
+    ],
+    { cwd: '/b', now: 5 },
+  );
+  assert.deepEqual(
+    Object.keys(seen).sort(),
+    ['claude_ai_Slack', 'repo-a', 'repo-b'],
+    'user and plugin servers not reported again are gone; folder /a keeps its own',
+  );
+  MC.noteSeen(seen, [{ name: 'wowdata', status: 'connected', source: 'dynamic' }], { cwd: '/b', now: 6 });
+  assert.ok(seen.claude_ai_Slack, 'a report with only our own servers (strict mode) drops nothing');
 });
