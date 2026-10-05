@@ -18,6 +18,7 @@ const PRIVATE_DIR = 0o700;
 const OPEN_FILE = 0o644;
 const OPEN_DIR = 0o755;
 const SESSION_NAME = 'ownership';
+const SLOTS = 20;
 
 const coverageEnv = process.env.NODE_V8_COVERAGE ? { NODE_V8_COVERAGE: process.env.NODE_V8_COVERAGE } : {};
 const modeOf = file => fs.statSync(file).mode & 0o777;
@@ -35,7 +36,7 @@ const isAlive = pid => {
 
 let seq = 0;
 async function withGame(opts, fn) {
-  const h = await H.start(`u${++seq}`, { root: ROOT, ...opts, env: { ...coverageEnv, ...opts.env } });
+  const h = await H.start(`u${++seq}`, { root: ROOT, slots: SLOTS, ...opts, env: { ...coverageEnv, ...opts.env } });
   try {
     await fn(h);
     assert.deepEqual(h.client.errors(), [], 'the addon raised no Lua errors');
@@ -49,28 +50,35 @@ async function withGame(opts, fn) {
 
 async function connectLiveSession(h) {
   const listener = spawn(process.execPath, ['-e', 'setInterval(Object,1e9)', '--', LP.DEV_FLAG, LP.CHANNEL_ARG], { stdio: 'ignore' });
-  const token = await h.client.waitFor(() => LP.readToken(h.sb.home), { label: 'the live token' });
-  const sock = net.connect(LP.endpoint(h.sb.home));
-  sock.on('error', () => {});
-  sock.on(
-    'data',
-    LP.lineReader(() => {}),
-  );
-  await new Promise((resolve, reject) => {
-    sock.once('connect', resolve);
-    sock.once('error', reject);
-  });
-  const nonce = LP.nonce();
-  sock.write(
-    LP.encode({ type: 'hello', nonce, proof: LP.proof(token, 'client', nonce), name: SESSION_NAME, cwd: h.sb.project, pid: process.pid, ppid: listener.pid }),
-  );
-  await h.bridge.waitForLine(new RegExp(`session "${SESSION_NAME}" connected.*, listening`));
+  let sock = null;
+  const close = () => {
+    if (sock) sock.destroy();
+    listener.kill('SIGKILL');
+  };
+  try {
+    const token = await h.client.waitFor(() => LP.readToken(h.sb.home), { label: 'the live token' });
+    sock = net.connect(LP.endpoint(h.sb.home));
+    sock.on('error', () => {});
+    sock.on(
+      'data',
+      LP.lineReader(() => {}),
+    );
+    await new Promise((resolve, reject) => {
+      sock.once('connect', resolve);
+      sock.once('error', reject);
+    });
+    const nonce = LP.nonce();
+    sock.write(
+      LP.encode({ type: 'hello', nonce, proof: LP.proof(token, 'client', nonce), name: SESSION_NAME, cwd: h.sb.project, pid: process.pid, ppid: listener.pid }),
+    );
+    await h.bridge.waitForLine(new RegExp(`session "${SESSION_NAME}" connected.*, listening`));
+  } catch (e) {
+    close();
+    throw e;
+  }
   return {
     reply: (chatId, text) => sock.write(LP.encode({ type: 'reply', call: 1, chat_id: chatId, text })),
-    close: () => {
-      sock.destroy();
-      listener.kill('SIGKILL');
-    },
+    close,
   };
 }
 
