@@ -1106,6 +1106,8 @@ function luaSession(s) {
   if (s.title) f.push(`title = ${luaStr(s.title)}`);
   if (s.branch) f.push(`branch = ${luaStr(s.branch)}`);
   if (s.restart) f.push(`restart = ${luaStr(s.restart)}`);
+  if (s.handoff) f.push('handoff = true');
+  if (s.recap) f.push(`recap = ${luaStr(s.recap)}`);
   return `\t\t{ ${f.join(', ')} },`;
 }
 
