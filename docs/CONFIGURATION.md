@@ -132,6 +132,7 @@ A `config.json` from before agents existed kept Claude's settings at the top lev
 | `plugins.claude-code.factory.allowedTools` | `[]` | Rules a skill run gets on top of `agents.claude.allowedTools` (for example `Bash(gh:*)`). The dispatcher chat never gets them. |
 | `plugins.claude-code.factory.maxRunning` | `2` | How many skill runs may go at once; a dispatch past it is refused. |
 | `plugins.claude-code.factory.timeoutMs` | `7200000` | A skill run that takes longer is ended and reported failed. |
+| `plugins.claude-code.threads` | `[]` | Project folders whose coding chats are long-lived threads (relative to the bridge's folder, `~` allowed). A thread chat keeps its Claude session when the system prompt rules change (game context turned on or off, a release that edits the rules), so its first system prompt stays for good; `/claude n` starts a fresh one. With the factory on, its dispatcher rules and skill list go in each turn's prompt instead of the system prompt. |
 
 | `plugins.live.enabled` | `true` | `false` keeps the bridge from opening the live-session socket (`live.sock` in the home folder). |
 | `plugins.live.waitMs` | `3000` | How long a message on a `live` chat waits for a Claude Code session to connect before the chat is told there is none. |
@@ -151,7 +152,7 @@ With `plugins.claude-code.factory.enabled`, a coding chat does not work on the c
 
 The dispatcher run is denied `Edit`, `Write`, `MultiEdit`, `NotebookEdit`, `Bash`, `Skill`, `Agent` and `Task`, whatever `agents.claude.allowedTools` says, and its prompt tells it to dispatch one skill, ask one short question back, or answer a status question. A skill must run in its own session: a skill invoked with the Skill tool runs on the model of the session that calls it, so a cheap dispatcher model cannot call it itself.
 
-When a run ends, the bridge sends its result to the chat that started it as a late reply. The addon reads it the next time it reads its slots: when the player sends any message, or at the 10-minute idle check in pixel mode. It is not pushed while the addon is idle. Until then, `factory_status` has it. Two runs that end before the addon reads its slots share one late slot per chat, so only the newer one shows; `factory_status` has both. A run that the bridge ended when it stopped is recorded as `killed` and sends nothing.
+When a run ends, the bridge sends its result to the chat that started it as a late reply. The addon reads it the next time it reads its slots: when the player sends any message, or at the 10-minute idle check in pixel mode. It is not pushed while the addon is idle. Until then, `factory_status` has it. A late reply carries the id of the chat's latest message, and the addon shows a late reply only once per id: a second run that ends before the player sends another message in that chat does not show, even on a later slot read. `factory_status` has both. A run that the bridge ended when it stopped is recorded as `killed` and sends nothing.
 
 Add this to the `plugins` block of `~/.claude-wow/config.json`, then restart the bridge:
 

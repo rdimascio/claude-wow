@@ -729,6 +729,8 @@ const SITUATION_OPEN = '[In-game situation when this message was written, report
 const SITUATION_CLOSE = '[End of in-game situation]';
 function messagePrompt(text, ctx, opts) {
   const parts = [];
+  const rules = String((opts && opts.rules) || '').trim();
+  if (rules) parts.push(rules);
   const situation = String(ctx || '').trim();
   if (situation) parts.push(`${SITUATION_OPEN}\n${situation}\n${SITUATION_CLOSE}`);
   if (opts && opts.image) parts.push(visionHint(opts.image));

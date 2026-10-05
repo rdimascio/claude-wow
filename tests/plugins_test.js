@@ -115,6 +115,58 @@ test("the shipped coding plugin: a folder resolved against the bridge's, refused
   fs.rmSync(base, { recursive: true, force: true });
 });
 
+test('the coding plugin: a chat in a plugins.claude-code.threads folder is a thread, its dispatcher rules go to the turn prompt', () => {
+  const code = require('../bridge/plugins/claude-code');
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'wowai-thread-'));
+  const proj = path.join(base, 'proj');
+  const other = path.join(base, 'other');
+  fs.mkdirSync(proj);
+  fs.mkdirSync(other);
+  const cases = [
+    [{ threads: ['proj'] }, proj, true],
+    [{ threads: [proj + path.sep] }, proj, true],
+    [{ threads: [' proj '] }, proj, true],
+    [{ threads: ['proj'] }, other, false],
+    [{ threads: ['proj'] }, path.join(proj, 'sub'), false],
+    [{ threads: [''] }, base, false],
+    [{ threads: [42, null] }, base, false],
+    [{ threads: 'proj' }, proj, false],
+    [{}, proj, false],
+    [null, proj, false],
+  ];
+  for (const [options, cwd, want] of cases) assert.equal(code.isThread(options, cwd, base), want, JSON.stringify([options, cwd]));
+  assert.equal(code.isThread({ threads: ['~'] }, os.homedir(), base), true, '~ is the home folder');
+
+  const calls = [];
+  const factory = { enabled: true, skills: ['fresh-eyes'] };
+  const core = opts => ({
+    log: noop,
+    tag: j => '#' + j.id,
+    defaultCwd: base,
+    options: () => opts,
+    sessionFolder: () => '',
+    fail: (job, text) => calls.push({ fail: text }),
+    runAgent: (job, o) => calls.push({ run: o }),
+  });
+  code.handle({ id: 1, cwd: 'proj', text: 'hi' }, core({ factory, threads: ['proj'] }));
+  const thread = calls.at(-1).run;
+  assert.equal(thread.thread, true);
+  assert.equal(thread.tools, '', 'nothing mutable in the system prompt');
+  assert.match(thread.turnRules, /Skills you may dispatch: fresh-eyes\./);
+  assert.deepEqual(thread.deniedTools, [...require('../bridge/factory').DISPATCHER_DENIED], 'still a dispatcher');
+  code.handle({ id: 2, cwd: 'other', text: 'hi' }, core({ factory, threads: ['proj'] }));
+  const plain = calls.at(-1).run;
+  assert.equal(plain.thread, undefined);
+  assert.equal(plain.turnRules, undefined);
+  assert.match(plain.tools, /Skills you may dispatch: fresh-eyes\./);
+  code.handle({ id: 3, cwd: 'proj', text: 'hi' }, core({ threads: ['proj'] }));
+  const full = calls.at(-1).run;
+  assert.equal(full.thread, true, 'a thread without the factory still keeps its session');
+  assert.equal(full.turnRules, '');
+  assert.equal(full.tools, undefined);
+  fs.rmSync(base, { recursive: true, force: true });
+});
+
 test('the shipped ask plugin: no folder semantics, a scratch folder of its own, and instructions in the prompt', () => {
   const ask = require('../bridge/plugins/ask');
   const reg = PL.createRegistry();
