@@ -5193,7 +5193,7 @@ end
 
 Q.PARCHMENT_LINK_COLORS = {
 	ff9d9d9d = "ff5c5248", ffffffff = "ff2e1f0f", ff1eff00 = "ff0d6b00", ff0070dd = "ff004c99", ffa335ee = "ff6a1b9a",
-	ffff8000 = "ff9a4a00", ffe6cc80 = "ff7a5c1e", ffffff00 = "ff7a3b00", ffffd100 = "ff7a3b00", ff71d5ff = "ff00577a",
+	ffff8000 = "ff9a4a00", ffe6cc80 = "ff7a5c1e", ffffff00 = "ff7a3b00", ffffd100 = "ff7a3b00", ff71d5ff = "ff1c4f9c",
 }
 
 Q.GAME_LINK_COLORS = {}
@@ -5216,10 +5216,8 @@ function Q.OnParchment(link)
 end
 
 Q.URL_CHARS = "[%w%-%._~:/%?#@!%$&'%(%)%+,;=%%]"
-Q.TEXT_INK = {
-	game = { strong = "ffffffff", code = "ffa8c8d8", link = "ff71d5ff" },
-	parchment = { strong = "ff5c1a00", code = "ff1f4a5a", link = "ff00577a" },
-}
+Q.TEXT_INK = { game = { strong = "ffffffff", code = "ffa8c8d8", link = "ff71d5ff" } }
+Q.TEXT_INK.parchment = { strong = "ff5c1a00", code = "ff7a2e0e", link = Q.PARCHMENT_LINK_COLORS[Q.TEXT_INK.game.link] }
 
 function Q.UrlLabel(url)
 	local n = url:match("^https?://github%.com/[^/]+/[^/]+/pull/(%d+)")
