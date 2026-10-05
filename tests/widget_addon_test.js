@@ -573,3 +573,131 @@ test('a ticker handle the client returns as userdata still cancels', () => {
   assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.tick.n'), '1');
   assert.equal(vm.evaluate('TICKER_UD_CANCELLED'), 'true');
 });
+
+const AUDIT_EXTRAS = [
+  'function GetSecretThing() return 1 end',
+  'function IsAuditReady() return true end',
+  'function DoAuditAction() AUDIT_ACTION = true end',
+  'QuestFontHighlight = CreateFrame("Font", "QuestFontHighlight")',
+  'QuestFontHighlight.GetObjectType = function() return "Font" end',
+  'OddFontObject = CreateFrame("Font", "OddFontObject")',
+  'OddFontObject.GetObjectType = function() return "Font" end',
+  'NotAFontTable = { GetObjectType = function() return "Frame" end }',
+  'ClaudeWoWAuditFont = CreateFrame("Font", "ClaudeWoWAuditFont")',
+  'ClaudeWoWAuditFont.GetObjectType = function() return "Font" end',
+].join('\n');
+
+const auditList = (vm, which) => {
+  const text = vm.evaluate(`table.concat(ClaudeWoWWidgetDB.globals.${which}, "\\n")`);
+  return text ? text.split('\n') : [];
+};
+
+const byteOrder = list => [...list].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+
+test('/claude dev globals saves the sorted names the widget sandbox admits and refuses, without the bridge', () => {
+  const vm = newVM();
+  vm.run(AUDIT_EXTRAS);
+  vm.run('ClaudeWoW.Send = function(text) AUDIT_SENT = text end');
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.globals'), null);
+  vm.run('SlashCmdList.CLAUDE("dev globals")');
+  assert.equal(vm.evaluate('AUDIT_SENT'), null, 'the dump went to the bridge');
+  const admitted = auditList(vm, 'admitted');
+  const refusedFunctions = auditList(vm, 'refused');
+  const refusedFonts = auditList(vm, 'refusedFonts');
+  assert.deepEqual(refusedFonts, ['OddFontObject']);
+  assert.ok(!refusedFunctions.includes('OddFontObject'));
+  assert.deepEqual(refusedFunctions, byteOrder(refusedFunctions));
+  const refused = [...refusedFunctions, ...refusedFonts];
+  for (const name of [
+    'UnitPowerMax',
+    'GetUnitName',
+    'GetRaidTargetIndex',
+    'GetTime',
+    'C_Fake.GetThing',
+    'C_UnitAuras.GetAuraDataByIndex',
+    'GameFontNormal',
+    'GameTooltipText',
+    'QuestFontHighlight',
+  ])
+    assert.ok(admitted.includes(name), `${name} should be admitted`);
+  for (const name of ['UnitSetRole', 'GetSecretThing', 'IsAuditReady', 'C_Fake.DropThing', 'OddFontObject'])
+    assert.ok(refused.includes(name), `${name} should be refused`);
+  for (const name of ['DoAuditAction', 'NotAFontTable', 'ClaudeWoWAuditFont'])
+    assert.ok(!admitted.includes(name) && !refused.includes(name), `${name} is outside the audited patterns`);
+  assert.deepEqual(admitted, byteOrder(admitted));
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.globals.admittedCount'), String(admitted.length));
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.globals.refusedCount'), String(refused.length));
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.globals.total'), String(admitted.length + refused.length));
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.globals.truncated'), 'false');
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.globals.version'), '1.60.1');
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.globals.build'), '69913');
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.globals.interface'), '16001');
+  const total = admitted.length + refused.length;
+  assert.match(
+    vm.evaluate(lastSystemNote),
+    new RegExp(
+      `Saved ${total} of ${total} global names \\(${admitted.length} a widget can use, ${refused.length} it cannot\\) for client 1\\.60\\.1 \\(69913\\)`,
+    ),
+  );
+  vm.run('SlashCmdList.CLAUDE("dev globals clear")');
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.globals'), null);
+  assert.match(vm.evaluate(lastSystemNote), /Dropped the saved global names/);
+});
+
+test('every name the globals dump admits resolves in a widget, and every name it refuses does not', () => {
+  const vm = newVM();
+  vm.run(AUDIT_EXTRAS);
+  vm.run('SlashCmdList.CLAUDE("dev globals")');
+  const admitted = auditList(vm, 'admitted');
+  const refused = [...auditList(vm, 'refused'), ...auditList(vm, 'refusedFonts')];
+  assert.ok(admitted.length > 20 && refused.length >= 5);
+  const source = [
+    'local ui = ...',
+    `local admitted = { ${admitted.map(n => JSON.stringify(n)).join(', ')} }`,
+    `local refused = { ${refused.map(n => JSON.stringify(n)).join(', ')} }`,
+    'local wrong = {}',
+    'local function Lookup(name)',
+    '  local ns, field = name:match("^(C_[%w_]+)%.(.+)$")',
+    '  if ns then local t = _G[ns]; return t and t[field] end',
+    '  return _G[name]',
+    'end',
+    'local function Usable(value)',
+    '  if value == nil then return false end',
+    '  if type(value) ~= "function" then return true end',
+    '  local ok, err = pcall(value)',
+    '  return ok or not tostring(err):find("is not allowed in a widget")',
+    'end',
+    'for _, n in ipairs(admitted) do if not Usable(Lookup(n)) then wrong[#wrong + 1] = "+" .. n end end',
+    'for _, n in ipairs(refused) do if Usable(Lookup(n)) then wrong[#wrong + 1] = "-" .. n end end',
+    'ui.db.wrong = table.concat(wrong, " ")',
+    'ui.db.checked = #admitted + #refused',
+  ].join('\n');
+  vm.run(
+    `ClaudeWoWWidgetDB.set = { epoch = "audit", version = 1, items = { { name = "audit", title = "audit", rev = "r1", source = ${P.luaStr(source)} } } }; ClaudeWoWWidgets.Apply(false)`,
+  );
+  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("audit")'), 'running', vm.evaluate('select(2, ClaudeWoWWidgets.Status("audit"))'));
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.audit.checked'), String(admitted.length + refused.length));
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.audit.wrong'), '');
+});
+
+test('the globals dump keeps at most GLOBALS_MAX names, admitted ones first', () => {
+  const vm = newVM();
+  vm.run('for i = 1, ClaudeWoWWidgets.GLOBALS_MAX + 50 do _G["GetAuditFiller" .. i] = function() end end');
+  vm.run('SlashCmdList.CLAUDE("dev globals")');
+  const max = Number(vm.evaluate('ClaudeWoWWidgets.GLOBALS_MAX'));
+  const admittedCount = Number(vm.evaluate('ClaudeWoWWidgetDB.globals.admittedCount'));
+  assert.ok(admittedCount > 0);
+  assert.equal(vm.evaluate('#ClaudeWoWWidgetDB.globals.admitted'), String(admittedCount));
+  assert.equal(vm.evaluate('#ClaudeWoWWidgetDB.globals.admitted + #ClaudeWoWWidgetDB.globals.refused'), String(max));
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.globals.saved'), String(max));
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.globals.truncated'), 'true');
+  assert.ok(Number(vm.evaluate('ClaudeWoWWidgetDB.globals.total')) > max);
+  assert.match(vm.evaluate(lastSystemNote), new RegExp(`Saved ${max} of \\d+ global names`));
+});
+
+test('/claude dev globals with an unknown word saves nothing and says how to use it', () => {
+  const vm = newVM();
+  vm.run('SlashCmdList.CLAUDE("dev globals now")');
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.globals'), null);
+  assert.match(vm.evaluate(lastSystemNote), /Usage: \/claude dev globals/);
+});
