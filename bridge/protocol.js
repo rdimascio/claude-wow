@@ -6,6 +6,7 @@
 const crypto = require('crypto');
 const os = require('os');
 const path = require('path');
+const MC = require('./mcpconfig');
 
 // The addon's name, as the game sees it: its folder under Interface/AddOns, its
 // .toc, its SavedVariables file (<ADDON>.lua) and the prefix of its globals.
@@ -257,8 +258,6 @@ function permissionModeName(raw) {
 const PRESENCE_TEST_RESULTS = ['passed', 'failed'];
 const LATE_CREATE_RESULTS = ['seen', 'unseen'];
 
-const MCP_NAME_RE = /^[A-Za-z0-9]+(?:[-_][A-Za-z0-9]+)*$/;
-const MCP_CHAT_MAX = 8;
 const MCP_HEALTH = ['connected', 'failed', 'needs-auth', 'pending', 'unknown'];
 
 function parseFlags(flags) {
@@ -315,12 +314,7 @@ function parseFlags(flags) {
     } else if (tok === 'discord=link') {
       out.discordLink = true;
     } else if (tok.startsWith('mcp=')) {
-      const names = tok
-        .slice(4)
-        .split(',')
-        .map(s => s.trim())
-        .filter(s => MCP_NAME_RE.test(s));
-      out.mcp = [...new Set(names)].slice(0, MCP_CHAT_MAX);
+      out.mcp = MC.parseChoice(tok.slice(4));
     } else if (tok.startsWith('resume=')) {
       const v = tok.slice(7).trim();
       if (RESUME_REF_RE.test(v)) out.resume = v;
@@ -734,6 +728,8 @@ const SITUATION_OPEN = '[In-game situation when this message was written, report
 const SITUATION_CLOSE = '[End of in-game situation]';
 function messagePrompt(text, ctx, opts) {
   const parts = [];
+  const rules = String((opts && opts.rules) || '').trim();
+  if (rules) parts.push(rules);
   const situation = String(ctx || '').trim();
   if (situation) parts.push(`${SITUATION_OPEN}\n${situation}\n${SITUATION_CLOSE}`);
   if (opts && opts.image) parts.push(visionHint(opts.image));
@@ -1198,9 +1194,16 @@ function luaTable(globalName, records, opts = {}) {
     lines.splice(lines.length - 1, 0, `\tprojects = { ${rows.join(', ')} },`);
   }
   if (Array.isArray(opts.mcp)) {
+    const label = v =>
+      String(v || '')
+        .replace(/[\x00-\x1f|]/g, '')
+        .slice(0, 64);
     const rows = opts.mcp
-      .filter(s => s && MCP_NAME_RE.test(String(s.name || '')))
-      .map(s => `{ name = ${luaStr(s.name)}, on = ${s.on ? 'true' : 'false'}, health = ${luaStr(MCP_HEALTH.includes(s.health) ? s.health : 'unknown')} }`);
+      .filter(e => e && /^[A-Za-z0-9_-]{1,64}$/.test(String(e.id || '')) && MC.SOURCES.includes(e.src))
+      .map(
+        e =>
+          `{ id = ${luaStr(e.id)}, label = ${luaStr(label(e.label) || e.id)}, src = ${luaStr(e.src)}, on = ${e.on ? 'true' : 'false'}, health = ${luaStr(MCP_HEALTH.includes(e.health) ? e.health : 'unknown')} }`,
+      );
     lines.splice(lines.length - 1, 0, `\tmcp = { ${rows.join(', ')} },`);
   }
   if (opts.home) lines.splice(lines.length - 1, 0, `\thome = ${luaStr(opts.home)},`);

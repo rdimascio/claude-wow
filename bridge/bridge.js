@@ -416,6 +416,7 @@ function noteMessage(job, role, text) {
 }
 
 const RESTORE_CHATS = 16;
+const HIDDEN_CHAT_PLUGINS = new Set(['stream']);
 const RESTORE_MESSAGES = 40;
 const RESTORE_TEXT_MAX = 2000;
 
@@ -443,7 +444,14 @@ function maybeOfferRestore(job) {
   if (!job.session || transcripts.tokens[tokenKey]) return;
   transcripts.tokens[tokenKey] = Date.now();
   const chats = Object.values(transcripts.chats)
-    .filter(c => c.id !== job.chat && c.messages.length && (!c.client || c.client === job.client) && (c.cwd || !c.char || c.char === job.char))
+    .filter(
+      c =>
+        c.id !== job.chat &&
+        c.messages.length &&
+        (!c.client || c.client === job.client) &&
+        (c.cwd || !c.char || c.char === job.char) &&
+        !HIDDEN_CHAT_PLUGINS.has(c.plugin),
+    )
     .sort((a, b) => (b.updated || 0) - (a.updated || 0))
     .slice(0, RESTORE_CHATS)
     .map(c => ({
@@ -1577,7 +1585,25 @@ function admit(job) {
   if (shuttingDown || inFlight(job)) return;
   lastActivityAt = Date.now();
   if (holdForDeploy(job)) return;
+  if (answerStatusNow(job)) return;
   dispatchMessage(job);
+}
+
+const STATUS_COMMANDS = new Set(['runs', 'stop']);
+
+function answerStatusNow(job) {
+  const cmd = FACTORY.parseSlash(job.text);
+  if (!cmd || !STATUS_COMMANDS.has(cmd.name) || !running.has(chatKey(job))) return false;
+  const routed = registry.route(job, { fallback: DEFAULT_PLUGIN });
+  if (!routed.plugin || routed.plugin.id !== 'claude-code') return false;
+  const conf = FACTORY.settings(core.options('claude-code'));
+  const result = FACTORY.slashCommand(factory, job.text, { key: chatKey(job), job, cwd: job.cwd, conf, label: tagOf(job) });
+  if (!result) return false;
+  ackJob(job);
+  noteMessage(job, 'user', job.text);
+  log(`${tagOf(job)} /${cmd.name} answered while the chat is busy`);
+  finish(job, result.ok ? 'done' : 'error', result.text);
+  return true;
 }
 
 function agentSessionOf(job) {
@@ -2402,13 +2428,11 @@ function factorySocket(tag) {
 }
 
 const loggedMcpDropped = new Set();
-const mcpHealth = new Map();
-function noteMcpHealth(servers) {
-  for (const s of servers) mcpHealth.set(s.name, s.status);
+function noteMcpHealth(servers, cwd) {
+  state.mcpSeen = MC.noteSeen(state.mcpSeen || {}, servers, { cwd });
 }
 function mcpSlotList() {
-  if (!USER_MCP) return [];
-  return USER_MCP.servers.map(s => ({ name: s.name, on: s.default, health: mcpHealth.get(s.name) || 'unknown' }));
+  return MC.catalog({ mcp: USER_MCP, seen: state.mcpSeen || {}, codexOwn: CODEX_ALL_MCP, reserved: [DM.SERVER_NAME, GM.SERVER_NAME, FACTORY.SERVER_NAME] });
 }
 function loggedMcpBlocks(tag, never, userMcp) {
   if (!userMcp) return never;
@@ -2417,7 +2441,7 @@ function loggedMcpBlocks(tag, never, userMcp) {
     const blocked = never(rule);
     if (blocked && userMcp.blocks(rule) && !said.has(rule)) {
       said.add(rule);
-      log(`${tag} mcp: ${rule} was denied and is outside mcp.servers.${MC.serverOf(rule).server}.allow, so it is not offered to allow`);
+      log(`${tag} mcp: ${rule} was denied; its server is off for this chat or the tool is outside its allow list, so it is not offered to allow`);
     }
     return blocked;
   };
@@ -2449,9 +2473,19 @@ function runAgent(job, opts = {}) {
   const runDenied = [...inGameDeniedTools({ claudeRun, plugin, withRunTools: !!runToolSocket }), ...(Array.isArray(opts.deniedTools) ? opts.deniedTools : [])];
   const factoryConf = claudeRun && opts.factory && opts.factory.enabled ? opts.factory : null;
   const factoryToolSocket = factoryConf ? factorySocket(tag) : '';
-  const userMcp = claudeRun ? MC.forClaude(USER_MCP, { on: chosen.mcp }) : null;
-  const grantForGood = P.splitGrants(inGameGrantable(job.allow, runDenied, userMcp));
-  const grantOnce = P.splitGrants(inGameGrantable(job.allowOnce, runDenied, userMcp));
+  const userMcp = claudeRun ? MC.forClaude(USER_MCP, { choice: chosen.mcp }) : null;
+  if (claudeRun && chosen.mcp) state.mcpSeen = MC.seedSeen(state.mcpSeen || {}, MC.claudeOwnServers({ cwd }), { cwd });
+  const seenOff = claudeRun
+    ? MC.discoveredOff(
+        chosen.mcp,
+        mcpSlotList()
+          .filter(e => e.src !== 'config' && e.src !== 'codex')
+          .map(e => e.id),
+      )
+    : null;
+  const mcpGuard = claudeRun ? { blocks: rule => (userMcp ? userMcp.blocks(rule) : false) || seenOff.blocks(rule) } : null;
+  const grantForGood = P.splitGrants(inGameGrantable(job.allow, runDenied, mcpGuard));
+  const grantOnce = P.splitGrants(inGameGrantable(job.allowOnce, runDenied, mcpGuard));
   if (grantForGood.rules.length) {
     const added = allowRules(agentId, grantForGood.rules);
     log(`${tag} allowed for ${agentId}: ${grantForGood.rules.join(', ')}${added.length ? '' : ' (already allowed)'}`);
@@ -2461,7 +2495,7 @@ function runAgent(job, opts = {}) {
   }
   const dataServer = opts.gameData && (claudeRun || codexRun || agent.mcp) ? gameDataServer(tag, job) : null;
   const codexMcp = codexRun
-    ? [...(dataServer ? [{ name: DM.SERVER_NAME, server: dataServer.server }] : []), ...MC.forCodex(USER_MCP, { skip: CODEX_OWN_MCP, on: chosen.mcp })]
+    ? [...(dataServer ? [{ name: DM.SERVER_NAME, server: dataServer.server }] : []), ...MC.forCodex(USER_MCP, { choice: chosen.mcp, own: CODEX_ALL_MCP })]
     : [];
   const runOnlyRules = [
     ...grantOnce.rules,
@@ -2476,7 +2510,12 @@ function runAgent(job, opts = {}) {
     log(`${tag} mcp: allowed tool rules that mcp.servers does not allow are left out of Claude runs: ${scoped.dropped.join(', ')}`);
   }
   const acfg = A.withChatSettings(
-    P.withRunDeniedRules(P.withRunOnlyRules(scoped.agentCfg, runOnlyRules), [...runDenied, ...scoped.denied, ...(userMcp ? userMcp.offRules : [])]),
+    P.withRunDeniedRules(P.withRunOnlyRules(scoped.agentCfg, runOnlyRules), [
+      ...runDenied,
+      ...scoped.denied,
+      ...(userMcp ? userMcp.offRules : []),
+      ...(seenOff ? seenOff.rules : []),
+    ]),
     agentId,
     chosen,
   );
@@ -2524,9 +2563,13 @@ function runAgent(job, opts = {}) {
     job.noGameContext = true;
   const rulesHash = P.systemRulesHash(gameContext(job), rulesOpts);
   if (agentId === 'claude' && state.sessions[skey] && P.rulesChanged(state, skey, rulesHash)) {
-    log(`${tag} system prompt rules changed (${state.sessionRules[skey]} -> ${rulesHash}): new session`);
-    delete state.sessions[skey];
-    delete state.sessions[key];
+    if (opts.thread) {
+      log(`${tag} system prompt rules changed (${state.sessionRules[skey]} -> ${rulesHash}): thread chat, the session is kept`);
+    } else {
+      log(`${tag} system prompt rules changed (${state.sessionRules[skey]} -> ${rulesHash}): new session`);
+      delete state.sessions[skey];
+      delete state.sessions[key];
+    }
   }
   maybeOfferRestore(job);
   noteMessage(job, 'user', job.text);
@@ -2555,7 +2598,7 @@ function runAgent(job, opts = {}) {
   const system = P.systemPrompt(ctx, primer(), { tools: pluginTools, surfaces: plugin.surfaces, voice: plugin.voice });
   const systemShort = P.systemPrompt(ctx, '', { surfaces: plugin.surfaces, voice: plugin.voice });
   const devNote = takeDevNote(job);
-  const prompt = P.messagePrompt(devNote ? `${devNote}\n\n${job.text}` : job.text, ctx, { image });
+  const prompt = P.messagePrompt(devNote ? `${devNote}\n\n${job.text}` : job.text, ctx, { image, rules: opts.turnRules });
   const promptFile = path.join(TMP_DIR, `prompt-${job.id}-${Date.now().toString(36)}.txt`);
   const input = agent.input({ prompt, system, systemShort, resume, cfg: acfg, images });
   if (input.promptFile !== undefined) {
@@ -2691,7 +2734,7 @@ function runAgent(job, opts = {}) {
     granted,
     isDir: isDirectory,
     neverOffer: [...IN_GAME_NEVER_GRANTED, ...(acfg.deniedTools || [])],
-    neverOfferIf: loggedMcpBlocks(tag, neverOffered(acfg.deniedTools || [], userMcp), userMcp),
+    neverOfferIf: loggedMcpBlocks(tag, neverOffered(acfg.deniedTools || [], mcpGuard), mcpGuard),
   });
   job.activity = ACH.createRunLog(agentId);
   const progress = [];
@@ -2786,7 +2829,7 @@ function runAgent(job, opts = {}) {
     for (const d of r.denied) denied.add(d);
     if (Array.isArray(r.deniedAgain)) for (const d of r.deniedAgain) deniedAgain.add(d);
     if (Array.isArray(r.mcpDown)) noteMcpDown(r.mcpDown);
-    if (Array.isArray(r.mcpStatus)) noteMcpHealth(r.mcpStatus);
+    if (Array.isArray(r.mcpStatus)) noteMcpHealth(r.mcpStatus, cwd);
     notes.push(...r.notes);
     if (r.done) result = r.done;
   };
@@ -2954,7 +2997,7 @@ function chatSettings(job) {
     effort: job.effort || '',
     permissionMode: job.permissionMode || '',
     addDirs: (Array.isArray(job.addDirs) ? job.addDirs : []).map(d => P.resolveCwd(d, DEFAULT_CWD)),
-    ...(Array.isArray(job.mcp) ? { mcp: job.mcp } : {}),
+    ...(job.mcp && typeof job.mcp === 'object' ? { mcp: job.mcp } : {}),
   };
 }
 
@@ -3662,7 +3705,9 @@ function startSelfUpdate() {
 }
 
 const USER_MCP = MC.parse(cfg.mcp, { reserved: [DM.SERVER_NAME, GM.SERVER_NAME, FACTORY.SERVER_NAME], log, env: process.env });
-const CODEX_OWN_MCP = USER_MCP ? MC.codexOwnServers().filter(n => USER_MCP.servers.some(s => s.name === n)) : [];
+const CODEX_ALL_MCP = MC.codexOwnServers();
+const CODEX_OWN_MCP = USER_MCP ? CODEX_ALL_MCP.filter(n => USER_MCP.servers.some(s => s.name === n)) : [];
+state.mcpSeen = MC.seedSeen(state.mcpSeen || {}, MC.claudeOwnServers({ cwd: DEFAULT_CWD }), { cwd: DEFAULT_CWD });
 banner();
 for (const n of CODEX_OWN_MCP)
   log(

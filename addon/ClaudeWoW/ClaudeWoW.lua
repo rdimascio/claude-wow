@@ -4068,8 +4068,8 @@ function Cli.ProjectButtonTooltip(b)
 	GameTooltip:Show()
 end
 
-Cli.MCP_MAX = 8
-Cli.MCP_LIST_MAX = 32
+Cli.MCP_MAX = 16
+Cli.MCP_LIST_MAX = 64
 Cli.MCP_AGENTS = { claude = true, codex = true }
 Cli.MCP_HEALTH = {
 	connected = { "ok", "33cc33" },
@@ -4078,6 +4078,13 @@ Cli.MCP_HEALTH = {
 	pending = { "starting", "999999" },
 	unknown = { "not seen yet", "999999" },
 }
+Cli.MCP_SOURCES = {
+	{ "config", "From config.json" },
+	{ "claude", "Your Claude servers" },
+	{ "plugin", "Claude plugins" },
+	{ "claude.ai", "claude.ai connectors" },
+	{ "codex", "Your Codex servers" },
+}
 
 function ClaudeWoW.ApplyMcp(list)
 	if type(list) ~= "table" then
@@ -4085,15 +4092,27 @@ function ClaudeWoW.ApplyMcp(list)
 		Cli.UpdateMcpButton()
 		return
 	end
+	local known = {}
+	for _, src in ipairs(Cli.MCP_SOURCES) do known[src[1]] = true end
 	local out = {}
 	for _, s in ipairs(list) do
 		if #out >= Cli.MCP_LIST_MAX then break end
-		if type(s) == "table" and type(s.name) == "string" and #s.name <= 64 and s.name:match("^[%w][%w_%-]*$") then
+		if type(s) == "table" and type(s.id) == "string" and #s.id <= 64 and s.id:match("^[%w_%-]+$") and known[s.src] then
+			local label = type(s.label) == "string" and s.label:gsub("[%c|]", ""):sub(1, 64) or ""
 			local health = (type(s.health) == "string" and Cli.MCP_HEALTH[s.health]) and s.health or "unknown"
-			table.insert(out, { name = s.name, on = s.on == true, health = health })
+			table.insert(out, { id = s.id, label = label ~= "" and label or s.id, src = s.src, on = s.on == true, health = health })
 		end
 	end
 	run.bridgeMcp = out
+	for _, c in ipairs(db and db.chats or {}) do
+		if type(c.mcp) == "table" then
+			local set = {}
+			for _, id in ipairs(c.mcp) do
+				if type(id) == "string" then set[id] = true end
+			end
+			c.mcp, c.mcpSet, c.mcpAllOff = nil, next(set) and set or nil, true
+		end
+	end
 	Cli.UpdateMcpButton()
 end
 
@@ -4103,13 +4122,29 @@ function Cli.McpUnsupported(c)
 end
 
 function Cli.McpOn(c, s)
-	if c and type(c.mcp) == "table" then return Contains(c.mcp, s.name) end
+	if c and type(c.mcpSet) == "table" and c.mcpSet[s.id] ~= nil then return c.mcpSet[s.id] end
+	if c and c.mcpAllOff then return false end
 	return s.on
 end
 
+function Cli.McpChoiceParts(c)
+	local parts = {}
+	if not c then return parts end
+	if c.mcpAllOff then table.insert(parts, "-*") end
+	local ids = {}
+	for _, s in ipairs(run.bridgeMcp or {}) do
+		if type(c.mcpSet) == "table" and c.mcpSet[s.id] ~= nil then table.insert(ids, s.id) end
+	end
+	table.sort(ids)
+	for _, id in ipairs(ids) do table.insert(parts, (c.mcpSet[id] and "+" or "-") .. id) end
+	return parts
+end
+
 function Cli.McpToken(c)
-	if not (c and type(c.mcp) == "table" and run.bridgeMcp) then return "" end
-	return "mcp=" .. table.concat(c.mcp, ",")
+	if not (c and run.bridgeMcp) then return "" end
+	local parts = Cli.McpChoiceParts(c)
+	if #parts == 0 then return "" end
+	return "mcp=" .. table.concat(parts, ",")
 end
 
 function Cli.McpCounts(c)
@@ -4130,41 +4165,82 @@ function Cli.McpMissing()
 		if not ClaudeWoW.IsConnected() then return "not connected to the bridge yet." end
 		return "this bridge sends no MCP server list. Update the bridge (claude-wow update) and reconnect."
 	end
-	if #run.bridgeMcp == 0 then return "the bridge has no MCP servers. Add them under mcp.servers in its config.json." end
+	if #run.bridgeMcp == 0 then return "the bridge sees no MCP servers: none in your Claude or Codex setup, or in mcp.servers in its config.json." end
+end
+
+function Cli.McpFind(name)
+	name = tostring(name or "")
+	for _, s in ipairs(run.bridgeMcp or {}) do
+		if s.id == name then return s end
+	end
+	local want = name:lower()
+	for _, field in ipairs({ "id", "label" }) do
+		local hits, ids = {}, {}
+		for _, s in ipairs(run.bridgeMcp or {}) do
+			if s[field]:lower() == want then
+				table.insert(hits, s)
+				table.insert(ids, s.id)
+			end
+		end
+		if #hits > 1 then return nil, "more than one server is called " .. name .. "; name one of " .. table.concat(ids, ", ") .. "." end
+		if hits[1] then return hits[1] end
+	end
 end
 
 function Cli.SetMcp(c, name, on)
 	local missing = Cli.McpMissing()
 	if missing then return nil, missing end
-	local found, set = false, {}
-	for _, s in ipairs(run.bridgeMcp) do
-		local want = Cli.McpOn(c, s)
-		if s.name == name then
-			found, want = true, on
-		end
-		if want then table.insert(set, s.name) end
+	local s, ambiguous = Cli.McpFind(name)
+	if ambiguous then return nil, ambiguous end
+	if not s then return nil, "no MCP server named \"" .. tostring(name) .. "\" (servers: " .. Cli.McpNames() .. ")." end
+	local set = {}
+	for id, v in pairs(c.mcpSet or {}) do set[id] = v end
+	local plain = s.on
+	if c.mcpAllOff then plain = false end
+	if on == plain and on then set[s.id] = nil else set[s.id] = on end
+	local count = 0
+	for _ in pairs(set) do count = count + 1 end
+	local before = c.mcpSet
+	c.mcpSet = set
+	if count > Cli.MCP_MAX then
+		c.mcpSet = before
+		return nil, "this chat already changes " .. Cli.MCP_MAX .. " servers. Use /claude mcp none, then turn on the ones you want, or /claude mcp default."
 	end
-	if not found then return nil, "no MCP server named \"" .. name .. "\" (servers: " .. Cli.McpNames() .. ")." end
-	if #set > Cli.MCP_MAX then return nil, "a chat can use at most " .. Cli.MCP_MAX .. " MCP servers. Turn them all off with /claude mcp none, then turn on the ones you want." end
-	c.mcp = set
-	return name .. " is " .. (on and "on" or "off") .. " for this chat."
+	if next(set) == nil then c.mcpSet = nil end
+	return s.label .. " is " .. (on and "on" or "off") .. " for this chat."
 end
 
 function Cli.McpNames()
 	local names = {}
-	for _, s in ipairs(run.bridgeMcp or {}) do table.insert(names, s.name) end
+	for _, s in ipairs(run.bridgeMcp or {}) do table.insert(names, s.label) end
 	return #names > 0 and table.concat(names, ", ") or "none"
+end
+
+function Cli.McpGroups()
+	local groups = {}
+	for _, src in ipairs(Cli.MCP_SOURCES) do
+		local rows = {}
+		for _, s in ipairs(run.bridgeMcp or {}) do
+			if s.src == src[1] then table.insert(rows, s) end
+		end
+		if #rows > 0 then table.insert(groups, { title = src[2], rows = rows }) end
+	end
+	return groups
 end
 
 function Cli.McpReport(c)
 	local missing = Cli.McpMissing()
 	if missing then return "MCP: " .. missing end
-	local lines = { "MCP servers for this chat" .. (type(c.mcp) == "table" and "" or " (the bridge's defaults)") .. ":" }
-	for _, s in ipairs(run.bridgeMcp) do
-		table.insert(lines, "  " .. (Cli.McpOn(c, s) and "on   " or "off  ") .. s.name .. "  " .. Cli.McpHealthText(s))
+	local custom = c.mcpAllOff or type(c.mcpSet) == "table"
+	local lines = { "MCP servers for this chat" .. (custom and "" or " (the defaults)") .. ":" }
+	for _, g in ipairs(Cli.McpGroups()) do
+		table.insert(lines, g.title .. ":")
+		for _, s in ipairs(g.rows) do
+			table.insert(lines, "  " .. (Cli.McpOn(c, s) and "on   " or "off  ") .. s.label .. "  " .. Cli.McpHealthText(s))
+		end
 	end
 	if Cli.McpUnsupported(c) then table.insert(lines, ChatAgentName(c) .. " does not use MCP servers; this list applies to Claude and Codex chats.") end
-	table.insert(lines, "/claude mcp on|off <name> changes one; /claude mcp none turns all off; /claude mcp default goes back to the bridge's defaults.")
+	table.insert(lines, "/claude mcp on|off <name> changes one; /claude mcp none turns all off; /claude mcp default goes back to the defaults.")
 	return table.concat(lines, "\n")
 end
 
@@ -4175,14 +4251,14 @@ function Cli.McpCommand(c, rest)
 	if word == "" then
 		Cli.Say(c, Cli.McpReport(c))
 	elseif word == "default" then
-		c.mcp = nil
-		Cli.Out(c, "MCP: this chat uses the bridge's default servers again.")
+		c.mcpSet, c.mcpAllOff = nil, nil
+		Cli.Out(c, "MCP: this chat uses the default servers again.")
 	elseif word == "none" then
 		local missing = Cli.McpMissing()
-		if not missing then c.mcp = {} end
+		if not missing then c.mcpSet, c.mcpAllOff = nil, true end
 		Cli.Out(c, "MCP: " .. (missing or "every server is off for this chat."))
 	else
-		local verb, name = rest:match("^(%S+)%s+(%S+)$")
+		local verb, name = rest:match("^(%S+)%s+(.+)$")
 		local note, err = Cli.SetMcp(c, name, verb:lower() == "on")
 		Cli.Out(c, "MCP: " .. (err or note))
 	end
@@ -4191,7 +4267,7 @@ end
 function Cli.IsMcpCommand(rest)
 	rest = Trim(rest or ""):lower()
 	if rest == "" or rest == "default" or rest == "none" then return true end
-	local verb, name = rest:match("^(%S+)%s+(%S+)$")
+	local verb, name = rest:match("^(%S+)%s+(.+)$")
 	return (verb == "on" or verb == "off") and name ~= nil
 end
 
@@ -4200,17 +4276,19 @@ function Cli.McpMenu(anchor)
 	if not c then return end
 	if not Cli.McpMissing() and type(MenuUtil) == "table" and type(MenuUtil.CreateContextMenu) == "function" then
 		local shown = pcall(MenuUtil.CreateContextMenu, anchor, function(_, root)
-			root:CreateTitle("MCP servers")
-			for _, s in ipairs(run.bridgeMcp) do
-				root:CreateCheckbox(s.name .. "  " .. Cli.McpHealthText(s), function() return Cli.McpOn(c, s) end, function()
-					local _, err = Cli.SetMcp(c, s.name, not Cli.McpOn(c, s))
-					if err then Cli.Out(c, "MCP: " .. err) end
-					ClaudeWoW.Render()
-				end)
+			for _, g in ipairs(Cli.McpGroups()) do
+				root:CreateTitle(g.title)
+				for _, s in ipairs(g.rows) do
+					root:CreateCheckbox(s.label .. "  " .. Cli.McpHealthText(s), function() return Cli.McpOn(c, s) end, function()
+						local _, err = Cli.SetMcp(c, s.id, not Cli.McpOn(c, s))
+						if err then Cli.Out(c, "MCP: " .. err) end
+						ClaudeWoW.Render()
+					end)
+				end
 			end
 			root:CreateDivider()
 			root:CreateButton("Turn all off", function() Cli.McpCommand(c, "none") end)
-			root:CreateButton("Use the bridge's defaults", function() Cli.McpCommand(c, "default") end)
+			root:CreateButton("Use the defaults", function() Cli.McpCommand(c, "default") end)
 		end)
 		if shown then return end
 	end
@@ -4245,11 +4323,15 @@ function Cli.McpButtonTooltip(b)
 	local c = ActiveChat()
 	GameTooltip:SetOwner(b, ui.chatTitle and "ANCHOR_BOTTOMRIGHT" or "ANCHOR_TOP")
 	GameTooltip:SetText("MCP servers")
+	local on, total = Cli.McpCounts(c)
+	GameTooltip:AddLine(on .. " of " .. total .. " on for this chat. Your own Claude and Codex servers are on unless you turn them off here.", 0.8, 0.8, 0.8, true)
+	local warn = {}
 	for _, s in ipairs(run.bridgeMcp or {}) do
-		GameTooltip:AddDoubleLine((Cli.McpOn(c, s) and "on   " or "off  ") .. s.name, Cli.McpHealthText(s), 1, 1, 1)
+		if Cli.McpOn(c, s) and (s.health == "failed" or s.health == "needs-auth") then table.insert(warn, s.label .. ": " .. Cli.McpHealthText(s)) end
 	end
+	for _, line in ipairs(warn) do GameTooltip:AddLine(line, 1, 1, 1) end
 	if c and Cli.McpUnsupported(c) then GameTooltip:AddLine(ChatAgentName(c) .. " does not use MCP servers.", 1, 0.6, 0.2, true) end
-	GameTooltip:AddLine("Click to turn servers on or off for this chat. Health is from the last Claude run that loaded them.", 0.8, 0.8, 0.8, true)
+	GameTooltip:AddLine("Click to turn servers on or off for this chat.", 0.8, 0.8, 0.8, true)
 	GameTooltip:Show()
 end
 
