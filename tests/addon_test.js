@@ -1344,6 +1344,23 @@ test("protected slash commands typed in the game's box or a whisper tab reach th
   assert.equal(replacedFunctions(vm), '');
 });
 
+test("slash commands: /skill typed in a coding chat's whisper tab goes to that chat and never to the server", () => {
+  const vm = whisperVM();
+  vm.run('SlashCmdList.CLAUDE("-c --agent claude")');
+  vm.run('SlashCmdList.CLAUDE("config whisper on")');
+  vm.run('ClaudeWoWDB.chats[1].cwd = "/Users/me/every"; ClaudeWoWDB.chats[1].plugin = "claude-code"');
+  vm.run('ClaudeWoW.ApplySkills({ "babysit-pr" })');
+  vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
+  const sentBefore = vm.num('#STUB.chatSent');
+  typeIn(vm, 'ChatFrame11EditBox', '/babysit-pr 18632');
+  const recs = stripRecords(vm).filter(r => r.text === '/babysit-pr 18632');
+  assert.equal(recs.length, 1, 'the command reached the chat once');
+  const rec = recs[0];
+  assert.equal(rec.chat, vm.evaluate('ClaudeWoWDB.chats[1].id'));
+  assert.equal(vm.num('#STUB.chatSent'), sentBefore, 'nothing reached the server');
+  assert.equal(vm.num('STUB.serverSends'), 0);
+});
+
 test("the fallback chat list pages 16 at a time and opens on the active chat's page", () => {
   const vm = whisperVM();
   vm.run('for i = 2, 20 do ClaudeWoW.NewChat("c" .. i) end');
@@ -2328,6 +2345,84 @@ test('a new chat asks the bridge for a title with its first message and takes th
   );
   vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
   assert.equal(vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].name'), 'Mine', 'a name the player chose is kept');
+});
+
+function skillsVM(skills = '"babysit-pr", "fresh-eyes", "review-prs"') {
+  const vm = newVM();
+  login(vm);
+  vm.run('SLASH_OTHERADDON1 = "/review-prs"; SlashCmdList.OTHERADDON = function() STUB.otherAddon = true end');
+  vm.run('ClaudeWoWDB.chats[1].cwd = "/Users/me/every"; ClaudeWoWDB.chats[1].plugin = "claude-code"');
+  vm.run('STUB.RunTimers()');
+  nextSlot(vm, `{ now = time(), cwd = "/Users/me/every", skills = { ${skills} }, replies = {} }`);
+  vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
+  assert.equal(vm.evaluate('ClaudeWoW.IsConnected()'), 'true');
+  return vm;
+}
+
+test('slash commands: a chat with no plugin of its own follows the bridge default, so it takes them when the default is claude-code and refuses them when it is ask', () => {
+  for (const [dflt, sent] of [
+    ['claude-code', true],
+    ['ask', false],
+  ]) {
+    const vm = newVM();
+    login(vm);
+    vm.run('ClaudeWoWDB.chats[1].cwd = ""; ClaudeWoWDB.chats[1].plugin = ""');
+    vm.run('STUB.RunTimers()');
+    nextSlot(vm, `{ now = time(), cwd = "/Users/me/every", plugin = "${dflt}", plugins = { "ask", "claude-code" }, skills = { "babysit-pr" }, replies = {} }`);
+    vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
+    vm.run('SlashCmdList.CLAUDEWOW_SKILL_BABYSIT_PR("7")');
+    assert.equal(!!stripRecords(vm).find(r => r.text === '/babysit-pr 7'), sent, dflt);
+  }
+});
+
+test('slash commands: each factory skill from the bridge becomes a game slash command that sends /skill args to the coding chat; a command another addon owns is left alone', () => {
+  const vm = skillsVM();
+  assert.equal(vm.evaluate('SLASH_CLAUDEWOW_SKILL_BABYSIT_PR1'), '/babysit-pr');
+  assert.equal(vm.evaluate('SLASH_CLAUDEWOW_SKILL_RUNS1'), '/runs');
+  assert.equal(vm.evaluate('SLASH_CLAUDEWOW_SKILL_STOP1'), '/stop');
+  assert.equal(vm.evaluate('SlashCmdList.CLAUDEWOW_SKILL_REVIEW_PRS'), null, '/review-prs belongs to another addon');
+  vm.run('SlashCmdList.CLAUDEWOW_SKILL_BABYSIT_PR("  18632 ")');
+  const rec = stripRecords(vm).find(r => r.text === '/babysit-pr 18632');
+  assert.ok(rec, 'the command goes out as the message text');
+  assert.equal(rec.cwd, '/Users/me/every');
+  assert.match(rec.flags, /plugin=claude-code/);
+});
+
+test('slash commands: a general chat refuses them, and a skill the bridge stopped listing is refused at use', () => {
+  const vm = skillsVM();
+  vm.run('ClaudeWoWDB.chats[1].cwd = ""; ClaudeWoWDB.chats[1].plugin = ""');
+  vm.run('SlashCmdList.CLAUDEWOW_SKILL_BABYSIT_PR("12")');
+  assert.ok(!stripRecords(vm).some(r => r.text === '/babysit-pr 12'), 'nothing is sent from a general chat');
+  assert.match(vm.evaluate('table.concat(STUB.prints, "\\n")'), /\/babysit-pr runs in a coding chat/);
+  vm.run('ClaudeWoWDB.chats[1].cwd = "/Users/me/every"; ClaudeWoWDB.chats[1].plugin = "claude-code"');
+  vm.run('ClaudeWoW.ApplySkills({ "fresh-eyes" })');
+  vm.run('SlashCmdList.CLAUDEWOW_SKILL_BABYSIT_PR("12")');
+  assert.ok(!stripRecords(vm).some(r => r.text === '/babysit-pr 12'));
+  assert.match(vm.evaluate('table.concat(STUB.prints, "\\n")'), /\/babysit-pr is not a factory skill on this bridge right now/);
+  vm.run('ClaudeWoW.ApplySkills(nil)');
+  vm.run('SlashCmdList.CLAUDEWOW_SKILL_RUNS("")');
+  assert.match(vm.evaluate('table.concat(STUB.prints, "\\n")'), /\/runs is not a factory skill/, 'with the factory off even /runs is refused');
+});
+
+test('slash commands: Tab in the input completes a command name, lists the choices when several match, and does nothing in a general chat or mid-message', () => {
+  const vm = skillsVM();
+  vm.run('ClaudeWoW.Toggle()');
+  const tab = text => vm.run(`ClaudeWoWInput:SetText(${JSON.stringify(text)}); ClaudeWoWInput:GetScript("OnTabPressed")(ClaudeWoWInput)`);
+  const input = () => vm.evaluate('ClaudeWoWInput:GetText()');
+  const last = () => vm.evaluate('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history].text');
+  tab('/bab');
+  assert.equal(input(), '/babysit-pr ');
+  assert.equal(vm.num('ClaudeWoWInput.cursor'), 12);
+  tab('/r');
+  assert.equal(input(), '/r', 'two commands start with r');
+  assert.equal(last(), 'Commands: /runs, /review-prs');
+  tab('/zz');
+  assert.match(last(), /^No command starts with \/zz\. Commands: \/runs, \/stop, \/babysit-pr, \/fresh-eyes, \/review-prs$/);
+  tab('fix /bab');
+  assert.equal(input(), 'fix /bab');
+  vm.run('ClaudeWoWDB.chats[1].cwd = ""; ClaudeWoWDB.chats[1].plugin = ""');
+  tab('/bab');
+  assert.equal(input(), '/bab', 'a general chat has no commands');
 });
 
 function connectIn(vm, cwd) {
