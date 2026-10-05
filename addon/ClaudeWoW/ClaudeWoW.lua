@@ -553,6 +553,34 @@ local function AddHistory(chat, role, text, id, denied, agent, macros)
 	end
 end
 
+function ClaudeWoW.ApplyMirror(list)
+	if type(list) ~= "table" then return end
+	local changed = false
+	for _, e in ipairs(list) do
+		local c = type(e) == "table" and type(e.chat) == "string" and FindChat(e.chat) or nil
+		local seq = c and tonumber(e.seq)
+		if seq and seq > (c.mirrorSeq or 0) then
+			local first = (c.mirrorSeq or 0) + 1
+			if c.mirrorSeq and seq > first then
+				AddHistory(c, "system", (seq - first) .. " earlier message(s) are in Discord.")
+			end
+			local text = tostring(e.text or "")
+			if e.role == "user" then
+				AddHistory(c, "user", "(Discord) " .. text)
+			elseif e.role == "assistant" then
+				local denied = type(e.denied) == "table" and #e.denied > 0 and e.denied or nil
+				AddHistory(c, "assistant", text, nil, denied, e.agent ~= "" and e.agent or nil)
+			else
+				AddHistory(c, "system", text)
+			end
+			c.mirrorSeq = seq
+			if db.activeChat ~= c.id then c.unread = (c.unread or 0) + 1 end
+			changed = true
+		end
+	end
+	if changed then ClaudeWoW.Render() end
+end
+
 local function SlotName(i)
 	return string.format("%s%03d", SLOT_PREFIX, i)
 end
@@ -2149,6 +2177,7 @@ local function TryLoadSlot(why)
 		ClaudeWoW.ApplyProjects(data.projects, data.home)
 		ClaudeWoW.ApplySkills(data.skills)
 		run.bridgeDiscord = data.discord == true
+		ClaudeWoW.ApplyMirror(data.mirror)
 		ClaudeWoW.ApplyMcp(data.mcp)
 		local acked = ClaudeWoW.ApplyAcks(data.acks)
 		ApplyTransport(data)
@@ -2379,6 +2408,7 @@ local function ProcessInbox()
 	ClaudeWoW.ApplyProjects(inbox.projects, inbox.home)
 	ClaudeWoW.ApplySkills(inbox.skills)
 	run.bridgeDiscord = inbox.discord == true
+	ClaudeWoW.ApplyMirror(inbox.mirror)
 	ClaudeWoW.ApplyMcp((tonumber(inbox.now) or 0) >= time() - Q.INBOX_FRESH_SECONDS and inbox.mcp or nil)
 	ApplyTransport(inbox)
 	ClaudeWoW.Version.Apply(inbox.bridge, inbox.now)
@@ -7803,6 +7833,7 @@ function Cli.SessionEntries()
 					kind = kind, id = e.id, name = (chat and not e.running) and chat.name or title, alias = alias,
 					cwd = e.cwd, branch = e.branch, agent = e.agent, plugin = e.plugin, at = e.at,
 					live = e.live, running = e.running, restart = e.restart, chat = chat and chat.id or nil,
+					bridgeChat = (not chat and e.chat ~= "") and e.chat or nil,
 					handoff = e.handoff, recap = e.recap,
 				}
 				table.insert(kind == "live" and live or (kind == "deaf" and deaf or rest), entry)
@@ -7980,6 +8011,7 @@ function Cli.AttachTo(e)
 	end
 	local name = (e.name ~= "" and e.name or e.id:sub(1, 8)):sub(1, 24)
 	c = AddChat(name, "")
+	if not e.live and type(e.bridgeChat) == "string" and e.bridgeChat:match("^[%w]+$") and not FindChat(e.bridgeChat) then c.id = e.bridgeChat end
 	c.plugin = ""
 	c.agent = ""
 	if e.live then

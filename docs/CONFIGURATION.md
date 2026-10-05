@@ -294,6 +294,7 @@ The bot token comes from `CLAUDE_WOW_DISCORD_BOT_TOKEN`, else from `~/.claude-wo
 - In game: `/claude discord` on a coding chat creates a thread, posts the last 5 messages as a recap, and links the two. Game replies then post to the thread too.
 - Replies go out in pieces of at most 1900 characters. `@everyone`, `@here` and user and role mentions are defused, and game tokens are stripped. A run that hits a denied tool says so and asks you to grant it in game.
 - A linked chat whose session started without game context (for example from Discord while the game was closed) keeps running without it, so starting the game does not start a new session.
+- Messages typed in Discord, and their replies, show in the game chat tagged "(Discord)" on the addon's next slot read, which can be after your next message. The bridge sends the last 10 per linked chat (slot field `mirror`); when more came in than that, the chat says how many are only in Discord. A permission ask from a Discord turn keeps its Allow button in game. Attaching a Discord-started chat with `/claude -r` keeps its chat id, so both sides stay linked.
 - Deleting a chat in game unlinks its thread and says so there.
 - What leaves the machine: reply and progress text, which can include file contents and paths. No game context, image or file is posted.
 
