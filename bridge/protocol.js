@@ -324,6 +324,9 @@ function parseFlags(flags) {
     } else if (tok.startsWith('resume=')) {
       const v = tok.slice(7).trim();
       if (RESUME_REF_RE.test(v)) out.resume = v;
+    } else if (tok.startsWith('char=')) {
+      const v = fromHex(tok.slice(5).trim()).trim();
+      if (v && v.length <= 64 && !/[\x00-\x1f\x7f\s]/.test(v)) out.reportedChar = v;
     } else if (tok.startsWith('live=')) {
       const v = fromHex(tok.slice(5).trim()).trim().slice(0, 80);
       if (v) out.liveTarget = v;
@@ -555,7 +558,7 @@ function parseOutbox(src) {
   const opts = b.match(/\["opts"\]\s*=\s*"([0-9a-fA-F]*)"/);
   if (opts && opts[1]) {
     const f = parseFlags(fromHex(opts[1]));
-    for (const k of ['model', 'effort', 'permissionMode', 'addDirs', 'mcp', 'resume', 'liveTarget', 'addonVersion', 'addonProto'])
+    for (const k of ['model', 'effort', 'permissionMode', 'addDirs', 'mcp', 'resume', 'liveTarget', 'addonVersion', 'addonProto', 'reportedChar'])
       if (f[k] !== undefined) job[k] = f[k];
   }
   return job;
@@ -1265,7 +1268,9 @@ function luaTable(globalName, records, opts = {}) {
   if (opts.widgets) lines.push(luaWidgets(opts.widgets));
   const restore = opts.restore;
   if (restore) {
-    lines.push('\trestore = {', `\t\ttoken = ${luaStr(restore.token)},`, '\t\tchats = {');
+    lines.push('\trestore = {', `\t\ttoken = ${luaStr(restore.token)},`);
+    if (restore.char) lines.push(`\t\tchar = ${luaStr(restore.char)},`);
+    lines.push('\t\tchats = {');
     for (const c of restore.chats) {
       lines.push(
         '\t\t\t{',
@@ -1451,7 +1456,9 @@ function parseMapFile(src) {
 }
 
 function luaMap(map) {
-  const lines = ['\tmap = {', `\t\tepoch = ${luaStr(map.epoch)},`, `\t\tversion = ${Number(map.version) || 0},`, '\t\tlayers = {'];
+  const lines = ['\tmap = {', `\t\tepoch = ${luaStr(map.epoch)},`, `\t\tversion = ${Number(map.version) || 0},`];
+  if (map.char) lines.push(`\t\tchar = ${luaStr(map.char)},`);
+  lines.push('\t\tlayers = {');
   for (const [name, l] of Object.entries(map.layers || {})) {
     lines.push(
       `\t\t\t{ name = ${luaStr(name)}, title = ${luaStr(l.title)}, ordered = ${l.ordered ? 'true' : 'false'}, loop = ${l.loop ? 'true' : 'false'}, points = {`,
