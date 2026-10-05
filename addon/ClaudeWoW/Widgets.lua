@@ -129,6 +129,8 @@ local TOOLTIP_METHODS = {
 	"SetInventoryItem", "SetBagItem", "SetMinimumWidth", "SetPoint", "ClearAllPoints",
 }
 
+local UNIT_WRITER_VERBS = { "Set", "Switch", "Clear", "Popup", "Frame", "Select", "Toggle", "Use", "Cast", "Target" }
+
 local READ_ONLY_MEMBER_PATTERNS = { "^Get%u", "^Is%u", "^Has%u", "^Can%u", "^Does%u", "^Find%u", "^Are%u", "^Should%u" }
 
 local function NameSet(names)
@@ -142,6 +144,7 @@ local LUA_FUNCTION = NameSet(LUA_FUNCTIONS)
 local GAME_FUNCTION = NameSet(GAME_FUNCTIONS)
 local DATA_TABLE = NameSet(DATA_TABLES)
 local TEMPLATE = NameSet(TEMPLATES)
+local UNIT_WRITER_VERB = NameSet(UNIT_WRITER_VERBS)
 
 local function Blocked(name)
 	return function()
@@ -250,14 +253,34 @@ local function NewMembrane(widget)
 		return nil
 	end
 
-	local function Export(value)
+	local function IsPlainTable(value)
+		return getmetatable(value) == nil and type(rawget(value, 0)) ~= "userdata"
+	end
+
+	local ExportWithin
+	local function ExportPlainTable(source, copies)
+		if copies[source] then return copies[source] end
+		local copy = {}
+		copies[source] = copy
+		for key, value in pairs(source) do
+			local exportedKey = ExportWithin(key, copies)
+			if exportedKey ~= nil then copy[exportedKey] = ExportWithin(value, copies) end
+		end
+		return copy
+	end
+
+	ExportWithin = function(value, copies)
 		local kind = type(value)
 		if kind == "function" then return nil end
 		if kind ~= "table" then return value end
 		if realOf[value] ~= nil then return value end
 		if proxyOf[value] then return proxyOf[value] end
-		if getmetatable(value) == nil and type(rawget(value, 0)) ~= "userdata" then return value end
+		if IsPlainTable(value) then return ExportPlainTable(value, copies) end
 		return ExportObject(value)
+	end
+
+	local function Export(value)
+		return ExportWithin(value, {})
 	end
 
 	local function Import(value)
@@ -464,13 +487,19 @@ local function WidgetTimers(widget)
 	})
 end
 
+local function IsUnitReader(key)
+	if not key:find("^Unit%u%a*$") then return false end
+	local verb = key:match("^Unit(%u%l*)")
+	return not UNIT_WRITER_VERB[verb]
+end
+
 local function Resolve(key, membrane)
 	local value = _G[key]
 	local kind = type(value)
 	if kind == "string" or kind == "number" or kind == "boolean" then return value end
 	if kind == "function" then
 		if LUA_FUNCTION[key] then return value end
-		if GAME_FUNCTION[key] or key:find("^Unit%u%a*$") then return membrane.ExportFunction(value) end
+		if GAME_FUNCTION[key] or IsUnitReader(key) then return membrane.ExportFunction(value) end
 		return nil
 	end
 	if kind ~= "table" then return nil end

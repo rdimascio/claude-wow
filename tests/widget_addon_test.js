@@ -31,6 +31,14 @@ RAID_CLASS_COLORS = { HUNTER = { r = 0.67, g = 0.83, b = 0.45, colorStr = "ffabd
 GameFontNormal = CreateFrame("Font", "GameFontNormal")
 GameFontNormal.GetObjectType = function() return "Font" end
 function GameTooltip.SetOwner(self, owner, anchor) self.owner, self.anchor = owner, anchor end
+C_NamePlate = { GetNamePlates = function()
+  local plates = { DEFAULT_CHAT_FRAME.editBox, nested = { chat = DEFAULT_CHAT_FRAME, run = RunScript, count = 2 } }
+  plates.nested.back = plates
+  plates[DEFAULT_CHAT_FRAME] = "frame key"
+  return plates
+end }
+function UnitSetRole(unit, role) UNIT_ROLE_SET = role end
+function UnitPowerMax(unit) return 100 end
 function GameTooltip.AddLine(self, line) self.lines = self.lines or {}; table.insert(self.lines, line) end
 `;
 
@@ -278,4 +286,38 @@ test('a removed widget stops the event handlers on its container, and a rerun do
   vm.run('STUB.FireEvent("PLAYER_TARGET_CHANGED")');
   assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.counter.count'), '2');
   assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.counter.hooks'), '2');
+});
+
+test('a getter or an event payload cannot hand a widget a Blizzard frame inside a table', () => {
+  const vm = newVM(savedWidgets([
+    ['plates', [
+      'local ui = ...',
+      'local plates = C_NamePlate.GetNamePlates()',
+      'assert(plates.nested.count == 2, "plain data is lost")',
+      'assert(plates.nested.back == plates, "the cycle is not kept")',
+      'assert(plates.nested.run == nil, "a function leaked")',
+      'assert(plates.nested.chat == nil, "the chat frame leaked")',
+      'for key in pairs(plates) do assert(type(key) ~= "table", "a frame key leaked") end',
+      'local eb = plates[1]',
+      'eb:SetText("/run WIDGET_ESCAPED = true")',
+      'eb:GetScript("OnEnterPressed")(eb)',
+    ].join('\n')],
+    ['payload', [
+      'local ui = ...',
+      'local f = CreateFrame("Frame")',
+      'f:RegisterEvent("PLAYER_TARGET_CHANGED")',
+      'f:SetScript("OnEvent", function(self, event, payload) ui.db.got = tostring(payload.count) ui.db.leaked = tostring(payload.frame ~= nil) end)',
+    ].join('\n')],
+    ['role', 'local ui = ...\nassert(UnitPowerMax("player") == 100)\nUnitSetRole("player", "TANK")'],
+  ]));
+  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("plates")'), 'failed');
+  assert.match(vm.evaluate('select(2, ClaudeWoWWidgets.Status("plates"))'), /attempt to index/);
+  vm.run('STUB.FireEvent("PLAYER_TARGET_CHANGED", { frame = DEFAULT_CHAT_FRAME.editBox, count = 3 })');
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.payload.got'), '3');
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.payload.leaked'), 'false');
+  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("role")'), 'failed');
+  assert.match(vm.evaluate('select(2, ClaudeWoWWidgets.Status("role"))'), /UnitSetRole/);
+  assert.equal(vm.evaluate('UNIT_ROLE_SET'), null);
+  assert.equal(vm.evaluate('WIDGET_ESCAPED'), null);
+  assert.equal(vm.evaluate('CHAT_LINE_SENT'), null);
 });
