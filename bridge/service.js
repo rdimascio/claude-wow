@@ -409,7 +409,7 @@ function terminalIdentity(p, b) {
   return alive(p.pid) ? 'match' : 'gone';
 }
 
-function preflight(d, platform = process.platform, b = backend(platform)) {
+function preflight(d, b = backend()) {
   const problems = [];
   const home = H.resolve();
   if (!fs.existsSync(home.config)) {
@@ -860,7 +860,7 @@ function main(argv, { platform = process.platform, out = console.log, err = cons
   try {
     switch (cmd) {
       case 'install': {
-        const problems = preflight(d, platform, b);
+        const problems = preflight(d, b);
         if (problems.length) {
           for (const p of problems) err(`claude-wow service: ${p}`);
           return 1;
@@ -947,6 +947,9 @@ module.exports = {
   CLOCK_SLACK_MS,
   winProcessQuery,
   winVerifiedKill,
+  POWERSHELL,
+  POWERSHELL_ARGS,
+  IDENTITY_CHANGED_EXIT,
   parseWinProcess,
   supervisorIdentity,
   agentRunIdentity,

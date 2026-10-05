@@ -7,11 +7,8 @@ const { spawn } = require('child_process');
 const S = require('../bridge/service');
 
 const WINDOWS_ONLY = { skip: process.platform !== 'win32' && 'runs the real PowerShell scripts, Windows only', timeout: 120000 };
-const POWERSHELL = 'powershell.exe';
-const POWERSHELL_ARGS = ['-NoProfile', '-NonInteractive', '-Command'];
 const STALE_BY_MS = 5000;
 const EXIT_WAIT_MS = 15000;
-const IDENTITY_CHANGED_EXIT = 3;
 
 function scratch() {
   const dir = path.join(__dirname, 'tmp', 'service-windows');
@@ -52,7 +49,7 @@ function stillRunning(child) {
 }
 
 function powershell(script) {
-  return S.backend('win32').exec(POWERSHELL, [...POWERSHELL_ARGS, script]);
+  return S.backend('win32').exec(S.POWERSHELL, [...S.POWERSHELL_ARGS, script]);
 }
 
 function cleanup(children) {
@@ -90,15 +87,15 @@ test('Windows, real PowerShell: verify matches the recorded supervisor and rejec
     assert.equal(win.verify({ pid: fake.child.pid, started: staleStarted, mode: 'service' }), 'stale', 'created after the recorded start: a reused pid');
     assert.equal(win.verify({ pid: other.pid, started: Date.now(), mode: 'service' }), 'stale', 'another program behind the pid');
     assert.ok(await exited(gone), 'the short-lived child exits');
-    assert.notEqual(win.verify({ pid: gone.pid, started: Date.now(), mode: 'service' }), 'match', 'a finished process is never the supervisor');
+    assert.equal(win.verify({ pid: gone.pid, started: Date.now(), mode: 'service' }), 'gone', 'a finished process is never the supervisor');
     const d = { run: path.join(__dirname, 'tmp', 'service-windows', 'run') };
     S.writePid(d, { pid: fake.child.pid, started: fake.started, mode: 'terminal' });
     assert.ok(
-      S.preflight(d, 'win32').some(p => p.includes(`terminal (pid ${fake.child.pid})`)),
+      S.preflight(d, S.backend('win32')).some(p => p.includes(`terminal (pid ${fake.child.pid})`)),
       'install is blocked by the verified terminal bridge',
     );
     S.writePid(d, { pid: fake.child.pid, started: staleStarted, mode: 'terminal' });
-    assert.ok(!S.preflight(d, 'win32').some(p => p.includes(`pid ${fake.child.pid}`)), 'a reused pid does not block install');
+    assert.ok(!S.preflight(d, S.backend('win32')).some(p => p.includes(`pid ${fake.child.pid}`)), 'a reused pid does not block install');
   } finally {
     cleanup([fake.child, other, gone]);
   }
@@ -112,7 +109,7 @@ test('Windows, real PowerShell: the verified kill ends only the process whose st
   const other = spawnOtherProgram();
   try {
     const refused = powershell(S.winVerifiedKill({ pid: target.child.pid, started: staleStarted }));
-    assert.equal(refused.status, IDENTITY_CHANGED_EXIT, refused.out);
+    assert.equal(refused.status, S.IDENTITY_CHANGED_EXIT, refused.out);
     assert.ok(stillRunning(target.child), 'a start time later than the record kills nothing');
 
     const killed = powershell(S.winVerifiedKill({ pid: target.child.pid, started: target.started }));
@@ -122,7 +119,7 @@ test('Windows, real PowerShell: the verified kill ends only the process whose st
     assert.ok(stillRunning(other), 'another program is left alone');
 
     const again = powershell(S.winVerifiedKill({ pid: target.child.pid, started: target.started }));
-    assert.notEqual(again.status, 0, 'a pid that is gone is never reported as killed');
+    assert.equal(again.status, S.IDENTITY_CHANGED_EXIT, 'a pid that is gone is never reported as killed');
     assert.ok(stillRunning(bystander.child));
   } finally {
     cleanup([target.child, bystander.child, other]);

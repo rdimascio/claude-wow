@@ -559,7 +559,7 @@ test('Windows install preflight: a terminal bridge blocks install only when its 
   const record = { pid: 4242, bridgePid: 4243, started: STARTED, mode: 'terminal' };
   const terminalProblems = (name, fake) => {
     const d = winDirs(name, record);
-    return { d, problems: S.preflight(d, 'win32', fake.b).filter(p => !/config\.json is missing/.test(p)) };
+    return { d, problems: S.preflight(d, fake.b).filter(p => !/config\.json is missing/.test(p)) };
   };
   const reused = fakeWindows({ alivePids: [4242], processes: { 4242: { created: STARTED + 3_600_000, command: '"C:\\Program Files\\Editor\\editor.exe"' } } });
   assert.deepEqual(terminalProblems('win-pre-reused', reused).problems, [], 'a pid Windows gave to another program does not block install');
@@ -581,7 +581,7 @@ test('Windows install preflight: a terminal bridge blocks install only when its 
   const service = fakeWindows({ alivePids: [4242], processes: { 4242: SUPERVISOR } });
   const sd = winDirs('win-pre-service', { ...record, mode: 'service' });
   assert.deepEqual(
-    S.preflight(sd, 'win32', service.b).filter(p => !/config\.json is missing/.test(p)),
+    S.preflight(sd, service.b).filter(p => !/config\.json is missing/.test(p)),
     [],
   );
   assert.deepEqual(service.state.queries, [], 'a service record is left to install');
@@ -590,9 +590,9 @@ test('Windows install preflight: a terminal bridge blocks install only when its 
 test('install preflight off Windows: a live terminal pid blocks install, a dead one does not', () => {
   const d = winDirs('posix-pre', { pid: process.pid, started: STARTED, mode: 'terminal' });
   const terminal = ps => ps.filter(p => !/config\.json is missing/.test(p));
-  assert.match(terminal(S.preflight(d, 'linux', S.backend('linux')))[0], new RegExp(`terminal \\(pid ${process.pid}\\)`));
+  assert.match(terminal(S.preflight(d, S.backend('linux')))[0], new RegExp(`terminal \\(pid ${process.pid}\\)`));
   fs.writeFileSync(S.pidFile(d), JSON.stringify({ pid: 2147483000, started: STARTED, mode: 'terminal' }));
-  assert.deepEqual(terminal(S.preflight(d, 'linux', S.backend('linux'))), []);
+  assert.deepEqual(terminal(S.preflight(d, S.backend('linux'))), []);
 });
 
 test('Windows orphaned agent run: only a process created before the run started and named by its marker is ended, through the verified kill', () => {
