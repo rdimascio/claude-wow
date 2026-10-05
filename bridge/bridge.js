@@ -811,6 +811,7 @@ function sharedSlotFields(urgent) {
     projects: projectList(),
     mcp: mcpSlotList(),
     home: os.homedir(),
+    skills: FACTORY.slotSkills(FACTORY.settings(pluginsCfg['claude-code'])),
     discord: !!discordHub,
     mirror: discordMirror(),
     cwd: DEFAULT_CWD,

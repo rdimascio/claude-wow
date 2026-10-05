@@ -113,6 +113,12 @@ test('luaTable carries the project list with labels and the home folder, quoted 
   assert.match(lua, /^\thome = "\/Users\/me",$/m);
 });
 
+test('luaTable carries the factory skill names only when there are some', () => {
+  assert.ok(!/skills =/.test(P.luaTable('X', [], {})));
+  assert.ok(!/skills =/.test(P.luaTable('X', [], { skills: [] })));
+  assert.match(P.luaTable('X', [], { skills: ['babysit-pr', 'fresh-eyes'] }), /^\tskills = \{ "babysit-pr", "fresh-eyes" \},$/m);
+});
+
 test('systemPrompt always asks for the TL;DR block, and adds the game rules and primer while a context is sent', () => {
   // Without a context the prompt is only the reply-format rule.
   for (const empty of ['', '  \n ', undefined]) {

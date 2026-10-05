@@ -1201,6 +1201,9 @@ function luaTable(globalName, records, opts = {}) {
     lines.splice(lines.length - 1, 0, `\tmcp = { ${rows.join(', ')} },`);
   }
   if (opts.home) lines.splice(lines.length - 1, 0, `\thome = ${luaStr(opts.home)},`);
+  if (Array.isArray(opts.skills) && opts.skills.length) {
+    lines.splice(lines.length - 1, 0, `\tskills = { ${opts.skills.map(luaStr).join(', ')} },`);
+  }
   if (opts.discord === true) lines.splice(lines.length - 1, 0, '\tdiscord = true,');
   if (Array.isArray(opts.mirror) && opts.mirror.length) {
     const rows = opts.mirror
