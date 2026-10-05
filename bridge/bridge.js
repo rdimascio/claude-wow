@@ -2524,9 +2524,13 @@ function runAgent(job, opts = {}) {
     job.noGameContext = true;
   const rulesHash = P.systemRulesHash(gameContext(job), rulesOpts);
   if (agentId === 'claude' && state.sessions[skey] && P.rulesChanged(state, skey, rulesHash)) {
-    log(`${tag} system prompt rules changed (${state.sessionRules[skey]} -> ${rulesHash}): new session`);
-    delete state.sessions[skey];
-    delete state.sessions[key];
+    if (opts.thread) {
+      log(`${tag} system prompt rules changed (${state.sessionRules[skey]} -> ${rulesHash}): thread chat, the session is kept`);
+    } else {
+      log(`${tag} system prompt rules changed (${state.sessionRules[skey]} -> ${rulesHash}): new session`);
+      delete state.sessions[skey];
+      delete state.sessions[key];
+    }
   }
   maybeOfferRestore(job);
   noteMessage(job, 'user', job.text);
@@ -2555,7 +2559,7 @@ function runAgent(job, opts = {}) {
   const system = P.systemPrompt(ctx, primer(), { tools: pluginTools, surfaces: plugin.surfaces, voice: plugin.voice });
   const systemShort = P.systemPrompt(ctx, '', { surfaces: plugin.surfaces, voice: plugin.voice });
   const devNote = takeDevNote(job);
-  const prompt = P.messagePrompt(devNote ? `${devNote}\n\n${job.text}` : job.text, ctx, { image });
+  const prompt = P.messagePrompt(devNote ? `${devNote}\n\n${job.text}` : job.text, ctx, { image, rules: opts.turnRules });
   const promptFile = path.join(TMP_DIR, `prompt-${job.id}-${Date.now().toString(36)}.txt`);
   const input = agent.input({ prompt, system, systemShort, resume, cfg: acfg, images });
   if (input.promptFile !== undefined) {
