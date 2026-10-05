@@ -63,6 +63,33 @@ test('a live reply that lands after a cancel leaves the agent run that took over
   });
 });
 
+test('a late live answer for a deleted chat stays out of the chat that reuses its id', async () => {
+  await withGame({ config: { plugins: { default: 'claude-code', live: { pickupMs: 50, pickupPollMs: 50 } } } }, async h => {
+    await h.client.connect();
+    const session = await connectLiveSession(h);
+    try {
+      const chat = h.client.activeChat().id;
+      const chatId = `${h.client.db().session}:${chat}`;
+      const liveId = h.client.lastSeq() + 1;
+      h.client.send('@live are you there');
+      await h.bridge.waitForLine(new RegExp(`#${liveId}@\\S+ "${SESSION_NAME}" showed no sign of it`));
+      await h.client.waitFor(() => !h.client.activeChat().pendingId, { label: 'the chat free again' });
+
+      h.client.runLua(`ClaudeWoW.DeleteChat(${JSON.stringify(chat)})`);
+      await h.bridge.waitForLine(new RegExp(`forgot chat ${chat}`));
+      assert.equal(h.client.activeChat().id, chat, 'the last chat keeps its id');
+      await h.client.say('@claude-code a fresh start');
+
+      session.reply(chatId, 'the stale live answer');
+      await h.bridge.waitForLine(new RegExp(`#${liveId}@\\S+ late reply dropped: its chat was deleted`));
+      const texts = ((h.transcripts().chats || {})[chat] || { messages: [] }).messages.map(m => m.text);
+      assert.ok(!texts.some(t => t.includes('the stale live answer')), `the reused chat has no stale answer: ${JSON.stringify(texts)}`);
+    } finally {
+      session.close();
+    }
+  });
+});
+
 test.after(() => {
   fs.rmSync(ROOT, { recursive: true, force: true });
 });

@@ -54,6 +54,18 @@ test('state, transcripts, the log and run scratch files are private to the user,
   });
 });
 
+test('the bridge says so when it cannot make an existing run folder private', { skip: process.platform === 'win32' }, async () => {
+  const beforeLaunch = sb => {
+    const loop = path.join(sb.home, 'uijobs');
+    fs.mkdirSync(sb.home, { recursive: true });
+    fs.symlinkSync(loop, loop);
+  };
+  await withGame({ beforeLaunch }, async h => {
+    await h.client.connect();
+    await h.bridge.waitForLine(/could not make \S+uijobs private/);
+  });
+});
+
 test.after(() => {
   fs.rmSync(ROOT, { recursive: true, force: true });
 });

@@ -105,7 +105,7 @@ const PRIVATE_DIR_MODE = 0o700;
 
 function restrictMode(target, mode) {
   if (process.platform === 'win32') return;
-  try { fs.chmodSync(target, mode); } catch {}
+  try { fs.chmodSync(target, mode); } catch (e) { if (e.code !== 'ENOENT') log(`could not make ${target} private (${e.message})`); }
 }
 
 function makePrivateDir(dir) {
@@ -1546,6 +1546,7 @@ function checkedReply(job, reply) {
 
 function lateReply(job, raw) {
   lastActivityAt = Date.now();
+  if (chatDeletedSince(job)) { log(`${tagOf(job)} late reply dropped: its chat was deleted`); return; }
   const { text, summary } = checkedReply(job, P.splitSummary(String(raw || '')));
   noteMessage(job, 'assistant', text);
   publish(`${chatKey(job)}#late`, { chat: job.chat, id: job.id, status: 'done', late: true, text, summary, cwd: job.cwd, agent: job.agent || '', plugin: job.plugin || '', client: job.client }, true);
