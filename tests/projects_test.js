@@ -63,7 +63,8 @@ test('known projects: the default first, then by recency; ~ and trailing slashes
 
 test('known projects: the limit holds and a label never carries Lua-breaking characters', () => {
   const t = tree();
-  const odd = path.join(t.home, 'we"ird]]--');
+  const quote = process.platform === 'win32' ? "'" : '"';
+  const odd = path.join(t.home, `we${quote}ird]]--`);
   fs.mkdirSync(odd);
   const list = PJ.knownProjects({ recent: [{ cwd: odd, at: 2 }, { cwd: t.plain, at: 1 }], home: t.home, tempRoots: [], limit: 1, now: 2 });
   assert.equal(list.length, 1);
