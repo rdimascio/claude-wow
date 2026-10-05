@@ -61,6 +61,7 @@ const GM = require('./goalsmcp');
 const FB = require('./feedback');
 const HO = require('./handoff');
 const FACTORY = require('./factory');
+const NT = require('./notify');
 const GD = require('./gamedata');
 const DSYNC = require('./datasync');
 const GR = require('./gamerefs');
@@ -123,6 +124,8 @@ try {
   console.error(`Cannot read ${CONFIG_FILE} (${e.message}).\nRun "claude-wow setup" (node setup.js in the claude-wow folder) first.`);
   process.exit(2); // the supervisor doesn't restart on 2
 }
+const NOTIFY = NT.settings(cfg.notify, NT.takeSecret(process.env));
+const notifier = NT.createNotifier({ ...NOTIFY, log: line => log(line) });
 const once = argv.includes('--once');
 const injectIdx = argv.indexOf('--inject');
 const inject = injectIdx >= 0 ? argv[injectIdx + 1] : null;
@@ -558,7 +561,7 @@ function shutdown(sig, exitCode) {
   const n = kids.filter(PR.alive).length;
   log(`${sig}: stopping${n ? `; ending ${n} child process${n === 1 ? '' : 'es'} (SIGTERM, SIGKILL after ${KILL_GRACE_MS} ms)` : ''}`);
   PR.killAll(kids, { graceMs: KILL_GRACE_MS, log }, () =>
-    voteClosing.then(() => process.exit(exitCode !== undefined ? exitCode : sig === 'SIGINT' ? 130 : 143)),
+    voteClosing.then(() => notifier.flush()).then(() => process.exit(exitCode !== undefined ? exitCode : sig === 'SIGINT' ? 130 : 143)),
   );
 }
 process.on('SIGINT', () => shutdown('SIGINT'));
@@ -1943,7 +1946,13 @@ function checkedReply(job, reply) {
   return { ...reply, text: text.text, summary: RT.checkReply(reply.summary, linked).text };
 }
 
+function notifyFields(job) {
+  const who = GOALS.characterOf(contextTextFor(job));
+  return { character: who ? who.name : '', chat: job.name || '', cwd: job.cwd || '' };
+}
+
 function lateReply(job, raw) {
+  notifier.notify('late', notifyFields(job));
   lastActivityAt = Date.now();
   const { text, summary } = checkedReply(job, P.splitSummary(String(raw || '')));
   noteMessage(job, 'assistant', text);
@@ -2715,6 +2724,7 @@ function finish(job, status, text, session, denied) {
   job.finished = true;
   lastActivityAt = Date.now();
   const owned = running.get(chatKey(job));
+  const ranMs = owned && owned.job === job ? Date.now() - owned.startedAt : NaN;
   if (!owned || owned.job === job) {
     running.delete(chatKey(job));
     if (state.inflight) delete state.inflight[chatKey(job)];
@@ -2766,13 +2776,18 @@ function finish(job, status, text, session, denied) {
   mapShare.onReplyPublished();
   signal(clientFor(job), 'sig', job.id, true);
   tellPluginFinished(plugin, job, { status, text, summary });
+  if (registry.normalize(job.plugin) === 'claude-code') notifier.notify(NT.runEvent(status, denied), { ms: ranMs, ...notifyFields(job) });
   const growth = usage.turns
     ? `, turn ${usage.turns}${usage.ctx ? ', ctx ' + P.tokensLabel(usage.ctx) + (usage.window ? ' of ' + P.tokensLabel(usage.window) : '') : ''}${usage.cost !== undefined ? ', ~$' + usage.cost.toFixed(2) + ' API so far' : ''}`
     : '';
   log(`#${job.id}${job.session ? '@' + job.session : ''} ${status} (${text.length} chars${summary ? ', summary ' + summary.length : ', no summary'}${growth})`);
   lastActivityAt = Date.now();
   drainQueue();
-  if (exitWhenIdle && running.size === 0 && !shuttingDown) process.exit(status === 'done' ? 0 : 1); // under a shutdown, shutdown() exits
+  if (exitWhenIdle && running.size === 0 && !shuttingDown) {
+    const exit = () => process.exit(status === 'done' ? 0 : 1);
+    if (notifier.enabled) notifier.flush().then(exit);
+    else exit();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -3216,6 +3231,9 @@ function banner() {
   console.log(`  agent    : ${DEFAULT_AGENT} (default; chats pick their own with /claude --agent)`);
   for (const id of A.agentIds()) console.log(`  ${id.padEnd(9)}: ${agentLine(id)}`);
   console.log(`  sessions : ${Object.keys(state.sessions).length} saved`);
+  console.log(
+    `  notify   : ${NOTIFY.error || (NOTIFY.url ? `discord on (${NT.redact(NOTIFY.url)}), runs over ${NOTIFY.minRunSeconds}s, ${NOTIFY.detail}` : 'off (notify.discord.webhookUrl)')}`,
+  );
   const ctx = gameContext();
   console.log(
     `  context  : ${cfg.gameContext === false ? 'off (gameContext in config.json)' : ctx ? (ctx.split('\n').find(l => /^Character:/i.test(l)) || ctx.split('\n')[0]).slice(0, 100) : 'none yet (the addon sends it with its hello; /claude config context in game)'}`,
