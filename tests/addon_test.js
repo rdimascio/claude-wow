@@ -714,6 +714,13 @@ test('game chat echo: the summary by default, the first lines without one, the w
     assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].pendingId'), null);
   };
 
+  reply('Merged **two** PRs: https://github.com/o/r/pull/7');
+  assert.ok(prints().includes('|Haddon:claudewow:url:https://github.com/o/r/pull/7|h[PR #7]|h') && !prints().includes('**'), 'the echo renders bold and short links too: ' + prints());
+  vm.run('ClaudeWoWDB.settings.echo = "full"');
+  reply('Full **echo**: https://github.com/o/r/pull/8');
+  assert.ok(prints().includes('|h[PR #8]|h') && !prints().includes('**'), 'and so does the full echo: ' + prints());
+  vm.run('ClaudeWoWDB.settings.echo = "summary"');
+
   // With a summary only the summary is printed; the window keeps the whole reply.
   reply('Long line one\\nLong line two\\nLong line three\\n\\nTL;DR: Renamed foo.\\nTests pass.', 'Renamed foo.\\nTests pass.');
   let out = prints();
@@ -2977,6 +2984,27 @@ test('projects: a chat has none by default; --project, #name and none attach and
 
   vm.run('SlashCmdList.CLAUDE("-c --project none")');
   assert.equal(vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].cwd'), '');
+});
+
+test('the whisper tab and the game chat echo render coding replies the same way: fences skipped, code untouched, links short, cuts on word boundaries', () => {
+  const vm = whisperVM();
+  const chatId = vm.evaluate('ClaudeWoWDB.chats[1].id');
+  vm.run(`ClaudeWoW.Send("merge them")`);
+  const pending = vm.num(`(function() for _, c in ipairs(ClaudeWoWDB.chats) do if c.id == "${chatId}" then return c.pendingId end end end)()`);
+  nextSlot(vm, `{ now = time(), cwd = "", replies = { { chat = "${chatId}", id = ${pending}, status = "done", text = "I merged **PR** https://github.com/o/r/pull/18610.\\n\`\`\`\\necho \`pwd\`\\n\`\`\`", agent = "claude" } } }`);
+  vm.run('STUB.now = STUB.now + 10; STUB.Tick()');
+  const tab = chatTabText(vm, chatId);
+  assert.ok(tab.includes('|Haddon:claudewow:url:https://github.com/o/r/pull/18610|h[PR #18610]|h|r.'), 'a short link in the tab: ' + tab);
+  assert.ok(!tab.includes('**') && tab.includes('echo `pwd`'), 'bold is drawn, code stays as written');
+  assert.ok(!tab.includes('```'), 'no fence line is written');
+  vm.run(`ClaudeWoW.Send("long one")`);
+  const second = vm.num(`(function() for _, c in ipairs(ClaudeWoWDB.chats) do if c.id == "${chatId}" then return c.pendingId end end end)()`);
+  const long = 'x'.repeat(280) + ' https://github.com/o/r/pull/18632 rest' + '\\nmore'.repeat(9);
+  nextSlot(vm, `{ now = time(), cwd = "", replies = { { chat = "${chatId}", id = ${second}, status = "done", text = "${long}", agent = "claude" } } }`);
+  vm.run('STUB.now = STUB.now + 10; STUB.Tick()');
+  const preview = chatTabText(vm, chatId);
+  assert.ok(preview.includes('x'.repeat(280) + '...'), 'a preview line is cut before the URL: ' + preview.slice(-400));
+  assert.ok(!/pull\/18\d{0,2}\|h/.test(preview), 'never into a link with a shorter, wrong PR number');
 });
 
 test('a whisper reply waits briefly for an item the client has not loaded, then shows the real link; it gives up after three tries with a plain id', () => {

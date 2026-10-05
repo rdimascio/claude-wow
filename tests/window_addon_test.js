@@ -491,6 +491,37 @@ test('a coding reply reads cleanly: bold, code and headings are styled, fences d
   assert.equal(vm.evaluate('STUB.copied[1]'), 'https://github.com/every-io/every/pull/18632', 'a click opens the copy box with the full URL');
 });
 
+test('code fences keep their lines exactly, and URLs keep their whole path but not the marks or punctuation around them', () => {
+  const vm = nativeVM();
+  vm.run(`
+    local c = ClaudeWoWDB.chats[1]
+    ClaudeWoW.SwitchChat(c.id)
+    c.history = { { role = "assistant", t = 1, text = table.concat({
+      "\`\`\`bash",
+      "# install deps",
+      "echo \`pwd\` **x** https://a.com",
+      "- not a bullet",
+      "\`\`\`",
+      "**https://github.com/o/r/pull/99**",
+      "file https://github.com/o/r/blob/main/app/(auth)/page.tsx and (see https://b.com/x).",
+      "open https://... later",
+      "wiki https://en.wikipedia.org/wiki/Foo_(bar) ok",
+      "[**bold label**](https://c.com)",
+    }, "\\n") } }
+    ClaudeWoW.Render()
+    STUB.bubble = (function() for _, b in ipairs(ClaudeWoW.UI.bubbles) do if b.shown then return b end end end)()
+  `);
+  const body = vm.evaluate('STUB.bubble.body:GetText()');
+  assert.ok(body.includes('# install deps\necho `pwd` **x** https://a.com\n- not a bullet'), 'fenced lines stay exactly as written: ' + body);
+  assert.ok(body.includes('|Haddon:claudewow:url:https://github.com/o/r/pull/99|h[PR #99]|h') && !body.includes('pull/99**'), 'bold marks stay outside the URL');
+  assert.ok(!/\*\*/.test(body.split('\n').slice(4).join('\n')), 'and are drawn as bold');
+  assert.ok(body.includes('url:https://github.com/o/r/blob/main/app/(auth)/page.tsx|h'), 'balanced parentheses stay in the path');
+  assert.ok(body.includes('url:https://b.com/x|h') && body.includes('|r).'), 'a closing parenthesis and full stop stay outside');
+  assert.ok(body.includes('open https://... later') && !body.includes('url:https://|h'), 'a bare scheme is not a link');
+  assert.ok(body.includes('url:https://en.wikipedia.org/wiki/Foo_(bar)|h'), 'a URL that ends in a balanced parenthesis keeps it');
+  assert.ok(body.includes('|h[bold label]|h'), 'marks inside a link label are dropped');
+});
+
 test('clicking a link in a reply opens the link, not the copy box; clicking the text around it still opens the copy box', () => {
   const vm = nativeVM();
   vm.run(`

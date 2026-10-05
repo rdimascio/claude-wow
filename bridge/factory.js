@@ -27,7 +27,7 @@ const ARGS_MAX = 2000;
 const SUMMARY_LINES = 40;
 const SUMMARY_CHARS = 4000;
 const PR_URL_RE = /https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+/g;
-const RUN_SYSTEM = 'This run was started from an in-game World of Warcraft chat through the claude-wow bridge. Nobody watches it and nobody can answer a question: decide and go on, or stop and say what blocks you. End with a short summary of at most six lines that names the URL of every pull request you opened or changed.';
+const RUN_SYSTEM = 'This run was started from an in-game World of Warcraft chat through the claude-wow bridge. Nobody watches it and nobody can answer a question: decide and go on, or stop and say what blocks you. End with a summary that names the URL of every pull request you opened or changed; a merge or run report may be as long as it needs, up to about 40 lines.';
 const OFF_TEXT = 'The connection to the claude-wow bridge closed, so the factory tools are off for the rest of this run; the call did nothing.';
 
 function pickSetting(v, fallback) {
@@ -142,9 +142,17 @@ function resultEvent(text) {
 }
 
 function summaryOf(text) {
-  const lines = String(text || '').split('\n').map(l => l.trim()).filter(Boolean).slice(0, SUMMARY_LINES);
-  const out = lines.join('\n');
-  return out.length > SUMMARY_CHARS ? out.slice(0, SUMMARY_CHARS) + '...' : out;
+  const kept = [];
+  let size = 0;
+  for (const line of String(text || '').split('\n').map(l => l.trim()).filter(Boolean).slice(0, SUMMARY_LINES)) {
+    if (size + line.length + kept.length > SUMMARY_CHARS) {
+      if (!kept.length) kept.push(line.slice(0, SUMMARY_CHARS).replace(/\s+\S*$/, ''));
+      return kept.join('\n') + '\n...';
+    }
+    kept.push(line);
+    size += line.length;
+  }
+  return kept.join('\n');
 }
 
 function prUrls(text) {

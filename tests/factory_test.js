@@ -259,7 +259,10 @@ test('a run summary keeps a full merge report, not just its first lines', () => 
   const report = ['I merged 2 of the 3 approved AI PRs into internal.', ...Array.from({ length: 12 }, (_, k) => `- #${18600 + k}: merged`), 'Before each merge, the two required checks passed.'].join('\n');
   const summary = F.summaryOf(report);
   assert.equal(summary, report, 'every line of a normal report is kept');
-  assert.ok(!summary.endsWith('...'));
+  const near = Array.from({ length: 39 }, (_, k) => `${k} ${'y'.repeat(95)} https://github.com/o/r/pull/${1000 + k}`);
+  const cut = F.summaryOf(near.join('\n'));
+  assert.ok(cut.endsWith('\n...'), 'past 4,000 characters the summary stops at a line');
+  assert.ok(cut.split('\n').slice(0, -1).every(l => near.includes(l)), 'every kept line is whole, so no URL is cut into another number');
   const flood = Array.from({ length: 100 }, (_, k) => `line ${k}`).join('\n');
   assert.equal(F.summaryOf(flood).split('\n').length, 40, 'a flood is still capped');
 });
