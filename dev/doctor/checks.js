@@ -2,7 +2,17 @@
 const path = require('path');
 const Service = require('../../bridge/service');
 const Screens = require('../../bridge/screenshots');
-const { slotNumber, pad3, ADDON, RUNTIME_ADDON, latestAddonVersion, versionVerdict, versionsSummary, installedSummary } = require('../../bridge/protocol');
+const {
+  slotNumber,
+  slotsToClearAhead,
+  pad3,
+  ADDON,
+  RUNTIME_ADDON,
+  latestAddonVersion,
+  versionVerdict,
+  versionsSummary,
+  installedSummary,
+} = require('../../bridge/protocol');
 const GameFs = require('../../bridge/gamefs');
 const SIG = require('../../bridge/signals');
 const UPD = require('../../bridge/selfupdate');
@@ -11,7 +21,6 @@ const CLI = require('../../bridge/clients');
 const DAY_MS = 24 * 60 * 60 * 1000;
 const QUIET_LIMIT_MS = 10 * 60 * 1000;
 const LOG_TAIL_BYTES = 2 * 1024 * 1024;
-const WRAP_WINDOW = 50;
 const LAUNCH_SLACK_MS = 2000;
 const MB = 1024 * 1024;
 const LIMITS = { sessionBytes: 20 * MB, homeBytes: 200 * MB, logsBytes: 50 * MB, screenshotLeftovers: 20 };
@@ -433,12 +442,6 @@ function wavSlots(ctx, dir) {
     .map(m => Number(m[1]));
 }
 
-function slotsAhead(lastSlot, slots, window) {
-  const ahead = [];
-  for (let k = 1; k <= window; k++) ahead.push(((lastSlot - 1 + k) % slots) + 1);
-  return ahead;
-}
-
 function perClient(ctx, id, title, noClient, one) {
   const clients = CLI.clientsOf(ctx.config);
   if (!clients.length) return noClient();
@@ -481,16 +484,21 @@ function signalsOf(ctx, client) {
     );
     return { summary: `${armed}, lastSeq unknown`, issues };
   }
-  const lastSlot = slotNumber(Math.max(lastSeq, 1), slots);
+  const lastId = Math.max(lastSeq, 1);
+  const lastSlot = slotNumber(lastId, slots);
   const toWrap = slots - (lastSeq % slots);
   const ackSet = new Set(ack || []);
-  const spentAhead = slotsAhead(lastSlot, slots, WRAP_WINDOW).filter(s => !ackSet.has(s));
+  const runningIds = Object.values(ctx.state.inflight || {})
+    .filter(run => run && (!run.client || run.client === client.key))
+    .map(run => run.id);
+  const bridgeArms = slotsToClearAhead(lastId, slots, runningIds);
+  const spentAhead = bridgeArms.filter(s => !ackSet.has(s));
   if (spentAhead.length) {
     issues.push(
       warn(
         `${spentAhead.length} ack file(s) ahead of lastSeq ${lastSeq} are missing (${spentAhead.slice(0, 5).map(pad3).join(', ')}${spentAhead.length > 5 ? ', ...' : ''}).`,
         'An ack is a file the bridge deletes; a slot whose file is already gone cannot signal, so those messages wait for the slower slot polls.',
-        'Restart the bridge on this version (it arms the next 50 slots on every message), then restart WoW so the game sees the armed files.',
+        `Restart the bridge on this version (it arms the next ${bridgeArms.length} slots on every message), then restart WoW so the game sees the armed files.`,
       ),
     );
   }
@@ -1083,7 +1091,6 @@ module.exports = {
   formatBytes,
   summarizeLog,
   parseLastSeq,
-  slotsAhead,
   tocInterface,
   interfaceFromVersion,
   productForFlavor,
