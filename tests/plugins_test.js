@@ -136,6 +136,11 @@ test('the coding plugin: a chat in a plugins.claude-code.threads folder is a thr
   ];
   for (const [options, cwd, want] of cases) assert.equal(code.isThread(options, cwd, base), want, JSON.stringify([options, cwd]));
   assert.equal(code.isThread({ threads: ['~'] }, os.homedir(), base), true, '~ is the home folder');
+  const alias = path.join(base, 'alias');
+  fs.symlinkSync(proj, alias, 'junction');
+  assert.equal(code.isThread({ threads: [alias] }, proj, base), true, 'a linked spelling of the folder in the config');
+  assert.equal(code.isThread({ threads: [proj] }, alias, base), true, 'a linked spelling of the chat folder');
+  assert.equal(code.isThread({ threads: [alias] }, other, base), false);
 
   const calls = [];
   const factory = { enabled: true, skills: ['fresh-eyes'] };

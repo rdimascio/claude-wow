@@ -8,7 +8,7 @@ The owner confirms or changes these numbers before day 1 and does not change the
 
 | Measure | Source | Go limit |
 |---|---|---|
-| Context per resumed turn | `ctx X of Y` on the bridge log `done` line | Median of day 7 at most **300k** tokens. No turn above **600k**. |
+| Context per resumed turn | `ctx X of Y` on the bridge log `done` line, every turn | Median of day 7 at most **30% of Y**. No turn above **60% of Y**. On a 1M window: 300k and 600k. |
 | Cost per resumed turn | the `~$Z API so far` session total, today minus yesterday, over the day's turns | Mean at most **$0.15**. |
 | Thread cost per day | the same session total, end of day minus start of day | At most **$5**. |
 | Worker cost per day | sum of `costUsd` in `~/.claude-wow/factory/runs.json` for runs that ended that day | Recorded, no limit (Phase 1 adds the cap). A run with `costUsd: null` is counted as unknown, never as 0. |
@@ -25,17 +25,17 @@ Baseline for comparison, not a limit: the resumed turn in [`step1-ask-model.md`]
 - [ ] Remove every `Bash` and write rule from `agents.claude.allowedTools` and `factory.allowedTools`. Workers inherit the shared list until Phase 1.
 - [ ] All week, answer any roll with Greed or Pass, never Need. A chat Need writes the shared list and reaches the next worker at once.
 - [ ] Open the thread chat (`/claude --project <name>`) and send `/claude n` once, so the week starts on a session made after the deploy. Its first system prompt is frozen for the week.
-- [ ] Write down whether the game context was on for that first turn, and the session id from the `resume` or `new session` log line.
+- [ ] Write down whether the game context was on for that first turn, the window `Y` from its `done` line, and the Claude session id: `sessions["chat:<chat id>"]` in `~/.claude-wow/state.json` after the first turn ends (the log shows only its first 8 characters).
 - [ ] Write the week's goal in one line in the log below.
 
 ## Daily record
 
-At the end of each day, record from `~/Library/Logs/claude-wow/bridge.log` (the thread chat's `#<id>@<token>` lines) and `state.json` (`sessionUsage` for the chat):
+At the end of each day, record from the bridge log (`~/Library/Logs/claude-wow/bridge.log` for the macOS service, `~/.claude-wow/bridge.log` for a bridge run in a terminal; the thread chat's `#<id>@<token>` lines) and `~/.claude-wow/state.json` (`sessionUsage["chat:<chat id>"]`):
 
-- turns today, the context of the last turn, the highest context of the day
+- turns today, the context of every turn, and the day's median and highest context
 - the session total cost at the start and end of the day
 - worker runs that ended today, their skills, status and `costUsd`
-- any `new session`, `thread chat, the session is kept` or error line for the chat
+- any `new session` or error line for the chat. `thread chat, the session is kept` repeats on every turn once the game context differs from the first turn's; note only the first one.
 
 ## Decision log
 
@@ -55,7 +55,7 @@ Record the five scores and the total lost for the day.
 
 ## Results
 
-| Day | Turns | Last ctx | Max ctx | Thread $ | Mean $ / turn | Worker $ | Lost | Go? |
+| Day | Turns | Median ctx | Max ctx | Thread $ | Mean $ / turn | Worker $ | Lost | Go? |
 |---|---|---|---|---|---|---|---|---|
 | 1 | | | | | | | | |
 | 2 | | | | | | | | |

@@ -24,9 +24,18 @@ function siblingFolders(dir) {
   }
 }
 
+function realFolder(p) {
+  try {
+    return fs.realpathSync.native(p);
+  } catch {
+    return p;
+  }
+}
+
 function isThread(options, cwd, defaultCwd) {
   const threads = options && Array.isArray(options.threads) ? options.threads : [];
-  return threads.some(d => typeof d === 'string' && d.trim() !== '' && P.sameFolder(P.resolveCwd(d.trim(), defaultCwd), cwd));
+  const here = realFolder(cwd);
+  return threads.some(d => typeof d === 'string' && d.trim() !== '' && P.sameFolder(realFolder(P.resolveCwd(d.trim(), defaultCwd)), here));
 }
 
 const plugin = {
