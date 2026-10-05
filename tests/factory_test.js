@@ -40,11 +40,24 @@ function rig(opts = {}) {
     baseConfig: () => ({ permissionMode: 'acceptEdits', allowedTools: ['WebSearch'], deniedTools: [], effort: 'max', model: 'opus[1m]', maxCostUsd: 0.5 }),
     env: () => ({ ...process.env, CLAUDE_WOW_FAKE_STATE: fakeState }),
     onDone: (run, ctx) => done.push({ run, ctx }),
-    spawn: (...a) => { const c = PR.spawnChild(...a); spawned.push(c); return c; },
-    ...(opts.factory || {}),
+    spawn: (...a) => {
+      const c = PR.spawnChild(...a);
+      spawned.push(c);
+      return c;
+    },
+    ...opts.factory,
   });
   const calls = () => {
-    try { return fs.readFileSync(path.join(fakeState, 'calls.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map(l => JSON.parse(l)); } catch { return []; }
+    try {
+      return fs
+        .readFileSync(path.join(fakeState, 'calls.jsonl'), 'utf8')
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .map(l => JSON.parse(l));
+    } catch {
+      return [];
+    }
   };
   const ctx = (c = conf()) => ({ conf: c, cwd: work, label: '#7', key: 'chat-1', job: { id: 7 } });
   return { dir, work, logs, done, spawned, factory, calls, ctx, cleanup: () => fs.rmSync(dir, { recursive: true, force: true }) };
@@ -56,10 +69,24 @@ test('settings: off unless enabled; the default allowlist is the factory skills;
   assert.deepEqual(F.settings({}), { enabled: false });
   assert.deepEqual(F.settings({ factory: { enabled: 'yes' } }), { enabled: false });
   const d = conf();
-  assert.deepEqual(d.skills, ['every-ai-lead', 'babysit-prs', 'babysit-pr', 'merge-train', 'implementation-engineer', 'adversarial-review', 'factory-intake', 'fresh-eyes', 'review-prs']);
+  assert.deepEqual(d.skills, [
+    'every-ai-lead',
+    'babysit-prs',
+    'babysit-pr',
+    'merge-train',
+    'implementation-engineer',
+    'adversarial-review',
+    'factory-intake',
+    'fresh-eyes',
+    'review-prs',
+  ]);
   assert.equal(d.model, 'opus');
   assert.equal(d.maxRunning, 2);
-  const c = conf({ skills: ['babysit-pr', 'Bad Name', '--rm', 'fresh-eyes', 'babysit-pr'], model: 'sonnet', models: { 'fresh-eyes': { model: 'claude-fable-5-1', effort: 'high' }, 'babysit-pr': 'opus', 'not-listed': 'haiku' } });
+  const c = conf({
+    skills: ['babysit-pr', 'Bad Name', '--rm', 'fresh-eyes', 'babysit-pr'],
+    model: 'sonnet',
+    models: { 'fresh-eyes': { model: 'claude-fable-5-1', effort: 'high' }, 'babysit-pr': 'opus', 'not-listed': 'haiku' },
+  });
   assert.deepEqual(c.skills, ['babysit-pr', 'fresh-eyes']);
   assert.deepEqual(F.modelFor(c, 'fresh-eyes'), { model: 'claude-fable-5-1', effort: 'high' });
   assert.deepEqual(F.modelFor(c, 'babysit-pr'), { model: 'opus', effort: '' });
@@ -78,7 +105,15 @@ test('the coding plugin is a dispatcher only when factory.enabled is true', () =
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'cw-factory-plug-'));
   const runs = [];
   let options = {};
-  const core = { log() {}, tag: j => '#' + j.id, defaultCwd: base, options: () => options, sessionFolder: () => '', fail() {}, runAgent: (job, o) => runs.push(o) };
+  const core = {
+    log() {},
+    tag: j => '#' + j.id,
+    defaultCwd: base,
+    options: () => options,
+    sessionFolder: () => '',
+    fail() {},
+    runAgent: (job, o) => runs.push(o),
+  };
   p.handle({ id: 1, cwd: '', text: 'hi' }, core);
   assert.equal(runs[0].factory, undefined);
   assert.equal(runs[0].tools, undefined, 'without the factory the prompt is what it was');
@@ -124,7 +159,9 @@ test('a dispatch runs the skill as its own claude -p run: prompt on stdin, the s
     assert.match(r.factory.status({}).text, new RegExp(id));
     assert.match(fs.readFileSync(run.log, 'utf8'), /"type":"result"/, 'the log holds the run');
     assert.equal(fs.statSync(run.log).mode & 0o777, POSIX ? 0o600 : fs.statSync(run.log).mode & 0o777);
-  } finally { r.cleanup(); }
+  } finally {
+    r.cleanup();
+  }
 });
 
 test('the run summary is plain text for the game window: no Markdown marks, and a long one ends at a sentence', () => {
@@ -134,12 +171,15 @@ test('the run summary is plain text for the game window: no Markdown marks, and 
     '* **#18579** (batch of 9 fixes): **not merged.** Its `sensitive-read-audit.test.ts:65` check fails.',
     '- __#18610__: merged.',
   ].join('\n');
-  assert.equal(F.summaryOf(said), [
-    'Result',
-    'I merged 2 of the 3 approved AI PRs into internal. See the PR https://github.com/a/b/pull/1.',
-    '- #18579 (batch of 9 fixes): not merged. Its sensitive-read-audit.test.ts:65 check fails.',
-    '- #18610: merged.',
-  ].join('\n'));
+  assert.equal(
+    F.summaryOf(said),
+    [
+      'Result',
+      'I merged 2 of the 3 approved AI PRs into internal. See the PR https://github.com/a/b/pull/1.',
+      '- #18579 (batch of 9 fixes): not merged. Its sensitive-read-audit.test.ts:65 check fails.',
+      '- #18610: merged.',
+    ].join('\n'),
+  );
   const long = Array.from({ length: 200 }, (_, i) => `Sentence number ${i} is here.`).join(' ');
   const cut = F.summaryOf(long);
   assert.ok(cut.length <= 4000, cut.length);
@@ -154,7 +194,17 @@ test('a run summary keeps paragraph breaks: one blank line between paragraphs, n
 });
 
 test('a cut summary ends with one line that names the run log, from the line cap alone or the character cap', () => {
-  const run = { id: 'abcd1234', skill: 'merge-train', args: '', model: 'opus', status: 'done', startedAt: 0, endedAt: 1000, log: '/home/u/.claude-wow/factory/logs/abcd1234.log', prUrls: [] };
+  const run = {
+    id: 'abcd1234',
+    skill: 'merge-train',
+    args: '',
+    model: 'opus',
+    status: 'done',
+    startedAt: 0,
+    endedAt: 1000,
+    log: '/home/u/.claude-wow/factory/logs/abcd1234.log',
+    prUrls: [],
+  };
   const lines = Array.from({ length: 45 }, (_, k) => `Step ${k} went well.`);
   const byLines = F.summarize(lines.join('\n'));
   assert.equal(byLines.cut, true, 'the line cap alone marks the summary cut');
@@ -173,7 +223,10 @@ test('a cut summary ends with one line that names the run log, from the line cap
   const long = Array.from({ length: 200 }, (_, i) => `Sentence number ${i} is here.`).join(' ');
   const byChars = F.summarize(long);
   assert.equal(byChars.cut, true, 'the character cap marks the summary cut');
-  assert.match(F.describe({ ...run, summary: byChars.text, summaryCut: byChars.cut }, 1000), /is here\.\nCut for chat\. The full output is in \/home\/u\/\.claude-wow\/factory\/logs\/abcd1234\.log on the bridge computer\.$/);
+  assert.match(
+    F.describe({ ...run, summary: byChars.text, summaryCut: byChars.cut }, 1000),
+    /is here\.\nCut for chat\. The full output is in \/home\/u\/\.claude-wow\/factory\/logs\/abcd1234\.log on the bridge computer\.$/,
+  );
 });
 
 test('refusals: a skill outside the allowlist, a skill-like injection, an off factory, a missing claude and too many runs start nothing', async () => {
@@ -199,13 +252,17 @@ test('refusals: a skill outside the allowlist, a skill-like injection, an off fa
     assert.match(r.factory.call('factory_nuke', {}, r.ctx(c)).text, /not a factory tool/);
     assert.match(r.factory.status({ runId: 'zzzz' }).text, /no factory run zzzz/);
     await until(() => r.factory.children().length === 0);
-  } finally { r.cleanup(); }
+  } finally {
+    r.cleanup();
+  }
   const m = rig({ missing: true });
   try {
     const res = m.factory.dispatch({ skill: 'babysit-pr' }, m.ctx());
     assert.equal(res.ok, false);
     assert.match(res.text, /not installed on the bridge PC: not here/);
-  } finally { m.cleanup(); }
+  } finally {
+    m.cleanup();
+  }
 });
 
 test('shutdown: stop() then killAll ends the run and everything under it, marks it killed and delivers nothing', { skip: !POSIX }, async () => {
@@ -223,7 +280,9 @@ test('shutdown: stop() then killAll ends the run and everything under it, marks 
     assert.equal(run.status, 'killed');
     assert.throws(() => process.kill(call.pid, 0), 'the claude process is gone');
     assert.equal(r.done.length, 0, 'a run killed by shutdown is not reported as a result');
-  } finally { r.cleanup(); }
+  } finally {
+    r.cleanup();
+  }
 });
 
 test('a run past timeoutMs is ended and reported failed with the reason', { skip: !POSIX }, async () => {
@@ -235,7 +294,9 @@ test('a run past timeoutMs is ended and reported failed with the reason', { skip
     assert.equal(run.status, 'failed');
     assert.match(run.why, /timeoutMs/);
     assert.equal(r.done.length, 1);
-  } finally { r.cleanup(); }
+  } finally {
+    r.cleanup();
+  }
 });
 
 test('a run left running by a stopped bridge is marked lost by the next one, and the run list stays bounded', () => {
@@ -243,7 +304,16 @@ test('a run left running by a stopped bridge is marked lost by the next one, and
   try {
     const file = path.join(r.dir, 'home', 'factory', 'runs.json');
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    const runs = Array.from({ length: F.KEEP_RUNS + 5 }, (_, i) => ({ id: (0x10000000 + i).toString(16), status: i === F.KEEP_RUNS + 4 ? 'running' : 'done', startedAt: 1, endedAt: 2, log: path.join(r.dir, `${i}.log`), skill: 'babysit-pr', args: '', model: 'opus' }));
+    const runs = Array.from({ length: F.KEEP_RUNS + 5 }, (_, i) => ({
+      id: (0x10000000 + i).toString(16),
+      status: i === F.KEEP_RUNS + 4 ? 'running' : 'done',
+      startedAt: 1,
+      endedAt: 2,
+      log: path.join(r.dir, `${i}.log`),
+      skill: 'babysit-pr',
+      args: '',
+      model: 'opus',
+    }));
     fs.writeFileSync(file, JSON.stringify({ runs }));
     const passive = F.createFactory({ dir: path.dirname(file), adopt: false, command: () => ({}), baseConfig: () => ({}), env: () => ({}) });
     assert.equal(passive.runs().at(-1).status, 'running', 'a bridge without the lock leaves the record alone');
@@ -252,20 +322,37 @@ test('a run left running by a stopped bridge is marked lost by the next one, and
     assert.equal(all.length, F.KEEP_RUNS);
     assert.equal(all.at(-1).status, 'lost');
     assert.match(next.status({ runId: all.at(-1).id }).text, /lost/);
-  } finally { r.cleanup(); }
+  } finally {
+    r.cleanup();
+  }
 });
 
 test('joined grants: a factory run hello reaches the factory grants with no character check; goal grants and their tools stay apart', async () => {
   const goalCalls = [];
   const factoryCalls = [];
-  const goals = GM.createRunGrants({ call: async (tool) => { goalCalls.push(tool); return { ok: true, text: 'goal' }; }, character: () => 'Bone-Forever' });
-  const factory = GM.createRunGrants({ call: async (tool, args, ctx) => { factoryCalls.push([tool, ctx]); return { ok: true, text: 'factory' }; }, character: null, tools: F.TOOL_NAMES, serverName: F.SERVER_NAME, toolsLabel: 'factory' });
+  const goals = GM.createRunGrants({
+    call: async tool => {
+      goalCalls.push(tool);
+      return { ok: true, text: 'goal' };
+    },
+    character: () => 'Bone-Forever',
+  });
+  const factory = GM.createRunGrants({
+    call: async (tool, args, ctx) => {
+      factoryCalls.push([tool, ctx]);
+      return { ok: true, text: 'factory' };
+    },
+    character: null,
+    tools: F.TOOL_NAMES,
+    serverName: F.SERVER_NAME,
+    toolsLabel: 'factory',
+  });
   const joined = GM.joinGrants([goals, factory]);
   const hello = (g, nonce = 'n1') => ({ type: GM.HELLO, run: g.id, nonce, proof: LP.proof(g.token, 'client', nonce) });
   const conn = () => ({ destroy() {} });
   const fg = factory.grant('#3', { key: 'k' });
   const gg = goals.grant('#4');
-  assert.equal(joined.hello({ ...hello(fg), proof: LP.proof(gg.token, 'client', 'n1') }, conn()).run, undefined, 'another grant\'s token opens nothing');
+  assert.equal(joined.hello({ ...hello(fg), proof: LP.proof(gg.token, 'client', 'n1') }, conn()).run, undefined, "another grant's token opens nothing");
   const fr = joined.hello(hello(fg), conn());
   assert.ok(fr.run);
   assert.match(joined.hello(hello(fg, 'n2'), conn()).why, /already had its one connection/);
@@ -285,7 +372,11 @@ test('joined grants: a factory run hello reaches the factory grants with no char
 
 test('factory-mcp lists only the dispatch and status tools with the configured skills', async () => {
   const lines = [];
-  const out = { write(s) { for (const l of s.split('\n').filter(Boolean)) lines.push(JSON.parse(l)); } };
+  const out = {
+    write(s) {
+      for (const l of s.split('\n').filter(Boolean)) lines.push(JSON.parse(l));
+    },
+  };
   const opts = F.parseArgs(['--socket', '/s', '--run', 'a'.repeat(32), '--skills', 'babysit-pr,Bad Name,fresh-eyes']);
   assert.deepEqual(opts.skills, ['babysit-pr', 'fresh-eyes']);
   assert.throws(() => F.parseArgs(['--rm']), /unknown option/);
@@ -295,7 +386,10 @@ test('factory-mcp lists only the dispatch and status tools with the configured s
   server.handle({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'factory_status', arguments: {} } });
   await until(() => lines.length === 3);
   const byId = id => lines.find(l => l.id === id).result;
-  assert.deepEqual(byId(1).tools.map(t => t.name), ['factory_dispatch', 'factory_status']);
+  assert.deepEqual(
+    byId(1).tools.map(t => t.name),
+    ['factory_dispatch', 'factory_status'],
+  );
   assert.deepEqual(byId(1).tools[0].inputSchema.properties.skill.enum, ['babysit-pr', 'fresh-eyes']);
   assert.equal(byId(2).isError, true);
   assert.match(byId(3).content[0].text, /wowfactory was started without a run grant/);
@@ -306,7 +400,11 @@ test('factory-mcp lists only the dispatch and status tools with the configured s
 });
 
 test('a run summary keeps a full merge report, not just its first lines', () => {
-  const report = ['I merged 2 of the 3 approved AI PRs into internal.', ...Array.from({ length: 12 }, (_, k) => `- #${18600 + k}: merged`), 'Before each merge, the two required checks passed.'].join('\n');
+  const report = [
+    'I merged 2 of the 3 approved AI PRs into internal.',
+    ...Array.from({ length: 12 }, (_, k) => `- #${18600 + k}: merged`),
+    'Before each merge, the two required checks passed.',
+  ].join('\n');
   const summary = F.summaryOf(report);
   assert.equal(summary, report, 'every line of a normal report is kept');
   const near = Array.from({ length: 39 }, (_, k) => `${k} ${'y'.repeat(95)} https://github.com/o/r/pull/${1000 + k}`);
@@ -314,7 +412,10 @@ test('a run summary keeps a full merge report, not just its first lines', () => 
   assert.ok(!cut.endsWith('...') && cut.length < near.join('\n').length, 'past 4,000 characters the summary stops at a boundary');
   assert.equal(F.summarize(near.join('\n')).cut, true);
   const kept = cut.split('\n');
-  assert.ok(kept.every(l => near.includes(l)), 'every kept line is whole, so no URL is cut into another number');
+  assert.ok(
+    kept.every(l => near.includes(l)),
+    'every kept line is whole, so no URL is cut into another number',
+  );
   const flood = Array.from({ length: 100 }, (_, k) => `line ${k}`).join('\n');
   assert.equal(F.summaryOf(flood).split('\n').length, 40, 'a flood is still capped');
 });
@@ -323,7 +424,13 @@ test('slash commands: parsed only from a leading /name, and only for a listed sk
   assert.deepEqual(F.parseSlash('  /babysit-pr   12\n please '), { name: 'babysit-pr', args: '12 please' });
   assert.deepEqual(F.parseSlash('/runs'), { name: 'runs', args: '' });
   for (const t of ['babysit-pr 12', '/Users/me/x is broken', '/tmp/x', 'why /babysit-pr', '/', '/-x']) assert.equal(F.parseSlash(t), null, t);
-  const factory = { status: x => ({ ok: true, text: 'status ' + x.runId }), cancel: x => ({ ok: true, text: 'cancel ' + x.runId }), dispatch: () => { throw new Error('no dispatch expected'); } };
+  const factory = {
+    status: x => ({ ok: true, text: 'status ' + x.runId }),
+    cancel: x => ({ ok: true, text: 'cancel ' + x.runId }),
+    dispatch: () => {
+      throw new Error('no dispatch expected');
+    },
+  };
   const on = { conf: conf({ skills: ['babysit-pr'] }) };
   assert.equal(F.slashCommand(factory, '/runs', { conf: F.settings({}) }), null, 'the factory off: every slash message goes to the agent');
   assert.equal(F.slashCommand(factory, '/fresh-eyes 3', on), null, 'a skill not on the list goes to the agent');
@@ -353,16 +460,37 @@ test('a slash command starts the run with no agent turn, and /stop ends it as st
     assert.equal(run.why, 'It was stopped from the game.');
     assert.equal(r.done.length, 1, 'the stopped run is reported back to the chat');
     assert.match(F.slashCommand(r.factory, `/stop ${id}`, r.ctx()).text, /is not running; it is stopped/);
-  } finally { r.cleanup(); }
+  } finally {
+    r.cleanup();
+  }
 });
 
 test('the coding plugin answers a slash command itself and never starts an agent run for it', () => {
   const code = require('../bridge/plugins/claude-code');
   const p = PL.createRegistry().register(code);
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'cw-factory-slash-'));
-  const runs = [], replies = [], fails = [], accepted = [];
-  const factory = { status: () => ({ ok: true, text: 'No factory runs yet.' }), cancel: () => ({ ok: false, text: 'There is no factory run x.' }), dispatch: () => ({ ok: false, text: 'nope' }), runs: () => [] };
-  const core = { log() {}, tag: j => '#' + j.id, defaultCwd: base, options: () => ({ factory: { enabled: true, skills: ['babysit-pr'] } }), sessionFolder: () => '', factory, accept: j => accepted.push(j.id), reply: (j, t) => replies.push(t), fail: (j, t) => fails.push(t), runAgent: (job, o) => runs.push(o) };
+  const runs = [],
+    replies = [],
+    fails = [],
+    accepted = [];
+  const factory = {
+    status: () => ({ ok: true, text: 'No factory runs yet.' }),
+    cancel: () => ({ ok: false, text: 'There is no factory run x.' }),
+    dispatch: () => ({ ok: false, text: 'nope' }),
+    runs: () => [],
+  };
+  const core = {
+    log() {},
+    tag: j => '#' + j.id,
+    defaultCwd: base,
+    options: () => ({ factory: { enabled: true, skills: ['babysit-pr'] } }),
+    sessionFolder: () => '',
+    factory,
+    accept: j => accepted.push(j.id),
+    reply: (j, t) => replies.push(t),
+    fail: (j, t) => fails.push(t),
+    runAgent: (job, o) => runs.push(o),
+  };
   p.handle({ id: 1, cwd: '', text: '/runs' }, core);
   p.handle({ id: 2, cwd: '', text: '/stop x' }, core);
   p.handle({ id: 3, cwd: '', text: '/review-prs' }, core);

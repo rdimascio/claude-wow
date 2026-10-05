@@ -31,8 +31,8 @@ const REL = require('./releases');
 const UPD = require('./selfupdate');
 const CLI = require('./clients');
 
-const LABEL = 'io.claudewow.bridge';      // launchd label
-const UNIT = 'claude-wow-bridge';         // systemd unit name
+const LABEL = 'io.claudewow.bridge'; // launchd label
+const UNIT = 'claude-wow-bridge'; // systemd unit name
 // The service as the project's old name (wow-ai) installed it. `install` and
 // `uninstall` remove it, or two bridges would start at login and fight over
 // the slot files.
@@ -56,8 +56,15 @@ function dirs(platform = process.platform, env = process.env, home = os.homedir(
     return {
       logs: path.join(base, 'logs'),
       run: base,
-      definition: path.join(env.APPDATA || path.join(home, 'AppData', 'Roaming'),
-        'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup', 'Claude WoW bridge.vbs'),
+      definition: path.join(
+        env.APPDATA || path.join(home, 'AppData', 'Roaming'),
+        'Microsoft',
+        'Windows',
+        'Start Menu',
+        'Programs',
+        'Startup',
+        'Claude WoW bridge.vbs',
+      ),
     };
   }
   const state = path.join(env.XDG_STATE_HOME || path.join(home, '.local', 'state'), 'claude-wow');
@@ -71,16 +78,31 @@ function dirs(platform = process.platform, env = process.env, home = os.homedir(
 // Where the old name's service kept its definition and pid file.
 function oldDirs(platform = process.platform, env = process.env, home = os.homedir()) {
   if (platform === 'darwin') {
-    return { label: OLD_LABEL, definition: path.join(home, 'Library', 'LaunchAgents', `${OLD_LABEL}.plist`), run: path.join(home, 'Library', 'Application Support', 'wow-ai') };
+    return {
+      label: OLD_LABEL,
+      definition: path.join(home, 'Library', 'LaunchAgents', `${OLD_LABEL}.plist`),
+      run: path.join(home, 'Library', 'Application Support', 'wow-ai'),
+    };
   }
   if (platform === 'win32') {
     return {
       run: path.join(env.LOCALAPPDATA || path.join(home, 'AppData', 'Local'), 'wow-ai'),
-      definition: path.join(env.APPDATA || path.join(home, 'AppData', 'Roaming'),
-        'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup', 'WoW AI bridge.vbs'),
+      definition: path.join(
+        env.APPDATA || path.join(home, 'AppData', 'Roaming'),
+        'Microsoft',
+        'Windows',
+        'Start Menu',
+        'Programs',
+        'Startup',
+        'WoW AI bridge.vbs',
+      ),
     };
   }
-  return { unit: OLD_UNIT, definition: path.join(env.XDG_CONFIG_HOME || path.join(home, '.config'), 'systemd', 'user', `${OLD_UNIT}.service`), run: path.join(env.XDG_STATE_HOME || path.join(home, '.local', 'state'), 'wow-ai') };
+  return {
+    unit: OLD_UNIT,
+    definition: path.join(env.XDG_CONFIG_HOME || path.join(home, '.config'), 'systemd', 'user', `${OLD_UNIT}.service`),
+    run: path.join(env.XDG_STATE_HOME || path.join(home, '.local', 'state'), 'wow-ai'),
+  };
 }
 
 const serviceLogFile = d => path.join(d.logs, 'bridge.log');
@@ -140,8 +162,11 @@ const programArgs = ({ node, script }) => [node, script].filter(Boolean);
 function launchdPlist({ label = LABEL, node, script, cwd, logFile, env = {} }) {
   const envRows = Object.entries({ CLAUDE_WOW_SERVICE: '1', ...env })
     .filter(([, v]) => v !== undefined && v !== null && v !== '')
-    .map(([k, v]) => `      <key>${xmlEscape(k)}</key>\n      <string>${xmlEscape(v)}</string>`).join('\n');
-  const program = programArgs({ node, script }).map(a => `      <string>${xmlEscape(a)}</string>`).join('\n');
+    .map(([k, v]) => `      <key>${xmlEscape(k)}</key>\n      <string>${xmlEscape(v)}</string>`)
+    .join('\n');
+  const program = programArgs({ node, script })
+    .map(a => `      <string>${xmlEscape(a)}</string>`)
+    .join('\n');
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -180,7 +205,8 @@ function systemdUnit({ node, script, cwd, env = {} }) {
   const q = s => `"${String(s).replace(/(["\\])/g, '\\$1')}"`;
   const envRows = Object.entries({ CLAUDE_WOW_SERVICE: '1', ...env })
     .filter(([, v]) => v !== undefined && v !== null && v !== '')
-    .map(([k, v]) => `Environment=${q(`${k}=${v}`)}`).join('\n');
+    .map(([k, v]) => `Environment=${q(`${k}=${v}`)}`)
+    .join('\n');
   return `[Unit]
 Description=Claude WoW bridge
 After=default.target
@@ -207,7 +233,11 @@ function startupVbs({ node, script, cwd }) {
 Set sh = CreateObject("WScript.Shell")\r
 sh.Environment("Process")("CLAUDE_WOW_SERVICE") = "1"\r
 sh.CurrentDirectory = ${q(cwd)}\r
-sh.Run ${q(programArgs({ node, script }).map(a => `"${a}"`).join(' '))}, 0, False\r
+sh.Run ${q(
+    programArgs({ node, script })
+      .map(a => `"${a}"`)
+      .join(' '),
+  )}, 0, False\r
 `;
 }
 
@@ -218,12 +248,22 @@ sh.Run ${q(programArgs({ node, script }).map(a => `"${a}"`).join(' '))}, 0, Fals
 // so the next line lands in a fresh file. Returns true when it rotated.
 function rotate(file, { maxBytes = LOG_MAX_BYTES, keep = LOG_KEEP } = {}) {
   let size;
-  try { size = fs.statSync(file).size; } catch { return false; }
+  try {
+    size = fs.statSync(file).size;
+  } catch {
+    return false;
+  }
   if (size < maxBytes) return false;
   for (let i = keep - 1; i >= 1; i--) {
-    try { fs.renameSync(`${file}.${i}`, `${file}.${i + 1}`); } catch {}
+    try {
+      fs.renameSync(`${file}.${i}`, `${file}.${i + 1}`);
+    } catch {}
   }
-  try { fs.renameSync(file, `${file}.1`); } catch { return false; }
+  try {
+    fs.renameSync(file, `${file}.1`);
+  } catch {
+    return false;
+  }
   return true;
 }
 
@@ -233,11 +273,19 @@ class RotatingLog {
     this.file = file;
     this.opts = opts;
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    try { this.size = fs.statSync(file).size; } catch { this.size = 0; }
+    try {
+      this.size = fs.statSync(file).size;
+    } catch {
+      this.size = 0;
+    }
   }
   write(chunk) {
     const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
-    try { fs.appendFileSync(this.file, buf); } catch { return; }
+    try {
+      fs.appendFileSync(this.file, buf);
+    } catch {
+      return;
+    }
     this.size += buf.length;
     if (this.size >= (this.opts.maxBytes || LOG_MAX_BYTES) && rotate(this.file, this.opts)) this.size = 0;
   }
@@ -253,18 +301,29 @@ function writePid(d, info) {
 }
 
 function readPid(d) {
-  try { return JSON.parse(fs.readFileSync(pidFile(d), 'utf8')); } catch { return null; }
+  try {
+    return JSON.parse(fs.readFileSync(pidFile(d), 'utf8'));
+  } catch {
+    return null;
+  }
 }
 
 function clearPid(d, pid = process.pid) {
   const cur = readPid(d);
   if (cur && cur.pid !== pid) return; // another supervisor's file
-  try { fs.unlinkSync(pidFile(d)); } catch {}
+  try {
+    fs.unlinkSync(pidFile(d));
+  } catch {}
 }
 
 function alive(pid) {
   if (!pid) return false;
-  try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; }
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return e.code === 'EPERM';
+  }
 }
 
 // `launchctl print gui/<uid>/<label>` -> the pid and state lines.
@@ -280,7 +339,9 @@ function parseLaunchctlPrint(text) {
 function formatUptime(ms) {
   if (!(ms >= 0)) return '?';
   const s = Math.floor(ms / 1000);
-  const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
+  const d = Math.floor(s / 86400),
+    h = Math.floor((s % 86400) / 3600),
+    m = Math.floor((s % 3600) / 60);
   if (d) return `${d}d ${h}h ${m}m`;
   if (h) return `${h}h ${m}m`;
   if (m) return `${m}m ${s % 60}s`;
@@ -289,7 +350,11 @@ function formatUptime(ms) {
 
 function lastLines(file, n) {
   let text;
-  try { text = fs.readFileSync(file, 'utf8'); } catch { return []; }
+  try {
+    text = fs.readFileSync(file, 'utf8');
+  } catch {
+    return [];
+  }
   const lines = text.split(/\r?\n/);
   if (lines[lines.length - 1] === '') lines.pop();
   return n === 0 ? [] : lines.slice(-n);
@@ -308,7 +373,8 @@ function agentEnv(execDir = process.execPath ? path.dirname(process.execPath) : 
   if (execDir && !env.PATH.split(path.delimiter).includes(execDir)) {
     env.PATH = execDir + path.delimiter + env.PATH;
   }
-  for (const k of ['HOME', 'DISPLAY', 'LANG', 'CLAUDE_WOW_HOME', 'CLAUDE_WOW_PROJECT', 'WOW_AI_PROJECT', 'CODEX_BIN', 'GROK_HOME']) if (process.env[k]) env[k] = process.env[k];
+  for (const k of ['HOME', 'DISPLAY', 'LANG', 'CLAUDE_WOW_HOME', 'CLAUDE_WOW_PROJECT', 'WOW_AI_PROJECT', 'CODEX_BIN', 'GROK_HOME'])
+    if (process.env[k]) env[k] = process.env[k];
   return env;
 }
 
@@ -355,11 +421,15 @@ function preflight(d) {
 const mac = {
   exec: run,
   uid: () => process.getuid(),
-  target() { return `gui/${this.uid()}/${LABEL}`; },
+  target() {
+    return `gui/${this.uid()}/${LABEL}`;
+  },
   sleep: ms => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms),
   settleMs: 250,
   settleTries: 40,
-  loaded() { return this.exec('launchctl', ['print', this.target()]).ok; },
+  loaded() {
+    return this.exec('launchctl', ['print', this.target()]).ok;
+  },
   waitUnloaded() {
     for (let i = 0; i < this.settleTries; i++) {
       if (!this.loaded()) return true;
@@ -372,7 +442,15 @@ const mac = {
     if (r.ok) return r;
     const legacy = this.exec('launchctl', ['load', '-w', d.definition]);
     const legacyFailed = !legacy.ok || /failed|error/i.test(legacy.out);
-    return legacyFailed ? { ...r, out: [r.out, legacy.out].map(s => (s || '').trim()).filter(Boolean).join('; ') } : legacy;
+    return legacyFailed
+      ? {
+          ...r,
+          out: [r.out, legacy.out]
+            .map(s => (s || '').trim())
+            .filter(Boolean)
+            .join('; '),
+        }
+      : legacy;
   },
   bootstrapLoaded(d) {
     let r = { ok: false, out: '' };
@@ -395,7 +473,9 @@ const mac = {
     if (!fs.existsSync(old.definition)) return false;
     let r = run('launchctl', ['bootout', `gui/${process.getuid()}/${old.label}`]);
     if (!r.ok) r = run('launchctl', ['unload', '-w', old.definition]);
-    try { fs.unlinkSync(old.definition); } catch {}
+    try {
+      fs.unlinkSync(old.definition);
+    } catch {}
     return true;
   },
   install(d) {
@@ -449,14 +529,21 @@ const linux = {
   exec: run,
   sys(args) {
     const r = this.exec('systemctl', ['--user', ...args]);
-    if (r.error && r.error.code === 'ENOENT') throw new Error('systemctl was not found. Without systemd, start the bridge from your session startup with: ' + programArgs(program()).join(' '));
+    if (r.error && r.error.code === 'ENOENT')
+      throw new Error('systemctl was not found. Without systemd, start the bridge from your session startup with: ' + programArgs(program()).join(' '));
     return r;
   },
   removeOld(old = oldDirs('linux')) {
     if (!fs.existsSync(old.definition)) return false;
-    try { this.sys(['disable', '--now', old.unit]); } catch {}
-    try { fs.unlinkSync(old.definition); } catch {}
-    try { this.sys(['daemon-reload']); } catch {}
+    try {
+      this.sys(['disable', '--now', old.unit]);
+    } catch {}
+    try {
+      fs.unlinkSync(old.definition);
+    } catch {}
+    try {
+      this.sys(['daemon-reload']);
+    } catch {}
     return true;
   },
   install(d) {
@@ -481,14 +568,22 @@ const linux = {
     const r = this.sys(['start', UNIT]);
     if (!r.ok) throw new Error(`systemctl could not start ${UNIT}: ${r.out.trim()}`);
   },
-  stop() { const r = this.sys(['stop', UNIT]); if (!r.ok) throw new Error(`systemctl could not stop ${UNIT}: ${r.out.trim()}`); },
-  restart() { const r = this.sys(['restart', UNIT]); if (!r.ok) throw new Error(`systemctl could not restart ${UNIT}: ${r.out.trim()}`); },
+  stop() {
+    const r = this.sys(['stop', UNIT]);
+    if (!r.ok) throw new Error(`systemctl could not stop ${UNIT}: ${r.out.trim()}`);
+  },
+  restart() {
+    const r = this.sys(['restart', UNIT]);
+    if (!r.ok) throw new Error(`systemctl could not restart ${UNIT}: ${r.out.trim()}`);
+  },
   probe() {
     try {
       const active = this.sys(['is-active', UNIT]).out.trim();
       const pid = Number((this.sys(['show', '-p', 'MainPID', '--value', UNIT]).out || '').trim()) || 0;
       return { loaded: active !== 'inactive' || this.sys(['is-enabled', UNIT]).ok, pid, state: active };
-    } catch { return { loaded: false, pid: 0, state: '' }; }
+    } catch {
+      return { loaded: false, pid: 0, state: '' };
+    }
   },
   kind: 'systemd --user unit ' + UNIT,
 };
@@ -499,11 +594,16 @@ const win = {
   // its pid file says one is still running.
   removeOld(old = oldDirs('win32')) {
     const had = fs.existsSync(old.definition);
-    if (had) try { fs.unlinkSync(old.definition); } catch {}
+    if (had)
+      try {
+        fs.unlinkSync(old.definition);
+      } catch {}
     const p = readPid(old);
     if (p && p.mode === 'service' && alive(p.pid)) {
       run('taskkill', ['/PID', String(p.pid), '/T', '/F']);
-      try { fs.unlinkSync(pidFile(old)); } catch {}
+      try {
+        fs.unlinkSync(pidFile(old));
+      } catch {}
     }
     return had;
   },
@@ -527,7 +627,10 @@ const win = {
     if (p && p.mode === 'service' && alive(p.pid)) return; // already running
     const { node, script, cwd } = program();
     const child = spawn(node, programArgs({ node, script }).slice(1), {
-      cwd, detached: true, stdio: 'ignore', windowsHide: true,
+      cwd,
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
       env: { ...process.env, CLAUDE_WOW_SERVICE: '1' },
     });
     child.unref();
@@ -536,9 +639,14 @@ const win = {
     const p = readPid(d);
     if (!p || p.mode !== 'service' || !alive(p.pid)) return;
     run('taskkill', ['/PID', String(p.pid), '/T', '/F']);
-    try { fs.unlinkSync(pidFile(d)); } catch {}
+    try {
+      fs.unlinkSync(pidFile(d));
+    } catch {}
   },
-  restart(d) { this.stop(d); this.start(d); },
+  restart(d) {
+    this.stop(d);
+    this.start(d);
+  },
   probe(d) {
     const p = readPid(d);
     const running = !!(p && p.mode === 'service' && alive(p.pid));
@@ -552,12 +660,20 @@ function backend(platform = process.platform) {
 }
 
 function readState(file) {
-  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return {}; }
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    return {};
+  }
 }
 
 function clientLines(configFile, state) {
   let cfg = null;
-  try { cfg = JSON.parse(fs.readFileSync(configFile, 'utf8')); } catch { return ['no config.json (claude-wow setup)']; }
+  try {
+    cfg = JSON.parse(fs.readFileSync(configFile, 'utf8'));
+  } catch {
+    return ['no config.json (claude-wow setup)'];
+  }
   const clients = CLI.clientsOf(cfg);
   if (!clients.length) return ['none in config.json (claude-wow setup)'];
   return CLI.describe(clients, state);
@@ -572,10 +688,13 @@ function status(d, platform = process.platform, out = console.log, stateFile = H
   const bridgeAlive = !!(p && alive(p.bridgePid));
   out(`claude-wow service (${b.kind})`);
   out(`  installed : ${installed ? 'yes  ' + d.definition : 'no   (claude-wow service install)'}`);
-  if (installed && platform !== 'win32') out(`  loaded    : ${probe.loaded ? 'yes' : 'no   (claude-wow service start)'}${probe.state ? '  [' + probe.state + ']' : ''}`);
+  if (installed && platform !== 'win32')
+    out(`  loaded    : ${probe.loaded ? 'yes' : 'no   (claude-wow service start)'}${probe.state ? '  [' + probe.state + ']' : ''}`);
   if (supervisorAlive) {
     const where = p.mode === 'service' ? 'as the service' : 'in a terminal';
-    out(`  running   : yes, ${where}: supervisor pid ${p.pid}${bridgeAlive ? ', bridge pid ' + p.bridgePid : ', bridge restarting'}, up ${formatUptime(Date.now() - p.started)} (since ${new Date(p.started).toLocaleString()})`);
+    out(
+      `  running   : yes, ${where}: supervisor pid ${p.pid}${bridgeAlive ? ', bridge pid ' + p.bridgePid : ', bridge restarting'}, up ${formatUptime(Date.now() - p.started)} (since ${new Date(p.started).toLocaleString()})`,
+    );
   } else if (probe.pid && alive(probe.pid)) {
     out(`  running   : yes, pid ${probe.pid} (no pid file yet)`);
   } else {
@@ -597,10 +716,16 @@ function status(d, platform = process.platform, out = console.log, stateFile = H
 
 function follow(file, out) {
   let pos = 0;
-  try { pos = fs.statSync(file).size; } catch {}
+  try {
+    pos = fs.statSync(file).size;
+  } catch {}
   const tick = () => {
     let st;
-    try { st = fs.statSync(file); } catch { return; }
+    try {
+      st = fs.statSync(file);
+    } catch {
+      return;
+    }
     if (st.size < pos) pos = 0; // rotated
     if (st.size > pos) {
       const fd = fs.openSync(file, 'r');
@@ -616,7 +741,10 @@ function follow(file, out) {
 
 function logs(d, opts, out = console.log) {
   const file = fs.existsSync(serviceLogFile(d)) ? serviceLogFile(d) : H.resolve().log;
-  if (!fs.existsSync(file)) { out(`no log yet (${file})`); return opts.follow ? 0 : 1; }
+  if (!fs.existsSync(file)) {
+    out(`no log yet (${file})`);
+    return opts.follow ? 0 : 1;
+  }
   for (const l of lastLines(file, opts.lines)) out(l);
   if (opts.follow) follow(file, out);
   return 0;
@@ -624,23 +752,38 @@ function logs(d, opts, out = console.log) {
 
 function main(argv, { platform = process.platform, out = console.log, err = console.error } = {}) {
   const { cmd, opts, error } = parseArgs(argv);
-  if (error) { err(`claude-wow service: ${error}\n`); out(HELP); return 2; }
-  if (cmd === 'help') { out(HELP); return 0; }
+  if (error) {
+    err(`claude-wow service: ${error}\n`);
+    out(HELP);
+    return 2;
+  }
+  if (cmd === 'help') {
+    out(HELP);
+    return 0;
+  }
   const d = dirs(platform);
   const b = backend(platform);
   try {
     switch (cmd) {
       case 'install': {
         const problems = preflight(d);
-        if (problems.length) { for (const p of problems) err(`claude-wow service: ${p}`); return 1; }
+        if (problems.length) {
+          for (const p of problems) err(`claude-wow service: ${p}`);
+          return 1;
+        }
         b.install(d);
         out(`installed ${d.definition}`);
         out(`the bridge now runs in the background and starts at every login; log: ${serviceLogFile(d)}`);
         if (platform === 'darwin') {
           let mode = P.DEFAULT_TRANSPORT;
           const config = H.resolve().config;
-          try { mode = P.chooseTransport(JSON.parse(fs.readFileSync(config, 'utf8')).capture).transport; } catch {}
-          if (mode !== 'screenshot') out(`note: capture.mode is "pixel" (deprecated). A background process cannot ask for Screen Recording; remove capture.mode from ${config} or set it to "screenshot" (no permissions needed), or run the bridge from a terminal instead.`);
+          try {
+            mode = P.chooseTransport(JSON.parse(fs.readFileSync(config, 'utf8')).capture).transport;
+          } catch {}
+          if (mode !== 'screenshot')
+            out(
+              `note: capture.mode is "pixel" (deprecated). A background process cannot ask for Screen Recording; remove capture.mode from ${config} or set it to "screenshot" (no permissions needed), or run the bridge from a terminal instead.`,
+            );
         }
         out('re-run "claude-wow service install" after installing a new agent CLI or a new Node, so the service sees the new PATH.');
         out('');
@@ -651,12 +794,25 @@ function main(argv, { platform = process.platform, out = console.log, err = cons
         out(had ? `removed ${d.definition}; the bridge no longer starts at login` : 'the service was not installed');
         return 0;
       }
-      case 'start': b.start(d); out('started'); return status(d, platform, out);
-      case 'stop': b.stop(d); out('stopped (it starts again at the next login; "claude-wow service uninstall" to remove it)'); return 0;
-      case 'restart': b.restart(d); out('restarted'); return status(d, platform, out);
-      case 'status': return status(d, platform, out);
-      case 'logs': return logs(d, opts, out);
-      default: out(HELP); return 2;
+      case 'start':
+        b.start(d);
+        out('started');
+        return status(d, platform, out);
+      case 'stop':
+        b.stop(d);
+        out('stopped (it starts again at the next login; "claude-wow service uninstall" to remove it)');
+        return 0;
+      case 'restart':
+        b.restart(d);
+        out('restarted');
+        return status(d, platform, out);
+      case 'status':
+        return status(d, platform, out);
+      case 'logs':
+        return logs(d, opts, out);
+      default:
+        out(HELP);
+        return 2;
     }
   } catch (e) {
     err(`claude-wow service ${cmd}: ${e.message}`);
@@ -665,10 +821,39 @@ function main(argv, { platform = process.platform, out = console.log, err = cons
 }
 
 module.exports = {
-  LABEL, UNIT, OLD_LABEL, OLD_UNIT, COMMANDS, LOG_MAX_BYTES, LOG_KEEP, HELP,
-  dirs, oldDirs, backend, serviceLogFile, launchdLogFile, pidFile,
-  parseArgs, launchdPlist, systemdUnit, startupVbs, xmlEscape, releaseProgram, program, definition,
-  rotate, RotatingLog, writePid, readPid, clearPid, alive,
-  parseLaunchctlPrint, formatUptime, lastLines, agentEnv,
-  status, clientLines, main,
+  LABEL,
+  UNIT,
+  OLD_LABEL,
+  OLD_UNIT,
+  COMMANDS,
+  LOG_MAX_BYTES,
+  LOG_KEEP,
+  HELP,
+  dirs,
+  oldDirs,
+  backend,
+  serviceLogFile,
+  launchdLogFile,
+  pidFile,
+  parseArgs,
+  launchdPlist,
+  systemdUnit,
+  startupVbs,
+  xmlEscape,
+  releaseProgram,
+  program,
+  definition,
+  rotate,
+  RotatingLog,
+  writePid,
+  readPid,
+  clearPid,
+  alive,
+  parseLaunchctlPrint,
+  formatUptime,
+  lastLines,
+  agentEnv,
+  status,
+  clientLines,
+  main,
 };

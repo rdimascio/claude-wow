@@ -27,7 +27,10 @@ function checkReply(text, linked = new Set()) {
 }
 
 function logLine(unverified) {
-  const shown = unverified.slice(0, MAX_LOGGED).map(id => `spell:${id}`).join(', ');
+  const shown = unverified
+    .slice(0, MAX_LOGGED)
+    .map(id => `spell:${id}`)
+    .join(', ');
   return `reply tokens: ${unverified.length} spell token(s) not linked in this chat, shown as plain text: ${shown}${unverified.length > MAX_LOGGED ? ', ...' : ''}`;
 }
 

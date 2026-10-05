@@ -5,7 +5,6 @@ const os = require('os');
 const path = require('path');
 const H = require('../../dev/harness');
 const P = require('../../bridge/protocol');
-const SIG = require('../../bridge/signals');
 const { WowClient } = require('../../dev/wow/client');
 
 function makeRoot(label) {
@@ -30,12 +29,6 @@ function gameRunner(root) {
   };
 }
 
-function sessionCostByAgent(h) {
-  const calls = h.agentCalls();
-  const last = calls[calls.length - 1];
-  return JSON.parse(fs.readFileSync(path.join(h.sb.agentState, `${last.session}.json`), 'utf8')).total.costUSD;
-}
-
 function replyTo(h, id) {
   const c = h.client.activeChat();
   if (!c || c.pendingId) return null;
@@ -43,22 +36,22 @@ function replyTo(h, id) {
 }
 
 function isAlive(pid) {
-  try { process.kill(pid, 0); return true; } catch { return false; }
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function switchingLock(h) {
   const lockFile = path.join(h.sb.home, 'deploy.lock');
-  fs.writeFileSync(lockFile, JSON.stringify({ pid: process.pid, host: os.hostname(), started: Date.now(), command: 'dev deploy', token: 'e2e', phase: 'switching' }));
+  fs.writeFileSync(
+    lockFile,
+    JSON.stringify({ pid: process.pid, host: os.hostname(), started: Date.now(), command: 'dev deploy', token: 'e2e', phase: 'switching' }),
+  );
   return lockFile;
 }
-
-const listAfter = (argv, flag) => {
-  const i = argv.indexOf(flag);
-  if (i < 0) return [];
-  const out = [];
-  for (let j = i + 1; j < argv.length && !String(argv[j]).startsWith('--'); j++) out.push(argv[j]);
-  return out;
-};
 
 const WAGO_FIXTURES = path.join(__dirname, '..', 'fixtures', 'wago');
 const FOREVER_BUILD = '1.60.1.200';
@@ -74,22 +67,11 @@ const ERA = '_classic_era_';
 const ERA_CLIENT = { interface: 11509, version: '1.15.9', build: '70003' };
 const TWO_CLIENTS = { extraClients: [ERA], tocInterface: P.TOC_INTERFACE };
 
-function signalFiles(addons) {
-  const root = SIG.runtimeRoot(addons);
-  const out = [];
-  const pending = ['ack', 'sig', 'act'].map(d => path.join(root, d));
-  while (pending.length) {
-    const dir = pending.pop();
-    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-      if (e.isDirectory()) pending.push(path.join(dir, e.name));
-      else out.push(path.relative(root, path.join(dir, e.name)));
-    }
-  }
-  return out.sort();
-}
-
 function slotBodies(addons) {
-  return fs.readdirSync(addons).filter(n => /^ClaudeWoW_S\d{3}$/.test(n)).map(n => fs.readFileSync(path.join(addons, n, 'Inbox.lua'), 'utf8'));
+  return fs
+    .readdirSync(addons)
+    .filter(n => /^ClaudeWoW_S\d{3}$/.test(n))
+    .map(n => fs.readFileSync(path.join(addons, n, 'Inbox.lua'), 'utf8'));
 }
 
 async function withEra(h, fn, opts = {}) {
@@ -105,8 +87,51 @@ async function withEra(h, fn, opts = {}) {
   }
 }
 
+async function askFromA(h, era, text) {
+  era.slash('/claude config context on');
+  await era.say(`warm up before ${text}`);
+  await h.client.say(`@ask ${text}`);
+  const out = h.bridge.output;
+  const start = out.lastIndexOf('[ask] Claude starting');
+  assert.ok(start > 0, 'the ask run started');
+  const before = out.slice(0, start);
+  const lastContext = /\((_classic_\w+_)\) game context updated[^\n]*\n(?![\s\S]*game context updated)/.exec(before);
+  assert.ok(lastContext, 'both clients reported a context before the run');
+  const startLine = out.slice(start, out.indexOf('\n', start));
+  const between = before.slice(lastContext.index);
+  return {
+    lastFrom: lastContext[1],
+    granted: startLine.includes('[wowgoals for this run]'),
+    refusal: /wowgoals: another client reported its game context after this one \(([^)]*)\)/.exec(between),
+  };
+}
+
+function assertGoalToolsFollowLastReport(r, theirs) {
+  if (r.lastFrom === ERA) {
+    assert.equal(r.granted, false, "B reported last, so A's run has no goal server");
+    assert.ok(r.refusal, 'and the bridge says why');
+    assert.equal(r.refusal[1], theirs);
+  } else {
+    assert.equal(r.lastFrom, '_classic_beta_');
+    assert.equal(r.granted, true, "A reported last, so A's run keeps its goal tools");
+    assert.equal(r.refusal, null);
+  }
+}
+
 module.exports = {
-  makeRoot, gameRunner, sessionCostByAgent, isAlive, replyTo, H,
-  switchingLock, listAfter, fixtureFetch, FOREVER_BUILD,
-  ERA, ERA_CLIENT, TWO_CLIENTS, signalFiles, slotBodies, withEra,
+  makeRoot,
+  gameRunner,
+  isAlive,
+  replyTo,
+  H,
+  switchingLock,
+  fixtureFetch,
+  FOREVER_BUILD,
+  ERA,
+  ERA_CLIENT,
+  TWO_CLIENTS,
+  slotBodies,
+  withEra,
+  askFromA,
+  assertGoalToolsFollowLastReport,
 };

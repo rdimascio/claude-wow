@@ -13,10 +13,15 @@ const FACTORY = require('../factory');
 // Subfolders of the bridge's folder, for the "folder not found" hint.
 function siblingFolders(dir) {
   try {
-    return fs.readdirSync(dir, { withFileTypes: true })
+    return fs
+      .readdirSync(dir, { withFileTypes: true })
       .filter(d => d.isDirectory() && !d.name.startsWith('.') && d.name !== 'node_modules')
-      .map(d => d.name).sort().slice(0, 30);
-  } catch { return []; }
+      .map(d => d.name)
+      .sort()
+      .slice(0, 30);
+  } catch {
+    return [];
+  }
 }
 
 const plugin = {
@@ -28,7 +33,9 @@ const plugin = {
   searchesFiles: true,
   banner: options => {
     const conf = FACTORY.settings(options);
-    return conf.enabled ? `factory dispatcher: ${conf.skills.length} skill(s), runs on ${conf.model} unless plugins.claude-code.factory.models says otherwise` : 'full coding sessions (plugins.claude-code.factory.enabled is off)';
+    return conf.enabled
+      ? `factory dispatcher: ${conf.skills.length} skill(s), runs on ${conf.model} unless plugins.claude-code.factory.models says otherwise`
+      : 'full coding sessions (plugins.claude-code.factory.enabled is off)';
   },
   handle(job, core) {
     const cwd = P.resolveCwd(job.cwd, core.defaultCwd);
@@ -36,10 +43,13 @@ const plugin = {
     if (!fs.existsSync(cwd)) {
       core.log(`${core.tag(job)} cwd does not exist: ${cwd}`);
       const sibs = siblingFolders(core.defaultCwd);
-      core.fail(job, `Folder does not exist: ${cwd}\n` +
-        `Paths are relative to ${core.defaultCwd}.` +
-        (sibs.length ? `\nFolders there: ${sibs.join(', ')}` : '') +
-        `\nUse /claude cd <folder> to pick one, or /claude cd alone for the default.`);
+      core.fail(
+        job,
+        `Folder does not exist: ${cwd}\n` +
+          `Paths are relative to ${core.defaultCwd}.` +
+          (sibs.length ? `\nFolders there: ${sibs.join(', ')}` : '') +
+          `\nUse /claude cd <folder> to pick one, or /claude cd alone for the default.`,
+      );
       return;
     }
     const conf = FACTORY.settings(core.options('claude-code'));

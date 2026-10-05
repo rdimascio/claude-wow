@@ -23,11 +23,17 @@ const PROGRESS_CHARS = 140;
 
 // One progress line's worth of a text: first PROGRESS_CHARS characters, one line.
 function snippet(text) {
-  const s = String(text || '').trim().replace(/\s+/g, ' ');
+  const s = String(text || '')
+    .trim()
+    .replace(/\s+/g, ' ');
   return s.length > PROGRESS_CHARS ? s.slice(0, PROGRESS_CHARS) + '...' : s;
 }
 
-function firstLine(s) { return String(s || '').split('\n')[0].slice(0, 110); }
+function firstLine(s) {
+  return String(s || '')
+    .split('\n')[0]
+    .slice(0, 110);
+}
 
 // The command inside the shell wrapper an agent runs it with (Codex: `/bin/zsh -lc 'ls -la'`).
 function shellInner(cmd) {
@@ -45,7 +51,9 @@ function shellInner(cmd) {
 // appends to the reply; done: the reply itself, once the run has produced it;
 // usage: { context, output, window? } when the event says how big the session
 // has grown (see claudeUsage). The bridge keeps the last usage it sees.
-function empty() { return { progress: [], denied: [], notes: [] }; }
+function empty() {
+  return { progress: [], denied: [], notes: [] };
+}
 
 // Context growth. Every message resumes the chat's session, so what the model
 // reads grows with every turn, and each message costs more than the last. The
@@ -81,7 +89,9 @@ const CLAUDE_RATES = [
   { match: /claude-sonnet-4-[56]\b/, input: 3, output: 15 },
   { match: /claude-haiku-4-5\b/, input: 1, output: 5 },
 ];
-const CACHE_WRITE_5M = 1.25, CACHE_WRITE_1H = 2, CACHE_READ = 0.1;
+const CACHE_WRITE_5M = 1.25,
+  CACHE_WRITE_1H = 2,
+  CACHE_READ = 0.1;
 
 function claudeRate(model) {
   const m = String(model || '');
@@ -90,9 +100,14 @@ function claudeRate(model) {
 
 // USD for one model's tokens: { input, output, cacheRead, cache5m, cache1h }.
 function priceTokens(rate, t) {
-  return (t.input * rate.input + t.output * rate.output
-    + t.cacheRead * (rate.cacheRead !== undefined ? rate.cacheRead : rate.input * CACHE_READ)
-    + t.cache5m * rate.input * CACHE_WRITE_5M + t.cache1h * rate.input * CACHE_WRITE_1H) / 1e6;
+  return (
+    (t.input * rate.input +
+      t.output * rate.output +
+      t.cacheRead * (rate.cacheRead !== undefined ? rate.cacheRead : rate.input * CACHE_READ) +
+      t.cache5m * rate.input * CACHE_WRITE_5M +
+      t.cache1h * rate.input * CACHE_WRITE_1H) /
+    1e6
+  );
 }
 
 // { usd, models, unknown } for a result event: per model from modelUsage
@@ -105,7 +120,8 @@ function claudeCost(ev, model) {
   const u = ev && ev.usage && typeof ev.usage === 'object' ? ev.usage : null;
   const n = (o, k) => (o && Number.isFinite(o[k]) && o[k] > 0 ? o[k] : 0);
   const cc = u && u.cache_creation && typeof u.cache_creation === 'object' ? u.cache_creation : null;
-  const t1h = n(cc, 'ephemeral_1h_input_tokens'), t5m = n(cc, 'ephemeral_5m_input_tokens');
+  const t1h = n(cc, 'ephemeral_1h_input_tokens'),
+    t5m = n(cc, 'ephemeral_5m_input_tokens');
   const share1h = t1h + t5m > 0 ? t1h / (t1h + t5m) : 0;
   const mu = ev && ev.modelUsage && typeof ev.modelUsage === 'object' ? ev.modelUsage : null;
   const models = mu ? Object.keys(mu) : [];
@@ -117,11 +133,23 @@ function claudeCost(ev, model) {
   else if (models.length) {
     for (const m of models) {
       const rate = claudeRate(m);
-      if (!rate) { unknown.push(m); continue; }
-      if (!counted(m)) { unknown.push(m); continue; } // several models, this one without counts: cannot be priced
+      if (!rate) {
+        unknown.push(m);
+        continue;
+      }
+      if (!counted(m)) {
+        unknown.push(m);
+        continue;
+      } // several models, this one without counts: cannot be priced
       const x = mu[m];
       const write = n(x, 'cacheCreationInputTokens');
-      usd += priceTokens(rate, { input: n(x, 'inputTokens'), output: n(x, 'outputTokens'), cacheRead: n(x, 'cacheReadInputTokens'), cache1h: write * share1h, cache5m: write * (1 - share1h) });
+      usd += priceTokens(rate, {
+        input: n(x, 'inputTokens'),
+        output: n(x, 'outputTokens'),
+        cacheRead: n(x, 'cacheReadInputTokens'),
+        cache1h: write * share1h,
+        cache5m: write * (1 - share1h),
+      });
     }
     return { usd, models, unknown, sessionTotal: true };
   }
@@ -129,7 +157,13 @@ function claudeCost(ev, model) {
   const rate = claudeRate(model);
   if (!rate) return { usd: 0, models: [model], unknown: [model] };
   const write = n(u, 'cache_creation_input_tokens');
-  usd = priceTokens(rate, { input: n(u, 'input_tokens'), output: n(u, 'output_tokens'), cacheRead: n(u, 'cache_read_input_tokens'), cache1h: cc ? t1h : 0, cache5m: cc ? t5m : write });
+  usd = priceTokens(rate, {
+    input: n(u, 'input_tokens'),
+    output: n(u, 'output_tokens'),
+    cacheRead: n(u, 'cache_read_input_tokens'),
+    cache1h: cc ? t1h : 0,
+    cache5m: cc ? t5m : write,
+  });
   return { usd, models: [model], unknown: [] };
 }
 
@@ -176,13 +210,14 @@ function costCapNote(id, acfg) {
   const v = acfg && acfg.maxCostUsd;
   if (v === undefined || v === null) return '';
   if (id !== 'claude') return `${displayName(id)} has no cost cap, so agents.${id}.maxCostUsd is ignored.`;
-  if (costCap(v) === null) return `agents.claude.maxCostUsd must be a positive number of US dollars; ${JSON.stringify(v)} is ignored, so Claude runs have no cost cap.`;
+  if (costCap(v) === null)
+    return `agents.claude.maxCostUsd must be a positive number of US dollars; ${JSON.stringify(v)} is ignored, so Claude runs have no cost cap.`;
   return '';
 }
 
 function claudeParser(opts = {}) {
   let usage = null; // the last assistant message's usage: what the next turn will carry
-  let model = '';   // the model that wrote it, for pricing a result without modelUsage
+  let model = ''; // the model that wrote it, for pricing a result without modelUsage
   const refusals = new Map();
   const wowdataCalls = new Map();
   const noteRefusal = (id, message, reasonType, replace) => {
@@ -217,11 +252,13 @@ function claudeParser(opts = {}) {
             if (tool && block.id) wowdataCalls.set(block.id, tool);
             out.progress.push(tool ? PD.loadingLine(tool) : describeToolUse(block));
             out.steps = (out.steps || 0) + 1;
-          }
-          else if (block.type === 'text' && block.text && block.text.trim()) out.progress.push(snippet(block.text));
+          } else if (block.type === 'text' && block.text && block.text.trim()) out.progress.push(snippet(block.text));
         }
         const u = claudeUsage(ev.message.usage);
-        if (u) { usage = u; out.usage = { ...u }; }
+        if (u) {
+          usage = u;
+          out.usage = { ...u };
+        }
         if (typeof ev.message.model === 'string' && ev.message.model) model = ev.message.model;
       } else if (ev.type === 'result') {
         const u = usage || claudeUsage(ev.usage);
@@ -230,18 +267,27 @@ function claudeParser(opts = {}) {
           out.usage = window ? { ...u, window } : { ...u };
           // The run's API-equivalent price: the result's usage is the sum over its calls.
           const cost = claudeCost(ev, model);
-          if (cost && !cost.unknown.length) { out.usage.cost = cost.usd; if (cost.sessionTotal) out.usage.costIsSessionTotal = true; }
-          else out.usage.costUnknown = cost ? cost.unknown : ['no model named'];
+          if (cost && !cost.unknown.length) {
+            out.usage.cost = cost.usd;
+            if (cost.sessionTotal) out.usage.costIsSessionTotal = true;
+          } else out.usage.costUnknown = cost ? cost.unknown : ['no model named'];
         }
         const missing = ev.result === undefined || ev.result === null || ev.result === '';
-        const text = ev.subtype === BUDGET_STOP ? budgetStopText(ev)
-          : missing && ev.is_error ? `Claude Code ended with an error (${ev.subtype || 'no detail given'}) and no message.`
-          : typeof ev.result === 'string' ? ev.result : JSON.stringify(ev.result ?? '', null, 2);
+        const text =
+          ev.subtype === BUDGET_STOP
+            ? budgetStopText(ev)
+            : missing && ev.is_error
+              ? `Claude Code ended with an error (${ev.subtype || 'no detail given'}) and no message.`
+              : typeof ev.result === 'string'
+                ? ev.result
+                : JSON.stringify(ev.result ?? '', null, 2);
         const denials = Array.isArray(ev.permission_denials) ? ev.permission_denials : [];
         if (denials.length) {
           const neverOffered = new Set(Array.isArray(opts.neverOffer) ? opts.neverOffer : []);
           const neverIf = typeof opts.neverOfferIf === 'function' ? opts.neverOfferIf : () => false;
-          const entries = denials.map(d => classifyDenial(d, refusals.get(String(d && d.tool_use_id)) || {}, opts)).filter(e => !neverOffered.has(e.rule) && !neverIf(e.rule));
+          const entries = denials
+            .map(d => classifyDenial(d, refusals.get(String(d && d.tool_use_id)) || {}, opts))
+            .filter(e => !neverOffered.has(e.rule) && !neverIf(e.rule));
           const again = entries.filter(e => deniedAgain(e, opts.granted));
           const fresh = entries.filter(e => !again.includes(e));
           out.denied = [...new Set(fresh.map(e => e.rule))];
@@ -279,17 +325,26 @@ function localParser(opts = {}) {
 // One progress line for a Codex item, or null for the kinds shown elsewhere.
 function codexItemLine(item) {
   switch (item.type) {
-    case 'command_execution': return `$ ${firstLine(shellInner(item.command))}`;
+    case 'command_execution':
+      return `$ ${firstLine(shellInner(item.command))}`;
     case 'file_change': {
       const changes = Array.isArray(item.changes) ? item.changes : [];
       const kinds = new Set(changes.map(c => c.kind));
-      const verb = kinds.size === 1 ? ({ add: 'write', delete: 'delete', update: 'edit' })[[...kinds][0]] || 'edit' : 'edit';
-      return `${verb} ${changes.map(c => baseName(c.path)).filter(Boolean).slice(0, 4).join(', ')}`;
+      const verb = kinds.size === 1 ? { add: 'write', delete: 'delete', update: 'edit' }[[...kinds][0]] || 'edit' : 'edit';
+      return `${verb} ${changes
+        .map(c => baseName(c.path))
+        .filter(Boolean)
+        .slice(0, 4)
+        .join(', ')}`;
     }
-    case 'web_search': return `search: ${item.query || ''}`;
-    case 'mcp_tool_call': return `tool: ${item.server || ''}.${item.tool || ''}`;
-    case 'collab_tool_call': return `agent: ${item.tool || ''}`;
-    default: return null;
+    case 'web_search':
+      return `search: ${item.query || ''}`;
+    case 'mcp_tool_call':
+      return `tool: ${item.server || ''}.${item.tool || ''}`;
+    case 'collab_tool_call':
+      return `agent: ${item.tool || ''}`;
+    default:
+      return null;
   }
 }
 
@@ -304,7 +359,10 @@ function codexParser() {
         if (ev.thread_id) out.session = ev.thread_id;
       } else if (ev.type === 'item.started' && item) {
         const line = codexItemLine(item);
-        if (line) { out.progress.push(line); shown.add(item.id); }
+        if (line) {
+          out.progress.push(line);
+          shown.add(item.id);
+        }
       } else if (ev.type === 'item.completed' && item) {
         if (item.type === 'agent_message') {
           last = String(item.text || '');
@@ -317,7 +375,9 @@ function codexParser() {
           const line = codexItemLine(item);
           if (line && !shown.has(item.id)) out.progress.push(line);
           if (item.type === 'command_execution' && item.status === 'declined') {
-            out.notes.push(`Codex was not allowed to run: ${firstLine(shellInner(item.command))}\nRaise "permissionMode" for codex in bridge/config.json (acceptEdits lets it edit the project, bypassPermissions lifts the sandbox) if it should have been.`);
+            out.notes.push(
+              `Codex was not allowed to run: ${firstLine(shellInner(item.command))}\nRaise "permissionMode" for codex in bridge/config.json (acceptEdits lets it edit the project, bypassPermissions lifts the sandbox) if it should have been.`,
+            );
           }
         }
       } else if (ev.type === 'turn.completed') {
@@ -344,8 +404,16 @@ function codexParser() {
 // spawn_subagent, ...) by what they do; anything else falls back to the ACP
 // `kind` on the call, then to its name.
 const GROK_TOOL_KIND = {
-  run_terminal_command: 'execute', read_file: 'read', list_dir: 'list', write: 'edit', search_replace: 'edit',
-  grep: 'search', web_search: 'websearch', web_fetch: 'fetch', todo_write: 'think', spawn_subagent: 'agent',
+  run_terminal_command: 'execute',
+  read_file: 'read',
+  list_dir: 'list',
+  write: 'edit',
+  search_replace: 'edit',
+  grep: 'search',
+  web_search: 'websearch',
+  web_fetch: 'fetch',
+  todo_write: 'think',
+  spawn_subagent: 'agent',
 };
 
 // A Grok tool_call as a progress line plus the Claude-syntax rule that would
@@ -372,15 +440,26 @@ function grokCall(ev) {
       const cmd = firstLine(input.command || input.cmd || input.script || '') || firstLine(ev.title || '');
       return { line: `$ ${cmd}`, rule: ruleFor({ tool_name: 'Bash', tool_input: { command: cmd } }) };
     }
-    case 'read': return { line: `read ${file()}`, rule: 'Read' };
-    case 'list': return { line: `ls ${file() || '.'}`, rule: 'Read' };
-    case 'edit': case 'delete': case 'move': return { line: `edit ${file()}`, rule: 'Edit' };
-    case 'search': return { line: `grep ${input.pattern || input.query || input.regex || ''}`, rule: 'Grep' };
-    case 'websearch': return { line: `search: ${input.query || input.q || ''}`, rule: 'WebSearch' };
-    case 'fetch': return { line: `fetch ${input.url || ''}`, rule: 'WebFetch' };
-    case 'think': return { line: 'todo list', rule: null };
-    case 'agent': return { line: `agent: ${snippet(input.description || input.prompt || input.task || '')}`.trim(), rule: null };
-    default: return { line: String(ev.title || ev.toolName || name || 'tool'), rule: null };
+    case 'read':
+      return { line: `read ${file()}`, rule: 'Read' };
+    case 'list':
+      return { line: `ls ${file() || '.'}`, rule: 'Read' };
+    case 'edit':
+    case 'delete':
+    case 'move':
+      return { line: `edit ${file()}`, rule: 'Edit' };
+    case 'search':
+      return { line: `grep ${input.pattern || input.query || input.regex || ''}`, rule: 'Grep' };
+    case 'websearch':
+      return { line: `search: ${input.query || input.q || ''}`, rule: 'WebSearch' };
+    case 'fetch':
+      return { line: `fetch ${input.url || ''}`, rule: 'WebFetch' };
+    case 'think':
+      return { line: 'todo list', rule: null };
+    case 'agent':
+      return { line: `agent: ${snippet(input.description || input.prompt || input.task || '')}`.trim(), rule: null };
+    default:
+      return { line: String(ev.title || ev.toolName || name || 'tool'), rule: null };
   }
 }
 
@@ -411,21 +490,38 @@ function grokRefusal(ev) {
 }
 
 function grokParser() {
-  let text = '';      // the text segment being streamed (chunks under `data`)
-  let lastText = '';  // the last finished segment, for a turn that ends on a tool call
-  let thought = '';   // buffered thought chunks, shown as one line when something else arrives
+  let text = ''; // the text segment being streamed (chunks under `data`)
+  let lastText = ''; // the last finished segment, for a turn that ends on a tool call
+  let thought = ''; // buffered thought chunks, shown as one line when something else arrives
   const calls = new Map(); // toolCallId -> { line, rule }
-  const flushThought = (out) => { if (thought.trim()) out.progress.push('~ ' + snippet(thought)); thought = ''; };
-  const flushText = (out) => { if (text.trim()) { lastText = text; out.progress.push(snippet(text)); } text = ''; };
-  const chunk = (ev) => typeof ev.data === 'string' ? ev.data : (ev.data && typeof ev.data.text === 'string') ? ev.data.text : typeof ev.text === 'string' ? ev.text : '';
+  const flushThought = out => {
+    if (thought.trim()) out.progress.push('~ ' + snippet(thought));
+    thought = '';
+  };
+  const flushText = out => {
+    if (text.trim()) {
+      lastText = text;
+      out.progress.push(snippet(text));
+    }
+    text = '';
+  };
+  const chunk = ev =>
+    typeof ev.data === 'string' ? ev.data : ev.data && typeof ev.data.text === 'string' ? ev.data.text : typeof ev.text === 'string' ? ev.text : '';
   return {
     feed(ev) {
       const out = empty();
       switch (ev.type) {
-        case 'text': flushThought(out); text += chunk(ev); break;
-        case 'thought': if (text) flushText(out); thought += chunk(ev); break;
+        case 'text':
+          flushThought(out);
+          text += chunk(ev);
+          break;
+        case 'thought':
+          if (text) flushText(out);
+          thought += chunk(ev);
+          break;
         case 'tool_call': {
-          flushThought(out); flushText(out);
+          flushThought(out);
+          flushText(out);
           const c = grokCall(ev);
           calls.set(String(ev.toolCallId || ''), c);
           out.progress.push(c.line);
@@ -459,7 +555,8 @@ function grokParser() {
           out.done = { text: String(typeof msg === 'object' ? JSON.stringify(msg) : msg), error: true };
           break;
         }
-        default: break; // usage, plan, available_commands, and whatever a newer Grok adds
+        default:
+          break; // usage, plan, available_commands, and whatever a newer Grok adds
       }
       return out;
     },
@@ -480,10 +577,15 @@ function agyParser() {
           const file = params.AbsolutePath || params.TargetFile || params.file_path || params.path || '';
           const base = file ? baseName(file) : '';
           const commands = {
-            view_file: `read ${base}`, write_to_file: `edit ${base}`, replace_file_content: `edit ${base}`,
-            multi_replace_file_content: `edit ${base}`, sed_file: `edit ${base}`,
-            run_command: `$ ${params.CommandLine || ''}`, grep_search: `grep: ${params.Query || ''}`,
-            list_dir: `ls ${base || params.DirectoryPath || ''}`, search_web: `search: ${params.query || params.Query || ''}`,
+            view_file: `read ${base}`,
+            write_to_file: `edit ${base}`,
+            replace_file_content: `edit ${base}`,
+            multi_replace_file_content: `edit ${base}`,
+            sed_file: `edit ${base}`,
+            run_command: `$ ${params.CommandLine || ''}`,
+            grep_search: `grep: ${params.Query || ''}`,
+            list_dir: `ls ${base || params.DirectoryPath || ''}`,
+            search_web: `search: ${params.query || params.Query || ''}`,
             read_url_content: `fetch ${params.url || params.Url || ''}`,
           };
           if (commands[name]) out.progress.push(commands[name]);
@@ -505,12 +607,18 @@ function agyParser() {
 
 function hermesParser() {
   return {
-    feed() { return empty(); },
+    feed() {
+      return empty();
+    },
     finish({ stdout, stderr, code }) {
       const err = String(stderr || '').replace(/\x1b\[[0-9;]*[A-Za-z]/g, '');
       const session = /session_id:\s*(\S+)/i.exec(err);
       let text = String(stdout || '').trim();
-      if (!text && code !== 0) text = err.replace(/^.*session_id:.*$/gim, '').trim().slice(-2000);
+      if (!text && code !== 0)
+        text = err
+          .replace(/^.*session_id:.*$/gim, '')
+          .trim()
+          .slice(-2000);
       return { session: session ? session[1] : '', done: { text, error: code !== 0 } };
     },
   };
@@ -550,7 +658,7 @@ function attachedNote(images) {
 // (--system-prompt-snapshot), so nothing about this message's picture goes
 // there: the caption rides with the picture, where it cannot be missed, and
 // the fuller vision paragraph is in the prompt (protocol.messagePrompt).
-const IMAGE_CAPTION = '[The image above is a screenshot of the player\'s screen, taken the moment they sent this message.]';
+const IMAGE_CAPTION = "[The image above is a screenshot of the player's screen, taken the moment they sent this message.]";
 
 const READ_ONLY_MODES = new Set(['default', 'manual', 'plan']);
 
@@ -591,7 +699,10 @@ const AGENTS = {
       content.push({ type: 'text', text: `${IMAGE_CAPTION}\n\n${prompt}` });
       return { stdin: JSON.stringify({ type: 'user', message: { role: 'user', content } }) + '\n' };
     },
-    env: (env) => { delete env.CLAUDECODE; return env; }, // a bridge started from inside Claude Code can still launch it
+    env: env => {
+      delete env.CLAUDECODE;
+      return env;
+    }, // a bridge started from inside Claude Code can still launch it
     parser: claudeParser,
   },
   codex: {
@@ -623,7 +734,7 @@ const AGENTS = {
       const ctx = resume ? systemShort : system;
       return { stdin: (ctx ? contextBlock(ctx) : '') + prompt + attachedNote(images) };
     },
-    env: (env) => env,
+    env: env => env,
     parser: codexParser,
   },
   grok: {
@@ -631,9 +742,7 @@ const AGENTS = {
     command: 'grok',
     settings: ['model', 'permissionMode'],
     install: 'https://docs.x.ai/build (irm https://x.ai/cli/install.ps1 | iex), then `grok login`',
-    windowsPaths: () => [
-      path.join(process.env.GROK_HOME || path.join(os.homedir(), '.grok'), 'bin', 'grok.exe'),
-    ],
+    windowsPaths: () => [path.join(process.env.GROK_HOME || path.join(os.homedir(), '.grok'), 'bin', 'grok.exe')],
     posixPaths: () => [path.join(process.env.GROK_HOME || path.join(os.homedir(), '.grok'), 'bin', 'grok')],
     npmPackage: '@xai-official/grok',
     args({ cfg, resume, cwd, system, promptFile }) {
@@ -645,12 +754,12 @@ const AGENTS = {
         // Headless Grok can't ask, so anything not on the allowlist is denied.
         a.push('--permission-mode', 'dontAsk');
         const rules = mode === 'acceptEdits' ? ['Edit', 'Read', 'Grep'] : [];
-        for (const r of (Array.isArray(cfg.allowedTools) ? cfg.allowedTools : [])) rules.push(...grokRules(r));
+        for (const r of Array.isArray(cfg.allowedTools) ? cfg.allowedTools : []) rules.push(...grokRules(r));
         for (const r of new Set(rules)) a.push('--allow', r);
       }
       // Deny rules win over everything, always-approve included.
       const denied = [];
-      for (const r of (Array.isArray(cfg.deniedTools) ? cfg.deniedTools : [])) denied.push(...grokRules(r));
+      for (const r of Array.isArray(cfg.deniedTools) ? cfg.deniedTools : []) denied.push(...grokRules(r));
       for (const r of new Set(denied)) a.push('--deny', r);
       if (cfg.model) a.push('-m', cfg.model);
       if (resume) a.push('-r', resume);
@@ -658,11 +767,15 @@ const AGENTS = {
       return a.concat(Array.isArray(cfg.extraArgs) ? cfg.extraArgs : []);
     },
     input: ({ prompt, images }) => ({ promptFile: prompt + attachedNote(images) }),
-    env: (env) => { env.GROK_DISABLE_AUTOUPDATER = '1'; return env; },
+    env: env => {
+      env.GROK_DISABLE_AUTOUPDATER = '1';
+      return env;
+    },
     parser: grokParser,
   },
   agy: {
-    name: 'Antigravity', command: 'agy',
+    name: 'Antigravity',
+    command: 'agy',
     settings: ['model', 'permissionMode', 'addDirs'],
     install: 'Install Google Antigravity CLI (agy) and run `agy` once to log in.',
     windowsPaths: () => [path.join(process.env.LOCALAPPDATA || '', 'agy', 'bin', 'agy.exe')],
@@ -673,8 +786,15 @@ const AGENTS = {
       const context = contextBlock(resume ? systemShort || '' : system || '').slice(0, 12000);
       const available = Math.max(0, 24000 - context.length - note.length);
       const bounded = text.length > available ? text.slice(0, available) + note : text;
-      const a = [`-p=${context}${bounded}`, '--output-format', 'stream-json', '--add-dir', cwd,
-        '--print-timeout', `${Math.max(1, Math.ceil((timeoutMs || 1800000) / 1000))}s`];
+      const a = [
+        `-p=${context}${bounded}`,
+        '--output-format',
+        'stream-json',
+        '--add-dir',
+        cwd,
+        '--print-timeout',
+        `${Math.max(1, Math.ceil((timeoutMs || 1800000) / 1000))}s`,
+      ];
       const mode = cfg.permissionMode || 'acceptEdits';
       if (mode === 'acceptEdits') a.push('--mode', 'accept-edits', '--disable-slash-commands');
       else if (READ_ONLY_MODES.has(mode)) a.push('--mode', 'plan');
@@ -684,13 +804,17 @@ const AGENTS = {
       if (cfg.model) a.push('--model', cfg.model);
       return a.concat(Array.isArray(cfg.extraArgs) ? cfg.extraArgs : []);
     },
-    input: () => ({}), env: env => env, parser: agyParser,
+    input: () => ({}),
+    env: env => env,
+    parser: agyParser,
   },
   hermes: {
-    name: 'Hermes', command: 'hermes',
+    name: 'Hermes',
+    command: 'hermes',
     settings: ['model'],
     install: 'Install Hermes Agent and run `hermes setup` once.',
-    windowsPaths: () => [], posixPaths: () => [],
+    windowsPaths: () => [],
+    posixPaths: () => [],
     stream: 'text',
     args({ cfg, resume, cwd, images }) {
       const a = ['chat', '--query-file', '-', '-Q', '--in', cwd, '--source', 'tool'];
@@ -709,13 +833,16 @@ const AGENTS = {
       const note = cfg && cfg.permissionMode === 'bypassPermissions' ? 'hermes never runs with --yolo from the bridge' : '';
       return { stdin: text, note };
     },
-    env: env => env, parser: hermesParser,
+    env: env => env,
+    parser: hermesParser,
   },
   local: {
-    name: 'Local', command: 'local-agent',
+    name: 'Local',
+    command: 'local-agent',
     settings: ['model'],
     install: 'start an OpenAI-compatible server such as llama-server (docs/CONFIGURATION.md) and set agents.local.baseUrl',
-    windowsPaths: () => [], posixPaths: () => [],
+    windowsPaths: () => [],
+    posixPaths: () => [],
     mcp: true,
     resolve: () => {
       const [file, args] = R.scriptCommand('local-agent');
@@ -767,7 +894,7 @@ function withChatSettings(agentCfg, id, chosen) {
 }
 
 const PLUGIN_SETTINGS = ['model', 'effort'];
-const PLUGIN_SETTING_RE = /^[A-Za-z0-9._:\[\]-]{1,80}$/;
+const PLUGIN_SETTING_RE = /^[A-Za-z0-9._:[\]-]{1,80}$/;
 
 function withPluginSettings(agentCfg, id, pluginOpts) {
   const block = pluginOpts && pluginOpts.agents && pluginOpts.agents[id];
@@ -779,11 +906,15 @@ function withPluginSettings(agentCfg, id, pluginOpts) {
   return withChatSettings(agentCfg, id, picked);
 }
 
-function agentIds() { return Object.keys(AGENTS); }
+function agentIds() {
+  return Object.keys(AGENTS);
+}
 
 // The agent id a config value or strip flag names, or null when it is unknown.
 function normalizeAgent(id) {
-  const s = String(id || '').trim().toLowerCase();
+  const s = String(id || '')
+    .trim()
+    .toLowerCase();
   return AGENTS[s] ? s : null;
 }
 
@@ -810,11 +941,19 @@ function agentConfig(cfg, id) {
 // Finding the executable
 // ---------------------------------------------------------------------------
 
-function exists(p) { try { return fs.statSync(p).isFile(); } catch { return false; } }
+function exists(p) {
+  try {
+    return fs.statSync(p).isFile();
+  } catch {
+    return false;
+  }
+}
 
 function pathDirs() {
   const sep = process.platform === 'win32' ? ';' : ':';
-  const dirs = String(process.env.PATH || '').split(sep).filter(Boolean);
+  const dirs = String(process.env.PATH || '')
+    .split(sep)
+    .filter(Boolean);
   if (process.platform === 'win32' && process.env.APPDATA) dirs.push(path.join(process.env.APPDATA, 'npm'));
   return dirs;
 }
@@ -841,7 +980,11 @@ function fromPath(p) {
 // binary next to it, run that instead so the process tree stays one deep.
 function unwrapShim(shim, agent) {
   let src;
-  try { src = fs.readFileSync(shim, 'utf8'); } catch { return null; }
+  try {
+    src = fs.readFileSync(shim, 'utf8');
+  } catch {
+    return null;
+  }
   // npm shims mention "%dp0%\node.exe" before the launcher: skip it. The launcher
   // is a .js file (Codex), a .exe (Claude) or a shebang script with no extension (Grok).
   const m = [...src.matchAll(/"%~?dp0%?\\([^"]+)"/g)].find(x => !/(^|\\)node\.exe$/i.test(x[1]));
@@ -899,17 +1042,58 @@ function resolveCommand(id, cfg = {}) {
   }
   for (const p of A.windowsPaths()) if (exists(p)) return { file: p, args: [], found: true };
   const dirs = pathDirs();
-  for (const d of dirs) { const exe = path.join(d, A.command + '.exe'); if (exists(exe)) return { file: exe, args: [], found: true }; }
+  for (const d of dirs) {
+    const exe = path.join(d, A.command + '.exe');
+    if (exists(exe)) return { file: exe, args: [], found: true };
+  }
   for (const d of dirs) {
     const shim = path.join(d, A.command + '.cmd');
-    if (exists(shim)) { const r = unwrapShim(shim, A); if (r) return r; }
+    if (exists(shim)) {
+      const r = unwrapShim(shim, A);
+      if (r) return r;
+    }
   }
   return { file: A.command + '.exe', args: [], found: false, note: `install it (${A.install}) or set agents.${id}.path in config.json` };
 }
 
 module.exports = {
-  AGENTS, DEFAULT_AGENT, SETTING_FLAGS, READ_ONLY_MODES, unsupportedSettings, costCap, costCapNote, withChatSettings, withPluginSettings, PLUGIN_SETTINGS, addDirs, agentIds, normalizeAgent, displayName, agentConfig,
-  grokRules, snippet, contextBlock, imagePaths, IMAGE_CAPTION,
-  claudeParser, codexParser, grokParser, agyParser, hermesParser, localParser, LOCAL_DEFAULTS, codexItemLine, grokCall, grokRefusal, shellInner, claudeUsage, claudeWindow, claudeCost, claudeRate, CLAUDE_RATES,
-  resolveCommand, unwrapShim, nativeNextTo,
+  AGENTS,
+  DEFAULT_AGENT,
+  SETTING_FLAGS,
+  READ_ONLY_MODES,
+  unsupportedSettings,
+  costCap,
+  costCapNote,
+  withChatSettings,
+  withPluginSettings,
+  PLUGIN_SETTINGS,
+  addDirs,
+  agentIds,
+  normalizeAgent,
+  displayName,
+  agentConfig,
+  grokRules,
+  snippet,
+  contextBlock,
+  imagePaths,
+  IMAGE_CAPTION,
+  claudeParser,
+  codexParser,
+  grokParser,
+  agyParser,
+  hermesParser,
+  localParser,
+  LOCAL_DEFAULTS,
+  codexItemLine,
+  grokCall,
+  grokRefusal,
+  shellInner,
+  claudeUsage,
+  claudeWindow,
+  claudeCost,
+  claudeRate,
+  CLAUDE_RATES,
+  resolveCommand,
+  unwrapShim,
+  nativeNextTo,
 };
