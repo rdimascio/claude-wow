@@ -92,6 +92,7 @@ const OB = require('./observed');
 const OT = require('./observedtools');
 const MH = require('./maphold');
 const REL = require('./releases');
+const SVC = require('./service');
 
 const HERE = __dirname;
 // Config, state, transcripts, log and scratch live in the home folder (home.js:
@@ -2601,6 +2602,15 @@ function noteInflight(key, job, child, agentName, marker) {
   saveState();
 }
 
+function endOrphanOnWindows(run) {
+  if (!pidAlive(run.pid) || !Number.isFinite(run.startedAt) || run.startedAt < BOOTED_AT) return;
+  const outcome = SVC.endWinAgentRun(run);
+  const agent = run.agent || 'agent';
+  if (outcome === 'ended') log(`#${run.id}: ended the orphaned ${agent} process tree ${run.pid} left by the previous bridge`);
+  else if (outcome === 'unknown' || outcome === 'failed')
+    log(`#${run.id}: could not confirm and end the orphaned ${agent} process ${run.pid} (${outcome}); if it still runs, end it in Task Manager`);
+}
+
 function recoverInflight() {
   const staleQueue = state.queued !== undefined || state.handling !== undefined || state.held !== undefined;
   delete state.queued;
@@ -2612,7 +2622,8 @@ function recoverInflight() {
     return;
   }
   for (const [key, run] of lost) {
-    if (process.platform !== 'win32' && isSameProcess(run.pid, run.startedAt, run.marker)) {
+    if (process.platform === 'win32') endOrphanOnWindows(run);
+    else if (isSameProcess(run.pid, run.startedAt, run.marker)) {
       try {
         process.kill(-run.pid, 'SIGKILL');
         log(`#${run.id}: ended the orphaned ${run.agent || 'agent'} process group ${run.pid} left by the previous bridge`);

@@ -626,6 +626,24 @@ function supervisorIdentity(record, proc) {
   return SUPERVISOR_COMMAND.test(proc.command) ? 'match' : 'stale';
 }
 
+function agentRunIdentity(record, proc) {
+  if (proc.state !== 'found') return proc.state;
+  if (!Number.isFinite(record.startedAt) || !record.marker) return 'unknown';
+  if (proc.created > latestCreation({ started: record.startedAt })) return 'stale';
+  if (!proc.command) return 'unknown';
+  return proc.command.includes(record.marker) ? 'match' : 'stale';
+}
+
+function endWinAgentRun(record, exec = run) {
+  if (!record || !isPid(record.pid)) return 'gone';
+  const query = exec(POWERSHELL, [...POWERSHELL_ARGS, winProcessQuery(record.pid)]);
+  const identity = query.ok ? agentRunIdentity(record, parseWinProcess(query.out)) : 'unknown';
+  if (identity !== 'match') return identity;
+  const kill = exec(POWERSHELL, [...POWERSHELL_ARGS, winVerifiedKill({ pid: record.pid, started: record.startedAt })]);
+  if (kill.ok) return 'ended';
+  return kill.status === IDENTITY_CHANGED_EXIT ? 'stale' : 'failed';
+}
+
 function unverifiedError(record, file) {
   return new Error(
     `could not confirm that pid ${record.pid} is the bridge supervisor, so nothing was stopped or started. If it is, end it in Task Manager; then delete ${file} and retry`,
@@ -918,6 +936,8 @@ module.exports = {
   winVerifiedKill,
   parseWinProcess,
   supervisorIdentity,
+  agentRunIdentity,
+  endWinAgentRun,
   parseLaunchctlPrint,
   formatUptime,
   lastLines,

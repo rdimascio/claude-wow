@@ -27,8 +27,7 @@ test('a bridge that dies mid-run tells the player which message was lost', async
       { timeoutMs: 30000, label: 'a note about the lost run' },
     );
     assert.match(note.text, /stopped unexpectedly .* reply is lost\. Send it again/);
-    if (process.platform === 'win32') return;
-    await h.bridge.waitForLine(new RegExp(`#${id}: ended the orphaned .* process group`), { from: 0 });
+    await h.bridge.waitForLine(new RegExp(`#${id}: ended the orphaned .* process (group|tree)`), { from: 0 });
     await h.client.waitFor(() => h.agentCalls().every(c => !isAlive(c.pid)), { timeoutMs: 5000, label: 'the orphaned agent to be ended' });
   });
 });
