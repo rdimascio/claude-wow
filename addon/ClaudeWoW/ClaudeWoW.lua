@@ -277,6 +277,8 @@ function Cli.ChatOptionTokens(c, extraDirs)
 	if c.resumeId and c.resumeId ~= "" then table.insert(tokens, "resume=" .. c.resumeId) end
 	if c.liveTarget and c.liveTarget ~= "" then table.insert(tokens, "live=" .. ToHex(c.liveTarget)) end
 	if c.discordLinkPending then table.insert(tokens, "discord=link") end
+	local mcp = Cli.McpToken(c)
+	if mcp ~= "" then table.insert(tokens, mcp) end
 	return tokens
 end
 
@@ -2128,6 +2130,7 @@ local function TryLoadSlot(why)
 		ClaudeWoW.ApplyProjects(data.projects, data.home)
 		run.bridgeDiscord = data.discord == true
 		ClaudeWoW.ApplyMirror(data.mirror)
+		ClaudeWoW.ApplyMcp(data.mcp)
 		local acked = ClaudeWoW.ApplyAcks(data.acks)
 		ApplyTransport(data)
 		if acked then RefreshStrip() end
@@ -2357,6 +2360,7 @@ local function ProcessInbox()
 	ClaudeWoW.ApplyProjects(inbox.projects, inbox.home)
 	run.bridgeDiscord = inbox.discord == true
 	ClaudeWoW.ApplyMirror(inbox.mirror)
+	ClaudeWoW.ApplyMcp((tonumber(inbox.now) or 0) >= time() - Q.INBOX_FRESH_SECONDS and inbox.mcp or nil)
 	ApplyTransport(inbox)
 	ClaudeWoW.Version.Apply(inbox.bridge, inbox.now)
 	ClaudeWoW.Version.ApplyDisk(inbox.addonDisk, inbox.now)
@@ -3388,7 +3392,7 @@ function ClaudeWoW.Send(text, allow, opts)
 	-- Shift-clicked links become [Name] plus their tooltip, which is what the agent can read.
 	local links
 	text, links = ClaudeWoW.ExpandLinks(text)
-	local limit = Codec.MAX_PAYLOAD - 300
+	local limit = Codec.MAX_PAYLOAD - 300 - #Cli.McpToken(c)
 	if #text > limit then
 		Cli.Out(c, "That message is too long for one send (" .. #text .. " chars, max ~" .. limit .. "). Split it up." .. (links > 0 and " Each linked item adds its tooltip to the message." or ""))
 		return
@@ -3890,7 +3894,8 @@ function Cli.ProjectButtonRoom(b)
 	if ui.chatTitle then
 		return math.max(Cli.PROJECT_W_MIN, math.min(Cli.PROJECT_W_MAX, math.floor(hostWidth * Cli.PROJECT_HEADER_SHARE)))
 	end
-	return math.max(Cli.PROJECT_W_MIN, hostWidth - 2 * Cli.PROJECT_PAD)
+	local mcp = ui.mcpButton and ui.mcpButton:IsShown() and ((Try(ui.mcpButton.GetWidth, ui.mcpButton) or 0) + Cli.PROJECT_PAD) or 0
+	return math.max(Cli.PROJECT_W_MIN, hostWidth - 2 * Cli.PROJECT_PAD - mcp)
 end
 
 function Cli.UpdateProjectButton()
@@ -3910,6 +3915,191 @@ function Cli.ProjectButtonTooltip(b)
 	GameTooltip:SetOwner(b, ui.chatTitle and "ANCHOR_BOTTOMRIGHT" or "ANCHOR_TOP")
 	GameTooltip:SetText("Project: " .. (b.fullName or Cli.NO_PROJECT))
 	GameTooltip:AddLine("The repo this chat works in. No project = a general chat. You can also type #name in a message or use /claude --project <name>.", 0.8, 0.8, 0.8, true)
+	GameTooltip:Show()
+end
+
+Cli.MCP_MAX = 8
+Cli.MCP_LIST_MAX = 32
+Cli.MCP_AGENTS = { claude = true, codex = true }
+Cli.MCP_HEALTH = {
+	connected = { "ok", "33cc33" },
+	["needs-auth"] = { "needs login", "ff9933" },
+	failed = { "failed", "ff4444" },
+	pending = { "starting", "999999" },
+	unknown = { "not seen yet", "999999" },
+}
+
+function ClaudeWoW.ApplyMcp(list)
+	if type(list) ~= "table" then
+		run.bridgeMcp = nil
+		Cli.UpdateMcpButton()
+		return
+	end
+	local out = {}
+	for _, s in ipairs(list) do
+		if #out >= Cli.MCP_LIST_MAX then break end
+		if type(s) == "table" and type(s.name) == "string" and #s.name <= 64 and s.name:match("^[%w][%w_%-]*$") then
+			local health = (type(s.health) == "string" and Cli.MCP_HEALTH[s.health]) and s.health or "unknown"
+			table.insert(out, { name = s.name, on = s.on == true, health = health })
+		end
+	end
+	run.bridgeMcp = out
+	Cli.UpdateMcpButton()
+end
+
+function Cli.McpUnsupported(c)
+	local agent = ChatAgent(c)
+	return agent ~= "" and not Cli.MCP_AGENTS[agent]
+end
+
+function Cli.McpOn(c, s)
+	if c and type(c.mcp) == "table" then return Contains(c.mcp, s.name) end
+	return s.on
+end
+
+function Cli.McpToken(c)
+	if not (c and type(c.mcp) == "table" and run.bridgeMcp) then return "" end
+	return "mcp=" .. table.concat(c.mcp, ",")
+end
+
+function Cli.McpCounts(c)
+	local on = 0
+	for _, s in ipairs(run.bridgeMcp or {}) do
+		if Cli.McpOn(c, s) then on = on + 1 end
+	end
+	return on, #(run.bridgeMcp or {})
+end
+
+function Cli.McpHealthText(s)
+	local h = Cli.MCP_HEALTH[s.health] or Cli.MCP_HEALTH.unknown
+	return "|cff" .. h[2] .. h[1] .. "|r"
+end
+
+function Cli.McpMissing()
+	if not run.bridgeMcp then
+		if not ClaudeWoW.IsConnected() then return "not connected to the bridge yet." end
+		return "this bridge sends no MCP server list. Update the bridge (claude-wow update) and reconnect."
+	end
+	if #run.bridgeMcp == 0 then return "the bridge has no MCP servers. Add them under mcp.servers in its config.json." end
+end
+
+function Cli.SetMcp(c, name, on)
+	local missing = Cli.McpMissing()
+	if missing then return nil, missing end
+	local found, set = false, {}
+	for _, s in ipairs(run.bridgeMcp) do
+		local want = Cli.McpOn(c, s)
+		if s.name == name then
+			found, want = true, on
+		end
+		if want then table.insert(set, s.name) end
+	end
+	if not found then return nil, "no MCP server named \"" .. name .. "\" (servers: " .. Cli.McpNames() .. ")." end
+	if #set > Cli.MCP_MAX then return nil, "a chat can use at most " .. Cli.MCP_MAX .. " MCP servers. Turn them all off with /claude mcp none, then turn on the ones you want." end
+	c.mcp = set
+	return name .. " is " .. (on and "on" or "off") .. " for this chat."
+end
+
+function Cli.McpNames()
+	local names = {}
+	for _, s in ipairs(run.bridgeMcp or {}) do table.insert(names, s.name) end
+	return #names > 0 and table.concat(names, ", ") or "none"
+end
+
+function Cli.McpReport(c)
+	local missing = Cli.McpMissing()
+	if missing then return "MCP: " .. missing end
+	local lines = { "MCP servers for this chat" .. (type(c.mcp) == "table" and "" or " (the bridge's defaults)") .. ":" }
+	for _, s in ipairs(run.bridgeMcp) do
+		table.insert(lines, "  " .. (Cli.McpOn(c, s) and "on   " or "off  ") .. s.name .. "  " .. Cli.McpHealthText(s))
+	end
+	if Cli.McpUnsupported(c) then table.insert(lines, ChatAgentName(c) .. " does not use MCP servers; this list applies to Claude and Codex chats.") end
+	table.insert(lines, "/claude mcp on|off <name> changes one; /claude mcp none turns all off; /claude mcp default goes back to the bridge's defaults.")
+	return table.concat(lines, "\n")
+end
+
+function Cli.McpCommand(c, rest)
+	if not c then return end
+	rest = Trim(rest or "")
+	local word = rest:lower()
+	if word == "" then
+		Cli.Say(c, Cli.McpReport(c))
+	elseif word == "default" then
+		c.mcp = nil
+		Cli.Out(c, "MCP: this chat uses the bridge's default servers again.")
+	elseif word == "none" then
+		local missing = Cli.McpMissing()
+		if not missing then c.mcp = {} end
+		Cli.Out(c, "MCP: " .. (missing or "every server is off for this chat."))
+	else
+		local verb, name = rest:match("^(%S+)%s+(%S+)$")
+		local note, err = Cli.SetMcp(c, name, verb:lower() == "on")
+		Cli.Out(c, "MCP: " .. (err or note))
+	end
+end
+
+function Cli.IsMcpCommand(rest)
+	rest = Trim(rest or ""):lower()
+	if rest == "" or rest == "default" or rest == "none" then return true end
+	local verb, name = rest:match("^(%S+)%s+(%S+)$")
+	return (verb == "on" or verb == "off") and name ~= nil
+end
+
+function Cli.McpMenu(anchor)
+	local c = ActiveChat()
+	if not c then return end
+	if not Cli.McpMissing() and type(MenuUtil) == "table" and type(MenuUtil.CreateContextMenu) == "function" then
+		local shown = pcall(MenuUtil.CreateContextMenu, anchor, function(_, root)
+			root:CreateTitle("MCP servers")
+			for _, s in ipairs(run.bridgeMcp) do
+				root:CreateCheckbox(s.name .. "  " .. Cli.McpHealthText(s), function() return Cli.McpOn(c, s) end, function()
+					local _, err = Cli.SetMcp(c, s.name, not Cli.McpOn(c, s))
+					if err then Cli.Out(c, "MCP: " .. err) end
+					ClaudeWoW.Render()
+				end)
+			end
+			root:CreateDivider()
+			root:CreateButton("Turn all off", function() Cli.McpCommand(c, "none") end)
+			root:CreateButton("Use the bridge's defaults", function() Cli.McpCommand(c, "default") end)
+		end)
+		if shown then return end
+	end
+	Cli.Say(c, Cli.McpReport(c))
+end
+
+function Cli.UpdateMcpButton()
+	local b = ui.mcpButton
+	if not b then return end
+	local c = ActiveChat()
+	local on, total = Cli.McpCounts(c)
+	local show = c ~= nil and total > 0
+	if ui.titleBar and ui.chatTitle and ui.projectButton then
+		ui.chatTitle:SetPoint("RIGHT", show and b or ui.projectButton, "LEFT", -Cli.PROJECT_PAD, 0)
+	end
+	if not show then
+		b:Hide()
+		return
+	end
+	local warn = false
+	for _, s in ipairs(run.bridgeMcp) do
+		if Cli.McpOn(c, s) and (s.health == "failed" or s.health == "needs-auth") then warn = true end
+	end
+	local color = Cli.McpUnsupported(c) and "999999" or (warn and "ff9933" or "ffffff")
+	b.text:SetWidth(0)
+	b.text:SetText("MCP |cff" .. color .. on .. "/" .. total .. "|r")
+	b:SetWidth((Try(b.text.GetStringWidth, b.text) or 50) + Cli.PROJECT_PAD)
+	b:Show()
+end
+
+function Cli.McpButtonTooltip(b)
+	local c = ActiveChat()
+	GameTooltip:SetOwner(b, ui.chatTitle and "ANCHOR_BOTTOMRIGHT" or "ANCHOR_TOP")
+	GameTooltip:SetText("MCP servers")
+	for _, s in ipairs(run.bridgeMcp or {}) do
+		GameTooltip:AddDoubleLine((Cli.McpOn(c, s) and "on   " or "off  ") .. s.name, Cli.McpHealthText(s), 1, 1, 1)
+	end
+	if c and Cli.McpUnsupported(c) then GameTooltip:AddLine(ChatAgentName(c) .. " does not use MCP servers.", 1, 0.6, 0.2, true) end
+	GameTooltip:AddLine("Click to turn servers on or off for this chat. Health is from the last Claude run that loaded them.", 0.8, 0.8, 0.8, true)
 	GameTooltip:Show()
 end
 
@@ -4596,6 +4786,7 @@ end
 
 function ClaudeWoW.Render()
 	local c = ActiveChat()
+	Cli.UpdateMcpButton()
 	Cli.UpdateProjectButton()
 	Q.UpdatePlaceholder()
 	if ui.content and c then
@@ -6612,6 +6803,27 @@ local function BuildUI()
 	projectHost:HookScript("OnSizeChanged", function() Cli.UpdateProjectButton() end)
 	ui.projectButton = projectButton
 
+	local mcpButton = CreateFrame("Button", "ClaudeWoWMcpButton", projectHost)
+	mcpButton:SetSize(60, ui.titleBar and Q.NAV_H - 10 or 16)
+	mcpButton:SetPoint("RIGHT", projectButton, "LEFT", -Cli.PROJECT_PAD, 0)
+	mcpButton:SetFrameLevel((Try(projectHost.GetFrameLevel, projectHost) or 1) + 5)
+	mcpButton.text = mcpButton:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+	mcpButton.text:SetPoint("RIGHT", mcpButton, "RIGHT", -2, 0)
+	mcpButton.text:SetJustifyH("RIGHT")
+	mcpButton.text:SetWordWrap(false)
+	local mcpHl = mcpButton:CreateTexture(nil, "HIGHLIGHT")
+	mcpHl:SetAllPoints()
+	mcpHl:SetColorTexture(1, 1, 1, 0.08)
+	mcpButton:RegisterForClicks("LeftButtonUp")
+	mcpButton:SetScript("OnClick", function(self)
+		GameTooltip:Hide()
+		Cli.McpMenu(self)
+	end)
+	mcpButton:SetScript("OnEnter", Cli.McpButtonTooltip)
+	mcpButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
+	mcpButton:Hide()
+	ui.mcpButton = mcpButton
+
 	-- Send sits to the right of the input box, vertically centred on it.
 	local send = MakeButton(f, "Send", SEND_W, ClaudeWoW.SendFromInput)
 	send:SetHeight(30)
@@ -6867,6 +7079,7 @@ HELP = table.concat({
 	"/claude wrong [#n] [note]          mark the last reply in this chat (or reply #n) as wrong; it lands in the bridge's feedback list",
 	"/claude bug <text>                 report a bug, with the addon's state and Lua errors attached",
 	"/claude errors                     the Lua errors the addon caught this UI session",
+	"/claude mcp [on|off <name>|none|default]  the MCP servers this chat's Claude or Codex runs get, with their health; the MCP button in the chat header does the same",
 	"/claude resend                     show the strip again if the bridge missed it",
 	"/claude reload                     reload now (also frees the slot pool)",
 	"/claude slots                      how many reply slots are still free this session",
@@ -6899,7 +7112,7 @@ end
 local COMMAND_ARGS = {
 	mini = 0, min = 0, hide = 0, quit = 0, help = 0, clear = 0, delete = 0, reset = 0, copy = 0,
 	cancel = 0, resend = 0, reload = 0, refresh = 0, slots = 0, diag = { [""] = true, copy = true },
-	dev = true, wrong = true, bug = true, errors = 0, discord = 0,
+	dev = true, wrong = true, bug = true, errors = 0, discord = 0, mcp = function(rest) return Cli.IsMcpCommand(rest) end,
 	context = function(rest) return rest == "" or rest == "on" or rest == "off" or ParseTokens(rest) ~= nil end,
 	ctx = function(rest) return rest == "" or rest == "on" or rest == "off" or ParseTokens(rest) ~= nil end,
 	mode = { [""] = true, pixel = true, reload = true },
@@ -6933,7 +7146,7 @@ Cli.CLAUDE_VERBS = {
 	help = true, diag = true, cancel = true, copy = true, clear = true, rename = true, delete = true,
 	cd = true, hide = true, quit = true, mini = true, min = true, reload = true, refresh = true,
 	resend = true, slots = true, look = true, reset = true, probe = true, orders = true,
-	dev = true, wrong = true, bug = true, errors = true, discord = true,
+	dev = true, wrong = true, bug = true, errors = true, mcp = true, discord = true,
 }
 
 Cli.CONFIG_KEYS = {
@@ -8286,6 +8499,8 @@ RunCommand = function(cmd, rest)
 		ClaudeWoW.Cancel(c)
 	elseif cmd == "dev" or cmd == "wrong" or cmd == "bug" then
 		Cli.DevCommand(c, cmd, rest)
+	elseif cmd == "mcp" then
+		Cli.McpCommand(c, rest)
 	elseif cmd == "errors" then
 		Cli.Say(c, ClaudeWoWDev and ClaudeWoWDev.Report() or "Dev.lua is not loaded. Restart the game client once to load new addon files.")
 	elseif cmd == "clear" then

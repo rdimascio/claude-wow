@@ -9,6 +9,7 @@ const ROOT = makeRoot('fuzz');
 const withGame = gameRunner(ROOT);
 const SEED = (Number(process.env.CLAUDE_WOW_FUZZ_SEED) || Date.now() ^ (process.pid << 8)) >>> 0;
 const PERIODIC_SWEEP_ONLY_MS = 5000;
+const UNREAD_BEFORE_STOP_MS = 3000;
 const EPISODES = Number(process.env.CLAUDE_WOW_FUZZ_EPISODES) || 8;
 
 function mulberry32(seed) {
@@ -78,7 +79,7 @@ test(`seeded fuzz: random messages, directives, reloads, restarts and combat eac
       for (const p of plans) {
         log.push(JSON.stringify(p));
         if (p.restartBefore) {
-          const from = Date.now();
+          const from = Date.now() - UNREAD_BEFORE_STOP_MS;
           await h.bridge.restart();
           restarts.push([from, Date.now() + PERIODIC_SWEEP_ONLY_MS]);
         }

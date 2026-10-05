@@ -220,6 +220,7 @@ The client's own commands, with the same rule: a command word followed by someth
 | `/claude rename [name]`, `/claude delete`, `/claude clear` | manage the current chat |
 | `/claude reset` | wipe this chat's agent memory, keep the transcript |
 | `/claude cancel` | stop waiting on this chat's reply |
+| `/claude mcp [on\|off <name>\|none\|default]` | the MCP servers from `mcp.servers` that this chat's Claude or Codex runs get, with their health; the **MCP** button in the chat header does the same with checkboxes |
 | `/claude -r all` | one chat per session handed off with `claude-wow handoff --stop` in a terminal, each resuming its session headless ([docs/IN-GAME-DEV.md](docs/IN-GAME-DEV.md)) |
 | `/claude dev <command>` | dev tools for the chat's folder, run by the bridge without an agent: `status`, `diff`, `log`, `run`, `test`, `doctor`, `errors`, `feedback` ([docs/IN-GAME-DEV.md](docs/IN-GAME-DEV.md)) |
 | `/claude wrong [#n] [note]`, `/claude bug <text>`, `/claude errors` | mark a reply as wrong, file a bug with the addon's Lua errors, list the Lua errors the addon caught |
