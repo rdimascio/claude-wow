@@ -648,7 +648,7 @@ test('the chat list orders by the last message, a new chat by its start, and ope
   assert.equal(shownRows(vm).split('|')[0], 'Old talk', 'a new message moves the chat to the top');
 });
 
-test('general chats sit under Chats, project chats under their project, and the dropdown under the input switches the project', () => {
+test('general chats sit under Chats, project chats under their project, and the project button in the header switches the project', () => {
   const vm = nativeVM();
   vm.run('ClaudeWoW.NewChat("Best rogue race")');
   vm.run('ClaudeWoW.Render()');
@@ -665,6 +665,48 @@ test('general chats sit under Chats, project chats under their project, and the 
   assert.match(vm.evaluate('ClaudeWoWProjectButton.text:GetText()'), /wow-ai/);
   vm.run('ClaudeWoWProjectButton.scripts.OnClick(ClaudeWoWProjectButton); STUB.Pick("No project")');
   assert.equal(vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].cwd'), '');
+});
+
+test('the project button sits at the right end of the header band, and the chat title stops before it', () => {
+  const vm = nativeVM();
+  assert.equal(vm.evaluate('ClaudeWoWProjectButton:GetParent() == ClaudeWoWTitleBar'), 'true');
+  assert.equal(vm.evaluate('ClaudeWoWProjectButton.point .. " " .. ClaudeWoWProjectButton.relPoint'), 'RIGHT RIGHT');
+  assert.equal(vm.evaluate('ClaudeWoWProjectButton.rel == ClaudeWoWTitleBar'), 'true');
+  assert.equal(vm.evaluate('ClaudeWoW.UI.chatTitle.rel == ClaudeWoWProjectButton'), 'true', 'the title truncates before it reaches the button');
+  assert.equal(vm.evaluate('ClaudeWoW.UI.chatTitle.point .. " " .. ClaudeWoW.UI.chatTitle.relPoint .. " " .. ClaudeWoW.UI.chatTitle.x'), 'RIGHT LEFT -8');
+  vm.run('STUB.renames = 0; local real = ClaudeWoW.RenamePrompt; ClaudeWoW.RenamePrompt = function(...) STUB.renames = STUB.renames + 1 return real(...) end');
+  vm.run('ClaudeWoWProjectButton.scripts.OnClick(ClaudeWoWProjectButton, "LeftButton")');
+  assert.equal(vm.num('STUB.renames'), 0, 'a click on the project button opens the project menu, not the rename prompt');
+  assert.match(vm.evaluate('STUB.menu.items[1].text'), /^Project$/);
+});
+
+test('a long project label truncates inside a bounded button, shows in full in the tooltip, and the bound follows the window size', () => {
+  const vm = nativeVM();
+  vm.run('ClaudeWoW.SetFolder("~/a-very-long-project-folder-name-for-the-header", ClaudeWoWDB.chats[#ClaudeWoWDB.chats])');
+  vm.run('ClaudeWoWProjectButton.text.GetStringWidth = function() return 400 end; ClaudeWoWTitleBar.width = 400; ClaudeWoW.Render()');
+  assert.equal(vm.num('ClaudeWoWProjectButton:GetWidth()'), 200, 'half the header band at most');
+  assert.equal(vm.num('ClaudeWoWProjectButton.text:GetWidth()'), 192, 'the label is cut to the button');
+  vm.run('ClaudeWoWTitleBar.width = 188; for _, fn in ipairs(ClaudeWoWTitleBar.hooks.OnSizeChanged) do fn(ClaudeWoWTitleBar) end');
+  assert.equal(vm.num('ClaudeWoWProjectButton:GetWidth()'), 94, 'a narrow window narrows the button');
+  vm.run('ClaudeWoWTitleBar.width = 2000; for _, fn in ipairs(ClaudeWoWTitleBar.hooks.OnSizeChanged) do fn(ClaudeWoWTitleBar) end');
+  assert.equal(vm.num('ClaudeWoWProjectButton:GetWidth()'), 240, 'a wide window still caps the button');
+  vm.run('ClaudeWoWProjectButton.scripts.OnEnter(ClaudeWoWProjectButton)');
+  assert.equal(vm.evaluate('GameTooltip:GetText()'), 'Project: a-very-long-project-folder-name-for-the-header');
+  vm.run('ClaudeWoWProjectButton.text.GetStringWidth = function() return 40 end; ClaudeWoW.Render()');
+  assert.equal(vm.num('ClaudeWoWProjectButton:GetWidth()'), 60, 'a short label keeps the minimum width');
+});
+
+test('without native frames the project button stays in the composer and never runs past the box edge', () => {
+  const vm = newVM();
+  open(vm);
+  vm.run('ClaudeWoW.SetFolder("~/a-very-long-project-folder-name-for-the-composer", ClaudeWoWDB.chats[1]); ClaudeWoW.Render()');
+  assert.equal(vm.evaluate('ClaudeWoW.UI.chatTitle'), null);
+  assert.equal(vm.evaluate('ClaudeWoWProjectButton.point'), 'BOTTOMRIGHT');
+  vm.run('ClaudeWoWProjectButton.text.GetStringWidth = function() return 1000 end; ClaudeWoW.Render()');
+  const box = vm.num('ClaudeWoWProjectButton:GetParent():GetWidth()');
+  assert.ok(vm.num('ClaudeWoWProjectButton:GetWidth()') <= box - 16, 'the button fits inside the composer');
+  assert.ok(vm.num('ClaudeWoWProjectButton:GetRight()') <= vm.num('ClaudeWoWProjectButton:GetParent():GetRight()'));
+  assert.ok(vm.num('ClaudeWoWProjectButton:GetLeft()') >= vm.num('ClaudeWoWProjectButton:GetParent():GetLeft()'));
 });
 
 test('the chat list shows the newest chat first, keeps its order when a chat is opened, and scrolls only to bring an opened chat into view', () => {
@@ -741,7 +783,7 @@ test('the window is built from Blizzard frame templates where the client has the
   assert.equal(vm.evaluate('ClaudeWoWMini.shown'), 'true');
 });
 
-test('the black bar shows the chat title across its whole width, with folder, agent and plugin in its tooltip', () => {
+test('the black bar shows the chat title up to the project button, with folder, agent and plugin in its tooltip', () => {
   const vm = nativeVM();
   vm.run('ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[2].id)');
   assert.equal(vm.evaluate('ClaudeWoW.UI.chatTitle:GetText()'), 'Fix the bridge');
