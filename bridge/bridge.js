@@ -55,6 +55,7 @@ const AS = require('./assets'); // the capture scripts and the primer, by path, 
 const ACH = require('./achievements');
 const SS = require('./sessions');
 const CQ = require('./chatqueue');
+const DH = require('./chathub');
 const PJ = require('./projects');
 const G = require('./gamefs');
 const SIG = require('./signals');
@@ -167,6 +168,8 @@ if (!DEFAULT_AGENT) {
 }
 // The plugin a chat is routed to unless it is bound to another ("plugin=" flag).
 const pluginsCfg = cfg.plugins && typeof cfg.plugins === 'object' ? cfg.plugins : {};
+const DISCORD = DH.settings(cfg.discord);
+const DISCORD_TOKEN = DH.takeToken(process.env, HOME.dir);
 const DEFAULT_PLUGIN = pluginsCfg.default ? registry.normalize(pluginsCfg.default) : registry.ids()[0];
 if (!DEFAULT_PLUGIN) {
   console.error(`"plugins.default": "${pluginsCfg.default}" in ${CONFIG_FILE} is not one of ${registry.ids().join(', ')}.`);
@@ -465,6 +468,8 @@ function forgetChat(job) {
   if (state.sessionPlugin) delete state.sessionPlugin[sessKey(job)];
   if (state.sessionRules) delete state.sessionRules[sessKey(job)];
   if (state.sessionUsage) delete state.sessionUsage[sessKey(job)];
+  if (state.chatSettings) delete state.chatSettings[job.chat];
+  unlinkDiscord(job.chat);
   if (state.lastRuns) delete state.lastRuns[sessKey(job)];
   devNotes.delete(chatKey(job));
   if (pendingRestore) pendingRestore.chats = pendingRestore.chats.filter(c => c.id !== job.chat);
@@ -616,6 +621,7 @@ function shutdown(sig, exitCode) {
   factory.stop();
   forgetUnstartedWork();
   stopPlugins();
+  if (discordHub) discordHub.stop().catch(() => {});
   let voteClosing = Promise.resolve();
   try {
     voteClosing = VOTES.settleWithin(voteBox.stop(), VOTES.SHUTDOWN_PUSH_WAIT_MS);
@@ -797,6 +803,7 @@ function sharedSlotFields(urgent) {
     sessions: sessionList(),
     projects: projectList(),
     home: os.homedir(),
+    discord: !!discordHub,
     cwd: DEFAULT_CWD,
     agent: DEFAULT_AGENT,
     agents: A.agentIds(),
@@ -1361,7 +1368,7 @@ function contextTextFor(job) {
 }
 
 function gameContext(job) {
-  if (cfg.gameContext === false) return '';
+  if (cfg.gameContext === false || (job && job.noGameContext)) return '';
   return contextTextFor(job);
 }
 
@@ -1778,6 +1785,11 @@ function runJob(job) {
     finish(job, 'error', refusal);
     return;
   }
+  if (job.discordLink) {
+    linkFromGame(job);
+    return;
+  }
+  if (job.via !== 'discord') noteChatSettings(job);
   const early = registry.route(job, { fallback: DEFAULT_PLUGIN });
   const sessionless = !!(early.plugin && early.plugin.sessionless);
   if (job.resume && !job.liveTarget && !sessionless) {
@@ -2047,6 +2059,142 @@ function checkedReply(job, reply) {
   return { ...reply, text: text.text, summary: RT.checkReply(reply.summary, linked).text };
 }
 
+const CHAT_SETTINGS = ['agent', 'model', 'effort', 'permissionMode', 'addDirs', 'plugin'];
+let discordHub = null;
+
+function noteChatSettings(job) {
+  if (!job.chat || registry.normalize(job.plugin) !== 'claude-code') return;
+  const picked = {};
+  for (const k of CHAT_SETTINGS) if (job[k] !== undefined && job[k] !== '') picked[k] = job[k];
+  (state.chatSettings = state.chatSettings || {})[job.chat] = picked;
+}
+
+function discordLinkOf(chatId) {
+  const link = state.discordLinks && state.discordLinks[chatId];
+  return link ? { chatId, ...link } : null;
+}
+
+const discordLinks = {
+  get: discordLinkOf,
+  byThread: threadId => {
+    for (const [chatId, link] of Object.entries(state.discordLinks || {})) if (link.threadId === threadId) return { chatId, ...link };
+    return null;
+  },
+  all: () => Object.entries(state.discordLinks || {}).map(([chatId, link]) => ({ chatId, ...link })),
+};
+
+function discordReplyText(status, text, denied) {
+  const body = status === 'error' ? `Error: ${text}` : text;
+  const rules = Array.isArray(denied) ? denied.filter(Boolean) : [];
+  return rules.length ? `${body}\n\nThis run needs permission for ${rules.join(', ')}. Grant it in game (Claude window, this chat).` : body;
+}
+
+function unlinkDiscord(chatId) {
+  const link = discordLinkOf(chatId);
+  if (!link) return;
+  delete state.discordLinks[chatId];
+  if (discordHub) discordHub.postTo(chatId, 'This chat was deleted in game. This thread is no longer linked.');
+  log(`discord: chat ${chatId} unlinked (deleted in game)`);
+}
+
+function newDiscordChat(threadId, text) {
+  let cwd = DEFAULT_CWD;
+  let rest = String(text || '');
+  const tag = /^\s*#([\w.-]+)\s*/.exec(rest);
+  if (tag) {
+    const hit = PJ.knownProjects({ defaultCwd: DEFAULT_CWD, recent: PJ.recentClaudeProjects(CLAUDE_DIR) }).find(
+      p => p.label.toLowerCase() === tag[1].toLowerCase(),
+    );
+    if (!hit)
+      return { error: `Unknown project "${tag[1]}". Start the message with the name of a known project, or leave it out for ${path.basename(DEFAULT_CWD)}.` };
+    cwd = hit.path;
+    rest = rest.slice(tag[0].length);
+  }
+  const chatId = 'd' + crypto.randomBytes(5).toString('hex');
+  (state.discordLinks = state.discordLinks || {})[chatId] = { threadId, cwd, createdAt: Date.now() };
+  saveState();
+  log(`discord: new chat ${chatId} in ${cwd}`);
+  return { chatId, text: rest };
+}
+
+function discordJob(chatId, text) {
+  const link = discordLinkOf(chatId) || {};
+  state.discordSeq = (state.discordSeq || 0) + 1;
+  const settings = (state.chatSettings && state.chatSettings[chatId]) || {};
+  return {
+    ...settings,
+    session: 'discord',
+    chat: chatId,
+    id: state.discordSeq,
+    text,
+    cwd: link.cwd || (transcripts.chats[chatId] && transcripts.chats[chatId].cwd) || '',
+    plugin: 'claude-code',
+    via: 'discord',
+    name: '',
+    allow: [],
+  };
+}
+
+function linkFromGame(job) {
+  markHandled(job);
+  if (!discordHub) {
+    finish(job, 'error', DISCORD.error || 'Discord is not set up on this bridge (discord.enabled in config.json).');
+    return;
+  }
+  if (discordLinkOf(job.chat)) {
+    finish(job, 'done', 'This chat is already linked to a Discord thread.');
+    return;
+  }
+  const t = transcripts.chats[job.chat];
+  const recap = t
+    ? t.messages
+        .slice(-5)
+        .map(m => `${m.role === 'user' ? 'You' : 'Claude'}: ${String(m.text).slice(0, 300)}`)
+        .join('\n')
+    : '';
+  discordHub
+    .createLink(job.name || (t && t.name) || 'claude-wow chat', recap)
+    .then(threadId => {
+      (state.discordLinks = state.discordLinks || {})[job.chat] = { threadId, cwd: job.cwd || (t && t.cwd) || DEFAULT_CWD, createdAt: Date.now() };
+      saveState();
+      log(`${tagOf(job)} discord: linked to a new thread`);
+      finish(job, 'done', 'Linked. This chat now also lives in a Discord thread; messages from either side reach the same session.');
+    })
+    .catch(e => {
+      log(`${tagOf(job)} discord: link failed (${e.message})`);
+      finish(job, 'error', `Could not create the Discord thread: ${e.message}`);
+    });
+}
+
+function startDiscord() {
+  if (DISCORD.error) log(DISCORD.error);
+  if (!DISCORD.enabled || once || inject !== null) return;
+  const hub = DH.createChatHub({
+    config: DISCORD,
+    token: DISCORD_TOKEN,
+    home: HOME.dir,
+    log,
+    links: discordLinks,
+    onNewChat: newDiscordChat,
+    onMessage: ({ chatId, text }) => {
+      const job = discordJob(chatId, text);
+      saveState();
+      log(`${tagOf(job)} (discord) message for chat ${chatId}`);
+      admit(job);
+    },
+  });
+  hub
+    .start()
+    .then(r => {
+      if (!r.ok) return log(r.error);
+      discordHub = hub;
+      log(
+        `discord: on, channel ${DISCORD.channelId}, ${DISCORD.userIds.length} allowed user(s), ${Object.keys(state.discordLinks || {}).length} linked chat(s)`,
+      );
+    })
+    .catch(e => log(`discord: could not start (${e && e.message ? e.message : e})`));
+}
+
 function lateReply(job, raw) {
   lastActivityAt = Date.now();
   if (chatDeletedSince(job)) {
@@ -2055,6 +2203,7 @@ function lateReply(job, raw) {
   }
   const { text, summary } = checkedReply(job, P.splitSummary(String(raw || '')));
   noteMessage(job, 'assistant', text);
+  if (discordHub) discordHub.postTo(job.chat, text);
   publish(
     `${chatKey(job)}#late`,
     {
@@ -2179,6 +2328,8 @@ function homeGuardRules() {
   const mcpDir = path.relative(HOME.dir, MCP_CONFIG_DIR);
   return homeDirs().flatMap(dir => [
     P.absolutePathRule('Read', LP.tokenFile(dir)),
+    P.absolutePathRule('Read', path.join(dir, DH.TOKEN_FILE)),
+    P.absolutePathRule('Read', path.join(dir, DH.WEBHOOK_FILE)),
     P.absolutePathRule('Edit', path.join(dir, path.basename(HOME.goals), '**')),
     P.absolutePathRule('Read', path.join(dir, mcpDir, '**')),
   ]);
@@ -2304,7 +2455,10 @@ function runAgent(job, opts = {}) {
     delete state.sessions[key];
   }
   const pluginTools = typeof opts.tools === 'string' ? opts.tools : plugin.tools;
-  const rulesHash = P.systemRulesHash(gameContext(job), { tools: pluginTools, surfaces: plugin.surfaces, voice: plugin.voice });
+  const rulesOpts = { tools: pluginTools, surfaces: plugin.surfaces, voice: plugin.voice };
+  if (discordLinkOf(job.chat) && state.sessions[skey] && state.sessionRules && state.sessionRules[skey] === P.systemRulesHash('', rulesOpts))
+    job.noGameContext = true;
+  const rulesHash = P.systemRulesHash(gameContext(job), rulesOpts);
   if (agentId === 'claude' && state.sessions[skey] && P.rulesChanged(state, skey, rulesHash)) {
     log(`${tag} system prompt rules changed (${state.sessionRules[skey]} -> ${rulesHash}): new session`);
     delete state.sessions[skey];
@@ -2487,6 +2641,7 @@ function runAgent(job, opts = {}) {
     toolTrail.push(String(line).slice(0, RUN_TOOL_CHARS));
     while (toolTrail.length > RUN_TOOLS_KEPT) toolTrail.shift();
     beat(job);
+    if (discordHub) discordHub.progressTo(job.chat, progress.slice(-3).join('\n'));
     publish(
       key,
       {
@@ -2912,6 +3067,7 @@ function finish(job, status, text, session, denied) {
   mapShare.onReplyPublished();
   signal(clientFor(job), 'sig', job.id, true);
   tellPluginFinished(plugin, job, { status, text, summary });
+  if (discordHub) discordHub.postTo(job.chat, discordReplyText(status, shown.text, denied));
   const growth = usage.turns
     ? `, turn ${usage.turns}${usage.ctx ? ', ctx ' + P.tokensLabel(usage.ctx) + (usage.window ? ' of ' + P.tokensLabel(usage.window) : '') : ''}${usage.cost !== undefined ? ', ~$' + usage.cost.toFixed(2) + ' API so far' : ''}`
     : '';
@@ -3422,6 +3578,7 @@ for (const id of A.agentIds()) {
   if (note) log(note);
 }
 if (!once) startPlugins();
+startDiscord();
 if (inject !== null) {
   const job = {
     id: state.lastId + 1,

@@ -95,7 +95,7 @@ function markHandled(state, job, now = Date.now()) {
   h[job.id] = 1;
   const ids = Object.keys(h);
   if (ids.length > 1000) for (const k of ids.slice(0, ids.length - 1000)) delete h[k];
-  state.lastId = Math.max(state.lastId, job.id);
+  if (job.via !== 'discord') state.lastId = Math.max(state.lastId, job.id);
   (state.seen = state.seen || {})[key] = now;
 }
 
@@ -308,6 +308,8 @@ function parseFlags(flags) {
         .filter(Boolean)
         .slice(0, ADD_DIRS_MAX);
       if (dirs.length) out.addDirs = dirs;
+    } else if (tok === 'discord=link') {
+      out.discordLink = true;
     } else if (tok.startsWith('resume=')) {
       const v = tok.slice(7).trim();
       if (RESUME_REF_RE.test(v)) out.resume = v;
@@ -1182,6 +1184,7 @@ function luaTable(globalName, records, opts = {}) {
     lines.splice(lines.length - 1, 0, `\tprojects = { ${rows.join(', ')} },`);
   }
   if (opts.home) lines.splice(lines.length - 1, 0, `\thome = ${luaStr(opts.home)},`);
+  if (opts.discord === true) lines.splice(lines.length - 1, 0, '\tdiscord = true,');
   if (Array.isArray(opts.acks)) {
     const acks = opts.acks.filter(a => a && Number.isInteger(a.id) && a.id > 0);
     lines.splice(lines.length - 1, 0, `\tacks = { ${acks.map(a => `{ session = ${luaStr(a.session || '')}, id = ${a.id} }`).join(', ')} },`);
