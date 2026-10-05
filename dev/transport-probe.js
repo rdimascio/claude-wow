@@ -6,7 +6,11 @@ const HOME = require('../bridge/home');
 const CLI = require('../bridge/clients');
 
 function readState(file) {
-  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return {}; }
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    return {};
+  }
 }
 
 const CHAT_LOG = 'WoWChatLog.txt';
@@ -14,7 +18,14 @@ const ASYNC_LOG = 'AsyncFile.log';
 const PROBE_LINE = /(CWLOG\d+) (LONG|V|H|END) ?(\S*)/;
 const ASYNC_LINE = /(Cancel requested|Cancel processed|Wait Started|Wait Finished) -- FileData ID (-?\d+)/;
 const STRIP_LINE = /  (CWLOG\d+|CWX1) /;
-const SINGLE_IDS = { 133975: 'A1 shown cancel', 133888: 'A2 twice', 134120: 'A3 hidden cancel', 8999999: 'A4 missing id', 134188: 'A5 blocking load', 134336: 'A6/A7 keep then reuse' };
+const SINGLE_IDS = {
+  133975: 'A1 shown cancel',
+  133888: 'A2 twice',
+  134120: 'A3 hidden cancel',
+  8999999: 'A4 missing id',
+  134188: 'A5 blocking load',
+  134336: 'A6/A7 keep then reuse',
+};
 const CANCEL_BURST_FIRST = 135000;
 const WAIT_BURST_FIRST = 135100;
 const BURST_COUNT = 48;
@@ -72,7 +83,8 @@ function feedChat(state, text, seenAt, from, to) {
     if (m[2] === 'LONG') tag.longLength = m[3].length;
     else if (m[2] === 'END') tag.end = true;
     else {
-      if (m[2] === 'V') tag.visible++; else tag.hidden++;
+      if (m[2] === 'V') tag.visible++;
+      else tag.hidden++;
       tag.highest = Math.max(tag.highest, Number(m[3]) || 0);
     }
   }
@@ -165,13 +177,19 @@ function stripInPlace(file, pattern) {
 }
 
 function sizeOf(file) {
-  try { return fs.statSync(file).size; } catch { return -1; }
+  try {
+    return fs.statSync(file).size;
+  } catch {
+    return -1;
+  }
 }
 
 function main() {
   const o = parseArgs(process.argv.slice(2));
   if (o.help) {
-    console.log('node dev/transport-probe.js [--logs <client Logs folder>] [--out <report.json>] [--minutes <n>] [--settle <seconds>]\nWatches WoWChatLog.txt and AsyncFile.log for the lines /claude probe writes, then prints a verdict.');
+    console.log(
+      'node dev/transport-probe.js [--logs <client Logs folder>] [--out <report.json>] [--minutes <n>] [--settle <seconds>]\nWatches WoWChatLog.txt and AsyncFile.log for the lines /claude probe writes, then prints a verdict.',
+    );
     return;
   }
   const logs = o.logs || logsDirFromConfig();
@@ -216,7 +234,9 @@ function main() {
         truncation = Object.assign({ at: new Date(now).toISOString() }, stripInPlace(chatFile, STRIP_LINE));
         chatAt = truncation.after;
         chat.carry = '';
-        console.log(`truncate test: removed ${truncation.removedLines} probe lines in place, ${truncation.before} -> ${truncation.after} bytes; waiting for the client's next write`);
+        console.log(
+          `truncate test: removed ${truncation.removedLines} probe lines in place, ${truncation.before} -> ${truncation.after} bytes; waiting for the client's next write`,
+        );
       }
     } else if (chatSize >= 0 && chatSize < chatAt) {
       chatAt = chatSize;

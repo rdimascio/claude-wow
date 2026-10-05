@@ -13,15 +13,106 @@ const PLACEHOLDER_SOURCES = new Set(['something unseen', 'the environment']);
 const PLACEHOLDER_ABILITIES = new Set(['an attack', 'The environment']);
 const PLACEHOLDER_ZONES = new Set(['somewhere unmapped']);
 const HEAD_RE = /^Death recap: .+? just died in (.+)\.$/;
-const KILLING_BLOW_RE = /^-\d+(?:\.\d+)?s (.+?)(?: \(level [^)]*\))?: (.+?) \d+(?: crit)?(?: \(tick\))?(?:, overkill (\d+))?(?:, absorbed \d+)? <- killing blow$/;
+const KILLING_BLOW_RE =
+  /^-\d+(?:\.\d+)?s (.+?)(?: \(level [^)]*\))?: (.+?) \d+(?: crit)?(?: \(tick\))?(?:, overkill (\d+))?(?:, absorbed \d+)? <- killing blow$/;
 const BRIDGE_NOTE_RE = /(?:^|\n\n)\[bridge\]/;
 const PLAIN_WORDS = new Set([
-  'i', "i'm", "i'd", "i'll", 'me', 'my', 'you', "you're", "you've", "you'll", 'your', 'yours', 'he', 'she', 'it', "it's", 'its', 'we', 'they', 'them', 'their',
-  'a', 'an', 'the', 'this', 'that', "that's", 'these', 'those', 'there', "there's", 'here', "here's",
-  'and', 'but', 'or', 'so', 'if', 'when', 'then', 'not', 'no', 'yes', 'nope', 'just', 'even', 'still', 'also', 'next', 'maybe', 'never', 'always', 'again',
-  'what', "what's", 'who', "who's", 'why', 'how', 'well', 'oh', 'wow', 'ouch', 'hey', 'nice', 'good', 'great', 'pro', 'tip', 'rip', 'gg', 'lol',
-  'at', 'in', 'on', 'to', 'of', 'for', 'with', 'from', 'by', 'one', 'some', 'someone', 'something', 'somehow', 'death', 'dead', 'died',
-  "don't", "didn't", "can't", "won't", "let's", 'tl', 'dr',
+  'i',
+  "i'm",
+  "i'd",
+  "i'll",
+  'me',
+  'my',
+  'you',
+  "you're",
+  "you've",
+  "you'll",
+  'your',
+  'yours',
+  'he',
+  'she',
+  'it',
+  "it's",
+  'its',
+  'we',
+  'they',
+  'them',
+  'their',
+  'a',
+  'an',
+  'the',
+  'this',
+  'that',
+  "that's",
+  'these',
+  'those',
+  'there',
+  "there's",
+  'here',
+  "here's",
+  'and',
+  'but',
+  'or',
+  'so',
+  'if',
+  'when',
+  'then',
+  'not',
+  'no',
+  'yes',
+  'nope',
+  'just',
+  'even',
+  'still',
+  'also',
+  'next',
+  'maybe',
+  'never',
+  'always',
+  'again',
+  'what',
+  "what's",
+  'who',
+  "who's",
+  'why',
+  'how',
+  'well',
+  'oh',
+  'wow',
+  'ouch',
+  'hey',
+  'nice',
+  'good',
+  'great',
+  'pro',
+  'tip',
+  'rip',
+  'gg',
+  'lol',
+  'at',
+  'in',
+  'on',
+  'to',
+  'of',
+  'for',
+  'with',
+  'from',
+  'by',
+  'one',
+  'some',
+  'someone',
+  'something',
+  'somehow',
+  'death',
+  'dead',
+  'died',
+  "don't",
+  "didn't",
+  "can't",
+  "won't",
+  "let's",
+  'tl',
+  'dr',
 ]);
 const ROAST_WORDS = Object.freeze(new Set([...require('../order-words.json'), ...require('../roast-words.json'), ...PLAIN_WORDS]));
 const ROAST_CHAR_RE = /^[A-Za-z0-9 ,.'‘’\-:!?%()";]$/;
@@ -37,7 +128,9 @@ const TOOLS = [
 ].join('\n');
 
 function isRecap(text) {
-  return String(text || '').trimStart().startsWith(RECAP_PREFIX);
+  return String(text || '')
+    .trimStart()
+    .startsWith(RECAP_PREFIX);
 }
 
 function isRoast(job) {
@@ -45,11 +138,7 @@ function isRoast(job) {
 }
 
 function roastPrompt(recap) {
-  return [
-    'I just died. Roast this death in two or three sentences, then the TL;DR line.',
-    '',
-    String(recap || '').trim(),
-  ].join('\n');
+  return ['I just died. Roast this death in two or three sentences, then the TL;DR line.', '', String(recap || '').trim()].join('\n');
 }
 
 function scratchFolder(options) {
@@ -57,7 +146,9 @@ function scratchFolder(options) {
 }
 
 function recapFacts(recap) {
-  const lines = String(recap || '').split('\n').map(l => l.trim());
+  const lines = String(recap || '')
+    .split('\n')
+    .map(l => l.trim());
   const facts = {};
   const head = HEAD_RE.exec(lines[0] || '');
   if (head && !PLACEHOLDER_ZONES.has(head[1])) facts.zone = head[1];
@@ -99,7 +190,15 @@ function refusedText(r) {
 function checkLine(recap, outcome, gameData = null) {
   const line = roastLine(outcome);
   if (!line) return { text: '', refused: '', phrasesNote: '' };
-  const r = GR.checkText(line, { store: gameData, tokens: false, names: recapNames(recap), known: [recap], plainWords: ROAST_WORDS, charRe: ROAST_CHAR_RE, maxLength: ROAST_TEXT_MAX });
+  const r = GR.checkText(line, {
+    store: gameData,
+    tokens: false,
+    names: recapNames(recap),
+    known: [recap],
+    plainWords: ROAST_WORDS,
+    charRe: ROAST_CHAR_RE,
+    maxLength: ROAST_TEXT_MAX,
+  });
   return r.ok ? { text: r.text, refused: '', phrasesNote: r.phrasesNote } : { text: '', refused: refusedText(r), phrasesNote: r.phrasesNote || '' };
 }
 
@@ -153,10 +252,14 @@ const plugin = {
   banner: options => `roasts your deaths (/claude config roast on), runs in ${scratchFolder(options)} (plugins.roast.cwd)`,
   handle(job, core) {
     const cwd = scratchFolder(core.options('roast'));
-    try { fs.mkdirSync(cwd, { recursive: true }); }
-    catch (e) {
+    try {
+      fs.mkdirSync(cwd, { recursive: true });
+    } catch (e) {
       core.log(`${core.tag(job)} roast: cannot create ${cwd} (${e.message})`);
-      core.fail(job, `The roast plugin needs a scratch folder and could not create ${path.resolve(cwd)}: ${e.message}\nSet plugins.roast.cwd in config.json to a folder that works.`);
+      core.fail(
+        job,
+        `The roast plugin needs a scratch folder and could not create ${path.resolve(cwd)}: ${e.message}\nSet plugins.roast.cwd in config.json to a folder that works.`,
+      );
       return;
     }
     if (isRecap(job.text)) {

@@ -87,6 +87,7 @@ function Methods.Hide(self)
 end
 function Methods.SetShown(self, v) if v then self:Show() else self:Hide() end end
 function Methods.IsShown(self) return self.shown end
+function Methods.IsProtected(self) return self.protected == true, self.protected == true end
 function Methods.IsVisible(self) return self.shown end
 function Methods.SetText(self, t) self.text = t; table.insert(STUB.texts, tostring(t)) end
 function Methods.GetText(self) return self.text or "" end

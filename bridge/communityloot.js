@@ -17,7 +17,11 @@ const TABLES = Object.freeze({
 const TEMPLATES = Object.freeze(Object.keys(TABLES));
 const OWNED = Object.freeze(TEMPLATES.filter(e => e !== 'referenceloot'));
 const ENTITIES = Object.freeze([...TEMPLATES, 'lootobjects', 'lootitems']);
-const NPC_LOOT = Object.freeze({ creatureloot: ['LootId', 'lootId'], skinloot: ['SkinningLootId', 'skinningId'], pickpocketloot: ['PickpocketLootId', 'pickpocketId'] });
+const NPC_LOOT = Object.freeze({
+  creatureloot: ['LootId', 'lootId'],
+  skinloot: ['SkinningLootId', 'skinningId'],
+  pickpocketloot: ['PickpocketLootId', 'pickpocketId'],
+});
 const OBJECT_KINDS = Object.freeze({ 3: 'chest', 25: 'fishinghole' });
 const MAX_REFERENCE_DEPTH = 2;
 const MAX_ROW_COUNT = 255;
@@ -47,16 +51,49 @@ function addTo(map, id, f) {
 function lootRow(r, ctx, drop) {
   const chance = Math.abs(r.ChanceOrQuestChance);
   const conditional = r.condition_id > 0;
-  if (!Number.isSafeInteger(r.entry) || r.entry < 0 || !Number.isSafeInteger(r.mincountOrRef) || r.mincountOrRef === 0 || typeof r.ChanceOrQuestChance !== 'number' || !Number.isSafeInteger(r.groupid) || r.groupid < 0 || r.groupid > MAX_GROUP || !Number.isSafeInteger(r.maxcount) || r.maxcount < 0 || r.maxcount > MAX_ROW_COUNT) { drop('lootRowInvalid'); return null; }
-  if (conditional && !ctx.conditions.has(r.condition_id)) { drop('lootConditionMissing'); return null; }
+  if (
+    !Number.isSafeInteger(r.entry) ||
+    r.entry < 0 ||
+    !Number.isSafeInteger(r.mincountOrRef) ||
+    r.mincountOrRef === 0 ||
+    typeof r.ChanceOrQuestChance !== 'number' ||
+    !Number.isSafeInteger(r.groupid) ||
+    r.groupid < 0 ||
+    r.groupid > MAX_GROUP ||
+    !Number.isSafeInteger(r.maxcount) ||
+    r.maxcount < 0 ||
+    r.maxcount > MAX_ROW_COUNT
+  ) {
+    drop('lootRowInvalid');
+    return null;
+  }
+  if (conditional && !ctx.conditions.has(r.condition_id)) {
+    drop('lootConditionMissing');
+    return null;
+  }
   if (r.mincountOrRef > 0) {
-    if (!ctx.items112.has(r.item)) { drop('lootItemNotIn112'); return null; }
-    if ((chance === 0 && r.groupid === 0) || (chance !== 0 && chance < MIN_CHANCE) || r.maxcount < r.mincountOrRef) { drop('lootRowInvalid'); return null; }
-    if (!ctx.client.byId('items', r.item)) { drop('lootItemNotInClient'); return { rolls: true }; }
+    if (!ctx.items112.has(r.item)) {
+      drop('lootItemNotIn112');
+      return null;
+    }
+    if ((chance === 0 && r.groupid === 0) || (chance !== 0 && chance < MIN_CHANCE) || r.maxcount < r.mincountOrRef) {
+      drop('lootRowInvalid');
+      return null;
+    }
+    if (!ctx.client.byId('items', r.item)) {
+      drop('lootItemNotInClient');
+      return { rolls: true };
+    }
     return { item: r.item, flags: { questOnly: r.ChanceOrQuestChance < 0, conditional, shared: false } };
   }
-  if (r.ChanceOrQuestChance < 0 || (chance === 0 && r.groupid === 0)) { drop('lootRowInvalid'); return null; }
-  if (r.maxcount === 0) { drop('referenceNeverRolled'); return { rolls: true }; }
+  if (r.ChanceOrQuestChance < 0 || (chance === 0 && r.groupid === 0)) {
+    drop('lootRowInvalid');
+    return null;
+  }
+  if (r.maxcount === 0) {
+    drop('referenceNeverRolled');
+    return { rolls: true };
+  }
   return { ref: -r.mincountOrRef, flags: { questOnly: false, conditional, shared: true } };
 }
 
@@ -84,7 +121,10 @@ function readTemplates(sql, ctx, drop) {
       const t = { items: new Map(), refs: new Map(), rows: 0 };
       for (const row of rows) {
         if (row.rolls) continue;
-        if (row.chance === 0 && filled.has(row.group)) { drop('lootGroupNeverReached'); continue; }
+        if (row.chance === 0 && filled.has(row.group)) {
+          drop('lootGroupNeverReached');
+          continue;
+        }
         t.rows++;
         if (row.ref) addTo(t.refs, row.ref, row.flags);
         else addTo(t.items, row.item, row.flags);
@@ -101,14 +141,20 @@ function checkReferences(templates, count) {
   for (const byEntry of Object.values(templates)) {
     for (const t of byEntry.values()) {
       for (const id of [...t.refs.keys()]) {
-        if (!refs.has(id)) { t.refs.delete(id); count('unresolved', 'referenceloot'); }
+        if (!refs.has(id)) {
+          t.refs.delete(id);
+          count('unresolved', 'referenceloot');
+        }
       }
     }
   }
   let depth = 1;
   for (const [id, t] of refs) {
     for (const target of t.refs.keys()) {
-      if (target === id || refs.get(target).refs.size) throw new S.DumpError(`reference loot ${id} reaches reference ${target}, which references further: references nest deeper than ${MAX_REFERENCE_DEPTH} levels or loop`);
+      if (target === id || refs.get(target).refs.size)
+        throw new S.DumpError(
+          `reference loot ${id} reaches reference ${target}, which references further: references nest deeper than ${MAX_REFERENCE_DEPTH} levels or loop`,
+        );
       depth = MAX_REFERENCE_DEPTH;
     }
   }
@@ -120,14 +166,19 @@ function encounterChests(client, objects, spawnMaps, count) {
   for (const c of ENCOUNTER_CHESTS) {
     const inClient = encounters.some(e => e.mapID === c.mapID && e.name === c.encounter);
     const chests = [...objects.values()].filter(o => o.kind === 'chest' && o.name === c.chest && (spawnMaps.get(o.id) || new Set()).has(c.mapID));
-    if (!inClient || chests.length !== 1) { count('unresolved', 'encounterChest'); continue; }
+    if (!inClient || chests.length !== 1) {
+      count('unresolved', 'encounterChest');
+      continue;
+    }
     chests[0].encounter = { mapID: c.mapID, name: c.encounter };
   }
 }
 
 function convert(sql, client, { npcs, nameOrDrop, drop }) {
   const loot = { unreferenced: {}, unresolved: {} };
-  const count = (kind, entity, n = 1) => { loot[kind][entity] = (loot[kind][entity] || 0) + n; };
+  const count = (kind, entity, n = 1) => {
+    loot[kind][entity] = (loot[kind][entity] || 0) + n;
+  };
   const itemRows = [...S.rows(sql, 'item_template', ['entry', 'name', 'Flags', 'DisenchantID', 'maxMoneyLoot'])];
   const ctx = {
     client,
@@ -140,7 +191,10 @@ function convert(sql, client, { npcs, nameOrDrop, drop }) {
   const owned = Object.fromEntries(TEMPLATES.map(e => [e, new Set()]));
   const own = (entity, id) => {
     const t = templates[entity].get(id);
-    if (!t || (!t.items.size && !t.refs.size)) { count('unresolved', entity); return false; }
+    if (!t || (!t.items.size && !t.refs.size)) {
+      count('unresolved', entity);
+      return false;
+    }
     owned[entity].add(id);
     return true;
   };
@@ -178,7 +232,10 @@ function convert(sql, client, { npcs, nameOrDrop, drop }) {
   const disenchantSources = new Map();
   for (const it of ctx.items112.values()) {
     if (!GD.isId(it.DisenchantID) || !templates.disenchantloot.has(it.DisenchantID)) continue;
-    if (!client.byId('items', it.entry)) { drop('disenchantSourceNotInClient'); continue; }
+    if (!client.byId('items', it.entry)) {
+      drop('disenchantSourceNotInClient');
+      continue;
+    }
     if (!disenchantSources.has(it.DisenchantID)) disenchantSources.set(it.DisenchantID, []);
     disenchantSources.get(it.DisenchantID).push(it.entry);
   }
@@ -200,7 +257,10 @@ function convert(sql, client, { npcs, nameOrDrop, drop }) {
   for (const entity of TEMPLATES) {
     const rows = [];
     for (const [id, t] of templates[entity]) {
-      if (!owned[entity].has(id)) { count('unreferenced', entity, t.rows); continue; }
+      if (!owned[entity].has(id)) {
+        count('unreferenced', entity, t.rows);
+        continue;
+      }
       const row = { id, items: [...t.items].map(([itemID, f]) => flagged(itemID, f)) };
       if (t.refs.size) row.refs = [...t.refs].map(([refID, f]) => flagged(refID, f));
       if (entity === 'disenchantloot') row.fromItems = disenchantSources.get(id).sort((a, b) => a - b);
@@ -254,8 +314,9 @@ function sourcesOf(cs, itemID) {
   const climb = (refID, f, depth) => {
     for (const up of refIn.get(refID) || []) {
       const g = { questOnly: f.questOnly, conditional: f.conditional || up.conditional, shared: true };
-      if (up.entity === 'referenceloot') { if (depth < MAX_REFERENCE_DEPTH) climb(up.id, g, depth + 1); }
-      else addTo(out.get(up.entity), up.id, g);
+      if (up.entity === 'referenceloot') {
+        if (depth < MAX_REFERENCE_DEPTH) climb(up.id, g, depth + 1);
+      } else addTo(out.get(up.entity), up.id, g);
     }
   };
   for (const hit of itemIn.get(itemID) || []) {
@@ -278,4 +339,18 @@ function itemsOf(cs, entity, templateID) {
   return out;
 }
 
-module.exports = { TABLES, TEMPLATES, OWNED, ENTITIES, NPC_LOOT, ENCOUNTER_CHESTS, MAX_REFERENCE_DEPTH, convert, hasLoot, hasIndex, lootIndex, sourcesOf, itemsOf };
+module.exports = {
+  TABLES,
+  TEMPLATES,
+  OWNED,
+  ENTITIES,
+  NPC_LOOT,
+  ENCOUNTER_CHESTS,
+  MAX_REFERENCE_DEPTH,
+  convert,
+  hasLoot,
+  hasIndex,
+  lootIndex,
+  sourcesOf,
+  itemsOf,
+};

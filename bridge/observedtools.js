@@ -25,7 +25,7 @@ function done(value) {
 
 function itemIdArg(args) {
   const raw = args.itemID;
-  const n = typeof raw === 'number' ? raw : (typeof raw === 'string' && /^\d{1,9}$/.test(raw.trim()) ? Number(raw.trim()) : NaN);
+  const n = typeof raw === 'number' ? raw : typeof raw === 'string' && /^\d{1,9}$/.test(raw.trim()) ? Number(raw.trim()) : NaN;
   return Number.isSafeInteger(n) && n > 0 ? n : null;
 }
 
@@ -44,12 +44,18 @@ function itemRef(store, itemID) {
 function observedPoint(store, spot, notes) {
   if (spot.x === null || spot.y === null) {
     const r = resolveOne(store, `{map:${spot.mapID},0,0}`);
-    if (r.error) { notes.add(`map ${spot.mapID} is not in the game data, so ${spot.n} sample(s) there are left out`); return null; }
+    if (r.error) {
+      notes.add(`map ${spot.mapID} is not in the game data, so ${spot.n} sample(s) there are left out`);
+      return null;
+    }
     return { map: { ref: null, id: r.ref.id, name: r.ref.name, trust: r.ref.trust }, point: null, n: spot.n };
   }
   const token = `{map:${spot.mapID},${spot.x},${spot.y}}`;
   const r = resolveOne(store, token);
-  if (r.error) { notes.add(`map ${spot.mapID} is not in the game data, so ${spot.n} sample(s) there are left out`); return null; }
+  if (r.error) {
+    notes.add(`map ${spot.mapID} is not in the game data, so ${spot.n} sample(s) there are left out`);
+    return null;
+  }
   return { map: { ref: token, id: r.ref.id, name: r.ref.name, trust: r.ref.trust }, point: { x: spot.x, y: spot.y, trust: OB.TRUST }, n: spot.n };
 }
 
@@ -68,7 +74,10 @@ function farmView(store, item, lines, minSamples, asOfContext) {
     rate: row.rate,
     perLoot: row.perLoot,
     asOf: row.asOf,
-    spots: row.spots.slice(0, SPOTS_PER_SOURCE_MAX).map(s => observedPoint(store, s, notes)).filter(Boolean),
+    spots: row.spots
+      .slice(0, SPOTS_PER_SOURCE_MAX)
+      .map(s => observedPoint(store, s, notes))
+      .filter(Boolean),
   }));
   const out = {
     item,
@@ -85,12 +94,14 @@ function farmView(store, item, lines, minSamples, asOfContext) {
       ...notes,
     ],
   };
-  if (!sources.length) out.notes.unshift(hidden.length ? 'Not enough observed loot yet to give a rate for this item.' : 'No observed loot of this item yet. Say you do not know.');
+  if (!sources.length)
+    out.notes.unshift(hidden.length ? 'Not enough observed loot yet to give a rate for this item.' : 'No observed loot of this item yet. Say you do not know.');
   return out;
 }
 
 const AUCTION_NOTES_BY_FLAVOR = Object.freeze({
-  classic_era: 'On this client (Classic Era) each auction quote is one complete search result, sent through the Blizzard browse window, that fit on one page: price is the lowest buyout per item, rounded up to whole copper; quantity is every item listed for it in that result, bid-only auctions included; rows is the number of those auctions; stack is the size of the auction that set the price, so a price from a stack of 20 may not buy a single item.',
+  classic_era:
+    'On this client (Classic Era) each auction quote is one complete search result, sent through the Blizzard browse window, that fit on one page: price is the lowest buyout per item, rounded up to whole copper; quantity is every item listed for it in that result, bid-only auctions included; rows is the number of those auctions; stack is the size of the auction that set the price, so a price from a stack of 20 may not buy a single item.',
 });
 
 function priceView(store, item, lines, asOfContext) {
@@ -99,7 +110,16 @@ function priceView(store, item, lines, asOfContext) {
   const notes = new Set(flavorNote ? [flavorNote] : []);
   const vendorRows = vendors.map(v => {
     const placed = v.mapID ? observedPoint(store, { mapID: v.mapID, x: null, y: null, n: v.n }, notes) : null;
-    return { npc: sourceView({ type: 'npc', id: v.npcID, spell: 0 }), price: v.price, stack: v.stack, unitPrice: Math.round(v.price / v.stack), n: v.n, asOf: v.asOf, trust: OB.TRUST, map: placed ? placed.map : null };
+    return {
+      npc: sourceView({ type: 'npc', id: v.npcID, spell: 0 }),
+      price: v.price,
+      stack: v.stack,
+      unitPrice: Math.round(v.price / v.stack),
+      n: v.n,
+      asOf: v.asOf,
+      trust: OB.TRUST,
+      map: placed ? placed.map : null,
+    };
   });
   const out = {
     item,
@@ -124,9 +144,15 @@ function routePoints(store, raw) {
   raw.forEach((value, i) => {
     const text = typeof value === 'string' ? value.trim() : '';
     const refs = GR.parseRefs(text);
-    if (refs.length !== 1 || refs[0].token !== text || refs[0].kind !== 'map') { errors.push(`point ${i + 1} is not one {map:ID,x,y} token`); return; }
+    if (refs.length !== 1 || refs[0].token !== text || refs[0].kind !== 'map') {
+      errors.push(`point ${i + 1} is not one {map:ID,x,y} token`);
+      return;
+    }
     const r = resolveOne(store, text);
-    if (r.error) { errors.push(`point ${i + 1}: ${r.error}`); return; }
+    if (r.error) {
+      errors.push(`point ${i + 1}: ${r.error}`);
+      return;
+    }
     points.push({ token: text, id: r.ref.id, name: r.ref.name, trust: r.ref.trust, x: r.ref.point.x, y: r.ref.point.y });
   });
   if (errors.length) return { error: `The route was refused and nothing was drawn. ${errors.join(' ')}` };
@@ -160,7 +186,11 @@ function createObservedTools(opts) {
     const resolved = itemRef(store, itemID);
     if (resolved.error) return fail(`Refused: ${resolved.error}`);
     let lines;
-    try { lines = observed.lines(snap.character.key); } catch (e) { return fail(`Cannot read the observed data: ${e.message}`); }
+    try {
+      lines = observed.lines(snap.character.key);
+    } catch (e) {
+      return fail(`Cannot read the observed data: ${e.message}`);
+    }
     return done(view(store, resolved.item, lines, snap.at || null));
   }
 
@@ -178,7 +208,8 @@ function createObservedTools(opts) {
     return done({
       layer: ROUTE_LAYER,
       drawn: !!r.changed,
-      delivery: 'The bridge keeps the route in the slot files until the next reply is published or the game says hello, then for three minutes more; it reaches the map on a slot load the game makes anyway (a reply, the hello or /reload). A route drawn while a hello is in flight may miss the slot that hello reads and then rides only those three minutes. No slot is spent for it.',
+      delivery:
+        'The bridge keeps the route in the slot files until the next reply is published or the game says hello, then for three minutes more; it reaches the map on a slot load the game makes anyway (a reply, the hello or /reload). A route drawn while a hello is in flight may miss the slot that hello reads and then rides only those three minutes. No slot is spent for it.',
       points: checked.points.map(p => ({ ref: p.token, map: { id: p.id, name: p.name, trust: p.trust }, point: { x: p.x, y: p.y, trust: MODEL_TRUST } })),
       notes: ['Every point is your estimate: the map shows each stop as a model estimate, never as a verified spot.', ...(r.notes || [])],
     });
@@ -210,7 +241,8 @@ function toolSchemas() {
     },
     {
       name: TOOL.price,
-      description: 'The prices the player saw for an item: the auction house results of searches the player ran in game, and vendor windows the player opened, in copper, with n and asOf. On Classic Era an auction quote comes only from a complete search result that fit on one page, and also gives rows (the auctions behind it) and stack (the size of the auction that set the price). Nothing here comes from the web or from memory, and the bridge never searches the auction house. An itemID the game data does not have is refused. No observation means you do not know the price.',
+      description:
+        'The prices the player saw for an item: the auction house results of searches the player ran in game, and vendor windows the player opened, in copper, with n and asOf. On Classic Era an auction quote comes only from a complete search result that fit on one page, and also gives rows (the auctions behind it) and stack (the size of the auction that set the price). Nothing here comes from the web or from memory, and the bridge never searches the auction house. An itemID the game data does not have is refused. No observation means you do not know the price.',
       inputSchema: {
         type: 'object',
         properties: { itemID: { type: 'integer', minimum: 1, description: 'The item ID, from the wowdata tools' } },
@@ -223,7 +255,12 @@ function toolSchemas() {
       inputSchema: {
         type: 'object',
         properties: {
-          points: { type: 'array', maxItems: ROUTE_POINTS_MAX, items: { type: 'string', maxLength: 40 }, description: 'Ordered stops, for example ["{map:ID,45.6,42.4}", "{map:ID,50.1,40.0}"]' },
+          points: {
+            type: 'array',
+            maxItems: ROUTE_POINTS_MAX,
+            items: { type: 'string', maxLength: 40 },
+            description: 'Ordered stops, for example ["{map:ID,45.6,42.4}", "{map:ID,50.1,40.0}"]',
+          },
           loop: { type: 'boolean', description: 'true joins the last stop back to the first' },
           clear: { type: 'boolean', description: 'true removes the route' },
         },
@@ -233,6 +270,16 @@ function toolSchemas() {
 }
 
 module.exports = {
-  TOOL, TOOL_NAMES, WRITE_TOOL_NAMES, ROUTE_LAYER, ROUTE_POINTS_MAX, MODEL_TRUST,
-  routePoints, routeCommand, farmView, priceView, createObservedTools, toolSchemas,
+  TOOL,
+  TOOL_NAMES,
+  WRITE_TOOL_NAMES,
+  ROUTE_LAYER,
+  ROUTE_POINTS_MAX,
+  MODEL_TRUST,
+  routePoints,
+  routeCommand,
+  farmView,
+  priceView,
+  createObservedTools,
+  toolSchemas,
 };

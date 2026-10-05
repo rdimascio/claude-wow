@@ -48,7 +48,8 @@ function assertBuild(value) {
 }
 
 function flavorOf(name) {
-  if (!Object.prototype.hasOwnProperty.call(FLAVORS, name)) throw new SyncError(`unknown flavor ${JSON.stringify(name)}: use ${Object.keys(FLAVORS).join(', ')}`);
+  if (!Object.prototype.hasOwnProperty.call(FLAVORS, name))
+    throw new SyncError(`unknown flavor ${JSON.stringify(name)}: use ${Object.keys(FLAVORS).join(', ')}`);
   return FLAVORS[name];
 }
 
@@ -60,7 +61,8 @@ function flavorForBuild(build) {
 
 function assertFlavorBuild(flavorName, build) {
   const owner = flavorForBuild(build);
-  if (owner && owner !== flavorName) throw new SyncError(`build ${build} is a ${FLAVORS[owner].label} build, not ${FLAVORS[flavorName].label}; sync it with --flavor ${owner}`);
+  if (owner && owner !== flavorName)
+    throw new SyncError(`build ${build} is a ${FLAVORS[owner].label} build, not ${FLAVORS[flavorName].label}; sync it with --flavor ${owner}`);
 }
 
 function syncCommand(flavorName) {
@@ -99,13 +101,27 @@ function parseCsv(text) {
       const close = text.indexOf('"', i);
       if (close < 0) throw new SyncError('CSV has an unterminated quoted field');
       field += text.slice(i, close);
-      if (text[close + 1] === '"') { field += '"'; i = close + 2; continue; }
+      if (text[close + 1] === '"') {
+        field += '"';
+        i = close + 2;
+        continue;
+      }
       quoted = false;
       i = close + 1;
       continue;
     }
-    if (c === '"' && i === fieldStart) { quoted = true; i++; continue; }
-    if (c === ',') { row.push(field); field = ''; i++; fieldStart = i; continue; }
+    if (c === '"' && i === fieldStart) {
+      quoted = true;
+      i++;
+      continue;
+    }
+    if (c === ',') {
+      row.push(field);
+      field = '';
+      i++;
+      fieldStart = i;
+      continue;
+    }
     if (c === '\r' || c === '\n') {
       row.push(field);
       rows.push(row);
@@ -119,7 +135,10 @@ function parseCsv(text) {
     i++;
   }
   if (quoted) throw new SyncError('CSV has an unterminated quoted field');
-  if (field !== '' || row.length) { row.push(field); rows.push(row); }
+  if (field !== '' || row.length) {
+    row.push(field);
+    rows.push(row);
+  }
   return rows;
 }
 
@@ -149,7 +168,10 @@ function isPercent(n) {
 class Skip extends Error {}
 
 class Drop extends Error {
-  constructor(reason) { super(reason); this.reason = reason; }
+  constructor(reason) {
+    super(reason);
+    this.reason = reason;
+  }
 }
 
 function need(value, reason) {
@@ -201,7 +223,8 @@ function placeOnMap(world, continentID, ctx) {
     const spot = projectOnto(a, world, uiMap.system);
     if (spot) bucket.set(a.uiMapID, spot);
   }
-  const bySize = m => [...m.values()].sort((p, q) => p.system - q.system || p.area - q.area || p.uiMapID - q.uiMapID).map(({ uiMapID, x, y }) => ({ uiMapID, x, y }));
+  const bySize = m =>
+    [...m.values()].sort((p, q) => p.system - q.system || p.area - q.area || p.uiMapID - q.uiMapID).map(({ uiMapID, x, y }) => ({ uiMapID, x, y }));
   const zones = bySize(byType[UI_MAP_TYPE_ZONE]);
   const continents = bySize(byType[UI_MAP_TYPE_CONTINENT]);
   const zoneAmbiguous = zones.length > 1;
@@ -215,7 +238,13 @@ const TABLES = Object.freeze([
     entity: 'uimaps',
     columns: ['ID', 'Name_lang', 'ParentUiMapID', 'Type', 'System'],
     convert(row) {
-      return { id: idOf(row), name: nameOf(row, 'Name_lang'), parentUiMapID: intOf(row, 'ParentUiMapID'), type: intOf(row, 'Type'), system: intOf(row, 'System') };
+      return {
+        id: idOf(row),
+        name: nameOf(row, 'Name_lang'),
+        parentUiMapID: intOf(row, 'ParentUiMapID'),
+        type: intOf(row, 'Type'),
+        system: intOf(row, 'System'),
+      };
     },
     accept(record, ctx) {
       ctx.uiMaps.set(record.id, { type: record.type, system: record.system });
@@ -224,7 +253,23 @@ const TABLES = Object.freeze([
   {
     table: 'UiMapAssignment',
     entity: 'uimapassignments',
-    columns: ['ID', 'UiMapID', 'MapID', 'AreaID', 'OrderIndex', 'UiMin_0', 'UiMin_1', 'UiMax_0', 'UiMax_1', 'Region_0', 'Region_1', 'Region_2', 'Region_3', 'Region_4', 'Region_5'],
+    columns: [
+      'ID',
+      'UiMapID',
+      'MapID',
+      'AreaID',
+      'OrderIndex',
+      'UiMin_0',
+      'UiMin_1',
+      'UiMax_0',
+      'UiMax_1',
+      'Region_0',
+      'Region_1',
+      'Region_2',
+      'Region_3',
+      'Region_4',
+      'Region_5',
+    ],
     convert(row) {
       const uiMin = [numberOf(row, 'UiMin_0'), numberOf(row, 'UiMin_1')];
       const uiMax = [numberOf(row, 'UiMax_0'), numberOf(row, 'UiMax_1')];
@@ -430,13 +475,18 @@ function convertTable(spec, text, ctx) {
   const missing = spec.columns.filter(c => !header.includes(c));
   if (missing.length) throw new SyncError(`${spec.table}: column ${missing.join(', ')} is missing; the table layout changed`);
   const dropped = {};
-  const drop = reason => { dropped[reason] = (dropped[reason] || 0) + 1; };
+  const drop = reason => {
+    dropped[reason] = (dropped[reason] || 0) + 1;
+  };
   const seen = new Set();
   const records = [];
   for (let r = 1; r < rows.length; r++) {
     const cells = rows[r];
     if (cells.length === 1 && cells[0] === '') continue;
-    if (cells.length !== header.length) { drop('columnCount'); continue; }
+    if (cells.length !== header.length) {
+      drop('columnCount');
+      continue;
+    }
     const row = {};
     for (let c = 0; c < header.length; c++) row[header[c]] = cells[c];
     let record;
@@ -444,10 +494,16 @@ function convertTable(spec, text, ctx) {
       record = spec.convert(row, ctx);
     } catch (e) {
       if (e instanceof Skip) continue;
-      if (e instanceof Drop) { drop(e.reason); continue; }
+      if (e instanceof Drop) {
+        drop(e.reason);
+        continue;
+      }
       throw e;
     }
-    if (seen.has(record.id)) { drop('duplicateId'); continue; }
+    if (seen.has(record.id)) {
+      drop('duplicateId');
+      continue;
+    }
     seen.add(record.id);
     if (spec.accept) spec.accept(record, ctx);
     records.push(record);
@@ -482,14 +538,19 @@ async function readCappedBody(res, url, maxBytes) {
 
 async function fetchText(fetchImpl, url, { expect, filename, maxBytes = MAX_BODY_BYTES }) {
   try {
-    const res = await fetchImpl(url, { headers: { 'user-agent': `claude-wow/${require('../package.json').version} (data sync)` }, redirect: 'error', signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+    const res = await fetchImpl(url, {
+      headers: { 'user-agent': `claude-wow/${require('../package.json').version} (data sync)` },
+      redirect: 'error',
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
     if (!res || res.status !== 200) throw new SyncError(`${url}: HTTP ${res ? res.status : 'no response'}`);
     if (res.url && new URL(res.url).origin !== WAGO_ORIGIN) throw new SyncError(`${url}: the answer came from ${new URL(res.url).origin}, not ${WAGO_ORIGIN}`);
     const type = String(res.headers.get('content-type') || '');
     if (!type.includes(expect)) throw new SyncError(`${url}: expected ${expect}, got ${type || 'no content type'}`);
     if (filename) {
       const disposition = String(res.headers.get('content-disposition') || '');
-      if (!disposition.includes(`filename="${filename}"`)) throw new SyncError(`${url}: wago.tools did not serve ${filename} (got ${disposition || 'no file name'})`);
+      if (!disposition.includes(`filename="${filename}"`))
+        throw new SyncError(`${url}: wago.tools did not serve ${filename} (got ${disposition || 'no file name'})`);
     }
     return await readCappedBody(res, url, maxBytes);
   } catch (e) {
@@ -501,9 +562,16 @@ async function fetchText(fetchImpl, url, { expect, filename, maxBytes = MAX_BODY
 async function latestBuild(fetchImpl, flavor, family, maxBytes) {
   const text = await fetchText(fetchImpl, buildsUrl(), { expect: 'json', maxBytes });
   let list;
-  try { list = JSON.parse(text)[flavor.product]; } catch { list = null; }
+  try {
+    list = JSON.parse(text)[flavor.product];
+  } catch {
+    list = null;
+  }
   if (!Array.isArray(list)) throw new SyncError(`${buildsUrl()}: no ${flavor.product} builds listed`);
-  const builds = list.map(b => b && b.version).filter(isBuild).filter(b => buildFamily(b) === family);
+  const builds = list
+    .map(b => b && b.version)
+    .filter(isBuild)
+    .filter(b => buildFamily(b) === family);
   if (!builds.length) throw new SyncError(`${buildsUrl()}: no valid ${flavor.product} build in family ${family}`);
   return builds.sort(compareBuilds).pop();
 }
@@ -522,7 +590,11 @@ function flavorDir(dataDir, flavorName) {
 
 function readCurrent(root) {
   let pointer;
-  try { pointer = fs.readFileSync(path.join(root, CURRENT_FILE), 'utf8').trim(); } catch { return null; }
+  try {
+    pointer = fs.readFileSync(path.join(root, CURRENT_FILE), 'utf8').trim();
+  } catch {
+    return null;
+  }
   const match = POINTER_PATTERN.exec(pointer);
   if (!match) return null;
   const build = match[1];
@@ -539,16 +611,32 @@ function readCurrent(root) {
 
 function pidAlive(pid) {
   if (!Number.isSafeInteger(pid) || pid <= 0) return false;
-  try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; }
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return e.code === 'EPERM';
+  }
 }
 
 function inspectLock(file) {
   let mtimeMs;
-  try { mtimeMs = fs.statSync(file).mtimeMs; } catch (e) { if (e.code === 'ENOENT') return null; throw e; }
+  try {
+    mtimeMs = fs.statSync(file).mtimeMs;
+  } catch (e) {
+    if (e.code === 'ENOENT') return null;
+    throw e;
+  }
   let raw = '';
-  try { raw = fs.readFileSync(file, 'utf8'); } catch (e) { if (e.code === 'ENOENT') return null; }
+  try {
+    raw = fs.readFileSync(file, 'utf8');
+  } catch (e) {
+    if (e.code === 'ENOENT') return null;
+  }
   let held = null;
-  try { held = JSON.parse(raw); } catch {}
+  try {
+    held = JSON.parse(raw);
+  } catch {}
   const readable = held && typeof held === 'object' && typeof held.startedAt === 'number';
   return { raw, mtimeMs, held: readable ? held : null };
 }
@@ -565,7 +653,9 @@ function removeIfUnchanged(file, seen, now) {
   } catch (e) {
     if (e.code !== 'EEXIST') throw e;
     let guardAge = 0;
-    try { guardAge = now() - fs.statSync(guard).mtimeMs; } catch {}
+    try {
+      guardAge = now() - fs.statSync(guard).mtimeMs;
+    } catch {}
     if (guardAge < LOCK_STALE_MS) throw new LockedError(`another data sync is taking over the lock file ${file}`);
     fs.rmSync(guard, { recursive: true, force: true });
     fs.mkdirSync(guard);
@@ -601,11 +691,14 @@ function acquireLock(root, now = Date.now, alive = pidAlive) {
       }
       const seen = inspectLock(file);
       if (!seen) continue;
-      if (!lockIsStale(seen, now, alive)) throw new LockedError(`another data sync is running (${seen.held ? `pid ${seen.held.pid}` : 'lock file not written yet'}); lock file ${file}`);
+      if (!lockIsStale(seen, now, alive))
+        throw new LockedError(`another data sync is running (${seen.held ? `pid ${seen.held.pid}` : 'lock file not written yet'}); lock file ${file}`);
       removeIfUnchanged(file, seen, now);
     }
   } finally {
-    try { fs.unlinkSync(staged); } catch {}
+    try {
+      fs.unlinkSync(staged);
+    } catch {}
   }
   throw new LockedError(`could not take the lock file ${file}`);
 }
@@ -626,12 +719,20 @@ function isRevisionOf(name, build) {
 
 function sweep(root, build, keep, log) {
   let names = [];
-  try { names = fs.readdirSync(root); } catch (e) { log(`could not list ${root}: ${e.message}`); }
+  try {
+    names = fs.readdirSync(root);
+  } catch (e) {
+    log(`could not list ${root}: ${e.message}`);
+  }
   for (const name of names) {
     if (name === keep) continue;
     const stray = STRAY_SUFFIXES.some(s => name.endsWith(s));
     if (!stray && !isRevisionOf(name, build)) continue;
-    try { fs.rmSync(path.join(root, name), { recursive: true, force: true }); } catch (e) { log(`could not remove ${path.join(root, name)}: ${e.message}`); }
+    try {
+      fs.rmSync(path.join(root, name), { recursive: true, force: true });
+    } catch (e) {
+      log(`could not remove ${path.join(root, name)}: ${e.message}`);
+    }
   }
 }
 
@@ -661,7 +762,7 @@ async function sync(opts = {}) {
   const root = flavorDir(opts.dataDir, flavorName);
   const lock = acquireLock(root, now, opts.pidAlive);
   try {
-    const build = opts.build || await latestBuild(fetchImpl, flavor, family, opts.maxBodyBytes);
+    const build = opts.build || (await latestBuild(fetchImpl, flavor, family, opts.maxBodyBytes));
     assertBuild(build);
     assertFlavorBuild(flavorName, build);
     const before = readCurrent(root);
@@ -670,7 +771,9 @@ async function sync(opts = {}) {
       return { status: 'current', build, dir: before.dir, manifest: before.manifest };
     }
     if (!opts.build && before && compatibility(before.build, build) === 'mismatch') {
-      throw new SyncError(`current data is ${before.build} (family ${buildFamily(before.build)}); the newest ${family} build is ${build}. Name it with --build to switch families`);
+      throw new SyncError(
+        `current data is ${before.build} (family ${buildFamily(before.build)}); the newest ${family} build is ${build}. Name it with --build to switch families`,
+      );
     }
     const tmpDir = path.join(root, `${build}.tmp`);
     fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -681,7 +784,10 @@ async function sync(opts = {}) {
         instanceNames: new Map(),
         uiMaps: new Map(),
         assignments: [],
-        note(table, reason) { notes[table] = notes[table] || {}; notes[table][reason] = (notes[table][reason] || 0) + 1; },
+        note(table, reason) {
+          notes[table] = notes[table] || {};
+          notes[table][reason] = (notes[table][reason] || 0) + 1;
+        },
       };
       const tables = {};
       const entities = {};
@@ -697,7 +803,8 @@ async function sync(opts = {}) {
         } catch (e) {
           if (!spec.optional || !(e instanceof SyncError)) throw e;
           const had = before && before.build === build && before.manifest.tables && before.manifest.tables[spec.table];
-          if (had && had.sha256) throw new SyncError(`${spec.table} could not be fetched again (${e.message}); the current data keeps it, so nothing was changed. Try again later`);
+          if (had && had.sha256)
+            throw new SyncError(`${spec.table} could not be fetched again (${e.message}); the current data keeps it, so nothing was changed. Try again later`);
           tables[spec.table] = { url, entity: spec.entity, error: e.message };
           log(`${spec.entity}: skipped, ${e.message}`);
           continue;
@@ -706,7 +813,15 @@ async function sync(opts = {}) {
         const file = `${spec.entity}.jsonl`;
         writeJsonl(path.join(tmpDir, file), records);
         const droppedCount = Object.values(dropped).reduce((s, n) => s + n, 0);
-        tables[spec.table] = { url, sha256: sha256(text), entity: spec.entity, rows: records.length, dropped: droppedCount, droppedBy: dropped, ...(notes[spec.table] ? { notes: notes[spec.table] } : {}) };
+        tables[spec.table] = {
+          url,
+          sha256: sha256(text),
+          entity: spec.entity,
+          rows: records.length,
+          dropped: droppedCount,
+          droppedBy: dropped,
+          ...(notes[spec.table] ? { notes: notes[spec.table] } : {}),
+        };
         entities[spec.entity] = { file, table: spec.table, rows: records.length };
         log(`${spec.entity}: ${records.length} rows, ${droppedCount} dropped`);
       }
@@ -749,7 +864,9 @@ async function sync(opts = {}) {
   }
 }
 
-const FLAVOR_LINES = Object.entries(FLAVORS).map(([name, f]) => `    ${name.padEnd(12)}${f.label} clients ${f.clientLine}.* (wago.tools product ${f.product}, newest ${f.family} build by default)`).join('\n');
+const FLAVOR_LINES = Object.entries(FLAVORS)
+  .map(([name, f]) => `    ${name.padEnd(12)}${f.label} clients ${f.clientLine}.* (wago.tools product ${f.product}, newest ${f.family} build by default)`)
+  .join('\n');
 const SOURCES = Object.freeze(['client', 'community']);
 const USAGE = `claude-wow data sync [--flavor <name>] [--source client|community] [--build <a.b.c.d>] [--force]\n  Fetches one game's client tables from wago.tools into <CLAUDE_WOW_HOME>/data/<flavor>/<build>/.\n  The bridge uses the flavor that matches the client build the game reports, never another one.\n  --flavor  which game (default ${DEFAULT_FLAVOR}):\n${FLAVOR_LINES}\n  --build   a build other than the newest one in the flavor's default family; needed to switch build families\n  --source  client (default): the client tables above. community: Classic Era only, NPC names, spawns and quest titles and givers
             from the cMaNGOS classic-db dump (GPL-3.0, 1.12 community data) into data/classic_era/community/; needs client data synced first
@@ -769,8 +886,10 @@ function parseArgs(argv) {
     else throw new UsageError(`unknown option ${JSON.stringify(a)}`);
   }
   if (opts.build !== undefined && !isBuild(opts.build)) throw new UsageError(`bad build string ${JSON.stringify(opts.build)}: it must look like 1.60.1.70094`);
-  if (opts.flavor !== undefined && !Object.prototype.hasOwnProperty.call(FLAVORS, opts.flavor)) throw new UsageError(`unknown flavor ${JSON.stringify(opts.flavor)}: use ${Object.keys(FLAVORS).join(', ')}`);
-  if (opts.source !== undefined && !SOURCES.includes(opts.source)) throw new UsageError(`unknown source ${JSON.stringify(opts.source)}: use ${SOURCES.join(', ')}`);
+  if (opts.flavor !== undefined && !Object.prototype.hasOwnProperty.call(FLAVORS, opts.flavor))
+    throw new UsageError(`unknown flavor ${JSON.stringify(opts.flavor)}: use ${Object.keys(FLAVORS).join(', ')}`);
+  if (opts.source !== undefined && !SOURCES.includes(opts.source))
+    throw new UsageError(`unknown source ${JSON.stringify(opts.source)}: use ${SOURCES.join(', ')}`);
   if (opts.source === 'community' && opts.flavor !== 'classic_era') throw new UsageError('--source community is for --flavor classic_era only');
   if (opts.source === 'community' && opts.build !== undefined) throw new UsageError('--build is for the client tables, not --source community');
   return opts;
@@ -780,23 +899,39 @@ async function main(argv, deps = {}) {
   const out = deps.out || (s => process.stdout.write(s));
   const err = deps.err || (s => process.stderr.write(s));
   const [command, ...rest] = argv;
-  if (!command || command === '--help' || command === '-h' || command === 'help') { out(USAGE); return command ? 0 : 2; }
-  if (command !== 'sync') { err(`unknown data command ${JSON.stringify(command)}\n${USAGE}`); return 2; }
-  if (rest.includes('--help') || rest.includes('-h')) { out(USAGE); return 0; }
+  if (!command || command === '--help' || command === '-h' || command === 'help') {
+    out(USAGE);
+    return command ? 0 : 2;
+  }
+  if (command !== 'sync') {
+    err(`unknown data command ${JSON.stringify(command)}\n${USAGE}`);
+    return 2;
+  }
+  if (rest.includes('--help') || rest.includes('-h')) {
+    out(USAGE);
+    return 0;
+  }
   try {
     const opts = parseArgs(rest);
     const home = require('./home').resolve(deps.env || process.env);
     const run = { ...opts, dataDir: home.data, fetch: deps.fetch || globalThis.fetch, now: deps.now, log: line => out(line + '\n') };
     if (opts.source === 'community') {
       const result = await require('./communitydata').syncCommunity(run);
-      if (result.status === 'synced') out(`${result.manifest.rows} rows kept, ${result.manifest.dropped} dropped; current community data ${result.version} in ${result.dir}\n`);
+      if (result.status === 'synced')
+        out(`${result.manifest.rows} rows kept, ${result.manifest.dropped} dropped; current community data ${result.version} in ${result.dir}\n`);
       return 0;
     }
     const result = await sync(run);
-    if (result.status === 'synced') out(`${result.manifest.rows} rows kept, ${result.manifest.dropped} dropped; current build ${result.build} (${result.manifest.flavor}) in ${result.dir}\n`);
+    if (result.status === 'synced')
+      out(
+        `${result.manifest.rows} rows kept, ${result.manifest.dropped} dropped; current build ${result.build} (${result.manifest.flavor}) in ${result.dir}\n`,
+      );
     const C = require('./communitydata');
     const community = result.manifest.flavor === C.FLAVOR ? C.readCommunity(C.communityRoot(home.data)) : null;
-    if (community && (community.manifest.client || {}).placementHash !== C.placementHash(result.manifest)) out(`community data ${community.version} was built with other client data, so its positions are hidden until you run "claude-wow data sync --flavor classic_era --source community"\n`);
+    if (community && (community.manifest.client || {}).placementHash !== C.placementHash(result.manifest))
+      out(
+        `community data ${community.version} was built with other client data, so its positions are hidden until you run "claude-wow data sync --flavor classic_era --source community"\n`,
+      );
     return 0;
   } catch (e) {
     err(`data sync failed: ${e && e.message ? e.message : String(e)}\n`);
@@ -806,9 +941,42 @@ async function main(argv, deps = {}) {
 }
 
 module.exports = {
-  BUILD_PATTERN, FLAVORS, TABLES, TABLES_VERSION, MAX_NAME_LENGTH, LOCK_FILE, LOCK_STALE_MS, CURRENT_FILE, MANIFEST_FILE,
-  SyncError, LockedError, UsageError,
-  DEFAULT_FLAVOR, isBuild, assertBuild, flavorForBuild, syncCommand, buildFamily, compatibility, compareBuilds, buildsUrl, tableUrl,
-  parseCsv, toInt, toNumber, toName, convertTable, placeOnMap,
-  acquireLock, readCurrent, flavorDir, sync, parseArgs, main, readCappedBytes, sha256, MANIFEST_SCHEMA, FETCH_TIMEOUT_MS,
+  BUILD_PATTERN,
+  FLAVORS,
+  TABLES,
+  TABLES_VERSION,
+  MAX_NAME_LENGTH,
+  LOCK_FILE,
+  LOCK_STALE_MS,
+  CURRENT_FILE,
+  MANIFEST_FILE,
+  SyncError,
+  LockedError,
+  UsageError,
+  DEFAULT_FLAVOR,
+  isBuild,
+  assertBuild,
+  flavorForBuild,
+  syncCommand,
+  buildFamily,
+  compatibility,
+  compareBuilds,
+  buildsUrl,
+  tableUrl,
+  parseCsv,
+  toInt,
+  toNumber,
+  toName,
+  convertTable,
+  placeOnMap,
+  acquireLock,
+  readCurrent,
+  flavorDir,
+  sync,
+  parseArgs,
+  main,
+  readCappedBytes,
+  sha256,
+  MANIFEST_SCHEMA,
+  FETCH_TIMEOUT_MS,
 };

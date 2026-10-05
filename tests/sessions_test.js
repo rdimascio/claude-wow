@@ -52,29 +52,47 @@ test('recent Claude Code sessions come from the prompt history, newest first, na
   const dir = fakeClaudeDir();
   try {
     const list = SS.recentClaudeSessions(dir, { limit: 10 });
-    assert.deepEqual(list.map(s => s.id), [B, C1, A]);
+    assert.deepEqual(
+      list.map(s => s.id),
+      [B, C1, A],
+    );
     assert.deepEqual(list[0], { id: B, name: 'Fix the build', cwd: '/Users/me/proj', agent: 'claude', at: 3 });
     assert.equal(list[1].name, 'first', 'no title: the first prompt');
     assert.equal(list[2].name, 'Claude version check');
-    assert.deepEqual(SS.recentClaudeSessions(dir, { limit: 1 }).map(s => s.id), [B]);
+    assert.deepEqual(
+      SS.recentClaudeSessions(dir, { limit: 1 }).map(s => s.id),
+      [B],
+    );
     assert.deepEqual(SS.recentClaudeSessions(path.join(dir, 'missing')), []);
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('an id or a prefix is found in the project folders with its folder; a running session is read from its pid file', () => {
   const dir = fakeClaudeDir();
   try {
-    assert.deepEqual(SS.findClaudeSessions(dir, 'f024').map(s => [s.id, s.cwd, s.name]), [[B, '/Users/me/proj', 'Fix the build']]);
+    assert.deepEqual(
+      SS.findClaudeSessions(dir, 'f024').map(s => [s.id, s.cwd, s.name]),
+      [[B, '/Users/me/proj', 'Fix the build']],
+    );
     assert.equal(SS.findClaudeSessions(dir, 'abcd').length, 2);
     assert.deepEqual(SS.findClaudeSessions(dir, 'ffff'), []);
     assert.deepEqual(SS.runningClaude(dir, 4242), { id: A, name: 'wow-ai-90', cwd: '/Users/me/wow-ai' });
     assert.equal(SS.runningClaude(dir, 1), null);
     assert.equal(SS.runningClaude(dir, 'x'), null);
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
-test('the bridge\'s own chat sessions, and one list: running first, then by age, each id once', () => {
-  const state = { sessions: { 'chat:c1': B, 'chat:c2': 'thread-9', 'abc:default': 'old' }, sessionCwd: { 'chat:c1': '/Users/me/proj' }, sessionAgent: { 'chat:c2': 'codex' }, sessionPlugin: { 'chat:c1': 'claude-code', 'chat:c2': 'ask' } };
+test("the bridge's own chat sessions, and one list: running first, then by age, each id once", () => {
+  const state = {
+    sessions: { 'chat:c1': B, 'chat:c2': 'thread-9', 'abc:default': 'old' },
+    sessionCwd: { 'chat:c1': '/Users/me/proj' },
+    sessionAgent: { 'chat:c2': 'codex' },
+    sessionPlugin: { 'chat:c1': 'claude-code', 'chat:c2': 'ask' },
+  };
   const transcripts = { chats: { c1: { name: 'Build fixes', updated: 5000000 }, c2: { name: 'Quests', updated: 9000000 } } };
   const own = SS.ownSessions(state, transcripts);
   assert.deepEqual(own, [
@@ -82,9 +100,21 @@ test('the bridge\'s own chat sessions, and one list: running first, then by age,
     { id: 'thread-9', chat: 'c2', name: 'Quests', cwd: '', agent: 'codex', plugin: 'ask', at: 9000 },
   ]);
   const live = [{ id: A, name: 'wow-ai', cwd: '/Users/me/wow-ai', agent: 'claude', at: 1 }];
-  const claude = [{ id: B, name: 'Fix the build', cwd: '/Users/me/proj', agent: 'claude', at: 99999 }, { id: A, name: 'dup of live', at: 50000 }, { id: C1, name: 'first', at: 2 }];
+  const claude = [
+    { id: B, name: 'Fix the build', cwd: '/Users/me/proj', agent: 'claude', at: 99999 },
+    { id: A, name: 'dup of live', at: 50000 },
+    { id: C1, name: 'first', at: 2 },
+  ];
   const merged = SS.mergeSessions({ live, own, claude, limit: 12 });
-  assert.deepEqual(merged.map(s => [s.id, !!s.live, s.chat || '']), [[A, true, ''], ['thread-9', false, 'c2'], [B, false, 'c1'], [C1, false, '']]);
+  assert.deepEqual(
+    merged.map(s => [s.id, !!s.live, s.chat || '']),
+    [
+      [A, true, ''],
+      ['thread-9', false, 'c2'],
+      [B, false, 'c1'],
+      [C1, false, ''],
+    ],
+  );
   assert.equal(SS.mergeSessions({ live, own, claude, limit: 2 }).length, 2);
 });
 
@@ -94,19 +124,41 @@ test('a reference resolves by exact id, exact name, id prefix, then name prefix;
     { id: C1, name: 'First abcd', cwd: '/srv/one' },
     { id: C2, name: 'Second abcd', cwd: '/srv/two' },
   ];
-  assert.deepEqual(SS.matchRef(list, A).map(s => s.id), [A]);
-  assert.deepEqual(SS.matchRef(list, 'WOW-AI').map(s => s.id), [A]);
-  assert.deepEqual(SS.matchRef(list, '6624').map(s => s.id), [A]);
-  assert.deepEqual(SS.matchRef(list, '662').map(s => s.id), [], 'an id prefix needs four characters');
-  assert.deepEqual(SS.matchRef(list, 'second').map(s => s.id), [C2]);
+  assert.deepEqual(
+    SS.matchRef(list, A).map(s => s.id),
+    [A],
+  );
+  assert.deepEqual(
+    SS.matchRef(list, 'WOW-AI').map(s => s.id),
+    [A],
+  );
+  assert.deepEqual(
+    SS.matchRef(list, '6624').map(s => s.id),
+    [A],
+  );
+  assert.deepEqual(
+    SS.matchRef(list, '662').map(s => s.id),
+    [],
+    'an id prefix needs four characters',
+  );
+  assert.deepEqual(
+    SS.matchRef(list, 'second').map(s => s.id),
+    [C2],
+  );
   assert.equal(SS.matchRef(list, 'abcd').length, 2);
   assert.deepEqual(SS.resolveResume('6624', { own: list }).session.id, A);
   const amb = SS.resolveResume('abcd', { own: list });
   assert.match(amb.error, /^"abcd" matches 2 sessions:\nabcd1111  First abcd  \/srv\/one\nabcd2222  Second abcd  \/srv\/two\nUse more of the id\.$/);
   assert.match(SS.resolveResume('zzzz', { own: list }).error, /No session matches "zzzz"\. \/claude -r lists the recent ones\./);
   let asked = '';
-  const found = SS.resolveResume('f024', { own: list, find: ref => { asked = ref; return [{ id: B, name: 'Fix the build', cwd: '/Users/me/proj', agent: 'claude' }]; } });
-  assert.equal(asked, 'f024', 'the Claude Code store is searched only when the bridge\'s own sessions have no match');
+  const found = SS.resolveResume('f024', {
+    own: list,
+    find: ref => {
+      asked = ref;
+      return [{ id: B, name: 'Fix the build', cwd: '/Users/me/proj', agent: 'claude' }];
+    },
+  });
+  assert.equal(asked, 'f024', "the Claude Code store is searched only when the bridge's own sessions have no match");
   assert.equal(found.session.cwd, '/Users/me/proj');
 });
 
@@ -119,17 +171,30 @@ test('a session without a title is named by its first prompt, from the history o
     const p = path.join(dir, 'projects', SS.projectSlug('/srv/three'));
     fs.mkdirSync(p, { recursive: true });
     const id = 'abcd3333-0000-4000-8000-000000000003';
-    fs.writeFileSync(path.join(p, `${id}.jsonl`), [
-      { type: 'user', isMeta: true, message: { role: 'user', content: 'meta' } },
-      { type: 'user', message: { role: 'user', content: '<command-name>/clear</command-name>' } },
-      { type: 'user', message: { role: 'user', content: '<channel source="claude-wow" chat_id="x">hey</channel>' } },
-      { type: 'user', message: { role: 'user', content: [{ type: 'text', text: '  Fix the   live session picker so the player can click a row and attach it without copying ids  ' }] } },
-    ].map(l => JSON.stringify(l)).join('\n') + '\n');
+    fs.writeFileSync(
+      path.join(p, `${id}.jsonl`),
+      [
+        { type: 'user', isMeta: true, message: { role: 'user', content: 'meta' } },
+        { type: 'user', message: { role: 'user', content: '<command-name>/clear</command-name>' } },
+        { type: 'user', message: { role: 'user', content: '<channel source="claude-wow" chat_id="x">hey</channel>' } },
+        {
+          type: 'user',
+          message: {
+            role: 'user',
+            content: [{ type: 'text', text: '  Fix the   live session picker so the player can click a row and attach it without copying ids  ' }],
+          },
+        },
+      ]
+        .map(l => JSON.stringify(l))
+        .join('\n') + '\n',
+    );
     assert.equal(SS.firstPrompt(path.join(p, `${id}.jsonl`)), 'Fix the live session picker so the player can click a row...');
     assert.equal(SS.sessionLabel(dir, id, '/srv/three'), 'Fix the live session picker so the player can click a row...');
     assert.equal(SS.sessionLabel(dir, B, '/Users/me/proj'), 'Fix the build', 'a title wins over the first prompt');
     assert.equal(SS.sessionLabel(dir, 'ffffffff-0000-4000-8000-000000000000', ''), '');
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('git branch of a session folder: a checkout, a subfolder, a worktree, a detached head, no repository', () => {
@@ -158,7 +223,9 @@ test('git branch of a session folder: a checkout, a subfolder, a worktree, a det
     fs.writeFileSync(path.join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n');
     assert.equal(SS.gitBranch(repo), 'fix/live-session-picker', 'cached for a while');
     assert.equal(SS.gitBranch(repo, Date.now() + 60000), 'main');
-  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('merged list: listening sessions first, then running ones that cannot hear the game, each session once', () => {
@@ -167,6 +234,20 @@ test('merged list: listening sessions first, then running ones that cannot hear 
     { id: A, name: 'wow-ai', cwd: '/w', at: 1, listening: true },
     { id: B, name: 'wow-ai', cwd: '/w', at: 4, listening: false },
   ];
-  const merged = SS.mergeSessions({ live, own: [], claude: [{ id: A, name: 'dup', at: 9 }, { id: C1, name: 'old', at: 3 }] });
-  assert.deepEqual(merged.map(s => [s.id, s.live, !!s.running]), [[A, true, true], [B, false, true], [C1, undefined, false]]);
+  const merged = SS.mergeSessions({
+    live,
+    own: [],
+    claude: [
+      { id: A, name: 'dup', at: 9 },
+      { id: C1, name: 'old', at: 3 },
+    ],
+  });
+  assert.deepEqual(
+    merged.map(s => [s.id, s.live, !!s.running]),
+    [
+      [A, true, true],
+      [B, false, true],
+      [C1, undefined, false],
+    ],
+  );
 });
