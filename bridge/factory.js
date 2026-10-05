@@ -24,10 +24,10 @@ const SKILL_RE = /^[a-z0-9][a-z0-9:_-]{0,63}$/;
 const SETTING_RE = /^[A-Za-z0-9._:\[\]-]{1,80}$/;
 const RUN_ID_RE = /^[0-9a-f]{8}$/;
 const ARGS_MAX = 2000;
-const SUMMARY_LINES = 10;
-const SUMMARY_CHARS = 900;
+const SUMMARY_LINES = 40;
+const SUMMARY_CHARS = 4000;
 const PR_URL_RE = /https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+/g;
-const RUN_SYSTEM = 'This run was started from an in-game World of Warcraft chat through the claude-wow bridge. Nobody watches it and nobody can answer a question: decide and go on, or stop and say what blocks you. End with a short summary of at most six lines that names the URL of every pull request you opened or changed. The summary is shown in a game window that does not render Markdown: write plain sentences, with no bold, no backticks, no headings and no Markdown links; a list item starts with "- ".';
+const RUN_SYSTEM = 'This run was started from an in-game World of Warcraft chat through the claude-wow bridge. Nobody watches it and nobody can answer a question: decide and go on, or stop and say what blocks you. End with a summary that names the URL of every pull request you opened or changed; a merge or run report may be as long as it needs, up to about 40 lines. The summary is shown in a game window that does not render Markdown: write plain sentences, with no bold, no backticks, no headings and no Markdown links; a list item starts with "- ".';
 const OFF_TEXT = 'The connection to the claude-wow bridge closed, so the factory tools are off for the rest of this run; the call did nothing.';
 
 function pickSetting(v, fallback) {

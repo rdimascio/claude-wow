@@ -139,9 +139,9 @@ test('the run summary is plain text for the game window: no Markdown marks, and 
     '- #18579 (batch of 9 fixes): not merged. Its sensitive-read-audit.test.ts:65 check fails.',
     '- #18610: merged.',
   ].join('\n'));
-  const long = Array.from({ length: 40 }, (_, i) => `Sentence number ${i} is here.`).join(' ');
+  const long = Array.from({ length: 200 }, (_, i) => `Sentence number ${i} is here.`).join(' ');
   const cut = F.summaryOf(long);
-  assert.ok(cut.length <= 904, cut.length);
+  assert.ok(cut.length <= 4004, cut.length);
   assert.match(cut, /is here\. \.\.\.$/);
 });
 
@@ -272,4 +272,17 @@ test('factory-mcp lists only the dispatch and status tools with the configured s
   assert.deepEqual(launch.args.slice(-6), ['--socket', '/s', '--run', 'b'.repeat(32), '--skills', 'babysit-pr']);
   assert.ok(launch.args.some(a => a.endsWith(path.join('bridge', 'factory.js'))));
   assert.ok(!launch.args.includes('t'), 'the token is only in the env');
+});
+
+test('a run summary keeps a full merge report, not just its first lines', () => {
+  const report = ['I merged 2 of the 3 approved AI PRs into internal.', ...Array.from({ length: 12 }, (_, k) => `- #${18600 + k}: merged`), 'Before each merge, the two required checks passed.'].join('\n');
+  const summary = F.summaryOf(report);
+  assert.equal(summary, report, 'every line of a normal report is kept');
+  const near = Array.from({ length: 39 }, (_, k) => `${k} ${'y'.repeat(95)} https://github.com/o/r/pull/${1000 + k}`);
+  const cut = F.summaryOf(near.join('\n'));
+  assert.ok(cut.endsWith(' ...') && cut.length < near.join('\n').length, 'past 4,000 characters the summary stops at a boundary');
+  const kept = cut.slice(0, -4).split('\n');
+  assert.ok(kept.every(l => near.includes(l)), 'every kept line is whole, so no URL is cut into another number');
+  const flood = Array.from({ length: 100 }, (_, k) => `line ${k}`).join('\n');
+  assert.equal(F.summaryOf(flood).split('\n').length, 40, 'a flood is still capped');
 });
