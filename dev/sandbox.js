@@ -14,6 +14,8 @@ const CLIENT_INTERFACE = '16001';
 const PRIMARY_FLAVOR = '_classic_beta_';
 const FLAVOR_RE = /^_[a-z_]+_$/;
 
+const FAKE_AGENT = path.join(REPO, 'dev', 'fake-claude.js');
+
 const LIVE_PLIST = 'io.claudewow.bridge.plist';
 
 function liveCheckouts(home) {
@@ -133,7 +135,7 @@ function buildConfig(L, opts = {}) {
   }
   cfg.capture = Object.assign({}, cfg.capture, { enabled: true, mode: 'screenshot', processName: 'World of Warcraft' }, opts.capture || {});
   cfg.plugins = Object.assign({}, cfg.plugins, { default: opts.plugin || 'claude-code', ask: { cwd: path.join(L.dir, 'ask') } });
-  const claude = Object.assign({}, cfg.agents.claude, { path: opts.agentPath || path.join(REPO, 'dev', 'fake-claude.js') });
+  const claude = Object.assign({}, cfg.agents.claude, { path: opts.agentPath ?? FAKE_AGENT });
   cfg.agents = Object.assign({}, cfg.agents, { claude });
   cfg.agent = 'claude';
   if (opts.primerFile !== undefined) cfg.primerFile = opts.primerFile;
@@ -149,6 +151,7 @@ function copyAddonTo(addons) {
   const dest = path.join(addons, 'ClaudeWoW');
   fs.mkdirSync(dest, { recursive: true });
   const names = fs.readdirSync(src);
+  for (const stale of fs.readdirSync(dest)) if (!names.includes(stale)) fs.rmSync(assertSafe(path.join(dest, stale)), { recursive: true, force: true });
   const build = P.addonBuild(names.map(name => ({ name, data: fs.readFileSync(path.join(src, name)) })));
   for (const f of names) {
     if (f === 'ClaudeWoW.toc') fs.writeFileSync(path.join(dest, f), P.tocWithBuild(fs.readFileSync(path.join(src, f), 'utf8'), build));
@@ -200,7 +203,9 @@ function open(name = 'default', opts = {}) {
   const L = layout(dir, (recorded.opts && recorded.opts.extraClients) || []);
   const cfg = withInertStream(JSON.parse(fs.readFileSync(L.config, 'utf8')));
   fs.writeFileSync(assertSafe(L.config), JSON.stringify(cfg, null, 2) + '\n');
-  return { ...L, name, cfg, env: envFor(L, opts.env) };
+  const env = envFor(L, opts.env);
+  const installed = opts.keepAddon ? null : installAddon(L, env);
+  return { ...L, name, cfg, env, installed };
 }
 
 function writeConfig(sb, patch) {
@@ -218,4 +223,4 @@ function spendSignals(sb, kinds, slots) {
   for (const kind of kinds) for (const s of slots) fs.rmSync(assertSafe(signalFile(sb, kind, s)), { force: true });
 }
 
-module.exports = { REPO, DEFAULT_ROOT, ACCOUNT, CLIENT_INTERFACE, PRIMARY_FLAVOR, assertSafe, sandboxDir, liveCheckouts, isWithin, forbiddenRoots, layout, clientLayout, buildConfig, create, open, writeConfig, envFor, signalFile, spendSignals };
+module.exports = { REPO, DEFAULT_ROOT, FAKE_AGENT, ACCOUNT, CLIENT_INTERFACE, PRIMARY_FLAVOR, assertSafe, sandboxDir, liveCheckouts, isWithin, forbiddenRoots, layout, clientLayout, buildConfig, create, open, writeConfig, envFor, signalFile, spendSignals };

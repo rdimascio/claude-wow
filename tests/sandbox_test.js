@@ -110,3 +110,44 @@ test('a sandbox never points the stream plugin at the real overlay service', () 
     fs.rmSync(ROOT, { recursive: true, force: true });
   }
 });
+
+test('an explicit empty agentPath is kept so the bridge finds the real CLI; no agentPath means the fake agent', () => {
+  const L = SB.layout(path.join(ROOT, 'agent-path'));
+  assert.equal(SB.buildConfig(L, { agentPath: '' }).agents.claude.path, '');
+  assert.equal(SB.buildConfig(L, {}).agents.claude.path, SB.FAKE_AGENT);
+  assert.equal(SB.buildConfig(L, { agentPath: '/opt/x/claude' }).agents.claude.path, '/opt/x/claude');
+});
+
+test('reopening a sandbox refreshes the shipped addon and slots but keeps SavedVariables, transcripts, config and project', () => {
+  const sb = SB.create('refresh', { root: ROOT });
+  try {
+    const lua = path.join(sb.addons, 'ClaudeWoW', 'ClaudeWoW.lua');
+    const leftover = path.join(sb.addons, 'ClaudeWoW', 'Removed.lua');
+    const slotToc = path.join(sb.addons, 'ClaudeWoW_S007', 'ClaudeWoW_S007.toc');
+    const shipped = fs.readFileSync(path.join(SB.REPO, 'addon', 'ClaudeWoW', 'ClaudeWoW.lua'), 'utf8');
+    fs.writeFileSync(lua, '-- STALE');
+    fs.writeFileSync(leftover, '-- gone from the repo');
+    fs.writeFileSync(slotToc, 'stale toc');
+    fs.writeFileSync(sb.saved, 'ClaudeWoWDB = { kept = true }\n');
+    fs.writeFileSync(sb.transcripts, '{"kept":true}\n');
+    fs.writeFileSync(path.join(sb.project, 'notes.txt'), 'kept');
+    SB.writeConfig(sb, { slots: 60 });
+
+    const kept = SB.open('refresh', { root: ROOT, keepAddon: true });
+    assert.equal(kept.installed, null);
+    assert.equal(fs.readFileSync(lua, 'utf8'), '-- STALE', 'keepAddon leaves the old snapshot');
+    assert.equal(fs.readFileSync(slotToc, 'utf8'), 'stale toc');
+
+    const reopened = SB.open('refresh', { root: ROOT });
+    assert.ok(fs.readFileSync(lua, 'utf8') === shipped, 'the shipped ClaudeWoW.lua is copied again');
+    assert.ok(!fs.existsSync(leftover), 'a file no longer shipped is removed');
+    assert.match(fs.readFileSync(slotToc, 'utf8'), /## Interface: 16001/);
+    assert.match(reopened.installed, /slots: 60/);
+    assert.equal(fs.readFileSync(sb.saved, 'utf8'), 'ClaudeWoWDB = { kept = true }\n');
+    assert.equal(fs.readFileSync(sb.transcripts, 'utf8'), '{"kept":true}\n');
+    assert.equal(fs.readFileSync(path.join(sb.project, 'notes.txt'), 'utf8'), 'kept');
+    assert.equal(reopened.cfg.slots, 60);
+  } finally {
+    fs.rmSync(ROOT, { recursive: true, force: true });
+  }
+});
