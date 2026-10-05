@@ -231,6 +231,9 @@ function claudeParser(opts = {}) {
       if (ev.type === 'system' && ev.subtype === 'init' && Array.isArray(ev.mcp_servers)) {
         const down = ev.mcp_servers.filter(s => s && typeof s === 'object' && s.status !== 'connected');
         if (down.length) out.mcpDown = down.map(s => ({ name: String(s.name || '?').slice(0, 80), status: String(s.status || 'no status').slice(0, 40) }));
+        out.mcpStatus = ev.mcp_servers
+          .filter(s => s && typeof s === 'object' && typeof s.name === 'string')
+          .map(s => ({ name: s.name.slice(0, 80), status: String(s.status || 'unknown').slice(0, 40) }));
       }
       if (ev.type === 'system' && ev.subtype === 'permission_denied') {
         noteRefusal(ev.tool_use_id, ev.message || ev.decision_reason, ev.decision_reason_type, true);
@@ -670,7 +673,7 @@ const AGENTS = {
   claude: {
     name: 'Claude',
     command: 'claude',
-    settings: ['model', 'effort', 'permissionMode', 'addDirs'],
+    settings: ['model', 'effort', 'permissionMode', 'addDirs', 'mcp'],
     install: 'https://claude.com/claude-code, then run `claude` once and log in',
     windowsPaths: () => [path.join(os.homedir(), '.local', 'bin', 'claude.exe')],
     posixPaths: () => [path.join(os.homedir(), '.local', 'bin', 'claude')],
@@ -709,7 +712,7 @@ const AGENTS = {
   codex: {
     name: 'Codex',
     command: 'codex',
-    settings: ['model', 'effort', 'permissionMode', 'addDirs'],
+    settings: ['model', 'effort', 'permissionMode', 'addDirs', 'mcp'],
     install: 'npm install -g @openai/codex, then run `codex` once and log in',
     windowsPaths: () => [],
     posixPaths: () => [],
@@ -869,7 +872,7 @@ const AGENTS = {
 
 const DEFAULT_AGENT = 'claude';
 
-const SETTING_FLAGS = { model: '--model', effort: '--effort', permissionMode: '--permission-mode', addDirs: '--add-dir' };
+const SETTING_FLAGS = { model: '--model', effort: '--effort', permissionMode: '--permission-mode', addDirs: '--add-dir', mcp: 'mcp' };
 
 function unsupportedSettings(id, chosen) {
   const agent = AGENTS[id];
@@ -888,6 +891,7 @@ function withChatSettings(agentCfg, id, chosen) {
   if (!agent || !chosen) return agentCfg;
   const out = { ...agentCfg };
   for (const key of agent.settings) {
+    if (key === 'mcp') continue;
     const v = chosen[key];
     if (Array.isArray(v) ? v.length : v) out[key] = v;
   }

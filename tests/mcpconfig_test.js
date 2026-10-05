@@ -347,3 +347,72 @@ test('Codex: a server named like one in ~/.codex/config.toml is left out, since 
     ['github', 'linear'],
   );
 });
+
+test('per chat: mcp= names the servers a chat turned on, an empty value turns all off, and a bad name is dropped', () => {
+  const hex = s => Buffer.from(s, 'utf8').toString('hex');
+  assert.equal(P.parseFlags('agent=claude').mcp, undefined, 'no token: the config defaults');
+  assert.deepEqual(P.parseFlags('mcp=').mcp, [], 'an explicit empty set');
+  assert.deepEqual(P.parseFlags('mcp=notion,github,notion,bad name,a__b').mcp, ['notion', 'github']);
+  assert.deepEqual(P.parseFlags(`mcp=${Array.from({ length: 12 }, (_, i) => `s${i}`).join(',')}`).mcp.length, 8);
+  const outbox = `ClaudeWoWDB = {\n["outbox"] = {\n["id"] = 3,\n["session"] = "s",\n["chat"] = "c",\n["text"] = "${hex('hi')}",\n["cwd"] = "",\n["opts"] = "${hex('mcp=github')}",\n["t"] = 1,\n},\n}\n`;
+  assert.deepEqual(P.parseOutbox(outbox).mcp, ['github'], 'reload mode carries it too');
+
+  const mcp = parsed(SAMPLE).mcp;
+  assert.deepEqual(MC.forClaude(mcp, { on: ['notion', 'quiet'] }).names, ['notion', 'quiet'], 'a chat can turn on a server that is off by default');
+  const none = MC.forClaude(mcp, { on: [] });
+  assert.deepEqual(none.names, []);
+  assert.equal(none.blocks('mcp__notion__notion-search'), true, 'a server the chat turned off is never offered, even a tool its allow list names');
+  assert.deepEqual(
+    none.offRules,
+    ['mcp__github', 'mcp__notion', 'mcp__linear', 'mcp__quiet'],
+    "and it is denied, so a same-name server of Claude's own settings is off too",
+  );
+  assert.deepEqual(MC.forClaude(mcp).names, ['github', 'notion', 'linear']);
+  assert.deepEqual(MC.forClaude(mcp).offRules, [], 'no choice: nothing extra is denied');
+  assert.equal(MC.forClaude(mcp).blocks('mcp__quiet__x'), false);
+  assert.deepEqual(
+    MC.forCodex(mcp, { on: ['quiet', 'github'] }).map(e => e.name),
+    ['github', 'quiet'],
+  );
+  const own = MC.forCodex(mcp, { on: ['github'], skip: ['notion', 'github', 'elsewhere'] });
+  assert.deepEqual(own, [{ name: 'notion', off: true }], 'a config.toml server the chat turned off is disabled; one it keeps on loads from config.toml');
+  assert.deepEqual(MC.codexArgs(own), ['-c', 'mcp_servers.notion.enabled=false']);
+  assert.deepEqual(
+    MC.forCodex(mcp, { skip: ['notion'] }).filter(e => e.off),
+    [],
+    'no choice: config.toml decides',
+  );
+  assert.deepEqual(A.unsupportedSettings('grok', { mcp: ['notion'] }), ['mcp notion']);
+  assert.deepEqual(A.unsupportedSettings('claude', { mcp: ['notion'] }), []);
+  assert.deepEqual(A.unsupportedSettings('codex', { mcp: ['notion'] }), []);
+  assert.equal(A.withChatSettings({}, 'claude', { mcp: ['notion'] }).mcp, undefined, 'the choice drives the server list, not an agent config key');
+});
+
+test('slot field mcp: each server with its default and last health; a bad name or health never reaches Lua', () => {
+  const lua = P.luaTable('X', [], {
+    mcp: [
+      { name: 'notion', on: true, health: 'connected' },
+      { name: 'linear', on: false, health: 'weird' },
+      { name: 'bad name"', on: true, health: 'connected' },
+    ],
+  });
+  assert.match(lua, /^\tmcp = \{ \{ name = "notion", on = true, health = "connected" \}, \{ name = "linear", on = false, health = "unknown" \} \},$/m);
+  assert.match(P.luaTable('X', [], { mcp: [] }), /^\tmcp = \{ {2}\},$/m, 'a new bridge with no servers says so');
+  assert.ok(!/mcp =/.test(P.luaTable('X', [], {})));
+});
+
+test('health: the Claude init event reports every server with its status', () => {
+  const r = A.claudeParser().feed({
+    type: 'system',
+    subtype: 'init',
+    mcp_servers: [{ name: 'notion', status: 'connected' }, { name: 'linear', status: 'needs-auth' }, { status: 'failed' }],
+  });
+  assert.deepEqual(r.mcpStatus, [
+    { name: 'notion', status: 'connected' },
+    { name: 'linear', status: 'needs-auth' },
+  ]);
+  assert.deepEqual(r.mcpDown, [
+    { name: 'linear', status: 'needs-auth' },
+    { name: '?', status: 'failed' },
+  ]);
+});
