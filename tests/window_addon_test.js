@@ -442,7 +442,8 @@ test('on Classic Era a working chat whose glyph atlas is refused shows its numbe
 test('a chat whose newest reply waits on a permission gets the needs-you title color; working outranks it, it outranks an unread reply', () => {
   const vm = nativeVM();
   vm.run('ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[3].id)');
-  const idle = titleColorOf(vm, 1);
+  const idle = '0.75,0.61,0';
+  assert.equal(titleColorOf(vm, 1), '0.5,0.5,0.5', 'an idle chat with no messages has a dim title');
   vm.run('ClaudeWoWDB.chats[2].unread = 1; ClaudeWoW.Render()');
   const reply = titleColorOf(vm, 2);
   assert.notEqual(reply, idle);
@@ -842,7 +843,10 @@ test('the window is built from Blizzard frame templates where the client has the
   assert.equal(vm.evaluate('ClaudeWoW.UI.art.frame'), 'questlog-frame');
   assert.equal(vm.evaluate('ClaudeWoW.UI.art.filigree'), 'questlog-frame-filigree');
   assert.equal(vm.evaluate('ClaudeWoW.UI.art.poi'), 'UI-QuestPoi-QuestNumber', 'each chat has a round POI button');
-  assert.equal(vm.evaluate('ClaudeWoW.UI.questList.rows[1].objectives[1].text:GetText()'), 'No messages yet', 'objective lines sit under each title');
+  const shownLines = (index) => vm.num(`(function() local n = 0 for _, l in ipairs(${rowOf(index)}.objectives) do if l.text.shown then n = n + 1 end end return n end)()`);
+  assert.equal(shownLines(2), 0, 'an idle chat with no messages has no objective line');
+  assert.equal(vm.evaluate(`${rowOf(2)}.when:GetText()`), '', 'no time without messages');
+  assert.equal(vm.evaluate(`${rowOf(2)}.label == ${rowOf(2)}.title`), 'true');
   assert.equal(vm.evaluate('ClaudeWoW.UI.art.minus'), 'common-button-list-minus');
 
   vm.run('ClaudeWoW.UI.questList.headers[1].scripts.OnClick(ClaudeWoW.UI.questList.headers[1])');
@@ -858,10 +862,13 @@ test('the window is built from Blizzard frame templates where the client has the
   assert.equal(vm.evaluate('ClaudeWoW.UI.questList.empty.shown'), 'true');
   vm.run('ClaudeWoWChatSearch:SetText(""); for _, fn in ipairs(ClaudeWoWChatSearch.hooks.OnTextChanged) do fn(ClaudeWoWChatSearch) end');
 
-  vm.run('ClaudeWoWDB.chats[2].unread = 1; ClaudeWoW.Render()');
+  vm.run('ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[3].id); table.insert(ClaudeWoWDB.chats[2].history, { role = "user", text = "hi", t = time() }); ClaudeWoWDB.chats[2].unread = 1; ClaudeWoW.Render()');
+  assert.equal(vm.evaluate(`${rowOf(2)}.objectives[1].text.shown`), 'true');
   vm.run('ClaudeWoWChatSettings.scripts.OnClick(ClaudeWoWChatSettings); STUB.Pick("Show message previews")');
   assert.equal(vm.evaluate('ClaudeWoWDB.settings.chatPreviews'), 'false', 'the gear menu turns message previews off');
-  assert.equal(vm.evaluate('ClaudeWoW.UI.questList.rows[1].objectives[1].text.shown'), 'false');
+  assert.equal(vm.evaluate(`${rowOf(2)}.objectives[1].text.shown`), 'false');
+  assert.equal(vm.evaluate(`${rowOf(2)}.when:GetText()`), '12:00', 'the time stays with previews off');
+  assert.equal(titleColorOf(vm, 1), '0.75,0.61,0', 'with previews off an empty chat keeps the idle title');
   vm.run('ClaudeWoWChatSettings.scripts.OnClick(ClaudeWoWChatSettings); STUB.Pick("Show message previews")');
   vm.run('ClaudeWoWChatSettings.scripts.OnClick(ClaudeWoWChatSettings); STUB.Pick("Collapse all folders")');
   assert.equal(shownRows(vm), '', 'collapse all hides every chat');
@@ -871,6 +878,34 @@ test('the window is built from Blizzard frame templates where the client has the
   vm.run('ClaudeWoWFrame.CloseButton.scripts.OnClick(ClaudeWoWFrame.CloseButton)');
   assert.equal(vm.evaluate('ClaudeWoWFrame.shown'), 'false');
   assert.equal(vm.evaluate('ClaudeWoWMini.shown'), 'true');
+});
+
+test('a chat row shows one preview line, the last message time beside the title, and the count in its tooltip', () => {
+  const vm = nativeVM();
+  const shownLines = (index) => vm.num(`(function() local n = 0 for _, l in ipairs(${rowOf(index)}.objectives) do if l.text.shown then n = n + 1 end end return n end)()`);
+  vm.run(`date = function(fmt, t) if fmt == "%Y-%m-%d" then return t == time() and "today" or "before" end return fmt == "%b %d" and "Oct 02" or "18:01" end
+    local h = ClaudeWoWDB.chats[2].history
+    table.insert(h, { role = "user", text = "why is it down", t = time() - 90000 })
+    table.insert(h, { role = "assistant", agent = "claude", text = "Factory run done\\nsecond line", t = time() })
+    table.insert(ClaudeWoWDB.chats[3].history, { role = "user", text = "route please", t = time() - 90000 })
+    ClaudeWoW.Render()`);
+  assert.equal(shownLines(2), 1, 'an idle chat shows one objective line: the preview');
+  assert.match(vm.evaluate(`${rowOf(2)}.objectives[1].text:GetText()`), /: Factory run done$/);
+  assert.equal(vm.evaluate(`${rowOf(2)}.when:GetText()`), '18:01', 'today shows the clock time');
+  assert.equal(vm.evaluate(`${rowOf(3)}.when:GetText()`), 'Oct 02', 'an older day shows the date');
+  assert.equal(vm.evaluate(`${rowOf(2)}.title.rel == ${rowOf(2)}.when`), 'true', 'the title truncates before the time');
+  vm.run(`local r = ${rowOf(2)}; r.scripts.OnEnter(r)`);
+  assert.equal(vm.evaluate('GameTooltip:GetText()'), 'Fix the bridge');
+  assert.equal(vm.evaluate('table.concat(GameTooltip.lines, "|")'), '2 messages, last at 18:01');
+  vm.run(`local r = ${rowOf(1)}; r.scripts.OnEnter(r)`);
+  assert.equal(vm.evaluate('table.concat(GameTooltip.lines, "|")'), 'No messages yet');
+  vm.run(`local r = ${rowOf(1)}; r.scripts.OnLeave(r)`);
+  assert.equal(vm.evaluate('GameTooltip.shown'), 'false');
+  vm.run('ClaudeWoWDB.chats[2].history = {}; ClaudeWoWDB.chats[2].pendingId = 7; ClaudeWoW.Render()');
+  assert.equal(shownLines(2), 1, 'a working chat with a cleared history keeps its line');
+  assert.match(vm.evaluate(`${rowOf(2)}.objectives[1].text:GetText()`), /^Working: /);
+  assert.equal(titleColorOf(vm, 2), '1,1,0', 'and its working title color');
+  vm.run('ClaudeWoWDB.chats[2].pendingId = nil; ClaudeWoW.Render()');
 });
 
 test('the black bar shows the chat title up to the project button, with folder, agent and plugin in its tooltip', () => {
