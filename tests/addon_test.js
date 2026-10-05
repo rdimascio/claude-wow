@@ -2989,6 +2989,36 @@ test('projects: a chat has none by default; --project, #name and none attach and
   assert.equal(vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].cwd'), '');
 });
 
+test('projects: the bridge list adds recent projects with repo labels, and one folder spelled with ~ or a trailing slash is listed once', () => {
+  const vm = newVM();
+  login(vm);
+  vm.run('ClaudeWoWDB.settings.projects = { "~/code/every", "/Users/me/code/every/" }');
+  vm.run('STUB.RunTimers()');
+  nextSlot(vm, '{ now = time(), cwd = "/Users/me/code/every", home = "/Users/me", projects = { { path = "/Users/me/code/every", label = "every" }, { path = "/Users/me/wow-ai", label = "claude-wow" }, { path = "/Users/me/every-3", label = "every (every-3)" } }, replies = {} }');
+  vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
+  assert.equal(vm.evaluate('ClaudeWoW.IsConnected()'), 'true');
+
+  vm.run('SlashCmdList.CLAUDE("--project nope hi")');
+  const said = vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history[#ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history].text');
+  assert.match(said, /Known: every, claude-wow, every \(every-3\)\./, 'one every for both spellings, then the bridge list by label: ' + said);
+
+  vm.run('SlashCmdList.CLAUDE("--project claude-wow fix the build")');
+  const rec = stripRecords(vm).find(r => r.text === 'fix the build');
+  assert.equal(rec.cwd, '/Users/me/wow-ai', 'the repo label finds the folder');
+  const tab = vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history[#ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history - 1].text');
+  assert.match(tab, /project: claude-wow/);
+});
+
+test('projects: without a bridge list the picker keeps folder names, and ~ stays as typed until the bridge names its home', () => {
+  const vm = newVM();
+  login(vm);
+  vm.run('ClaudeWoWDB.settings.projects = { "~/code/every", "/Users/me/wow-ai" }');
+  connectIn(vm, '/Users/me/code/every');
+  vm.run('SlashCmdList.CLAUDE("--project nope hi")');
+  const said = vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history[#ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history].text');
+  assert.match(said, /Known: every, wow-ai, every\./, said);
+});
+
 test('the whisper tab and the game chat echo render coding replies the same way: fences skipped, code untouched, links short, cuts on word boundaries', () => {
   const vm = whisperVM();
   const chatId = vm.evaluate('ClaudeWoWDB.chats[1].id');

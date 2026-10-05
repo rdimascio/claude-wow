@@ -150,8 +150,25 @@ local function ParseTokens(text)
 	return math.floor(n + 0.5)
 end
 
+function Cli.NormalizeFolder(cwd)
+	local p = tostring(cwd or "")
+	local home = run.bridgeHome
+	if home and home ~= "" then
+		if p == "~" then
+			p = home
+		elseif p:match("^~[\\/]") then
+			p = home:gsub("[\\/]+$", "") .. p:sub(2)
+		end
+	end
+	if #p > 1 then p = p:gsub("([^:\\/])[\\/]+$", "%1") end
+	return p
+end
+
 -- Last path component of a folder, for labels.
 local function FolderName(cwd)
+	local labels = run.bridgeProjectLabels
+	local label = labels and labels[Cli.NormalizeFolder(cwd)]
+	if label and label ~= "" then return label end
 	local name = tostring(cwd or ""):gsub("[\\/]+$", ""):match("([^\\/]+)$")
 	return name or ""
 end
@@ -2053,6 +2070,7 @@ local function TryLoadSlot(why)
 		if type(data.plugins) == "table" and #data.plugins > 0 then run.bridgePlugins = data.plugins end
 		ClaudeWoW.ApplyLive(data.live)
 		ClaudeWoW.ApplySessions(data.sessions, data.now)
+		ClaudeWoW.ApplyProjects(data.projects, data.home)
 		local acked = ClaudeWoW.ApplyAcks(data.acks)
 		ApplyTransport(data)
 		if acked then RefreshStrip() end
@@ -2279,6 +2297,7 @@ local function ProcessInbox()
 	if type(inbox.plugins) == "table" and #inbox.plugins > 0 then run.bridgePlugins = inbox.plugins end
 	ClaudeWoW.ApplyLive(inbox.live)
 	ClaudeWoW.ApplySessions(inbox.sessions, inbox.now)
+	ClaudeWoW.ApplyProjects(inbox.projects, inbox.home)
 	ApplyTransport(inbox)
 	ClaudeWoW.Version.Apply(inbox.bridge, inbox.now)
 	ClaudeWoW.Version.ApplyDisk(inbox.addonDisk, inbox.now)
@@ -3667,15 +3686,30 @@ end
 function Cli.KnownProjects()
 	local out, seen = {}, {}
 	local function Add(p)
-		if type(p) == "string" and p ~= "" and not seen[p] and #out < Cli.PROJECTS_MAX then
-			seen[p] = true
-			table.insert(out, p)
-		end
+		if type(p) ~= "string" or p == "" or #out >= Cli.PROJECTS_MAX then return end
+		local key = Cli.NormalizeFolder(p)
+		if seen[key] then return end
+		seen[key] = true
+		table.insert(out, key)
 	end
 	for _, p in ipairs(db.settings.projects or {}) do Add(p) end
 	for _, c in ipairs(db.chats) do Add(Cli.ProjectOf(c)) end
 	Add(run.bridgeCwd)
+	for _, p in ipairs(run.bridgeProjects or {}) do Add(p) end
 	return out
+end
+
+function ClaudeWoW.ApplyProjects(projects, home)
+	if type(home) == "string" and home ~= "" then run.bridgeHome = home end
+	if type(projects) ~= "table" then return end
+	local list, labels = {}, {}
+	for _, p in ipairs(projects) do
+		if type(p) == "table" and type(p.path) == "string" and p.path ~= "" then
+			table.insert(list, p.path)
+			if type(p.label) == "string" and p.label ~= "" then labels[Cli.NormalizeFolder(p.path)] = p.label end
+		end
+	end
+	run.bridgeProjects, run.bridgeProjectLabels = list, labels
 end
 
 function Cli.RememberProject(path)

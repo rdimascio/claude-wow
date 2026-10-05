@@ -998,6 +998,11 @@ function luaTable(globalName, records, opts = {}) {
   if (Array.isArray(opts.sessions)) {
     lines.splice(lines.length - 1, 0, '\tsessions = {', ...opts.sessions.map(luaSession), '\t},');
   }
+  if (Array.isArray(opts.projects)) {
+    const rows = opts.projects.filter(p => p && p.path).map(p => `{ path = ${luaStr(p.path)}, label = ${luaStr(p.label || '')} }`);
+    lines.splice(lines.length - 1, 0, `\tprojects = { ${rows.join(', ')} },`);
+  }
+  if (opts.home) lines.splice(lines.length - 1, 0, `\thome = ${luaStr(opts.home)},`);
   if (Array.isArray(opts.acks)) {
     const acks = opts.acks.filter(a => a && Number.isInteger(a.id) && a.id > 0);
     lines.splice(lines.length - 1, 0, `\tacks = { ${acks.map(a => `{ session = ${luaStr(a.session || '')}, id = ${a.id} }`).join(', ')} },`);

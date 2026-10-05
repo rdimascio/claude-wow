@@ -137,6 +137,13 @@ test('luaTable carries the fallback note when there is one', () => {
   assert.match(lua, /^\ttransportNote = "pixel transport, fallen back to \\"why\\"",$/m);
 });
 
+test('luaTable carries the project list with labels and the home folder, quoted for Lua', () => {
+  assert.ok(!/projects =|home =/.test(P.luaTable('X', [], {})), 'no fields unless given');
+  const lua = P.luaTable('X', [], { projects: [{ path: '/Users/me/wow-ai', label: 'claude-wow' }, { path: '', label: 'skip' }, { path: 'C:\\src\\a "b"', label: '' }], home: '/Users/me' });
+  assert.match(lua, /^\tprojects = \{ \{ path = "\/Users\/me\/wow-ai", label = "claude-wow" \}, \{ path = "C:\\\\src\\\\a \\"b\\"", label = "" \} \},$/m);
+  assert.match(lua, /^\thome = "\/Users\/me",$/m);
+});
+
 test('jobsFromStrip parses the current record format and keeps separators inside text', () => {
   const rec = ['sess', 'chat1', '12', 'realms', 'allow=WebSearch', 'My chat', 'hello\x1Fworld'].join('\x1F');
   const jobs = P.jobsFromStrip(12, rec);
