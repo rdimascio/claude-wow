@@ -202,6 +202,9 @@ function open(name = 'default', opts = {}) {
   const recorded = JSON.parse(fs.readFileSync(path.join(dir, 'sandbox.json'), 'utf8'));
   const L = layout(dir, (recorded.opts && recorded.opts.extraClients) || []);
   const cfg = withInertStream(JSON.parse(fs.readFileSync(L.config, 'utf8')));
+  const claude = cfg.agents && cfg.agents.claude;
+  const madeForRealAgent = recorded.opts && recorded.opts.agentPath === '';
+  if (claude && claude.path === '' && madeForRealAgent && opts.agentPath === undefined) claude.path = FAKE_AGENT;
   fs.writeFileSync(assertSafe(L.config), JSON.stringify(cfg, null, 2) + '\n');
   const env = envFor(L, opts.env);
   const installed = opts.keepAddon ? null : installAddon(L, env);

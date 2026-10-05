@@ -118,6 +118,20 @@ test('an explicit empty agentPath is kept so the bridge finds the real CLI; no a
   assert.equal(SB.buildConfig(L, { agentPath: '/opt/x/claude' }).agents.claude.path, '/opt/x/claude');
 });
 
+test('a plain reopen of a --real-agent sandbox goes back to the fake agent; a custom path is kept', () => {
+  const sb = SB.create('real-then-plain', { root: ROOT, agentPath: '' });
+  try {
+    assert.equal(sb.cfg.agents.claude.path, '');
+    const plain = SB.open('real-then-plain', { root: ROOT, keepAddon: true });
+    assert.equal(plain.cfg.agents.claude.path, SB.FAKE_AGENT);
+    assert.equal(JSON.parse(fs.readFileSync(plain.config, 'utf8')).agents.claude.path, SB.FAKE_AGENT);
+    SB.writeConfig(plain, { agents: Object.assign({}, plain.cfg.agents, { claude: Object.assign({}, plain.cfg.agents.claude, { path: '/opt/x/claude' }) }) });
+    assert.equal(SB.open('real-then-plain', { root: ROOT, keepAddon: true }).cfg.agents.claude.path, '/opt/x/claude');
+  } finally {
+    fs.rmSync(ROOT, { recursive: true, force: true });
+  }
+});
+
 test('reopening a sandbox refreshes the shipped addon and slots but keeps SavedVariables, transcripts, config and project', () => {
   const sb = SB.create('refresh', { root: ROOT });
   try {
