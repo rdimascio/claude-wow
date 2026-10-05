@@ -3625,6 +3625,8 @@ function ClaudeWoW.ApplySessions(list, now)
 				title = type(e.title) == "string" and e.title or "",
 				branch = type(e.branch) == "string" and e.branch or "",
 				restart = type(e.restart) == "string" and e.restart or "",
+				handoff = e.handoff == true or nil,
+				recap = type(e.recap) == "string" and e.recap ~= "" and e.recap or nil,
 			})
 		end
 	end
@@ -6723,6 +6725,7 @@ end
 HELP = table.concat({
 	"/claude <text>                     start a new chat with that message, like claude \"<text>\" in a terminal. Bare /claude in the game chat opens the workspace window; in a chat's tab it starts a new chat",
 	"/claude -c [text]                  continue the current chat (--continue); alone it points at its tab (with the tabs off, it opens the window on it)",
+	"/claude -r all                     open one chat per session handed off with claude-wow handoff in a terminal; each resumes its session headless",
 	"/claude -r [id|name|n] [text]      resume a session (--resume). A Claude Code session started with the claude-wow channel gets the chat live; any other session is resumed headless in its folder. Bare -r lists the sessions (live ones first, marked live, running not listening, or resume): click a row or give its number; -r more lists them all",
 	"/claude -n <name> [text]           name the new chat (--name); with -c it renames the current one",
 	"/claude --model <model> [text]     the model for the chat (opus, sonnet, a full model name)",
@@ -7349,6 +7352,7 @@ function Cli.SessionEntries()
 					kind = kind, id = e.id, name = (chat and not e.running) and chat.name or title, alias = alias,
 					cwd = e.cwd, branch = e.branch, agent = e.agent, plugin = e.plugin, at = e.at,
 					live = e.live, running = e.running, restart = e.restart, chat = chat and chat.id or nil,
+					handoff = e.handoff, recap = e.recap,
 				}
 				table.insert(kind == "live" and live or (kind == "deaf" and deaf or rest), entry)
 				if chat then seen[chat.id] = true end
@@ -7542,6 +7546,7 @@ function Cli.AttachTo(e)
 			c.adoptCwd = (e.cwd or "") == "" or nil
 		end
 		AddHistory(c, "system", "Attached to session " .. e.id .. ((e.cwd or "") ~= "" and (" in " .. Display(e.cwd)) or "") .. ". Your next message resumes it" .. (e.unverified and " (the bridge looks the id up then)" or "") .. ".")
+		if e.recap then AddHistory(c, "system", e.recap) end
 	end
 	ClaudeWoW.SwitchChat(c.id)
 	ClaudeWoW.RenderChatList()
@@ -7609,6 +7614,10 @@ function Cli.RunResume(o)
 		ClaudeWoW.ShowResumePicker(nil, nil, true)
 		return
 	end
+	if tostring(o.resume):lower() == "all" and o.text == "" then
+		Cli.ResumeAll()
+		return
+	end
 	local hits = Cli.ResolveResume(o.resume)
 	if #hits == 0 then
 		Cli.Say(ActiveChat(), "No chat or session matches \"" .. Display(o.resume) .. "\". /claude -r lists them.")
@@ -7619,6 +7628,41 @@ function Cli.RunResume(o)
 		return
 	end
 	Cli.AttachWith(hits[1], o)
+end
+
+function Cli.ResumeAll()
+	local from = ActiveChat()
+	local opened, busy, already = {}, {}, {}
+	for _, e in ipairs(Cli.SessionEntries()) do
+		if e.handoff then
+			if e.running then
+				table.insert(busy, e)
+			elseif e.chat then
+				table.insert(already, e)
+			else
+				local c = Cli.AttachTo(e)
+				if c then table.insert(opened, c) end
+			end
+		end
+	end
+	if #opened + #busy + #already == 0 then
+		Cli.Say(from, "No sessions were handed off. In a terminal, run: claude-wow handoff <repository folder> --stop. Then /claude -r all again.")
+		return
+	end
+	local lines = {}
+	if #opened > 0 then
+		local names = {}
+		for _, c in ipairs(opened) do table.insert(names, c.name) end
+		table.insert(lines, "Opened " .. #opened .. " chat" .. (#opened == 1 and "" or "s") .. " for the handed-off sessions: " .. table.concat(names, ", ") .. ". Each resumes its session with your first message there.")
+	end
+	if #already > 0 then table.insert(lines, #already .. " already had a chat.") end
+	if #busy > 0 then
+		local names = {}
+		for _, e in ipairs(busy) do table.insert(names, Display(e.name)) end
+		table.insert(lines, "Still running in a terminal, so not opened (resuming both would fork them): " .. table.concat(names, ", ") .. ". Quit them, then /claude -r all again.")
+	end
+	local target = opened[1] or from
+	Cli.Say(target, table.concat(lines, "\n"))
 end
 
 function ClaudeWoW.ResumePick(n)

@@ -59,6 +59,7 @@ const SIG = require('./signals');
 const DM = require('./datamcp');
 const GM = require('./goalsmcp');
 const FB = require('./feedback');
+const HO = require('./handoff');
 const FACTORY = require('./factory');
 const GD = require('./gamedata');
 const DSYNC = require('./datasync');
@@ -635,11 +636,25 @@ function projectList() {
   return list;
 }
 
+let handoffCache = { key: '', handoff: null, entries: [] };
+function handoffEntries(now = Date.now()) {
+  let st;
+  try { st = fs.statSync(path.join(HOME.dir, HO.FILE_NAME)); } catch { return []; }
+  const key = `${st.mtimeMs}:${st.size}:${st.ino}`;
+  if (key !== handoffCache.key) {
+    let handoff = null;
+    try { handoff = HO.readHandoff(HOME.dir, now); } catch (e) { log(`handoff: cannot read ${HO.FILE_NAME} (${e.message})`); }
+    handoffCache = { key, handoff, entries: HO.slotEntries(handoff) };
+  }
+  const h = handoffCache.handoff;
+  return h && now - h.at <= HO.FRESH_MS ? handoffCache.entries : [];
+}
+
 function sessionList() {
   const lp = livePlugin();
   const live = lp && typeof lp.sessions === 'function' ? lp.sessions() : [];
   const merged = SS.mergeSessions({ live, own: SS.ownSessions(state, transcripts), claude: recentClaudeSessions(), limit: SESSION_LIST_MAX });
-  return merged.map(s => ({ ...s, branch: SS.gitBranch(s.cwd) }));
+  return HO.withHandoff(merged, handoffEntries()).map(s => ({ ...s, branch: s.branch || SS.gitBranch(s.cwd) }));
 }
 
 function resolveResume(job) {
