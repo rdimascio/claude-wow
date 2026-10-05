@@ -40,6 +40,19 @@ end }
 function UnitSetRole(unit, role) UNIT_ROLE_SET = role end
 function UnitPowerMax(unit) return 100 end
 function GameTooltip.AddLine(self, line) self.lines = self.lines or {}; table.insert(self.lines, line) end
+GameTooltip.parent = UIParent
+function Methods.SetScrollChild(self, child) self.scrollChild = child; child.parent = self end
+function Methods.GetScrollChild(self) return self.scrollChild end
+function Methods.EnableKeyboard(self, v) self.keyboardEnabled = v and true or false end
+function Methods.SetPropagateKeyboardInput(self, v) self.propagateKeys = v and true or false end
+function Methods.SetAutoFocus(self, v) self.autoFocus = v and true or false end
+function GetUnitName(unit) if unit == "player" then return "Testchar" end end
+function GetRaidTargetIndex(unit) if unit == "target" then return 8 end end
+for _, name in ipairs({ "GameTooltipText", "Tooltip_Med", "GameFontHighlightSmall" }) do
+  local font = CreateFrame("Font", name)
+  font.GetObjectType = function() return "Font" end
+  _G[name] = font
+end
 `;
 
 function newVM(savedVariables = '') {
@@ -320,4 +333,124 @@ test('a getter or an event payload cannot hand a widget a Blizzard frame inside 
   assert.equal(vm.evaluate('UNIT_ROLE_SET'), null);
   assert.equal(vm.evaluate('WIDGET_ESCAPED'), null);
   assert.equal(vm.evaluate('CHAT_LINE_SENT'), null);
+});
+
+test('a widget frame method takes only frames the widget made, so GameTooltip cannot be captured', () => {
+  const vm = newVM(savedWidgets([
+    ['tipgrab', [
+      'local ui = ...',
+      'local s = CreateFrame("ScrollFrame")',
+      's:SetScrollChild(GameTooltip)',
+      'local tip = s:GetScrollChild()',
+      'tip:SetParent(ui.frame)',
+      'ui.db.grabbed = tostring(tip:GetName())',
+    ].join('\n')],
+    ['container', 'local ui = ...\nCreateFrame("ScrollFrame"):SetScrollChild(ui.frame)'],
+    ['anchor', 'local ui = ...\nlocal f = CreateFrame("Frame")\nf:SetPoint("BOTTOMRIGHT", GameTooltip)'],
+    ['scroll', [
+      'local ui = ...',
+      'local s = CreateFrame("ScrollFrame")',
+      'local child = CreateFrame("Frame")',
+      's:SetScrollChild(child)',
+      'assert(s:GetScrollChild() == child, "own scroll child lost")',
+      'assert(child:GetParent() == s, "own scroll child not reparented")',
+    ].join('\n')],
+    ['owner', [
+      'local ui = ...',
+      'local f = CreateFrame("Frame")',
+      'f:RegisterEvent("RAID_TARGET_UPDATE")',
+      'f:SetScript("OnEvent", function(self) local tip = self:GetChildren() ui.db.limited = tostring(tip ~= nil and tip.GetParent == nil and tip.SetScript == nil and tip.AddLine ~= nil) end)',
+    ].join('\n')],
+  ]));
+  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("tipgrab")'), 'failed');
+  assert.match(vm.evaluate('select(2, ClaudeWoWWidgets.Status("tipgrab"))'), /SetScrollChild needs a frame this widget made/);
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.tipgrab.grabbed'), null);
+  assert.equal(vm.evaluate('GameTooltip.parent == UIParent'), 'true');
+  assert.match(vm.evaluate('select(2, ClaudeWoWWidgets.Status("container"))'), /SetScrollChild needs a frame this widget made/);
+  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("anchor")'), 'running');
+  assert.equal(vm.evaluate('(function() for _, f in ipairs(STUB.frames) do if rawequal(f.rel, GameTooltip) then return true end end return false end)()'), 'false', 'the real GameTooltip reached a widget frame method');
+  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("scroll")'), 'running', vm.evaluate('select(2, ClaudeWoWWidgets.Status("scroll"))'));
+  vm.run('for _, f in ipairs(STUB.frames) do if f.events.RAID_TARGET_UPDATE then f.children = { GameTooltip }; GameTooltip.parent = f end end');
+  vm.run('STUB.FireEvent("RAID_TARGET_UPDATE")');
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.owner.limited'), 'true', 'a reparented GameTooltip came back as a full widget frame');
+});
+
+const UNPRINTABLE = 'error(setmetatable({}, { __tostring = function() error("no text") end }))';
+
+test('an error that cannot be shown as text still stops the widget, and later widgets start at login', () => {
+  const zombie = [
+    'local ui = ...',
+    'local f = CreateFrame("Frame")',
+    'f:RegisterEvent("PLAYER_TARGET_CHANGED")',
+    `f:SetScript("OnEvent", function() ui.db.n = (ui.db.n or 0) + 1 ${UNPRINTABLE} end)`,
+  ].join('\n');
+  const vm = newVM(savedWidgets([['first', `local ui = ...\n${UNPRINTABLE}`], ['second', 'local ui = ...\nui.db.ok = true'], ['zombie', zombie]]));
+  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("first")'), 'failed');
+  assert.equal(vm.evaluate('select(2, ClaudeWoWWidgets.Status("first"))'), 'an error that cannot be shown as text');
+  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("second")'), 'running');
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.second.ok'), 'true');
+  vm.run('STUB.FireEvent("PLAYER_TARGET_CHANGED")');
+  vm.run('STUB.FireEvent("PLAYER_TARGET_CHANGED")');
+  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("zombie")'), 'failed');
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.zombie.n'), '1');
+  assert.match(vm.evaluate(lastSystemNote), /zombie failed and was stopped: an error that cannot be shown as text/);
+});
+
+test('a widget cannot take the keyboard, or the mouse on its full-screen container', () => {
+  const vm = newVM();
+  const before = Number(vm.evaluate('#STUB.frames'));
+  vm.run(widgetSet([
+    ['keys', 'local ui = ...\nCreateFrame("Frame"):EnableKeyboard(true)'],
+    ['swallow', 'local ui = ...\nCreateFrame("Frame"):SetPropagateKeyboardInput(false)'],
+    ['containerkeys', 'local ui = ...\nui.frame:SetPropagateKeyboardInput(true)'],
+    ['containermouse', 'local ui = ...\nui.frame:EnableMouse(true)'],
+    ['focus', 'local ui = ...\nCreateFrame("EditBox"):SetFocus()'],
+    ['autofocus', 'local ui = ...\nCreateFrame("EditBox"):SetAutoFocus(true)'],
+    ['fine', [
+      'local ui = ...',
+      'local f = CreateFrame("Frame")',
+      'f:EnableMouse(true)',
+      'f:EnableKeyboard(false)',
+      'f:SetPropagateKeyboardInput(true)',
+      'ui.frame:EnableMouse(false)',
+      'local box = CreateFrame("EditBox", nil, nil, "InputBoxTemplate")',
+      'box:SetAutoFocus(false)',
+      'ui.db.ok = true',
+    ].join('\n')],
+  ]));
+  const refused = {
+    keys: /EnableKeyboard is not allowed/, swallow: /SetPropagateKeyboardInput is not allowed/, containerkeys: /SetPropagateKeyboardInput is not allowed/,
+    containermouse: /EnableMouse is not allowed on ui.frame/, focus: /SetFocus is not allowed/, autofocus: /SetAutoFocus is not allowed/,
+  };
+  for (const [name, why] of Object.entries(refused)) {
+    assert.equal(vm.evaluate(`ClaudeWoWWidgets.Status("${name}")`), 'failed', name);
+    assert.match(vm.evaluate(`select(2, ClaudeWoWWidgets.Status("${name}"))`), why);
+  }
+  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("fine")'), 'running', vm.evaluate('select(2, ClaudeWoWWidgets.Status("fine"))'));
+  const any = (cond) => vm.evaluate(`(function() for i = ${before + 1}, #STUB.frames do local f = STUB.frames[i] if ${cond} then return true end end return false end)()`);
+  assert.equal(any('f.keyboardEnabled == true'), 'false');
+  assert.equal(any('f.propagateKeys == false'), 'false');
+  assert.equal(any('f.autoFocus == true'), 'false');
+  assert.equal(any('f.kind == "EditBox" and f.autoFocus ~= false'), 'false', 'a widget edit box kept auto focus');
+  assert.equal(vm.evaluate('STUB.focus'), null);
+  assert.equal(any('f.mouseEnabled == true'), 'true', 'a child frame can still take the mouse');
+});
+
+test('a widget can read unit names and raid marks and use tooltip and game font objects by name', () => {
+  const source = [
+    'local ui = ...',
+    'local f = CreateFrame("Frame")',
+    'local a, b, c = f:CreateFontString(), f:CreateFontString(), f:CreateFontString()',
+    'a:SetFontObject(GameTooltipText)',
+    'b:SetFontObject(Tooltip_Med)',
+    'c:SetFontObject(GameFontHighlightSmall)',
+    'a:SetText(GetUnitName("player") .. " " .. GetRaidTargetIndex("target"))',
+  ].join('\n');
+  const vm = newVM(savedWidgets([['names', source]]));
+  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("names")'), 'running', vm.evaluate('select(2, ClaudeWoWWidgets.Status("names"))'));
+  const strings = '(function() for _, f in ipairs(STUB.frames) do if #f.children == 3 then return f.children end end end)()';
+  assert.equal(vm.evaluate(`${strings}[1].text`), 'Testchar 8');
+  assert.equal(vm.evaluate(`${strings}[1].font == GameTooltipText`), 'true');
+  assert.equal(vm.evaluate(`${strings}[2].font == Tooltip_Med`), 'true');
+  assert.equal(vm.evaluate(`${strings}[3].font == GameFontHighlightSmall`), 'true');
 });

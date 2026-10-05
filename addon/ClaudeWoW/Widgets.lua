@@ -111,10 +111,18 @@ local GAME_FUNCTIONS = {
 	"IsFalling", "IsStealthed", "IsIndoors", "IsOutdoors", "IsSpellKnown", "IsPlayerSpell", "IsUsableSpell", "IsCurrentSpell",
 	"IsSpellInRange", "IsItemInRange", "IsAutoRepeatSpell", "IsEquippedItem", "IsShiftKeyDown", "IsControlKeyDown",
 	"IsAltKeyDown", "IsModifierKeyDown", "IsMouseButtonDown", "HasFullControl", "CheckInteractDistance", "HasPetUI",
-	"PlaySound", "PlaySoundFile",
+	"PlaySound", "PlaySoundFile", "GetUnitName", "GetRaidTargetIndex",
 }
 
 local DATA_TABLES = { "RAID_CLASS_COLORS", "CLASS_ICON_TCOORDS", "ITEM_QUALITY_COLORS", "FACTION_BAR_COLORS", "PowerBarColor", "Enum", "SOUNDKIT" }
+
+local FONT_OBJECTS = {
+	"GameTooltipText", "GameTooltipTextSmall", "GameTooltipHeaderText", "Tooltip_Med", "Tooltip_Small", "TextStatusBarText",
+	"ChatFontNormal", "ChatFontSmall",
+}
+W.FONT_OBJECTS = FONT_OBJECTS
+
+local FONT_FAMILY_PATTERNS = { "^GameFont%u", "^NumberFont%u", "^SystemFont_", "^QuestFont" }
 
 local TEMPLATES = {
 	"BackdropTemplate", "TooltipBackdropTemplate", "TooltipBorderedFrameTemplate", "BasicFrameTemplate", "BasicFrameTemplateWithInset",
@@ -144,6 +152,7 @@ local LUA_FUNCTION = NameSet(LUA_FUNCTIONS)
 local GAME_FUNCTION = NameSet(GAME_FUNCTIONS)
 local DATA_TABLE = NameSet(DATA_TABLES)
 local TEMPLATE = NameSet(TEMPLATES)
+local FONT_OBJECT = NameSet(FONT_OBJECTS)
 local UNIT_WRITER_VERB = NameSet(UNIT_WRITER_VERBS)
 
 local function Blocked(name)
@@ -195,12 +204,21 @@ local function MapValues(map, ...)
 	return unpackValues(values, 1, count)
 end
 
+local UNPRINTABLE_ERROR = "an error that cannot be shown as text"
+
+local function ErrorText(err)
+	local ok, text = pcall(tostring, err)
+	if ok and type(text) == "string" then return text end
+	return UNPRINTABLE_ERROR
+end
+
 function W.Fail(widget, err)
 	if widget.failed then return end
 	widget.failed = true
-	failures[widget.name] = { rev = widget.rev, err = tostring(err) }
-	W.Stop(widget)
-	Report(string.format("%s failed and was stopped: %s. /claude config ui run %s tries again; or ask the agent to fix it.", widget.name, tostring(err), widget.name))
+	pcall(W.Stop, widget)
+	local text = ErrorText(err)
+	failures[widget.name] = { rev = widget.rev, err = text }
+	Report(string.format("%s failed and was stopped: %s. /claude config ui run %s tries again; or ask the agent to fix it.", widget.name, text, widget.name))
 end
 
 local function Guarded(widget, fn)
@@ -230,6 +248,7 @@ local function NewMembrane(widget)
 	local ownedRealOf = setmetatable({}, weakKeys)
 	local proxyOf = setmetatable({}, weakKeys)
 	local foreignProxyOf = setmetatable({}, weakKeys)
+	local fontRealOf = setmetatable({}, weakKeys)
 	local originalOf = setmetatable({}, weakKeys)
 	local membrane = {}
 	local Adopt
@@ -249,6 +268,7 @@ local function NewMembrane(widget)
 
 	local function ExportObject(real)
 		if proxyOf[real] then return proxyOf[real] end
+		if foreignProxyOf[real] then return foreignProxyOf[real] end
 		if IsWidgetDescendant(real) then return Adopt(real) end
 		return nil
 	end
@@ -284,8 +304,8 @@ local function NewMembrane(widget)
 	end
 
 	local function Import(value)
-		if type(value) == "table" and realOf[value] ~= nil then return realOf[value] end
-		return value
+		if type(value) ~= "table" then return value end
+		return ownedRealOf[value] or fontRealOf[value] or value
 	end
 
 	local function CallExported(fn, ...)
@@ -361,6 +381,33 @@ local function NewMembrane(widget)
 	function special.SetParent(_, real, parent)
 		return real:SetParent(FrameParent(parent))
 	end
+	function special.SetScrollChild(_, real, child)
+		local childReal = type(child) == "table" and ownedRealOf[child]
+		if not childReal or childReal == widget.frame then error("SetScrollChild needs a frame this widget made", 3) end
+		return real:SetScrollChild(childReal)
+	end
+	function special.EnableKeyboard(_, real, enable)
+		if enable then error("EnableKeyboard is not allowed in a widget: a widget must never take the keyboard", 3) end
+		return real:EnableKeyboard(false)
+	end
+	function special.SetPropagateKeyboardInput(_, real, propagate)
+		if real == widget.frame or not propagate then error("SetPropagateKeyboardInput is not allowed in a widget: a widget must never take the keyboard", 3) end
+		return real:SetPropagateKeyboardInput(true)
+	end
+	function special.SetAutoFocus(_, real, auto)
+		if auto then error("SetAutoFocus is not allowed in a widget: a widget must never take the keyboard", 3) end
+		return real:SetAutoFocus(false)
+	end
+	function special.SetFocus()
+		error("SetFocus is not allowed in a widget: a widget must never take the keyboard", 3)
+	end
+	local CONTAINER_MOUSE_METHODS = { "EnableMouse", "EnableMouseWheel", "SetMouseClickEnabled", "SetMouseMotionEnabled" }
+	for _, name in ipairs(CONTAINER_MOUSE_METHODS) do
+		special[name] = function(_, real, enable, ...)
+			if real == widget.frame and enable then error(name .. " is not allowed on ui.frame: it covers the whole screen; use it on a child frame", 3) end
+			return CallExported(real[name], real, enable, MapValues(Import, ...))
+		end
+	end
 
 	local methodCache = {}
 	local function OwnedMethod(name)
@@ -419,6 +466,12 @@ local function NewMembrane(widget)
 		return proxy
 	end
 
+	function membrane.Font(real)
+		local proxy = membrane.Foreign(real)
+		fontRealOf[proxy] = real
+		return proxy
+	end
+
 	membrane.container = Adopt(widget.frame)
 	return membrane
 end
@@ -445,6 +498,7 @@ local function WidgetCreateFrame(widget, membrane)
 	return function(kind, _, parent, template, id)
 		CheckTemplates(template)
 		local frame = CreateFrame(kind, nil, membrane.FrameParent(parent), template, id)
+		if type(frame.SetAutoFocus) == "function" then frame:SetAutoFocus(false) end
 		widget.frames[#widget.frames + 1] = frame
 		return membrane.Adopt(frame)
 	end
@@ -493,6 +547,14 @@ local function IsUnitReader(key)
 	return not UNIT_WRITER_VERB[verb]
 end
 
+local function IsFontName(key)
+	if FONT_OBJECT[key] then return true end
+	for _, pattern in ipairs(FONT_FAMILY_PATTERNS) do
+		if key:find(pattern) then return true end
+	end
+	return false
+end
+
 local function Resolve(key, membrane)
 	local value = _G[key]
 	local kind = type(value)
@@ -506,7 +568,7 @@ local function Resolve(key, membrane)
 	if SHARED_LIBRARY[key] then return ShallowCopy(value) end
 	if DATA_TABLE[key] then return DeepCopy(value) end
 	if key:find("^C_%a") then return NamespaceProxy(key, value, membrane) end
-	if key:find("Font") and IsFontObject(value) then return membrane.Foreign(value) end
+	if IsFontName(key) and IsFontObject(value) then return membrane.Font(value) end
 	return nil
 end
 
