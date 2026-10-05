@@ -50,7 +50,9 @@ function realish(p) {
   let cur = path.resolve(p);
   const rest = [];
   for (;;) {
-    try { return path.join(fs.realpathSync(cur), ...rest.reverse()); } catch {}
+    try {
+      return path.join(fs.realpathSync(cur), ...rest.reverse());
+    } catch {}
     const up = path.dirname(cur);
     if (up === cur) return path.join(cur, ...rest.reverse());
     rest.push(path.basename(cur));
@@ -69,7 +71,8 @@ function assertSafe(p, home = os.homedir()) {
 }
 
 function sandboxDir(root, name) {
-  if (!/^[\w.-]+$/.test(String(name)) || /^\.+$/.test(String(name))) throw new Error(`refusing sandbox name "${name}": use letters, digits, dot, dash and underscore`);
+  if (!/^[\w.-]+$/.test(String(name)) || /^\.+$/.test(String(name)))
+    throw new Error(`refusing sandbox name "${name}": use letters, digits, dot, dash and underscore`);
   const dir = path.join(path.resolve(root), name);
   if (!isWithin(dir, path.resolve(root)) || dir === path.resolve(root)) throw new Error(`refusing sandbox ${dir}: it is not inside ${root}`);
   return assertSafe(dir);
@@ -170,20 +173,26 @@ function envFor(L, extra = {}) {
   const keep = ['PATH', 'LANG', 'TMPDIR', 'SystemRoot', 'TEMP', 'TMP', 'COMSPEC'];
   const env = {};
   for (const k of keep) if (process.env[k] !== undefined) env[k] = process.env[k];
-  return Object.assign(env, {
-    HOME: L.user,
-    USERPROFILE: L.user,
-    CLAUDE_WOW_HOME: L.home,
-    CLAUDE_WOW_FAKE_STATE: L.agentState,
-    CLAUDE_WOW_SANDBOX: L.dir,
-  }, extra);
+  return Object.assign(
+    env,
+    {
+      HOME: L.user,
+      USERPROFILE: L.user,
+      CLAUDE_WOW_HOME: L.home,
+      CLAUDE_WOW_FAKE_STATE: L.agentState,
+      CLAUDE_WOW_SANDBOX: L.dir,
+    },
+    extra,
+  );
 }
 
 function create(name = 'default', opts = {}) {
   const dir = sandboxDir(opts.root || DEFAULT_ROOT, name);
   if (opts.fresh !== false && fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
   const extra = opts.extraClients || [];
-  for (const flavor of extra) if (!FLAVOR_RE.test(String(flavor)) || flavor === PRIMARY_FLAVOR) throw new Error(`refusing extra client "${flavor}": use a flavor folder name like _classic_era_`);
+  for (const flavor of extra)
+    if (!FLAVOR_RE.test(String(flavor)) || flavor === PRIMARY_FLAVOR)
+      throw new Error(`refusing extra client "${flavor}": use a flavor folder name like _classic_era_`);
   const L = layout(dir, extra);
   for (const c of L.clients) for (const d of [c.addons, c.screenshots, c.savedDir]) fs.mkdirSync(assertSafe(d), { recursive: true });
   for (const d of [L.home, L.user, L.project, L.agentState, L.logs]) fs.mkdirSync(assertSafe(d), { recursive: true });
@@ -192,7 +201,10 @@ function create(name = 'default', opts = {}) {
   fs.writeFileSync(L.config, JSON.stringify(cfg, null, 2) + '\n');
   const env = envFor(L, opts.env);
   const installed = installAddon(L, env);
-  fs.writeFileSync(path.join(dir, 'sandbox.json'), JSON.stringify({ name, created: new Date().toISOString(), repo: REPO, opts: { ...opts, root: undefined } }, null, 2) + '\n');
+  fs.writeFileSync(
+    path.join(dir, 'sandbox.json'),
+    JSON.stringify({ name, created: new Date().toISOString(), repo: REPO, opts: { ...opts, root: undefined } }, null, 2) + '\n',
+  );
   return { ...L, name, cfg, env, installed };
 }
 
@@ -226,4 +238,25 @@ function spendSignals(sb, kinds, slots) {
   for (const kind of kinds) for (const s of slots) fs.rmSync(assertSafe(signalFile(sb, kind, s)), { force: true });
 }
 
-module.exports = { REPO, DEFAULT_ROOT, FAKE_AGENT, ACCOUNT, CLIENT_INTERFACE, PRIMARY_FLAVOR, assertSafe, sandboxDir, liveCheckouts, isWithin, forbiddenRoots, layout, clientLayout, buildConfig, create, open, writeConfig, envFor, signalFile, spendSignals };
+module.exports = {
+  REPO,
+  DEFAULT_ROOT,
+  FAKE_AGENT,
+  ACCOUNT,
+  CLIENT_INTERFACE,
+  PRIMARY_FLAVOR,
+  assertSafe,
+  sandboxDir,
+  liveCheckouts,
+  isWithin,
+  forbiddenRoots,
+  layout,
+  clientLayout,
+  buildConfig,
+  create,
+  open,
+  writeConfig,
+  envFor,
+  signalFile,
+  spendSignals,
+};

@@ -18,7 +18,10 @@ test('a reply that finished while the game was not reading reaches the game afte
     assert.equal(h.client.activeChat().pendingId, id, 'the game has not read the reply yet');
     await h.bridge.restart();
     await h.bridge.waitForLine(/republishing \d+ finished repl(y|ies) from before the restart/);
-    assert.ok(Object.values(h.state().replies || {}).some(e => e.record.id === id && e.record.status === 'done'), 'the reply is kept in state.json');
+    assert.ok(
+      Object.values(h.state().replies || {}).some(e => e.record.id === id && e.record.status === 'done'),
+      'the reply is kept in state.json',
+    );
     h.client.start();
     const reply = await h.client.waitFor(() => replyTo(h, id), { label: 'the reply in the game after the restart' });
     assert.equal(reply.role, 'assistant');
@@ -26,7 +29,7 @@ test('a reply that finished while the game was not reading reaches the game afte
   });
 });
 
-test('after a SavedVariables wipe, a reply kept for the old addon session is dropped and never answers the new session\'s message with the same chat and id', async () => {
+test("after a SavedVariables wipe, a reply kept for the old addon session is dropped and never answers the new session's message with the same chat and id", async () => {
   await withGame({}, async h => {
     await h.client.connect();
     const oldToken = h.client.db().session;
@@ -35,7 +38,10 @@ test('after a SavedVariables wipe, a reply kept for the old addon session is dro
     h.client.runLua(`ClaudeWoWDB.lastSeq = ${id - 1}`);
     h.client.send('old session question');
     await h.client.waitFor(() => replyTo(h, id), { label: 'the old session reply' });
-    assert.ok(Object.keys(h.state().replies || {}).some(k => k.startsWith(`${oldToken}:`)), 'the reply is kept in state.json');
+    assert.ok(
+      Object.keys(h.state().replies || {}).some(k => k.startsWith(`${oldToken}:`)),
+      'the reply is kept in state.json',
+    );
     h.client.quit();
     fs.rmSync(h.sb.saved, { force: true });
     fs.rmSync(h.sb.saved + '.bak', { force: true });
@@ -65,7 +71,9 @@ test('after a SavedVariables wipe, a reply kept for the old addon session is dro
     };
     assert.deepEqual(afterNewQuestion(), [], 'nothing answered the new question while it was held');
     fs.rmSync(lockFile);
-    const replies = await h.client.waitFor(() => !h.client.activeChat().pendingId && afterNewQuestion().length ? afterNewQuestion() : null, { label: 'the real reply' });
+    const replies = await h.client.waitFor(() => (!h.client.activeChat().pendingId && afterNewQuestion().length ? afterNewQuestion() : null), {
+      label: 'the real reply',
+    });
     assert.equal(replies.length, 1);
     assert.match(replies[0].text, /new session question/);
   });
