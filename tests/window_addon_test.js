@@ -787,7 +787,7 @@ test('a quiet plugin chat stays out of the chat list, the count, the minimized b
   assert.equal(shownRows(vm).split('|').length, 3);
   assert.equal(vm.evaluate('ClaudeWoW.UI.chatCount:GetText()'), 'Chats: |cffffffff3|r');
   vm.run('ClaudeWoW.UpdateMini()');
-  assert.equal(vm.evaluate('ClaudeWoW.UI.miniBadge:GetText()'), '|cff999999Ready|r', 'a plugin send does not show as work');
+  assert.equal(vm.evaluate('ClaudeWoW.UI.miniBadge:GetText()'), '|cffccccccReady|r', 'a plugin send does not show as work');
 
   vm.run('SlashCmdList.CLAUDEWOW("chats")');
   const listing = vm.evaluate('(function() for _, ch in ipairs(ClaudeWoWDB.chats) do for _, m in ipairs(ch.history) do if tostring(m.text):find("^Chats:") then return m.text end end end end)()');
@@ -909,7 +909,7 @@ test('help lives in the gear menu, and Clear moves from the bottom bar into the 
 
 test('the footer is a short state on the left and context and spend on the right, with the detail on hover', () => {
   const vm = nativeVM();
-  vm.run('ClaudeWoWDB.chats[1].cost = 2.414; ClaudeWoWDB.chats[1].ctx = 186700; ClaudeWoWDB.chats[2].cost = 12.39; ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[1].id); ClaudeWoW.Render()');
+  vm.run('ClaudeWoWDB.settings.contextWarn = 0; ClaudeWoWDB.chats[1].window = nil; ClaudeWoWDB.chats[1].cost = 2.414; ClaudeWoWDB.chats[1].ctx = 186700; ClaudeWoWDB.chats[2].cost = 12.39; ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[1].id); ClaudeWoW.Render()');
   const stats = vm.evaluate('ClaudeWoW.UI.stats:GetText()');
   assert.ok(stats.includes('UI-GoldIcon'), stats);
   assert.ok(stats.includes('$2.41'), 'this chat\'s spend: ' + stats);
@@ -926,6 +926,24 @@ test('the footer is a short state on the left and context and spend on the right
   assert.equal(color(), '1.00,0.50', '85% is orange');
   vm.run('ClaudeWoWDB.chats[1].window = 1000000; ClaudeWoW.UpdateStatus()');
   assert.equal(color(), '0.10,0.75', 'measured against the model window when the agent reports one');
+  const tick = 'ClaudeWoWContextBar.tick';
+  assert.equal(vm.evaluate(`${tick}.shown`), 'false', 'no warning mark when the warning is off');
+
+  vm.run('ClaudeWoWDB.settings.contextWarn = 100000; ClaudeWoWDB.chats[1].window = 1000000; ClaudeWoWDB.chats[1].ctx = 129900; ClaudeWoW.UpdateStatus()');
+  assert.equal(vm.evaluate(`${tick}.shown`), 'true', 'the warning mark shows on the bar');
+  assert.equal(vm.num(`${tick}.x`), 12, 'the mark sits at 100k of a 1.0M window on a 120 px bar');
+  assert.equal(vm.evaluate(`${tick}.point`), 'TOP');
+  assert.equal(vm.evaluate(`${tick}.relPoint`), 'TOPLEFT');
+  assert.equal(color(), '1.00,0.50', 'past the warning mark the bar is at least orange');
+  vm.run('ClaudeWoWDB.chats[1].ctx = 99000; ClaudeWoW.UpdateStatus()');
+  assert.equal(color(), '0.10,0.75', 'under the warning mark the window fraction decides');
+  vm.run('ClaudeWoWDB.chats[1].window = 200000; ClaudeWoWDB.chats[1].ctx = 186700; ClaudeWoW.UpdateStatus()');
+  assert.equal(vm.num(`${tick}.x`), 60, 'the mark moves with the window');
+  assert.equal(color(), '0.85,0.10', 'red stays red past the warning mark');
+  vm.run('ClaudeWoWDB.settings.contextWarn = 300000; ClaudeWoW.UpdateStatus()');
+  assert.equal(vm.evaluate(`${tick}.shown`), 'false', 'no mark when the warning is past the window');
+  vm.run('ClaudeWoWDB.settings.contextWarn = 200000; ClaudeWoW.UpdateStatus()');
+  assert.equal(vm.evaluate(`${tick}.shown`), 'false', 'no mark when the warning is the window end');
   vm.run('ClaudeWoWDB.chats[1].ctx = nil; ClaudeWoW.UpdateStatus()');
   assert.equal(vm.evaluate('ClaudeWoWContextBar.shown'), 'false', 'no bar without a context size');
 

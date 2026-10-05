@@ -4763,7 +4763,7 @@ function ClaudeWoW.UpdateMini()
 	elseif unread > 0 then
 		t = "|cff55ff55" .. unread .. (unread == 1 and " new reply" or " new replies") .. "|r"
 	else
-		t = "|cff999999Ready|r"
+		t = "|cffccccccReady|r"
 	end
 	ui.miniBadge:SetText(t)
 	if ui.miniPulse then
@@ -5064,6 +5064,8 @@ Q.COUNT_W = 92
 Q.GOLD_ICON = "|TInterface\\MoneyFrame\\UI-GoldIcon:12:12:0:-1|t"
 Q.STATUS_HIT_W = 260
 Q.CTX_BAR_W, Q.CTX_BAR_H = 120, 13
+Q.CTX_TICK_W = 2
+Q.CTX_WARN_LEVEL = 3
 Q.CTX_DEFAULT_WINDOW = 200000
 Q.CTX_LEVELS = {
 	{ upTo = 0.50, color = { 0.10, 0.75, 0.10 } },
@@ -5097,6 +5099,10 @@ function Q.ContextBar(f)
 		border:SetBackdrop({ edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", edgeSize = 8 })
 		border:SetBackdropBorderColor(0.6, 0.6, 0.6, 1)
 	end
+	bar.tick = bar:CreateTexture(nil, "OVERLAY")
+	bar.tick:SetColorTexture(1, 0.95, 0.8, 0.9)
+	bar.tick:SetSize(Q.CTX_TICK_W, Q.CTX_BAR_H)
+	bar.tick:Hide()
 	bar.text = bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	bar.text:SetPoint("CENTER", bar, "CENTER", 0, 0)
 	bar:EnableMouse(true)
@@ -5122,6 +5128,16 @@ function Q.UpdateContextBar(c)
 	local window = Q.ContextWindow(c)
 	local fraction = c.ctx / window
 	local color = Q.ContextColor(fraction)
+	local warn = tonumber(db.settings.contextWarn) or 0
+	local warnLevel = Q.CTX_LEVELS[Q.CTX_WARN_LEVEL]
+	if warn > 0 and c.ctx >= warn and fraction <= warnLevel.upTo then color = warnLevel.color end
+	if warn > 0 and warn < window then
+		bar.tick:ClearAllPoints()
+		bar.tick:SetPoint("TOP", bar, "TOPLEFT", bar:GetWidth() * warn / window, 0)
+		bar.tick:Show()
+	else
+		bar.tick:Hide()
+	end
 	bar:SetValue(math.min(fraction, 1))
 	bar:SetStatusBarColor(color[1], color[2], color[3])
 	bar.fraction = fraction
