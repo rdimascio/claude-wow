@@ -66,6 +66,11 @@ All notable changes to this project are recorded here. The format follows [Keep 
 
 ### Fixed
 
+- A live-session reply that arrives after a cancel no longer drops the bridge's record of the agent run that took over the chat, so that run still counts against `maxParallel`, can be cancelled, and is ended when the bridge stops.
+- Deleting a chat now ends its running agent run and drops its queued or held messages, and a run that ends after the delete no longer writes the chat's session or transcript back, so `/claude -r` and a restore cannot bring the deleted chat back.
+- `state.json`, `transcripts.json`, `bridge.log`, prompt files and vision screenshots are now readable only by your user (`0600`, with `tmp/`, `mapjobs/` and `uijobs/` at `0700`); the bridge fixes the modes of existing files at start. Game-facing files keep their modes.
+- An agent's reply or error output no longer shows `�` where a non-ASCII character's bytes arrived in two reads.
+- A vision message waiting in the queue keeps its screenshot when newer vision messages pass `vision.keep`, and so does each message of a screenshot that several messages share.
 - A strip the addon shot in the same second as the one the bridge was reading got the same file name, and the bridge deleted it with the first one, so the message, hello or cancel in it waited for the addon's 40 s retry. The bridge now deletes a screenshot only when its size and mtime are still the ones it read, and the watcher reads a file again when it changed while the handler ran.
 - A strip that arrived while the bridge was stopping could still start an agent run, which left a `handling` entry in `state.json` after the bridge was gone. A stopping bridge now ignores new messages; the addon sends them again to the next bridge.
 - The update restart's quiet time counted from the start of a reply's publish, not from when the reply was delivered, so on a slow machine the restart came up to a few hundred ms early. It now counts from after the publish, for a normal and a late reply.

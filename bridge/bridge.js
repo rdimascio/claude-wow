@@ -40,6 +40,7 @@ const readline = require('readline');
 const os = require('os');
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
+const { StringDecoder } = require('string_decoder');
 const PR = require('./procs');  // the children (agent runs, the capture script): their process groups, and ending them for good (tests/procs_test.js)
 const P = require('./protocol'); // the pure protocol code, unit-tested in tests/bridge_test.js
 const A = require('./agents');   // how each agent is launched and read, unit-tested in tests/agents_test.js
@@ -99,6 +100,24 @@ const LOG_FILE = HOME.log;
 const DEPLOY_LOCK_FILE = REL.layout(HOME.dir).lock;
 const DEPLOY_HOLD_POLL_MS = 1000;
 const TMP_DIR = HOME.tmp; // prompt files for agents that read the prompt from disk
+const PRIVATE_FILE_MODE = 0o600;
+const PRIVATE_DIR_MODE = 0o700;
+
+function restrictMode(target, mode) {
+  if (process.platform === 'win32') return;
+  try { fs.chmodSync(target, mode); } catch {}
+}
+
+function makePrivateDir(dir) {
+  fs.mkdirSync(dir, { recursive: true, mode: PRIVATE_DIR_MODE });
+  restrictMode(dir, PRIVATE_DIR_MODE);
+}
+
+function writePrivateScratch(file, content) {
+  makePrivateDir(path.dirname(file));
+  fs.writeFileSync(file, content, { mode: PRIVATE_FILE_MODE });
+  restrictMode(file, PRIVATE_FILE_MODE);
+}
 
 const argv = process.argv.slice(2);
 if (argv.includes('--help') || argv.includes('-h')) {
@@ -231,6 +250,8 @@ function holdLock() {
   return false;
 }
 const holdsLock = !exitWhenIdle && holdLock();
+for (const privateFile of [STATE_FILE, HOME.transcripts, LOG_FILE]) restrictMode(privateFile, PRIVATE_FILE_MODE);
+for (const privateDir of [TMP_DIR, HOME.mapjobs, HOME.uijobs]) restrictMode(privateDir, PRIVATE_DIR_MODE);
 
 const stateEarly = readJson(STATE_FILE, {});
 const chosen = P.chooseTransport(cap, stateEarly);
@@ -297,6 +318,10 @@ function saveTranscripts() {
 // Chats the player deleted in game while a run for them was still going: the
 // run's late progress and reply must not recreate the transcript.
 const forgotten = new Set();
+const chatGenerations = new Map();
+const generationOf = chat => chatGenerations.get(chat) || 0;
+const stampGeneration = job => { if (job.chat) job.chatGeneration = generationOf(job.chat); };
+const chatDeletedSince = job => !!job.chat && job.chatGeneration !== undefined && job.chatGeneration !== generationOf(job.chat);
 
 function noteMessage(job, role, text) {
   if (!job.chat) return;
@@ -358,6 +383,8 @@ function maybeOfferRestore(job) {
 function forgetChat(job) {
   if (!job.chat) return;
   const had = !!transcripts.chats[job.chat];
+  chatGenerations.set(job.chat, generationOf(job.chat) + 1);
+  dropChatWork(job.chat);
   delete transcripts.chats[job.chat];
   forgotten.add(job.chat);
   delete state.sessions[sessKey(job)];
@@ -370,6 +397,38 @@ function forgetChat(job) {
   if (pendingRestore) pendingRestore.chats = pendingRestore.chats.filter(c => c.id !== job.chat);
   saveTranscripts();
   log(`#${job.id}${job.session ? '@' + job.session : ''} forgot chat ${job.chat}${had ? '' : ' (nothing stored)'}`);
+}
+
+function discardVisionFile(job) {
+  if (job && job.image && job.image.file) { try { fs.unlinkSync(job.image.file); } catch {} }
+}
+
+function dropChatWork(chat) {
+  for (const [key, q] of [...queued]) {
+    if (q.chat !== chat) continue;
+    queued.delete(key);
+    markHandled(q);
+    discardVisionFile(q);
+    log(`${tagOf(q)} dropped: its chat was deleted before it started`);
+  }
+  noteQueued();
+  let heldDropped = false;
+  for (const [key, entry] of [...held]) {
+    if (!entry.job || entry.job.chat !== chat) continue;
+    held.delete(key);
+    markHandled(entry.job);
+    discardVisionFile(entry.job);
+    heldDropped = true;
+    log(`${tagOf(entry.job)} dropped: its chat was deleted while it was held for a deploy`);
+  }
+  if (heldDropped) noteHeld();
+  for (const r of running.values()) {
+    if (r.job.chat !== chat) continue;
+    r.job.cancelled = true;
+    log(`${tagOf(r.job)} its chat was deleted; ending it and everything it started`);
+    revokeRunGrant(r.job);
+    if (r.child) killTree(r.child);
+  }
 }
 
 const running = new Map(); // chatKey -> { job, child }
@@ -400,8 +459,12 @@ function readJson(file, fallback) {
 
 function durableWrite(file, content) {
   const tmp = `${file}.${process.pid}.tmp`;
-  const fd = fs.openSync(tmp, 'w');
-  try { fs.writeSync(fd, content); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+  const fd = fs.openSync(tmp, 'w', PRIVATE_FILE_MODE);
+  try {
+    if (process.platform !== 'win32') fs.fchmodSync(fd, PRIVATE_FILE_MODE);
+    fs.writeSync(fd, content);
+    fs.fsyncSync(fd);
+  } finally { fs.closeSync(fd); }
   fs.renameSync(tmp, file);
 }
 
@@ -412,7 +475,7 @@ function saveState() {
 function log(...parts) {
   const line = `[${new Date().toISOString()}] ${parts.join(' ')}`;
   console.log(line);
-  try { fs.appendFileSync(LOG_FILE, line + '\n'); } catch {}
+  try { fs.appendFileSync(LOG_FILE, line + '\n', { mode: PRIVATE_FILE_MODE }); } catch {}
 }
 
 const { pad3, chatKey, sessKey, jobsFromStrip } = P;
@@ -1129,6 +1192,7 @@ function submit(job) {
 
 function dispatchMessage(job) {
   dropHeld(job);
+  stampGeneration(job);
   const key = chatKey(job);
   const cur = running.get(key);
   if (cur && cur.job.id === job.id) return;
@@ -1701,7 +1765,7 @@ function runAgent(job, opts = {}) {
   const promptFile = path.join(TMP_DIR, `prompt-${job.id}-${Date.now().toString(36)}.txt`);
   const input = agent.input({ prompt, system, systemShort, resume, cfg: acfg, images });
   if (input.promptFile !== undefined) {
-    try { fs.mkdirSync(TMP_DIR, { recursive: true }); fs.writeFileSync(promptFile, input.promptFile); }
+    try { writePrivateScratch(promptFile, input.promptFile); }
     catch (e) { finish(job, 'error', `Could not write the prompt file ${promptFile}: ${e.message}`); return; }
   }
   const runGrant = runToolSocket ? runGrants.grant(tag) : null;
@@ -1732,14 +1796,14 @@ function runAgent(job, opts = {}) {
   // it, on a plugin whose replies may reach the map.
   if (surfaces.has('map')) {
     try {
-      fs.mkdirSync(MAP_DIR, { recursive: true });
+      makePrivateDir(MAP_DIR);
       fs.rmSync(mapFileFor(job), { force: true });
       env.CLAUDE_WOW_MAP_FILE = mapFileFor(job);
     } catch (e) { log(`${tag} map file unavailable: ${e.message}`); }
   }
   if (surfaces.has('ui')) {
     try {
-      fs.mkdirSync(WIDGET_DIR, { recursive: true });
+      makePrivateDir(WIDGET_DIR);
       fs.rmSync(widgetFileFor(job), { force: true });
       env.CLAUDE_WOW_UI_FILE = widgetFileFor(job);
     } catch (e) { log(`${tag} ui file unavailable: ${e.message}`); }
@@ -1827,12 +1891,15 @@ function runAgent(job, opts = {}) {
     if (r.done) result = r.done;
   };
 
+  const stdoutDecoder = new StringDecoder('utf8');
+  const stderrDecoder = new StringDecoder('utf8');
   child.stdout.on('data', (chunk) => {
+    const text = stdoutDecoder.write(chunk);
     if (agent.stream === 'text') {
-      stdoutText += chunk.toString('utf8');
+      stdoutText += text;
       return;
     }
-    buffer += chunk.toString('utf8');
+    buffer += text;
     let nl;
     while ((nl = buffer.indexOf('\n')) >= 0) {
       const line = buffer.slice(0, nl).trim();
@@ -1840,7 +1907,7 @@ function runAgent(job, opts = {}) {
       if (line) handleLine(line);
     }
   });
-  child.stderr.on('data', (chunk) => { stderr += chunk.toString('utf8'); });
+  child.stderr.on('data', (chunk) => { stderr += stderrDecoder.write(chunk); });
 
   const timer = setTimeout(() => {
     job.timedOut = true;
@@ -1867,6 +1934,9 @@ function runAgent(job, opts = {}) {
 
   child.on('close', (code) => {
     cleanup();
+    stderr += stderrDecoder.end();
+    if (agent.stream === 'text') stdoutText += stdoutDecoder.end();
+    else buffer += stdoutDecoder.end();
     if (agent.stream === 'text') {
       try {
         const r = parser.finish({ stdout: stdoutText, stderr, code });
@@ -1878,7 +1948,7 @@ function runAgent(job, opts = {}) {
       }
     }
     if (buffer.trim()) handleLine(buffer.trim());
-    if (sessionId) {
+    if (sessionId && !chatDeletedSince(job)) {
       state.sessions[skey] = sessionId;
       (state.sessionCwd = state.sessionCwd || {})[skey] = cwd;
       (state.sessionAgent = state.sessionAgent || {})[skey] = agentId;
@@ -1982,7 +2052,7 @@ function nameChat(job, key) {
   if (!model || !String(job.text || '').trim()) return;
   const claude = A.resolveCommand('claude', A.agentConfig(cfg, 'claude'));
   if (!claude.found) { log(`#${job.id} title: claude not found, the chat keeps its first words`); return; }
-  try { fs.mkdirSync(TMP_DIR, { recursive: true }); } catch {}
+  try { makePrivateDir(TMP_DIR); } catch {}
   titles.delete(key);
   job.titlePending = T.generateTitle({ file: claude.file, args: claude.args, model, text: job.text, cwd: TMP_DIR, env: A.AGENTS.claude.env({ ...process.env }) }).then(title => {
     if (!title) { log(`#${job.id} title: ${model} gave none`); return; }
@@ -2014,6 +2084,14 @@ function tellPluginFinished(plugin, job, outcome) {
   } catch (e) { failed(e); }
 }
 
+function releaseRunOf(job) {
+  const key = chatKey(job);
+  const owner = running.get(key);
+  if (!owner || owner.job !== job) return;
+  running.delete(key);
+  if (state.inflight) delete state.inflight[key];
+}
+
 function finish(job, status, text, session, denied) {
   if (job.finished) return; // spawn failures fire both 'error' and 'close'
   const named = titles.get(chatKey(job));
@@ -2025,8 +2103,7 @@ function finish(job, status, text, session, denied) {
   }
   job.finished = true;
   lastActivityAt = Date.now();
-  running.delete(chatKey(job));
-  if (state.inflight) delete state.inflight[chatKey(job)];
+  releaseRunOf(job);
   dropHandling(handlingKey(job));
   markHandled(job);
   saveState();
@@ -2048,7 +2125,7 @@ function finish(job, status, text, session, denied) {
     }
   }
   const shown = status === 'done' ? checkedReply(job, { text, summary }) : { text, summary };
-  noteMessage(job, status === 'done' ? 'assistant' : 'system', status === 'done' ? shown.text : 'Bridge error: ' + text);
+  if (!chatDeletedSince(job)) noteMessage(job, status === 'done' ? 'assistant' : 'system', status === 'done' ? shown.text : 'Bridge error: ' + text);
   awardAchievements(job, status);
   const usage = P.usageFields(job.usage);
   publish(chatKey(job), { chat: job.chat, id: job.id, status, text: shown.text, summary: shown.summary, cwd: job.cwd, session, denied, macros, agent: job.agent || '', plugin: job.plugin || '', lateOk: status === 'error' && !!job.lateOk, ...usage, client: job.client }, true);
@@ -2184,32 +2261,33 @@ function attachGameView(img, cropTop, jobs, source) {
   try {
     view = V.gameView(img, { cropTop, maxWidth: vis.maxWidth });
     png = V.encodePNG(view);
-    fs.mkdirSync(TMP_DIR, { recursive: true });
+    makePrivateDir(TMP_DIR);
   } catch (e) { log(`vision: could not prepare the game view from ${source} (${e.message}); running without it`); return; }
   for (const job of jobs) {
     const file = path.join(TMP_DIR, V.fileName(job.id));
-    try { fs.writeFileSync(file, png); } catch (e) { log(`vision: could not write ${file} (${e.message})`); continue; }
+    try { writePrivateScratch(file, png); } catch (e) { log(`vision: could not write ${file} (${e.message})`); continue; }
     job.image = { file, width: view.width, height: view.height, mediaType: 'image/png', bytes: png.length };
   }
-  pruneVisionFiles(Math.max(1, vis.keep | 0));
+  pruneVisionFiles(Math.max(1, vis.keep | 0), jobs);
   log(`vision: ${source} -> ${view.width}x${view.height} png, ${Math.round(png.length / 1024)} KB, for ${jobs.map(j => '#' + j.id).join(', ')}`);
 }
 
-function heldVisionFiles() {
+function waitingVisionFiles(fresh = []) {
   const saved = Array.isArray(state.held) ? state.held : [];
   const files = new Set();
-  for (const entry of [...held.values(), ...saved]) {
-    const file = entry && entry.job && entry.job.image && entry.job.image.file;
+  const waitingJobs = [...held.values(), ...saved].map(entry => entry && entry.job).concat([...queued.values()], fresh);
+  for (const job of waitingJobs) {
+    const file = job && job.image && job.image.file;
     if (typeof file === 'string' && file) files.add(path.resolve(file));
   }
   return files;
 }
 
 // Keep the newest `keep` vision files in bridge/tmp; 0 sweeps them all (startup).
-function pruneVisionFiles(keep) {
+function pruneVisionFiles(keep, fresh = []) {
   let names = [];
   try { names = fs.readdirSync(TMP_DIR).filter(V.isVisionFile); } catch { return; }
-  const waiting = heldVisionFiles();
+  const waiting = waitingVisionFiles(fresh);
   const files = names.map(name => path.join(TMP_DIR, name)).filter(f => !waiting.has(path.resolve(f)))
     .map(f => { let m = 0; try { m = fs.statSync(f).mtimeMs; } catch {} return { f, m }; })
     .sort((a, b) => b.m - a.m);

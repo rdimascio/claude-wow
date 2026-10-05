@@ -68,6 +68,22 @@ function emit(ev) {
   process.stdout.write(JSON.stringify(ev) + '\n');
 }
 
+const SPLIT_UTF8_TEXT = 'h\u00e9llo \u2713 caf\u00e9 \u2603';
+const SPLIT_PAUSE_MS = 150;
+
+function writeFlushed(stream, bytes) {
+  return new Promise(resolve => stream.write(bytes, resolve));
+}
+
+async function writeSplitInsideCharacter(stream, text) {
+  const bytes = Buffer.from(text, 'utf8');
+  const firstWide = bytes.findIndex(b => b >= 0x80);
+  const cut = firstWide < 0 ? bytes.length : firstWide + 1;
+  await writeFlushed(stream, bytes.subarray(0, cut));
+  await sleep(SPLIT_PAUSE_MS);
+  await writeFlushed(stream, bytes.subarray(cut));
+}
+
 function sleep(ms) {
   return new Promise(r => setTimeout(r, ms));
 }
@@ -283,6 +299,7 @@ async function main() {
   if (d['no-result']) process.exit(Number(d['no-result']) || 1);
   emit({ type: 'system', subtype: 'init', session_id: session.id, model: MODEL, cwd: process.cwd(), tools: [], mcp_servers: mcpServers(argv, d['mcp-fail']) });
   if (d.crash) { process.stderr.write('fake-claude: crashing on request\n'); process.exit(Number(d.crash) || 3); }
+  if (d['split-stderr']) { await writeSplitInsideCharacter(process.stderr, `fake-claude: ${SPLIT_UTF8_TEXT}\n`); process.exit(3); }
   if (typeof d['mcp-term'] === 'string') await holdUntilTerm(d['mcp-term'], argv);
   if (d.hang) { setInterval(() => {}, 1 << 30); await new Promise(() => {}); }
 
@@ -336,15 +353,19 @@ async function main() {
   session.total = addUsage(session.total, u);
   saveSession(session);
   const said = mcpSaid || (denials.length ? `blocked (turn ${session.turns}): ${command}` : command ? `ran (turn ${session.turns}): ${command}` : '');
-  const reply = d.reply !== undefined && d.reply !== true ? String(d.reply) : said || `echo (turn ${session.turns}): ${lastUserLine(text).slice(0, 200)}`;
+  const reply = d['split-unicode'] ? SPLIT_UTF8_TEXT : d.reply !== undefined && d.reply !== true ? String(d.reply) : said || `echo (turn ${session.turns}): ${lastUserLine(text).slice(0, 200)}`;
   const body = d.long ? `${reply}\n` + 'lorem ipsum dolor sit amet '.repeat(Number(d.long) || 100) : reply;
   emit({ type: 'assistant', session_id: session.id, message: { model: MODEL, role: 'assistant', content: [{ type: 'text', text: body }], usage: u } });
-  emit({
+  const result = {
     type: 'result', subtype: 'success', is_error: false, result: body, session_id: session.id,
     num_turns: session.turns, usage: u, permission_denials: denials,
     modelUsage: { [MODEL]: session.total },
     total_cost_usd: session.total.costUSD,
-  });
+  };
+  if (d['split-unicode']) await writeSplitInsideCharacter(process.stdout, JSON.stringify(result) + '\n');
+  else emit(result);
 }
 
-main().catch(e => { process.stderr.write(String(e && e.stack || e) + '\n'); process.exit(70); });
+module.exports = { SPLIT_UTF8_TEXT };
+
+if (require.main === module) main().catch(e => { process.stderr.write(String(e && e.stack || e) + '\n'); process.exit(70); });
