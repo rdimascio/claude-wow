@@ -53,7 +53,12 @@ AddOns/ClaudeWoW_S###/Inbox.lua ◄── bridge/bridge.js (a real process) ◄�
   - `PlaySoundFile` is true only when the `.wav` file exists now and existed
     when the client launched: the client snapshots every file under
     `Interface/AddOns` at launch (not at `/reload`), so a file created later
-    reads as missing, as it does in the real client. Client option
+    reads as missing, as it does in the real client. `LoadAddOn` and the
+    addon's own `.toc` files use the same snapshot: a `.lua` file created
+    after launch is not loaded, even after `/reload`, while a launch-time
+    file that the bridge rewrites reads its new contents. `ClaudeWoW` itself
+    goes through the `DISABLED` and `INTERFACE_VERSION` checks; when it does
+    not load, its SavedVariables are neither read nor written. Client option
     `deletionVisible: false` makes a deleted launch-time file still read as
     present (the case the addon's presence self-test must catch);
     `fileIndex: 'live'` turns the snapshot off.

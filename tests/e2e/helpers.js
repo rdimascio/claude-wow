@@ -1,5 +1,4 @@
 'use strict';
-const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -18,7 +17,7 @@ function gameRunner(root) {
     const h = await H.start(`t${++seq}`, Object.assign({ root }, opts));
     try {
       await fn(h);
-      assert.deepEqual(h.client.errors(), [], 'the addon raised no Lua errors');
+      h.client.assertHealthy('the addon');
     } catch (e) {
       const tail = `\n--- bridge output (tail) ---\n${h.bridge.output.slice(-2500)}\n--- game prints (tail) ---\n${h.client.prints().slice(-8).join('\n')}`;
       e.message += tail;
@@ -99,7 +98,7 @@ async function withEra(h, fn, opts = {}) {
   client.start();
   try {
     await fn(client, era);
-    assert.deepEqual(client.errors(), [], 'the Era addon raised no Lua errors');
+    client.assertHealthy('the Era addon');
   } finally {
     client.stop();
   }

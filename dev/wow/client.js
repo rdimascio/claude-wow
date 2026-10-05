@@ -101,6 +101,8 @@ class WowClient {
     this.sessions = 0;
     this.gameOffset = 0;
     this.background = null;
+    this.endedSessionErrors = [];
+    this.mainAddonLoaded = false;
   }
 
   resolveGamePath(rel) {
@@ -158,8 +160,9 @@ class WowClient {
     lualib.luaL_openlibs(L);
     lua.lua_register(L, to_luastring('HOST_read'), S => {
       const file = this.resolveGamePath(to_jsstring(lauxlib.luaL_checkstring(S, 1)));
+      const indexedAtLaunch = !!file && (!this.fileIndex || this.fileIndex.has(file));
       let buf = null;
-      try { buf = file ? fs.readFileSync(file) : null; } catch { buf = null; }
+      try { buf = indexedAtLaunch ? fs.readFileSync(file) : null; } catch { buf = null; }
       if (buf) lua.lua_pushstring(S, Uint8Array.from(buf)); else lua.lua_pushnil(S);
       return 1;
     });
@@ -223,7 +226,13 @@ class WowClient {
     });
   }
 
+  keepSessionErrors() {
+    if (!this.L) return;
+    this.endedSessionErrors.push(...(this.json('DEV.errors') || []));
+  }
+
   boot() {
+    this.keepSessionErrors();
     this.L = this.newState();
     this.sessions += 1;
     this.runLua(fs.readFileSync(STUB), '@wow_stub.lua');
@@ -236,17 +245,14 @@ class WowClient {
     if (!o.hasChatLog) this.runLua('SendSystemMessage = nil; LoggingChat = nil');
     if (o.chatDock) this.runLua('STUB.ChatDock()');
     this.syncClock();
-    this.runLua(`
-      local src = HOST_read("Interface/AddOns/${MAIN_ADDON}/${MAIN_ADDON}.toc")
-      assert(src, "the ${MAIN_ADDON} addon is not installed in the sandbox client")
-      local _, files = DEV.ParseToc(src)
-      for _, f in ipairs(files) do DEV.RunAddonFile("${MAIN_ADDON}", f) end
-      DEV.loaded["${MAIN_ADDON}"] = true
-    `, '@boot');
+    if (!this.indexed.includes(MAIN_ADDON)) throw new Error(`the ${MAIN_ADDON} addon is not installed in the sandbox client`);
+    this.runLua(`DEV.mainLoadResult = { DEV.LoadAddOn("${MAIN_ADDON}") }`, '@boot');
+    this.mainAddonLoaded = this.luaValue('DEV.mainLoadResult[1]') === 'true';
+    if (!this.mainAddonLoaded) this.note(`${MAIN_ADDON} not loaded: ${this.luaValue('DEV.mainLoadResult[2]')}`);
     for (const name of this.startupAddons()) this.runLua(`DEV.LoadAddOn(${luaQuote(name)})`, '@boot-' + name);
     if (o.afterAddonLoad) this.runLua(o.afterAddonLoad, '@afterAddonLoad');
-    if (fs.existsSync(this.sb.saved)) this.runLua(fs.readFileSync(this.sb.saved), '@SavedVariables');
-    this.runLua(`DEV.Fire("ADDON_LOADED", "${MAIN_ADDON}")`);
+    if (this.mainAddonLoaded && fs.existsSync(this.sb.saved)) this.runLua(fs.readFileSync(this.sb.saved), '@SavedVariables');
+    if (this.mainAddonLoaded) this.runLua(`DEV.Fire("ADDON_LOADED", "${MAIN_ADDON}")`);
     this.runLua('DEV.Fire("PLAYER_LOGIN")');
     this.runLua('DEV.Fire("PLAYER_ENTERING_WORLD", true, false)');
     this.note(`ui session ${this.sessions} started`);
@@ -257,6 +263,7 @@ class WowClient {
   }
 
   saveVariables() {
+    if (!this.mainAddonLoaded) return;
     const body = this.luaValue(`DEV.SerializeSaved({${this.savedNames().map(luaQuote).join(',')}})`);
     fs.mkdirSync(path.dirname(this.sb.saved), { recursive: true });
     if (fs.existsSync(this.sb.saved)) fs.copyFileSync(this.sb.saved, this.sb.saved + '.bak');
@@ -279,6 +286,7 @@ class WowClient {
       this.saveVariables();
       this.writeChatLog(true);
     }
+    this.keepSessionErrors();
     this.L = null;
     this.note(crash ? 'client crashed' : 'client quit');
   }
@@ -390,7 +398,10 @@ class WowClient {
   pressKey(key = 'SPACE') {
     this.runLua(`
       for _, f in ipairs(STUB.frames) do
-        if f.shown ~= false and f.scripts.OnKeyDown then pcall(f.scripts.OnKeyDown, f, ${luaQuote(key)}) end
+        if f.shown ~= false and f.scripts.OnKeyDown then
+          local ok, err = pcall(f.scripts.OnKeyDown, f, ${luaQuote(key)})
+          if not ok then table.insert(DEV.errors, tostring(err)) end
+        end
       end`);
   }
 
@@ -453,7 +464,14 @@ class WowClient {
   }
 
   errors() {
-    return this.json('DEV.errors') || [];
+    const current = this.L ? (this.json('DEV.errors') || []) : [];
+    return [...this.endedSessionErrors, ...current];
+  }
+
+  assertHealthy(label = 'the addon') {
+    if (this.fatal) throw this.fatal;
+    const errors = this.errors();
+    if (errors.length) throw new Error(`${label} raised Lua errors:\n${errors.join('\n')}`);
   }
 
   db() {
