@@ -2408,6 +2408,7 @@ test('projects: the bridge list adds recent projects with repo labels, and one f
   assert.equal(rec.cwd, '/Users/me/wow-ai', 'the repo label finds the folder');
   assert.equal(vm.num('#ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history'), 1, 'the project note is not a transcript message: the header shows the project');
   assert.equal(vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history[1].role'), 'user');
+  assert.match(vm.evaluate('table.concat(STUB.prints, "\\n")'), /project: claude-wow/, 'with whisper tabs off the project note goes to the game chat');
 });
 
 test('projects: without a bridge list the picker keeps folder names, and ~ stays as typed until the bridge names its home', () => {
