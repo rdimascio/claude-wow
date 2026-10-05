@@ -8,6 +8,7 @@ const CLI = require('../bridge/clients');
 
 const BRIDGE = path.join(SB.REPO, 'bridge', 'bridge.js');
 const SUPERVISOR = path.join(SB.REPO, 'bridge', 'supervisor.js');
+const BRIDGE_READY_MS = process.platform === 'win32' ? 60000 : 20000;
 
 class BridgeProcess {
   constructor(sb, { supervised = false, echo = false } = {}) {
@@ -66,7 +67,7 @@ class BridgeProcess {
     }
   }
 
-  async ready(timeoutMs = 20000) {
+  async ready(timeoutMs = BRIDGE_READY_MS) {
     await this.waitForLine(/screenshot transport: watching|pixel capture/, { timeoutMs });
     return this;
   }

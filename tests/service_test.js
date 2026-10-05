@@ -554,3 +554,34 @@ test('Windows status: an installed service is verified once, so a pid reused bet
   );
   assert.ok(!lines.some(l => /no pid file yet/.test(l)), lines.join('\n'));
 });
+
+test('Windows orphaned agent run: only a process created before the run started and named by its marker is ended, through the verified kill', () => {
+  const run = { pid: 5150, startedAt: STARTED, marker: 'claude.exe' };
+  const agent = { created: STARTED - 200, command: '"C:\\Users\\p\\.local\\bin\\claude.exe" -p --output-format stream-json' };
+  assert.equal(S.agentRunIdentity(run, { state: 'found', ...agent }), 'match');
+  assert.equal(S.agentRunIdentity(run, { state: 'found', ...agent, command: 'C:\\Windows\\notepad.exe' }), 'stale');
+  assert.equal(S.agentRunIdentity(run, { state: 'found', ...agent, created: STARTED + S.CLOCK_SLACK_MS + 1 }), 'stale');
+  assert.equal(S.agentRunIdentity({ pid: 5150, startedAt: STARTED }, { state: 'found', ...agent }), 'unknown', 'no marker is never trusted');
+  assert.equal(S.agentRunIdentity(run, { state: 'found', ...agent, command: '' }), 'unknown');
+  assert.equal(S.agentRunIdentity(run, { state: 'gone' }), 'gone');
+
+  const { b, state } = fakeWindows({ alivePids: [5150], processes: { 5150: agent } });
+  assert.equal(S.endWinAgentRun(run, b.exec), 'ended');
+  assert.equal(state.kills.length, 1);
+  assert.match(state.kills[0].script, /\$null = \$p\.Handle/);
+  assert.ok(state.kills[0].script.includes(`-gt ${STARTED + S.CLOCK_SLACK_MS}`), state.kills[0].script);
+
+  const reused = fakeWindows({ alivePids: [5150], processes: { 5150: { created: STARTED + 60_000, command: 'C:\\Windows\\notepad.exe' } } });
+  assert.equal(S.endWinAgentRun(run, reused.b.exec), 'stale');
+  assert.deepEqual(reused.state.kills, [], 'a pid Windows gave to another program is left alone');
+
+  const unreadable = fakeWindows({ alivePids: [5150], queryFails: true });
+  assert.equal(S.endWinAgentRun(run, unreadable.b.exec), 'unknown');
+  assert.deepEqual(unreadable.state.kills, [], 'no kill when the identity cannot be read');
+
+  const changed = fakeWindows({ alivePids: [5150], processes: { 5150: agent }, killStatus: 3 });
+  assert.equal(S.endWinAgentRun(run, changed.b.exec), 'stale');
+  const broken = fakeWindows({ alivePids: [5150], processes: { 5150: agent }, killStatus: 1 });
+  assert.equal(S.endWinAgentRun(run, broken.b.exec), 'failed');
+  assert.equal(S.endWinAgentRun({ pid: '5150; Stop-Computer', startedAt: STARTED, marker: 'x' }, b.exec), 'gone');
+});
