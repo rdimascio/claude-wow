@@ -81,6 +81,18 @@ test('an explicit empty agentPath is kept so the bridge finds the real CLI; no a
   assert.equal(SB.buildConfig(L, { agentPath: '/opt/x/claude' }).agents.claude.path, '/opt/x/claude');
 });
 
+test("a bridge started with the sandbox environment can read a live session's command line", () => {
+  const { spawnSync } = require('child_process');
+  const liveproto = path.join(SB.REPO, 'bridge', 'liveproto.js');
+  const readOwnCommandLine = `require(${JSON.stringify(liveproto)}).commandLine(process.pid).then(line => process.stdout.write(String(line)))`;
+  const r = spawnSync(process.execPath, ['-e', readOwnCommandLine], {
+    env: SB.envFor(SB.layout(path.join(ROOT, 'cmdline-env'))),
+    encoding: 'utf8',
+    windowsHide: true,
+  });
+  assert.match(r.stdout, /node|bun/i, `the command line read with the sandbox environment: ${r.stdout}${r.stderr}`);
+});
+
 test('a plain reopen of a --real-agent sandbox goes back to the fake agent; a custom path is kept', () => {
   const sb = SB.create('real-then-plain', { root: ROOT, agentPath: '' });
   try {
