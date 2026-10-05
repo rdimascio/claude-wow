@@ -2146,7 +2146,9 @@ function runAgent(job, opts = {}) {
     log(`${tag} allowed for this run only (${agentId}): ${grantOnce.rules.join(', ')}`);
   }
   const dataServer = opts.gameData && (claudeRun || codexRun || agent.mcp) ? gameDataServer(tag, job) : null;
-  const codexMcp = codexRun ? [...(dataServer ? [{ name: DM.SERVER_NAME, server: dataServer.server }] : []), ...MC.forCodex(USER_MCP)] : [];
+  const codexMcp = codexRun
+    ? [...(dataServer ? [{ name: DM.SERVER_NAME, server: dataServer.server }] : []), ...MC.forCodex(USER_MCP, { skip: CODEX_OWN_MCP })]
+    : [];
   const runOnlyRules = [
     ...grantOnce.rules,
     ...(dataServer ? dataServer.rules : []),
@@ -2324,7 +2326,12 @@ function runAgent(job, opts = {}) {
     runGrant && GM.SERVER_NAME + ' for this run',
     factoryGrant && FACTORY.SERVER_NAME + ' for this run',
     userMcp && userMcp.names.length && 'mcp ' + userMcp.names.join(' '),
-    codexMcp.length && 'mcp ' + codexMcp.map(e => e.name).join(' '),
+    codexMcp.some(e => e.name !== DM.SERVER_NAME) &&
+      'mcp ' +
+        codexMcp
+          .filter(e => e.name !== DM.SERVER_NAME)
+          .map(e => e.name)
+          .join(' '),
     userMcp && userMcp.strict && 'strict mcp',
   ]
     .filter(Boolean)
@@ -3295,7 +3302,12 @@ function startSelfUpdate() {
 }
 
 const USER_MCP = MC.parse(cfg.mcp, { reserved: [DM.SERVER_NAME, GM.SERVER_NAME, FACTORY.SERVER_NAME], log, env: process.env });
+const CODEX_OWN_MCP = USER_MCP ? MC.codexOwnServers().filter(n => USER_MCP.servers.some(s => s.name === n && s.default)) : [];
 banner();
+for (const n of CODEX_OWN_MCP)
+  log(
+    `mcp.servers.${n}: ~/.codex/config.toml has a server of the same name, and Codex would merge the two (its url, auth and env with this one), so Codex runs leave this server out; rename one of them`,
+  );
 if (USER_MCP && (USER_MCP.servers.length || USER_MCP.strict)) {
   log(`mcp: ${MC.summary(USER_MCP)}`);
   if (USER_MCP.strict) {

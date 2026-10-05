@@ -173,8 +173,8 @@ test('a bad entry is skipped with one log line each and never stops the others',
 test('no env value reaches the run: the log names a missing variable, argv and the MCP JSON carry only ${NAME}', () => {
   const missing = parsed(SAMPLE, {});
   assert.deepEqual(missing.lines, [
-    "mcp.servers.github: GITHUB_TOKEN is not set in the bridge's environment, so the server gets the literal text ${GITHUB_TOKEN}",
-    "mcp.servers.linear: LINEAR_KEY is not set in the bridge's environment, so the server gets the literal text ${LINEAR_KEY}",
+    "mcp.servers.github: GITHUB_TOKEN is not set in the bridge's environment, so a Claude server gets the literal text ${GITHUB_TOKEN} and a Codex server gets nothing",
+    "mcp.servers.linear: LINEAR_KEY is not set in the bridge's environment, so a Claude server gets the literal text ${LINEAR_KEY} and a Codex server gets nothing",
   ]);
   const saved = { GITHUB_TOKEN: process.env.GITHUB_TOKEN, LINEAR_KEY: process.env.LINEAR_KEY };
   Object.assign(process.env, { GITHUB_TOKEN: SECRET, LINEAR_KEY: SECRET });
@@ -247,76 +247,103 @@ test('claudeOwnServers lists the user, local, project and enabled plugin servers
   assert.deepEqual(MC.claudeOwnServers({ home, configDir: '', cwd, read: () => null }), []);
 });
 
-test('Codex: default servers become -c mcp_servers entries with names of env vars, the codex allow list and auto-approval', () => {
+test('Codex: default servers become -c mcp_servers entries with names of env vars, the codex allow list, auto-approval, and their env vars hidden from the shell', () => {
   const entries = MC.forCodex(parsed(SAMPLE, { GITHUB_TOKEN: SECRET, LINEAR_KEY: SECRET }).mcp);
   assert.deepEqual(
     entries.map(e => e.name),
     ['github', 'notion', 'linear'],
   );
+  const c = (server, kv) => ['-c', `mcp_servers.${server}.${kv}`];
   assert.deepEqual(MC.codexArgs(entries), [
+    ...c('github', 'command="npx"'),
+    ...c('github', 'args=["-y","@modelcontextprotocol/server-github"]'),
+    ...c('github', 'env_vars=["GITHUB_TOKEN"]'),
+    ...c('github', 'enabled=true'),
+    ...c('github', 'default_tools_approval_mode="approve"'),
+    ...c('notion', 'url="https://mcp.notion.com/mcp"'),
+    ...c('notion', 'enabled=true'),
+    ...c('notion', 'enabled_tools=["search"]'),
+    ...c('notion', 'default_tools_approval_mode="approve"'),
+    ...c('linear', 'url="https://mcp.linear.app/mcp"'),
+    ...c('linear', 'bearer_token_env_var="LINEAR_KEY"'),
+    ...c('linear', 'enabled=true'),
+    ...c('linear', 'enabled_tools=["list_issues"]'),
+    ...c('linear', 'default_tools_approval_mode="approve"'),
     '-c',
-    'mcp_servers.github.command="npx"',
-    '-c',
-    'mcp_servers.github.args=["-y","@modelcontextprotocol/server-github"]',
-    '-c',
-    'mcp_servers.github.env_vars=["GITHUB_TOKEN"]',
-    '-c',
-    'mcp_servers.github.default_tools_approval_mode="approve"',
-    '-c',
-    'mcp_servers.notion.url="https://mcp.notion.com/mcp"',
-    '-c',
-    'mcp_servers.notion.enabled_tools=["search"]',
-    '-c',
-    'mcp_servers.notion.default_tools_approval_mode="approve"',
-    '-c',
-    'mcp_servers.linear.url="https://mcp.linear.app/mcp"',
-    '-c',
-    'mcp_servers.linear.bearer_token_env_var="LINEAR_KEY"',
-    '-c',
-    'mcp_servers.linear.enabled_tools=["list_issues"]',
-    '-c',
-    'mcp_servers.linear.default_tools_approval_mode="approve"',
+    'shell_environment_policy.exclude=["GITHUB_TOKEN","LINEAR_KEY"]',
   ]);
   assert.equal(MC.forCodex(null).length, 0);
   assert.deepEqual(MC.codexArgs([]), []);
+  assert.deepEqual(MC.codexArgs([{ name: 'd', server: { type: 'stdio', command: 'node', args: [] } }]).slice(-2), [
+    '-c',
+    'mcp_servers.d.default_tools_approval_mode="approve"',
+  ]);
 });
 
-test('Codex: every value is a TOML string, so a number-looking argument, quotes and backslashes survive; no env value reaches argv', () => {
+test('Codex: every value is a TOML string, so a number-looking argument, quotes, backslashes and a lone surrogate survive', () => {
   const args = MC.codexArgs([
     {
       name: 's',
-      server: { type: 'stdio', command: 'C:\\Tools\\srv.exe', args: ['007', '1e3', 'say "hi"', 'true', 'a\u007fb'] },
-      envVars: ['GITHUB_TOKEN'],
+      server: { type: 'stdio', command: 'C:\\Tools\\srv.exe', args: ['007', '1e3', 'say "hi"', 'true', 'a\u007fb', 'x\ud800y'] },
+      envVars: [],
       enabledTools: [],
-      disabledTools: ['goal_set'],
     },
   ]);
   assert.deepEqual(args, [
     '-c',
     'mcp_servers.s.command="C:\\\\Tools\\\\srv.exe"',
     '-c',
-    'mcp_servers.s.args=["007","1e3","say \\"hi\\"","true","a\\u007fb"]',
+    'mcp_servers.s.args=["007","1e3","say \\"hi\\"","true","a\\u007fb","x\ufffdy"]',
     '-c',
-    'mcp_servers.s.env_vars=["GITHUB_TOKEN"]',
+    'mcp_servers.s.enabled=true',
     '-c',
     'mcp_servers.s.enabled_tools=[]',
     '-c',
-    'mcp_servers.s.disabled_tools=["goal_set"]',
-    '-c',
     'mcp_servers.s.default_tools_approval_mode="approve"',
   ]);
+});
+
+test('Codex: the overrides go before exec, no env value reaches argv, and no mcp means the argv of before', () => {
   const saved = process.env.GITHUB_TOKEN;
   process.env.GITHUB_TOKEN = SECRET;
   try {
-    const argv = A.AGENTS.codex.args({ cfg: {}, resume: '', cwd: '/p', images: [], codexMcpArgs: MC.codexArgs(MC.forCodex(parsed(SAMPLE, process.env).mcp)) });
+    const overrides = MC.codexArgs(MC.forCodex(parsed(SAMPLE, process.env).mcp));
+    const argv = A.AGENTS.codex.args({ cfg: {}, resume: 'thread-1', cwd: '/p', images: [], codexMcpArgs: overrides });
+    const at = argv.indexOf('exec');
+    assert.ok(overrides.length > 0 && at > 0);
+    assert.deepEqual(argv.slice(0, at), overrides);
+    assert.deepEqual(argv.slice(at), A.AGENTS.codex.args({ cfg: {}, resume: 'thread-1', cwd: '/p', images: [] }));
     assert.ok(!JSON.stringify(argv).includes(SECRET));
-    assert.ok(argv.indexOf('-c') < argv.indexOf('exec'), 'config overrides go before the exec subcommand');
   } finally {
     if (saved === undefined) delete process.env.GITHUB_TOKEN;
     else process.env.GITHUB_TOKEN = saved;
   }
+});
+
+test('Codex: a server named like one in ~/.codex/config.toml is left out, since Codex would merge its url, auth and env into ours', () => {
+  const toml = [
+    '[mcp_servers.mobbin]',
+    'url = "https://api.mobbin.com/mcp"',
+    '[mcp_servers."quoted-one".env]',
+    "  [ mcp_servers . 'single' ]",
+    'mcp_servers.dotted.command = "x"',
+    '[projects."/x"]',
+    '# [mcp_servers.commented]',
+  ].join('\n');
+  const own = MC.codexOwnServers({ home: '/h', codexHome: '', readText: f => (f === path.join('/h', '.codex', 'config.toml') ? toml : '') });
+  assert.deepEqual(own.sort(), ['dotted', 'mobbin', 'quoted-one', 'single']);
+  assert.deepEqual(MC.codexOwnServers({ codexHome: '/ch', readText: f => (f === path.join('/ch', 'config.toml') ? '[mcp_servers.a]' : '') }), ['a']);
   assert.deepEqual(
-    A.AGENTS.codex.args({ cfg: {}, resume: '', cwd: '/p', images: [] }),
-    A.AGENTS.codex.args({ cfg: {}, resume: '', cwd: '/p', images: [], codexMcpArgs: [] }),
+    MC.codexOwnServers({
+      readText: () => {
+        throw new Error('ENOENT');
+      },
+    }),
+    [],
+  );
+  const mcp = parsed(SAMPLE).mcp;
+  assert.deepEqual(
+    MC.forCodex(mcp, { skip: ['notion'] }).map(e => e.name),
+    ['github', 'linear'],
   );
 });

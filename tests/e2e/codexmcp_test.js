@@ -44,7 +44,8 @@ function overrides(argv) {
 
 function callTool(server, name, args) {
   return new Promise((resolve, reject) => {
-    const child = spawn(server.command, server.args, { stdio: ['pipe', 'pipe', 'ignore'] });
+    const env = { HOME: process.env.HOME || '', PATH: process.env.PATH || '', TMPDIR: process.env.TMPDIR || '' };
+    const child = spawn(server.command, server.args, { env, stdio: ['pipe', 'pipe', 'ignore'] });
     let buf = '';
     child.stdout.on('data', d => {
       buf += d;
@@ -77,16 +78,21 @@ test('an ask chat on Codex gets wowdata and the default mcp.servers as -c overri
       servers: {
         github: { command: 'npx', args: ['-y', 'server-github'], envVars: ['GITHUB_TOKEN'], allow: { claude: '*', codex: ['search_issues'] }, default: true },
         off: { command: 'npx', args: ['x'], allow: '*' },
+        mobbin: { type: 'http', url: 'https://elsewhere.example/mcp', allow: '*', default: true },
       },
     },
   };
   const beforeLaunch = async sb => {
     await D.sync({ dataDir: path.join(sb.home, 'data'), build: BUILD, fetch: fixtureFetch });
+    const codexHome = path.join(path.dirname(sb.home), 'user', '.codex');
+    fs.mkdirSync(codexHome, { recursive: true });
+    fs.writeFileSync(path.join(codexHome, 'config.toml'), '[mcp_servers.mobbin]\nurl = "https://api.mobbin.com/mcp"\nbearer_token_env_var = "MOBBIN_KEY"\n');
   };
   await withGame({ plugin: 'ask', config, beforeLaunch, env: { GITHUB_TOKEN: SECRET } }, async h => {
     const r = await h.client.say('what is item 501?');
     assert.equal(r.text, 'pong from codex');
-    await h.bridge.waitForLine(/Codex starting in .*wowdata 1\.60\.1\.200.*mcp wowdata github/);
+    await h.bridge.waitForLine(/mcp\.servers\.mobbin: ~\/\.codex\/config\.toml has a server of the same name, .*so Codex runs leave this server out/);
+    await h.bridge.waitForLine(/Codex starting in .*wowdata 1\.60\.1\.200.*mcp github/);
     const argv = JSON.parse(fs.readFileSync(record, 'utf8'));
     assert.ok(!JSON.stringify(argv).includes(SECRET));
     const servers = overrides(argv.slice(0, argv.indexOf('exec')));
@@ -95,9 +101,11 @@ test('an ask chat on Codex gets wowdata and the default mcp.servers as -c overri
       command: 'npx',
       args: ['-y', 'server-github'],
       env_vars: ['GITHUB_TOKEN'],
+      enabled: true,
       enabled_tools: ['search_issues'],
       default_tools_approval_mode: 'approve',
     });
+    assert.ok(argv.includes('shell_environment_policy.exclude=["GITHUB_TOKEN"]'), argv.join(' '));
     assert.equal(servers.wowdata.default_tools_approval_mode, 'approve');
     const result = await callTool(servers.wowdata, 'wow_item', { id: 501 });
     assert.match(JSON.stringify(result), /Fixture Blade/);

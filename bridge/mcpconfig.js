@@ -103,7 +103,9 @@ function parse(raw, { reserved = [], log = () => {}, env = {} } = {}) {
     }
     for (const e of r.envVars)
       if (env[e] === undefined || env[e] === '')
-        log(`mcp.servers.${name}: ${e} is not set in the bridge's environment, so the server gets the literal text ${envRef(e)}`);
+        log(
+          `mcp.servers.${name}: ${e} is not set in the bridge's environment, so a Claude server gets the literal text ${envRef(e)} and a Codex server gets nothing`,
+        );
     servers.push(r);
   }
   return { servers, strict };
@@ -197,10 +199,23 @@ function claudeOwnServers({ home = os.homedir(), configDir = process.env.CLAUDE_
   return [...new Set(out)];
 }
 
-function forCodex(mcp) {
+function codexOwnServers({ home = os.homedir(), codexHome = process.env.CODEX_HOME || '', readText = f => fs.readFileSync(f, 'utf8') } = {}) {
+  let text = '';
+  try {
+    text = readText(path.join(codexHome || path.join(home, '.codex'), 'config.toml'));
+  } catch {
+    return [];
+  }
+  const names = new Set();
+  for (const m of text.matchAll(/^\s*\[\s*mcp_servers\s*\.\s*(?:"([^"]+)"|'([^']+)'|([A-Za-z0-9_-]+))/gm)) names.add(m[1] || m[2] || m[3]);
+  for (const m of text.matchAll(/^\s*mcp_servers\s*\.\s*(?:"([^"]+)"|'([^']+)'|([A-Za-z0-9_-]+))\s*[.=]/gm)) names.add(m[1] || m[2] || m[3]);
+  return [...names];
+}
+
+function forCodex(mcp, { skip = [] } = {}) {
   if (!mcp) return [];
   return mcp.servers
-    .filter(s => s.default)
+    .filter(s => s.default && !skip.includes(s.name))
     .map(s => ({
       name: s.name,
       server: s.server,
@@ -210,7 +225,7 @@ function forCodex(mcp) {
     }));
 }
 
-const tomlString = v => JSON.stringify(String(v)).replace(/\u007f/g, '\\u007f');
+const tomlString = v => JSON.stringify(String(v).replace(/[\ud800-\udfff]/gu, '\ufffd')).replace(/\u007f/g, '\\u007f');
 const tomlList = list => `[${list.map(tomlString).join(',')}]`;
 
 function codexArgs(entries) {
@@ -226,10 +241,12 @@ function codexArgs(entries) {
       set('args', tomlList(e.server.args || []));
       if (e.envVars && e.envVars.length) set('env_vars', tomlList(e.envVars));
     }
+    set('enabled', 'true');
     if (Array.isArray(e.enabledTools)) set('enabled_tools', tomlList(e.enabledTools));
-    if (Array.isArray(e.disabledTools) && e.disabledTools.length) set('disabled_tools', tomlList(e.disabledTools));
     set('default_tools_approval_mode', tomlString('approve'));
   }
+  const secrets = [...new Set((entries || []).flatMap(e => [...(e.envVars || []), ...(e.bearerTokenEnvVar ? [e.bearerTokenEnvVar] : [])]))];
+  if (secrets.length) out.push('-c', `shell_environment_policy.exclude=${tomlList(secrets)}`);
   return out;
 }
 
@@ -239,4 +256,4 @@ function summary(mcp) {
   return `${names.length ? names.join(', ') : 'no servers'}${mcp.strict ? '; strict: Claude runs load only these and the bridge servers' : ''}`;
 }
 
-module.exports = { parse, forClaude, forCodex, codexArgs, scopeAllowed, claudeOwnServers, summary, serverOf, ALL_TOOLS };
+module.exports = { parse, forClaude, forCodex, codexArgs, codexOwnServers, scopeAllowed, claudeOwnServers, summary, serverOf, ALL_TOOLS };
