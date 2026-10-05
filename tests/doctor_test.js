@@ -270,6 +270,17 @@ test('signals: with fewer than 100 slots only the half the bridge arms ahead is 
   assert.match(tiny.problems[0].what, /^10 ack file\(s\) ahead of lastSeq 5 are missing \(006, 007, 008, 009, 010, \.\.\.\)/);
 });
 
+test('signals: the slot of a run still in flight is not expected armed, other missing slots still warn', () => {
+  const bridgeArmed = Array.from({ length: 30 }, (_, i) => i + 11).filter(s => s !== 25);
+  const running = { inflight: { 'sess:a': { id: 25, chat: 'a', session: 'sess', client: '' } } };
+  const kept = C.checkSignals(context(makeWorld('inflight-kept', { lastSeq: 70, ack: bridgeArmed, state: running, config: { slots: 60 } })));
+  assert.equal(kept.status, 'ok');
+  const other = C.checkSignals(context(makeWorld('inflight-other', { lastSeq: 70, ack: bridgeArmed.filter(s => s !== 30), state: running, config: { slots: 60 } })));
+  assert.equal(other.status, 'warn');
+  assert.match(other.problems[0].what, /^1 ack file\(s\) ahead of lastSeq 70 are missing \(030\)/);
+  assert.match(other.problems[0].fix, /arms the next 29 slots on every message/);
+});
+
 test('signals: old signal folders left in the shipped ClaudeWoW folder warn, and the runtime ones count', () => {
   const world = makeWorld('legacy-signals', { lastSeq: 68, legacySignals: ['ack/001.wav', 'presence/a/0001.wav', 'ctl/valid.wav'] });
   const r = C.checkSignals(context(world));

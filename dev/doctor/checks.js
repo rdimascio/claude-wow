@@ -364,7 +364,10 @@ function signalsOf(ctx, client) {
   const lastSlot = slotNumber(lastId, slots);
   const toWrap = slots - (lastSeq % slots);
   const ackSet = new Set(ack || []);
-  const bridgeArms = slotsToClearAhead(lastId, slots);
+  const runningIds = Object.values(ctx.state.inflight || {})
+    .filter(run => run && (!run.client || run.client === client.key))
+    .map(run => run.id);
+  const bridgeArms = slotsToClearAhead(lastId, slots, runningIds);
   const spentAhead = bridgeArms.filter(s => !ackSet.has(s));
   if (spentAhead.length) {
     issues.push(warn(`${spentAhead.length} ack file(s) ahead of lastSeq ${lastSeq} are missing (${spentAhead.slice(0, 5).map(pad3).join(', ')}${spentAhead.length > 5 ? ', ...' : ''}).`,
