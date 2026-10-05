@@ -6,6 +6,7 @@
 const crypto = require('crypto');
 const os = require('os');
 const path = require('path');
+const MC = require('./mcpconfig');
 
 // The addon's name, as the game sees it: its folder under Interface/AddOns, its
 // .toc, its SavedVariables file (<ADDON>.lua) and the prefix of its globals.
@@ -257,8 +258,6 @@ function permissionModeName(raw) {
 const PRESENCE_TEST_RESULTS = ['passed', 'failed'];
 const LATE_CREATE_RESULTS = ['seen', 'unseen'];
 
-const MCP_NAME_RE = /^[A-Za-z0-9]+(?:[-_][A-Za-z0-9]+)*$/;
-const MCP_CHAT_MAX = 8;
 const MCP_HEALTH = ['connected', 'failed', 'needs-auth', 'pending', 'unknown'];
 
 function parseFlags(flags) {
@@ -315,15 +314,13 @@ function parseFlags(flags) {
     } else if (tok === 'discord=link') {
       out.discordLink = true;
     } else if (tok.startsWith('mcp=')) {
-      const names = tok
-        .slice(4)
-        .split(',')
-        .map(s => s.trim())
-        .filter(s => MCP_NAME_RE.test(s));
-      out.mcp = [...new Set(names)].slice(0, MCP_CHAT_MAX);
+      out.mcp = MC.parseChoice(tok.slice(4));
     } else if (tok.startsWith('resume=')) {
       const v = tok.slice(7).trim();
       if (RESUME_REF_RE.test(v)) out.resume = v;
+    } else if (tok.startsWith('char=')) {
+      const v = fromHex(tok.slice(5).trim()).trim();
+      if (v && v.length <= 64 && !/[\x00-\x1f\x7f\s]/.test(v)) out.reportedChar = v;
     } else if (tok.startsWith('live=')) {
       const v = fromHex(tok.slice(5).trim()).trim().slice(0, 80);
       if (v) out.liveTarget = v;
@@ -555,7 +552,7 @@ function parseOutbox(src) {
   const opts = b.match(/\["opts"\]\s*=\s*"([0-9a-fA-F]*)"/);
   if (opts && opts[1]) {
     const f = parseFlags(fromHex(opts[1]));
-    for (const k of ['model', 'effort', 'permissionMode', 'addDirs', 'mcp', 'resume', 'liveTarget', 'addonVersion', 'addonProto'])
+    for (const k of ['model', 'effort', 'permissionMode', 'addDirs', 'mcp', 'resume', 'liveTarget', 'addonVersion', 'addonProto', 'reportedChar'])
       if (f[k] !== undefined) job[k] = f[k];
   }
   return job;
@@ -731,6 +728,8 @@ const SITUATION_OPEN = '[In-game situation when this message was written, report
 const SITUATION_CLOSE = '[End of in-game situation]';
 function messagePrompt(text, ctx, opts) {
   const parts = [];
+  const rules = String((opts && opts.rules) || '').trim();
+  if (rules) parts.push(rules);
   const situation = String(ctx || '').trim();
   if (situation) parts.push(`${SITUATION_OPEN}\n${situation}\n${SITUATION_CLOSE}`);
   if (opts && opts.image) parts.push(visionHint(opts.image));
@@ -1195,13 +1194,32 @@ function luaTable(globalName, records, opts = {}) {
     lines.splice(lines.length - 1, 0, `\tprojects = { ${rows.join(', ')} },`);
   }
   if (Array.isArray(opts.mcp)) {
+    const label = v =>
+      String(v || '')
+        .replace(/[\x00-\x1f|]/g, '')
+        .slice(0, 64);
     const rows = opts.mcp
-      .filter(s => s && MCP_NAME_RE.test(String(s.name || '')))
-      .map(s => `{ name = ${luaStr(s.name)}, on = ${s.on ? 'true' : 'false'}, health = ${luaStr(MCP_HEALTH.includes(s.health) ? s.health : 'unknown')} }`);
+      .filter(e => e && /^[A-Za-z0-9_-]{1,64}$/.test(String(e.id || '')) && MC.SOURCES.includes(e.src))
+      .map(
+        e =>
+          `{ id = ${luaStr(e.id)}, label = ${luaStr(label(e.label) || e.id)}, src = ${luaStr(e.src)}, on = ${e.on ? 'true' : 'false'}, health = ${luaStr(MCP_HEALTH.includes(e.health) ? e.health : 'unknown')} }`,
+      );
     lines.splice(lines.length - 1, 0, `\tmcp = { ${rows.join(', ')} },`);
   }
   if (opts.home) lines.splice(lines.length - 1, 0, `\thome = ${luaStr(opts.home)},`);
+  if (Array.isArray(opts.skills) && opts.skills.length) {
+    lines.splice(lines.length - 1, 0, `\tskills = { ${opts.skills.map(luaStr).join(', ')} },`);
+  }
   if (opts.discord === true) lines.splice(lines.length - 1, 0, '\tdiscord = true,');
+  if (Array.isArray(opts.mirror) && opts.mirror.length) {
+    const rows = opts.mirror
+      .filter(m => m && m.chat && Number.isInteger(m.seq))
+      .map(
+        m =>
+          `\t\t{ chat = ${luaStr(m.chat)}, seq = ${m.seq}, role = ${luaStr(m.role)}, text = ${luaStr(m.text)}, agent = ${luaStr(m.agent || '')}, denied = { ${(m.denied || []).map(luaStr).join(', ')} } },`,
+      );
+    lines.splice(lines.length - 1, 0, '\tmirror = {', ...rows, '\t},');
+  }
   if (Array.isArray(opts.acks)) {
     const acks = opts.acks.filter(a => a && Number.isInteger(a.id) && a.id > 0);
     lines.splice(lines.length - 1, 0, `\tacks = { ${acks.map(a => `{ session = ${luaStr(a.session || '')}, id = ${a.id} }`).join(', ')} },`);
@@ -1262,7 +1280,9 @@ function luaTable(globalName, records, opts = {}) {
   if (opts.widgets) lines.push(luaWidgets(opts.widgets));
   const restore = opts.restore;
   if (restore) {
-    lines.push('\trestore = {', `\t\ttoken = ${luaStr(restore.token)},`, '\t\tchats = {');
+    lines.push('\trestore = {', `\t\ttoken = ${luaStr(restore.token)},`);
+    if (restore.char) lines.push(`\t\tchar = ${luaStr(restore.char)},`);
+    lines.push('\t\tchats = {');
     for (const c of restore.chats) {
       lines.push(
         '\t\t\t{',
@@ -1448,7 +1468,9 @@ function parseMapFile(src) {
 }
 
 function luaMap(map) {
-  const lines = ['\tmap = {', `\t\tepoch = ${luaStr(map.epoch)},`, `\t\tversion = ${Number(map.version) || 0},`, '\t\tlayers = {'];
+  const lines = ['\tmap = {', `\t\tepoch = ${luaStr(map.epoch)},`, `\t\tversion = ${Number(map.version) || 0},`];
+  if (map.char) lines.push(`\t\tchar = ${luaStr(map.char)},`);
+  lines.push('\t\tlayers = {');
   for (const [name, l] of Object.entries(map.layers || {})) {
     lines.push(
       `\t\t\t{ name = ${luaStr(name)}, title = ${luaStr(l.title)}, ordered = ${l.ordered ? 'true' : 'false'}, loop = ${l.loop ? 'true' : 'false'}, points = {`,

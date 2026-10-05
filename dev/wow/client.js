@@ -245,9 +245,9 @@ class WowClient {
     this.runLua(`DEV.now = ${this.gameNow().toFixed(3)}; DEV.epoch = ${Math.floor(Date.now() / 1000)}`);
   }
 
-  savedNames() {
+  savedNames(directive = 'SavedVariables') {
     const toc = fs.readFileSync(path.join(this.clientRoot, 'Interface', 'AddOns', MAIN_ADDON, MAIN_ADDON + '.toc'), 'utf8');
-    const m = /^##\s*SavedVariables:\s*(.+)$/m.exec(toc);
+    const m = new RegExp(`^##\\s*${directive}:\\s*(.+)$`, 'm').exec(toc);
     return m
       ? m[1]
           .split(',')
@@ -300,6 +300,8 @@ class WowClient {
     for (const name of this.startupAddons()) this.runLua(`DEV.LoadAddOn(${luaQuote(name)})`, '@boot-' + name);
     if (o.afterAddonLoad) this.runLua(o.afterAddonLoad, '@afterAddonLoad');
     if (this.mainAddonLoaded && fs.existsSync(this.sb.saved)) this.runLua(fs.readFileSync(this.sb.saved), '@SavedVariables');
+    if (this.mainAddonLoaded && fs.existsSync(this.characterSavedFile()))
+      this.runLua(fs.readFileSync(this.characterSavedFile()), '@SavedVariablesPerCharacter');
     if (this.mainAddonLoaded) this.runLua(`DEV.Fire("ADDON_LOADED", "${MAIN_ADDON}")`);
     this.runLua('DEV.Fire("PLAYER_LOGIN")');
     this.runLua('DEV.Fire("PLAYER_ENTERING_WORLD", true, false)');
@@ -310,12 +312,23 @@ class WowClient {
     this.log.push({ at: Date.now(), line });
   }
 
+  characterSavedFile() {
+    const realm = this.luaValue('GetRealmName()');
+    const name = this.luaValue('UnitName("player")');
+    return path.join(path.dirname(path.dirname(this.sb.saved)), realm, name, 'SavedVariables', path.basename(this.sb.saved));
+  }
+
   saveVariables() {
     if (!this.mainAddonLoaded) return;
-    const body = this.luaValue(`DEV.SerializeSaved({${this.savedNames().map(luaQuote).join(',')}})`);
-    fs.mkdirSync(path.dirname(this.sb.saved), { recursive: true });
-    if (fs.existsSync(this.sb.saved)) fs.copyFileSync(this.sb.saved, this.sb.saved + '.bak');
-    fs.writeFileSync(assertSafe(this.sb.saved), body);
+    const write = (file, names) => {
+      const body = this.luaValue(`DEV.SerializeSaved({${names.map(luaQuote).join(',')}})`);
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      if (fs.existsSync(file)) fs.copyFileSync(file, file + '.bak');
+      fs.writeFileSync(assertSafe(file), body);
+    };
+    write(this.sb.saved, this.savedNames());
+    const perCharacter = this.savedNames('SavedVariablesPerCharacter');
+    if (perCharacter.length) write(this.characterSavedFile(), perCharacter);
   }
 
   reload() {

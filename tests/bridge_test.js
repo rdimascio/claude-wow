@@ -113,6 +113,12 @@ test('luaTable carries the project list with labels and the home folder, quoted 
   assert.match(lua, /^\thome = "\/Users\/me",$/m);
 });
 
+test('luaTable carries the factory skill names only when there are some', () => {
+  assert.ok(!/skills =/.test(P.luaTable('X', [], {})));
+  assert.ok(!/skills =/.test(P.luaTable('X', [], { skills: [] })));
+  assert.match(P.luaTable('X', [], { skills: ['babysit-pr', 'fresh-eyes'] }), /^\tskills = \{ "babysit-pr", "fresh-eyes" \},$/m);
+});
+
 test('systemPrompt always asks for the TL;DR block, and adds the game rules and primer while a context is sent', () => {
   // Without a context the prompt is only the reply-format rule.
   for (const empty of ['', '  \n ', undefined]) {
@@ -190,6 +196,15 @@ test('messagePrompt puts the situation and the vision paragraph before the text,
   assert.ok(seeingNoCtx.startsWith('A screenshot of the player') && seeingNoCtx.endsWith('\n\nwhat is this?') && !seeingNoCtx.includes('in-game situation'));
   assert.equal(P.visionHint({}), P.visionHint(null));
   assert.ok(!P.visionHint({}).includes('downscaled)'), 'no size when unknown');
+});
+
+test("messagePrompt puts a thread chat's turn rules first, before the situation and the text", () => {
+  const ctx = 'Character: Testchar';
+  assert.equal(P.messagePrompt('go', '', { rules: '  \n' }), 'go', 'blank rules add nothing');
+  const m = P.messagePrompt('go', ctx, { rules: 'Skills you may dispatch: fresh-eyes.\n' });
+  assert.ok(m.startsWith('Skills you may dispatch: fresh-eyes.\n\n[In-game situation'), m);
+  assert.ok(m.endsWith('\n\ngo'));
+  assert.equal(P.messagePrompt('go', '', { rules: 'R' }), 'R\n\ngo');
 });
 
 test('splitSummary takes the last TL;DR block for the game chat and keeps the whole reply for the window', () => {
@@ -627,4 +642,21 @@ test('the ask plugin speaks as a player: one lowercase line, no TL;DR block; oth
     !P.systemPrompt('', '', { tools: ask.tools, surfaces: ask.surfaces, voice: ask.voice }).includes('Never run item links together'),
     'a chat with no game context gets no loot rule',
   );
+});
+
+test('luaTable carries the Discord capability and mirrored messages with their permission rules', () => {
+  assert.ok(!/discord =|mirror =/.test(P.luaTable('X', [], { mirror: [] })));
+  const lua = P.luaTable('X', [], {
+    discord: true,
+    mirror: [
+      { chat: 'c1', seq: 3, role: 'assistant', text: 'needs "Bash"', agent: 'claude', denied: ['Bash(npm test:*)'] },
+      { chat: '', seq: 1, role: 'user', text: 'x' },
+    ],
+  });
+  assert.match(lua, /^\tdiscord = true,$/m);
+  assert.match(
+    lua,
+    /^\t\t\{ chat = "c1", seq = 3, role = "assistant", text = "needs \\"Bash\\"", agent = "claude", denied = \{ "Bash\(npm test:\*\)" \} \},$/m,
+  );
+  assert.equal((lua.match(/chat = /g) || []).length, 1, 'an entry with no chat is left out');
 });

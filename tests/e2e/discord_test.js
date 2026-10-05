@@ -142,6 +142,45 @@ test('/claude discord links a game chat to a new thread with a recap, game repli
       const fromGame = h.agentCalls().find(c => c.prompt.includes('now do step one'));
       assert.equal(fromPhone.resume, fromGame.session, 'the same agent session');
       assert.ok(h.state().discordLinks[chatId], 'the link is saved by chat id');
+
+      await h.client.say('back in game');
+      const history = h.client.activeChat().history.map(m => `${m.role}|${m.text}`);
+      const phone = history.indexOf('user|(Discord) from my phone');
+      assert.ok(phone >= 0, `the Discord message is in the game chat: ${JSON.stringify(history.slice(-6))}`);
+      assert.ok(
+        history.slice(phone).some(t => /^assistant\|echo \(turn 3\): from my phone/.test(t)),
+        'and so is its reply',
+      );
+      assert.equal(history.filter(t => t === 'user|(Discord) from my phone').length, 1, 'shown once');
+    });
+  } finally {
+    await fake.close();
+  }
+});
+
+test('/runs from Discord answers at once while the chat is still running, instead of waiting behind the run', async () => {
+  const fake = await startFakeDiscord({ channelId: CHANNEL });
+  const withFactory = async sb => {
+    await setup(sb, fake);
+    const cfg = JSON.parse(fs.readFileSync(sb.config, 'utf8'));
+    cfg.plugins['claude-code'] = { factory: { enabled: true, skills: ['babysit-pr'] } };
+    fs.writeFileSync(sb.config, JSON.stringify(cfg, null, 2));
+  };
+  try {
+    await withGame({ env: { [DH.TOKEN_ENV]: TOKEN }, beforeLaunch: withFactory, run: false }, async h => {
+      const url = await webhookUrl(h);
+      await deliver(url, message({ content: 'warm up' }));
+      await h.client.waitFor(() => textPosts(fake).some(t => /warm up/.test(t)), { timeoutMs: 30000, label: 'the first reply' });
+      const [threadId] = [...fake.threads.keys()];
+      await deliver(url, message({ channel: threadId, thread: true, content: '[[sleep 8]] long work' }));
+      await h.client.waitFor(() => h.agentCalls().some(c => c.prompt.includes('long work')), { label: 'the long run to start' });
+      await deliver(url, message({ channel: threadId, thread: true, content: '/runs' }));
+      await h.client.waitFor(() => textPosts(fake, threadId).some(t => /^No factory runs yet\./.test(t)), {
+        timeoutMs: 6000,
+        label: 'the /runs answer during the run',
+      });
+      assert.ok(!textPosts(fake, threadId).some(t => /long work/.test(t)), 'the long run had not finished yet');
+      await h.bridge.waitForLine(/\/runs answered while the chat is busy/, { timeoutMs: 5000 });
     });
   } finally {
     await fake.close();
