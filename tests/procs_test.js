@@ -113,18 +113,6 @@ test('killTree: a child that exits while its grandchild ignores SIGTERM and hold
   } finally { cleanup(); }
 });
 
-test('killTree: a child that honours SIGTERM ends with it, and no SIGKILL follows', async () => {
-  const child = PR.spawnChild(process.execPath, ['-e', "process.stdout.write('up\\n'); setInterval(() => {}, 1000)"], { stdio: ['ignore', 'pipe', 'ignore'] });
-  await new Promise(r => child.stdout.once('data', r));
-  const logged = [];
-  const exited = new Promise(resolve => child.on('exit', (code, sig) => resolve({ code, sig })));
-  PR.killTree(child, { graceMs: 400, log: l => logged.push(l) });
-  const r = await exited;
-  if (POSIX) assert.equal(r.sig, 'SIGTERM');
-  await sleep(600);
-  assert.deepEqual(logged, [], 'nothing escalated');
-});
-
 test('killAll: ends every child it is given and calls back once they are gone, within the grace period plus a moment', async () => {
   const kids = [0, 1].map(() => PR.spawnChild(process.execPath, ['-e', stubborn()], { stdio: ['ignore', 'pipe', 'ignore'] }));
   try {

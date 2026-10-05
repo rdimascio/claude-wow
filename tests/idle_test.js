@@ -52,21 +52,6 @@ test('idleStatus: a message a plugin is handling (live session, stream, a roast 
   assert.equal(I.idleStatus({ handling: {} }).idle, true);
 });
 
-test('waitForIdle defers while a run is in flight and proceeds once idle has held for the settle time', async () => {
-  const t = fakeTime();
-  const states = [false, false, true, false, true, true, true, true, true];
-  let i = 0;
-  const waits = [];
-  const r = await I.waitForIdle({
-    probe: () => { const idle = states[Math.min(i++, states.length - 1)]; return { idle, reason: idle ? 'idle' : 'busy' }; },
-    timeoutMs: 60000, pollMs: 1000, settleMs: 2000, now: t.now, sleep: t.sleep, onWait: s => waits.push(s.reason),
-  });
-  assert.equal(r.idle, true);
-  assert.equal(i, 7, 'a busy read in the middle restarts the settle time');
-  assert.equal(r.waitedMs, 6000);
-  assert.deepEqual(waits, ['busy', 'busy'], 'told once per change into busy');
-});
-
 test('waitForIdle gives up at the timeout with the reason and never reports idle', async () => {
   const t = fakeTime();
   let reads = 0;

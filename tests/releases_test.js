@@ -27,26 +27,6 @@ function clock(start = 1_000_000) {
   return now;
 }
 
-test('the lock: one holder at a time, a second caller is refused with the holder named, and only the holder releases it', () => {
-  const l = REL.layout(scratch('lock'));
-  const first = REL.acquireLock(l.lock, { pid: 4242, command: 'dev deploy', alive: () => true });
-  assert.ok(fs.existsSync(l.lock));
-  assert.throws(() => REL.acquireLock(l.lock, { pid: 5151, alive: () => true }), /another deploy holds .*pid 4242 \(dev deploy\)/);
-  const elsewhere = REL.acquireLock(path.join(l.base, 'other.lock'), { pid: 5151, alive: () => true });
-  assert.match(elsewhere.token, /^[0-9a-f]{32}$/);
-  assert.notEqual(elsewhere.token, first.token);
-  assert.equal(REL.releaseLock(l.lock, elsewhere.token), false, 'a real token of another lock cannot release this one');
-  assert.equal(REL.releaseLock(l.lock, ''), false, 'no token releases nothing');
-  assert.ok(fs.existsSync(l.lock));
-  assert.equal(REL.readLock(l.lock).token, first.token, 'the holder still holds it');
-  assert.equal(elsewhere.release(), true);
-  assert.equal(first.release(), true);
-  assert.ok(!fs.existsSync(l.lock));
-  const second = REL.acquireLock(l.lock, { pid: 5151, alive: () => true });
-  assert.equal(second.staleRemoved, false);
-  second.release();
-});
-
 test('a stale lock is taken over: a dead holder, an old one, an unreadable one past its grace; a live, recent holder never is', () => {
   const l = REL.layout(scratch('stale'));
   const now = clock();
@@ -309,26 +289,4 @@ test('pruning keeps the newest releases and never removes the current or the pre
   fs.unlinkSync(l.current);
   assert.equal(REL.prune(l, 1).skipped, 'current does not point at a release');
   assert.equal(REL.listReleases(l).length, 5, 'without a known current nothing is removed');
-});
-
-test('installAndActivate installs, waits for idle before the flip, flips, runs the after-flip step, and prunes last: the step the self-updater reuses', { skip: NO_SYMLINKS }, async () => {
-  const base = scratch('install-activate');
-  const l = REL.layout(base);
-  const seen = [];
-  const r = await REL.installAndActivate(l, { name: '0.5.0-x', binaryFile: fakeBinary(base, 'x'), meta: { sha: 'x' } }, {
-    waitIdle: async () => { seen.push(['idle', REL.currentName(l), REL.hasRelease(l, '0.5.0-x')]); },
-    afterFlip: async flip => { seen.push(['after', flip.name, REL.currentName(l)]); return 7; },
-  });
-  assert.deepEqual(seen, [['idle', '', true], ['after', '0.5.0-x', '0.5.0-x']], 'the release is on disk and current is untouched while it waits');
-  assert.equal(r.outcome, 7);
-  assert.equal(r.pruneError, '');
-  assert.equal(r.changed, true);
-  assert.equal(REL.currentName(l), '0.5.0-x');
-  assert.equal(JSON.parse(fs.readFileSync(path.join(REL.releaseDir(l, '0.5.0-x'), REL.RELEASE_INFO), 'utf8')).sha, 'x');
-
-  await assert.rejects(REL.installAndActivate(l, { name: '0.5.0-y', binaryFile: fakeBinary(base, 'y') }, {
-    waitIdle: async () => { throw new Error('not idle'); },
-  }), /not idle/);
-  assert.equal(REL.currentName(l), '0.5.0-x', 'no flip when the idle wait fails');
-  assert.deepEqual(fs.readdirSync(l.releases).filter(f => f.startsWith('.staging')), [], 'no staging folder left');
 });

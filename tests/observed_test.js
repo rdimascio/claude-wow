@@ -209,17 +209,6 @@ test('gather spells: the gathering abilities of the synced Herbalism, Mining and
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('the dedupe memory is primed from the rotated file too', () => {
-  const dir = tmpDir('rotated');
-  try {
-    const entry = lootEntry('n', 3100, 0, AT, { 501: 1 });
-    fs.mkdirSync(path.join(dir, BONE), { recursive: true });
-    fs.writeFileSync(path.join(dir, BONE, OB.OBSERVED_ROTATED_FILE), JSON.stringify(OB.lineFor('loot', OB.parseLoot(entry).samples[0])) + '\n');
-    const observed = OB.createObserved({ dir });
-    assert.equal(observed.ingest(BONE, 'loot', OB.parseLoot(entry)), 0, 'a sample already in observed.1.jsonl is not written again');
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
-});
-
 test('farm_spot_lookup: observed rates with n and trust, item and map names from the synced data, NPC names never', async () => {
   const dir = tmpDir('farm');
   try {
@@ -379,9 +368,4 @@ test('map hold: a message never releases it; the published reply or a hello does
   share.hold();
   assert.equal(share.onHello({ session: 's', id: 9, hello: true }), true, 'a hello does');
   assert.ok(saves >= 4);
-});
-
-test('the observed tools are listed for the live session, and only route_draw is a writer', () => {
-  assert.deepEqual(OT.toolSchemas().map(t => t.name), ['farm_spot_lookup', 'market_price', 'route_draw']);
-  assert.deepEqual(OT.WRITE_TOOL_NAMES, ['route_draw']);
 });

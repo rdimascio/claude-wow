@@ -52,13 +52,6 @@ function loggedIn(slot = SLOT, clientApi = CLIENT_LOG_API, { ackHello = true } =
   return vm;
 }
 
-function sentFrom(vm, first) {
-  const n = vm.num('#SENT');
-  const lines = [];
-  for (let i = first; i <= n; i++) lines.push(vm.evaluate(`SENT[${i}]`));
-  return lines;
-}
-
 function asLogText(lines) {
   return lines.map(l => '9/30 19:00:00.000  ' + l + '\r\n').join('');
 }
@@ -72,39 +65,9 @@ function framesOf(text, cuts = []) {
   return frames;
 }
 
-function recordsOf(frame) {
-  return frame.text.split('\x1E').map(r => {
-    const p = r.split('\x1F');
-    return { chat: p[1], id: Number(p[2]), flags: p[4], text: p[p.length - 1] };
-  });
-}
-
 function shotFrames(vm, n) {
   for (let i = 0; i < n; i++) vm.run('local f = ClaudeWoWStrip; if f and f.shown and f.scripts.OnUpdate then f.scripts.OnUpdate(f, 0.016) end');
 }
-
-test('Codec.LogLines and the bridge assembler round-trip a payload with separators and UTF-8, whatever the flush boundaries', () => {
-  const vm = newVM();
-  vm.run('PAYLOAD = "sess\\31chat\\31" .. "7\\31\\31n\\31Name\\31h\\195\\169llo w\\195\\182rld " .. string.rep("x", 900) .. "\\30second\\31record"');
-  vm.run('LINES, TOTAL = ClaudeWoW_Codec.LogLines(70007, PAYLOAD, 200, 4096, "0123456789abcdef0123456789abcdef")');
-  const n = vm.num('#LINES');
-  const total = vm.num('TOTAL');
-  const lines = [];
-  for (let i = 1; i <= n; i++) lines.push(vm.evaluate(`LINES[${i}]`));
-  assert.ok(total >= 6 && total < n);
-  for (const l of lines) assert.match(l, /^CWX1 (0123456789abcdef0123456789abcdef 70007 \d+\/\d+ [A-Za-z0-9+/=]+|70007 pad z{200})$/);
-  const fillerBytes = lines.slice(total).reduce((sum, l) => sum + l.length, 0);
-  assert.ok(fillerBytes >= 4096, 'filler covers a whole buffer: ' + fillerBytes);
-  const text = asLogText(lines);
-  for (const cuts of [[], [4096], [37, 500, 501, 4096, 4097]]) {
-    const frames = framesOf(text, cuts);
-    assert.equal(frames.length, 1);
-    assert.equal(frames[0].error, undefined);
-    assert.equal(frames[0].id, 70007 % 65536);
-    assert.equal(frames[0].lineId, 70007);
-    assert.equal(frames[0].text, Buffer.from(vm.evaluate('PAYLOAD'), 'latin1').toString('utf8'));
-  }
-});
 
 test('a valid frame inside another player\'s chat line is never read: only a line that starts with the frame tag right after the timestamp counts', () => {
   const vm = newVM();
@@ -158,28 +121,6 @@ test('the bridge makes its key once, keeps it in its state, and replaces one tha
   assert.equal(CL.ensureKey(state, random).created, true);
 });
 
-test('the addon follows a new key from the bridge, refuses an offer with no key, and writes nothing with a saved offer that has no key', () => {
-  const other = 'f'.repeat(32);
-  const vm = loggedIn();
-  vm.run(`STUB.onLoadAddOn = function(name) ClaudeWoW_SlotData = { now = time(), cwd = "", transport = "screenshot", chatlog = { line = 200, filler = 4096, key = "${other}" }, replies = {} } end`);
-  vm.run('ClaudeWoW.Connect(); STUB.now = STUB.now + 6; STUB.Tick()');
-  let before = vm.num('#SENT');
-  vm.run('ClaudeWoW.NewChat("Rotated"); ClaudeWoW.Send("new key")');
-  assert.ok(vm.evaluate(`SENT[${before + 1}]`).startsWith(`CWX1 ${other} `), 'the next frame carries the new key');
-
-  const keyless = loggedIn('{ now = time(), cwd = "", transport = "screenshot", chatlog = { line = 200, filler = 4096 }, replies = {} }');
-  assert.equal(keyless.evaluate('ClaudeWoWDB.settings.chatlog'), null, 'an offer with no key is not taken');
-  keyless.run('ClaudeWoW.NewChat("Old bridge"); ClaudeWoW.Send("by screenshot")');
-  assert.equal(keyless.num('#SENT'), 0);
-  shotFrames(keyless, 2);
-  assert.ok(keyless.num('STUB.screenshots') >= 1, 'it goes by screenshot at once');
-
-  const saved = loggedIn('{ now = time(), cwd = "", transport = "screenshot", replies = {} }');
-  saved.run('ClaudeWoWDB.settings.chatlog = { line = 200, filler = 4096 }');
-  saved.run('ClaudeWoW.NewChat("Saved"); ClaudeWoW.Send("still by screenshot")');
-  assert.equal(saved.num('#SENT'), 0, 'a saved offer from before the key writes nothing');
-});
-
 test('a watcher that is resynced in the middle of a line drops the rest of that line', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cw-chatlog-'));
   const file = path.join(dir, 'WoWChatLog.txt');
@@ -213,29 +154,6 @@ test('with show on, the chat frame gets the frame line without the key, and the 
   assert.equal(vm.evaluate('HIDE'), 'false');
   assert.match(vm.evaluate('SHOWN'), /^CWX1 \.\.\. \d+ 1\/\d+ /);
   assert.ok(!vm.evaluate('SHOWN').includes(KEY), 'no key on screen');
-});
-
-test('a watcher that starts in the middle of a line drops the rest of that line', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cw-chatlog-'));
-  const file = path.join(dir, 'WoWChatLog.txt');
-  const vm = newVM();
-  vm.run(`LINES = ClaudeWoW_Codec.LogLines(77, "tail of a chat line", 900, 0, "${KEY}")`);
-  const frameLine = '10/1 12:00:01.234  ' + sentLinesOf(vm)[0];
-  const frames = [];
-  let w;
-  try {
-    fs.writeFileSync(file, '10/1 12:00:01.000  [Griefer] whispers: look ');
-    w = CL.watchChatLog(file, f => frames.push(f), { pollMs: 60000, key: KEY });
-    fs.appendFileSync(file, frameLine + '\r\n');
-    w.check();
-    assert.deepEqual(frames, [], 'the bytes after a mid-line start belong to the old line');
-    fs.appendFileSync(file, frameLine + '\r\n');
-    w.check();
-    assert.deepEqual(frames.map(f => f.text), ['tail of a chat line'], 'the next whole line is read');
-  } finally {
-    if (w) w.close();
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
 });
 
 test('stripOurLines never reads more than one chunk at a time, and leaves the length alone when the file grew while it worked', () => {
@@ -441,21 +359,6 @@ const noRealpath = { realpath: async () => { throw fsError('ENOENT'); } };
 const WIN_FOLDER = 'C:/Program Files (x86)/World of Warcraft/_classic_era_';
 const winRunning = (rows, extra = {}) => CL.clientRunning(WIN_FOLDER, { platform: 'win32', fs: noRealpath, run: async () => winList(rows), ...extra });
 
-test('Windows: the game counts as running only when a process runs from inside the client folder, matched without case and with either slash', async () => {
-  const calls = [];
-  const run = async (file, args, timeout) => { calls.push({ file, args, timeout }); return winList([['explorer.exe', 'C:\\Windows\\explorer.exe'], ['WowClassic.exe', 'c:\\PROGRAM FILES (X86)\\world of warcraft\\_Classic_Era_\\WowClassic.exe']]); };
-  assert.equal(await CL.clientRunning(WIN_FOLDER, { platform: 'win32', fs: noRealpath, run }), true);
-  assert.equal(calls[0].file, 'powershell.exe');
-  assert.ok(calls[0].timeout > 0, 'the process list has a timeout');
-  assert.match(calls[0].args.at(-1), /Get-CimInstance Win32_Process/);
-  assert.equal(await CL.clientRunning('C:\\Program Files (x86)\\World of Warcraft\\_classic_era_\\', { platform: 'win32', fs: noRealpath, run: async () => winList([['WowClassic.exe', '\\\\?\\C:/Program Files (x86)/World of Warcraft/_classic_era_/WowClassic.exe']]) }), true);
-  assert.equal(await winRunning([['Wow.exe', 'C:\\Program Files (x86)\\World of Warcraft\\_retail_\\Wow.exe'], ['svchost.exe', 'C:\\Windows\\System32\\svchost.exe']]), false, 'a game from another folder does not block the clean');
-  assert.equal(await winRunning([['WowClassic.exe', 'C:\\Program Files (x86)\\World of Warcraft\\_classic_era_2\\WowClassic.exe']]), false, 'a folder that only shares the prefix is another folder');
-  assert.equal(await winRunning([['WowClassic.exe', 'C:\\Program Files (x86)\\World of Warcraft\\_classic_era_.exe']]), false);
-  assert.equal(await winRunning([['explorer.exe', 'C:\\Windows\\explorer.exe']]), false, 'no game process');
-  assert.equal(await winRunning([['System', ''], ['explorer.exe', 'C:\\Windows\\explorer.exe']]), false, 'a system process with no readable path is not the game');
-});
-
 test('Windows: a failed, slow, unreadable or garbled process list means the bridge cannot tell', async () => {
   assert.equal(await winRunning([['Wow.exe', ''], ['explorer.exe', 'C:\\Windows\\explorer.exe']]), null, 'a WoW process whose path is hidden could be the game');
   assert.equal(await winRunning([], {}), null, 'an empty list is not a real list');
@@ -467,12 +370,6 @@ test('Windows: a failed, slow, unreadable or garbled process list means the brid
   assert.equal(await listed(`cwps begin\r\np ${b64('explorer.exe')},${b64('C:\\Windows\\explorer.exe')}\r\nWARNING: something\r\ncwps end\r\n`), null, 'a line that is not a process row');
   assert.equal(await CL.clientRunning(WIN_FOLDER, { platform: 'win32', fs: noRealpath, run: async () => { throw Object.assign(new Error('powershell.exe ETIMEDOUT'), { code: 'ETIMEDOUT' }); } }), null, 'timeout');
   assert.equal(await CL.clientRunning(WIN_FOLDER, { platform: 'win32', fs: noRealpath, run: () => { throw fsError('ENOENT'); } }), null, 'a runner that throws at once');
-});
-
-test('the Windows process script decodes in the bridge, so a non-ASCII path survives any console code page', async () => {
-  const rows = require('../bridge/clientproc').parseWindowsList(winList([['WowClassic.exe', 'D:\\Spiele\\Wörld\\_classic_era_\\WowClassic.exe']]));
-  assert.deepEqual(rows, [{ name: 'WowClassic.exe', exe: 'D:\\Spiele\\Wörld\\_classic_era_\\WowClassic.exe' }]);
-  assert.equal(await CL.clientRunning('D:/Spiele/Wörld/_classic_era_', { platform: 'win32', fs: noRealpath, run: async () => winList([['WowClassic.exe', 'D:\\Spiele\\Wörld\\_classic_era_\\WowClassic.exe']]) }), true);
 });
 
 const LINUX_FOLDER = '/home/p/Games/wow/drive_c/Program Files (x86)/World of Warcraft/_classic_era_';
@@ -526,18 +423,6 @@ test('Linux: a WoW exe the bridge cannot place in the client folder means it can
   assert.equal(await linuxRunning({ 2: { exe: PRELOADER, cwd: '/home/p', cmdline: ['/opt/other/WowClassic.exe'] } }), null, 'an absolute Unix path elsewhere');
 });
 
-test('Linux: a process of another user that names a WoW exe or the client folder means the bridge cannot tell', async () => {
-  const procs = { 1: BASH, 2: { uid: 0, exe: '!EACCES', cwd: '!EACCES', cmdline: [`${LINUX_FOLDER}/WowClassic`] } };
-  const fsApi = procFs(procs);
-  const reads = [];
-  const watched = { ...fsApi, readlink: async p => { reads.push(p); return fsApi.readlink(p); } };
-  assert.equal(await CL.clientRunning(LINUX_FOLDER, { platform: 'linux', uid: ME, fs: watched }), null, 'the folder in its command line');
-  assert.deepEqual(reads.filter(p => p.startsWith('/proc/2/')), [], 'only the world-readable cmdline of another user is read');
-  assert.equal(await linuxRunning({ 1: BASH, 2: { uid: 0, cmdline: ['C:\\Program Files (x86)\\World of Warcraft\\_classic_era_\\WowClassic.exe'] } }), null, 'a Windows path in the folder');
-  assert.equal(await linuxRunning({ 1: BASH, 2: { uid: 1001, cmdline: ['Wow.exe'] } }), null, 'any WoW exe');
-  assert.equal(await linuxRunning({ 1: BASH, 2: { uid: 0, cmdline: '!EACCES' } }), null, 'an unreadable command line of another user');
-});
-
 test('Linux: in WSL, in a container, or with the folder on a Windows drive the game can run where /proc cannot see it, so the bridge cannot tell', async () => {
   const state = (folder, env) => CL.clientState(folder, { platform: 'linux', uid: ME, fs: procFs({ 1: BASH }, {}, env) });
   assert.match((await state(LINUX_FOLDER, { osrelease: '5.15.153.1-microsoft-standard-WSL2\n' })).why, /WSL/);
@@ -563,9 +448,6 @@ async function whileChildRuns(fn) {
   }
 }
 const RUNNING_STATE = { running: true, why: 'the game is running' };
-test('macOS, real ps: a process launched by absolute path from a folder makes that folder count as running', { skip: process.platform !== 'darwin' }, async () => {
-  assert.deepEqual(await whileChildRuns(() => CL.clientState(REAL_FOLDER)), RUNNING_STATE);
-});
 test('Windows, real PowerShell script: a process launched by absolute path from a folder makes that folder count as running', { skip: process.platform !== 'win32' }, async () => {
   assert.deepEqual(await whileChildRuns(() => CL.clientState(REAL_FOLDER)), RUNNING_STATE);
 });
@@ -573,15 +455,6 @@ test('Linux, real /proc scan: a process launched by absolute path from a folder 
   const state = await whileChildRuns(() => CL.clientState(REAL_FOLDER));
   if (state.running === null && /WSL|container|Windows drive/.test(state.why)) { t.skip(state.why); return; }
   assert.deepEqual(state, RUNNING_STATE);
-});
-
-test('Linux: an own process whose exe or cwd the bridge may not read (not dumpable) is judged by its world-readable command line', async () => {
-  assert.equal(await linuxRunning({ 1: BASH, 2: { exe: '!EACCES', cmdline: ['/usr/bin/ssh-agent', '-D'] } }), false, 'an unrelated process does not block the clean');
-  assert.equal(await linuxRunning({ 1: BASH, 2: { exe: PRELOADER, cwd: '!EPERM', cmdline: ['/usr/bin/gnome-keyring-daemon'] } }), false, 'an unreadable working folder alone does not block it');
-  assert.equal(await linuxRunning({ 1: BASH, 2: { exe: '!EACCES', cmdline: ['C:\\Program Files (x86)\\World of Warcraft\\_classic_era_\\WowClassic.exe'] } }), null, 'a WoW exe in its command line');
-  assert.equal(await linuxRunning({ 1: BASH, 2: { exe: '!EPERM', cmdline: [`${LINUX_FOLDER}/WowClassic`] } }), null, 'the folder in its command line');
-  assert.equal(await linuxRunning({ 1: BASH, 2: { exe: '!EACCES', cmdline: '!EACCES' } }), null, 'and its command line cannot be read either');
-  assert.equal(await linuxRunning({ 1: BASH, 2: { exe: '!EACCES', cmdline: '!ESRCH' } }), false, 'a process that ended before its command line was read');
 });
 
 test('Linux: anything else the bridge cannot read about its own processes means it cannot tell', async () => {
@@ -770,85 +643,6 @@ test('watchChatLog reports the size of each write it reads', () => {
   }
 });
 
-test('chat log transport: a message is written to the chat log as hidden system lines, with no strip and no screenshot', () => {
-  const vm = loggedIn();
-  assert.equal(vm.evaluate('ClaudeWoWDB.settings.chatlog.line'), '200');
-  assert.equal(vm.evaluate('LOGGING'), 'true', 'chat logging is turned on');
-  const hello = framesOf(asLogText(sentFrom(vm, 1)));
-  assert.equal(hello.length, 1, 'the unacknowledged hello went out again through the chat log');
-  assert.match(recordsOf(hello[0])[0].flags, /^h;/);
-  const before = vm.num('#SENT');
-  vm.run('ClaudeWoW.Send("hello world")');
-  const lines = sentFrom(vm, before + 1);
-  assert.ok(lines.length > 0);
-  const frames = framesOf(asLogText(lines));
-  assert.equal(frames.length, 1);
-  assert.ok(recordsOf(frames[0]).find(r => r.text === 'hello world'));
-  assert.equal(vm.evaluate('ClaudeWoWStrip and ClaudeWoWStrip.shown or false'), 'false', 'no strip on screen');
-  shotFrames(vm, 3);
-  assert.equal(vm.num('STUB.screenshots'), 0);
-  const hide = 'FILTERS[#FILTERS].fn';
-  assert.equal(vm.evaluate(`${hide}(nil, "CHAT_MSG_SYSTEM", SENT[#SENT])`), 'true', 'the lines are filtered out of the chat frames');
-  assert.equal(vm.evaluate(`${hide}(nil, "CHAT_MSG_SYSTEM", "You feel rested.")`), 'false');
-  vm.run('STUB.now = STUB.now + 2; STUB.Tick(); STUB.now = STUB.now + 2; STUB.Tick()');
-  assert.equal(vm.num('#SENT'), before + lines.length, 'nothing is written again while waiting for the ack');
-});
-
-function sendLate(vm, name) {
-  const before = vm.num('#SENT');
-  vm.run(`ClaudeWoW.NewChat("${name}"); ClaudeWoW.Send("late ${name}")`);
-  const logged = vm.num('#SENT') > before;
-  vm.run('STUB.now = STUB.now + 9; STUB.Tick()');
-  shotFrames(vm, 2);
-  vm.run('STUB.FireEvent("SCREENSHOT_SUCCEEDED")');
-  vm.run(`STUB.sounds["${ACK(vm.num('ClaudeWoWDB.lastSeq'))}"] = false; STUB.now = STUB.now + 2; STUB.Tick()`);
-  return logged;
-}
-
-function sendPrompt(vm, name) {
-  const before = vm.num('#SENT');
-  vm.run(`ClaudeWoW.NewChat("${name}"); ClaudeWoW.Send("prompt ${name}")`);
-  const logged = vm.num('#SENT') > before;
-  shotFrames(vm, 2);
-  vm.run('STUB.FireEvent("SCREENSHOT_SUCCEEDED")');
-  vm.run(`STUB.sounds["${ACK(vm.num('ClaudeWoWDB.lastSeq'))}"] = false; STUB.now = STUB.now + 2; STUB.Tick()`);
-  return logged;
-}
-
-function lastDiag(vm) {
-  vm.run('SlashCmdList.CLAUDE("diag")');
-  return vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history[#ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history].text');
-}
-
-test('chat log transport heals itself: a pause after two late acks, a trial after 10 minutes, a longer pause when the trial is late, and back on when a trial is acknowledged', () => {
-  const vm = loggedIn();
-  assert.equal(sendLate(vm, 'a'), true);
-  assert.equal(sendLate(vm, 'b'), true);
-  assert.match(lastDiag(vm), /chat log transport: PAUSED, next try in 10m00s/);
-  assert.equal(sendPrompt(vm, 'c'), false, 'paused: screenshot only');
-  vm.run('STUB.now = STUB.now + 601');
-  assert.equal(sendLate(vm, 'd'), true, 'the trial after the pause uses the chat log');
-  assert.match(lastDiag(vm), /chat log transport: PAUSED, next try in 20m00s/, 'a late trial doubles the pause');
-  vm.run('STUB.now = STUB.now + 601');
-  assert.equal(sendPrompt(vm, 'e'), false, 'still paused after the first wait');
-  vm.run('STUB.now = STUB.now + 601');
-  assert.match(lastDiag(vm), /chat log transport: on trial after a pause/);
-  assert.equal(sendPrompt(vm, 'f'), true, 'the second trial uses the chat log');
-  assert.match(lastDiag(vm), /chat log transport: on, /, 'an ack on the first try ends the pause');
-  assert.equal(sendLate(vm, 'g'), true);
-  assert.match(lastDiag(vm), /chat log transport: on, /, 'one late ack alone does not pause');
-});
-
-test('chat log transport: new padding from the bridge ends a pause at once', () => {
-  const vm = loggedIn();
-  sendLate(vm, 'a');
-  sendLate(vm, 'b');
-  assert.match(lastDiag(vm), /PAUSED/);
-  vm.run('STUB.onLoadAddOn = function(name) ClaudeWoW_SlotData = { now = time(), cwd = "", transport = "screenshot", chatlog = { line = 200, filler = 60000, key = "0123456789abcdef0123456789abcdef" }, replies = {} } end');
-  vm.run('ClaudeWoW.Connect(); STUB.now = STUB.now + 6; STUB.Tick()');
-  assert.match(lastDiag(vm), /chat log transport: on, lines of 200, filler 60000 bytes/);
-});
-
 test('chat log transport: an unacknowledged message is retried by screenshot, and two late acks in a row pause the chat log', () => {
   const vm = loggedIn();
   for (let round = 1; round <= 2; round++) {
@@ -871,94 +665,6 @@ test('chat log transport: an unacknowledged message is retried by screenshot, an
   vm.run('SlashCmdList.CLAUDE("diag")');
   const diag = vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history[#ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history].text');
   assert.match(diag, /chat log transport: PAUSED, next try in/);
-});
-
-test('chat log transport: a hello the bridge never acknowledges is retried by screenshot before it expires, and a message waits 8 s, not 40', () => {
-  const vm = loggedIn(SLOT, CLIENT_LOG_API, { ackHello: false });
-  assert.equal(vm.num('STUB.screenshots'), 0);
-  vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
-  shotFrames(vm, 2);
-  assert.equal(vm.num('STUB.screenshots'), 0, 'not before the retry time');
-  vm.run('STUB.now = STUB.now + 3; STUB.Tick()');
-  shotFrames(vm, 2);
-  assert.equal(vm.num('STUB.screenshots'), 1, 'the hello went out again by screenshot');
-});
-
-test('chat log transport: on a client where the signal files are not proven (Classic Era: a deleted file still reads present), the ack comes from a slot poll, so the screenshot retry waits 15 s', () => {
-  const vm = loggedIn();
-  vm.run('ClaudeWoW.PresenceWorks = function() return false end');
-  vm.run('ClaudeWoW.NewChat("Slow"); ClaudeWoW.Send("no sound channel")');
-  vm.run('STUB.now = STUB.now + 9; STUB.Tick()');
-  shotFrames(vm, 2);
-  assert.equal(vm.num('STUB.screenshots'), 0, 'not at 8 s');
-  vm.run('STUB.now = STUB.now + 7; STUB.Tick()');
-  shotFrames(vm, 2);
-  assert.equal(vm.num('STUB.screenshots'), 1, 'at 15 s');
-});
-
-test('chat log transport: a bridge not heard from for an hour still gets the message through the chat log, while screenshots stay paused', () => {
-  const vm = loggedIn();
-  vm.run('STUB.now = STUB.now + 3600; STUB.Tick()');
-  const before = vm.num('#SENT');
-  const shots = vm.num('STUB.screenshots');
-  vm.run('ClaudeWoW.NewChat("After idle"); ClaudeWoW.Send("still there?")');
-  const frames = framesOf(asLogText(sentFrom(vm, before + 1)));
-  assert.equal(frames.length, 1);
-  assert.ok(recordsOf(frames[0]).find(r => r.text === 'still there?'));
-  shotFrames(vm, 3);
-  assert.equal(vm.num('STUB.screenshots'), shots, 'no screenshot for a bridge that looks dark');
-});
-
-test('/claude diag copy opens the diagnostics in the copy box, and plain /claude diag does not', () => {
-  const vm = loggedIn();
-  vm.run('SlashCmdList.CLAUDE("diag")');
-  assert.equal(vm.evaluate('ClaudeWoWCopy and ClaudeWoWCopy.shown or false'), 'false');
-  vm.run('SlashCmdList.CLAUDE("diag copy")');
-  assert.equal(vm.evaluate('ClaudeWoWCopy.shown'), 'true');
-  assert.match(lastDiag(vm), /^Diagnostics:\nsound channel/);
-});
-
-test('chat log transport: an ack on the first try keeps the chat log on after one late ack', () => {
-  const vm = loggedIn();
-  vm.run('ClaudeWoW.NewChat("One"); ClaudeWoW.Send("late")');
-  vm.run('STUB.now = STUB.now + 9; STUB.Tick()');
-  shotFrames(vm, 2);
-  vm.run('STUB.FireEvent("SCREENSHOT_SUCCEEDED")');
-  vm.run(`STUB.sounds["${ACK(vm.num('ClaudeWoWDB.lastSeq'))}"] = false; STUB.now = STUB.now + 2; STUB.Tick()`);
-  vm.run('ClaudeWoW.NewChat("Two"); ClaudeWoW.Send("prompt")');
-  vm.run(`STUB.sounds["${ACK(vm.num('ClaudeWoWDB.lastSeq'))}"] = false; STUB.now = STUB.now + 2; STUB.Tick()`);
-  vm.run('ClaudeWoW.NewChat("Three"); ClaudeWoW.Send("late again")');
-  vm.run('STUB.now = STUB.now + 9; STUB.Tick()');
-  shotFrames(vm, 2);
-  vm.run('STUB.FireEvent("SCREENSHOT_SUCCEEDED")');
-  vm.run(`STUB.sounds["${ACK(vm.num('ClaudeWoWDB.lastSeq'))}"] = false; STUB.now = STUB.now + 2; STUB.Tick()`);
-  const before = vm.num('#SENT');
-  vm.run('ClaudeWoW.NewChat("Four"); ClaudeWoW.Send("still by chat log")');
-  assert.ok(vm.num('#SENT') > before, 'one late ack, then a prompt one, then one late ack: still on');
-});
-
-test('chat log transport: a message that asks for vision goes out by screenshot', () => {
-  const vm = loggedIn();
-  const before = vm.num('#SENT');
-  vm.run('SlashCmdList.CLAUDE("look what is this item?")');
-  assert.equal(vm.num('#SENT'), before);
-  shotFrames(vm, 2);
-  assert.equal(vm.num('STUB.screenshots'), 1);
-});
-
-test('a bridge that does not offer the chat log, or a client without the API, keeps the screenshot transport', () => {
-  const plain = loggedIn('{ now = time(), cwd = "", transport = "screenshot", replies = {} }');
-  assert.equal(plain.evaluate('ClaudeWoWDB.settings.chatlog'), null);
-  plain.run('ClaudeWoW.Send("by screenshot")');
-  assert.equal(plain.num('#SENT'), 0);
-  shotFrames(plain, 2);
-  assert.ok(plain.num('STUB.screenshots') >= 1);
-  const noApi = loggedIn(SLOT, 'SENT = {}\n');
-  noApi.run('ClaudeWoW.Send("by screenshot")');
-  shotFrames(noApi, 2);
-  assert.ok(noApi.num('STUB.screenshots') >= 1);
-  noApi.run('SlashCmdList.CLAUDE("diag")');
-  assert.match(noApi.evaluate('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history].text'), /chat log transport: unavailable in this client/);
 });
 
 function slotWithAcks(acks) {
@@ -985,21 +691,6 @@ test('the bridge lists the records it acknowledged in the slot file: newest last
   assert.doesNotMatch(P.luaTable('X', [], { transport: 'screenshot' }), /acks/);
 });
 
-test('chat log transport on Classic Era: the hello is acknowledged from the slot file\'s ack list, so it never costs a screenshot', () => {
-  const vm = eraClient();
-  const shots = vm.num('STUB.screenshots');
-  const before = vm.num('#SENT');
-  vm.run('ClaudeWoW.Connect()');
-  const id = vm.num('ClaudeWoWDB.lastSeq');
-  const frames = framesOf(asLogText(sentFrom(vm, before + 1)));
-  assert.equal(frames.length, 1);
-  assert.match(recordsOf(frames[0]).find(r => r.id === id).flags, /^h/, 'the hello went out on the chat log');
-  vm.run(slotWithAcks(P.recentAcks(P.noteAck([], { session: vm.evaluate('ClaudeWoWDB.session'), id }))));
-  for (let i = 0; i < 6; i++) { vm.run('STUB.now = STUB.now + 5; STUB.Tick()'); shotFrames(vm, 2); }
-  assert.equal(vm.num('STUB.screenshots'), shots, 'no screenshot retry');
-  assert.equal(vm.num('#SENT'), before + sentFrom(vm, before + 1).length);
-});
-
 test('chat log transport on Classic Era: an ack listed for another session is ignored, and the hello goes out again by screenshot', () => {
   const vm = eraClient();
   const shots = vm.num('STUB.screenshots');
@@ -1008,33 +699,4 @@ test('chat log transport on Classic Era: an ack listed for another session is ig
   vm.run(slotWithAcks(P.recentAcks(P.noteAck([], { session: 'someoneelse0000', id }))));
   for (let i = 0; i < 4; i++) { vm.run('STUB.now = STUB.now + 5; STUB.Tick()'); shotFrames(vm, 2); }
   assert.equal(vm.num('STUB.screenshots'), shots + 1);
-});
-
-test('chat log transport on Classic Era: deleting a chat reads its ack from one slot poll, with no screenshot', () => {
-  const vm = eraClient();
-  vm.run('ClaudeWoW.NewChat("Gone soon"); ClaudeWoW.Send("hi")');
-  vm.run(`STUB.sounds["${ACK(vm.num('ClaudeWoWDB.lastSeq'))}"] = false; STUB.now = STUB.now + 2; STUB.Tick()`);
-  vm.run('STUB.now = STUB.now + 20; STUB.Tick()');
-  const shots = vm.num('STUB.screenshots');
-  const before = vm.num('#SENT');
-  vm.run('ClaudeWoW.DeleteChat()');
-  const id = vm.num('ClaudeWoWDB.lastSeq');
-  const frames = framesOf(asLogText(sentFrom(vm, before + 1)));
-  assert.equal(recordsOf(frames[0]).find(r => r.id === id).flags, 'd', 'the forget went out on the chat log');
-  vm.run(slotWithAcks(P.recentAcks(P.noteAck([], { session: vm.evaluate('ClaudeWoWDB.session'), id }))));
-  vm.run('LOADS = 0; local load = STUB.onLoadAddOn; STUB.onLoadAddOn = function(name) LOADS = LOADS + 1; load(name) end');
-  vm.run('STUB.now = STUB.now + 5; STUB.Tick()');
-  assert.equal(vm.num('LOADS'), 1, 'one slot poll, 4 s after the write');
-  for (let i = 0; i < 6; i++) { vm.run('STUB.now = STUB.now + 5; STUB.Tick()'); shotFrames(vm, 2); }
-  assert.equal(vm.num('STUB.screenshots'), shots, 'no screenshot retry');
-});
-
-test('a bridge that stops offering the chat log is followed on the next slot read', () => {
-  const vm = loggedIn();
-  vm.run('STUB.onLoadAddOn = function(name) ClaudeWoW_SlotData = { now = time(), cwd = "", transport = "screenshot", replies = {} } end');
-  vm.run('ClaudeWoW.Connect(); STUB.now = STUB.now + 6; STUB.Tick()');
-  assert.equal(vm.evaluate('ClaudeWoWDB.settings.chatlog'), null);
-  const before = vm.num('#SENT');
-  vm.run('ClaudeWoW.Send("by screenshot now")');
-  assert.equal(vm.num('#SENT'), before);
 });

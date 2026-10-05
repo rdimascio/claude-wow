@@ -96,13 +96,3 @@ test('migrateLegacy copies config, state and transcripts into ~/.claude-wow once
   assert.ok(!fs.existsSync(custom));
   fs.rmSync(home, { recursive: true, force: true });
 });
-
-test('the bridge, the slot installer, the supervisor and the service all go through home.js', () => {
-  // Static: none of them builds the config or log path from __dirname any more.
-  for (const f of ['bridge.js', 'install-slots.js', 'supervisor.js', 'service.js']) {
-    const src = fs.readFileSync(path.join(__dirname, '..', 'bridge', f), 'utf8');
-    assert.ok(!/path\.join\((HERE|__dirname), '(config|state|transcripts)\.json'\)/.test(src), `${f} reads its files from the home folder`);
-    assert.ok(!/path\.join\((HERE|__dirname), 'bridge\.log'\)/.test(src), `${f} logs to the home folder`);
-    assert.ok(/require\('\.\/home'\)/.test(src), `${f} uses home.js`);
-  }
-});

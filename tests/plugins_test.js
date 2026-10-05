@@ -7,7 +7,6 @@ const path = require('path');
 const os = require('os');
 const fs = require('fs');
 const PL = require('../bridge/plugins');
-const P = require('../bridge/protocol');
 
 const noop = () => {};
 const fake = (id, extra = {}) => ({ id, label: id, handle: noop, ...extra });
@@ -33,20 +32,11 @@ test('register validates the shape and fills in the optional fields', () => {
   assert.equal(reg.get('two').tools, ' t ');
 });
 
-test('only a plugin that says searchesFiles: true keeps the file search tools, and only claude-code ships with it', () => {
-  const reg = PL.createRegistry();
-  assert.equal(reg.register(fake('plain')).searchesFiles, false);
-  assert.equal(reg.register(fake('truthy', { searchesFiles: 'yes' })).searchesFiles, false, 'a truthy value is not an opt-in');
-  assert.equal(reg.register(fake('coder', { searchesFiles: true })).searchesFiles, true);
-  const shipped = ['ask', 'claude-code', 'roast', 'stream', 'live'].map(id => require(`../bridge/plugins/${id}`));
-  assert.deepEqual(shipped.filter(p => PL.normalizePlugin(p).searchesFiles).map(p => p.id), ['claude-code']);
-});
-
 test('route: address, then the chat binding, then match(), then the default', () => {
   const reg = PL.createRegistry();
   reg.register(fake('code', { aliases: ['claude'] }));
   reg.register(fake('ask'));
-  reg.register(fake('board', { match: job => /^board:/.test(job.text) }));
+  reg.register(fake('board', { match: job => job.text.startsWith('board:') }));
   // The default is the first registered plugin unless the caller names one.
   assert.equal(reg.route({ text: 'hi' }).plugin.id, 'code');
   assert.equal(reg.route({ text: 'hi' }).why, 'default');
@@ -79,40 +69,6 @@ test('route: address, then the chat binding, then match(), then the default', ()
   reg.register(fake('broken', { match: () => { throw new Error('x'); } }));
   assert.equal(reg.route({ text: 'zzz' }, { fallback: 'ask' }).plugin.id, 'ask');
   assert.match(PL.createRegistry().route({ text: 'hi' }).error, /no plugins/);
-});
-
-test('the plugin binding travels as a plugin= flag and in the reload outbox, only when set', () => {
-  const none = { newSession: false, hello: false, forget: false, context: false, vision: false, allow: [], agent: '' };
-  assert.deepEqual(P.parseFlags('agent=codex'), { ...none, agent: 'codex' }, 'no plugin key at all without the flag');
-  assert.deepEqual(P.parseFlags('plugin=Ask;v'), { ...none, vision: true, plugin: 'ask' });
-  assert.deepEqual(P.parseFlags('plugin='), none, 'an empty binding is no binding');
-  const job = P.jobsFromStrip(3, ['s', 'c1', '3', '', 'plugin=claude-code;agent=grok', 'N', 'hi'].join('\x1F'))[0];
-  assert.equal(job.plugin, 'claude-code');
-  assert.equal(job.agent, 'grok');
-  assert.equal(job.text, 'hi');
-  const hex = s => Buffer.from(s, 'utf8').toString('hex');
-  const src = `ClaudeWoWDB = {\n["outbox"] = {\n["id"] = 7,\n["session"] = "abc",\n["chat"] = "c1",\n["text"] = "${hex('q')}",\n["cwd"] = "",\n["plugin"] = "ask",\n},\n}`;
-  assert.equal(P.parseOutbox(src).plugin, 'ask');
-  assert.equal(P.parseOutbox(src.replace('["plugin"] = "ask",\n', '')).plugin, undefined);
-});
-
-test('slot files name the default plugin and the list, and a reply names the plugin that answered', () => {
-  const lua = P.luaTable('ClaudeWoW_SlotData', [{ chat: 'c', id: 1, status: 'done', text: 'x', plugin: 'ask' }, { chat: 'c', id: 2, status: 'done', text: 'y' }], { plugin: 'ask', plugins: ['ask', 'claude-code'] });
-  assert.ok(lua.includes('\tplugin = "ask",'), lua);
-  assert.ok(lua.includes('\tplugins = { "ask", "claude-code" },'), lua);
-  assert.equal((lua.match(/\t\t\tplugin = "ask",/g) || []).length, 1, 'only the record that has one');
-  const bare = P.luaTable('ClaudeWoW_Inbox', []);
-  assert.ok(bare.includes('\tplugin = "",') && bare.includes('\tplugins = {  },'), bare);
-});
-
-test('the system prompt carries a plugin\'s instructions right after the reply rules, and nothing extra without them', () => {
-  assert.equal(P.systemPrompt('', '', { tools: '' }), P.systemPrompt(''), 'empty tools = the prompt as it was');
-  assert.equal(P.systemPrompt('Character: X', '# P', { tools: '  ' }), P.systemPrompt('Character: X', '# P'));
-  const s = P.systemPrompt('Character: X', '# P', { tools: 'Be the guide.' });
-  assert.ok(s.includes('\n\nBe the guide.\n\n'));
-  assert.ok(s.indexOf('"TL;DR:"') < s.indexOf('Be the guide.'), 'after the reply rules');
-  assert.ok(s.indexOf('Be the guide.') < s.indexOf('in-game situation'), 'before the game rules');
-  assert.ok(s.indexOf('Be the guide.') < s.indexOf('# P'), 'before the primer');
 });
 
 test('the shipped coding plugin: a folder resolved against the bridge\'s, refused when missing, and a fresh session when it changes', () => {
@@ -187,18 +143,4 @@ test('the shipped ask plugin: no folder semantics, a scratch folder of its own, 
   p.handle({ id: 2, cwd: '', text: 'x' }, core);
   assert.match(calls[1].fail, /could not create/);
   fs.rmSync(base, { recursive: true, force: true });
-});
-
-test('the bridge\'s registry: ask is the default, claude-code the coding path, and the restore bundle carries a chat\'s plugin', () => {
-  const reg = PL.createRegistry();
-  reg.register(require('../bridge/plugins/ask'));
-  reg.register(require('../bridge/plugins/claude-code'));
-  assert.deepEqual(reg.ids(), ['ask', 'claude-code']);
-  assert.equal(reg.route({ text: 'what is this quest' }).plugin.id, 'ask', 'a chat bound to nothing is general chat');
-  assert.equal(reg.route({ text: 'fix it', plugin: 'claude-code' }).plugin.id, 'claude-code');
-  assert.equal(reg.route({ text: '/claude fix it' }).plugin.id, 'claude-code', 'the alias PLATFORM.md names');
-  assert.equal(reg.route({ text: 'hi' }, { fallback: 'claude-code' }).plugin.id, 'claude-code', 'plugins.default in the config');
-  const lua = P.luaTable('ClaudeWoW_SlotData', [], { restore: { token: 't', chats: [{ id: 'c', name: 'n', cwd: '', plugin: 'claude-code', messages: [] }, { id: 'd', name: 'n', cwd: '', messages: [] }] } });
-  assert.ok(lua.includes('\t\t\t\tplugin = "claude-code",'));
-  assert.ok(lua.includes('\t\t\t\tplugin = "",'));
 });

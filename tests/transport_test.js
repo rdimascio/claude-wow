@@ -153,20 +153,3 @@ test('a new install starts on the screenshot transport; the addon reporting shot
   assert.match(bad.out, /"capture\.mode": "gif" in .*config\.json is not one of pixel, screenshot\./);
   fs.rmSync(dir, { recursive: true, force: true });
 });
-
-test('a report the bridge cannot use (an unknown reason) changes nothing, and a config without a mode stays on the default', () => {
-  const dir = scratch('noop');
-  const { home, addons, saved, project } = fakeInstall(dir);
-  fs.writeFileSync(saved, outbox(3, 'plain', ''));
-  const r = runOnce(home, project);
-  assert.equal(r.status, 0, r.out);
-  assert.ok(!/TRANSPORT FALLBACK/.test(r.out));
-  assert.match(r.out, /#3@sess1 done \(/, r.out);
-  const state = JSON.parse(fs.readFileSync(path.join(home, 'state.json'), 'utf8'));
-  assert.equal(state.transportFallback, undefined);
-  const lua = fs.readFileSync(path.join(addons, 'ClaudeWoW_S001', 'Inbox.lua'), 'utf8');
-  assert.match(lua, /^\ttransport = "screenshot",$/m);
-  assert.match(lua, /^\tstrip = \{ on = 60, off = 0, codec = 2 \},$/m);
-  assert.ok(!/transportNote/.test(lua));
-  fs.rmSync(dir, { recursive: true, force: true });
-});

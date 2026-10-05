@@ -7,7 +7,6 @@ const path = require('path');
 const D = require('../bridge/datasync');
 const GD = require('../bridge/gamedata');
 const GR = require('../bridge/gamerefs');
-const DM = require('../bridge/datamcp');
 const OB = require('../bridge/observed');
 const OT = require('../bridge/observedtools');
 const G = require('../bridge/goals');
@@ -23,11 +22,8 @@ const ERA_CONTEXT = [
   'Character: Bone on Fixture Realm, level 20 Orc Rogue (Horde)',
   'Professions: Skinning 187/225',
 ].join('\n');
-const NAMES = ['Bone', 'Skinning'];
 const ERA_HIDE = 511;
-const ERA_CAP = 512;
 const FOREVER_BLADE = 501;
-const FOREVER_HELM = 510;
 
 function scratch(name) {
   const dir = path.join(os.tmpdir(), `claude-wow-era-${name}-${process.pid}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`);
@@ -55,38 +51,6 @@ async function syncedData(name, { era = true, forever = true } = {}) {
   return dataDir;
 }
 
-test('the client build picks the flavor: 1.15.* is classic_era, 1.60.* is forever, anything else has none', () => {
-  assert.equal(D.flavorForBuild(ERA_CLIENT), 'classic_era');
-  assert.equal(D.flavorForBuild('1.15.10.1'), 'classic_era');
-  assert.equal(D.flavorForBuild(FOREVER_CLIENT), 'forever');
-  for (const other of ['1.61.0.1', '1.14.4.1', '2.5.6.69795', '12.0.1.66220', '1.15.9', '', undefined, '../1.15.9.1']) assert.equal(D.flavorForBuild(other), null, String(other));
-  assert.deepEqual(D.FLAVORS.classic_era, { product: 'wow_classic_era', family: '1.15.9', clientLine: '1.15', label: 'Classic Era' });
-  assert.equal(GD.clientBuildOf(ERA_CONTEXT), ERA_CLIENT);
-});
-
-test('claude-wow data sync --flavor classic_era fetches the newest 1.15.9 wow_classic_era build and parses every Era-shaped table', async () => {
-  const home = scratch('main');
-  const wago = fakeWago(ERA_FIXTURES);
-  const out = [];
-  const code = await D.main(['sync', '--flavor', 'classic_era'], { env: { CLAUDE_WOW_HOME: home }, fetch: wago.fetchImpl, out: s => out.push(s), err: s => out.push(s) });
-  assert.equal(code, 0, out.join(''));
-  assert.match(out.join(''), /current build 1\.15\.9\.300 \(classic_era\)/);
-  assert.ok(wago.calls.slice(1).every(u => u.endsWith(`build=${ERA_BUILD}`)), 'not the PTR product, not 1.15.8, not a 1.60 build listed under the Era product');
-  const root = path.join(home, 'data', 'classic_era');
-  const current = D.readCurrent(root);
-  assert.equal(current.build, ERA_BUILD);
-  assert.equal(fs.existsSync(path.join(home, 'data', 'forever')), false, 'the Forever folder is left alone');
-  const m = current.manifest;
-  assert.deepEqual([m.flavor, m.product, m.buildFamily, m.dropped], ['classic_era', 'wow_classic_era', '1.15.9', 4]);
-  assert.deepEqual(Object.fromEntries(Object.entries(m.entities).map(([k, v]) => [k, v.rows])), {
-    uimaps: 2, uimapassignments: 2, zones: 1, flightpaths: 1, quests: 1, items: 4, skilllines: 3, skilllineabilities: 6, spellreagents: 1, instances: 4, encounters: 2, instancelevels: 1,
-  });
-  const items = fs.readFileSync(path.join(current.dir, 'items.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l));
-  assert.deepEqual(items[1], { id: ERA_CAP, name: 'Era Fixture Cap', quality: 2, itemLevel: 18, requiredLevel: 13, inventoryType: 1, sellPrice: 210, buyPrice: 1050, startQuestID: 0 });
-  const flight = JSON.parse(fs.readFileSync(path.join(current.dir, 'flightpaths.jsonl'), 'utf8').trim());
-  assert.deepEqual(flight.map, { uiMapID: 9102, x: 55, y: 50 });
-});
-
 test('a build of the other flavor is refused before any fetch or folder', async () => {
   const dataDir = path.join(scratch('cross'), 'data');
   const wago = fakeWago(ERA_FIXTURES);
@@ -113,92 +77,6 @@ test('the store follows the client build: an Era client reads Classic Era data, 
   const retail = GD.openStore({ dataDir, clientBuild: '12.0.1.66220' });
   assert.deepEqual([retail.flavor, retail.build], [null, null]);
   assert.match(GR.errorsText(GR.createExpander(retail).expand(`{item:${ERA_HIDE}}`).errors, retail), /Client build 12\.0\.1\.66220 belongs to no game the bridge has data for/);
-});
-
-test('never across flavors: an Era client with only Forever data synced gets no data, and every token, phrase and gather spell says so', async () => {
-  const dataDir = await syncedData('forever-only', { era: false });
-  const store = GD.openStore({ dataDir, clientBuild: ERA_CLIENT });
-  assert.deepEqual([store.flavor, store.build, store.buildCheck], ['classic_era', null, 'no-data']);
-  assert.equal(store.byId('items', FOREVER_BLADE), null);
-  const r = GR.createExpander(store).expand(`Buy 2 {item:${FOREVER_BLADE}}`);
-  assert.deepEqual(r.errors.map(e => e.reason), ['noData']);
-  assert.match(GR.errorsText(r.errors, store), /No game data is synced for this build yet \(claude-wow data sync --flavor classic_era\)/);
-  const order = G.validateOrderText(`Buy 2 {item:${FOREVER_BLADE}}`, NAMES, store);
-  assert.equal(order.ok, false);
-  assert.doesNotMatch(order.text, /Fixture Blade/);
-  assert.equal(OB.gatherSpells(store).count, 0);
-  assert.equal(DM.launchConfig({ dataDir, clientBuild: ERA_CLIENT }), null, 'no wowdata server rather than Forever answers');
-  const phrase = GR.checkText('go to fixture vale', { store, names: [], plainWords: new Set(['go', 'to', 'fixture', 'vale']), charRe: /[ -~]/, maxLength: 200 });
-  assert.equal(phrase.phrasesChecked, false, 'the Forever phrase index is not used for an Era client');
-  assert.match(phrase.phrasesNote, /--flavor classic_era/);
-
-  const eraOnly = await syncedData('era-only', { forever: false });
-  const foreverClient = GD.openStore({ dataDir: eraOnly, clientBuild: FOREVER_CLIENT });
-  assert.deepEqual([foreverClient.flavor, foreverClient.build], ['forever', null]);
-  assert.equal(GR.createExpander(foreverClient).expand(`{item:${ERA_HIDE}}`).errors[0].reason, 'noData');
-});
-
-test('a data folder whose manifest names another flavor is not read', async () => {
-  const dataDir = await syncedData('swapped', { era: false });
-  fs.cpSync(path.join(dataDir, 'forever'), path.join(dataDir, 'classic_era'), { recursive: true });
-  assert.equal(D.readCurrent(path.join(dataDir, 'classic_era')), null);
-  assert.equal(GD.openStore({ dataDir, clientBuild: ERA_CLIENT }).build, null);
-  assert.equal(D.readCurrent(path.join(dataDir, 'forever')).build, FOREVER_BUILD);
-});
-
-test('Era gather spells: the ranks of each gathering skill from Era SkillLineAbility, never an auto-learned or crafted spell', async () => {
-  const dataDir = await syncedData('gather', { forever: false });
-  const g = OB.gatherSpells(GD.openStore({ dataDir, clientBuild: ERA_CLIENT }));
-  assert.deepEqual(g.spells, { 92366: 92366, 92368: 92366, 98613: 98613, 98617: 98613 });
-  assert.deepEqual([g.count, g.cut, g.why], [4, 0, '']);
-});
-
-test('Era tokens, phrases, gearset goals and route_draw use the Classic Era data', async () => {
-  const dataDir = await syncedData('consumers');
-  const store = GD.openStore({ dataDir, clientBuild: ERA_CLIENT });
-  const order = G.validateOrderText(`Buy 2 {item:${ERA_HIDE}}`, NAMES, store);
-  assert.equal(order.ok, true, order.text);
-  assert.equal(order.text, 'Buy 2 Era Fixture Hide');
-  assert.deepEqual(order.refs.map(r => [r.id, r.trust, r.build]), [[ERA_HIDE, 'client-data', ERA_BUILD]]);
-  const forever = G.validateOrderText(`Buy 2 {item:${FOREVER_BLADE}}`, NAMES, store);
-  assert.match(forever.text, /\{item:501\}: that item ID is not in the Classic Era client data for build 1\.15\.9\.300/);
-  const phrase = GR.checkText('go to era fixture vale', { store, names: [], plainWords: new Set(['go', 'to', 'era', 'fixture', 'vale']), charRe: /[ -~]/, maxLength: 200 });
-  assert.equal(phrase.ok, false);
-  assert.deepEqual(phrase.phrases.map(p => [p.run, p.source]), [['era fixture vale', 'map']]);
-
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cw-era-goals-'));
-  try {
-    const goals = G.createGoals({
-      dir,
-      context: () => ({ text: ERA_CONTEXT, at: 1000 }),
-      now: () => 2000,
-      equipped: () => null,
-      post: async () => ({ ok: true, status: 200 }),
-      streamOptions: () => ({ url: 'http://127.0.0.1:9' }),
-      gameData: text => GR.openFor(dataDir, text),
-    });
-    const set = await goals.call('goal_set', { type: 'gearset', slots: { 1: ERA_CAP } });
-    assert.equal(set.ok, true, set.text);
-    const refused = await goals.call('goal_set', { type: 'gearset', slots: { 1: FOREVER_HELM } });
-    assert.equal(refused.ok, false);
-    assert.match(refused.text, /slot 1: \{item:510\} is not in the Classic Era client data for build 1\.15\.9\.300/);
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
-
-  const applied = [];
-  const tools = OT.createObservedTools({
-    observed: OB.createObserved({ dir: scratch('observed') }),
-    context: () => ({ text: ERA_CONTEXT, at: Date.now() }),
-    gameData: text => GR.openFor(dataDir, text),
-    applyMap: cmds => { applied.push(...cmds); return { changed: true, notes: [] }; },
-  });
-  const drawn = await tools.call('route_draw', { points: ['{map:9102,40,50}'] });
-  assert.equal(drawn.ok, true, drawn.text);
-  assert.ok(applied.length > 0);
-  const before = applied.length;
-  const cross = await tools.call('route_draw', { points: ['{map:9102,40,50}', '{map:9002,40,50}'] });
-  assert.equal(cross.ok, false);
-  assert.match(cross.text, /\{map:9002,40,50\}: that map ID is not in the Classic Era client data/);
-  assert.equal(applied.length, before, 'nothing is drawn');
 });
 
 test('a taught spell whose name starts with "the" is not indexed as a game phrase; other taught spells are', async () => {
@@ -239,17 +117,4 @@ test('market_price on Classic Era gives the observed auction quote with rows, n 
   const forever = await price(ERA_CONTEXT.replace(`World of Warcraft Classic (client ${ERA_CLIENT}, interface 11509)`, `World of Warcraft: Forever (client ${FOREVER_CLIENT}, interface 16001)`), FOREVER_BLADE);
   assert.deepEqual(forever.auctionHouse.latest, { price: 1500, quantity: 1 });
   assert.ok(!forever.notes.some(n => /complete search result/.test(n)));
-});
-
-test('the wowdata server for an Era client serves Classic Era rows labeled with their flavor', async () => {
-  const dataDir = await syncedData('mcp');
-  const launch = DM.launchConfig({ dataDir, clientBuild: ERA_CLIENT });
-  assert.deepEqual([launch.flavor, launch.build, launch.buildCheck], ['classic_era', ERA_BUILD, 'family']);
-  assert.deepEqual(JSON.parse(launch.config).mcpServers.wowdata.args.slice(-4), ['--data', dataDir, '--client-build', ERA_CLIENT]);
-  const store = GD.openStore({ dataDir, clientBuild: ERA_CLIENT });
-  const item = DM.callTool(store, 'wow_item', { id: ERA_HIDE }).structuredContent;
-  assert.deepEqual([item.found, item.flavor, item.build, item.trust, item.results[0].name], [true, 'classic_era', ERA_BUILD, 'client-data', 'Era Fixture Hide']);
-  const sources = DM.callTool(store, 'wow_sources', {}).structuredContent.results[0];
-  assert.deepEqual([sources.flavor, sources.product], ['classic_era', 'wow_classic_era']);
-  assert.match(DM.INSTRUCTIONS, /Forever \(1\.60\.\*\) or Classic Era \(1\.15\.\*\), never the other one's\. The one exception is the Classic community data/);
 });

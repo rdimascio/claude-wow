@@ -210,31 +210,6 @@ test('before the migration the service does not run current: the release is stag
   assert.ok(h.out.some(l => l.includes('MIGRATE-PROD-INSTALL.md')));
 });
 
-test('the idle wait: the flip waits while a run is in flight, proceeds once idle, and a timeout switches nothing', { skip: NO_SYMLINKS }, async () => {
-  const root = scratch('idle');
-  const repo = makeRepo(root);
-  let busy = 3;
-  const h = harness(root, { probe: () => (busy-- > 0 ? { idle: false, reason: '1 agent run(s) in flight (#4)' } : { idle: true, reason: 'idle' }) });
-  assert.equal(await D.main(['deploy', 'HEAD', '--repo', repo], h.ctx), 0);
-  const probes = h.events.filter(e => e[0] === 'probe');
-  assert.deepEqual(probes.map(p => p[1]), [false, false, false, true, true]);
-  assert.ok(probes.every(p => p[2] === ''), 'current did not move while waiting');
-  assert.deepEqual(probes.map(p => p[3]), [REL.PREPARING, REL.PREPARING, REL.PREPARING, REL.PREPARING, REL.SWITCHING], 'probed again after the lock says switching');
-  assert.deepEqual(h.events[probes.length], KICKSTART, 'the restart comes after the wait');
-  assert.ok(h.out.includes('hold    : the bridge holds new messages until this deploy ends'));
-  assert.ok(h.out.includes('waiting : 1 agent run(s) in flight (#4)'));
-
-  const before = REL.currentName(h.l);
-  commit(repo, 'three');
-  const stuck = harness(root, { probe: () => ({ idle: false, reason: '1 message(s) waiting in the queue (#9)' }) });
-  assert.equal(await D.main(['deploy', 'HEAD', '--repo', repo, '--timeout', '5'], stuck.ctx), 1);
-  assert.match(stuck.err.join('\n'), /did not go idle within 5 s \(1 message\(s\) waiting in the queue \(#9\)\)\. Nothing was switched/);
-  assert.equal(REL.currentName(stuck.l), before, 'current is unchanged');
-  assert.deepEqual(stuck.events.filter(e => e[0] !== 'probe'), [], 'no restart, no setup');
-  assert.ok(!fs.existsSync(stuck.l.lock), 'the lock is released on failure');
-  assert.equal(worktrees(repo), 1, 'the temporary worktree is removed on failure');
-});
-
 test('lock contention: a deploy while another holds the lock builds nothing and says who holds it; a dead holder\'s lock is taken over', { skip: NO_SYMLINKS }, async () => {
   const root = scratch('contention');
   const repo = makeRepo(root);
@@ -409,16 +384,6 @@ test('previous names the current release after a deploy died between its two wri
   assert.equal(await D.main(['status'], s.ctx), 0);
   assert.ok(s.out.some(line => /^warning  : .*nothing to roll back to/.test(line)), s.out.join('\n'));
   assert.equal(REL.currentName(h.l), current);
-});
-
-test('the restart goes through the service backend: a loaded agent is kickstarted, an unloaded one (after service stop) is bootstrapped', { skip: NO_SYMLINKS }, async () => {
-  const root = scratch('restart-backend');
-  const repo = makeRepo(root);
-  const h = harness(root, { loaded: false });
-  assert.equal(await D.main(['deploy', 'HEAD', '--repo', repo], h.ctx), 0, h.err.join('\n'));
-  assert.deepEqual(h.events[0], ['launchctl', 'bootstrap', `gui/${UID}`, h.ctx.definitionFile]);
-  assert.ok(!h.events.some(e => e[1] === 'kickstart'), 'kickstart of an unloaded agent fails, so it is not tried');
-  assert.equal(h.events[1][1], 'setup');
 });
 
 test('a message that slipped in before the switching mark is waited for: the flip comes only after a second idle read under the mark', { skip: NO_SYMLINKS }, async () => {

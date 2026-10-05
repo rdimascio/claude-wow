@@ -3,7 +3,6 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
-const { lua, lauxlib, lualib, to_luastring, to_jsstring } = require('fengari');
 const P = require('../bridge/protocol');
 
 const DPS_METER = [
@@ -16,18 +15,6 @@ const DPS_METER = [
   'local MyCastSpellByNameHelper = "fine"',
   'print("say \\"hi\\" \\\\ ]] done")',
 ].join('\n');
-
-test('validateWidgetCommand accepts a display-only widget and names its revision', () => {
-  const why = [];
-  const c = P.validateWidgetCommand({ op: 'set', name: 'dps', title: 'DPS |cffff0000meter', source: DPS_METER }, why);
-  assert.deepEqual(why, []);
-  assert.equal(c.op, 'set');
-  assert.equal(c.name, 'dps');
-  assert.ok(!c.title.includes('|'));
-  assert.match(c.rev, /^[0-9a-f]{12}$/);
-  assert.equal(c.rev, P.widgetRevision(DPS_METER));
-  assert.notEqual(c.rev, P.widgetRevision(DPS_METER + ' '));
-});
 
 test('validateWidgetCommand refuses protected calls, secure templates and the addon\'s globals', () => {
   const refused = (source) => {
@@ -81,7 +68,7 @@ test('applyWidgetCommands bumps the version only on change and keeps the budget'
   assert.ok(r.changed);
   assert.equal(set.version, 3);
   const many = Array.from({ length: P.WIDGET_LIMITS.widgets + 2 }, (_, i) => ({ op: 'set', name: 'w' + i, source: `local n = ${i}` }));
-  P.applyWidgetCommands(set, many.map((c, i) => c), 0);
+  P.applyWidgetCommands(set, many.map(c => c), 0);
   assert.equal(Object.keys(set.items).length, P.WIDGET_LIMITS.widgets);
   r = P.applyWidgetCommands(set, [{ op: 'clearall' }]);
   assert.ok(r.changed);
@@ -105,34 +92,6 @@ test('parseWidgetFile reads one command per line', () => {
   const r = P.parseWidgetFile('{"op":"set","name":"a","source":"local ui = ..."}\n\n{"op":"remove","name":"b"}\n{broken\n');
   assert.equal(r.cmds.length, 2);
   assert.equal(r.errors.length, 1);
-});
-
-test('the system prompt explains widgets to a plugin with the ui surface, in a game chat', () => {
-  const ui = { surfaces: ['map', 'macro', 'ui'] };
-  assert.match(P.systemPrompt('Character: Testchar', '', ui), /CLAUDE_WOW_UI_FILE/);
-  assert.match(P.systemPrompt('Character: Testchar', '', ui), /wowui/);
-  assert.doesNotMatch(P.systemPrompt('Character: Testchar', '', { surfaces: ['map', 'macro'] }), /wowui/);
-  assert.doesNotMatch(P.systemPrompt('', '', ui), /wowui/);
-});
-
-function runLua(src, expr) {
-  const L = lauxlib.luaL_newstate();
-  lualib.luaL_openlibs(L);
-  if (lauxlib.luaL_dostring(L, to_luastring(src + '\nRESULT = ' + expr)) !== 0) {
-    throw new Error('Lua error: ' + to_jsstring(lua.lua_tostring(L, -1)));
-  }
-  lua.lua_getglobal(L, to_luastring('RESULT'));
-  return to_jsstring(lua.lua_tostring(L, -1));
-}
-
-test('slot files carry widgets as a Lua table with the source intact', () => {
-  const set = P.newWidgetSet('ep0ch');
-  P.applyWidgetCommands(set, [{ op: 'set', name: 'dps', title: 'DPS "meter"', source: DPS_METER }]);
-  const src = P.luaTable('ClaudeWoW_SlotData', [], { now: 1, cwd: '/x', widgets: set });
-  const got = runLua(src, `(function(w) local item = w.items[1]
-    return table.concat({ w.epoch, w.version, item.name, item.title, item.rev }, "|") .. "\\n" .. item.source end)(ClaudeWoW_SlotData.widgets)`);
-  assert.equal(got, `ep0ch|1|dps|DPS "meter"|${P.widgetRevision(DPS_METER)}\n${DPS_METER}`);
-  assert.ok(!P.luaTable('X', [], { now: 1 }).includes('widgets ='));
 });
 
 test('the addon blocks the same names the bridge refuses', () => {

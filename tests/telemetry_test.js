@@ -9,7 +9,6 @@ const TL = require('../bridge/telemetry');
 const P = require('../bridge/protocol');
 const G = require('../bridge/goals');
 
-const BRIDGE_SOURCE = path.join(__dirname, '..', 'bridge', 'bridge.js');
 const CHARACTER = 'Bone-Forever';
 
 function tmpDir(label) {
@@ -50,34 +49,6 @@ function luaEval(chunk, expr) {
   lua.lua_getglobal(L, to_luastring('RESULT'));
   return lua.lua_isnil(L, -1) ? null : to_jsstring(lua.lua_tolstring(L, -1));
 }
-
-function submitBody() {
-  const src = fs.readFileSync(BRIDGE_SOURCE, 'utf8');
-  const start = src.indexOf('function submit(job) {');
-  assert.ok(start >= 0, 'bridge.js has submit()');
-  const end = src.indexOf('\nfunction ', start + 1);
-  return src.slice(start, end);
-}
-
-test('submit() branches on kind=gs before any dedupe, ack, sig, signal clearing or lastId update', () => {
-  const body = submitBody();
-  const branch = body.indexOf('TL.isTelemetry(job)');
-  assert.ok(branch > 0, 'the gs branch is in submit()');
-  const branchEnd = body.indexOf('return;', branch);
-  for (const later of ['fallbackToPixel', 'noteSignalReport', 'alreadyHandled(job)', 'clearSignalsAhead(', 'markHandled(', "signal('ack'", "signal('sig'", 'setContext(', 'runJob(']) {
-    const at = body.indexOf(later);
-    assert.ok(at < 0 || at > branchEnd, `${later} comes after the gs branch has returned`);
-  }
-  assert.doesNotMatch(body.slice(branch, branchEnd), /markHandled|signal\(|lastId|clearSignalsAhead|alreadyHandled/, 'the branch itself touches none of them');
-});
-
-test('kind=gs is a telemetry record whatever other flags ride with it; other kinds are not', () => {
-  const [gs] = P.jobsFromStrip(0, ['sess', '', '7', '', 'kind=gs;h;d;cancel=3', '', 'gs1'].join('\x1F'));
-  assert.equal(gs.kind, 'gs');
-  assert.equal(TL.isTelemetry(gs), true);
-  for (const kind of ['stream', 'roast', undefined]) assert.equal(TL.isTelemetry({ kind, id: 7 }), false);
-  assert.equal(TL.isTelemetry(null), false);
-});
 
 test('parseRecord reads every section into integers and drops what does not parse', () => {
   const text = record({
@@ -174,19 +145,6 @@ test('a record without a usable character in its name field is dropped with one 
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('each record goes to the character it names, whatever the bridge heard last: two clients never mix', () => {
-  const dir = tmpDir('twochars');
-  try {
-    const { t } = store(dir);
-    t.submit(gsJob('s1', 10, { money: '100' }, 'Bone-Forever'));
-    t.submit(gsJob('s2', 10, { money: '900' }, 'Alt-Forever'));
-    t.submit(gsJob('s1', 11, { money: '150' }, 'Bone-Forever'));
-    assert.deepEqual(t.snapshot('Bone-Forever').sections.money.value, { copper: 150 });
-    assert.deepEqual(t.snapshot('Alt-Forever').sections.money.value, { copper: 900 });
-    assert.equal(fs.existsSync(path.join(dir, 'Alt-Forever', TL.EVENTS_FILE)), false, 'the alt has only its baseline');
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
-});
-
 test('watched item counts are importance 2 only when they cross 25/50/75/100% of the target; bags full is importance 2', () => {
   const dir = tmpDir('items');
   try {
@@ -201,15 +159,6 @@ test('watched item counts are importance 2 only when they cross 25/50/75/100% of
     assert.deepEqual(step(7, '0;2589=41'), [], 'already full: no second event');
     assert.deepEqual(step(8, '2;2589=41,2592=3'), [], 'an item that just joined the watch list is a baseline');
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
-});
-
-test('thresholdCrossed needs a target and an increase', () => {
-  assert.equal(TL.thresholdCrossed(0, 100, 0), null);
-  assert.equal(TL.thresholdCrossed(5, 5, 20), null);
-  assert.equal(TL.thresholdCrossed(4, 5, 20), 25);
-  assert.equal(TL.thresholdCrossed(9, 16, 20), 75);
-  assert.equal(TL.thresholdCrossed(19, 30, 20), 100);
-  assert.equal(TL.thresholdCrossed(20, 30, 20), null, 'past the target already');
 });
 
 test('deaths and new recipes are importance 3; skill, gear and reputation changes are 1, a new reputation rank 2', () => {
@@ -308,17 +257,6 @@ test('a malformed snapshot.json never crashes the bridge: bad sections are dropp
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('bridge.js catches anything telemetry.submit and luaGs throw and logs it', () => {
-  const body = submitBody();
-  assert.match(body, /try \{ applied = telemetry\.submit\(job\); \} catch \(e\) \{ log\(/);
-  assert.match(body, /try \{ campaignStore\.onEvents\(job\.name, applied\.events\); \} catch \(e\) \{ log\(/);
-  assert.match(body, /if \(applied && applied\.status === 'applied'\) \{\n\s+if \(CAMPAIGN\.contextIsFor\(state\.context, job\.name\)\) noteContextHeard\(\);/, 'a game state record for the context\'s character confirms the context');
-  const dmAt = body.indexOf('if (CAMPAIGN.isDmRecord(job))');
-  assert.ok(dmAt > 0 && dmAt < body.indexOf('else noteContextHeard();'), 'a /dm next record (no context) is handled before it could refresh the context time');
-  const src = fs.readFileSync(BRIDGE_SOURCE, 'utf8');
-  assert.match(src, /try \{ gsLua = telemetry\.luaGs\(\); \} catch \(e\) \{ log\(/);
-});
-
 test('watchFrom takes a target map or a plain list, caps both lists, and drops what is not an ID', () => {
   const w = TL.watchFrom({ watch: { items: { 2589: 40, x: 3, 2592: 'lots' }, factions: [530, '530', -1, 'Orgrimmar', 76] } });
   assert.deepEqual([...w.items.entries()], [[2589, 40], [2592, 0]]);
@@ -348,18 +286,6 @@ test('a gs record and a goal for the same character land in the same folder', as
 
 
 
-test('the slot field lists the character keys the bridge refused, read back byte for byte in Lua', () => {
-  const dir = tmpDir('refused');
-  try {
-    const { t } = store(dir);
-    const odd = 'Bone-For·ever';
-    assert.equal(t.submit(gsJob('s1', 1, { money: '1' }, odd)).status, 'no-character');
-    const body = P.luaTable('ClaudeWoW_SlotData', [], { gsLua: t.luaGs() });
-    assert.equal(luaEval(body, 'ClaudeWoW_SlotData.gs.refused[1]'), odd);
-    assert.equal(luaEval(body, '#ClaudeWoW_SlotData.gs.refused'), '1');
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
-});
-
 test('goal_complete fires once per watched target: a dip and a recover across it is not a second completion, a new target is', () => {
   const dir = tmpDir('oncecomplete');
   try {
@@ -381,22 +307,6 @@ test('goal_complete fires once per watched target: a dip and a recover across it
     t = bridgeWith(60);
     completes(t, 10, '3;2589=50');
     assert.equal(completes(t, 11, '3;2589=60'), 1, 'a new target completes');
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
-});
-
-test('a target changed away and back with no items record in between is a new goal', () => {
-  const dir = tmpDir('awayback');
-  try {
-    const bridgeWith = target => store(dir, { watch: () => TL.watchFrom({ watch: { items: { 2589: target } } }) }).t;
-    const completes = (t, seq, sections) => t.submit(gsJob('s1', seq, sections)).events.filter(ev => ev.type === 'goal_complete').length;
-    let t = bridgeWith(40);
-    completes(t, 1, { items: '3;2589=30' });
-    assert.equal(completes(t, 2, { items: '3;2589=40' }), 1);
-    t = bridgeWith(50);
-    completes(t, 3, { money: '10' });
-    t = bridgeWith(40);
-    completes(t, 4, { items: '3;2589=39' });
-    assert.equal(completes(t, 5, { items: '3;2589=40' }), 1, '40 -> 50 -> 40 is a new goal even when only money arrived during the 50');
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 

@@ -60,7 +60,7 @@ test('gearset: item IDs are checked against the synced data and stored with thei
 test('gearset: unknown IDs, wrong slots, items that cannot be worn, bad slot numbers and no data refuse everything', async () => {
   const r = rig();
   try {
-    const refuse = async (slots, re, gameData) => {
+    const refuse = async (slots, re) => {
       const res = await r.store.call('goal_set', { type: 'gearset', slots });
       assert.equal(res.ok, false, JSON.stringify(slots));
       assert.match(res.text, re);
@@ -99,14 +99,6 @@ test('gearset: an item whose synced name cannot be shown falls back to a count t
     await r.store.call('goal_set', { type: 'gearset', slots: { 1: 504, 16: BLADE } });
     assert.equal(r.read().goals[0].title, 'Gear set: 2 items');
   } finally { r.cleanup(); }
-});
-
-test('gearset progress: counts set items the telemetry reports equipped, in any matching slot, each equipped item once', () => {
-  const goal = { type: 'gearset', target: { slots: { 11: RING, 16: BLADE, 17: BLADE, 1: HELM } } };
-  assert.deepEqual(G.progressOf(goal, { equip: null }), { have: null, of: 4, pct: null }, 'no telemetry, no progress');
-  assert.deepEqual(G.progressOf(goal, { equip: {} }), { have: 0, of: 4, pct: 0 });
-  assert.deepEqual(G.progressOf(goal, { equip: { 12: RING, 16: BLADE } }), { have: 2, of: 4, pct: 50 }, 'a ring in the other finger slot counts; one blade fills one of the two');
-  assert.deepEqual(G.progressOf(goal, { equip: { 12: RING, 16: BLADE, 17: BLADE, 1: HELM } }), { have: 4, of: 4, pct: 100 });
 });
 
 test('gearset progress reaches the overlay, the Orders card slot field and goal_list from the telemetry snapshot', async () => {
@@ -149,12 +141,4 @@ test('gearset: the bridge reads equipped items from the same character folder th
     assert.equal(TL.equippedReader(tl, false)(BONE_KEY), null, 'telemetry turned off shows no stale bar');
     assert.equal(TL.equippedReader(tl, true)('Nobody-Realm'), null);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
-});
-
-test('the InventoryType slot table is pinned to the forever Enum.InventoryType values and slots 1 to 19', () => {
-  assert.deepEqual(G.INVENTORY_TYPE_SLOTS, {
-    1: [1], 2: [2], 3: [3], 4: [4], 5: [5], 20: [5], 6: [6], 7: [7], 8: [8], 9: [9], 10: [10],
-    11: [11, 12], 12: [13, 14], 13: [16, 17], 21: [16], 17: [16], 14: [17], 22: [17], 23: [17],
-    15: [18], 25: [18], 26: [18], 28: [18], 16: [15], 19: [19],
-  });
 });

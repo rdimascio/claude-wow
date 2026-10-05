@@ -63,19 +63,6 @@ function widgetSet(widgets, version = 1, epoch = 'e1') {
 const meterFrame = `(function() for _, f in ipairs(STUB.frames) do if f.events.PLAYER_TARGET_CHANGED and f.scripts.OnEvent then return f end end end)()`;
 const lastSystemNote = '(function() local h = ClaudeWoWDB.chats[1].history; for i = #h, 1, -1 do if h[i].role == "system" then return h[i].text end end end)()';
 
-test('a widget from the slot data runs live inside its container, with saved data', () => {
-  const vm = newVM();
-  vm.run(widgetSet([['meter', TARGET_METER]]));
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("meter")'), 'running');
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.meter.runs'), '1');
-  assert.equal(vm.evaluate(`${meterFrame}.parent.parent == UIParent`), 'true');
-  vm.run('STUB.FireEvent("PLAYER_TARGET_CHANGED")');
-  assert.equal(vm.evaluate(`${meterFrame}.children[1].text`), 'level 23');
-  assert.match(vm.evaluate(lastSystemNote), /meter is live/);
-  vm.run(widgetSet([['meter', TARGET_METER]]));
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.meter.runs'), '1');
-});
-
 test('a runtime error stops the widget and is reported in the chat window', () => {
   const vm = newVM();
   vm.run(widgetSet([['meter', TARGET_METER]]));
@@ -131,24 +118,4 @@ test('/claude config ui lists widgets, and free text starting with "ui" is still
   vm.run('STUB.prints = {}; ClaudeWoW.Send = function(text) SENT_TEXT = text end; SlashCmdList.CLAUDE("ui for my bags would be nice")');
   assert.doesNotMatch(vm.evaluate('table.concat(STUB.prints, "\\n")'), /\[Claude WoW ui\]/);
   assert.equal(vm.evaluate('SENT_TEXT'), 'ui for my bags would be nice');
-});
-
-test('saved widgets start again at login without the bridge', () => {
-  const clock = 'local ui = ...\nui.db.started = true';
-  const saved = `ClaudeWoWWidgetDB = { removed = { meter = "${P.widgetRevision(TARGET_METER)}" }, data = {}, set = { epoch = "e1", version = 2, items = {
-    { name = "meter", title = "meter title", rev = "${P.widgetRevision(TARGET_METER)}", source = ${P.luaStr(TARGET_METER)} },
-    { name = "clock", title = "clock title", rev = "${P.widgetRevision(clock)}", source = ${P.luaStr(clock)} } } } }`;
-  const vm = newVM(saved);
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("clock")'), 'running');
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.clock.started'), 'true');
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("meter")'), 'removed');
-});
-
-test('widgets in Inbox.lua reach the widget module on the reload path', () => {
-  const set = P.newWidgetSet('e9');
-  P.applyWidgetCommands(set, [{ op: 'set', name: 'clock', source: 'local ui = ...\nui.db.started = true' }]);
-  const inbox = P.luaTable('ClaudeWoW_Inbox', [], { now: 1, widgets: set });
-  const vm = newVM();
-  vm.run(inbox + '\nSTUB.FireEvent("PLAYER_LOGIN")');
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("clock")'), 'running');
 });

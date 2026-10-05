@@ -41,7 +41,7 @@ function rig(opts = {}) {
     env: () => ({ ...process.env, CLAUDE_WOW_FAKE_STATE: fakeState }),
     onDone: (run, ctx) => done.push({ run, ctx }),
     spawn: (...a) => { const c = PR.spawnChild(...a); spawned.push(c); return c; },
-    ...(opts.factory || {}),
+    ...opts.factory,
   });
   const calls = () => {
     try { return fs.readFileSync(path.join(fakeState, 'calls.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map(l => JSON.parse(l)); } catch { return []; }

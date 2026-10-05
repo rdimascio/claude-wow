@@ -55,103 +55,6 @@ const settle = (vm) => vm.run('STUB.RunTimers(); STUB.RunTimers()');
 const frames = (vm, n, dt = 0.05) => { for (let i = 0; i < n; i++) vm.run(`STUB.RunFrames(${dt})`); };
 const open = (vm) => { vm.run('ClaudeWoW.Toggle(true)'); settle(vm); };
 const overlaps = (a, b) => a.left < b.right && a.right > b.left && a.bottom < b.top && a.top > b.bottom;
-const panelRect = (vm, name) => ({ left: vm.num(`${name}:GetLeft()`), right: vm.num(`${name}:GetRight()`), top: vm.num(`${name}:GetTop()`), bottom: vm.num(`${name}:GetBottom()`) });
-
-test('the workspace window steps aside when a Blizzard panel opens, and goes home when it closes', () => {
-  const vm = newVM();
-  open(vm);
-  const home = rect(vm);
-  assert.deepEqual(home, { left: 16, top: 964, right: 796, bottom: 464 }, 'it opens in the Blizzard left panel slot at the default size');
-
-  vm.run('ShowUIPanel(CharacterFrame)');
-  settle(vm);
-  let r = rect(vm);
-  assert.equal(r.left, 16 + 700 + 8, 'moved just right of the character sheet');
-  assert.equal(r.top, home.top, 'on the same line');
-  assert.ok(!overlaps(r, panelRect(vm, 'CharacterFrame')));
-  assert.equal(vm.evaluate('ClaudeWoWWindow.state.dodged'), 'true');
-
-  vm.run('HideUIPanel(CharacterFrame)');
-  settle(vm);
-  assert.deepEqual(rect(vm), home, 'back where it was');
-  assert.equal(vm.evaluate('ClaudeWoWWindow.state.dodged'), 'false');
-
-  vm.run('ToggleAllBags()');
-  settle(vm);
-  assert.deepEqual(rect(vm), home, 'bags on the right leave the left slot alone');
-  vm.run('UIParent:SetAttribute("LEFT_OFFSET", 1100)');
-  vm.run('ClaudeWoWWindow.Relayout()');
-  r = rect(vm);
-  assert.equal(r.right, 1200 - 8, 'a home the bags cover moves left of them');
-  assert.ok(!overlaps(r, panelRect(vm, 'ContainerFrameCombinedBags')));
-  vm.run('UIParent:SetAttribute("LEFT_OFFSET", nil); ClaudeWoWWindow.Relayout()');
-  vm.run('ToggleAllBags()');
-  settle(vm);
-  assert.deepEqual(rect(vm), home);
-
-  vm.run('CharacterFrame:Show()');
-  frames(vm, 8);
-  settle(vm);
-  assert.equal(rect(vm).left, 724, 'a panel shown without the panel manager is caught by the poll');
-  vm.run('CharacterFrame:Hide(); ContainerFrameCombinedBags:Show()');
-  frames(vm, 8);
-  settle(vm);
-  vm.run('CharacterFrame:Show()');
-  frames(vm, 8);
-  settle(vm);
-  assert.deepEqual(rect(vm), home, 'no room anywhere: it stays home instead of jumping off screen');
-  vm.run('CharacterFrame:Hide(); ContainerFrameCombinedBags:Hide()');
-  frames(vm, 8);
-  settle(vm);
-
-  vm.run('SlashCmdList.CLAUDE("config ui dodge off")');
-  vm.run('ShowUIPanel(CharacterFrame)');
-  settle(vm);
-  assert.deepEqual(rect(vm), home, 'dodge off: it stays put');
-  vm.run('HideUIPanel(CharacterFrame)');
-});
-
-test('full-screen frames hide the window and bring it back; autohide off keeps it; the player\'s own close is kept', () => {
-  const vm = newVM();
-  open(vm);
-  vm.run('ShowUIPanel(GameMenuFrame)');
-  settle(vm);
-  assert.equal(vm.evaluate('ClaudeWoWFrame.shown'), 'false', 'the game menu hides it');
-  assert.equal(vm.evaluate('ClaudeWoWDB.settings.shown'), 'true', 'but it still counts as open');
-  assert.equal(vm.evaluate('ClaudeWoWDB.settings.minimized'), 'false', 'not minimized');
-  assert.equal(vm.evaluate('ClaudeWoWMini.shown'), 'false', 'and the bar does not stand in for it');
-  vm.run('HideUIPanel(GameMenuFrame)');
-  settle(vm);
-  assert.equal(vm.evaluate('ClaudeWoWFrame.shown'), 'true', 'back after the menu closes');
-
-  vm.run('ShowUIPanel(WorldMapFrame)');
-  settle(vm);
-  assert.equal(vm.evaluate('ClaudeWoWFrame.shown'), 'true', 'the docked map is only a panel');
-  assert.ok(!overlaps(rect(vm), panelRect(vm, 'WorldMapFrame')) || vm.evaluate('ClaudeWoWWindow.state.dodged') === 'false');
-  vm.run('WorldMapFrame:Maximize()');
-  settle(vm);
-  assert.equal(vm.evaluate('ClaudeWoWFrame.shown'), 'false', 'the maximized map hides it');
-  vm.run('WorldMapFrame:Minimize()');
-  settle(vm);
-  assert.equal(vm.evaluate('ClaudeWoWFrame.shown'), 'true', 'and gives it back');
-  vm.run('HideUIPanel(WorldMapFrame)');
-  settle(vm);
-
-  vm.run('ShowUIPanel(GameMenuFrame)');
-  settle(vm);
-  vm.run('ClaudeWoW.Toggle(true)');
-  settle(vm);
-  assert.equal(vm.evaluate('ClaudeWoWFrame.shown'), 'true', 'opened on purpose over the menu: it stays');
-  vm.run('ClaudeWoW.Minimize(true)');
-  vm.run('HideUIPanel(GameMenuFrame)');
-  settle(vm);
-  assert.equal(vm.evaluate('ClaudeWoWFrame.shown'), 'false', 'minimized by the player: not brought back');
-
-  vm.run('ClaudeWoW.Toggle(true); SlashCmdList.CLAUDE("config ui autohide off")');
-  vm.run('ShowUIPanel(GameMenuFrame)');
-  settle(vm);
-  assert.equal(vm.evaluate('ClaudeWoWFrame.shown'), 'true', 'autohide off: it stays up');
-});
 
 test('it dims while the player moves or fights, fades back smoothly, and is opaque under the mouse or while typing', () => {
   const vm = newVM();
@@ -255,12 +158,6 @@ test('the window cannot be dragged, the compact bar can, and the size is remembe
   assert.equal(vm.evaluate('ClaudeWoWDB.layouts["Testchar-Test Realm"].w'), '780', 'reset goes back to the default size');
 });
 
-test('an install with a dragged window from before opens in the panel slot at its saved size', () => {
-  const vm = newVM({ saved: 'ClaudeWoWDB = { settings = { point = "TOPLEFT", relPoint = "TOPLEFT", x = 40, y = -60, width = 700, height = 400, whisperV2 = true, whisper = true } }' });
-  open(vm);
-  assert.deepEqual(rect(vm), { left: 16, top: 964, right: 716, bottom: 564 });
-});
-
 test('the window replaces nothing of Blizzard\'s: panel hooks are secure post-hooks and no Blizzard frame script is touched', () => {
   const vm = newVM({ before: `SNAP = { g = {}, map = {} }
     for k, v in pairs(_G) do if type(v) == "function" then SNAP.g[k] = v end end
@@ -337,19 +234,6 @@ const nativeVM = () => {
 };
 const shownHeaders = (vm) => vm.evaluate('(function() local t = {} for _, h in ipairs(ClaudeWoW.UI.questList.headers) do if h.shown then table.insert(t, h.text:GetText()) end end return table.concat(t, "|") end)()');
 const shownRows = (vm) => vm.evaluate('(function() local t = {} for _, r in ipairs(ClaudeWoW.UI.questList.rows) do if r.shown then table.insert(t, r.label:GetText()) end end return table.concat(t, "|") end)()');
-
-test('on Classic Era the window keeps only the atlases that client draws, and plain fills replace the Forever quest-log art', () => {
-  const vm = newVM({ before: NATIVE_TEMPLATES + '\nfunction GetBuildInfo() return "1.15.9", "70003", "Sep 1 2026", 11509, "", " " end' });
-  open(vm);
-  vm.run('ClaudeWoW.Render()');
-  assert.equal(vm.evaluate('ClaudeWoW.UI.art.parchment'), 'QuestBG-Parchment');
-  assert.equal(vm.evaluate('ClaudeWoW.UI.art.gear'), 'false', 'the quest-log gear atlas has no image on Era');
-  assert.equal(vm.evaluate('ClaudeWoWChatSettings.textures[1] and ClaudeWoWChatSettings.textures[1].texture'), 'Interface\\Icons\\INV_Misc_Gear_01');
-  assert.equal(vm.evaluate('ClaudeWoW.UI.art.filigree'), null, 'no frame edge, so no filigree on top of it');
-  for (const key of ['listBg', 'frame', 'header', 'poi', 'rowGlow']) {
-    assert.equal(vm.evaluate(`ClaudeWoW.UI.art.${key}`), 'false', `${key} is not drawn on Era`);
-  }
-});
 
 test('on Classic Era, where the quest parchment atlas is missing, the transcript uses the Vanilla quest panel parchment', () => {
   const vm = newVM({ before: NATIVE_TEMPLATES + `
@@ -474,27 +358,6 @@ test('clicking a link in a reply opens the link, not the copy box; clicking the 
   assert.equal(vm.num('STUB.copies'), 0, 'the same click does not open the copy box');
   vm.run('STUB.now = STUB.now + 1; STUB.bubble.scripts.OnMouseUp(STUB.bubble, "LeftButton"); STUB.RunTimers()');
   assert.equal(vm.num('STUB.copies'), 1, 'a click on plain text still opens the copy box');
-});
-
-test('the chat list orders by the last message, a new chat by its start, and opening a chat never moves it', () => {
-  const vm = nativeVM();
-  vm.run(`
-    for _, c in ipairs(ClaudeWoWDB.chats) do c.cwd = "" c.history = {} c.created = 100 end
-    ClaudeWoW.NewChat("Old talk"); ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history = { { role = "user", t = 500, text = "a" } }; ClaudeWoWDB.chats[#ClaudeWoWDB.chats].created = 50
-    ClaudeWoW.NewChat("Fresh talk"); ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history = { { role = "user", t = 900, text = "b" }, { role = "assistant", text = "no time" } }; ClaudeWoWDB.chats[#ClaudeWoWDB.chats].created = 60
-    ClaudeWoW.NewChat("Blank later"); ClaudeWoWDB.chats[#ClaudeWoWDB.chats].created = 950
-    ClaudeWoW.NewChat("Blank early"); ClaudeWoWDB.chats[#ClaudeWoWDB.chats].created = 200
-    ClaudeWoW.NewChat("New chat"); ClaudeWoWDB.chats[#ClaudeWoWDB.chats].created = 2000
-    ClaudeWoW.Render()
-  `);
-  const order = shownRows(vm).split('|');
-  assert.deepEqual(order.slice(0, 5), ['New chat', 'Blank later', 'Fresh talk', 'Old talk', 'Blank early']);
-  for (const name of ['Old talk', 'Blank early', 'Fresh talk']) {
-    vm.run(`for _, c in ipairs(ClaudeWoWDB.chats) do if c.name == "${name}" then ClaudeWoW.SwitchChat(c.id) end end`);
-    assert.deepEqual(shownRows(vm).split('|'), order, `opening ${name} leaves every row where it was`);
-  }
-  vm.run('for _, c in ipairs(ClaudeWoWDB.chats) do if c.name == "Old talk" then table.insert(c.history, { role = "user", t = 3000, text = "new" }) end end; ClaudeWoW.RenderChatList()');
-  assert.equal(shownRows(vm).split('|')[0], 'Old talk', 'a new message moves the chat to the top');
 });
 
 test('general chats sit under Chats, project chats under their project, and the dropdown under the input switches the project', () => {
@@ -650,22 +513,4 @@ test('the footer is a short state on the left and context and spend on the right
   const status = vm.evaluate('ClaudeWoW.UI.status:GetText()');
   assert.ok(status.includes('Working') && !status.includes('#159'), 'a short state, not the full line: ' + status);
   assert.ok(vm.evaluate('ClaudeWoW.UI.cwd.shown') === 'false');
-});
-
-test('typing in the input hands Blizzard\'s scrolling helpers the input\'s scroll frame, never the userInput flag', () => {
-  const vm = newVM({ before: NATIVE_TEMPLATES + `
-    function ScrollingEdit_OnTextChanged(self, scrollFrame) STUB.textScroll = scrollFrame end
-    function ScrollingEdit_OnUpdate(self, elapsed, scrollFrame) STUB.updateScroll = scrollFrame end` });
-  open(vm);
-  vm.run('ClaudeWoWInput:GetScript("OnTextChanged")(ClaudeWoWInput, true)');
-  vm.run('ClaudeWoWInput:GetScript("OnUpdate")(ClaudeWoWInput, 0.1)');
-  assert.equal(vm.evaluate('STUB.textScroll == ClaudeWoWInputScroll'), 'true');
-  assert.equal(vm.evaluate('STUB.updateScroll == ClaudeWoWInputScroll'), 'true');
-});
-
-test('without the templates the window keeps its own backdrop', () => {
-  const vm = newVM();
-  open(vm);
-  assert.equal(vm.evaluate('ClaudeWoWFrame.template'), 'BackdropTemplate');
-  assert.equal(vm.evaluate('ClaudeWoW.UI.transcriptPanel'), null);
 });

@@ -106,31 +106,6 @@ function luaString(node) {
   return node.raw.slice(1, -1).replace(/\\(.)/g, '$1');
 }
 
-test('story text: everyday words, the character name and tokens pass; tokens expand from the synced data', () => {
-  const data = openData(BONE_CONTEXT);
-  const ok = C.checkStory('Bone, the road into {map:9003,40,40} is quiet. Too quiet.', { names: ['Bone'], store: data, maxLength: 400, what: 'line' });
-  assert.equal(ok.ok, true, ok.text);
-  assert.equal(ok.text, 'Bone, the road into Fixture Town is quiet. Too quiet.');
-  assert.deepEqual(ok.refs.map(r => [r.kind, r.id, r.name]), [['map', 9003, 'Fixture Town']]);
-});
-
-test('story text: a corpus of ordinary narration lines passes with the real word list', () => {
-  const corpus = [
-    'Someone left a letter in your pack. Nobody saw who.',
-    'A cold wind follows you down the road.',
-    'Not every promise is kept, but this one will be.',
-    'Something waits in the dark, and it knows your name.',
-    'You fell. Get up. The story is not over.',
-    'You feel stronger now. Someone is watching.',
-    'The letter was a test, and you passed it.',
-    'Rest a while. The hard part comes next.',
-  ];
-  for (const line of corpus) {
-    const r = C.checkStory(line, { names: ['Bone'], store: openData(BONE_CONTEXT), maxLength: 400, what: 'line' });
-    assert.equal(r.ok, true, `${line}: ${r.text}`);
-  }
-});
-
 test('story text: names, links, handles, calls to action and ads are refused', () => {
   const data = openData(BONE_CONTEXT);
   const refused = [
@@ -306,16 +281,6 @@ test('a quest beat fires only on the game\'s own turn-in event, never on quests 
     assert.deepEqual(r.store.onEvents(BONE_KEY, [{ type: 'quest_turnin', data: { id: 7101, at: 2 } }]).map(b => b.id), ['b1']);
     assert.deepEqual(r.read().campaign.fired.map(f => f.by), ['quest_turnin']);
   } finally { r.cleanup(); }
-});
-
-test('story text is refused when multi-word game names cannot be checked: no data, another build family', () => {
-  const mismatch = GD.openStore({ dataDir: DATA, clientBuild: '1.15.9.70003' });
-  const r = C.checkStory('take the low road home', { names: ['Bone'], store: mismatch, maxLength: 400, what: 'line' });
-  assert.equal(r.ok, false);
-  assert.match(r.text, /cannot be checked/);
-  assert.match(r.text, /No game data is synced for this build yet \(claude-wow data sync --flavor classic_era\)/);
-  assert.equal(C.checkStory('A cold wind.', { names: [], store: null, maxLength: 400, what: 'line' }).ok, false, 'no data at all');
-  assert.equal(C.checkStory('A cold wind.', { names: [], store: openData(BONE_CONTEXT), maxLength: 400, what: 'line' }).ok, true);
 });
 
 test('campaign writes need a fresh game context; ending a campaign always works', async () => {

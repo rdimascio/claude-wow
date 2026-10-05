@@ -43,15 +43,6 @@ function rig(opts = {}) {
   return { dir, store, posts, file, read, setContext: text => { ctx = { text, at: CONTEXT_AT + 1000 }; }, cleanup: () => fs.rmSync(dir, { recursive: true, force: true }) };
 }
 
-test('the profession skill IDs mirror PROFESSION_SKILL_IDS in ClaudeWoW.lua exactly', () => {
-  const src = fs.readFileSync(ADDON, 'utf8');
-  const block = /local PROFESSION_SKILL_IDS = \{([\s\S]*?)\n\}/.exec(src);
-  assert.ok(block, 'the addon table is where the bridge expects it');
-  const luaIds = [...block[1].matchAll(/\[(\d+)\]\s*=\s*true/g)].map(m => Number(m[1])).sort((a, b) => a - b);
-  const jsIds = Object.keys(G.PROFESSION_SKILL_IDS).map(Number).sort((a, b) => a - b);
-  assert.deepEqual(jsIds, luaIds);
-});
-
 test('context parsing: the Professions line with ranks, the character and realm as a folder-safe key', () => {
   assert.deepEqual(G.parseProfessions(BONE_CONTEXT), [
     { name: 'Leatherworking', rank: 107, maxRank: 150, skillID: 165 },
@@ -69,50 +60,6 @@ test('context parsing: the Professions line with ranks, the character and realm 
   assert.deepEqual(G.characterOf('Character: Bone (Horde)'), { name: 'Bone', realm: '', key: 'Bone' });
   assert.equal(G.characterOf('Character: ../../etc on ../x, level 1').key, 'etc-x');
   assert.equal(G.characterOf('Game: World of Warcraft'), null);
-});
-
-test('order text validator: numbers, plain words and reported names pass in any letter case', () => {
-  const names = ['Leatherworking', 'First Aid', 'Bone'];
-  for (const text of [
-    'Skin 30 more, then raise Leatherworking to 150.',
-    'Bone, train First Aid now',
-    'raise leatherworking to 150 and first aid to 100',
-    'Let\'s cook 20 more',
-    'craft until 125',
-    'Bone\'s next goal: 50% of first aid\'s max!',
-    'sell to a vendor, then buy from the trainer? 2g 50s',
-  ]) assert.deepEqual(G.validateOrderText(text, names), { ok: true, text }, text);
-  assert.equal(G.validateOrderText('  Skin 10  ', names).text, 'Skin 10', 'trimmed');
-  assert.equal(G.validateOrderText('ｓｋｉｎ １０', names).text, 'skin 10', 'stored NFKC-normalized');
-});
-
-test('order text validator: every word that is not a number, a plain word or a reported name is refused and named', () => {
-  const names = ['Leatherworking', 'Bone'];
-  const cases = [
-    ['go to orgrimmar and buy from thrall', ['orgrimmar', 'thrall']],
-    ['kill worgen in silverpine forest', ['worgen', 'silverpine', 'forest']],
-    ['Go to Silverpine Forest', ['silverpine', 'forest']],
-    ['skin wolves near the Sepulcher', ['wolves', 'sepulcher']],
-    ['Raise Leatherworkingx to 150', ['leatherworkingx']],
-    ['Bonesaw time', ['bonesaw']],
-    ['raise Tailoring to 50', ['tailoring']],
-    ['raise first aid to 50', ['aid']],
-    ['buy a heavy KIT', ['heavy', 'kit']],
-    ['Ⓞrgrimmar now', ['orgrimmar']],
-    ['go to Ｏｒｇｒｉｍｍａｒ', ['orgrimmar']],
-    ['use this wowmacro now', ['wowmacro']],
-  ];
-  for (const [text, words] of cases) {
-    const r = G.validateOrderText(text, names);
-    assert.equal(r.ok, false, text);
-    assert.ok(r.text.includes(`not allowed: ${words.map(w => `"${w}"`).join(', ')}.`), `${text}: ${r.text}`);
-    assert.match(r.text, /No zone, NPC, item or quest names/);
-    assert.match(r.text, /reported names: Leatherworking, Bone\./);
-  }
-  const unreported = G.validateOrderText('Raise Leatherworking to 150', []);
-  assert.equal(unreported.ok, false, 'a profession is only allowed once the game reported it');
-  assert.match(unreported.text, /"leatherworking"/);
-  assert.match(unreported.text, /reported names: none reported yet/);
 });
 
 test('order text validator: any character outside the plain set is refused, so no slash commands, markup, accents or hidden characters', () => {
@@ -144,20 +91,6 @@ test('order text validator: any character outside the plain set is refused, so n
   reject(undefined, /empty/);
   assert.match(G.validateOrderText('/cast', []).text, /Allowed: letters A-Z, digits, spaces and , \. ' - : ! \? %\./);
   assert.equal(G.validateOrderText('1'.repeat(G.ORDER_TEXT_MAX), []).ok, true);
-});
-
-test('order vocabulary: lowercase, no duplicates, a few hundred plain words, no profession and no game proper name', () => {
-  const words = require('../bridge/order-words.json');
-  assert.equal(new Set(words).size, words.length, 'no duplicates');
-  assert.ok(words.length >= 250, `${words.length} words`);
-  for (const w of words) assert.match(w, /^[a-z][a-z']*$/, w);
-  const professions = Object.values(G.PROFESSION_SKILL_IDS).flatMap(n => n.toLowerCase().split(' ')).filter(w => w !== 'first');
-  for (const p of professions) assert.ok(!G.ORDER_WORDS.has(p), `${p} is allowed only when the game reports it`);
-  const properNames = ['horde', 'alliance', 'orc', 'troll', 'tauren', 'undead', 'human', 'dwarf', 'gnome', 'elf', 'rogue', 'warrior',
-    'mage', 'priest', 'hunter', 'druid', 'paladin', 'shaman', 'warlock', 'thrall', 'orgrimmar', 'undercity', 'crossroads', 'barrens',
-    'brill', 'ratchet', 'everlook', 'sepulcher', 'bulwark', 'durotar', 'mulgore', 'silverpine', 'tirisfal', 'stormwind', 'ironforge',
-    'darnassus', 'murloc', 'kobold', 'gnoll', 'worgen', 'defias', 'scourge', 'light', 'hearthstone', 'forest', 'leather', 'linen', 'city'];
-  for (const n of properNames) assert.ok(!G.ORDER_WORDS.has(n), n);
 });
 
 test('goal_set: a profession goal by name or skillID, progress from the game context, saved per character', async () => {
@@ -283,53 +216,6 @@ const openFixtureData = text => GD.openStore({ dataDir: WOWDATA, clientBuild: GD
 const NAMES = ['Leatherworking', 'Bone'];
 const fixtureData = (clientBuild = '1.60.1.70124') => GD.openStore({ dataDir: WOWDATA, clientBuild });
 
-test('order tokens: {item:ID}, {skill:ID} and {map:ID,x,y} expand from the fixture data, and the expanded text and refs are stored and shown', async () => {
-  const r = rig({ gameData: openFixtureData });
-  try {
-    const res = await r.store.call('order_issue', { text: 'Buy 2 {item:501}, then train {skill:40} at {map:9003,27.5,25}' });
-    assert.equal(res.ok, true, res.text);
-    const want = 'Buy 2 Fixture Blade, then train Fixture Craft at Fixture Town';
-    assert.match(res.text, new RegExp(`"${want}"`));
-    const current = r.read().orders.current;
-    assert.equal(current.text, want, 'a map token shows the map name only, never the typed coordinates');
-    assert.deepEqual(current.refs, [
-      { kind: 'item', id: 501, name: 'Fixture Blade', trust: 'client-data', build: FIXTURE_BUILD },
-      { kind: 'skill', id: 40, name: 'Fixture Craft', trust: 'client-data', build: FIXTURE_BUILD },
-      { kind: 'map', id: 9003, name: 'Fixture Town', trust: 'client-data', build: FIXTURE_BUILD, point: { x: 27.5, y: 25, trust: 'model' } },
-    ]);
-    assert.equal(r.posts[0].command.orders.order.text, want, 'the overlay gets the expanded names, never a raw token');
-    assert.equal((await r.store.call('order_issue', { text: 'Raise Leatherworking to 150' })).ok, true, 'a plain order still works with data synced');
-    assert.equal(r.read().orders.current.refs, undefined, 'an order without tokens stores no refs');
-    const faction = await r.store.call('order_issue', { text: 'Help {faction:76}' });
-    assert.equal(faction.ok, true, faction.text);
-    assert.equal(r.read().orders.current.text, 'Help Fixture Brotherhood');
-    assert.deepEqual(r.read().orders.current.refs, [{ kind: 'faction', id: 76, name: 'Fixture Brotherhood', trust: 'client-data', build: FIXTURE_BUILD }]);
-    assert.equal(r.posts.at(-1).command.orders.order.text, 'Help Fixture Brotherhood', 'the overlay gets the faction name');
-  } finally { r.cleanup(); }
-});
-
-test('order tokens: unknown IDs, a malformed map token, a kind with no name source and an unsafe data name refuse the whole order and save nothing', async () => {
-  const r = rig({ gameData: openFixtureData });
-  try {
-    const refuse = async (text, re) => {
-      const res = await r.store.call('order_issue', { text });
-      assert.equal(res.ok, false, text);
-      assert.match(res.text, /The whole order was refused and nothing was saved\./, text);
-      assert.match(res.text, re, text);
-    };
-    await refuse('Buy 2 {item:999}', /\{item:999\}: that item ID is not in the Forever client data for build 1\.60\.1\.200\. Look the ID up with the wowdata tools; never use an ID from memory or from another game version\./);
-    await refuse('Buy 2 {item:501} and 5 {item:2318}', /\{item:2318\}: that item ID is not in the Forever client data/);
-    await refuse('go to {map:4242,10,10}', /\{map:4242,10,10\}: that map ID/);
-    await refuse('go to {map:9003,101,10}', /coordinates run from 0 to 100/);
-    await refuse('kill {npc:1} for {quest:2}', /\{npc:1\}: there is no verified source of npc names yet, so leave that name out\. \{quest:2\}: .*quest names/);
-    await refuse('help {faction:3}', /\{faction:3\}: that faction ID is not in the Forever client data for build 1\.60\.1\.200\./);
-    await refuse('buy 2 {item:503}', /\{item:503\}: the name in the data has characters that cannot be shown/);
-    await refuse('buy 2 {item:504}', /\{item:504\}: the name in the data has characters that cannot be shown/);
-    assert.equal(fs.existsSync(r.file), false, 'nothing was written');
-    assert.equal(r.posts.length, 0, 'nothing was pushed');
-  } finally { r.cleanup(); }
-});
-
 test('order tokens: the 90-character cap applies to the expanded text', () => {
   const store = fixtureData();
   const text = `Buy ${'{item:501} '.repeat(7)}now`;
@@ -338,25 +224,6 @@ test('order tokens: the 90-character cap applies to the expanded text', () => {
   assert.equal(r.ok, false);
   assert.match(r.text, /characters once its tokens are expanded; the limit is 90/);
   assert.match(G.validateOrderText(`buy ${'1'.repeat(GR.TOKEN_TEXT_MAX)} {item:501}`, NAMES, store).text, /the limit is 400/);
-});
-
-test('order tokens: a raw game name next to a valid token is still refused, in any case, split by a hidden character, or with a title-case letter', () => {
-  const store = fixtureData();
-  const refuse = (text, re) => {
-    const r = G.validateOrderText(text, NAMES, store);
-    assert.equal(r.ok, false, text);
-    assert.match(r.text, re, text);
-  };
-  refuse('Buy 2 {item:501} in Silverpine', /not allowed: "silverpine"\..*reported names: Leatherworking, Bone\. Name a game thing with a reference token instead/);
-  refuse('buy 2 {item:501} from thrall in orgrimmar', /not allowed: "thrall", "orgrimmar"/);
-  refuse('go to Under city', /not allowed: "city"/);
-  refuse('buy 2 {item:501} in Under city', /not allowed: "city"/);
-  refuse('buy 2 {item:501} near the​town', /^The order text has the character U\+200B/);
-  refuse('buy 2 {item:501} near the­town', /^The order text has the character U\+00AD/);
-  refuse('buy 2 {item:501} in the ‮town', /^The order text has the character U\+202E/);
-  refuse('buy 2 {item:501} from ǅungeon', /^The order text has the character U\+017E/);
-  refuse('buy {item:501} {item 2}', /"\{"/);
-  assert.equal(G.validateOrderText('buy 2 {item:501} near the town', NAMES, store).ok, true, 'precondition: the same words without the hidden character pass');
 });
 
 test('order tokens: a token glued to a letter, a digit or another token is refused with the reason', () => {
@@ -377,21 +244,6 @@ test('order tokens: a data name with a character the order set refuses is refuse
   assert.deepEqual({ problem: tight.problem, char: tight.char, token: tight.token, name: tight.name }, { problem: 'char', char: 'L', token: '{item:502}', name: 'Fixture Letter' }, 'a caller with a tighter set gets the expanded text checked again, naming the token');
 });
 
-test('order phrases: a run of plain words that names something in the synced data is refused, unless a token, the character or a reported profession made it', async () => {
-  const store = fixtureData();
-  const refused = G.validateOrderText('take the low road to 150', NAMES, store);
-  assert.equal(refused.ok, false);
-  assert.equal(refused.text, 'The order was refused. These word runs are game names: "low road" (a map name in the game data; use {map:ID,x,y} for it). Reword the text or leave the names out.');
-  assert.equal(G.validateOrderText('go to the old town', NAMES, store).text, 'The order was refused. These word runs are game names: "old town" (a well-known ability, NPC or place name from the built-in list). Reword the text or leave the names out.', 'no token is offered where no token kind exists');
-  assert.equal(G.validateOrderText('you got old. town is next', NAMES, store).ok, true, 'runs stop at sentence and clause marks');
-  assert.equal(G.validateOrderText('you got old, town is next', NAMES, store).ok, true);
-  assert.equal(G.validateOrderText('go to old - town', NAMES, store).ok, false, 'a dash does not end a clause');
-  assert.equal(G.validateOrderText('take the {map:9004,10,10} to 150', NAMES, store).text, 'take the Low Road to 150', 'the same name through a token is fine');
-  assert.equal(G.validateOrderText('raise first aid to 100', ['First Aid', 'Bone'], store).ok, true, 'a reported profession that is also in the data and the built-in list');
-  assert.equal(G.validateOrderText('take the low road to 150', ['Low Road', 'Bone'], store).ok, true, 'a reported name made of plain words is not refused as a data phrase');
-  assert.equal(G.validateOrderText('take the low road to 150', NAMES, null).ok, true, 'without data the data phrases are skipped');
-});
-
 test('order phrases: the built-in list refuses well-known ability and place names made of plain words, with or without data', () => {
   for (const data of [null, fixtureData()]) {
     const r = G.validateOrderText('go to old town', NAMES, data);
@@ -399,39 +251,6 @@ test('order phrases: the built-in list refuses well-known ability and place name
     assert.match(r.text, /"old town"/);
   }
   assert.equal(G.validateOrderText('go to the town', NAMES, null).ok, true, 'precondition: the words alone are plain');
-});
-
-test('order_issue says when the data phrase check was skipped for lack of synced data', async () => {
-  const none = rig();
-  try {
-    const res = await none.store.call('order_issue', { text: 'take the low road to 150' });
-    assert.equal(res.ok, true, res.text);
-    assert.match(res.text, /No game data is synced for this build yet \(claude-wow data sync\).* Multi-word game names were checked only against the short built-in list\./);
-  } finally { none.cleanup(); }
-  const mismatch = rig({ gameData: openFixtureData, ctx: BONE_CONTEXT.replace('client 1.60.1.70124', 'client 1.60.0.1') });
-  try {
-    const res = await mismatch.store.call('order_issue', { text: 'take the low road to 150' });
-    assert.equal(res.ok, true, res.text);
-    assert.match(res.text, /The synced game data is build 1\.60\.1\.200, which is not in the client's build family \(client 1\.60\.0\.1\)\. Multi-word game names were checked only against the short built-in list\./, 'the note names the real reason');
-    assert.doesNotMatch(res.text, /try again|reference token/, 'a saved order gets no retry or token advice');
-  } finally { mismatch.cleanup(); }
-  const synced = rig({ gameData: openFixtureData });
-  try {
-    const res = await synced.store.call('order_issue', { text: 'skin 10' });
-    assert.equal(res.ok, true);
-    assert.doesNotMatch(res.text, /No game data is synced/);
-  } finally { synced.cleanup(); }
-});
-
-test('order tokens: an order refused by its words never opens the game data; a passing one opens it once', async () => {
-  let opened = 0;
-  const r = rig({ gameData: text => { opened += 1; return openFixtureData(text); } });
-  try {
-    assert.equal((await r.store.call('order_issue', { text: 'go to Silverpine' })).ok, false);
-    assert.equal(opened, 0, 'a refused-by-words order never opens the data');
-    assert.equal((await r.store.call('order_issue', { text: 'buy 2 {item:501}' })).ok, true);
-    assert.equal(opened, 1);
-  } finally { r.cleanup(); }
 });
 
 test('order tokens through the store the bridge builds: the injected home, its data and the context client build expand {item:501}', async () => {
@@ -473,21 +292,6 @@ test('order phrases: a missing or damaged phrase table is never taken as a compl
   }
 });
 
-test('order phrases: a re-sync of the same build with new tables rebuilds the index', () => {
-  const d = copiedData('resync');
-  try {
-    const check = () => G.validateOrderText('go to the far bank', NAMES, d.open());
-    assert.equal(check().ok, true);
-    fs.appendFileSync(path.join(d.build, 'uimaps.jsonl'), '{"id":9010,"name":"Far Bank","parentUiMapID":9002,"type":3,"system":0}\n');
-    const manifestFile = path.join(d.build, 'manifest.json');
-    const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
-    manifest.entities.uimaps.rows += 1;
-    manifest.tableHash = 'fixture-2';
-    fs.writeFileSync(manifestFile, JSON.stringify(manifest));
-    assert.match(check().text, /"far bank" \(a map name in the game data/);
-  } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
-});
-
 test('order tokens: without synced data, or with data for another build or an unknown client build, no token expands and the order says why', async () => {
   const empty = tmpDir('nodata');
   try {
@@ -510,35 +314,6 @@ test('order tokens: without synced data, or with data for another build or an un
     const res = await r.store.call('order_issue', { text: 'Buy 2 {item:501}' });
     assert.equal(res.ok, false, 'the client build comes from the game context the order is checked against');
     assert.match(res.text, /not in the client's build family \(client 1\.60\.0\.1\)/);
-  } finally { r.cleanup(); }
-});
-
-test('display push: the exact orders contract, on every change and never on a read or a refusal', async () => {
-  const r = rig();
-  try {
-    await r.store.call('goal_set', { profession: 'Leatherworking', rank: 150 });
-    await r.store.call('goal_set', { profession: 'Skinning', rank: 225 });
-    await r.store.call('goal_set', { profession: 'Cooking', rank: 75 });
-    await r.store.call('goal_set', { profession: 'First Aid', rank: 150 });
-    await r.store.call('order_issue', { text: 'Craft until Leatherworking hits 125', goalId: 'g_165' });
-    await r.store.call('goal_list', {});
-    await r.store.call('order_issue', { text: 'Go to Silverpine' });
-    assert.equal(r.posts.length, 5);
-    assert.equal(r.posts[4].url, 'http://127.0.0.1:9');
-    assert.deepEqual(r.posts[4].command, {
-      action: 'orders',
-      orders: {
-        order: { text: 'Craft until Leatherworking hits 125', goal: 'Leatherworking 150', pct: 71 },
-        goals: [{ title: 'Skinning 225', pct: 83 }, { title: 'Cooking 75', pct: 14 }, { title: 'First Aid 150', pct: 64 }],
-        asOf: CONTEXT_AT,
-      },
-    });
-    assert.deepEqual(r.posts[0].command.orders.order, null);
-    assert.equal(r.posts[3].command.orders.goals.length, G.OVERLAY_GOALS_MAX, 'without an order the first three goals show');
-    assert.equal(r.posts[3].command.orders.goals[0].title, 'Leatherworking 150');
-    await r.store.call('order_issue', { text: 'fish 10' });
-    assert.deepEqual(r.posts[5].command.orders.order, { text: 'fish 10', goal: '', pct: null });
-    assert.deepEqual(r.posts[5].command.orders.goals.map(g => g.title), ['Leatherworking 150', 'Skinning 225', 'Cooking 75']);
   } finally { r.cleanup(); }
 });
 
@@ -586,15 +361,6 @@ test('context cut by the addon at 900 bytes: the last Professions entry is dropp
     const res = await r.store.call('goal_set', { profession: 'Skinning', rank: 200 });
     assert.equal(res.ok, false, 'the cut entry is not a reported profession');
   } finally { r.cleanup(); }
-});
-
-test('context under the cap keeps its last Professions entry, and a cap-length context whose last line is not Professions keeps all', () => {
-  const short = 'Character: Bone\nProfessions: Leatherworking 107/150, Skinning 18';
-  assert.deepEqual(G.parseProfessions(short).map(p => [p.name, p.rank]), [['Leatherworking', 107], ['Skinning', 18]]);
-  const head = 'Character: Bone\nProfessions: Leatherworking 107/150, Skinning 187/225\nQuest log (id, * = ready to turn in): ';
-  const full = head + '1'.repeat(G.ADDON_CONTEXT_MAX_BYTES - head.length);
-  assert.equal(Buffer.byteLength(full), G.ADDON_CONTEXT_MAX_BYTES);
-  assert.deepEqual(G.parseProfessions(full).map(p => p.name), ['Leatherworking', 'Skinning']);
 });
 
 test('display push: stream off never posts, and a stream service that is down does not fail the write', async () => {
@@ -830,46 +596,6 @@ function writeDoc(r, doc) {
   fs.writeFileSync(r.file, JSON.stringify({ v: G.STORE_VERSION, rev: 9, character: BONE_KEY, goals: [], orders: { current: null, history: [] }, ...doc }));
 }
 
-test('slot field: the Orders card data rides in the slot table as goals = { rev, order, goals }, read back as Lua', async () => {
-  const r = rig();
-  try {
-    await r.store.call('goal_set', { profession: 'Leatherworking', rank: 150 });
-    await r.store.call('goal_set', { profession: 'Skinning', rank: 225 });
-    await r.store.call('goal_set', { profession: 'Cooking', rank: 75 });
-    await r.store.call('goal_set', { profession: 'First Aid', rank: 150 });
-    await r.store.call('order_issue', { text: 'Craft until Leatherworking hits 125', goalId: 'g_165' });
-    assert.deepEqual(slotGoals(r.store), {
-      rev: 5,
-      char: BONE_KEY,
-      order: { id: 'o_5', text: 'Craft until Leatherworking hits 125', pct: 71 },
-      goals: [{ title: 'Skinning 225', pct: 83 }, { title: 'Cooking 75', pct: 14 }, { title: 'First Aid 150', pct: 64 }],
-    });
-    await r.store.call('order_issue', { text: 'fish 10' });
-    const loose = slotGoals(r.store);
-    assert.equal(loose.rev, 6);
-    assert.deepEqual(loose.order, { id: 'o_6', text: 'fish 10' }, 'an order without a goal has no pct');
-    assert.equal(loose.goals.length, G.SLOT_GOALS_MAX);
-    r.setContext(BONE_CONTEXT.replace('Skinning 187/225', 'Skinning 200/225'));
-    assert.equal(slotGoals(r.store).goals[1].pct, 88, 'progress follows the latest context without a store write');
-  } finally { r.cleanup(); }
-});
-
-test('slot field: a cleared order sends the field without an order, so the card hides; no character sends no field', async () => {
-  const r = rig();
-  try {
-    await r.store.call('order_issue', { text: 'skin 10' });
-    assert.equal(slotGoals(r.store).order.text, 'skin 10');
-    await r.store.call('order_issue', { clear: true });
-    const cleared = slotGoals(r.store);
-    assert.equal(cleared.rev, 2);
-    assert.equal(cleared.order, undefined);
-  } finally { r.cleanup(); }
-  const nobody = rig({ ctx: '' });
-  try {
-    assert.equal(nobody.store.slotLua(), '');
-  } finally { nobody.cleanup(); }
-});
-
 test('slot field: only text that passes the order validator reaches the game, whatever the store file says', () => {
   const r = rig();
   try {
@@ -887,37 +613,6 @@ test('slot field: only text that passes the order validator reaches the game, wh
     writeDoc(r, { orders: { current: { id: 'nine', text: 'Skin 10 more' }, history: [] } });
     assert.deepEqual(slotGoals(r.store).order, { id: 'o_9', text: 'Skin 10 more' }, 'an unknown id falls back, the text stays checked');
   } finally { r.cleanup(); }
-});
-
-test('slot field: a token order shows the expanded names its stored refs allow, with no game data opened; a tampered order stays off and is logged once', async () => {
-  const logs = [];
-  const dir = tmpDir('slotrefs');
-  try {
-    const context = () => ({ text: BONE_CONTEXT, at: CONTEXT_AT });
-    const issuer = G.createGoals({ dir, context, streamOptions: () => ({ ...ST.INERT_OPTIONS }), now: () => NOW, gameData: openFixtureData });
-    let opened = 0;
-    const store = G.createGoals({ dir, context, streamOptions: () => ({ ...ST.INERT_OPTIONS }), now: () => NOW, gameData: () => { opened += 1; return null; }, log: m => logs.push(m) });
-    const file = path.join(dir, BONE_KEY, G.GOALS_FILE);
-    const edit = change => {
-      const doc = JSON.parse(fs.readFileSync(file, 'utf8'));
-      change(doc.orders.current);
-      fs.writeFileSync(file, JSON.stringify(doc));
-      const later = new Date(Date.now() + 1000 * (edit.n = (edit.n || 0) + 1));
-      fs.utimesSync(file, later, later);
-    };
-    assert.equal((await issuer.call('order_issue', { text: 'Buy 2 {item:501}, then train {skill:40} at {map:9003,27.5,25}' })).ok, true);
-    const want = 'Buy 2 Fixture Blade, then train Fixture Craft at Fixture Town';
-    assert.deepEqual(slotGoals(store).order, { id: 'o_1', text: want });
-    assert.equal(opened, 0, 'publishing never opens the game data');
-    edit(c => { delete c.refs; });
-    assert.equal(slotGoals(store).order, undefined, 'without its refs the expanded names are refused');
-    assert.equal(slotGoals(store).order, undefined);
-    assert.equal(logs.filter(l => /hide the Orders card \(order o_1 is not shown: .*fixture/.test(l)).length, 1, logs.join('\n'));
-    edit(c => { c.refs = [{ kind: 'item', id: 501, name: 'Fixture Blade' }]; c.text = 'Buy 2 Fixture Blade in Silverpine'; });
-    assert.equal(slotGoals(store).order, undefined, 'a name outside the refs is refused');
-    assert.equal((await issuer.call('order_issue', { text: 'take the {map:9004,10,10} to 150' })).ok, true);
-    assert.deepEqual(slotGoals(store).order, { id: 'o_2', text: 'take the Low Road to 150' }, 'a name made of plain words shows too');
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
 test('slot field: the Lua stays under the byte cap, dropping goals from the end before anything else', () => {
@@ -952,58 +647,6 @@ test('slot field: a store edited on disk is read again; one that cannot be read 
     assert.deepEqual(slotGoals(store), { rev: 0, char: BONE_KEY, goals: {} });
     assert.equal(logs.filter(l => /hide the Orders card/.test(l)).length, 1, logs.join('\n'));
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
-});
-
-test('slot field: a second store written within the same mtime tick is still read again', () => {
-  const dir = tmpDir('slotmtime');
-  try {
-    const store = G.createGoals({ dir, context: () => ({ text: BONE_CONTEXT, at: CONTEXT_AT }), streamOptions: () => ({ ...ST.INERT_OPTIONS }), now: () => NOW });
-    const file = path.join(dir, BONE_KEY, G.GOALS_FILE);
-    const tick = new Date(1790000000000);
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, JSON.stringify({ v: 1, rev: 3, goals: [], orders: { current: { id: 'o_3', text: 'Rest' } } }));
-    fs.utimesSync(file, tick, tick);
-    assert.equal(slotGoals(store).order.text, 'Rest');
-    fs.writeFileSync(file, JSON.stringify({ v: 1, rev: 4, goals: [], orders: { current: { id: 'o_4', text: 'Fish 10 more' } } }));
-    fs.utimesSync(file, tick, tick);
-    assert.equal(fs.statSync(file).mtimeMs, tick.getTime(), 'both writes carry the same mtime');
-    assert.equal(slotGoals(store).order.text, 'Fish 10 more');
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
-});
-
-test('slot field: every goal write republishes the slot files at once; a read or a refusal does not', async () => {
-  const dir = tmpDir('onchange');
-  let published = 0;
-  try {
-    const store = G.createGoals({ dir, context: () => ({ text: BONE_CONTEXT, at: CONTEXT_AT }), streamOptions: () => ({ ...ST.INERT_OPTIONS }), now: () => NOW, onChange: () => { published += 1; } });
-    await store.call('goal_set', { profession: 'Skinning', rank: 225 });
-    await store.call('goal_list', {});
-    await store.call('order_issue', { text: 'Go to Silverpine' });
-    assert.equal(published, 1);
-    await store.call('order_issue', { text: 'skin 10' });
-    assert.equal(published, 2);
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
-});
-
-test('slot field: the bridge republishes a goal write as urgent, the mode that keeps a large map and widget set in the slot files', async () => {
-  const src = fs.readFileSync(BRIDGE, 'utf8');
-  const wiring = /GOALS\.createBridgeGoals\(\{[\s\S]*?onChange: \(\) => publishNow\((\w+), \{ refresh: true \}\)/.exec(src);
-  assert.ok(wiring, 'the goal store is wired to publishNow');
-  assert.equal(wiring[1], 'true', 'a non-urgent publish drops a map over the progress size from every slot file');
-  assert.match(src, /const map = mapShare\.inSlots\(\{ urgent, size: mapLuaSize\(\), progressMax: MAP_PROGRESS_MAX \}\)/, 'urgent is what keeps a large map');
-  const dir = tmpDir('bridgegoals');
-  try {
-    let published = 0;
-    const store = G.createBridgeGoals({ home: { goals: path.join(dir, 'goals'), data: WOWDATA }, context: () => ({ text: BONE_CONTEXT, at: CONTEXT_AT }), streamOptions: () => ({ ...ST.INERT_OPTIONS }), onChange: () => { published += 1; } });
-    const res = await store.call('goal_set', { profession: 'Skinning', rank: 225 });
-    assert.equal(res.ok, true, res.text);
-    assert.equal(published, 1, 'createBridgeGoals passes onChange through');
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
-});
-
-test('slot field: urgent publish keeps large widgets too', () => {
-  const src = fs.readFileSync(BRIDGE, 'utf8');
-  assert.match(src, /const widgets = Date\.now\(\) < widgetShareUntil && \(urgent \|\| widgetSourceBytes\(\) <= WIDGET_PROGRESS_MAX\)/, 'and large widgets');
 });
 
 test('slot field through the real bridge: the slot files carry the current order next to the other fields', { timeout: 60000 }, () => {

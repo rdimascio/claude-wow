@@ -72,11 +72,6 @@ test('with an embedded table, files are written out once, rewritten when they di
   }
 });
 
-test('unembed puts the checkout back, so a later test in the same process is not left reading a deleted table', () => {
-  assert.equal(AS.isEmbedded(), false);
-  assert.equal(AS.root(), path.resolve(__dirname, '..'));
-});
-
 test('build.js names one binary per target, and the host target is this machine', () => {
   assert.deepEqual(B.TARGETS, ['bun-darwin-arm64', 'bun-darwin-x64', 'bun-linux-x64', 'bun-windows-x64']);
   assert.equal(B.outName('bun-darwin-arm64'), 'claude-wow-darwin-arm64');

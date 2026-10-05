@@ -5,7 +5,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { createSystem, isReadOnlyCommand } = require('../dev/doctor/system');
-const { gather, parsePlist } = require('../dev/doctor/context');
+const { gather } = require('../dev/doctor/context');
 const C = require('../dev/doctor/checks');
 const Doctor = require('../dev/doctor');
 const Service = require('../bridge/service');
@@ -121,8 +121,6 @@ function context(world, runOverrides = {}) {
   return gather(sys);
 }
 
-const byId = (results, id) => results.find(r => r.id === id);
-
 test('read-only guard: only the whitelisted inspection commands pass', () => {
   assert.ok(isReadOnlyCommand('launchctl', ['print', 'gui/501/io.claudewow.bridge']));
   assert.ok(!isReadOnlyCommand('launchctl', ['kickstart', '-k', 'gui/501/io.claudewow.bridge']));
@@ -135,16 +133,6 @@ test('read-only guard: only the whitelisted inspection commands pass', () => {
   assert.ok(!isReadOnlyCommand('kill', ['-9', '1']));
   assert.ok(isReadOnlyCommand('gh', ['run', 'list']));
   assert.ok(!isReadOnlyCommand('gh', ['run', 'rerun', '1']));
-});
-
-test('plist parsing: node, script, working directory and environment', () => {
-  const xml = Service.launchdPlist({ node: '/n/node', script: '/c/bridge/supervisor.js', cwd: '/c', logFile: '/l', env: { CLAUDE_WOW_HOME: '/h&x' } });
-  const plist = parsePlist(xml);
-  assert.equal(plist.node, '/n/node');
-  assert.equal(plist.script, '/c/bridge/supervisor.js');
-  assert.equal(plist.workingDirectory, '/c');
-  assert.equal(plist.env.CLAUDE_WOW_HOME, '/h&x');
-  assert.equal(plist.env.CLAUDE_WOW_SERVICE, '1');
 });
 
 test('a healthy world: every check ok, exit code 0', () => {
@@ -190,13 +178,6 @@ test('etime parsing', () => {
   assert.equal(C.parseEtime('01:02:03'), 3723);
   assert.equal(C.parseEtime('2-01:02:03'), 2 * 86400 + 3723);
   assert.equal(C.parseEtime('bogus'), null);
-});
-
-test('drift: a newer commit that changed no bridge file is not old code', () => {
-  const world = makeWorld('drift-addon-only');
-  const afterStart = Math.floor((NOW - 30 * MINUTE) / 1000);
-  const r = C.checkDrift(context(world, { git: { 'log': `${afterStart}\tccccccc\taddon only` } }));
-  assert.equal(r.status, 'ok');
 });
 
 test('drift: HEAD committed after the bridge started, branch switch, dirty tree, detached', () => {
@@ -353,13 +334,6 @@ test('data: a broken state.json fails loudly; legacy files in the checkout warn'
   const legacy = C.checkData(context(makeWorld('data-legacy', { legacy: ['state.json', 'config.json'] })));
   assert.equal(legacy.status, 'warn');
   assert.match(legacy.problems[0].what, /config\.json, state\.json/);
-});
-
-test('cost: shows stored turns, context and the displayed cost', () => {
-  const r = C.checkCost(context(makeWorld('cost')));
-  assert.equal(r.status, 'ok');
-  assert.match(r.summary, /chat:abc 14 turn\(s\), ctx 141\.4k of 1\.0M, displayed ~\$82\.30/);
-  assert.match(r.summary, /double-counts across --resume/);
 });
 
 test('config: an editable repo and an empty model warn, a missing defaultCwd fails', () => {

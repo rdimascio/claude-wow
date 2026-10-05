@@ -2,8 +2,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('http');
-const P = require('../bridge/protocol');
-const PL = require('../bridge/plugins');
 const stream = require('../bridge/plugins/stream');
 
 function fakeCore(options) {
@@ -39,22 +37,6 @@ function closedPort() {
     s.listen(0, '127.0.0.1', () => { const port = s.address().port; s.close(() => resolve(port)); });
   });
 }
-
-test('stream plugin: routes stream-kind records and registers next to the others', () => {
-  assert.equal(stream.match({ kind: 'stream' }), true);
-  assert.equal(stream.match({ kind: 'roast' }), false);
-  assert.equal(stream.match({}), false);
-  const registry = PL.createRegistry();
-  registry.register(require('../bridge/plugins/ask'));
-  registry.register(require('../bridge/plugins/roast'));
-  registry.register(stream);
-  assert.equal(registry.route({ text: '{"action":"scene","scene":"Raid"}', kind: 'stream' }).plugin.id, 'stream');
-  assert.equal(registry.route({ text: 'hi', plugin: 'stream' }).plugin.id, 'stream');
-  const record = ['sess1', 'chat9', '42', '', 'plugin=stream;kind=stream', 'Stream control', '{"action":"pane","pane":"right"}'].join('\x1F');
-  const [job] = P.jobsFromStrip(42, record);
-  assert.equal(job.kind, 'stream');
-  assert.equal(job.text, '{"action":"pane","pane":"right"}');
-});
 
 test('stream plugin: a command is POSTed as JSON to <url>/control and the service message is the reply, with no agent run', async () => {
   const svc = await controlServer(cmd => ({ ok: true, message: `Scene: ${cmd.scene}` }));

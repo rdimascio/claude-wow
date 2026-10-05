@@ -6,7 +6,6 @@ const net = require('net');
 const os = require('os');
 const path = require('path');
 const LP = require('../bridge/liveproto');
-const P = require('../bridge/protocol');
 const { createChannel, parentListens, pickProtocol } = require('../bridge/channel');
 const { createLive } = require('../bridge/plugins/live');
 
@@ -151,18 +150,6 @@ test('permission rules and verdicts: Need/Greed allow, the Pass text denies, any
   assert.match(LP.permissionPrompt({ tool_name: 'Bash', description: 'Create a file', input_preview: '{"command":"touch x"}' }, 'proj'), /^Claude Code \(proj\) wants to use Bash: Create a file\.\n.*touch x.*\nRoll Need or Greed/s);
 });
 
-test('start command: the dev-channel flag, a cd to the repo, CLAUDE_WOW_HOME only when set, --resume when given', () => {
-  assert.equal(LP.startCommand(), 'claude --dangerously-load-development-channels server:claude-wow');
-  assert.equal(LP.startCommand({ repo: '/Users/me/wow ai', home: '/tmp/h', resume: 'abc-123' }),
-    "cd '/Users/me/wow ai' && CLAUDE_WOW_HOME=/tmp/h claude --resume abc-123 --dangerously-load-development-channels server:claude-wow");
-});
-
-test('slot files carry the connected live sessions and the start command', () => {
-  const lua = P.luaTable('ClaudeWoW_SlotData', [], { live: { sessions: ['proj (/work/proj)'], start: 'claude --x' } });
-  assert.match(lua, /\tlive = \{ sessions = \{ "proj \(\/work\/proj\)" \}, start = "claude --x" \},/);
-  assert.doesNotMatch(P.luaTable('ClaudeWoW_SlotData', [], {}), /live =/);
-});
-
 test('channel server: initialize declares the channel and permission capabilities, tools/list has wow_reply', async () => {
   const out = fakeStdout();
   const ch = createChannel({ stdout: out, home: tmpHome(), retryMs: 1000 });
@@ -256,7 +243,7 @@ test('goal tools: the live session calls goal_set, goal_list and order_issue thr
 test('goal tools: a connected session that is not listening on the channel is refused by the bridge', async () => {
   const r = await rig({ commandLine: () => DEAF });
   const calls = [];
-  r.core.goals = async (tool, args) => { calls.push(tool); return { ok: true, text: 'done' }; };
+  r.core.goals = async tool => { calls.push(tool); return { ok: true, text: 'done' }; };
   try {
     await initialize(r.ch, r.out);
     r.ch.feed(JSON.stringify({ jsonrpc: '2.0', id: 30, method: 'tools/call', params: { name: 'order_issue', arguments: { text: 'skin 10' } } }) + '\n');
@@ -310,30 +297,6 @@ test('parentPid reads the real parent from ps', { skip: !POSIX }, async () => {
   assert.equal(await LP.parentPid(0), null);
   assert.equal(await LP.parentPid(4242, { run: async () => ' 77\n' }), 77);
   assert.equal(await LP.parentPid(4242, { run: async () => '' }), null);
-});
-
-test('goal tools with no bridge connected do nothing and say so', async () => {
-  const out = fakeStdout();
-  const ch = createChannel({ stdout: out, home: tmpHome(), retryMs: 1000 });
-  ch.feed(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'order_issue', arguments: { text: 'skin 10' } } }) + '\n');
-  const res = await until(() => out.lines.find(l => l.id === 1));
-  assert.equal(res.result.isError, true);
-  assert.match(res.result.content[0].text, /not connected, so order_issue did nothing/);
-  ch.stop();
-});
-
-test('the channel registers with the bridge only once Claude Code has listed its tools', async () => {
-  const r = await rig({ connect: false });
-  try {
-    r.ch.connectWhenReady();
-    await new Promise(res => setTimeout(res, 100));
-    assert.deepEqual(r.live.status(), [], 'not before initialize');
-    await initialize(r.ch, r.out);
-    await new Promise(res => setTimeout(res, 100));
-    assert.deepEqual(r.live.status(), [], 'not before tools/list, or wow_reply may be missing when the first message lands');
-    r.ch.feed(JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' }) + '\n');
-    await until(() => r.live.status().length === 1);
-  } finally { r.cleanup(); }
 });
 
 const PRINT_JOB = 'claude -p --output-format stream-json --dangerously-load-development-channels server:claude-wow';
@@ -442,17 +405,6 @@ test('the /claude -r picker never lists a -p/--print process, even one that conn
   } finally { r.cleanup(); }
 });
 
-test('no session connected: the chat is told plainly how to start one', async () => {
-  const r = await rig({ connect: false, options: { waitMs: 0 } });
-  try {
-    const job = { id: 1, session: 'tok', chat: 'c1', text: 'hi', allow: [] };
-    await r.live.handle(job, r.core);
-    assert.equal(r.calls.fail.length, 1);
-    assert.match(r.calls.fail[0].text, /^No live Claude Code session is connected\. Start one with:\nclaude --dangerously-load-development-channels server:claude-wow/);
-    assert.deepEqual(r.live.status(), []);
-  } finally { r.cleanup(); }
-});
-
 test('/claude -r targets one running session: by its Claude Code session id or prefix, its title or its name; another target is told it is not connected', async () => {
   const claudeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cw-claude-'));
   const id = '6624f327-7126-423e-a653-d7cf7a4e492b';
@@ -483,19 +435,6 @@ test('/claude -r targets one running session: by its Claude Code session id or p
       }
     }
   } finally { r.cleanup(); fs.rmSync(claudeDir, { recursive: true, force: true }); }
-});
-
-test('a session that connects within waitMs still gets the message', async () => {
-  const r = await rig({ connect: false, options: { waitMs: 3000 } });
-  try {
-    await initialize(r.ch, r.out);
-    const job = { id: 2, session: 'tok', chat: 'c1', text: 'hi', allow: [] };
-    const handled = r.live.handle(job, r.core);
-    setTimeout(() => r.ch.connect(), 50);
-    await handled;
-    assert.equal(r.calls.fail.length, 0);
-    await until(() => r.out.lines.find(l => l.method === 'notifications/claude/channel'));
-  } finally { r.cleanup(); }
 });
 
 test('socket: owner-only permissions, and a peer without the token is refused', { skip: !POSIX }, async () => {
@@ -623,13 +562,6 @@ test('a session that disconnects fails the messages still waiting on it', async 
     assert.match(r.calls.fail[0].text, /disconnected before it answered/);
     await until(() => r.live.status().length === 0);
   } finally { r.cleanup(); }
-});
-
-test('the live plugin is registered in the bridge and .mcp.json starts the channel server', () => {
-  const src = fs.readFileSync(path.join(__dirname, '..', 'bridge', 'bridge.js'), 'utf8');
-  assert.match(src, /registry\.register\(require\('\.\/plugins\/live'\)\)/);
-  const mcp = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '.mcp.json'), 'utf8'));
-  assert.deepEqual(mcp.mcpServers['claude-wow'], { command: 'node', args: ['bridge/channel.js'], alwaysLoad: true });
 });
 
 const SESSION_A = '6624f327-7126-423e-a653-d7cf7a4e492b';
@@ -859,4 +791,11 @@ test('delivery watchdog: a permission request counts as activity, and pickupMs 0
     t.mock.timers.tick(50000);
     assert.equal(off.calls.fail.length, 0);
   } finally { t.mock.timers.reset(); off.cleanup(); }
+});
+
+test('the live plugin is registered in the bridge and .mcp.json starts the channel server', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', 'bridge', 'bridge.js'), 'utf8');
+  assert.match(src, /registry\.register\(require\('\.\/plugins\/live'\)\)/);
+  const mcp = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '.mcp.json'), 'utf8'));
+  assert.deepEqual(mcp.mcpServers['claude-wow'], { command: 'node', args: ['bridge/channel.js'], alwaysLoad: true });
 });

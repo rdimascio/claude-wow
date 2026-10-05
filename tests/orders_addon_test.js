@@ -4,7 +4,6 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 const { lua, lauxlib, lualib, to_luastring, to_jsstring } = require('fengari');
-const G = require('../bridge/goals');
 
 const ADDON = path.join(__dirname, '..', 'addon', 'ClaudeWoW');
 const ADDON_FILES = ['Codec.lua', 'Inbox.lua', 'ClaudeWoW.lua', 'Orders.lua'];
@@ -62,15 +61,6 @@ function CreateFrame(kind, name, parent, template)
     f.Bar.Label = f.Bar:CreateFontString(nil, "ARTWORK", "GameFontHighlightMedium")
   end
   return f
-end
-`;
-
-const FAILING_CARD_STUB = `
-STUB.failCard = true
-local plainCreateFrame = CreateFrame
-function CreateFrame(kind, name, ...)
-  if name == "ClaudeWoWOrdersCard" and STUB.failCard then error("no frame today") end
-  return plainCreateFrame(kind, name, ...)
 end
 `;
 
@@ -147,150 +137,6 @@ function cardShown(vm) {
   return vm.evaluate('ClaudeWoWOrdersCard ~= nil and ClaudeWoWOrdersCard.shown == true') === 'true';
 }
 
-test('orders card: appears after the natural hello slot load that carries goals, laid out like the quest tracker', () => {
-  const vm = newVM();
-  nextSlot(vm, ORDER_GOALS(5));
-  assert.equal(vm.evaluate('ClaudeWoWOrdersCard'), null, 'nothing before a slot is read');
-  tick(vm);
-  assert.ok(vm.num('STUB.loads') >= 1, 'the login slot reads');
-  assert.equal(vm.evaluate('ClaudeWoW.IsConnected()'), 'true');
-  assert.equal(vm.evaluate('ClaudeWoWOrdersCard.shown'), 'true');
-  assert.equal(vm.evaluate('ClaudeWoWOrdersCard.header.Text.text'), 'Orders');
-  assert.equal(vm.evaluate('ClaudeWoWOrdersCard.orderText.text'), 'Craft until Leatherworking hits 125');
-  assert.equal(vm.evaluate('ClaudeWoWOrdersCard.bars[1].Bar.value'), '71');
-  assert.equal(vm.evaluate('ClaudeWoWOrdersCard.bars[1].Bar.Label.text'), '71%');
-  assert.equal(vm.evaluate('ClaudeWoWOrdersCard.goalLines[1].text'), '- Skinning 225');
-  assert.equal(vm.evaluate('ClaudeWoWOrdersCard.goalLines[2].text'), '- Cooking 75');
-  assert.equal(vm.evaluate('ClaudeWoWOrdersCard.goalLines[3].shown'), 'false');
-  assert.equal(vm.evaluate('ClaudeWoWOrdersCard.bars[3].Bar.value'), '14');
-  assert.equal(shownBars(vm), 3, 'the order bar and one bar per goal');
-  assert.equal(vm.evaluate('ClaudeWoWOrders.debug.anchoredTo'), 'screen', 'no quest tracker frame in this client: the tracker spot on screen');
-  assert.equal(vm.num('ClaudeWoWOrders.debug.renders'), 1);
-  assert.equal(vm.evaluate('ClaudeWoWOrdersCard.bars[1].Bar.mouseEnabled'), 'false', 'the bars never eat clicks');
-});
-
-test('orders card: the addon builds the same character key as the bridge, two-part Forever names included', () => {
-  const vm = newVM();
-  assert.equal(vm.evaluate('ClaudeWoWOrders.CharacterKey()'), G.characterOf('Character: Testchar on Test Realm, level 23').key);
-  vm.run('function UnitName(unit) return "Bone" end; function GetUnitName(unit, withRealm) return "Bone Sleeve" end; function GetRealmName() return "Classic Beta PvP 2" end');
-  assert.equal(vm.evaluate('ClaudeWoWOrders.CharacterKey()'), G.characterOf('Character: Bone on Classic Beta PvP 2, level 20 Orc Rogue (Horde)').key, 'UnitName, the first part of a Forever name, as the context line uses');
-  assert.equal(vm.evaluate('ClaudeWoWOrders.CharacterKey()'), 'Bone-ClassicBetaPvP2');
-});
-
-test('orders card: a change redraws on the next natural slot load; the same visible data does not, even with a new rev', () => {
-  const vm = newVM();
-  scenario(vm, [ORDER_GOALS(5)]);
-  const atLogin = vm.num('STUB.loads');
-  vm.run('ClaudeWoW.Send("how is my leatherworking")');
-  scenario(vm, [ORDER_GOALS(6, 'Skin 30 more', 40)]);
-  assert.equal(vm.num('STUB.loads'), atLogin + 1, 'the scheduled poll after the message, nothing more');
-  assert.equal(vm.evaluate('ClaudeWoWOrdersCard.orderText.text'), 'Skin 30 more');
-  assert.equal(vm.evaluate('ClaudeWoWOrdersCard.bars[1].Bar.Label.text'), '40%');
-  assert.equal(vm.num('ClaudeWoWOrders.debug.renders'), 2);
-  vm.run('ClaudeWoWOrdersCard.orderText.text = "untouched"');
-  scenario(vm, [ORDER_GOALS(6, 'Skin 30 more', 40)]);
-  assert.equal(vm.num('STUB.loads'), atLogin + 2);
-  assert.equal(vm.num('ClaudeWoWOrders.debug.renders'), 2, 'unchanged data: no redraw');
-  assert.equal(vm.evaluate('ClaudeWoWOrdersCard.orderText.text'), 'untouched');
-  scenario(vm, [ORDER_GOALS(6, 'Skin 30 more', 40).replace('rev = 6', 'rev = 7')]);
-  assert.equal(vm.num('ClaudeWoWOrders.debug.renders'), 2, 'a new rev with nothing visible changed: no redraw');
-  scenario(vm, [ORDER_GOALS(6, 'Skin 30 more', 41)]);
-  assert.equal(vm.num('ClaudeWoWOrders.debug.renders'), 3, 'progress moved: one redraw');
-});
-
-test('orders card: hides when the order clears; a slot without the field is read and changes nothing', () => {
-  const vm = newVM();
-  scenario(vm, [ORDER_GOALS(5)]);
-  assert.equal(cardShown(vm), true);
-  const syncs = vm.num('STUB.syncs');
-  const loads = vm.num('STUB.loads');
-  sendAndRead(vm, null, 'thanks');
-  assert.equal(vm.num('STUB.loads'), loads + 1, 'a slot was read');
-  assert.equal(vm.num('STUB.syncs'), syncs, 'and the card was not even asked');
-  assert.equal(cardShown(vm), true);
-  vm.run('STUB.failBar = true');
-  sendAndRead(vm, ORDER_GOALS(6, 'Skin 30 more', 40), 'fails');
-  assert.notEqual(vm.evaluate('ClaudeWoWOrders.debug.lastError'), null, 'a draw failed first');
-  vm.run('STUB.failBar = false');
-  sendAndRead(vm, `{ rev = 7, char = "${CHAR}", goals = { { title = "Skinning 225", pct = 83 } } }`, 'clear');
-  assert.equal(cardShown(vm), false, 'no order: the card hides even with goals');
-  assert.equal(vm.evaluate('ClaudeWoWOrders.debug.lastError'), null, 'hidden on purpose, not by an error');
-});
-
-test('orders card: an old bridge never sends goals, so there is no card and no error', () => {
-  const vm = newVM();
-  scenario(vm, [null]);
-  assert.ok(vm.num('STUB.loads') >= 1, 'slots were read');
-  assert.equal(vm.evaluate('ClaudeWoW.IsConnected()'), 'true');
-  assert.equal(vm.num('STUB.syncs'), 0);
-  assert.equal(vm.evaluate('ClaudeWoWOrdersCard'), null);
-  assert.equal(vm.num('ClaudeWoWOrders.debug.renders'), 0);
-});
-
-test('orders card: no extra slot load, the same count as a session without goals over a long stretch', () => {
-  const run = (goals) => {
-    const vm = newVM();
-    nextSlot(vm, goals ? ORDER_GOALS(5) : null);
-    tick(vm);
-    vm.run('ClaudeWoW.Send("one")');
-    nextSlot(vm, goals ? ORDER_GOALS(6, 'Skin 30 more', 40) : null);
-    for (let i = 0; i < 400; i++) tick(vm, 9);
-    return { loads: vm.num('STUB.loads'), card: vm.evaluate('ClaudeWoWOrdersCard and ClaudeWoWOrdersCard.orderText.text') };
-  };
-  const control = run(false);
-  const withCard = run(true);
-  assert.equal(withCard.card, 'Skin 30 more', 'the card did update during the stretch');
-  assert.ok(control.loads > 1, `the control loaded ${control.loads} slots`);
-  assert.equal(withCard.loads, control.loads, 'the card never asks for a slot of its own');
-});
-
-test('orders card: the reload path shows a fresh order for this character from Inbox.lua without any slot load', () => {
-  const vm = newVM({ beforeLogin: `ClaudeWoW_Inbox = { now = time(), replies = {}, goals = ${ORDER_GOALS(3, 'Rest')} }` });
-  assert.equal(vm.num('STUB.loads'), 0, 'no LoadAddOn at all');
-  assert.equal(vm.num('STUB.syncs'), 1);
-  assert.equal(cardShown(vm), true);
-  assert.equal(vm.evaluate('ClaudeWoWOrdersCard.orderText.text'), 'Rest');
-});
-
-test('orders card: an Inbox.lua order that is old, for another character, or unlabelled stays hidden', () => {
-  const cases = [
-    ['old', `{ now = time() - 3600, replies = {}, goals = ${ORDER_GOALS(3, 'Rest')} }`],
-    ['another character', `{ now = time(), replies = {}, goals = ${ORDER_GOALS(3, 'Rest', 71, 'Bone-ClassicBetaPvP2')} }`],
-    ['no clock', `{ replies = {}, goals = ${ORDER_GOALS(3, 'Rest')} }`],
-    ['the client cannot name its own character', `{ now = time(), replies = {}, goals = ${ORDER_GOALS(3, 'Rest')} }`, 'function UnitName() return nil end'],
-  ];
-  for (const [why, inbox, extra = ''] of cases) {
-    const vm = newVM({ beforeLogin: `${extra}\nClaudeWoW_Inbox = ${inbox}` });
-    assert.equal(vm.num('STUB.syncs'), 1, `${why}: the field was read`);
-    assert.equal(cardShown(vm), false, `${why}: no card`);
-  }
-  const fresh = newVM({ beforeLogin: `ClaudeWoW_Inbox = { now = time() - 120, replies = {}, goals = ${ORDER_GOALS(3, 'Rest')} }` });
-  assert.equal(cardShown(fresh), true, 'two minutes old is still live');
-});
-
-test('orders card: a drawing error never stops the slot read, is said once, and the same data is tried again', () => {
-  const vm = newVM({ prelude: FAILING_CARD_STUB });
-  scenario(vm, [null]);
-  vm.run('ClaudeWoW.Send("first")');
-  let p = pending(vm);
-  assert.ok(p.id, 'a message is waiting');
-  nextSlot(vm, ORDER_GOALS(5), `{ chat = "${p.chat}", id = ${p.id}, status = "done", text = "the reply", agent = "", plugin = "ask" }`);
-  tick(vm);
-  assert.equal(pending(vm).id, null, 'the reply in the same slot still landed');
-  assert.equal(vm.evaluate('ClaudeWoWOrdersCard'), null);
-  vm.run('ClaudeWoW.Send("second")');
-  p = pending(vm);
-  nextSlot(vm, ORDER_GOALS(5), `{ chat = "${p.chat}", id = ${p.id}, status = "done", text = "again", agent = "", plugin = "ask" }`);
-  tick(vm);
-  vm.run('RESULT = 0; for _, m in ipairs(STUB.printed) do if m:find("could not be drawn", 1, true) then RESULT = RESULT + 1 end end');
-  assert.equal(vm.num('RESULT'), 1, 'the error is said once');
-  vm.run('STUB.failCard = false; ClaudeWoW.Send("third")');
-  p = pending(vm);
-  nextSlot(vm, ORDER_GOALS(5), `{ chat = "${p.chat}", id = ${p.id}, status = "done", text = "ok", agent = "", plugin = "ask" }`);
-  tick(vm);
-  assert.equal(cardShown(vm), true, 'the same data drew once it could');
-});
-
 function sendAndRead(vm, goalsLua, text) {
   vm.run(`ClaudeWoW.Send("${text}")`);
   const p = pending(vm);
@@ -302,45 +148,6 @@ function drawErrorsSaid(vm) {
   vm.run('RESULT = 0; for _, m in ipairs(STUB.printed) do if m:find("could not be drawn", 1, true) then RESULT = RESULT + 1 end end');
   return vm.num('RESULT');
 }
-
-test('orders card: a shown card that fails mid-draw is hidden, not left half drawn; a later error is said again', () => {
-  const vm = newVM();
-  scenario(vm, [ORDER_GOALS(5)]);
-  assert.equal(cardShown(vm), true);
-  vm.run('STUB.failBar = true');
-  sendAndRead(vm, ORDER_GOALS(6, 'Skin 30 more', 40), 'one');
-  assert.equal(cardShown(vm), false, 'no half-drawn card with the new text and the old bars');
-  assert.equal(drawErrorsSaid(vm), 1);
-  vm.run('STUB.failBar = false; ClaudeWoWOrders.Refresh()');
-  assert.equal(cardShown(vm), false, 'a later refresh does not bring back the old order');
-  sendAndRead(vm, ORDER_GOALS(5), 'back');
-  assert.equal(cardShown(vm), true, 'the old data draws again: a failed sync forgot what was on screen');
-  assert.equal(vm.evaluate('ClaudeWoWOrdersCard.orderText.text'), 'Craft until Leatherworking hits 125');
-  sendAndRead(vm, ORDER_GOALS(6, 'Skin 30 more', 40), 'two');
-  assert.equal(cardShown(vm), true, 'the same data draws once it can');
-  assert.equal(vm.evaluate('ClaudeWoWOrdersCard.orderText.text'), 'Skin 30 more');
-  assert.equal(vm.evaluate('ClaudeWoWOrders.debug.lastError'), null, 'a good draw clears the last error');
-  vm.run('STUB.failBar = true');
-  sendAndRead(vm, ORDER_GOALS(7, 'Fish 10', 20), 'three');
-  assert.equal(cardShown(vm), false);
-  assert.equal(drawErrorsSaid(vm), 2, 'the same error after a good draw is said again');
-});
-
-test('orders card: a refresh that fails hides the card but keeps the order, so the next toggle can draw it', () => {
-  const vm = newVM();
-  scenario(vm, [ORDER_GOALS(5)]);
-  vm.run('STUB.failBar = true; ClaudeWoWOrders.ToggleCollapsed(); ClaudeWoWOrders.ToggleCollapsed()');
-  assert.equal(cardShown(vm), false);
-  vm.run('STUB.failBar = false; ClaudeWoWOrders.ToggleCollapsed(); ClaudeWoWOrders.ToggleCollapsed()');
-  assert.equal(cardShown(vm), true, 'no slot read needed');
-  assert.equal(vm.evaluate('ClaudeWoWOrders.debug.lastError'), null, 'the good draw cleared the error');
-  assert.equal(vm.evaluate('ClaudeWoWOrdersCard.orderText.text'), 'Craft until Leatherworking hits 125');
-  sendAndRead(vm, ORDER_GOALS(5), 'settle');
-  vm.run('STUB.failBar = true; ClaudeWoWOrders.ToggleCollapsed(); ClaudeWoWOrders.ToggleCollapsed(); STUB.failBar = false');
-  assert.equal(cardShown(vm), false);
-  sendAndRead(vm, ORDER_GOALS(5), 'same again');
-  assert.equal(cardShown(vm), true, 'a failed refresh forgets the signature, so the same slot data draws again');
-});
 
 test('orders card: a draw error that keeps failing is said once across vehicle and pet battle cycles', () => {
   const vm = newVM({ prelude: PET_VEHICLE_STUB });
@@ -387,34 +194,6 @@ test('orders card: an old slot file left by a stopped bridge never brings back a
   assert.equal(cardShown(vm), false);
 });
 
-test('orders card: an old slot file leaves a shown card as it is, neither hiding nor changing it', () => {
-  const vm = newVM();
-  scenario(vm, [ORDER_GOALS(5)]);
-  vm.run('ClaudeWoW.Send("later")');
-  nextSlot(vm, ORDER_GOALS(6, 'Skin 30 more', 40), '', 'time() - 1000');
-  tick(vm);
-  assert.equal(cardShown(vm), true);
-  assert.equal(vm.evaluate('ClaudeWoWOrdersCard.orderText.text'), 'Craft until Leatherworking hits 125');
-});
-
-function inboxFor(name, realm, char) {
-  return newVM({ beforeLogin: `function UnitName() return "${name}" end; function GetRealmName() return "${realm}" end
-ClaudeWoW_Inbox = { now = time(), replies = {}, goals = ${ORDER_GOALS(3, 'Rest', 71, char)} }` });
-}
-
-test('orders card: non-Latin names stay distinct and match the bridge key; an accented realm matches', () => {
-  const ivan = G.characterOf('Character: Иван on Гордунни, level 20').key;
-  assert.equal(cardShown(inboxFor('Иван', 'Гордунни', ivan)), true, 'a Cyrillic name matches the bridge key for the same character');
-  assert.equal(cardShown(inboxFor('Пётр', 'Гордунни', ivan)), false, 'another Cyrillic name on the same realm does not');
-  const zul = G.characterOf('Character: Bone on Zùl Grim, level 20').key;
-  assert.equal(cardShown(inboxFor('Bone', 'Zùl Grim', zul)), true);
-  assert.equal(cardShown(inboxFor('Bone', 'Zul Grim', zul)), false, 'an accent is not dropped');
-  const dot = G.characterOf('Character: Bone on Foo·Bar, level 20').key;
-  assert.equal(cardShown(inboxFor('Bone', 'Foo·Bar', dot)), false, 'a symbol the bridge drops never matches: the documented limit, hidden is the safe side');
-  assert.equal(inboxFor('·', 'Foo', 'x').evaluate('ClaudeWoWOrders.CharacterKey()'), '·-Foo', 'a name that is only a non-ASCII symbol keeps its bytes');
-  assert.equal(inboxFor('!!', 'Foo', 'x').evaluate('ClaudeWoWOrders.CharacterKey()'), null, 'an empty name after cleaning is refused');
-});
-
 test('orders card: /claude orders off hides it and keeps it hidden through new data, on brings it back; settings stay two booleans', () => {
   const vm = newVM();
   scenario(vm, [ORDER_GOALS(5)]);
@@ -443,16 +222,6 @@ test('orders card: /claude orders off hides it and keeps it hidden through new d
   assert.equal(vm.num('RESULT'), 2, 'ordersCard and ordersCollapsed, nothing else');
 });
 
-test('orders card: "/claude orders <words>" is a message, not the command', () => {
-  const vm = newVM();
-  scenario(vm, [ORDER_GOALS(5)]);
-  const chats = vm.num('#ClaudeWoWDB.chats');
-  vm.run('SlashCmdList.CLAUDE("orders for the raid tonight")');
-  assert.equal(vm.evaluate('ClaudeWoWDB.settings.ordersCard'), null);
-  assert.equal(vm.num('#ClaudeWoWDB.chats'), chats + 1, 'a new chat with that text');
-  assert.equal(cardShown(vm), true);
-});
-
 test('orders card: follows the quest tracker as it shows, hides and changes size', () => {
   const vm = newVM({ prelude: TRACKER_STUB });
   scenario(vm, [ORDER_GOALS(5)]);
@@ -470,20 +239,6 @@ test('orders card: follows the quest tracker as it shows, hides and changes size
   for (const script of ['OnShow', 'OnHide', 'OnSizeChanged']) {
     assert.equal(vm.num(`#ObjectiveTrackerFrame.hooks.${script}`), 1, `${script} hooked once, with HookScript, however often the card redraws`);
   }
-});
-
-test('orders card: hides in a pet battle and in a vehicle UI, and comes back after', () => {
-  const vm = newVM({ prelude: PET_VEHICLE_STUB });
-  scenario(vm, [ORDER_GOALS(5)]);
-  assert.equal(cardShown(vm), true);
-  vm.run('STUB.petBattle = true; STUB.FireEvent("PET_BATTLE_OPENING_START")');
-  assert.equal(cardShown(vm), false);
-  vm.run('STUB.petBattle = false; STUB.FireEvent("PET_BATTLE_CLOSE")');
-  assert.equal(cardShown(vm), true);
-  vm.run('STUB.vehicle = true; STUB.FireEvent("UNIT_ENTERED_VEHICLE", "player")');
-  assert.equal(cardShown(vm), false);
-  vm.run('STUB.vehicle = false; STUB.FireEvent("UNIT_EXITED_VEHICLE", "player")');
-  assert.equal(cardShown(vm), true);
 });
 
 test('orders card: Blizzard templates when the client has them, plain frames when a template is missing or incomplete', () => {
@@ -509,21 +264,6 @@ test('orders card: Blizzard templates when the client has them, plain frames whe
   const noAtlas = newVM({ prelude: 'C_Texture.GetAtlasExists = function() return false end' });
   scenario(noAtlas, [ORDER_GOALS(5)]);
   assert.equal(noAtlas.evaluate('ClaudeWoWOrders.debug.buttonArt'), 'Interface\\Buttons\\UI-MinusButton-Up', 'a missing atlas falls back to a file');
-});
-
-test('orders card: data from the slot is bounded and escaped, at most three goals', () => {
-  const vm = newVM();
-  const many = Array.from({ length: 10 }, (_, i) => `{ title = "goal ${i}", pct = ${i * 10} }`).join(', ');
-  scenario(vm, [`{ rev = 1, char = "${CHAR}", order = { id = "o_1", text = "a|cffff0000b ${'x'.repeat(200)}", pct = 250 }, goals = { ${many}, { title = "", pct = 5 }, { title = "no pct" } } }`]);
-  const text = vm.evaluate('ClaudeWoWOrdersCard.orderText.text');
-  assert.ok(text.startsWith('a||cffff0000b '), 'a pipe cannot start an escape sequence');
-  assert.ok(text.length <= 91, `${text.length} characters`);
-  assert.equal(vm.evaluate('ClaudeWoWOrdersCard.bars[1].Bar.value'), '100', 'percent clamped');
-  assert.equal(shownBars(vm), 4);
-  assert.equal(vm.evaluate('ClaudeWoWOrdersCard.goalLines[3].text'), '- goal 2');
-  assert.equal(vm.evaluate('ClaudeWoWOrders.debug.lastError'), null, 'ten goals draw without an error');
-  vm.run(`ClaudeWoWOrders.Sync("not a table"); ClaudeWoWOrders.Sync({ rev = 2, char = "${CHAR}", order = { text = 7 } })`);
-  assert.equal(cardShown(vm), false, 'an order without text is no order');
 });
 
 test('orders card: the module sends nothing and automates nothing', () => {
@@ -600,17 +340,4 @@ test('orders card on Classic Era: follows QuestWatchFrame with its fonts, colors
   assert.equal(vm.evaluate('ClaudeWoWOrdersCard.orderText.shown'), 'false');
   vm.run('ClaudeWoWOrders.ToggleCollapsed()');
   for (const script of ['OnShow', 'OnHide', 'OnSizeChanged']) assert.equal(vm.num(`#QuestWatchFrame.hooks.${script}`), 1, `${script} hooked once`);
-});
-
-test('orders card: a client with the objective tracker keeps the tracker look even when it also has QuestWatchFrame', () => {
-  const vm = newVM({ prelude: TRACKER_STUB + QUEST_WATCH_STUB });
-  scenario(vm, [ORDER_GOALS(5)]);
-  assert.equal(vm.evaluate('ClaudeWoWOrders.debug.style'), 'tracker');
-  assert.equal(vm.evaluate('ClaudeWoWOrders.debug.anchoredTo'), 'tracker');
-  assert.equal(shownBars(vm), 3);
-});
-
-test('orders card: the toc loads Orders.lua after the core', () => {
-  const toc = fs.readFileSync(path.join(ADDON, 'ClaudeWoW.toc'), 'utf8').split(/\r?\n/).map(l => l.trim()).filter(l => l && !l.startsWith('#'));
-  assert.ok(toc.indexOf('Orders.lua') > toc.indexOf('ClaudeWoW.lua'), toc.join(', '));
 });

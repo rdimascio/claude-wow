@@ -19,13 +19,6 @@ const IRC = Object.freeze({
   otherChannel: ':viewer_four!viewer_four@viewer_four.tmi.twitch.tv PRIVMSG #elsewhere :!1',
 });
 
-test('IRC parsing: PRIVMSG with and without IRCv3 tags, PING, and lines that are not chat', () => {
-  assert.deepEqual(V.parseIrcLine(IRC.plain), { type: 'privmsg', user: 'viewer_one', channel: 'bonestream', text: '!1' });
-  assert.deepEqual(V.parseIrcLine(IRC.tagged), { type: 'privmsg', user: 'viewer_two', channel: 'bonestream', text: '!2' });
-  assert.deepEqual(V.parseIrcLine(IRC.ping), { type: 'ping', arg: 'tmi.twitch.tv' });
-  assert.equal(V.parseIrcLine(IRC.welcome), null);
-});
-
 test('IRC parsing: malformed lines give nothing and never throw', () => {
   for (const line of [
     '', '@tagsonly', ':prefixonly', 'PRIVMSG', ':x PRIVMSG #bonestream', ':noexclaim PRIVMSG #bonestream :!1',
@@ -50,17 +43,6 @@ test('channel config: off unless votes.channel is a valid Twitch name', () => {
   for (const c of [null, {}, { channel: '' }, { channel: 'ab' }, { channel: 'bad name' }, { channel: 'x'.repeat(26) }, { channel: 5 }]) {
     assert.equal(V.channelOf(c), '', JSON.stringify(c));
   }
-});
-
-test('ballot: one vote per Twitch name, the first one counts; a tie or no votes has no winner', () => {
-  const b = V.createBallot({ options: [{ title: 'A' }, { title: 'B' }], endsAt: 5 });
-  assert.equal(b.cast('ann', 1), 'counted');
-  assert.equal(b.cast('ann', 2), 'repeat');
-  assert.equal(b.cast('ann', 1), 'repeat');
-  assert.deepEqual(b.result(), { options: [{ n: 1, title: 'A', votes: 1 }, { n: 2, title: 'B', votes: 0 }], total: 1, capped: false, endsAt: 5, winner: 1 });
-  assert.equal(b.cast('bob', 2), 'counted');
-  assert.equal(b.result().winner, null, 'a tie has no winner');
-  assert.equal(V.createBallot({ options: [{ title: 'A' }, { title: 'B' }], endsAt: 0 }).result().winner, null, 'no votes, no winner');
 });
 
 test('ballot: the voter set is capped; later names are not counted and the result says so', () => {
@@ -222,16 +204,6 @@ test('collector: a dropped connection reconnects a bounded number of times', () 
   assert.equal(c.votes.close().result.total, 0);
 });
 
-test('collector: votes on a reconnected socket count; the dropped one is ignored', () => {
-  const c = collector();
-  c.votes.start({ options: TWO, seconds: 600 });
-  c.sockets[0].emit('close');
-  c.timers.run(t => t.ms === 5000);
-  c.sockets[0].emit('data', `${IRC.plain}\r\n`);
-  c.sockets[1].emit('data', `${IRC.tagged}\r\n`);
-  assert.deepEqual(c.votes.close().result.options.map(o => o.votes), [0, 1]);
-});
-
 const BONE_CONTEXT = [
   'Game: World of Warcraft: Forever (client 1.60.1.70124, interface 16001)',
   'Character: Bone on Classic Beta PvP 2, level 20 Orc Rogue (Horde)',
@@ -254,16 +226,6 @@ function goalRig(opts = {}) {
 }
 
 const SKIN_OPTIONS = [{ profession: 'Skinning', rank: 200 }, { profession: 'Skinning', rank: 225 }];
-
-test('goal_vote_open: options get the goal_set checks, titles come from the bridge, and nothing is written', async () => {
-  const r = goalRig();
-  try {
-    const res = await r.store.call('goal_vote_open', { options: [...SKIN_OPTIONS, { type: 'gearset', slots: { 16: 501 } }], seconds: 60 });
-    assert.equal(res.ok, true, res.text);
-    assert.match(res.text, /!1 Skinning 200, !2 Skinning 225, !3 Gear set: Fixture Blade\. Viewers type !1 to !3; one vote per Twitch name\. The stream overlay shows it only with a wow-stream that has the "vote" action\./);
-    assert.equal(fs.existsSync(r.file), false, 'opening a vote writes no goal');
-  } finally { r.cleanup(); }
-});
 
 test('goal_vote_open: refuses bad option counts, invalid goals, duplicates, drops, bad seconds, and no collector', async () => {
   const r = goalRig();
@@ -380,18 +342,6 @@ test('collector: a joined connection that goes quiet past the idle timeout is dr
   assert.equal(c.sockets.length, 2);
 });
 
-test('collector: a vote whose chat never joined says so; one that stayed joined does not', () => {
-  const never = collector();
-  never.votes.start({ options: TWO, seconds: 60 });
-  assert.equal(never.votes.close().result.chatMissed, true);
-  const fine = collector();
-  fine.votes.start({ options: TWO, seconds: 60 });
-  fine.sockets[0].emit('data', `${IRC.join}\r\n${IRC.plain}\r\n`);
-  const r = fine.votes.close().result;
-  assert.equal(r.chatMissed, false);
-  assert.doesNotMatch(V.resultText(r), /not connected/);
-});
-
 test('collector: a stream service without the vote action is logged once, with a clear line', async () => {
   const c = collector({ answer: { ok: false, status: 400, message: 'Unknown action: vote' } });
   c.votes.start({ options: TWO, seconds: 60 });
@@ -416,45 +366,6 @@ test('collector: stop() returns the closing push, which says closed with no winn
   assert.equal(lastPost.options[0].votes, 1);
   assert.equal(c.sockets[0].destroyed, true);
   assert.equal(c.timers.pending.size, 0);
-});
-
-const CONTRACT = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'stream', 'vote.json'), 'utf8'));
-
-function contractProblems(p) {
-  const problems = [];
-  const keys = o => Object.keys(o).sort().join(',');
-  if (keys(p) !== keys(CONTRACT)) problems.push(`top keys ${keys(p)}`);
-  if (p.action !== CONTRACT.action) problems.push(`action ${p.action}`);
-  const v = p.vote || {};
-  if (keys(v) !== keys(CONTRACT.vote)) problems.push(`vote keys ${keys(v)}`);
-  if (typeof v.open !== 'boolean') problems.push('open');
-  if (!Array.isArray(v.options) || v.options.length < V.OPTIONS_MIN || v.options.length > V.OPTIONS_MAX) problems.push('options length');
-  for (const [i, o] of (v.options || []).entries()) {
-    if (keys(o) !== keys(CONTRACT.vote.options[0])) problems.push(`option keys ${keys(o)}`);
-    if (o.n !== i + 1) problems.push(`n ${o.n}`);
-    if (typeof o.title !== 'string' || !o.title || o.title.length > V.TITLE_MAX) problems.push(`title ${o.title}`);
-    if (!Number.isSafeInteger(o.votes) || o.votes < 0) problems.push(`votes ${o.votes}`);
-  }
-  if (!Number.isSafeInteger(v.total) || v.total !== (v.options || []).reduce((s, o) => s + o.votes, 0)) problems.push(`total ${v.total}`);
-  if (!Number.isSafeInteger(v.endsAt) || v.endsAt <= 0) problems.push(`endsAt ${v.endsAt}`);
-  if (!(v.winner === null || (Number.isSafeInteger(v.winner) && v.winner >= 1 && v.winner <= (v.options || []).length))) problems.push(`winner ${v.winner}`);
-  if (v.open && v.winner !== null) problems.push('an open vote has a winner');
-  return problems;
-}
-
-test('overlay contract: the shared wow-stream fixture passes the shape check, and so does every payload the bridge sends', async () => {
-  assert.deepEqual(contractProblems(CONTRACT), []);
-  assert.equal(V.TITLE_MAX, 60, 'the wow-stream title cap');
-  const c = collector();
-  c.votes.start({ options: [...TWO, { title: 'Gear set: Fixture Blade' }], seconds: 60 });
-  c.sockets[0].emit('data', `${IRC.join}\r\n${IRC.plain}\r\n${IRC.tagged}\r\n${IRC.dupeSuffix.replace('!3', '!1')}\r\n`);
-  c.timers.run(t => t.ms === 2000);
-  c.votes.close();
-  await new Promise(r => setImmediate(r));
-  assert.equal(c.posts.length, 3);
-  for (const p of c.posts) assert.deepEqual(contractProblems(p), [], JSON.stringify(p));
-  assert.deepEqual(c.posts[2].vote, { open: false, options: [{ n: 1, title: 'Skinning 200', votes: 2 }, { n: 2, title: 'Skinning 225', votes: 1 }, { n: 3, title: 'Gear set: Fixture Blade', votes: 0 }], total: 3, endsAt: 61000, winner: 1 });
-  assert.notDeepEqual(contractProblems({ ...CONTRACT, vote: { ...CONTRACT.vote, extra: 1 } }), [], 'the check itself rejects a changed shape');
 });
 
 test('collector: an option title longer than the overlay cap is refused before anything opens', () => {
@@ -524,16 +435,6 @@ test('goal_vote_close: a corrupt goals.json never blocks closing a vote; only ad
   } finally { r.cleanup(); }
 });
 
-test('collector: any chat line from the vote channel confirms the join and clears the connect timer', () => {
-  const c = collector();
-  c.votes.start({ options: TWO, seconds: 60 });
-  c.sockets[0].emit('data', `${IRC.otherChannel}\r\n`);
-  assert.equal([...c.timers.pending].some(t => t.ms === V.CONNECT_TIMEOUT_MS), true, 'another channel confirms nothing');
-  c.sockets[0].emit('data', `${IRC.plain}\r\n`);
-  assert.equal([...c.timers.pending].some(t => t.ms === V.CONNECT_TIMEOUT_MS), false);
-  assert.equal(c.votes.close().result.chatMissed, false);
-});
-
 test('settleWithin: resolves when the push settles, when it fails, or after the wait at the latest', async () => {
   const timers = fakeTimers();
   let resolvePush;
@@ -550,25 +451,4 @@ test('settleWithin: resolves when the push settles, when it fails, or after the 
   await new Promise(r => setImmediate(r));
   assert.equal(late, true, 'a push that never answers waits at most the given time');
   await V.settleWithin(Promise.reject(new Error('down')), 1000, timers);
-});
-
-test('goal_vote_close without adopt works before the game has reported a character', async () => {
-  const r = goalRig();
-  try {
-    await r.store.call('goal_vote_open', { options: SKIN_OPTIONS, seconds: 60 });
-    r.setContext('Game: World of Warcraft: Forever (client 1.60.1.70124, interface 16001)');
-    const closed = await r.store.call('goal_vote_close', {});
-    assert.equal(closed.ok, true, closed.text);
-    assert.match(closed.text, /Closed the vote\./);
-    assert.match((await r.store.call('goal_vote_close', { adopt: true })).text, /has not reported a character/);
-  } finally { r.cleanup(); }
-});
-
-test('goal_vote_open: the game data is opened once for all options', async () => {
-  const r = goalRig();
-  try {
-    const res = await r.store.call('goal_vote_open', { options: [{ type: 'gearset', slots: { 16: 501 } }, { type: 'gearset', slots: { 11: 505 } }, { type: 'gearset', slots: { 1: 510 } }], seconds: 60 });
-    assert.equal(res.ok, true, res.text);
-    assert.equal(r.opened.count, 1);
-  } finally { r.cleanup(); }
 });

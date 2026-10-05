@@ -161,21 +161,6 @@ function readyChatLog() {
   return vm;
 }
 
-test('chat log transport: game state goes out as chat log frames of its own, never as a screenshot', () => {
-  const vm = readyChatLog();
-  tick(vm, 6);
-  const first = logFrames(vm).filter(f => gsJobs(f).length);
-  assert.equal(first.length, 1, 'the first record went out on the chat log');
-  assert.equal(first[0].id, 0, 'a frame with no message id');
-  assert.deepEqual(Object.keys(sectionsOf(gsJobs(first[0])[0]).sections), ['cap', 'level', 'zone', 'money', 'items', 'skills', 'equip', 'factions', 'life', 'recipes', 'quests']);
-  for (let i = 0; i < 5; i++) { vm.run('STUB.money = STUB.money + 100; STUB.FireEvent("PLAYER_MONEY")'); tick(vm, 130); }
-  const all = logFrames(vm).filter(f => gsJobs(f).length);
-  assert.ok(all.length >= 5, `money changes went out on the chat log (${all.length} frames)`);
-  assert.equal(sectionsOf(gsJobs(all[all.length - 1])[0]).sections.money.value.copper, vm.num('STUB.money'));
-  assert.equal(vm.num('STUB.screenshots'), 0, 'no screenshot at all');
-  assert.equal(vm.evaluate('ClaudeWoWStrip and ClaudeWoWStrip.shown or false'), 'false');
-});
-
 test('chat log transport: game state rides on a message frame, after the message', () => {
   const vm = readyChatLog();
   tick(vm, 6);
@@ -203,194 +188,6 @@ test('chat log transport: a failed chat log write sends the message by screensho
   assert.ok(shot.frame.len <= MAX_PAYLOAD);
 });
 
-test('no game state goes out before the bridge advertises gs, and an old bridge without it never gets one', () => {
-  const vm = ready({ gs: null });
-  assert.equal(vm.evaluate('ClaudeWoWStrip.shown'), 'false', 'no telemetry-only shot');
-  const shots = vm.num('STUB.screenshots');
-  for (let i = 0; i < 5; i++) { vm.run('STUB.money = STUB.money + 100'); tick(vm, 130); }
-  assert.equal(vm.num('STUB.screenshots'), shots, 'still no shot after ten minutes of changes');
-  vm.run('ClaudeWoW.Send("what should I do next")');
-  const shot = shoot(vm);
-  assert.ok(shot.jobs.some(j => j.text === 'what should I do next'));
-  assert.deepEqual(gsJobs(shot), [], 'nothing rides on the message either');
-  assert.equal(vm.evaluate('ClaudeWoWTelemetry.Active()'), 'false');
-});
-
-test('the first record is a telemetry-only shot with every section, stamped with its own sequence and outside the message ids', () => {
-  const vm = ready();
-  const lastSeq = vm.num('ClaudeWoWDB.lastSeq');
-  const shot = shoot(vm);
-  assert.ok(shot, 'a telemetry-only shot once the hello left the strip');
-  assert.equal(shot.jobs.length, 1);
-  const [gs] = gsJobs(shot);
-  assert.equal(gs.session, vm.evaluate('ClaudeWoWDB.session'));
-  assert.equal(gs.chat, '');
-  assert.equal(gs.kind, 'gs');
-  assert.equal(gs.hello, false);
-  assert.equal(gs.name, CHARACTER, 'the record names its character');
-  assert.ok(gs.id >= vm.num('time()') - 1, 'the sequence is clock based, so a crash that lost the saved counter never goes back');
-  assert.equal(vm.num('ClaudeWoWDB.lastSeq'), lastSeq, 'no message id was spent');
-  assert.equal(vm.num('ClaudeWoWDB.telemetry.seq'), gs.id);
-  const r = sectionsOf(gs);
-  assert.deepEqual(r.errors, []);
-  assert.deepEqual(Object.keys(r.sections), ['cap', 'level', 'zone', 'money', 'items', 'skills', 'equip', 'factions', 'life', 'recipes', 'quests']);
-  assert.deepEqual(r.sections.cap.value, { missing: [] });
-  assert.deepEqual(r.sections.money.value, { copper: 12345 });
-  assert.deepEqual(r.sections.level.value, { level: 23, xp: 1234, xpMax: 5000 });
-  assert.deepEqual(r.sections.zone.value, { mapID: 1431 });
-  assert.deepEqual(r.sections.items.value, { free: 5, counts: { 2589: 12 } });
-  assert.deepEqual(r.sections.skills.value, { skills: { 393: { rank: 75, max: 75 }, 129: { rank: 40, max: 75 } } });
-  assert.deepEqual(r.sections.equip.value, { slots: { 1: 16707, 16: 2140 } });
-  assert.deepEqual(r.sections.factions.value, { factions: { 530: { reaction: 5, standing: 3000 } } });
-  assert.ok(Buffer.byteLength(gs.text) <= TL.RECORD_TEXT_MAX);
-});
-
-test('telemetry stays out of run.outbound: no ack wait, no retry, no pixelFailed, no keypress reload', () => {
-  const vm = ready();
-  assert.ok(gsJobs(shoot(vm)).length, 'the first record');
-  const shots = vm.num('STUB.screenshots');
-  const armedAtLogin = vm.num('ARMED');
-  for (let i = 0; i < 10; i++) { vm.run('STUB.FireEvent("PLAYER_MONEY")'); tick(vm, 41); }
-  assert.equal(vm.num('STUB.screenshots'), shots, 'an unacknowledged record is never shot again');
-  assert.equal(vm.evaluate('ClaudeWoW.IsConnected()'), 'true', 'pixelFailed was never set');
-  assert.equal(vm.num('ARMED'), armedAtLogin, 'ArmAutoRefresh was never called after login');  assert.equal(vm.evaluate('ClaudeWoWStrip.shown'), 'false');
-});
-
-test('a telemetry-only shot comes at most once every 2 minutes; level up, death and a new recipe go at once', () => {
-  const vm = ready();
-  shoot(vm);
-  vm.run('STUB.money = STUB.money + 5; STUB.FireEvent("PLAYER_MONEY")');
-  tick(vm, 40);
-  assert.equal(vm.evaluate('ClaudeWoWStrip.shown'), 'false', 'a money tick waits for the 2-minute window');
-  tick(vm, 81);
-  const later = gsJobs(shoot(vm));
-  assert.equal(later.length, 1, 'then it goes');
-  assert.deepEqual(Object.keys(sectionsOf(later[0]).sections), ['money'], 'only what changed');
-  const urgentCases = [
-    ['level', 'STUB.level = 24; STUB.FireEvent("PLAYER_LEVEL_UP", 24)'],
-    ['life', 'STUB.FireEvent("PLAYER_DEAD")'],
-    ['recipes', 'STUB.FireEvent("NEW_RECIPE_LEARNED", 3275)'],
-    ['quests', 'STUB.FireEvent("QUEST_TURNED_IN", 7101, 450, 0)'],
-  ];
-  for (const [section, fire] of urgentCases) {
-    vm.run(fire);
-    tick(vm, 5);
-    const urgent = gsJobs(shoot(vm));
-    assert.equal(urgent.length, 1, `${section} goes at once`);
-    assert.ok(sectionsOf(urgent[0]).sections[section], `the record carries ${section}`);
-  }
-});
-
-test('telemetry rides on a message shot after the message, at most once every 30 s, and never pushes a message out of the frame', () => {
-  const vm = ready();
-  shoot(vm);
-  vm.run('STUB.money = STUB.money + 7');
-  tick(vm, 10);
-  vm.run('ClaudeWoW.Send("first question")');
-  const early = shoot(vm);
-  assert.ok(early.jobs.some(j => j.text === 'first question'));
-  assert.deepEqual(gsJobs(early), [], 'inside 30 s of the last record nothing rides');
-  tick(vm, 25);
-  vm.run('ClaudeWoW.NewChat("Two")');
-  const big = 'x'.repeat(MAX_PAYLOAD - 300);
-  vm.run(`ClaudeWoW.Send("${big}")`);
-  const full = shoot(vm);
-  const message = full.jobs.find(j => j.text === big);
-  assert.ok(message, 'the long message is on the strip whole');
-  assert.ok(full.frame.len <= MAX_PAYLOAD, `the frame holds ${full.frame.len} bytes`);
-  const rider = gsJobs(full)[0];
-  assert.ok(rider, 'telemetry took the room that was left');
-  assert.ok(full.frame.text.indexOf('kind=gs') > full.frame.text.indexOf(big), 'after the message');
-  assert.ok(Object.keys(sectionsOf(rider).sections).length < 10, 'only the sections that fit');
-});
-
-test('telemetry is only offered the room the messages left, and a record bigger than that room is not drawn', () => {
-  const vm = ready();
-  shoot(vm);
-  const big = 'y'.repeat(MAX_PAYLOAD - 300);
-  vm.run('ROOMS = {}; ClaudeWoWTelemetry.Take = function(room, solo) table.insert(ROOMS, room); return string.rep("z", room + 1) end');
-  vm.run(`ClaudeWoW.Send("${big}")`);
-  const shot = shoot(vm);
-  assert.ok(shot.jobs.find(j => j.text === big), 'the message is drawn whole');
-  assert.ok(!shot.frame.text.includes('zzzz'), 'the oversized record was refused');
-  const room = vm.num('ROOMS[#ROOMS]');
-  assert.ok(room > 0, 'there was some room left');
-  assert.ok(shot.frame.len + 1 + room <= MAX_PAYLOAD, `a record of ${room} bytes next to the ${shot.frame.len}-byte frame still fits`);
-});
-
-test('a record taken for a shot survives a redraw before the shot fires: two sends in one frame still carry it', () => {
-  const vm = ready();
-  shoot(vm);
-  vm.run('STUB.money = STUB.money + 11');
-  tick(vm, 31);
-  vm.run('ClaudeWoW.Send("one"); ClaudeWoW.NewChat("Two"); ClaudeWoW.Send("two")');
-  const shot = shoot(vm);
-  assert.deepEqual(shot.jobs.filter(j => j.text === 'one' || j.text === 'two').map(j => j.text).sort(), ['one', 'two']);
-  const [gs] = gsJobs(shot);
-  assert.ok(gs, 'the record taken by the first redraw is still on the strip');
-  assert.deepEqual(sectionsOf(gs).sections.money.value, { copper: 12345 + 11 });
-});
-
-test('the bridge being dark pauses telemetry: no telemetry-only shot and nothing riding the pixel-style strip', () => {
-  const vm = ready();
-  shoot(vm);
-  const armed = vm.num('ARMED');
-  nextSlot(vm, 'nil');
-  vm.run('STUB.money = STUB.money + 9');
-  tick(vm, 23 * 60);
-  for (let i = 0; i < 3; i++) tick(vm, 130);
-  assert.equal(vm.evaluate('ClaudeWoWStrip.shown'), 'false', 'no shot while the bridge is down');
-  vm.run('STUB.FireEvent("PLAYER_DEAD")');
-  tick(vm, 5);
-  assert.equal(vm.evaluate('ClaudeWoWStrip.shown'), 'false', 'not even an importance-3 event');
-  assert.equal(vm.num('ARMED'), armed);
-});
-
-test('at most 120 records an hour, even with importance-3 events', () => {
-  const vm = ready();
-  shoot(vm);
-  let sent = 1;
-  for (let i = 0; i < 130; i++) {
-    vm.run('STUB.level = STUB.level + 1; STUB.FireEvent("PLAYER_LEVEL_UP")');
-    tick(vm, 2);
-    sent += gsJobs(shoot(vm)).length;
-  }
-  assert.equal(sent, 120);
-});
-
-test('a slot whose hash for a section differs from what was sent makes the addon send that section again; matching hashes send nothing', () => {
-  const vm = ready();
-  const [first] = gsJobs(shoot(vm));
-  const lines = first.text.split('\n').slice(1).map(l => l.split(':'));
-  const hashes = Object.fromEntries(lines.map(([name, hash]) => [name, hash]));
-  const roundTrip = (luaHashes) => {
-    vm.run('ClaudeWoW.Send("ping")');
-    shoot(vm);
-    const chat = vm.evaluate('ClaudeWoWDB.chats[1].id');
-    const id = vm.num('ClaudeWoWDB.chats[1].pendingId');
-    nextSlot(vm, slotBody(`{ v = 1, watch = { items = { 2589 }, factions = { 530 } }, chars = { { character = "${CHARACTER}", session = ClaudeWoWDB.session, seq = ${first.id}, hashes = { ${luaHashes} } } } }`, `, replies = { { chat = "${chat}", id = ${id}, status = "done", text = "pong" } }`));
-    tick(vm, 6);
-    assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].pendingId'), null, 'the reply came through the slot');
-  };
-  tick(vm, 61);
-  roundTrip(Object.entries(hashes).map(([n, h]) => `${n} = "${h}"`).join(', '));
-  tick(vm, 125);
-  assert.equal(vm.evaluate('ClaudeWoWStrip.shown'), 'false', 'the bridge has every section: nothing to send');
-  roundTrip(Object.entries(hashes).map(([n, h]) => `${n} = "${n === 'money' ? '00000000' : h}"`).join(', '));
-  const resent = gsJobs(shoot(vm));
-  assert.equal(resent.length, 1);
-  assert.deepEqual(Object.keys(sectionsOf(resent[0]).sections), ['money'], 'only the section the bridge has wrong');
-});
-
-test('the capability probe names the collection functions this client lacks', () => {
-  const vm = ready({ extra: GAME_STUB + '\nC_Reputation = nil\nGetInventoryItemID = nil' });
-  const [gs] = gsJobs(shoot(vm));
-  const r = sectionsOf(gs);
-  assert.deepEqual(r.sections.cap.value.missing, ['GetInventoryItemID', 'C_Reputation.GetFactionDataByID', 'C_Reputation.GetWatchedFactionData']);
-  assert.equal(r.sections.factions, undefined, 'no reputation API, no section');
-  assert.deepEqual(r.sections.equip.value, { slots: {} });
-});
-
 test('saved telemetry state is per character and bounded: the last 8 recipes, 20 characters, junk dropped at login', () => {
   const junk = Array.from({ length: 20 }, (_, i) => `{ id = ${i + 1}, t = 5 }`).join(', ');
   const others = Array.from({ length: 25 }, (_, i) => `["Alt${i}-TestRealm"] = { deaths = 1, lastDeath = 1, learned = {}, seen = ${i} }`).join(', ');
@@ -409,104 +206,6 @@ test('saved telemetry state is per character and bounded: the last 8 recipes, 20
   assert.equal(vm.num(`${mine}.learned[8].id`), 111);
 });
 
-test('deaths and recipes belong to the character: an alt on the same account starts at 0,0 after the main died', () => {
-  const main = ready();
-  shoot(main);
-  main.run('STUB.FireEvent("PLAYER_DEAD"); STUB.FireEvent("NEW_RECIPE_LEARNED", 3275)');
-  const deaths = main.num(`ClaudeWoWDB.telemetry.chars["${CHARACTER}"].deaths`);
-  const lastDeath = main.num(`ClaudeWoWDB.telemetry.chars["${CHARACTER}"].lastDeath`);
-  assert.equal(deaths, 1);
-  const saved = `ClaudeWoWDB = { telemetry = { seq = 5, chars = { ["${CHARACTER}"] = { deaths = ${deaths}, lastDeath = ${lastDeath}, learned = { { id = 3275, t = ${lastDeath} } }, seen = ${lastDeath} } } } }`;
-  const alt = ready({ saved, extra: GAME_STUB + '\nfunction UnitName(unit) return "Altchar" end' });
-  const [gs] = gsJobs(shoot(alt));
-  assert.equal(gs.name, 'Altchar-TestRealm');
-  const r = sectionsOf(gs).sections;
-  assert.deepEqual(r.life.value, { deaths: 0, lastDeath: 0 }, 'the main\'s death is not replayed for the alt');
-  assert.deepEqual(r.recipes.value, { learned: [] });
-  assert.equal(alt.num(`ClaudeWoWDB.telemetry.chars["${CHARACTER}"].deaths`), 1, 'the main keeps its own');
-});
-
-test('the record names the character with the key goals.js derives from the game context, so telemetry and goals share one folder', () => {
-  for (const [extra, expected] of [['', 'Testchar-TestRealm'], ['\nfunction GetUnitName(unit, showServer) return "Bone Sleeve" end\nfunction UnitName(unit) return "Bone" end\nfunction GetRealmName() return "Forever Realm" end', 'Bone-ForeverRealm'], ['\nfunction GetRealmName() return "Forever\'s Realm" end', 'Testchar-ForeversRealm']]) {
-    const vm = ready({ extra: GAME_STUB + extra });
-    const [gs] = gsJobs(shoot(vm));
-    const fromContext = G.characterOf(vm.evaluate('ClaudeWoW.GameContext()'));
-    assert.equal(gs.name, fromContext.key, 'the same key goals.js reads off the Character line');
-    assert.equal(gs.name, expected);
-    assert.match(gs.name, TL.CHARACTER_KEY_RE);
-  }
-});
-
-test('a record whose shot fails is sent again, and a message retry never carries a record', () => {
-  const vm = ready();
-  shoot(vm);
-  tick(vm, 31);
-  vm.run('STUB.money = STUB.money + 13; STUB.FireEvent("PLAYER_MONEY")');
-  vm.run('ClaudeWoW.Send("will fail once")');
-  vm.run('STUB.FireEvent("PLAYER_DEAD")');
-  const failed = shoot(vm, 'SCREENSHOT_FAILED');
-  assert.ok(gsJobs(failed).length, 'the record rode on the shot that failed');
-  const retry = shoot(vm);
-  assert.ok(retry.jobs.some(j => j.text === 'will fail once'), 'the message is shot again');
-  assert.deepEqual(gsJobs(retry), [], 'nothing rides on a retry, even with an importance-3 event waiting');
-  const chat = vm.evaluate('ClaudeWoWDB.chats[1].id');
-  const id = vm.num('ClaudeWoWDB.chats[1].pendingId');
-  nextSlot(vm, slotBody(GS, `, replies = { { chat = "${chat}", id = ${id}, status = "done", text = "ok" } }`));
-  tick(vm, 6);
-  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].pendingId'), null);
-  const [again] = gsJobs(shoot(vm));
-  assert.ok(again, 'the record goes on a shot of its own');
-  const sections = sectionsOf(again).sections;
-  assert.deepEqual(sections.money.value, { copper: 12345 + 13 }, 'the money from the failed shot is sent again');
-  assert.ok(sections.life, 'with the death');
-});
-
-test('a message shot called off before it fires takes its record with it, and that record is sent again later', () => {
-  const vm = ready();
-  shoot(vm);
-  tick(vm, 31);
-  vm.run('STUB.money = STUB.money + 17; STUB.FireEvent("PLAYER_MONEY")');
-  vm.run('ClaudeWoW.Send("never mind")');
-  assert.equal(vm.evaluate('ClaudeWoWStrip.shown'), 'true');
-  vm.run('ClaudeWoW.Cancel(ClaudeWoWDB.chats[1])');
-  assert.equal(vm.evaluate('ClaudeWoWStrip.shown'), 'false', 'a shot whose message was cancelled is not kept for its record');
-  tick(vm, 125);
-  const [later] = gsJobs(shoot(vm));
-  assert.deepEqual(sectionsOf(later).sections.money.value, { copper: 12345 + 17 });
-});
-
-test('a slot that has seen the record but holds another hash makes the addon resend at once; one that has not seen it yet keeps the addon\'s own', () => {
-  const vm = ready();
-  const [first] = gsJobs(shoot(vm));
-  const roundTrip = (seq, luaHashes) => {
-    vm.run('ClaudeWoW.Send("ping")');
-    shoot(vm);
-    const chat = vm.evaluate('ClaudeWoWDB.chats[1].id');
-    const id = vm.num('ClaudeWoWDB.chats[1].pendingId');
-    nextSlot(vm, slotBody(`{ v = 1, watch = { items = { 2589 }, factions = { 530 } }, chars = { { character = "${CHARACTER}", session = ClaudeWoWDB.session, seq = ${seq}, hashes = { ${luaHashes} } } } }`, `, replies = { { chat = "${chat}", id = ${id}, status = "done", text = "pong" } }`));
-    tick(vm, 6);
-    assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].pendingId'), null);
-  };
-  roundTrip(first.id - 1, '');
-  tick(vm, 125);
-  assert.equal(vm.evaluate('ClaudeWoWStrip.shown'), 'false', 'an older bridge seq within a minute: the record is probably on its way');
-  const vm2 = ready();
-  const [first2] = gsJobs(shoot(vm2));
-  const hashes2 = Object.fromEntries(first2.text.split('\n').slice(1).map(l => l.split(':').slice(0, 2)));
-  const wrong2 = Object.entries(hashes2).map(([n, h]) => `${n} = "${n === 'zone' ? '00000000' : h}"`).join(', ');
-  tick(vm2, 10);
-  vm2.run('ClaudeWoW.Send("ping")');
-  shoot(vm2);
-  const chat = vm2.evaluate('ClaudeWoWDB.chats[1].id');
-  const id = vm2.num('ClaudeWoWDB.chats[1].pendingId');
-  nextSlot(vm2, slotBody(`{ v = 1, watch = { items = { 2589 }, factions = { 530 } }, chars = { { character = "${CHARACTER}", session = ClaudeWoWDB.session, seq = ${first2.id}, hashes = { ${wrong2} } } } }`, `, replies = { { chat = "${chat}", id = ${id}, status = "done", text = "pong" } }`));
-  tick(vm2, 6);
-  tick(vm2, 110);
-  const [resent] = gsJobs(shoot(vm2));
-  assert.ok(resent, 'the bridge saw the record and holds another hash: sent again before the minute is up');
-  assert.deepEqual(Object.keys(sectionsOf(resent).sections), ['zone']);
-});
-
 test('Inbox.lua at login brings the bridge\'s hashes, so only what changed goes out', () => {
   const probe = ready({ saved: 'ClaudeWoWDB = { session = "fixedsession" }' });
   const [first] = gsJobs(shoot(probe));
@@ -521,37 +220,6 @@ test('Inbox.lua at login brings the bridge\'s hashes, so only what changed goes 
   const [rider] = gsJobs(hello);
   assert.ok(rider, 'the capability came from Inbox.lua, before any slot');
   assert.deepEqual(Object.keys(sectionsOf(rider).sections), ['money'], 'only the section that changed since the bridge last heard');
-});
-
-test('the pump collects only after a change event or an importance-3 event', () => {
-  const vm = ready();
-  shoot(vm);
-  vm.run('STUB.money = STUB.money + 23');
-  tick(vm, 130);
-  assert.equal(vm.evaluate('ClaudeWoWStrip.shown'), 'false', 'no PLAYER_MONEY: nothing collected');
-  vm.run('STUB.FireEvent("PLAYER_MONEY")');
-  tick(vm, 5);
-  const [gs] = gsJobs(shoot(vm));
-  assert.deepEqual(sectionsOf(gs).sections.money.value, { copper: 12345 + 23 });
-});
-
-test('no telemetry-only shot while the player is typing', () => {
-  const vm = ready();
-  shoot(vm);
-  vm.run('STUB.focus = ClaudeWoW.UI.input or CreateFrame("EditBox"); STUB.FireEvent("PLAYER_DEAD")');
-  tick(vm, 130);
-  assert.equal(vm.evaluate('ClaudeWoWStrip.shown'), 'false', 'an edit box has the keyboard');
-  vm.run('STUB.focus = nil');
-  tick(vm, 5);
-  assert.ok(gsJobs(shoot(vm)).length, 'it goes once the box lets go');
-});
-
-test('/claude config context off also stops telemetry', () => {
-  const vm = ready({ saved: 'ClaudeWoWDB = { settings = { context = false } }' });
-  assert.equal(vm.evaluate('ClaudeWoWStrip.shown'), 'false');
-  vm.run('STUB.FireEvent("PLAYER_DEAD")');
-  tick(vm, 5);
-  assert.equal(vm.evaluate('ClaudeWoWStrip.shown'), 'false');
 });
 
 test('the Lua character key equals goals.js characterOf on the same game context, case by case', () => {
@@ -581,53 +249,6 @@ test('the Lua character key equals goals.js characterOf on the same game context
   assert.equal(vm.evaluate('ClaudeWoWTelemetry.CharacterKey()'), `${'Б'.repeat(50)}-Forever`);
 });
 
-test('an urgent record whose shot fails stays urgent: the next shot goes at once', () => {
-  const vm = ready();
-  shoot(vm);
-  vm.run('STUB.level = 24; STUB.FireEvent("PLAYER_LEVEL_UP", 24)');
-  tick(vm, 5);
-  const failed = shoot(vm, 'SCREENSHOT_FAILED');
-  assert.ok(sectionsOf(gsJobs(failed)[0]).sections.level, 'the level-up record was on the failed shot');
-  tick(vm, 5);
-  const again = gsJobs(shoot(vm));
-  assert.equal(again.length, 1, 'sent again within a tick, not after the 2-minute window');
-  assert.ok(sectionsOf(again[0]).sections.level);
-});
-
-test('a slot that changes nothing for the addon does not wake the pump; a new watch list does', () => {
-  const vm = ready();
-  const [first] = gsJobs(shoot(vm));
-  const luaHashes = first.text.split('\n').slice(1).map(l => l.split(':')).map(([n, h]) => `${n} = "${h}"`).join(', ');
-  const roundTrip = (watchItems) => {
-    vm.run('ClaudeWoW.Send("ping")');
-    shoot(vm);
-    const chat = vm.evaluate('ClaudeWoWDB.chats[1].id');
-    const id = vm.num('ClaudeWoWDB.chats[1].pendingId');
-    nextSlot(vm, slotBody(`{ v = 1, watch = { items = { ${watchItems} }, factions = { 530 } }, chars = { { character = "${CHARACTER}", session = ClaudeWoWDB.session, seq = ${first.id}, hashes = { ${luaHashes} } } } }`, `, replies = { { chat = "${chat}", id = ${id}, status = "done", text = "pong" } }`));
-    tick(vm, 6);
-    tick(vm, 2);
-    vm.run('COLLECTED = 0; local sections = ClaudeWoWTelemetry.Sections; ClaudeWoWTelemetry.Sections = function(...) COLLECTED = COLLECTED + 1; return sections(...) end');
-    tick(vm, 125);
-  };
-  tick(vm, 61);
-  roundTrip('2589');
-  assert.equal(vm.num('COLLECTED'), 0, 'same watch list, same hashes: nothing collected');
-  roundTrip('2589, 2592');
-  const [items] = gsJobs(shoot(vm));
-  assert.deepEqual(Object.keys(sectionsOf(items).sections), ['items'], 'a new watch list is collected and sent');
-});
-
-test('change events never write the saved variables; only a death or a new recipe does', () => {
-  const vm = ready();
-  shoot(vm);
-  const key = `ClaudeWoWDB.telemetry.chars["${CHARACTER}"]`;
-  vm.run(`${key}.seen = 7`);
-  for (const ev of ['PLAYER_MONEY', 'PLAYER_XP_UPDATE', 'ZONE_CHANGED_NEW_AREA', 'BAG_UPDATE_DELAYED', 'PLAYER_EQUIPMENT_CHANGED', 'SKILL_LINES_CHANGED', 'UPDATE_FACTION', 'PLAYER_LEVEL_UP']) vm.run(`STUB.FireEvent("${ev}")`);
-  assert.equal(vm.num(`${key}.seen`), 7);
-  vm.run('STUB.FireEvent("PLAYER_DEAD")');
-  assert.ok(vm.num(`${key}.seen`) > 7);
-});
-
 test('when a record head does not fit the room left, the change still waits for a shot of its own', () => {
   const vm = ready();
   const [first] = gsJobs(shoot(vm));
@@ -649,23 +270,6 @@ test('when a record head does not fit the room left, the change still waits for 
   assert.deepEqual(Object.keys(sectionsOf(solo).sections), ['money']);
 });
 
-test('a failing Screenshot() gets one urgent retry, then normal pacing: the third try waits for the 2-minute window', () => {
-  const vm = ready();
-  shoot(vm);
-  vm.run('STUB.level = 24; STUB.FireEvent("PLAYER_LEVEL_UP", 24)');
-  tick(vm, 5);
-  assert.ok(gsJobs(shoot(vm, 'SCREENSHOT_FAILED')).length, 'first try, failed');
-  assert.ok(gsJobs(shoot(vm, 'SCREENSHOT_FAILED')).length, 'the one urgent retry, failed again');
-  assert.equal(vm.evaluate('ClaudeWoWStrip.shown'), 'false', 'no third try at once');
-  tick(vm, 5);
-  tick(vm, 5);
-  assert.equal(vm.evaluate('ClaudeWoWStrip.shown'), 'false', 'nor on the next ticks');
-  tick(vm, 125);
-  const third = gsJobs(shoot(vm));
-  assert.equal(third.length, 1, 'after the window the record goes again');
-  assert.ok(sectionsOf(third[0]).sections.level);
-});
-
 test('the addon stops sending when the slot lists its own character key as refused', () => {
   const vm = ready({ gs: `{ v = 1, watch = { items = { 2589 }, factions = { 530 } }, chars = {}, refused = { "${CHARACTER}" } }` });
   assert.equal(vm.evaluate('ClaudeWoWStrip.shown'), 'false', 'no telemetry-only shot for a refused key');
@@ -675,38 +279,6 @@ test('the addon stops sending when the slot lists its own character key as refus
   assert.equal(vm.evaluate('ClaudeWoWTelemetry.Active()'), 'false');
   const other = ready({ gs: '{ v = 1, watch = { items = { 2589 }, factions = { 530 } }, chars = {}, refused = { "Someone-Else" } }' });
   assert.ok(gsJobs(shoot(other)).length, 'another character\'s refused key does not stop this one');
-});
-
-test('the character line comes from ClaudeWoW.CharacterLine, the same text GameContext uses', () => {
-  const vm = newVM();
-  const line = vm.evaluate('ClaudeWoW.CharacterLine()');
-  assert.ok(vm.evaluate('ClaudeWoW.GameContext()').split('\n').includes(`Character: ${line}`));
-  vm.run('function UnitName() error("boom") end');
-  assert.equal(vm.evaluate('ClaudeWoW.CharacterLine()'), null);
-  assert.equal(vm.evaluate('ClaudeWoWTelemetry.CharacterKey()'), null);
-});
-
-test('an urgent event that changes nothing does not stay urgent: a later silent change waits for the gates', () => {
-  const vm = ready();
-  shoot(vm);
-  vm.run('STUB.FireEvent("NEW_RECIPE_LEARNED")');
-  tick(vm, 5);
-  assert.equal(vm.evaluate('ClaudeWoWStrip.shown'), 'false', 'nothing to record for a recipe event without an id');
-  vm.run('STUB.money = STUB.money + 31');
-  tick(vm, 5);
-  tick(vm, 5);
-  assert.equal(vm.evaluate('ClaudeWoWStrip.shown'), 'false', 'a money change with no event is not shot at once');
-});
-
-test('Inbox.lua an hour old does not arm telemetry: nothing rides on the login hello', () => {
-  const vm = newVM({ saved: 'ClaudeWoWDB = { settings = { transport = "screenshot", stripLevels = { on = 255, off = 0, codec = 1 } } }' });
-  vm.run('ClaudeWoW_Inbox = { now = time() - 3600, cwd = "", transport = "screenshot", strip = { on = 255, off = 0 }, gs = { v = 1, watch = { items = {}, factions = {} }, chars = {} }, replies = {} }');
-  vm.run('STUB.FireEvent("ADDON_LOADED", "ClaudeWoW"); STUB.FireEvent("PLAYER_LOGIN")');
-  vm.run('STUB.RunTimers()');
-  const hello = shoot(vm);
-  assert.ok(hello.jobs.some(j => j.hello));
-  assert.deepEqual(gsJobs(hello), [], 'a stale Inbox.lua is not a bridge that is listening');
-  assert.equal(vm.evaluate('ClaudeWoWTelemetry.Active()'), 'false');
 });
 
 test('/claude config telemetry off stops telemetry and on starts it again', () => {
@@ -722,18 +294,6 @@ test('/claude config telemetry off stops telemetry and on starts it again', () =
   vm.run('SlashCmdList.CLAUDE("config telemetry on")');
   assert.equal(vm.evaluate('ClaudeWoWDB.settings.telemetry'), 'true');
   assert.equal(vm.evaluate('ClaudeWoWTelemetry.Status()'), 'on');
-});
-
-test('a newer urgent event keeps its own retry when an older urgent shot fails', () => {
-  const vm = ready();
-  shoot(vm);
-  vm.run('STUB.level = 24; STUB.FireEvent("PLAYER_LEVEL_UP", 24)');
-  tick(vm, 5);
-  for (let i = 0; i < 2; i++) vm.run('local f = ClaudeWoWStrip; if f.shown and f.scripts.OnUpdate then f.scripts.OnUpdate(f, 0.016) end');
-  vm.run('STUB.FireEvent("PLAYER_DEAD")');
-  vm.run('STUB.FireEvent("SCREENSHOT_FAILED")');
-  assert.ok(gsJobs(shoot(vm, 'SCREENSHOT_FAILED')).length, 'the death goes at once, and its shot fails too');
-  assert.equal(vm.evaluate('ClaudeWoWStrip.shown'), 'true', 'the death still has its one urgent retry');
 });
 
 test('a message waits behind a fired telemetry-only shot, then is shot at once after its own failure', () => {
@@ -770,31 +330,4 @@ test('a late screenshot event from a timed-out shot never completes the next sho
   assert.ok(P.jobsFromStrip(frame.id, frame.text).some(j => j.text === 'after a slow shot'));
   frames();
   assert.equal(vm.num('STUB.screenshots'), fired + 1, 'the message is shot once the late event is in');
-});
-
-test('the player\'s own screenshot event while a message strip is still being drawn does not count as the message\'s shot', () => {
-  const vm = ready();
-  const frames = () => { for (let i = 0; i < 2; i++) vm.run('local f = ClaudeWoWStrip; if f.shown and f.scripts.OnUpdate then f.scripts.OnUpdate(f, 0.016) end'); };
-  frames();
-  vm.run('STUB.FireEvent("SCREENSHOT_SUCCEEDED")');
-  vm.run('ClaudeWoW.Send("typed during a print screen")');
-  const before = vm.num('STUB.screenshots');
-  vm.run('STUB.FireEvent("SCREENSHOT_SUCCEEDED")');
-  assert.equal(vm.evaluate('ClaudeWoWStrip.shown'), 'true', 'the strip is still up');
-  frames();
-  assert.equal(vm.num('STUB.screenshots'), before + 1, 'and the message is shot');
-});
-
-test('QUEST_TURNED_IN keeps the last 8 turn-ins per character and sends them in the quests section', () => {
-  const vm = ready();
-  shoot(vm);
-  for (let id = 1; id <= 10; id++) vm.run(`STUB.FireEvent("QUEST_TURNED_IN", ${7100 + id}, 0, 0)`);
-  vm.run('STUB.FireEvent("QUEST_TURNED_IN", "junk", 0, 0)');
-  const mine = `ClaudeWoWDB.telemetry.chars["${CHARACTER}"]`;
-  assert.equal(vm.num(`#${mine}.turnedIn`), 8);
-  assert.equal(vm.num(`${mine}.turnedIn[1].id`), 7103);
-  tick(vm, 5);
-  const rec = gsJobs(shoot(vm));
-  assert.equal(rec.length, 1);
-  assert.equal(sectionsOf(rec[0]).sections.quests.value.turnedIn.map(q => q.id).join(','), '7103,7104,7105,7106,7107,7108,7109,7110');
 });

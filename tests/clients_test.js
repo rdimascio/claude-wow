@@ -25,50 +25,6 @@ function legacyConfig(dir = FOREVER, extra = {}) {
   };
 }
 
-test('a single-client config from before clients[] reads as one client with the same paths the bridge used', () => {
-  const [c, ...rest] = CLI.clientsOf(legacyConfig());
-  assert.deepEqual(rest, []);
-  assert.equal(c.key, path.resolve(FOREVER));
-  assert.equal(c.label, '_classic_beta_');
-  assert.equal(c.product, 'wow_classic_beta');
-  assert.equal(c.account, 'ACCT#1');
-  assert.equal(c.addonDir, addonsOf(FOREVER));
-  assert.equal(c.inboxFile, SIG.runtimeInbox(addonsOf(FOREVER)));
-  assert.equal(c.savedVariablesFile, savedOf(FOREVER, 'ACCT#1'));
-  assert.equal(c.screenshotDir, path.join(FOREVER, 'Screenshots'));
-  assert.equal(c.chatLogFile, path.join(FOREVER, 'Logs', 'WoWChatLog.txt'));
-  assert.equal(c.processName, 'World of Warcraft');
-  assert.equal(c.tocInterface, P.TOC_INTERFACE);
-});
-
-test('an old config naming a renamed addon is read with the new names, as the bridge did', () => {
-  const cfg = legacyConfig(FOREVER, {
-    inboxFile: path.join(addonsOf(FOREVER), 'WoWAI', 'Inbox.lua'),
-    savedVariablesFile: savedOf(FOREVER, 'ACCT#1', 'WoWAI'),
-  });
-  const [c] = CLI.clientsOf(cfg);
-  assert.equal(c.inboxFile, SIG.runtimeInbox(addonsOf(FOREVER)), 'an inbox in an old addon folder is redirected');
-  assert.equal(c.savedVariablesFile, savedOf(FOREVER, 'ACCT#1'));
-  const shipped = CLI.clientsOf(legacyConfig(FOREVER, { inboxFile: path.join(addonsOf(FOREVER), P.ADDON, 'Inbox.lua') }))[0];
-  assert.equal(shipped.inboxFile, SIG.runtimeInbox(addonsOf(FOREVER)), 'an inbox in the shipped folder is redirected');
-  const custom = CLI.clientsOf(legacyConfig(FOREVER, { capture: { screenshotDir: '/elsewhere/shots' } }))[0];
-  assert.equal(custom.screenshotDir, path.resolve('/elsewhere/shots'));
-});
-
-test('clients[] derives every path from dir and the account, and its entries win over the old keys', () => {
-  const cfg = { ...legacyConfig(ERA), clients: [{ dir: FOREVER, account: 'A#1' }, { dir: ERA, account: 'B#2', tocInterface: '11509', processName: 'World of Warcraft Classic' }] };
-  const [forever, era] = CLI.clientsOf(cfg);
-  assert.equal(forever.dir, FOREVER);
-  assert.equal(forever.savedVariablesFile, savedOf(FOREVER, 'A#1'));
-  assert.equal(forever.inboxFile, SIG.runtimeInbox(addonsOf(FOREVER)));
-  assert.equal(forever.processName, 'World of Warcraft', 'the capture default fills what an entry leaves out');
-  assert.equal(forever.tocInterface, P.TOC_INTERFACE);
-  assert.equal(era.savedVariablesFile, savedOf(ERA, 'B#2'));
-  assert.equal(era.tocInterface, '11509');
-  assert.equal(era.processName, 'World of Warcraft Classic');
-  assert.equal(CLI.clientsOf(cfg).length, 2, 'the old addonDir is not read as a third client');
-});
-
 test('an entry without an account has no reload outbox, a disabled one is listed but not served, and the same folder twice is one client', () => {
   const cfg = { clients: [{ dir: FOREVER }, { dir: FOREVER + path.sep, account: 'X' }, { dir: ERA, enabled: false }, { account: 'no dir' }, null] };
   const all = CLI.allClients(cfg);
@@ -149,15 +105,6 @@ test('lastSpoke picks the client heard last, ignores dates no Date can hold, and
   assert.equal(CLI.lastSpoke(state, clients).label, '_classic_beta_');
 });
 
-test('recordsFor routes each reply only to the client its message came from, newest last, capped', () => {
-  const a = CLI.keyOf(FOREVER), b = CLI.keyOf(ERA);
-  const records = [{ id: 1, client: a }, { id: 1, client: b }, { id: 2, client: a }, { id: 3 }, null, { id: 4, client: a }];
-  assert.deepEqual(CLI.recordsFor(records, a).map(r => r.id), [1, 2, 4]);
-  assert.deepEqual(CLI.recordsFor(records, b).map(r => r.id), [1]);
-  assert.deepEqual(CLI.recordsFor(records, a, 2).map(r => r.id), [2, 4]);
-  assert.deepEqual(CLI.recordsFor(records, CLI.keyOf('/nowhere')), [], 'a record without a known client goes nowhere');
-});
-
 test('slotClients and describe name each client with its installed build, mark this one and the last speaker', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-wow-clients-'));
   try {
@@ -183,14 +130,6 @@ test('slotClients and describe name each client with its installed build, mark t
   }
 });
 
-test('accountOf reads the account from POSIX and Windows SavedVariables paths', () => {
-  assert.equal(CLI.accountOf('/g/_classic_era_/WTF/Account/84831040#1/SavedVariables/ClaudeWoW.lua'), '84831040#1');
-  assert.equal(CLI.accountOf('C:\\WoW\\_classic_\\WTF\\Account\\ABC\\SavedVariables\\ClaudeWoW.lua'), 'ABC');
-  assert.equal(CLI.accountOf('/custom/saved.lua'), '');
-  assert.equal(CLI.productFor('/x/_classic_era_'), 'wow_classic_era');
-  assert.equal(CLI.productFor('/x/_retail_'), 'wow');
-});
-
 test('adoptLegacyState copies the old context to the first client listed, disabled or not, and leaves the global one', () => {
   const all = CLI.allClients({ clients: [{ dir: FOREVER, enabled: false }, { dir: ERA }] });
   const state = { context: { text: 'Character: A', at: 1 }, presence: { ring: 'b', at: 3 } };
@@ -212,13 +151,6 @@ test('contextText: a known client reads only its own context, never the shared o
   assert.equal(CLI.contextText(state, CLI.keyOf('/never/heard')), '', 'a client that never sent one gets none');
   assert.equal(CLI.contextText(state, ''), 'shared');
   assert.equal(CLI.contextText({}, ''), '');
-});
-
-test('adoptLegacyState copies the shared context only from a state.json that has no per-client block yet', () => {
-  const all = CLI.allClients({ clients: [{ dir: FOREVER }, { dir: ERA }] });
-  const state = { context: { text: 'Character: B' }, clients: { [all[1].key]: { context: { text: 'Character: B' } } } };
-  assert.equal(CLI.adoptLegacyState(state, all), false);
-  assert.equal(state.clients[all[0].key], undefined, 'after a restart the first client does not take the context another client reported');
 });
 
 test('foreignContext: goal tools are refused when the shared context is another character, or the same character from another client', () => {

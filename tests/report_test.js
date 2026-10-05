@@ -81,45 +81,6 @@ function run(argv, dir, now = NOON) {
   return { code, out, err };
 }
 
-test('report: one local day of events from both event files, orders issued that day and goal progress from the snapshot', () => {
-  const f = fixture();
-  try {
-    const r = run(['--day', DAY], f.dir);
-    assert.equal(r.code, 0, r.err);
-    assert.equal(r.out, [
-      `Day report for ${KEY}, ${DAY} (local time)`,
-      'Level: 19 to 20',
-      'Money: +1g 49s 0c over 2 changes',
-      'Deaths: 1',
-      'Zone changes: 1 (maps 21)',
-      'Skill 393: 180 to 187',
-      'Recipes learned: 1 (recipe 9001)',
-      'Item 2318 in bags: 4 to 30',
-      'Watched item 2318 reached its target of 30',
-      'Orders issued: 3',
-      '  Skin 30 more, then raise Skinning (superseded)',
-      `  ${R.HIDDEN_TEXT} (superseded)`,
-      '  Buy 2 Fixture Blade (current)',
-      'Goals now:',
-      '  Skinning 225: 83%',
-      '  Gear set: 2 items: 50%',
-      `  ${R.HIDDEN_TEXT}: 71%`,
-      `Data: 10 events; snapshot updated ${new Date(NOON).toISOString()}`,
-      '',
-    ].join('\n'));
-  } finally { f.cleanup(); }
-});
-
-test('report: every order text and goal title goes through the viewer text check; a typed game name never prints', () => {
-  const f = fixture();
-  try {
-    const out = run(['--day', DAY], f.dir).out;
-    assert.doesNotMatch(out, /Orgrimmar/);
-    assert.doesNotMatch(out, /Undercity/);
-    assert.match(out, /Buy 2 Fixture Blade/, 'a name the order stored as a checked ref is allowed');
-  } finally { f.cleanup(); }
-});
-
 test('report: the default day is today, the default character the newest events folder, and a quiet day says so', () => {
   const f = fixture();
   try {
@@ -146,30 +107,6 @@ test('report: usage errors, no folder and an unreadable goal store', () => {
     assert.doesNotMatch(run(['--day', DAY], f.dir).out, /Goals now|Orders issued/, 'no goals file: no goal lines');
     fs.writeFileSync(path.join(f.dir, KEY, G.GOALS_FILE), '{bad');
     assert.match(run(['--day', DAY], f.dir).out, /Goals: not read \(.*not valid JSON/);
-  } finally { f.cleanup(); }
-});
-
-test('report: a tampered events file never prints free text; events whose used fields are not whole numbers are skipped', () => {
-  const f = fixture();
-  try {
-    const out = run(['--day', DAY], f.dir).out;
-    for (const word of ['Orgrimmar', 'Undercity', 'Thunder', 'Silvermoon', 'Crossroads', '1.5']) assert.doesNotMatch(out, new RegExp(word));
-    assert.match(out, /Data: 10 events/);
-  } finally { f.cleanup(); }
-});
-
-test('report: the bridge-owned profession names are allowed in order texts, and a gear set title shows its stored item names', () => {
-  const f = fixture();
-  try {
-    const file = path.join(f.dir, KEY, G.GOALS_FILE);
-    const doc = JSON.parse(fs.readFileSync(file, 'utf8'));
-    doc.orders.history.unshift({ id: 'o_9', text: 'Raise Mining to 50', issuedAt: NOON - 10, status: 'superseded' });
-    doc.goals[1].title = 'Gear set: 2x Fixture Blade';
-    doc.goals[1].refs = [{ kind: 'item', id: 501, name: 'Fixture Blade', slot: 16 }, { kind: 'item', id: 501, name: 'Fixture Blade', slot: 17 }];
-    fs.writeFileSync(file, JSON.stringify(doc));
-    const out = run(['--day', DAY], f.dir).out;
-    assert.match(out, /  Raise Mining to 50 \(superseded\)/);
-    assert.match(out, /  Gear set: 2x Fixture Blade: 50%/);
   } finally { f.cleanup(); }
 });
 

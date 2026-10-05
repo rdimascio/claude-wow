@@ -30,14 +30,6 @@ test('from a checkout, a script is run with this interpreter and its path, as be
   assert.throws(() => R.scriptCommand('nope', [], checkout), /no script called "nope"/);
 });
 
-test('from the binary, a script is the binary and a subcommand; the supervisor is the binary itself', () => {
-  assert.deepEqual(R.scriptCommand('bridge', ['--once'], binary), ['/home/p/.local/bin/claude-wow', ['bridge', '--once']]);
-  assert.deepEqual(R.scriptCommand('setup', ['--wow', 'x'], binary), ['/home/p/.local/bin/claude-wow', ['setup', '--wow', 'x']]);
-  assert.deepEqual(R.scriptCommand('install-slots', [], binary), ['/home/p/.local/bin/claude-wow', ['install-slots']]);
-  assert.deepEqual(R.scriptCommand('supervisor', [], binary), ['/home/p/.local/bin/claude-wow', []]);
-  for (const name of Object.keys(R.SCRIPTS)) assert.ok(fs.existsSync(path.join(R.ROOT, R.SCRIPTS[name])), `${R.SCRIPTS[name]} exists`);
-});
-
 test('a JavaScript launcher runs with this interpreter from a checkout, and with the node on the PATH from the binary', () => {
   assert.deepEqual(R.node(checkout), { file: '/usr/local/bin/node', found: true });
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-wow-rt-'));

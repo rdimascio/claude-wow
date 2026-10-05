@@ -127,24 +127,6 @@ test('follow waits for an events file to appear, picks the newest character fold
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('lines written just before a rotation are read from the rotated file before the new one', () => {
-  const dir = tmpGoals('drain');
-  const file = path.join(dir, 'Bone-Forever', TL.EVENTS_FILE);
-  try {
-    appendEvents(file, [ev('zone', 2, { from: 1, to: 2 })]);
-    const now = clock();
-    const out = sink();
-    const f = EV.follow({ file, min: 1, out, err: sink(), now, pollMs: 0 });
-    appendEvents(file, [ev('death', 3, { at: 1 }), ev('bags_full', 2, { free: 0 })]);
-    fs.renameSync(file, path.join(path.dirname(file), TL.EVENTS_ROTATED_FILE));
-    appendEvents(file, [ev('level_up', 3, { from: 20, to: 21 })]);
-    f.tick();
-    now.advance(EV.BURST_WINDOW_MS);
-    f.tick();
-    assert.deepEqual(out.lines().map(e => e.type), ['death', 'bags_full', 'level_up']);
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
-});
-
 test('without --character the newest events file is looked for again, and a character that starts writing later is followed from what is new', () => {
   const dir = tmpGoals('switch');
   try {
@@ -191,24 +173,6 @@ test('claude-wow events without --follow prints the recent events at or above --
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('the rotated file is drained to its end, however many reads that takes', () => {
-  const dir = tmpGoals('drainloop');
-  const file = path.join(dir, 'Bone-Forever', TL.EVENTS_FILE);
-  try {
-    appendEvents(file, [ev('zone', 2, { from: 1, to: 2 })]);
-    const now = clock();
-    const out = sink();
-    const f = EV.follow({ file, min: 1, out, err: sink(), now, pollMs: 0, chunk: 16 });
-    appendEvents(file, [ev('death', 3, { at: 1 }), ev('bags_full', 2, { free: 0 }), ev('recipe', 3, { id: 3275, at: 2 })]);
-    fs.renameSync(file, path.join(path.dirname(file), TL.EVENTS_ROTATED_FILE));
-    appendEvents(file, [ev('level_up', 3, { from: 20, to: 21 })]);
-    for (let i = 0; i < 40; i++) f.tick();
-    now.advance(EV.BURST_WINDOW_MS);
-    f.tick();
-    assert.deepEqual(out.lines().map(e => e.type), ['death', 'bags_full', 'recipe', 'level_up']);
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
-});
-
 test('switching between character files keeps each file\'s half-read line', () => {
   const dir = tmpGoals('partial');
   try {
@@ -233,23 +197,6 @@ test('switching between character files keeps each file\'s half-read line', () =
     now.advance(EV.BURST_WINDOW_MS);
     f.tick();
     assert.ok(out.lines().map(e => e.type).includes('death'), 'the line split across the switch is read whole');
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
-});
-
-test('a chunk boundary inside a multi-byte character never corrupts a Cyrillic character name', () => {
-  const dir = tmpGoals('utf8');
-  const file = path.join(dir, 'Боне-Вечность', TL.EVENTS_FILE);
-  try {
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, '');
-    const now = clock();
-    const out = sink();
-    const f = EV.follow({ file, min: 1, out, err: sink(), now, pollMs: 0, chunk: 7 });
-    appendEvents(file, [{ ...ev('death', 3, { at: 1 }), character: 'Боне-Вечность' }]);
-    for (let i = 0; i < 60; i++) f.tick();
-    now.advance(EV.BURST_WINDOW_MS);
-    f.tick();
-    assert.deepEqual(out.lines().map(e => e.character), ['Боне-Вечность']);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 

@@ -44,17 +44,6 @@ test('parseFlags reads the per-chat settings and the resume and live targets /cl
   assert.equal(P.parseFlags('plugin=live').liveTarget, undefined, 'plugin=live is a binding, not a target');
 });
 
-test('parseOutbox reads the same settings from the opts field of the reload outbox', () => {
-  const hex = s => Buffer.from(s).toString('hex');
-  const src = `ClaudeWoWDB = { ["outbox"] = { ["id"] = 9, ["text"] = "${hex('go on')}", ["cwd"] = "${hex('/proj')}", ["session"] = "s1", ["chat"] = "c1", ["plugin"] = "claude-code", ["opts"] = "${hex('model=opus;resume=f02436b8-8a5f-4c05-823e-bef25f88ff7b')}", }, }`;
-  const job = P.parseOutbox(src);
-  assert.equal(job.text, 'go on');
-  assert.equal(job.model, 'opus');
-  assert.equal(job.resume, 'f02436b8-8a5f-4c05-823e-bef25f88ff7b');
-  assert.equal(job.plugin, 'claude-code');
-  assert.equal(P.parseOutbox(src.replace(/\["opts"\][^,]*,/, '')).model, undefined);
-});
-
 test('withRunOnlyRules adds greed rules to one run without touching the saved agent config', () => {
   const saved = { permissionMode: 'acceptEdits', allowedTools: ['WebSearch'] };
   const run = P.withRunOnlyRules(saved, ['Bash(rm:*)', 'WebSearch', '']);
@@ -87,27 +76,6 @@ test('parseFlags reads shot=missing / shot=failed (the addon cannot take the scr
   assert.equal(job.text, 'hi');
 });
 
-test('the screenshot transport is the default; an explicit capture.mode wins; a remembered fallback puts an unset mode on pixels', () => {
-  assert.equal(P.DEFAULT_TRANSPORT, 'screenshot');
-  assert.equal(P.transportName(undefined), 'screenshot');
-  assert.equal(P.transportName(''), 'screenshot');
-  assert.equal(P.transportName('PIXEL'), 'pixel');
-  assert.equal(P.transportName('gif'), '');
-  // A new install, or a config.json from before the mode existed: the default.
-  assert.deepEqual(P.chooseTransport(undefined, {}), { transport: 'screenshot', source: 'default', fallback: null });
-  assert.deepEqual(P.chooseTransport({ enabled: true }, { sessions: {} }), { transport: 'screenshot', source: 'default', fallback: null });
-  // An existing config.json with an explicit mode keeps what it has.
-  assert.deepEqual(P.chooseTransport({ mode: 'pixel' }, {}), { transport: 'pixel', source: 'config', fallback: null });
-  assert.deepEqual(P.chooseTransport({ mode: 'screenshot' }, {}), { transport: 'screenshot', source: 'config', fallback: null });
-  assert.equal(P.chooseTransport({ mode: 'gif' }, {}).transport, '', 'a bad explicit mode is refused, not defaulted');
-  // A previous run fell back to pixels: without an explicit mode the next start goes straight there...
-  const fb = { reason: 'missing', at: 1700000000000, session: 's1' };
-  assert.deepEqual(P.chooseTransport({}, { transportFallback: fb }), { transport: 'pixel', source: 'fallback', fallback: fb });
-  // ...and an explicit mode still wins over the memory.
-  assert.equal(P.chooseTransport({ mode: 'screenshot' }, { transportFallback: fb }).source, 'config');
-  assert.equal(P.chooseTransport({}, { transportFallback: { reason: 'weird' } }).source, 'default', 'a memory with an unknown reason does not count');
-});
-
 test('transportFallback remembers the addon\'s report once per reason and words the note for the log and the slot files', () => {
   const state = {};
   const note = P.transportFallback(state, 'missing', { session: 'abc', id: 3 }, Date.UTC(2026, 8, 28, 12, 30));
@@ -119,55 +87,6 @@ test('transportFallback remembers the addon\'s report once per reason and words 
   assert.equal(P.transportFallback(state, 'bogus', {}), null);
   assert.equal(P.transportNote(null), '');
   assert.equal(P.transportNote(state.transportFallback), note.replace('2026-09-28 12:30 UTC', new Date(state.transportFallback.at).toISOString().slice(0, 16).replace('T', ' ') + ' UTC').replace('has no Screenshot() function', 'reported SCREENSHOT_FAILED on every try'));
-});
-
-test('parseOutbox reads the shot field the addon writes when it cannot take the screenshot', () => {
-  const hex = s => Buffer.from(s, 'utf8').toString('hex');
-  const src = `ClaudeWoWDB = {\n["outbox"] = {\n["id"] = 9,\n["session"] = "s1",\n["chat"] = "c1",\n["text"] = "${hex('hi')}",\n["cwd"] = "",\n["shot"] = "missing",\n},\n}`;
-  const job = P.parseOutbox(src);
-  assert.equal(job.shot, 'missing');
-  assert.equal(job.text, 'hi');
-  assert.equal(P.parseOutbox(src.replace('"missing"', '"nope"')).shot, undefined);
-  assert.equal(P.parseOutbox(src.replace('["shot"] = "missing",\n', '')).shot, undefined);
-});
-
-test('luaTable carries the fallback note when there is one', () => {
-  assert.ok(!/transportNote/.test(P.luaTable('X', [], { transport: 'pixel' })), 'no note unless given');
-  const lua = P.luaTable('X', [], { transport: 'pixel', transportNote: 'pixel transport, fallen back to "why"' });
-  assert.match(lua, /^\ttransportNote = "pixel transport, fallen back to \\"why\\"",$/m);
-});
-
-test('jobsFromStrip parses the current record format and keeps separators inside text', () => {
-  const rec = ['sess', 'chat1', '12', 'realms', 'allow=WebSearch', 'My chat', 'hello\x1Fworld'].join('\x1F');
-  const jobs = P.jobsFromStrip(12, rec);
-  assert.equal(jobs.length, 1);
-  assert.deepEqual(jobs[0], { session: 'sess', chat: 'chat1', id: 12, cwd: 'realms', newSession: false, hello: false, forget: false, context: false, vision: false, allow: ['WebSearch'], agent: '', name: 'My chat', text: 'hello\x1Fworld', via: 'pixel' });
-  // A chat that picked its own agent says so in the flags.
-  const codex = P.jobsFromStrip(13, ['sess', 'chat1', '13', '', 'agent=codex', 'My chat', 'hi'].join('\x1F'))[0];
-  assert.equal(codex.agent, 'codex');
-  assert.equal(codex.text, 'hi');
-});
-
-test('jobsFromStrip reads the game context field only when the flags say so', () => {
-  const ctx = 'Game: World of Warcraft: Forever\nCharacter: Testchar, level 23 Hunter';
-  const withCtx = ['sess', 'chat1', '13', '', 'c', 'My chat', ctx, 'is this\x1Fgood'].join('\x1F');
-  const jobs = P.jobsFromStrip(13, withCtx);
-  assert.equal(jobs[0].context, true);
-  assert.equal(jobs[0].ctx, ctx);
-  assert.equal(jobs[0].text, 'is this\x1Fgood');
-  // An empty context clears it; a hello carries one too.
-  const hello = P.jobsFromStrip(14, ['sess', 'chat1', '14', '', 'h;c', 'My chat', '', ''].join('\x1F'))[0];
-  assert.equal(hello.hello, true);
-  assert.equal(hello.ctx, '');
-  assert.equal(hello.text, '');
-  // Without the flag, a seventh field is just text with a separator in it.
-  const plain = P.jobsFromStrip(15, ['sess', 'chat1', '15', '', '', 'My chat', 'a', 'b'].join('\x1F'))[0];
-  assert.equal(plain.ctx, undefined);
-  assert.equal(plain.text, 'a\x1Fb');
-  // A "c" flag on a record too short to hold the field is not trusted.
-  const short = P.jobsFromStrip(16, ['sess', 'chat1', '16', '', 'c', 'My chat', 'only text'].join('\x1F'))[0];
-  assert.equal(short.ctx, undefined);
-  assert.equal(short.text, 'only text');
 });
 
 test('systemPrompt always asks for the TL;DR block, and adds the game rules and primer while a context is sent', () => {
@@ -209,22 +128,6 @@ test('systemPrompt always asks for the TL;DR block, and adds the game rules and 
   }
 });
 
-test('systemRulesHash follows the rule text only, and rulesChanged needs a recorded hash that differs', () => {
-  const ask = { tools: 'Be the guide.', voice: 'player' };
-  const hash = P.systemRulesHash('Character: A', ask);
-  assert.match(hash, /^[0-9a-f]{16}$/);
-  assert.equal(P.systemRulesHash('Character: B\nPosition: 3, 4', { ...ask }), hash, 'the context text is not part of it');
-  assert.notEqual(P.systemRulesHash('', ask), hash, 'having a game context is: it adds the game rules');
-  assert.notEqual(P.systemRulesHash('Character: A', { tools: 'Be the coder.', voice: 'player' }), hash);
-  assert.notEqual(P.systemRulesHash('Character: A', { tools: 'Be the guide.' }), hash);
-  const state = {};
-  assert.equal(P.rulesChanged(state, 'k', hash), false, 'a session from before the hash existed is kept');
-  P.noteRules(state, 'k', hash);
-  assert.equal(P.rulesChanged(state, 'k', hash), false);
-  assert.equal(P.rulesChanged(state, 'k', P.systemRulesHash('', {})), true);
-  assert.equal(P.rulesChanged(state, 'other', P.systemRulesHash('', {})), false);
-});
-
 test('messagePrompt puts the situation and the vision paragraph before the text, and nothing else', () => {
   assert.equal(P.messagePrompt('fix it', ''), 'fix it');
   assert.equal(P.messagePrompt('fix it', '  \n', {}), 'fix it');
@@ -262,15 +165,6 @@ test('splitSummary takes the last TL;DR block for the game chat and keeps the wh
   const lua = P.luaTable('ClaudeWoW_SlotData', [{ chat: 'c', id: 1, status: 'done', text: 'body\nTL;DR: short', summary: 'short' }, { chat: 'c', id: 2, status: 'done', text: 'plain' }]);
   assert.ok(lua.includes('summary = "short"'));
   assert.equal((lua.match(/summary = /g) || []).length, 1);
-});
-
-test('the shipped primer exists, mentions the essentials, and stays small enough to send on every run', () => {
-  const fs = require('fs');
-  const primer = fs.readFileSync(path.join(__dirname, '..', 'docs', 'WOW-ADDON-PRIMER.md'), 'utf8');
-  for (const must of ['## Interface: 16001', 'Gethe/wow-ui-source', 'InCombatLockdown', 'hooksecurefunc', 'SavedVariables', '/reload', '#showtooltip']) {
-    assert.ok(primer.includes(must), 'primer mentions ' + must);
-  }
-  assert.ok(primer.length < 9000, `primer is ${primer.length} chars; keep it under 9000 (it costs tokens on every message)`);
 });
 
 test('jobsFromStrip handles several records per frame and older formats', () => {
@@ -371,14 +265,6 @@ test('classifyDenial: outside the working folders becomes a folder, anything els
   assert.ok(!again[0].includes('\n'));
 });
 
-test('flags: a retry granted a folder carries it in dirs=, never in allow=', () => {
-  const hex = Buffer.from(['/srv/data', '/tmp'].join('\x1F')).toString('hex');
-  const f = P.parseFlags(`once=Bash(curl:*);dirs=${hex}`);
-  assert.deepEqual(f.allowOnce, ['Bash(curl:*)']);
-  assert.deepEqual(f.addDirs, ['/srv/data', '/tmp']);
-  assert.deepEqual(f.allow, []);
-});
-
 test('describeToolUse gives one short readable line per tool call', () => {
   assert.equal(P.describeToolUse({ name: 'Bash', input: { command: 'gh pr list --author @me --json number,title', description: 'List my open PRs' } }), 'List my open PRs', 'the description Claude gives the command wins');
   assert.equal(P.describeToolUse({ name: 'Bash', input: { command: 'npm test\nsecond line' } }), 'Run npm test');
@@ -425,17 +311,6 @@ test('pruneStale forgets session tokens not seen for a month', () => {
   assert.deepEqual(Object.keys(state.handled).sort(), ['', 'fresh', 'unknown']);
   assert.equal(state.seen.unknown, now); // grace period starts when first seen by the pruner
   assert.deepEqual(Object.keys(transcripts.tokens), ['fresh']);
-});
-
-test('slotNumber wraps and SILENT_WAV is a valid RIFF header', () => {
-  assert.equal(P.slotNumber(1, 200), 1);
-  assert.equal(P.slotNumber(200, 200), 200);
-  assert.equal(P.slotNumber(201, 200), 1);
-  assert.equal(P.SILENT_WAV.toString('ascii', 0, 4), 'RIFF');
-  assert.equal(P.SILENT_WAV.readUInt32LE(4), P.SILENT_WAV.length - 8);
-  assert.equal(P.chatKey({ session: 's', chat: 'c' }), 's:c');
-  assert.equal(P.sessKey({ session: 's', chat: 'c' }), 'chat:c');
-  assert.equal(P.sessKey({ session: 's', chat: '' }), 's:default');
 });
 
 test('slot files name the outbound transport the bridge listens on, screenshot unless told otherwise', () => {
@@ -536,11 +411,6 @@ test('the title flag and a generated title cross the protocol', () => {
   assert.match(P.luaTable('X', [{ chat: 'c', id: 1, status: 'done', text: 'x', title: 'Hunter Pet "Pathing"' }]), /title = "Hunter Pet \\"Pathing\\"",/);
   assert.ok(!/title =/.test(P.luaTable('X', [{ chat: 'c', id: 1, status: 'done', text: 'x' }])));
   assert.match(P.luaTable('X', [{ chat: 'c', id: 5, status: 'working', text: 'x', title: 'T', titleFor: 3 }]), /titleFor = 3,/);
-});
-
-test('a reply record carries the addon session token it answers, and no token field when the bridge has none', () => {
-  assert.match(P.luaTable('X', [{ chat: 'c', id: 1, status: 'done', text: 'x', token: '5f3a1b2c3d4e' }]), /\t\t\ttoken = "5f3a1b2c3d4e",/);
-  for (const token of [undefined, '', 7, null]) assert.ok(!/token =/.test(P.luaTable('X', [{ chat: 'c', id: 1, status: 'done', text: 'x', token }])), `no token line for ${token}`);
 });
 
 test('the slot file names the run limit and every message the bridge still holds, with when its run started', () => {

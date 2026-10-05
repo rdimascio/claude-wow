@@ -37,7 +37,7 @@ test('applyMapCommands bumps the version only on change and keeps the budget', (
   // Too many layers: the oldest go first.
   const many = [];
   for (let i = 0; i < P.MAP_LIMITS.layers + 3; i++) many.push({ op: 'set', layer: 'l' + i, points: [pt(i, i)] });
-  P.applyMapCommands(map, many.map((c, i) => c), 0);
+  P.applyMapCommands(map, many.map(c => c), 0);
   assert.equal(Object.keys(map.layers).length, P.MAP_LIMITS.layers);
   // Too many points in total.
   const big = n => ({ op: 'set', layer: 'big' + n, points: Array.from({ length: 400 }, (_, i) => pt(i % 100, n)) });

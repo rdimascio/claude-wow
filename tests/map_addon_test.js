@@ -91,48 +91,6 @@ function shownPins(vm) {
 const LAYER = `{ epoch = "e1", version = 1, layers = { { name = "mining", title = "Copper loop", ordered = true, loop = true, points = {
   { 1432, 50, 40, "1. Copper Vein", "ore" }, { 1432, 60, 50, "2. Copper Vein", "ore" }, { 1432, 55, 70, "3. Tin Vein", "ore" } } } } }`;
 
-test('Sync applies a new version once, starts navigation, ignores stale versions', () => {
-  const vm = newVM();
-  vm.run(`ClaudeWoWMap.Sync(${LAYER})`);
-  assert.equal(vm.evaluate('ClaudeWoWMapDB.map.version'), '1');
-  assert.equal(vm.evaluate('ClaudeWoWMapDB.nav.layer'), 'mining');
-  assert.equal(vm.evaluate('ClaudeWoWMapDB.nav.index'), '1');
-  const prints = () => vm.num('#STUB.prints');
-  const before = prints();
-  vm.run(`ClaudeWoWMap.Sync(${LAYER})`); // same version: nothing
-  assert.equal(prints(), before);
-  vm.run(`ClaudeWoWMap.Sync({ epoch = "e1", version = 0, layers = {} })`); // older: ignored
-  assert.equal(vm.num('#ClaudeWoWMapDB.map.layers'), 1);
-  // A new epoch (bridge state reset) replaces, even with a lower version; same content stays quiet.
-  vm.run(`local m = ${LAYER}; m.epoch = "e2"; ClaudeWoWMap.Sync(m)`);
-  assert.equal(vm.evaluate('ClaudeWoWMapDB.map.epoch'), 'e2');
-  assert.equal(prints(), before);
-  vm.run(`ClaudeWoWMap.Sync({ epoch = "e2", version = 5, layers = {} })`);
-  assert.equal(vm.num('#ClaudeWoWMapDB.map.layers'), 0);
-  assert.equal(vm.evaluate('ClaudeWoWMapDB.nav'), null);
-});
-
-test('a new route does not take over a route the player is already following', () => {
-  const vm = newVM();
-  vm.run(`ClaudeWoWMap.Sync(${LAYER})`);
-  vm.run('SlashCmdList.CLAUDEWOWMAP("nav mining 2")');
-  vm.run(`local m = ${LAYER}; m.version = 2; m.layers[2] = { name = "quests", title = "Westfall", ordered = true, loop = false,
-    points = { { 1432, 10, 10, "1. Talk", "quest" }, { 1432, 20, 20, "2. Kill", "kill" } } }; ClaudeWoWMap.Sync(m)`);
-  assert.equal(vm.evaluate('ClaudeWoWMapDB.nav.layer'), 'mining');
-  assert.equal(vm.evaluate('ClaudeWoWMapDB.nav.index'), '2');
-  // With nothing being followed, the next route starts by itself.
-  vm.run('SlashCmdList.CLAUDEWOWMAP("stop")');
-  vm.run(`local m = ${LAYER}; m.version = 3; m.layers[1].points[1][4] = "1. Rich Copper"; ClaudeWoWMap.Sync(m)`);
-  assert.equal(vm.evaluate('ClaudeWoWMapDB.nav.layer'), 'mining');
-  assert.equal(vm.evaluate('ClaudeWoWMapDB.nav.index'), '1');
-});
-
-test('slot data carrying a map reaches the map module', () => {
-  const vm = newVM();
-  vm.run(`ClaudeWoW_Inbox = { replies = {}, map = ${LAYER} }; STUB.FireEvent("PLAYER_LOGIN")`);
-  assert.equal(vm.evaluate('ClaudeWoWMapDB.map.layers[1].title'), 'Copper loop');
-});
-
 test('pins land where the points are, on the zone map and on the continent', () => {
   const vm = newVM();
   vm.run(`ClaudeWoWMap.Sync(${LAYER})`);

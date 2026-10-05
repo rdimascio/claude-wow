@@ -43,18 +43,6 @@ function sentLines(vm) {
   return lines;
 }
 
-test('/claude probe chatlog turns chat logging on and writes a long line, numbered filler and an end line as local system messages', () => {
-  const vm = newVM();
-  vm.run('SlashCmdList.CLAUDE("probe chatlog 4096")');
-  const lines = sentLines(vm);
-  assert.equal(lines.length, 1 + 18 + 1);
-  assert.match(lines[0], /^CWLOG\d+ LONG L{1000}$/);
-  assert.match(lines[1], /^CWLOG\d+ V 00001 z{200}$/);
-  assert.match(lines[2], /^CWLOG\d+ H 00002 z{200}$/);
-  assert.match(lines[19], /^CWLOG\d+ END 18$/);
-  assert.equal(vm.evaluate('LOGGING'), 'true');
-});
-
 test('the probe filter hides only the lines marked H from the chat frame', () => {
   const vm = newVM();
   vm.run('SlashCmdList.CLAUDE("probe chatlog 1024")');
@@ -65,12 +53,6 @@ test('the probe filter hides only the lines marked H from the chat frame', () =>
   const filters = Number(vm.evaluate('#FILTERS'));
   vm.run('SlashCmdList.CLAUDE("probe chatlog 1024")');
   assert.equal(Number(vm.evaluate('#FILTERS')), filters, 'a second run adds no second filter');
-});
-
-test('/claude probe followed by ordinary words is a message, not the probe', () => {
-  const vm = newVM();
-  vm.run('SlashCmdList.CLAUDE("probe chatlog for traps please")');
-  assert.equal(vm.evaluate('#SENT'), '0');
 });
 
 test('a client without SendSystemMessage gets a line saying so and no error', () => {

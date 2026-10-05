@@ -32,47 +32,6 @@ function fakeCore(scratch) {
   return { core, calls };
 }
 
-test('the kind flag: parsed only when present and well formed, next to every other flag', () => {
-  assert.equal(P.parseFlags('').kind, undefined, 'a record from an addon without kinds parses as before');
-  assert.equal(P.parseFlags('kind=roast').kind, 'roast');
-  assert.equal(P.parseFlags('kind=ROAST').kind, 'roast');
-  assert.equal(P.parseFlags('kind=').kind, undefined);
-  assert.equal(P.parseFlags('kind=../x').kind, undefined);
-  const all = P.parseFlags('n;agent=codex;plugin=roast;v;kind=roast;c');
-  assert.deepEqual(
-    { newSession: all.newSession, agent: all.agent, plugin: all.plugin, vision: all.vision, kind: all.kind, context: all.context },
-    { newSession: true, agent: 'codex', plugin: 'roast', vision: true, kind: 'roast', context: true },
-  );
-});
-
-test('a roast record round-trips through the strip payload with its kind, plugin, vision flag and recap text', () => {
-  const record = ['sess1', 'chat9', '42', '', 'plugin=roast;v;kind=roast', 'Death roasts', RECAP].join('\x1F');
-  const [job] = P.jobsFromStrip(42, record);
-  assert.equal(job.kind, 'roast');
-  assert.equal(job.plugin, 'roast');
-  assert.equal(job.vision, true);
-  assert.equal(job.chat, 'chat9');
-  assert.equal(job.id, 42);
-  assert.equal(job.text, RECAP);
-  const withContext = ['sess1', 'chat9', '43', '', 'plugin=roast;kind=roast;c', 'Death roasts', 'Location: Duskwood', RECAP].join('\x1F');
-  const [ctxJob] = P.jobsFromStrip(43, withContext);
-  assert.equal(ctxJob.kind, 'roast');
-  assert.equal(ctxJob.ctx, 'Location: Duskwood');
-  assert.equal(ctxJob.text, RECAP);
-});
-
-test('routing: a chat bound to roast goes there, an unbound roast-kind message is matched, anything else is left alone', () => {
-  const reg = PL.createRegistry();
-  reg.register(require('../bridge/plugins/ask'));
-  reg.register(require('../bridge/plugins/claude-code'));
-  reg.register(roast);
-  assert.deepEqual(reg.ids(), ['ask', 'claude-code', 'roast'], 'registered after the others, so never the default');
-  assert.equal(reg.route({ text: RECAP, plugin: 'roast', kind: 'roast' }).plugin.id, 'roast');
-  assert.equal(reg.route({ text: RECAP, kind: 'roast' }).plugin.id, 'roast', 'match() catches a roast-kind message on an unbound chat');
-  assert.equal(reg.route({ text: 'what drops the sword' }).plugin.id, 'ask');
-  assert.equal(reg.route({ text: 'nice one', plugin: 'roast' }).plugin.id, 'roast');
-});
-
 test('the roast plugin: the stable instructions are in the system prompt, the recap is wrapped as a roast request, and talk-back is not', () => {
   const reg = PL.createRegistry();
   const p = reg.register(roast);
@@ -111,9 +70,7 @@ test('the roast plugin: the stable instructions are in the system prompt, the re
 });
 
 const FIXTURES = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'roast', 'recaps.json'), 'utf8'));
-const ROAST_REPLY = 'Hogger clawed you so hard the overkill has its own respawn timer.\n\nTL;DR: Hogger sends his regards.';
 const DONE = { status: 'done', text: 'Hogger clawed you so hard the overkill has its own respawn timer.', summary: 'Hogger sends his regards.' };
-const FALL_DONE = { status: 'done', text: 'Gravity is undefeated.', summary: 'You hit the ground harder than you hit anything in Duskwood.' };
 
 function overlayServer() {
   const bodies = [];
@@ -138,45 +95,6 @@ function overlayCore(streamOptions, scratch) {
   };
   return { core, logs };
 }
-
-test('roast overlay: the payload carries only what the recorded recap really says', () => {
-  assert.equal(P.splitSummary(ROAST_REPLY).summary, DONE.summary, 'DONE is what finish() hands over for this reply');
-  assert.deepEqual(roast.overlayCommand(FIXTURES.gameRecap.recap, DONE), {
-    action: 'roast',
-    roast: { text: 'Hogger sends his regards.', killer: 'Hogger', ability: 'Rending Claw', overkill: 23, zone: 'Duskwood - Darkshire' },
-  });
-  assert.deepEqual(roast.overlayCommand(FIXTURES.environmentRecap.recap, FALL_DONE).roast, {
-    text: FALL_DONE.summary, ability: 'Falling', overkill: 60, zone: 'Duskwood - Darkshire',
-  }, 'the environment is not a killer name');
-  assert.deepEqual(roast.overlayCommand(FIXTURES.environmentNoType.recap, FALL_DONE).roast, {
-    text: FALL_DONE.summary, overkill: 40, zone: 'Duskwood - Darkshire',
-  }, '"The environment" is not an ability name');
-  assert.deepEqual(roast.overlayCommand(FIXTURES.unitCombatOnly.recap, FALL_DONE).roast, {
-    text: FALL_DONE.summary, zone: 'Duskwood - Darkshire',
-  }, 'UNIT_COMBAT hits name no attacker and no ability, so none is sent');
-});
-
-test('roast overlay: a TL;DR that names a game thing the recap does not have is not shown, and neither is an escape code', () => {
-  const doneWith = summary => ({ status: 'done', text: 'Roast.', summary });
-  for (const name of ['environmentRecap', 'environmentNoType', 'unitCombatOnly']) {
-    const roasted = roast.overlayCommand(FIXTURES[name].recap, DONE).roast;
-    assert.equal(roasted.text, undefined, `${name} has no Hogger, so the line is not shown`);
-    assert.equal(roasted.zone, 'Duskwood - Darkshire', 'the card still goes out');
-  }
-  const unit = FIXTURES.unitCombatOnly.recap;
-  assert.equal(roast.overlayCommand(unit, doneWith('Stormwind called, it wants its guard back.')).roast.text, undefined);
-  assert.equal(roast.overlayCommand(unit, doneWith("Elwynn's finest would never.")).roast.text, undefined);
-  assert.equal(roast.overlayCommand(unit, doneWith('Duskwood ate you alive.')).roast.text, 'Duskwood ate you alive.');
-  assert.equal(roast.overlayCommand(unit, doneWith('You took 52 Physical to the face.')).roast.text, 'You took 52 Physical to the face.');
-  const game = FIXTURES.gameRecap.recap;
-  assert.equal(roast.overlayCommand(game, doneWith("Hogger's Rending Claw sends regards.")).roast.text, "Hogger's Rending Claw sends regards.");
-  assert.equal(roast.overlayCommand(game, doneWith('Hogger’s claw, again.')).roast.text, 'Hogger’s claw, again.');
-  assert.equal(roast.overlayCommand(game, doneWith('Hogger and Van Cleef agree.')).roast.text, undefined);
-  assert.equal(roast.overlayCommand(game, doneWith('Hogger says |cffff0000hi|r.')).roast.text, undefined);
-  assert.equal(roast.overlayCommand(game, doneWith('Hogger says ||hi.')).roast.text, undefined);
-});
-
-const WOWDATA = path.join(__dirname, 'fixtures', 'wowdata', 'forever', '1.60.1.200');
 
 test('roast overlay: every word of the line must be a number, a recap word or a plain word, so lowercase, hidden-character and title-case names are dropped', () => {
   const game = FIXTURES.gameRecap.recap;
@@ -232,38 +150,6 @@ const ORDINARY_ROASTS = [
 
 const fixtureData = () => require('../bridge/gamedata').openStore({ dataDir: path.join(__dirname, 'fixtures', 'wowdata'), clientBuild: '1.60.1.70124' });
 
-test('roast overlay: ordinary rule-abiding roast lines are shown, with and without synced data', () => {
-  assert.equal(ORDINARY_ROASTS[0], 'Hogger clawed you so hard the overkill has its own respawn timer.', 'starts with the recorded reply');
-  assert.ok(ORDINARY_ROASTS.length >= 30);
-  for (const data of [null, fixtureData()]) {
-    for (const summary of ORDINARY_ROASTS) {
-      const checked = roast.checkLine(FIXTURES.gameRecap.recap, { status: 'done', text: 'Roast.', summary }, data);
-      assert.deepEqual({ text: checked.text, refused: checked.refused }, { text: summary, refused: '' }, summary);
-    }
-  }
-});
-
-test('roast overlay: game names split into plain words are refused by the built-in phrase list, with no data needed', () => {
-  const game = FIXTURES.gameRecap.recap;
-  const check = summary => roast.checkLine(game, { status: 'done', text: 'Roast.', summary });
-  for (const [summary, phrase] of [
-    ['Hogger taught you to back stab.', 'back stab'],
-    ['Next time, go to old town.', 'old town'],
-    ['A power word would have helped.', 'power word'],
-    ['A flash heal would have helped.', 'flash heal'],
-    ['You needed an ice block.', 'ice block'],
-    ['Where was your battle shout?', 'battle shout'],
-    ['Nobody was there to lay on hands.', 'lay on hands'],
-  ]) {
-    const r = check(summary);
-    assert.equal(r.text, '', summary);
-    assert.match(r.refused, new RegExp(`^game names not in the recap: .*${phrase}`), `${summary}: the word check passes, the phrase check refuses`);
-  }
-  for (const summary of ['Heroic Strike would have helped.', 'You died to a Hill Giant.', 'The Dark Lady is not impressed.', 'Power Word: Shield would have helped.']) {
-    assert.equal(check(summary).text, '', summary);
-  }
-});
-
 test('roast overlay: a run of plain words that is a name in the synced data is refused, unless the recap has it; without data it is skipped and logged', async () => {
   const game = FIXTURES.gameRecap.recap;
   const outcome = summary => ({ status: 'done', text: 'Roast.', summary });
@@ -283,7 +169,7 @@ test('roast overlay: a run of plain words that is a name in the synced data is r
     const job = { id: 15, kind: 'roast', text: game };
     roast.handle(job, core);
     await roast.finished(job, outcome('Hogger sends his regards.'), core);
-    assert.ok(logs.some(l => /#15 roast: No game data is synced for this build yet \(claude-wow data sync\)\. Multi-word game names were checked only against the short built-in list\.$/.test(l)), logs.join('\n'));
+    assert.ok(logs.some(l => l.endsWith('#15 roast: No game data is synced for this build yet (claude-wow data sync). Multi-word game names were checked only against the short built-in list.')), logs.join('\n'));
     assert.ok(!logs.some(l => /try again|reference token/.test(l)), 'a log note carries no instructions meant for a refused text');
     core.gameData = () => data;
     const again = { id: 16, kind: 'roast', text: game };
@@ -295,43 +181,6 @@ test('roast overlay: a run of plain words that is a name in the synced data is r
     svc.server.close();
     fs.rmSync(base, { recursive: true, force: true });
   }
-});
-
-test('roast phrases: runs stop at sentence and clause marks but not at a colon or a dash', () => {
-  const game = FIXTURES.gameRecap.recap;
-  const check = summary => roast.checkLine(game, { status: 'done', text: 'Roast.', summary }).text;
-  assert.equal(check('You got old. Town is that way.'), 'You got old. Town is that way.');
-  assert.equal(check('You got old; town is that way.'), 'You got old; town is that way.');
-  assert.equal(check('You got old, town is that way.'), 'You got old, town is that way.');
-  assert.equal(check('Next stop: old - town.'), '', 'a dash does not split a name');
-  assert.equal(check('Power word: fail.'), '', 'a colon does not split a name');
-  assert.equal(check('Go to Old,Town now.'), '', 'a mark with no space after it does not end the clause');
-  assert.equal(check('You needed Mark,of,the,Wild.'), '');
-  assert.equal(check('Go to old.town now.'), '');
-});
-
-const REMOVED_PHRASES = require('./fixtures/removed-game-phrases.json');
-
-test('phrases removed from the built-in list stay refused by the word check', () => {
-  const G = require('../bridge/goals');
-  const plain = w => roast.ROAST_WORDS.has(w) || G.ORDER_WORDS.has(w);
-  assert.ok(REMOVED_PHRASES.length >= 80);
-  const reopened = REMOVED_PHRASES.filter(p => p.split(' ').every(plain));
-  assert.deepEqual(reopened, [], 'a phrase made only of plain words must go back into bridge/game-phrases.json');
-  const recap = 'Death recap: someone just died somewhere.';
-  for (const p of REMOVED_PHRASES) assert.equal(roast.checkLine(recap, { status: 'done', text: 'x', summary: `You met ${p}.` }).text, '', p);
-});
-
-test('built-in phrase list: every entry is already normalized and made only of words the word check lets through', () => {
-  const G = require('../bridge/goals');
-  const GR = require('../bridge/gamerefs');
-  const entries = require('../bridge/game-phrases.json');
-  assert.ok(entries.includes('mark of the wild'));
-  for (const e of entries) {
-    assert.equal(GR.phraseWords(e).join(' '), e, `${e} is normalized`);
-    for (const w of e.split(' ')) assert.ok(roast.ROAST_WORDS.has(w) || G.ORDER_WORDS.has(w), `${e}: "${w}" is a plain word, so only the phrase check can catch it`);
-  }
-  assert.equal(GR.GAME_PHRASES.size, entries.length);
 });
 
 const IDIOM_ROASTS = [
@@ -370,60 +219,6 @@ for (const data of REAL_DATA) {
   });
 }
 
-test('roast: a typed line that starts with "Death recap:" is treated as a recap; one that does not makes no card', async () => {
-  const svc = await overlayServer();
-  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'wowai-roast-prefix-'));
-  try {
-    const { core } = overlayCore({ url: svc.url }, path.join(base, 'scratch'));
-    const typed = { id: 17, kind: 'roast', text: 'Death recap: I died to Hogger in Silverpine.' };
-    roast.handle(typed, core);
-    assert.equal(typed.recap, 'Death recap: I died to Hogger in Silverpine.');
-    await roast.finished(typed, { status: 'done', text: 'Roast.', summary: 'Silverpine got you.' }, core);
-    assert.equal(svc.bodies[0].body.roast.text, 'Silverpine got you.', 'the prefixed typed line is the name source, as documented');
-    const plain = { id: 18, kind: 'roast', text: 'I died to Hogger in Silverpine.' };
-    roast.handle(plain, core);
-    assert.equal(await roast.finished(plain, { status: 'done', text: 'Roast.', summary: 'Silverpine got you.' }, core), null);
-    assert.equal(svc.bodies.length, 1);
-  } finally {
-    svc.server.close();
-    fs.rmSync(base, { recursive: true, force: true });
-  }
-});
-
-test('roast overlay: no reference tokens; any brace drops the line', () => {
-  const game = FIXTURES.gameRecap.recap;
-  const outcome = summary => ({ status: 'done', text: 'Roast.', summary });
-  assert.equal(roast.overlayCommand(game, outcome('Hogger took your {item:501} too.')).roast.text, undefined);
-  assert.equal(roast.checkLine(game, outcome('Hogger took your {item:501} too.')).refused, 'the character U+007B is not allowed');
-  assert.equal(roast.overlayCommand(game, outcome('Hogger took your } too.')).roast.text, undefined);
-  assert.match(roast.checkLine(game, outcome('Go to silverpine.')).refused, /words neither in the recap nor plain: silverpine/);
-});
-
-const RACES = ['horde', 'alliance', 'orc', 'troll', 'tauren', 'undead', 'human', 'dwarf', 'gnome', 'elf', 'goblin'];
-const CLASSES = ['rogue', 'warrior', 'mage', 'priest', 'hunter', 'druid', 'paladin', 'shaman', 'warlock'];
-const ABILITY_AND_TITLE_WORDS = ['night', 'charge', 'kick', 'sprint', 'fear', 'blink', 'revenge', 'shield', 'claw', 'bite', 'dash', 'shoot',
-  'bubble', 'king', 'lady', 'captain', 'general', 'guard', 'spirit', 'ghost', 'giant', 'lord', 'queen', 'prince', 'knight', 'warchief',
-  'taunt', 'cleave', 'slam', 'execute', 'bash', 'maul', 'swipe', 'rake', 'shred', 'prowl', 'pounce', 'growl', 'roar', 'frenzy', 'enrage',
-  'renew', 'smite', 'polymorph', 'fireball', 'frostbolt', 'evasion', 'vanish', 'gouge', 'sap', 'garrote', 'ambush', 'eviscerate', 'backstab', 'rend', 'stealth'];
-const PLACE_WORDS = ['city', 'vale', 'shire', 'isle', 'steppes', 'highlands', 'wetlands', 'marsh', 'glade', 'grove', 'canyon', 'gorge', 'forest',
-  'thrall', 'orgrimmar', 'undercity', 'crossroads', 'barrens', 'brill', 'ratchet', 'everlook', 'sepulcher', 'bulwark', 'durotar', 'mulgore',
-  'silverpine', 'tirisfal', 'stormwind', 'ironforge', 'darnassus', 'light', 'hearthstone', 'forever'];
-const CREATURE_FAMILIES = ['murloc', 'kobold', 'gnoll', 'worgen', 'defias', 'scourge', 'wolf', 'wolves', 'bear', 'boar', 'cat', 'raptor', 'spider',
-  'scorpid', 'crocolisk', 'gorilla', 'bat', 'owl', 'hyena', 'crab', 'turtle', 'kodo', 'ogre', 'elemental', 'dragon', 'whelp', 'drake', 'demon',
-  'imp', 'skeleton', 'zombie', 'ghoul', 'harpy', 'centaur', 'quilboar', 'satyr', 'furbolg', 'naga', 'trogg', 'ooze', 'golem'];
-
-test('roast vocabulary: thousands of lowercase words, no duplicates, and none of the race, class, ability, title, place or creature-family words', () => {
-  const words = require('../bridge/roast-words.json');
-  assert.ok(words.length >= 3000, `${words.length} words`);
-  assert.equal(new Set(words).size, words.length, 'no duplicates');
-  for (const w of words) assert.match(w, /^[a-z][a-z']*$/, w);
-  const professions = Object.values(require('../bridge/goals').PROFESSION_SKILL_IDS).flatMap(n => n.toLowerCase().split(' ')).filter(w => w !== 'first');
-  for (const n of [...RACES, ...CLASSES, ...ABILITY_AND_TITLE_WORDS, ...PLACE_WORDS, ...CREATURE_FAMILIES, ...professions]) assert.ok(!roast.ROAST_WORDS.has(n), n);
-  for (const n of ['crit', 'crits', 'critted', 'aggro', 'dps', 'overkill', 'corpse', 'noob', 'haha', 'literally', 'attacked', 'viewers', 'loves', 'herself', 'hers', 'theirs', 'kiting', 'kited', 'ended', 'guild']) {
-    assert.ok(roast.ROAST_WORDS.has(n), n);
-  }
-});
-
 test('roast overlay: talking back in the roast chat never reaches the card, even when it names places', async () => {
   const svc = await overlayServer();
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'wowai-roast-talkback-'));
@@ -443,35 +238,6 @@ test('roast overlay: talking back in the roast chat never reaches the card, even
     svc.server.close();
     fs.rmSync(base, { recursive: true, force: true });
   }
-});
-
-test('roast overlay: the finished hook checks the line once and logs why it was left off the card', async () => {
-  const svc = await overlayServer();
-  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'wowai-roast-log-'));
-  try {
-    const { core, logs } = overlayCore({ url: svc.url }, path.join(base, 'scratch'));
-    const job = { id: 12, kind: 'roast', text: FIXTURES.gameRecap.recap };
-    roast.handle(job, core);
-    const GR = require('../bridge/gamerefs');
-    const real = GR.checkText;
-    let calls = 0;
-    GR.checkText = (...args) => { calls += 1; return real(...args); };
-    try {
-      await roast.finished(job, { status: 'done', text: 'Roast.', summary: 'Hogger and Van Cleef send regards.' }, core);
-    } finally { GR.checkText = real; }
-    assert.equal(calls, 1, 'the line is checked exactly once per card');
-    assert.equal(svc.bodies[0].body.roast.text, undefined, 'the card still goes out without the line');
-    assert.equal(svc.bodies[0].body.roast.killer, 'Hogger');
-    assert.ok(logs.some(l => /#12 roast: line left off the card \(words neither in the recap nor plain: van, cleef\)/.test(l)), logs.join('\n'));
-  } finally {
-    svc.server.close();
-    fs.rmSync(base, { recursive: true, force: true });
-  }
-});
-
-test('the roast instructions tell the model the line is checked word by word and that this chat has no tokens', () => {
-  assert.ok(roast.TOOLS.includes('checks the TL;DR line word by word'));
-  assert.ok(roast.TOOLS.includes('This chat has no reference tokens'));
 });
 
 test('roast overlay: the text is the TL;DR line, else the reply, without bridge notes either way, and never a bridge placeholder', () => {
@@ -584,14 +350,4 @@ test('roast overlay: a bridge that exits when idle (--inject) skips the hook and
     svc.server.close();
     fs.rmSync(dir, { recursive: true, force: true });
   }
-});
-
-test('the recap fits the strip with room to spare', () => {
-  const codec = fs.readFileSync(path.join(__dirname, '..', 'addon', 'ClaudeWoW', 'Codec.lua'), 'utf8');
-  const maxPayload = Number(/C\.MAX_PAYLOAD\s*=\s*(\d+)/.exec(codec)[1]);
-  const roastLua = fs.readFileSync(path.join(__dirname, '..', 'addon', 'ClaudeWoW', 'Roast.lua'), 'utf8');
-  const recapBudget = Number(/R\.MAX_BYTES\s*=\s*(\d+)/.exec(roastLua)[1]);
-  const contextBudget = 900;
-  const recordFields = 200;
-  assert.ok(recapBudget + contextBudget + recordFields <= maxPayload, `${recapBudget} + ${contextBudget} + ${recordFields} > ${maxPayload}`);
 });

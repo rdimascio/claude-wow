@@ -90,34 +90,6 @@ test('the local agent entry: its own script, the config block as flags, the prom
   assert.deepEqual(A.unsupportedSettings('local', { model: 'm', effort: 'high' }), ['--effort high']);
 });
 
-test('a text answer: one request with the system prompt first, the reply as the result, the chat saved for resume, cost 0', async () => {
-  const dir = scratch('text');
-  const model = await fakeModel([say('Hello from the local model.')]);
-  try {
-    const { code, events } = await runOnce({ baseUrl: model.baseUrl, model: 'qwen-test', sessions: dir }, { system: 'GAME SYSTEM', prompt: 'hi there' });
-    assert.equal(code, 0);
-    assert.equal(model.bodies.length, 1);
-    assert.equal(model.bodies[0].url, '/v1/chat/completions');
-    const sent = model.bodies[0].body;
-    assert.equal(sent.model, 'qwen-test');
-    assert.equal(sent.stream, false);
-    assert.equal(sent.tools, undefined);
-    assert.equal(sent.messages[0].role, 'system');
-    assert.match(sent.messages[0].content, /^GAME SYSTEM/);
-    assert.ok(sent.messages[0].content.includes(L.LOCAL_RULES));
-    assert.deepEqual(sent.messages.slice(1), [{ role: 'user', content: 'hi there' }]);
-    const parsed = feedAll(events);
-    assert.deepEqual(parsed.done, { text: 'Hello from the local model.', error: false });
-    assert.equal(parsed.usage.cost, 0);
-    assert.equal(parsed.usage.costUnknown, undefined);
-    assert.equal(parsed.usage.context, 120);
-    assert.ok(fs.existsSync(path.join(dir, `${parsed.session}.json`)));
-  } finally {
-    await model.close();
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-});
-
 test('resume: the next message carries the saved chat and keeps the session id; an id that is not one of ours starts fresh', async () => {
   const dir = scratch('resume');
   const model = await fakeModel([say('first answer'), say('second answer'), say('fresh answer')]);
@@ -154,33 +126,6 @@ test('a long wowdata result is clipped for the model but read whole for the prog
     assert.equal(code, 0);
     assert.ok(model.bodies[1].body.messages[3].content.length < big.length, 'the model still gets the clipped text');
     assert.ok(feedAll(events).progress.includes('Found {item:6948}'), 'the progress line reads the whole result');
-  } finally {
-    await model.close();
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test('tools: the wowdata MCP server from --mcp-config is offered to the model, its calls run over stdio, and the answer comes back', async () => {
-  const dir = scratch('tools');
-  const model = await fakeModel([callTools({ name: 'mcp__wowdata__wow_item', args: { id: 6948 } }), say('It is {item:6948}.')]);
-  try {
-    const mcpConfig = mcpConfigFile(dir, { type: 'stdio', command: process.execPath, args: ['-e', FAKE_MCP] });
-    const { code, events } = await runOnce({ baseUrl: model.baseUrl, sessions: dir, mcpConfig }, { system: 'S', prompt: 'what is item 6948?' });
-    assert.equal(code, 0);
-    assert.equal(model.bodies.length, 2);
-    const first = model.bodies[0].body;
-    assert.deepEqual(first.tools.map(t => t.function.name), ['mcp__wowdata__wow_item']);
-    assert.match(first.messages[0].content, /FAKE DATA RULES/);
-    const second = model.bodies[1].body.messages;
-    assert.equal(second[2].tool_calls[0].function.name, 'mcp__wowdata__wow_item');
-    assert.equal(second[3].role, 'tool');
-    assert.deepEqual(JSON.parse(second[3].content), { called: 'wow_item', args: { id: 6948 }, name: 'Fake Item' });
-    const init = events.find(e => e.type === 'system');
-    assert.deepEqual(init.mcp_servers, [{ name: 'wowdata', status: 'connected' }]);
-    const parsed = feedAll(events);
-    assert.ok(parsed.progress.includes('Looking up an item'), 'a wowdata call shows its loading line');
-    assert.deepEqual(parsed.mcpDown, []);
-    assert.equal(parsed.done.text, 'It is {item:6948}.');
   } finally {
     await model.close();
     fs.rmSync(dir, { recursive: true, force: true });

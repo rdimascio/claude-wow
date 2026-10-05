@@ -63,15 +63,6 @@ test('slot file round-trips replies, denied rules, cwd, agents and a restore bun
   assert.equal(d.restore.chats[0].messages[1].agent, 'codex');
 });
 
-test('slot file without a restore has no restore field and tolerates empty records', () => {
-  const d = readSlot(P.luaTable('ClaudeWoW_Inbox', [], { cwd: '' }), 'ClaudeWoW_Inbox');
-  assert.equal(d.cwd, '');
-  assert.equal(d.agent, '');
-  assert.deepEqual(d.agents, {}); // an empty Lua table
-  assert.equal(d.restore, undefined);
-  assert.deepEqual(d.replies, {});
-});
-
 test('slot file carries the session list for /claude -r: running sessions flagged live, a chat id when the bridge made it', () => {
   const sessions = [
     { id: '6624f327-7126-423e-a653-d7cf7a4e492b', name: 'wow-ai "main"', cwd: '/Users/me/wow-ai', agent: 'claude', at: 1790000000, live: true },

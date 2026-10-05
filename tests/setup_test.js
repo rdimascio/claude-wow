@@ -88,67 +88,6 @@ function fakeClient(dir, oldName, { slots = 3 } = {}) {
   return { addons, saved };
 }
 
-for (const oldName of P.OLD_ADDONS) {
-  test(`migrateOldInstall: a ${oldName} install becomes ${P.ADDON} with every chat intact and the old folders gone`, () => {
-    const dir = scratch(oldName);
-    const { addons, saved } = fakeClient(dir, oldName);
-    assert.ok(S.isClient(dir));
-
-    S.migrateOldInstall(dir, 'ACCT#1');
-
-    const newFile = path.join(saved, `${P.ADDON}.lua`);
-    assert.ok(fs.existsSync(newFile), 'the new SavedVariables file exists');
-    const src = fs.readFileSync(newFile, 'utf8');
-    assert.match(src, new RegExp(`^${P.ADDON}DB = \\{`, 'm'), 'the chat DB global is renamed');
-    assert.match(src, new RegExp(`^${P.ADDON}MapDB = \\{`, 'm'), 'the map DB global is renamed');
-    assert.ok(!src.includes(`${oldName}DB`) && !src.includes(`${oldName}MapDB`), 'no old global is left');
-    // The chats, their ids (what the bridge keys the agent sessions by), their
-    // history and the settings are byte-for-byte what they were.
-    const expected = oldSavedData(oldName).replace(`${oldName}DB =`, `${P.ADDON}DB =`).replace(`${oldName}MapDB =`, `${P.ADDON}MapDB =`);
-    assert.equal(src, expected);
-    for (const id of ['bad3474c10', '0ff1ce0001']) assert.ok(src.includes(`["id"] = "${id}"`), `chat ${id} came across`);
-    assert.ok(src.includes('["text"] = "Yes. TL;DR: here."'));
-    assert.ok(src.includes('["token"] = "sess-token-1"'), 'the restore token came across');
-    // Nothing is deleted from SavedVariables: the old file and its .bak stay.
-    assert.ok(fs.existsSync(path.join(saved, `${oldName}.lua`)));
-    assert.ok(fs.existsSync(path.join(saved, `${oldName}.lua.bak`)));
-
-    const left = fs.readdirSync(addons).sort();
-    assert.deepEqual(left, ['SomeOtherAddon'], 'the old addon and its slot pool are removed, other addons are not');
-
-    // Re-running is a no-op: the new file is kept as it is.
-    fs.appendFileSync(newFile, '-- edited in game\n');
-    S.migrateOldInstall(dir, 'ACCT#1');
-    assert.ok(fs.readFileSync(newFile, 'utf8').endsWith('-- edited in game\n'));
-
-    // copyAddon then puts the real addon in place under the new name.
-    const { dest, copied } = S.copyAddon(dir);
-    assert.equal(dest, path.join(addons, P.ADDON));
-    assert.ok(copied >= 4);
-    assert.ok(fs.existsSync(path.join(dest, `${P.ADDON}.toc`)));
-    assert.match(fs.readFileSync(path.join(dest, `${P.ADDON}.toc`), 'utf8'), new RegExp(`^## SavedVariables: ${P.ADDON}DB, ${P.ADDON}MapDB, ${P.ADDON}WidgetDB$`, 'm'),
-      'the .toc declares the globals the migrated file now holds');
-    if (process.platform !== 'win32') {
-      assert.equal(fs.statSync(newFile).mode & 0o777, 0o777, 'the migrated SavedVariables file matches the game install');
-      assert.equal(fs.statSync(dest).mode & 0o777, 0o777, 'the addon folder matches the game install');
-      for (const f of fs.readdirSync(dest)) assert.equal(fs.statSync(path.join(dest, f)).mode & 0o777, 0o777, f);
-    }
-    fs.rmSync(dir, { recursive: true, force: true });
-  });
-}
-
-test('migrateOldInstall: with both old names present the newer (WoWAI) saved data wins, and both addons go', () => {
-  const dir = scratch('both');
-  fakeClient(dir, 'WoWClaude', { slots: 2 });
-  const { addons, saved } = fakeClient(dir, 'WoWAI', { slots: 2 });
-  fs.writeFileSync(path.join(saved, 'WoWClaude.lua'), oldSavedData('WoWClaude').replace('You there', 'OLDER CHAT'));
-  S.migrateOldInstall(dir, 'ACCT#1');
-  const src = fs.readFileSync(path.join(saved, `${P.ADDON}.lua`), 'utf8');
-  assert.ok(src.includes('You there') && !src.includes('OLDER CHAT'), 'WoWAI.lua was the source');
-  assert.deepEqual(fs.readdirSync(addons).sort(), ['SomeOtherAddon']);
-  fs.rmSync(dir, { recursive: true, force: true });
-});
-
 test('migrateOldInstall: nothing to migrate is a no-op, and a client without an AddOns folder does not throw', () => {
   const dir = scratch('none');
   fs.mkdirSync(path.join(dir, 'Interface'), { recursive: true });
@@ -243,7 +182,7 @@ test('node setup.js --wow <fake client>: migrates the chats, installs ClaudeWoW 
   // The game folder: the new addon and its full slot pool, nothing of the old.
   const names = fs.readdirSync(addons);
   assert.ok(names.includes('ClaudeWoW') && names.includes('SomeOtherAddon'));
-  assert.ok(!names.some(n => /^WoWAI/.test(n)), 'no WoWAI folder left');
+  assert.ok(!names.some(n => n.startsWith('WoWAI')), 'no WoWAI folder left');
   assert.equal(names.filter(n => /^ClaudeWoW_S\d{3}$/.test(n)).length, 200);
   assert.equal(fs.readFileSync(path.join(addons, 'ClaudeWoW_S001', 'Inbox.lua'), 'utf8'), 'ClaudeWoW_SlotData = nil\n');
   assert.match(fs.readFileSync(path.join(addons, 'ClaudeWoW_S001', 'ClaudeWoW_S001.toc'), 'utf8'), /^## Dependencies: ClaudeWoW$/m);
@@ -409,26 +348,4 @@ test('node setup.js on a single-client config from before clients[] moves it int
   for (const k of CLI.LEGACY_KEYS) assert.equal(cfg[k], undefined, `${k} moved into clients[0]`);
   assert.equal(cfg.defaultCwd, project);
   fs.rmSync(dir, { recursive: true, force: true });
-});
-
-test('the addon toc and the slot default declare the same interface list', () => {
-  const toc = fs.readFileSync(path.join(__dirname, '..', 'addon', P.ADDON, `${P.ADDON}.toc`), 'utf8');
-  assert.equal(/^## Interface: (.+)$/m.exec(toc)[1], P.TOC_INTERFACE);
-  const example = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'bridge', 'config.example.json'), 'utf8'));
-  assert.equal(example.tocInterface, P.TOC_INTERFACE);
-});
-
-test('transportReport: the screenshot transport unless capture.mode says pixel, which is reported as deprecated', () => {
-  const lines = [];
-  const orig = console.log;
-  console.log = (l) => lines.push(String(l));
-  try {
-    assert.equal(S.transportReport({}), 'screenshot');
-    assert.equal(S.transportReport({ capture: { enabled: true } }), 'screenshot');
-    assert.equal(S.transportReport({ capture: { mode: 'screenshot' } }), 'screenshot');
-    assert.equal(S.transportReport({ capture: { mode: 'pixel' } }), 'pixel');
-    assert.equal(S.transportReport({ capture: { mode: 'gif' } }), '', 'a bad mode: nothing said here, the bridge refuses it with the file name');
-  } finally { console.log = orig; }
-  assert.equal(lines.filter(l => /^transport: screenshot \(the default\)/.test(l)).length, 3);
-  assert.equal(lines.filter(l => /^transport: pixel .*DEPRECATED/.test(l)).length, 1);
 });

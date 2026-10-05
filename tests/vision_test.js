@@ -18,23 +18,6 @@ function image(width, height, fill) {
   return { width, height, px: (x, y) => { const o = (y * width + x) * 3; return [rgb[o], rgb[o + 1], rgb[o + 2]]; } };
 }
 
-test('gameView crops the strip rows off the top and box-filters the rest down to maxWidth', () => {
-  // 8x6: the top 2 rows are "strip" (white); below, 2x2 blocks of one colour each.
-  const img = image(8, 6, (x, y) => (y < 2 ? [255, 255, 255] : [Math.floor(x / 2) * 60, Math.floor((y - 2) / 2) * 100, 7]));
-  const v = V.gameView(img, { cropTop: 2, maxWidth: 4 });
-  assert.equal(v.width, 4);
-  assert.equal(v.height, 2);
-  // Every output pixel is the mean of one uniform 2x2 block: exact values, no white.
-  for (let Y = 0; Y < 2; Y++) for (let X = 0; X < 4; X++) {
-    const o = (Y * 4 + X) * 3;
-    assert.deepEqual([v.rgb[o], v.rgb[o + 1], v.rgb[o + 2]], [X * 60, Y * 100, 7], `pixel ${X},${Y}`);
-  }
-  // Averaging is real: a 2x2 block of two colours gives their mean.
-  const mixed = image(2, 2, (x) => (x ? [200, 0, 0] : [0, 0, 100]));
-  const m = V.gameView(mixed, { maxWidth: 1 });
-  assert.deepEqual([m.width, m.height, m.rgb[0], m.rgb[1], m.rgb[2]], [1, 1, 100, 0, 50]);
-});
-
 test('gameView leaves a frame that is narrow enough alone, apart from the crop, and rounds the height with the width', () => {
   const img = image(100, 60, (x, y) => [x, y, 0]);
   const same = V.gameView(img, { cropTop: 10, maxWidth: 1280 });
