@@ -145,6 +145,21 @@ test('framing: newline-delimited JSON across chunk boundaries, garbage skipped, 
   assert.equal(LP.encode({ type: 'x' }), '{"type":"x"}\n');
 });
 
+test('framing: a multi-byte character split across chunks decodes whole at every split point', () => {
+  const bytes = Buffer.from(LP.encode({ text: 'héllo — ✓ 名前 🐉' }));
+  for (let cut = 1; cut < bytes.length; cut++) {
+    const got = [];
+    const feed = LP.lineReader(m => got.push(m));
+    feed(bytes.subarray(0, cut));
+    feed(bytes.subarray(cut));
+    assert.deepEqual(got, [{ text: 'héllo — ✓ 名前 🐉' }], `split at byte ${cut}`);
+  }
+  const bytewise = [];
+  const feed = LP.lineReader(m => bytewise.push(m));
+  for (const b of bytes) feed(Buffer.from([b]));
+  assert.deepEqual(bytewise, [{ text: 'héllo — ✓ 名前 🐉' }]);
+});
+
 test('proofs: HMAC over role and nonce, compared in constant time', () => {
   const a = LP.proof('tok', 'client', 'n1');
   assert.equal(a, LP.proof('tok', 'client', 'n1'));
@@ -715,7 +730,12 @@ test('permission relay: the request becomes a Need/Greed roll in the chat, the r
     assert.deepEqual(verdict.params, { request_id: 'abcde', behavior: 'allow' });
     assert.equal(r.out.lines.filter(l => l.method === 'notifications/claude/channel').length, 1, 'the verdict is not forwarded as chat');
     r.ch.feed(
-      JSON.stringify({ jsonrpc: '2.0', id: 20, method: 'tools/call', params: { name: 'wow_reply', arguments: { chat_id: 'tok:c1', text: 'done' } } }) + '\n',
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 20,
+        method: 'tools/call',
+        params: { name: 'wow_reply', arguments: { chat_id: 'tok:c1', message_id: '5', text: 'done' } },
+      }) + '\n',
     );
     await until(() => r.calls.reply.length === 2);
     assert.equal(r.calls.reply[1].job, greed, 'the answer after the roll lands on the verdict message');
@@ -762,6 +782,120 @@ test('permission relay: an unanswered roll is denied after permissionTimeoutMs; 
     );
     const deny = await until(() => r.out.lines.find(l => l.method === 'notifications/claude/channel/permission'));
     assert.deepEqual(deny.params, { request_id: 'bbbbb', behavior: 'deny' });
+  } finally {
+    r.cleanup();
+  }
+});
+
+const wowReply = (r, id, args) =>
+  r.ch.feed(JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: { name: 'wow_reply', arguments: args } }) + '\n');
+
+test("permission relay: after an unanswered roll is denied, the session's answer still lands as a late reply, with or without message_id", async () => {
+  const r = await rig({ options: { permissionTimeoutMs: 30 } });
+  try {
+    await initialize(r.ch, r.out);
+    const job = { id: 21, session: 'tok', chat: 'c1', text: 'touch a file', allow: [] };
+    await r.live.handle(job, r.core);
+    r.ch.feed(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'notifications/claude/channel/permission_request',
+        params: { request_id: 'ccccc', tool_name: 'Bash', description: 'x', input_preview: '{}' },
+      }) + '\n',
+    );
+    await until(() => r.out.lines.find(l => l.method === 'notifications/claude/channel/permission' && l.params.behavior === 'deny'));
+    await until(() => r.live._state.pending.size === 1);
+    wowReply(r, 30, { chat_id: 'tok:c1', message_id: '21', text: 'I could not touch it, here is why.' });
+    const res = await until(() => r.out.lines.find(l => l.id === 30));
+    assert.equal(res.result.isError, false, res.result.content[0].text);
+    assert.deepEqual(
+      (r.calls.late || []).map(l => [l.job, l.text]),
+      [[job, 'I could not touch it, here is why.']],
+    );
+    assert.equal(r.calls.reply.length, 1, "only the roll prompt went out as the message's reply");
+
+    const job2 = { id: 22, session: 'tok', chat: 'c2', text: 'write a file', allow: [] };
+    await r.live.handle(job2, r.core);
+    r.ch.feed(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'notifications/claude/channel/permission_request',
+        params: { request_id: 'ddddd', tool_name: 'Write', description: 'x', input_preview: '{}' },
+      }) + '\n',
+    );
+    await until(() => r.out.lines.find(l => l.method === 'notifications/claude/channel/permission' && l.params.request_id === 'ddddd'));
+    await until(() => r.live._state.pending.has('tok:c2'));
+    wowReply(r, 31, { chat_id: 'tok:c2', text: 'Skipped the write.' });
+    const res2 = await until(() => r.out.lines.find(l => l.id === 31));
+    assert.equal(res2.result.isError, false, res2.result.content[0].text);
+    assert.deepEqual(r.calls.late.at(-1).job, job2);
+  } finally {
+    r.cleanup();
+  }
+});
+
+test("permission relay: a new message typed instead of a roll denies it; the session's answer to the first message lands as its late reply", async () => {
+  const r = await rig();
+  try {
+    await initialize(r.ch, r.out);
+    const job = { id: 61, session: 'tok', chat: 'c1', text: 'touch a file', allow: [] };
+    await r.live.handle(job, r.core);
+    r.ch.feed(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'notifications/claude/channel/permission_request',
+        params: { request_id: 'eeeee', tool_name: 'Bash', description: 'x', input_preview: '{}' },
+      }) + '\n',
+    );
+    await until(() => r.calls.reply.length === 1);
+    const next = { id: 62, session: 'tok', chat: 'c1', text: 'never mind, where is the bank?', allow: [] };
+    await r.live.handle(next, r.core);
+    await until(() => r.out.lines.find(l => l.method === 'notifications/claude/channel/permission' && l.params.behavior === 'deny'));
+    await until(() => r.out.lines.filter(l => l.method === 'notifications/claude/channel').length === 2);
+    wowReply(r, 70, { chat_id: 'tok:c1', message_id: '61', text: 'Skipped the file.' });
+    const res = await until(() => r.out.lines.find(l => l.id === 70));
+    assert.equal(res.result.isError, false, res.result.content[0].text);
+    assert.deepEqual(
+      (r.calls.late || []).map(l => [l.job, l.text]),
+      [[job, 'Skipped the file.']],
+    );
+    wowReply(r, 71, { chat_id: 'tok:c1', message_id: '62', text: 'In the city.' });
+    await until(() => r.calls.reply.length === 2);
+    assert.equal(r.calls.reply[1].job, next);
+  } finally {
+    r.cleanup();
+  }
+});
+
+test("reply correlation: an answer to an older message that went late lands as its late reply, never as the newer message's reply", async () => {
+  const r = await rig({ options: { pickupMs: 20, pickupPollMs: 5 }, pickedUp: (session, job) => job.id !== 41 });
+  try {
+    await initialize(r.ch, r.out);
+    const a = { id: 41, session: 'tok', chat: 'c1', text: 'first', allow: [] };
+    await r.live.handle(a, r.core);
+    await until(() => r.calls.fail.length === 1);
+    assert.equal(r.calls.fail[0].job, a);
+    const b = { id: 42, session: 'tok', chat: 'c1', text: 'second', allow: [] };
+    await r.live.handle(b, r.core);
+    wowReply(r, 50, { chat_id: 'tok:c1', message_id: '41', text: 'answer to first' });
+    const res = await until(() => r.out.lines.find(l => l.id === 50));
+    assert.equal(res.result.isError, false, res.result.content[0].text);
+    assert.deepEqual(
+      (r.calls.late || []).map(l => [l.job, l.text]),
+      [[a, 'answer to first']],
+    );
+    assert.equal(r.calls.reply.length, 0, 'the newer message is still waiting');
+    wowReply(r, 51, { chat_id: 'tok:c1', message_id: '99', text: 'stray' });
+    const stray = await until(() => r.out.lines.find(l => l.id === 51));
+    assert.equal(stray.result.isError, true);
+    assert.match(stray.result.content[0].text, /message_id "99" is not waiting[\s\S]*message_id "42"/);
+    wowReply(r, 52, { chat_id: 'tok:c1', message_id: '42', text: 'answer to second' });
+    await until(() => r.calls.reply.length === 1);
+    assert.equal(r.calls.reply[0].job, b);
+    assert.equal(r.calls.reply[0].text, 'answer to second');
+    wowReply(r, 53, { chat_id: 'tok:c1', message_id: '41', text: 'again' });
+    const again = await until(() => r.out.lines.find(l => l.id === 53));
+    assert.equal(again.result.isError, true, 'a late answer lands once');
   } finally {
     r.cleanup();
   }

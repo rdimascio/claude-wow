@@ -3,6 +3,7 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const { StringDecoder } = require('string_decoder');
 const G = require('./goals');
 const OT = require('./observedtools');
 const C = require('./campaign');
@@ -83,9 +84,10 @@ function encode(msg) {
 }
 
 function lineReader(onMessage, onOverflow) {
+  const decoder = new StringDecoder('utf8');
   let buffer = '';
   return chunk => {
-    buffer += chunk.toString('utf8');
+    buffer += typeof chunk === 'string' ? chunk : decoder.write(chunk);
     let nl;
     while ((nl = buffer.indexOf('\n')) >= 0) {
       const line = buffer.slice(0, nl).trim();
@@ -101,6 +103,7 @@ function lineReader(onMessage, onOverflow) {
     }
     if (buffer.length > MAX_LINE) {
       buffer = '';
+      decoder.end();
       if (onOverflow) onOverflow();
     }
   };
