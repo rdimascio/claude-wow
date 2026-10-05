@@ -476,7 +476,7 @@ test('a widget can read unit names and raid marks and use tooltip and game font 
   ].join('\n');
   const vm = newVM(savedWidgets([['names', source]]));
   assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("names")'), 'running', vm.evaluate('select(2, ClaudeWoWWidgets.Status("names"))'));
-  const strings = '(function() for _, f in ipairs(STUB.frames) do if #f.children == 3 then return f.children end end end)()';
+  const strings = '(function() for i = #STUB.frames, 1, -1 do local f = STUB.frames[i] if #f.children == 3 then return f.children end end end)()';
   assert.equal(vm.evaluate(`${strings}[1].text`), 'Testchar 8');
   assert.equal(vm.evaluate(`${strings}[1].font == GameTooltipText`), 'true');
   assert.equal(vm.evaluate(`${strings}[2].font == Tooltip_Med`), 'true');
