@@ -2,6 +2,26 @@
 
 A coding chat is a Claude Code (or Codex) session in a project folder. These commands give it the rest of a terminal: git state, diffs, logs, tests, the health check, Lua errors and feedback. They run on the bridge PC, in the chat's folder, and never start an agent run.
 
+## Move your terminal sessions into the game
+
+1. In a terminal, in the repository:
+
+   ```sh
+   claude-wow handoff --stop
+   ```
+
+   It lists every Claude Code session running in this repository and its worktrees (from `~/.claude/sessions/<pid>.json`), with each one's title, branch, state and last ask and answer, and saves the list to `~/.claude-wow/handoff.json`. `--stop` then ends the **idle** sessions with `SIGTERM` and waits up to 15 s; their conversations stay on disk. It leaves alone:
+   - a session that is `busy` or running a shell command (`--force` ends those too, and their turn in progress is lost),
+   - a session whose start time it cannot check against `ps`, so a reused pid is never signalled,
+   - the session that runs the command (by `CLAUDE_CODE_SESSION_ID`, `CLAUDE_PID` and the parent processes),
+   - every session on Windows.
+
+   Run it again when the busy ones are done: the new list keeps the sessions stopped earlier (same repository, last 24 hours). Without `--stop` it only lists and saves.
+2. In game: `/claude -r all`. You get one chat per session, named after it, in its own folder, with its last ask and answer at the top. The bridge checks each session's process every 15 s: a session still running is listed and not opened, because resuming it in two places would fork it. Running `-r all` again opens only what is new.
+3. Type in a chat: the first message resumes that session headless (`claude -p --resume <id>` in its folder). `/claude dev run` shows the session id and the command to take it back to a terminal.
+
+The list is kept for 24 hours. `claude-wow handoff <folder>` names another repository; `--json` prints the saved list.
+
 ## Dev tools
 
 | Command | What you get |

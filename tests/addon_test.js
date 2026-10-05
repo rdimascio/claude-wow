@@ -3832,3 +3832,42 @@ test('dev errors and bug attach the caught errors under the marker the bridge sp
   const bug = stripRecords(vm2).find(r => r.text.startsWith('@dev bug'));
   assert.match(bug.text, /^@dev bug the map pins vanish\n--- addon errors ---\naddon .*\nClaudeWoW\/Map.lua:3: boom$/);
 });
+
+test('/claude -r all opens one chat per handed-off session with its recap, skips running and adopted ones, and says how to hand off', () => {
+  const vm = newVM();
+  login(vm);
+  vm.run('STUB.RunTimers()');
+  nextSlot(vm, `{ now = time(), cwd = "", replies = {}, sessions = {
+    { id = "aaaa1111-0000-4000-8000-000000000001", name = "Fix map pins", title = "Fix map pins", cwd = "/repo", agent = "claude", at = 1, handoff = true, branch = "fix/pins", recap = "Last ask: fix pins\\nLast answer: PR 12 is open." },
+    { id = "aaaa1111-0000-4000-8000-000000000002", name = "Cost cap", title = "Cost cap", cwd = "/repo-wt", agent = "claude", at = 2, handoff = true },
+    { id = "aaaa1111-0000-4000-8000-000000000003", name = "Still open", title = "Still open", cwd = "/repo", agent = "claude", at = 3, handoff = true, running = true },
+    { id = "aaaa1111-0000-4000-8000-000000000004", name = "Not handed", cwd = "/repo", agent = "claude", at = 4 },
+  } }`);
+  vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
+  assert.equal(vm.evaluate('ClaudeWoW.IsConnected()'), 'true');
+  const before = vm.num('#ClaudeWoWDB.chats');
+  vm.run('SlashCmdList.CLAUDE("-r all")');
+  assert.equal(vm.num('#ClaudeWoWDB.chats'), before + 2);
+  const byResume = id => `(function() for _, ch in ipairs(ClaudeWoWDB.chats) do if ch.resumeId == "${id}" then return ch end end end)()`;
+  const pins = byResume('aaaa1111-0000-4000-8000-000000000001');
+  const cost = byResume('aaaa1111-0000-4000-8000-000000000002');
+  assert.equal(vm.evaluate(`${pins}.cwd`), '/repo');
+  assert.equal(vm.evaluate(`${pins}.name`), 'Fix map pins');
+  assert.equal(vm.evaluate(`${cost}.cwd`), '/repo-wt');
+  const historyOf = c => vm.evaluate(`(function() local t = {} for _, m in ipairs(${c}.history) do t[#t + 1] = m.text end return table.concat(t, "|") end)()`);
+  assert.match(historyOf(pins), /Last ask: fix pins\nLast answer: PR 12 is open\./);
+  const all = historyOf(pins) + historyOf(cost);
+  assert.match(all, /Opened 2 chats for the handed-off sessions: (Fix map pins, Cost cap|Cost cap, Fix map pins)\./);
+  assert.match(all, /Still running in a terminal, so not opened .*: Still open\./);
+  vm.run('SlashCmdList.CLAUDE("-r all")');
+  assert.equal(vm.num('#ClaudeWoWDB.chats'), before + 2, 'a second -r all opens nothing new');
+  assert.match(vm.evaluate('(function() local c for _, ch in ipairs(ClaudeWoWDB.chats) do if ch.id == ClaudeWoWDB.activeChat then c = ch end end return c.history[#c.history].text end)()'), /2 already had a chat/);
+});
+
+test('/claude -r all with no handed-off session says how to hand off', () => {
+  const vm = newVM();
+  login(vm);
+  connect(vm);
+  vm.run('SlashCmdList.CLAUDE("-r all")');
+  assert.match(vm.evaluate('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history].text'), /No sessions were handed off\. In a terminal, run: claude-wow handoff/);
+});
