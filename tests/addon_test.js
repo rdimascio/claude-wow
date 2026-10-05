@@ -3696,3 +3696,139 @@ test('a give-up and a late reply give back the draft typed while waiting, like a
   assert.equal(lastOf(vm, 1, 'assistant'), 'after the cancel');
   assert.equal(vm.evaluate('ClaudeWoWInput:GetText()'), 'typed before the cancel', 'back in the box on a reply the bridge marks late');
 });
+
+function connectWithPlugins(vm, plugins) {
+  vm.run('STUB.RunTimers()');
+  nextSlot(vm, `{ now = time(), cwd = "", plugins = { ${plugins.map(p => JSON.stringify(p)).join(', ')} }, replies = {} }`);
+  vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
+  assert.equal(vm.evaluate('ClaudeWoW.IsConnected()'), 'true');
+}
+
+const lastLine = vm => vm.evaluate('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history].text');
+
+function loadDev(vm, handlerSetup = '') {
+  vm.run(handlerSetup || 'DEV_PREV = 0; local h = function() DEV_PREV = DEV_PREV + 1 end; function geterrorhandler() return DEV_HANDLER or h end; function seterrorhandler(f) DEV_HANDLER = f end');
+  vm.run(fs.readFileSync(path.join(ADDON, 'Dev.lua'), 'utf8'), 'ClaudeWoW', 'addon/Dev.lua');
+}
+
+test('dev commands: refused until the bridge advertises the dev plugin, then sent verbatim as @dev records', () => {
+  const vm = newVM();
+  login(vm);
+  connect(vm);
+  vm.run('SlashCmdList.CLAUDE("dev status")');
+  assert.match(lastLine(vm), /has not said it has dev tools/);
+  assert.equal(stripRecords(vm).filter(r => r.text.startsWith('@dev')).length, 0);
+
+  const vm2 = newVM();
+  login(vm2);
+  connectWithPlugins(vm2, ['ask', 'claude-code', 'dev']);
+  vm2.run('SlashCmdList.CLAUDE("dev status")');
+  const rec = stripRecords(vm2).find(r => r.text === '@dev status');
+  assert.ok(rec, 'the record carries @dev status');
+  assert.ok(!rec.flags.split(';').includes('t'), 'a dev command never asks for a chat title');
+});
+
+test('dev commands: bare dev asks for help, wrong carries its note, bug needs text', () => {
+  const sent = (cmd) => {
+    const vm = newVM();
+    login(vm);
+    connectWithPlugins(vm, ['dev']);
+    vm.run(`SlashCmdList.CLAUDE(${JSON.stringify(cmd)})`);
+    return { vm, texts: stripRecords(vm).map(r => r.text).filter(t => t.startsWith('@dev')) };
+  };
+  assert.deepEqual(sent('dev').texts, ['@dev help']);
+  assert.deepEqual(sent('wrong the drop rate is from retail').texts, ['@dev wrong the drop rate is from retail']);
+  assert.deepEqual(sent('wrong').texts, ['@dev wrong']);
+  const bare = sent('bug');
+  assert.deepEqual(bare.texts, []);
+  assert.match(lastLine(bare.vm), /Say what went wrong/);
+});
+
+test('Dev.lua keeps only Claude WoW errors, counts repeats, keeps 20, and still calls the previous handler', () => {
+  const vm = newVM();
+  login(vm);
+  loadDev(vm);
+  assert.equal(vm.evaluate('ClaudeWoWDev.installed'), 'true');
+  vm.run('DEV_HANDLER("Interface/AddOns/ClaudeWoW/Map.lua:3: boom"); DEV_HANDLER("Interface/AddOns/ClaudeWoW/Map.lua:3: boom"); DEV_HANDLER("Interface/AddOns/OtherAddon/x.lua:1: theirs")');
+  assert.equal(vm.num('DEV_PREV'), 3, 'every error still reaches the handler that was there before');
+  assert.equal(vm.num('#ClaudeWoWDev.errors'), 1);
+  assert.equal(vm.num('ClaudeWoWDev.errors[1].count'), 2);
+  vm.run('for i = 1, 25 do DEV_HANDLER("Interface\\\\AddOns\\\\ClaudeWoW\\\\DM.lua:" .. i .. ": e") end');
+  assert.equal(vm.num('#ClaudeWoWDev.errors'), 20);
+  assert.match(vm.evaluate('ClaudeWoWDev.errors[20].message'), /DM.lua:25/);
+  vm.run('SlashCmdList.CLAUDE("errors")');
+  assert.match(lastLine(vm), /^20 Lua errors from Claude WoW this UI session \(27 in all\)/);
+});
+
+test('Dev.lua without seterrorhandler installs nothing and says so', () => {
+  const vm = newVM();
+  login(vm);
+  loadDev(vm, 'seterrorhandler = nil');
+  assert.equal(vm.evaluate('ClaudeWoWDev.installed'), null);
+  vm.run('SlashCmdList.CLAUDE("errors")');
+  assert.match(lastLine(vm), /this client has no seterrorhandler/);
+});
+
+test('Dev.lua says so when another addon keeps the error handler, and reads BugGrabber then', () => {
+  const vm = newVM();
+  login(vm);
+  loadDev(vm, 'local h = function() end; function geterrorhandler() return h end; function seterrorhandler() end');
+  assert.equal(vm.evaluate('ClaudeWoWDev.installed'), null);
+  assert.equal(vm.evaluate('ClaudeWoWDev.blocked'), 'true');
+  vm.run('SlashCmdList.CLAUDE("errors")');
+  assert.match(lastLine(vm), /another addon keeps the error handler/);
+  vm.run('BugGrabber = { GetDB = function() return { { message = "Interface/AddOns/ClaudeWoW/Orders.lua:7: bad", counter = 3 }, { message = "Interface/AddOns/Other/x.lua:1: no" } } end }');
+  vm.run('SlashCmdList.CLAUDE("errors")');
+  assert.match(lastLine(vm), /^1 Lua error from Claude WoW this UI session, from BugGrabber, newest last:\nx3 ClaudeWoW\/Orders.lua:7: bad/);
+});
+
+test('a dev command waits while the chat has a reply pending, keeps the resume id, the reset and the title', () => {
+  const vm = newVM();
+  login(vm);
+  connectWithPlugins(vm, ['dev']);
+  vm.run('local c = ClaudeWoWDB.chats[1]; c.resumeId = "1111aaaa-0000-4000-8000-000000000001"; c.resetNext = true');
+  vm.run('SlashCmdList.CLAUDE("dev status")');
+  const rec = stripRecords(vm).find(r => r.text === '@dev status');
+  assert.ok(rec);
+  const flags = rec.flags.split(';');
+  assert.ok(!flags.some(f => f.startsWith('resume=') || f.startsWith('live=')), rec.flags);
+  assert.ok(!flags.includes('n'), 'the reset waits for the next agent message');
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].resetNext'), 'true');
+  vm.run('SlashCmdList.CLAUDE("dev diff")');
+  assert.match(lastLine(vm), /still waiting on a reply/);
+  const id = vm.num('ClaudeWoWDB.chats[1].pendingId');
+  const chatId = vm.evaluate('ClaudeWoWDB.chats[1].id');
+  nextSlot(vm, `{ now = time(), cwd = "", plugins = { "dev" }, replies = { { chat = "${chatId}", id = ${id}, status = "done", text = "branch main", plugin = "dev", cwd = "/elsewhere", session = "" } } }`);
+  vm.run('STUB.now = STUB.now + 6; STUB.Tick(); STUB.now = STUB.now + 6; STUB.Tick()');
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].pendingId'), null, 'the dev reply landed');
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].resumeId'), '1111aaaa-0000-4000-8000-000000000001');
+  vm.run('ClaudeWoW.Send("continue the fix")');
+  const next = stripRecords(vm).find(r => r.text === 'continue the fix');
+  assert.ok(next.flags.split(';').includes('resume=1111aaaa-0000-4000-8000-000000000001'), next.flags);
+  assert.ok(next.flags.split(';').includes('n'));
+  assert.ok(next.flags.split(';').includes('t'), 'the first real message still asks for a title');
+});
+
+test('dev errors and bug attach the caught errors under the marker the bridge splits on, within the payload limit', () => {
+  const vm = newVM();
+  login(vm);
+  loadDev(vm);
+  connectWithPlugins(vm, ['dev']);
+  vm.run('for i = 1, 20 do DEV_HANDLER("Interface/AddOns/ClaudeWoW/Window.lua:" .. i .. ": " .. string.rep("x", 200)) end');
+  vm.run('SlashCmdList.CLAUDE("dev errors")');
+  const rec = stripRecords(vm).find(r => r.text.startsWith('@dev errors'));
+  assert.ok(rec);
+  const [head, attached] = rec.text.split('\n--- addon errors ---\n');
+  assert.equal(head, '@dev errors');
+  assert.ok(attached.length <= 1400, `attachment ${attached.length} chars`);
+  assert.match(attached, /Window.lua:20:/, 'the newest error is kept');
+
+  const vm2 = newVM();
+  login(vm2);
+  loadDev(vm2);
+  connectWithPlugins(vm2, ['dev']);
+  vm2.run('DEV_HANDLER("Interface/AddOns/ClaudeWoW/Map.lua:3: boom")');
+  vm2.run('SlashCmdList.CLAUDE("bug the map pins vanish")');
+  const bug = stripRecords(vm2).find(r => r.text.startsWith('@dev bug'));
+  assert.match(bug.text, /^@dev bug the map pins vanish\n--- addon errors ---\naddon .*\nClaudeWoW\/Map.lua:3: boom$/);
+});
