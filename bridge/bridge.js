@@ -54,6 +54,7 @@ const R = require('./runtime'); // node, bun, or the compiled binary (tests/runt
 const AS = require('./assets'); // the capture scripts and the primer, by path, from a checkout or the binary (tests/assets_test.js)
 const ACH = require('./achievements');
 const SS = require('./sessions');
+const CQ = require('./chatqueue');
 const PJ = require('./projects');
 const G = require('./gamefs');
 const SIG = require('./signals');
@@ -480,9 +481,7 @@ function discardVisionFile(job) {
 }
 
 function dropChatWork(chat) {
-  for (const [key, q] of [...queued]) {
-    if (q.chat !== chat) continue;
-    queued.delete(key);
+  for (const q of queued.dropWhere(j => j.chat === chat)) {
     markHandled(q);
     discardVisionFile(q);
     log(`${tagOf(q)} dropped: its chat was deleted before it started`);
@@ -508,7 +507,7 @@ function dropChatWork(chat) {
 }
 
 const running = new Map(); // chatKey -> { job, child }
-const queued = new Map(); // chatKey -> job waiting for that chat (or for a free parallel slot)
+const queued = CQ.createChatQueue();
 const live = new Map(); // chatKey -> latest record shown to the game
 let lastActivityAt = Date.now();
 let lastPublish = 0;
@@ -1184,7 +1183,7 @@ const RUN_LIMIT_SECONDS = Math.floor((cfg.timeoutMs || 1800000) / 1000);
 function aliveRuns(client) {
   const mine = job => job && job.client === client.key && Number.isInteger(job.id);
   const runs = [...running.values()].filter(r => mine(r.job)).map(r => ({ session: r.job.session, id: r.job.id, since: Math.floor(r.startedAt / 1000) }));
-  for (const job of queued.values()) if (mine(job)) runs.push({ session: job.session, id: job.id, since: 0 });
+  for (const job of queued.jobs()) if (mine(job)) runs.push({ session: job.session, id: job.id, since: 0 });
   for (const entry of held.values()) if (mine(entry.job)) runs.push({ session: entry.job.session, id: entry.job.id, since: 0 });
   return runs;
 }
@@ -1194,7 +1193,12 @@ function pendingIds(client) {
   const ids = [...running.values()]
     .filter(r => mine(r.job))
     .map(r => r.job.id)
-    .concat([...queued.values()].filter(mine).map(j => j.id));
+    .concat(
+      queued
+        .jobs()
+        .filter(mine)
+        .map(j => j.id),
+    );
   for (const r of live.values()) if (r && r.status === 'working' && r.client === client.key) ids.push(r.id);
   return ids;
 }
@@ -1526,10 +1530,31 @@ function submit(job) {
     log(`hello from session ${job.session}${inLabel(client)}${pendingRestore ? ' (restore offered)' : ''}`);
     return;
   }
-  if (inFlight(job)) return;
+  admit(job);
+}
+
+function admit(job) {
+  if (shuttingDown || inFlight(job)) return;
   lastActivityAt = Date.now();
   if (holdForDeploy(job)) return;
   dispatchMessage(job);
+}
+
+function agentSessionOf(job) {
+  if (job.agentSession) return job.agentSession;
+  const saved = state.sessions && state.sessions[sessKey(job)];
+  if (saved) return saved;
+  if (job.resume && !job.liveTarget) {
+    const found = resolveResume(job);
+    if (found.session && found.session.id) return found.session.id;
+  }
+  return sessKey(job);
+}
+
+function sessionBusy(job) {
+  const mine = agentSessionOf(job);
+  for (const r of running.values()) if (r.job !== job && agentSessionOf(r.job) === mine) return true;
+  return false;
 }
 
 function dispatchMessage(job) {
@@ -1538,15 +1563,23 @@ function dispatchMessage(job) {
   const key = chatKey(job);
   const cur = running.get(key);
   if (cur && cur.job.id === job.id) return;
-  const q = queued.get(key);
-  if (q && q.id === job.id) return;
+  if (queued.has(key, job)) return;
   if (state.handling && state.handling[handlingKey(job)]) return;
-  if (cur || running.size >= MAX_PARALLEL) {
-    queued.set(key, job);
+  const sharedBusy = !cur && sessionBusy(job);
+  if (cur || sharedBusy || running.size >= MAX_PARALLEL) {
+    const placed = queued.push(key, job);
+    if (placed === 'present') return;
+    if (placed === 'full') {
+      log(`#${job.id}${job.session ? '@' + job.session : ''} refused: ${CQ.PER_CHAT_MAX} messages already wait in this chat`);
+      finish(job, 'error', `This chat already has ${CQ.PER_CHAT_MAX} messages waiting. Wait for one to finish, then send this again.`);
+      return;
+    }
     noteQueued();
     saveState();
     SW.republishQueued(publishNow);
-    log(`#${job.id}${job.session ? '@' + job.session : ''} queued (${cur ? 'chat busy' : running.size + ' running'})`);
+    log(
+      `#${job.id}${job.session ? '@' + job.session : ''} queued (${cur ? 'chat busy' : sharedBusy ? 'its agent session is busy in another chat' : running.size + ' running'})`,
+    );
     return;
   }
   runJob(job);
@@ -1561,9 +1594,9 @@ function noteHelloVersions(job) {
 
 function cancelRun(job) {
   const key = chatKey(job);
-  const q = queued.get(key);
-  if (q && q.id === job.cancel) {
-    queued.delete(key);
+  const q = queued.find(key, job.cancel);
+  if (q) {
+    queued.remove(key, q);
     noteQueued();
     markHandled(q);
     saveState();
@@ -1591,17 +1624,16 @@ function cancelRun(job) {
 // Is this message already running or waiting its turn? (A retried strip.)
 function inFlight(job) {
   const key = chatKey(job);
-  const cur = running.get(key),
-    q = queued.get(key);
-  return !!((cur && cur.job.id === job.id) || (q && q.id === job.id));
+  const cur = running.get(key);
+  return !!((cur && cur.job.id === job.id) || queued.has(key, job));
 }
 
 function drainQueue() {
   if (shuttingDown) return; // a run ending under the shutdown must not start the next one
-  for (const [key, job] of queued) {
+  for (const [key, job] of queued.heads()) {
     if (running.size >= MAX_PARALLEL) break;
-    if (running.has(key)) continue;
-    queued.delete(key);
+    if (running.has(key) || sessionBusy(job)) continue;
+    queued.remove(key, job);
     noteQueued();
     saveState();
     runJob(job);
@@ -1609,7 +1641,7 @@ function drainQueue() {
 }
 
 function noteQueued() {
-  const waiting = [...queued.values()].map(j => ({ id: j.id, chat: j.chat, session: j.session }));
+  const waiting = queued.jobs().map(j => ({ id: j.id, chat: j.chat, session: j.session }));
   if (waiting.length) state.queued = waiting;
   else delete state.queued;
 }
@@ -2281,6 +2313,7 @@ function runAgent(job, opts = {}) {
   maybeOfferRestore(job);
   noteMessage(job, 'user', job.text);
   const resume = state.sessions[skey] || state.sessions[key];
+  job.agentSession = resume || '';
 
   // Vision: the game view handleScreenshot cut out for this job, read now (it
   // may have waited in the queue) and handed to the agent as an image.
@@ -2518,7 +2551,7 @@ function runAgent(job, opts = {}) {
       log(`${tag} parser error: ${err && err.stack ? err.stack : detail}`);
       return;
     }
-    if (r.session) sessionId = r.session;
+    if (r.session) sessionId = job.agentSession = r.session;
     if (r.usage) usage = r.usage;
     if (Number.isInteger(r.steps) && r.steps > 0) steps += r.steps;
     for (const p of r.progress) pushProgress(p);
@@ -3104,7 +3137,7 @@ function attachGameView(img, cropTop, jobs, source) {
 function waitingVisionFiles(fresh = []) {
   const saved = Array.isArray(state.held) ? state.held : [];
   const files = new Set();
-  const waitingJobs = [...held.values(), ...saved].map(entry => entry && entry.job).concat([...queued.values()], fresh);
+  const waitingJobs = [...held.values(), ...saved].map(entry => entry && entry.job).concat(queued.jobs(), fresh);
   for (const job of waitingJobs) {
     const file = job && job.image && job.image.file;
     if (typeof file === 'string' && file) files.add(path.resolve(file));
