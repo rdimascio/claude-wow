@@ -92,6 +92,7 @@ const OB = require('./observed');
 const OT = require('./observedtools');
 const MH = require('./maphold');
 const REL = require('./releases');
+const SVC = require('./service');
 const MC = require('./mcpconfig');
 
 const HERE = __dirname;
@@ -2658,6 +2659,28 @@ function noteInflight(key, job, child, agentName, marker) {
   saveState();
 }
 
+function endOrphanOnWindows(run) {
+  if (!pidAlive(run.pid)) {
+    log(`#${run.id}: the ${run.agent || 'agent'} process ${run.pid} the previous bridge started is already gone`);
+    return;
+  }
+  if (!Number.isFinite(run.startedAt) || run.startedAt < BOOTED_AT) return;
+  let found = '';
+  const outcome = SVC.endWinAgentRun(run, undefined, (proc, query) => {
+    found =
+      proc.state === 'found'
+        ? `created ${proc.created} vs started ${run.startedAt}, command ${proc.command}`
+        : `${proc.state}: ${String(query.out || query.error || '')
+            .trim()
+            .slice(0, 200)}`;
+  });
+  const agent = run.agent || 'agent';
+  if (outcome === 'ended') log(`#${run.id}: ended the orphaned ${agent} process tree ${run.pid} left by the previous bridge`);
+  else if (outcome === 'unknown' || outcome === 'failed')
+    log(`#${run.id}: could not confirm and end the orphaned ${agent} process ${run.pid} (${outcome}); if it still runs, end it in Task Manager`);
+  else log(`#${run.id}: left pid ${run.pid} alone (${outcome}): it is not the ${agent} run the previous bridge started (${found})`);
+}
+
 function recoverInflight() {
   const staleQueue = state.queued !== undefined || state.handling !== undefined || state.held !== undefined;
   delete state.queued;
@@ -2669,7 +2692,8 @@ function recoverInflight() {
     return;
   }
   for (const [key, run] of lost) {
-    if (process.platform !== 'win32' && isSameProcess(run.pid, run.startedAt, run.marker)) {
+    if (process.platform === 'win32') endOrphanOnWindows(run);
+    else if (isSameProcess(run.pid, run.startedAt, run.marker)) {
       try {
         process.kill(-run.pid, 'SIGKILL');
         log(`#${run.id}: ended the orphaned ${run.agent || 'agent'} process group ${run.pid} left by the previous bridge`);
