@@ -89,6 +89,89 @@ test('RotatingLog appends and rotates itself once it passes the limit', () => {
   assert.equal(again.size, 6, 'a new writer picks up the existing size');
 });
 
+const POSIX = process.platform !== 'win32';
+const modeOf = file => fs.statSync(file).mode & 0o777;
+
+function publicFile(file, text = 'x\n') {
+  fs.writeFileSync(file, text);
+  fs.chmodSync(file, 0o644);
+}
+
+test('RotatingLog keeps the log, its folder and its archives private, and repairs old public ones', { skip: !POSIX }, () => {
+  const dir = scratch('rotlogmode');
+  const logs = path.join(dir, 'logs');
+  const file = path.join(logs, 'bridge.log');
+  fs.mkdirSync(logs, { mode: 0o755 });
+  fs.chmodSync(logs, 0o755);
+  publicFile(file);
+  publicFile(file + '.1');
+  publicFile(file + '.2');
+  const log = new S.RotatingLog(file, { maxBytes: 50, keep: 2 });
+  assert.equal(modeOf(logs), S.PRIVATE_DIR_MODE);
+  assert.equal(modeOf(file), S.PRIVATE_FILE_MODE);
+  assert.equal(modeOf(file + '.1'), S.PRIVATE_FILE_MODE);
+  assert.equal(modeOf(file + '.2'), S.PRIVATE_FILE_MODE);
+  log.write('a'.repeat(60) + '\n');
+  assert.ok(!fs.existsSync(file));
+  log.write('fresh\n');
+  assert.equal(modeOf(file), S.PRIVATE_FILE_MODE, 'the log made after a rotation is private');
+  assert.equal(modeOf(file + '.1'), S.PRIVATE_FILE_MODE);
+
+  const fresh = path.join(dir, 'new', 'deeper', 'service.log');
+  new S.RotatingLog(fresh).write('first\n');
+  assert.equal(modeOf(path.dirname(fresh)), S.PRIVATE_DIR_MODE);
+  assert.equal(modeOf(fresh), S.PRIVATE_FILE_MODE);
+
+  const winLog = path.join(dir, 'win', 'bridge.log');
+  fs.mkdirSync(path.dirname(winLog));
+  publicFile(winLog);
+  publicFile(winLog + '.1');
+  new S.RotatingLog(winLog, { platform: 'win32' });
+  assert.equal(modeOf(winLog), 0o644, 'Windows: no chmod');
+  assert.equal(modeOf(winLog + '.1'), 0o644, 'Windows: no chmod');
+});
+
+test('rotation leaves a private archive even when the live log was public', { skip: !POSIX }, () => {
+  const dir = scratch('rotatemode');
+  const file = path.join(dir, 'bridge.log');
+  publicFile(file, 'z'.repeat(200));
+  assert.equal(S.rotate(file, { maxBytes: 100, keep: 3 }), true);
+  assert.equal(modeOf(file + '.1'), S.PRIVATE_FILE_MODE);
+});
+
+test('the supervisor start repairs the service logs, the launchd log and the home bridge.log archives; Windows is left alone', { skip: !POSIX }, () => {
+  const dir = scratch('securelogs');
+  const d = { logs: path.join(dir, 'logs'), run: path.join(dir, 'run'), definition: path.join(dir, 'x.plist') };
+  const home = path.join(dir, 'home');
+  fs.mkdirSync(d.logs, { mode: 0o755 });
+  fs.chmodSync(d.logs, 0o755);
+  fs.mkdirSync(home, { mode: 0o755 });
+  fs.chmodSync(home, 0o755);
+  const bridgeLog = path.join(home, 'bridge.log');
+  const files = [
+    S.serviceLogFile(d),
+    ...[1, 2, 3, 4, 5].map(i => `${S.serviceLogFile(d)}.${i}`),
+    S.launchdLogFile(d),
+    S.launchdLogFile(d) + '.1',
+    bridgeLog,
+    bridgeLog + '.5',
+  ];
+  for (const f of files) publicFile(f);
+
+  S.secureServiceLogs(d, { platform: 'win32', bridgeLog });
+  assert.equal(modeOf(d.logs), 0o755, 'Windows: no change');
+  for (const f of files) assert.equal(modeOf(f), 0o644, `Windows: ${f} untouched`);
+
+  S.secureServiceLogs(d, { platform: process.platform, bridgeLog });
+  assert.equal(modeOf(d.logs), S.PRIVATE_DIR_MODE);
+  for (const f of files) assert.equal(modeOf(f), S.PRIVATE_FILE_MODE, `${f} is private`);
+  assert.equal(modeOf(home), 0o755, 'the home folder itself is not changed');
+
+  const empty = { logs: path.join(dir, 'missing'), run: path.join(dir, 'missing'), definition: path.join(dir, 'y') };
+  assert.doesNotThrow(() => S.secureServiceLogs(empty, { bridgeLog: path.join(dir, 'nope.log') }));
+  assert.ok(!fs.existsSync(empty.logs), 'a start in a terminal does not create the service log folder');
+});
+
 test('pid file: written, read back, only its owner clears it, liveness check', () => {
   const dir = scratch('pid');
   const d = { run: dir, logs: dir, definition: path.join(dir, 'x') };
@@ -355,6 +438,49 @@ test('install over a loaded LaunchAgent waits for bootout to finish, then ends l
   assert.ok(state.calls.indexOf('bootout') < state.calls.indexOf('bootstrap'));
   assert.ok(!state.calls.includes('load'), 'no bootstrap ran while launchd was still tearing the old job down');
   assert.match(fs.readFileSync(d.definition, 'utf8'), /<key>Label<\/key>\s*<string>io\.claudewow\.bridge<\/string>/);
+});
+
+test('install makes the log folder and launchd.log private before launchd opens it, and repairs a public one', { skip: !POSIX }, () => {
+  const dir = scratch('macinstallmode');
+  const d = { logs: path.join(dir, 'logs'), run: path.join(dir, 'run'), definition: path.join(dir, 'LaunchAgents', `${S.LABEL}.plist`) };
+  const { b } = fakeLaunchd();
+  b.install(d);
+  assert.equal(modeOf(d.logs), S.PRIVATE_DIR_MODE);
+  assert.equal(modeOf(S.launchdLogFile(d)), S.PRIVATE_FILE_MODE, 'launchd appends to an existing file and keeps its mode');
+
+  fs.chmodSync(d.logs, 0o755);
+  publicFile(S.launchdLogFile(d), 'y'.repeat(2 * 1024 * 1024));
+  publicFile(S.serviceLogFile(d));
+  const again = fakeLaunchd();
+  again.b.install(d);
+  assert.equal(modeOf(d.logs), S.PRIVATE_DIR_MODE);
+  assert.equal(modeOf(S.launchdLogFile(d)), S.PRIVATE_FILE_MODE);
+  assert.equal(modeOf(S.launchdLogFile(d) + '.1'), S.PRIVATE_FILE_MODE, 'the rotated launchd log is private');
+  assert.equal(modeOf(S.serviceLogFile(d)), S.PRIVATE_FILE_MODE);
+});
+
+test('systemd install makes the state folder and the service logs private', { skip: !POSIX }, () => {
+  const dir = scratch('linuxinstallmode');
+  const state = path.join(dir, 'state');
+  const d = { logs: state, run: state, definition: path.join(dir, 'systemd', 'user', `${S.UNIT}.service`) };
+  fs.mkdirSync(state, { mode: 0o755 });
+  fs.chmodSync(state, 0o755);
+  publicFile(S.serviceLogFile(d));
+  publicFile(S.serviceLogFile(d) + '.3');
+  const calls = [];
+  const b = Object.assign(Object.create(S.backend('linux')), {
+    exec: (cmd, args) => {
+      assert.equal(cmd, 'systemctl');
+      calls.push(args.join(' '));
+      return { ok: true, status: 0, out: '' };
+    },
+    removeOld: () => false,
+  });
+  b.install(d);
+  assert.ok(calls.includes(`--user enable --now ${S.UNIT}`));
+  assert.equal(modeOf(state), S.PRIVATE_DIR_MODE);
+  assert.equal(modeOf(S.serviceLogFile(d)), S.PRIVATE_FILE_MODE);
+  assert.equal(modeOf(S.serviceLogFile(d) + '.3'), S.PRIVATE_FILE_MODE);
 });
 
 test('install fails loudly when launchd will not load the agent, even if the legacy load exits 0', () => {
