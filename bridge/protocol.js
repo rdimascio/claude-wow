@@ -1132,6 +1132,7 @@ function luaTable(globalName, records, opts = {}) {
     '\tcancel = true,',
     '\treplies = {',
   ];
+  if (opts.openUrl === true) lines.splice(lines.length - 1, 0, '\topenUrl = true,');
   if (transport === 'screenshot') {
     const lv = screenshotLevels(opts.levels);
     lines.splice(lines.length - 1, 0, `\tstrip = { on = ${lv.on}, off = ${lv.off}, codec = ${stripCodec(opts.codec)} },`);

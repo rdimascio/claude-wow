@@ -92,6 +92,7 @@ const OB = require('./observed');
 const OT = require('./observedtools');
 const MH = require('./maphold');
 const REL = require('./releases');
+const OU = require('./openurl');
 
 const HERE = __dirname;
 // Config, state, transcripts, log and scratch live in the home folder (home.js:
@@ -320,6 +321,8 @@ for (const [k, v] of Object.entries(state.handled)) {
 }
 
 const TELEMETRY_ON = TL.telemetryEnabled(cfg.telemetry);
+const OPEN_LINKS_LOG = process.env.CLAUDE_WOW_OPEN_LINKS_LOG || '';
+const linkOpener = OU.createOpener({ enabled: cfg.openLinks !== false, log, ...(OPEN_LINKS_LOG ? { spawnFn: OU.recordingSpawn(OPEN_LINKS_LOG) } : {}) });
 const observed = OB.createObserved({ dir: HOME.goals, log });
 const telemetry = TL.createTelemetry({
   dir: HOME.goals,
@@ -353,7 +356,7 @@ function saveTranscripts() {
 // run's late progress and reply must not recreate the transcript.
 const forgotten = new Set();
 
-function noteMessage(job, role, text) {
+function noteMessage(job, role, text, linkTexts = []) {
   if (!job.chat) return;
   if (role === 'user') forgotten.delete(job.chat);
   else if (forgotten.has(job.chat)) return;
@@ -365,6 +368,7 @@ function noteMessage(job, role, text) {
   const m = { role, text: String(text ?? '').slice(0, 4000), id: job.id, t: Math.floor(Date.now() / 1000) };
   if (role === 'assistant' && job.agent) m.agent = job.agent;
   if (job.plugin) m.plugin = job.plugin;
+  if (role === 'assistant') OU.noteLinks(c, [text, ...linkTexts]);
   c.messages.push(m);
   while (c.messages.length > 200) c.messages.shift();
   c.updated = Date.now();
@@ -742,6 +746,7 @@ function sharedSlotFields(urgent) {
     goalsLua,
     dmLua,
     gsLua,
+    openUrl: linkOpener.available,
     bridge: BRIDGE_INFO,
   };
 }
@@ -1418,6 +1423,19 @@ function submit(job) {
     if (!result.fired) publishNow();
     return;
   }
+  if (OU.isOpenRecord(job)) {
+    markHandled(job);
+    saveState();
+    ackJob(job);
+    let result;
+    try {
+      result = linkOpener.request(job, transcripts.chats[job.chat]);
+    } catch (e) {
+      result = { text: `open link failed (${e && e.message ? e.message : e})` };
+    }
+    log(`${tagOf(job)} ${result.text}`);
+    return;
+  }
   if (job.ctx !== undefined) setContext(job);
   else noteContextHeard();
   if (job.forget) {
@@ -1946,7 +1964,7 @@ function checkedReply(job, reply) {
 function lateReply(job, raw) {
   lastActivityAt = Date.now();
   const { text, summary } = checkedReply(job, P.splitSummary(String(raw || '')));
-  noteMessage(job, 'assistant', text);
+  noteMessage(job, 'assistant', text, [summary]);
   publish(
     `${chatKey(job)}#late`,
     {
@@ -2740,7 +2758,7 @@ function finish(job, status, text, session, denied) {
     }
   }
   const shown = status === 'done' ? checkedReply(job, { text, summary }) : { text, summary };
-  noteMessage(job, status === 'done' ? 'assistant' : 'system', status === 'done' ? shown.text : 'Bridge error: ' + text);
+  noteMessage(job, status === 'done' ? 'assistant' : 'system', status === 'done' ? shown.text : 'Bridge error: ' + text, [shown.summary]);
   awardAchievements(job, status);
   const usage = P.usageFields(job.usage);
   publish(

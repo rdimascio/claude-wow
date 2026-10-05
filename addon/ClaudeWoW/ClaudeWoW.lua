@@ -1072,7 +1072,7 @@ RefreshStrip = function()
 					rec.shot = "log"
 					rec.logged = true
 					rec.loggedAt = GetTime()
-					if (rec.forget or rec.cancelOf or rec.dm) and not run.helloPollAt and not run.ackPollAt then
+					if (rec.forget or rec.cancelOf or rec.dm or rec.openUrl) and not run.helloPollAt and not run.ackPollAt then
 						run.ackPollAt = GetTime() + ClaudeWoW.ChatLog.ACK_POLL_SECONDS
 					end
 				end
@@ -1762,7 +1762,7 @@ local function NoteAcked(rec)
 	rec.acked = true
 	ClaudeWoW.ChatLog.Acked(rec)
 	if rec.ctx ~= nil then run.contextSent = rec.ctx end
-	if not (rec.hello or rec.forget or rec.cancelOf or rec.dm) then Q.NoteLife((FindChat(rec.chat))) end
+	if not (rec.hello or rec.forget or rec.cancelOf or rec.dm or rec.openUrl) then Q.NoteLife((FindChat(rec.chat))) end
 end
 
 local function MarkAcked(id)
@@ -2070,6 +2070,7 @@ local function TryLoadSlot(why)
 	if type(data) == "table" and type(data.cwd) == "string" and data.cwd ~= "" then run.bridgeCwd = data.cwd end
 	if type(data) == "table" then
 		if data.cancel == true then run.bridgeCancel = true end
+		run.bridgeOpenUrl = data.openUrl == true
 		if type(data.agent) == "string" and data.agent ~= "" then run.bridgeAgent = data.agent end
 		if type(data.agents) == "table" and #data.agents > 0 then run.bridgeAgents = data.agents end
 		if type(data.plugin) == "string" and data.plugin ~= "" then run.bridgePlugin = data.plugin end
@@ -2221,7 +2222,7 @@ local function Tick()
 			NoteAcked(rec)
 			changed = true
 			NotedBridge()
-			if (rec.text or "") ~= "" and ClaudeWoWVoice then ClaudeWoWVoice.Started(id) end
+			if (rec.text or "") ~= "" and not rec.openUrl and ClaudeWoWVoice then ClaudeWoWVoice.Started(id) end
 			if rec.hello and run.lateProbe and not run.lateProbe.result then run.helloPollAt = now + 1 end
 			if rec.dm and not (run.ackPollAt and not PresenceWorks()) then run.dmPollAt = now + 1 end
 		end
@@ -2243,6 +2244,9 @@ local function Tick()
 			rec.shot = nil
 			changed = true
 		elseif rec.hello and now - rec.sentAt >= 20 then
+			run.outbound[id] = nil
+			changed = true
+		elseif rec.openUrl and now - rec.sentAt >= STRIP_SECONDS then
 			run.outbound[id] = nil
 			changed = true
 		elseif now - rec.sentAt >= STRIP_SECONDS then
@@ -2297,6 +2301,8 @@ local function ProcessInbox()
 	if type(inbox) ~= "table" then return end
 	if type(inbox.cwd) == "string" and inbox.cwd ~= "" then run.bridgeCwd = inbox.cwd end
 	if inbox.cancel == true then run.bridgeCancel = true end
+	local inboxStamp = tonumber(inbox.now)
+	if inboxStamp and time() - inboxStamp <= Q.INBOX_FRESH_SECONDS then run.bridgeOpenUrl = inbox.openUrl == true end
 	if type(inbox.agent) == "string" and inbox.agent ~= "" then run.bridgeAgent = inbox.agent end
 	if type(inbox.agents) == "table" and #inbox.agents > 0 then run.bridgeAgents = inbox.agents end
 	if type(inbox.plugin) == "string" and inbox.plugin ~= "" then run.bridgePlugin = inbox.plugin end
@@ -3463,6 +3469,57 @@ function ClaudeWoW.SendDmNext(charKey)
 	run.dmSentAt = now
 	db.lastSeq = db.lastSeq + 1
 	run.outbound[db.lastSeq] = { chat = "", cwd = "", flags = "kind=dm", name = charKey, text = "next", sentAt = now, dm = true }
+	NoteStaleSignals(db.lastSeq)
+	RefreshStrip()
+	return "sent"
+end
+
+Q.OPEN_URL_MAX = 2048
+Q.OPEN_URL_GAP_SECONDS = 2
+
+function Q.OpenableUrl(url)
+	if type(url) ~= "string" or #url > Q.OPEN_URL_MAX then return false end
+	if not url:match("^https?://[%w%-]") then return false end
+	return not url:find("[^%w%-%._~:/%?#@!%$&'%(%)%+,;=%%]")
+end
+
+function Q.HasLink(text, url)
+	if type(text) ~= "string" or not text:find(url, 1, true) then return false end
+	for found in text:gmatch("https?://" .. Q.URL_CHARS .. "+") do
+		if Q.SplitUrl(found) == url then return true end
+	end
+	return false
+end
+
+function Q.ChatForUrl(url)
+	local active = ActiveChat()
+	local order = { active }
+	for _, c in ipairs(db.chats) do
+		if c ~= active then table.insert(order, c) end
+	end
+	for _, c in ipairs(order) do
+		for i = #c.history, 1, -1 do
+			local m = c.history[i]
+			if m.role == "assistant" and Q.HasLink(m.text, url) then return c end
+		end
+	end
+end
+
+function ClaudeWoW.OpenUrl(url)
+	if not db or db.settings.mode ~= "pixel" then return "reload" end
+	if not run.bridgeOpenUrl then return "unsupported" end
+	if ClaudeWoW.BridgeState() == "down" then return "offline" end
+	if not Q.OpenableUrl(url) then return "refused" end
+	local c = Q.ChatForUrl(url)
+	if not c then return "unknown" end
+	local now = GetTime()
+	for _, rec in pairs(run.outbound) do
+		if rec.openUrl and not rec.acked then return "busy" end
+	end
+	if run.openUrlAt and now - run.openUrlAt < Q.OPEN_URL_GAP_SECONDS then return "busy" end
+	run.openUrlAt = now
+	db.lastSeq = db.lastSeq + 1
+	run.outbound[db.lastSeq] = { chat = c.id, cwd = "", flags = "kind=url", name = "", text = url, sentAt = now, openUrl = true }
 	NoteStaleSignals(db.lastSeq)
 	RefreshStrip()
 	return "sent"
@@ -4963,15 +5020,25 @@ function Cli.Links.macro(arg)
 	if macro then ClaudeWoW.MacroPrompt(macro) end
 end
 
-function Cli.Links.url(arg)
-	if arg ~= "" then ClaudeWoW.ShowCopy(arg) end
+function Cli.Links.url(arg, button)
+	if arg == "" then return end
+	local copyClick = button == "RightButton"
+		or (type(IsControlKeyDown) == "function" and IsControlKeyDown())
+		or (type(IsShiftKeyDown) == "function" and IsShiftKeyDown())
+	if copyClick then return ClaudeWoW.ShowCopy(arg) end
+	local result = ClaudeWoW.OpenUrl(arg)
+	if result == "sent" then
+		if UIErrorsFrame then UIErrorsFrame:AddMessage("Opening in your browser", 1, 0.82, 0, 1) end
+	elseif result ~= "busy" then
+		ClaudeWoW.ShowCopy(arg)
+	end
 end
 
 function Cli.Links.map(arg)
 	if ClaudeWoWMap and ClaudeWoWMap.ShowLayer then ClaudeWoWMap.ShowLayer(arg) end
 end
 
-function ClaudeWoW.OnLink(link)
+function ClaudeWoW.OnLink(link, button)
 	if not db then return false end
 	link = tostring(link or "")
 	local body = link:match("^addon:claudewow:(.*)$") or link:match("^claudewow:(.*)$")
@@ -4979,12 +5046,12 @@ function ClaudeWoW.OnLink(link)
 	local action, arg = body:match("^(%a+):?(.*)$")
 	local fn = action and Cli.Links[action]
 	if not fn then return false end
-	fn(arg or "")
+	fn(arg or "", button)
 	return true
 end
 
-hooksecurefunc("SetItemRef", function(link)
-	ClaudeWoW.OnLink(link)
+hooksecurefunc("SetItemRef", function(link, _, button)
+	ClaudeWoW.OnLink(link, button)
 end)
 
 -- Shift-clicking an item, spell, quest or name puts its link into the chat box
