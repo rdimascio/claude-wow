@@ -40,12 +40,36 @@ end
 function D.Install()
 	if D.installed or type(seterrorhandler) ~= "function" or type(geterrorhandler) ~= "function" then return false end
 	local previous = geterrorhandler()
-	D.installed = true
-	seterrorhandler(function(message, ...)
+	local mine = function(message, ...)
 		pcall(D.Keep, message, StackHere())
 		if type(previous) == "function" then return previous(message, ...) end
-	end)
-	return true
+	end
+	pcall(seterrorhandler, mine)
+	D.installed = geterrorhandler() == mine or nil
+	D.blocked = not D.installed or nil
+	return D.installed == true
+end
+
+local function BugGrabberErrors()
+	local bg = _G.BugGrabber
+	if type(bg) ~= "table" or type(bg.GetDB) ~= "function" then return {} end
+	local ok, list = pcall(bg.GetDB, bg)
+	if not ok or type(list) ~= "table" then return {} end
+	local out = {}
+	for _, e in ipairs(list) do
+		if type(e) == "table" then
+			local message, stack = tostring(e.message or ""), tostring(e.stack or "")
+			if message:find(OWN_FILES) or stack:find(OWN_FILES) then
+				out[#out + 1] = { message = message:sub(1, MESSAGE_MAX), stack = stack:sub(1, STACK_MAX), count = tonumber(e.counter) or 1 }
+			end
+		end
+	end
+	return out
+end
+
+function D.All()
+	if #D.errors > 0 or not D.blocked then return D.errors end
+	return BugGrabberErrors()
 end
 
 local function StackHead(stack)
@@ -62,12 +86,15 @@ local function Short(message)
 end
 
 function D.Report()
-	if #D.errors == 0 then
-		return D.installed and "No Lua error from Claude WoW this UI session." or "No Lua error caught: this client has no seterrorhandler, so the addon cannot catch them. /claude dev errors reads the game's own log."
+	local list = D.All()
+	if #list == 0 then
+		if D.installed then return "No Lua error from Claude WoW this UI session." end
+		if D.blocked then return "No Lua error caught: another addon keeps the error handler to itself, and it lists no Claude WoW error. /claude dev errors reads the game's own log." end
+		return "No Lua error caught: this client has no seterrorhandler, so the addon cannot catch them. /claude dev errors reads the game's own log."
 	end
-	local lines = { #D.errors .. " Lua error" .. (#D.errors == 1 and "" or "s") .. " from Claude WoW this UI session (" .. D.caught .. " in all), newest last:" }
-	for i = math.max(1, #D.errors - ERRORS_SHOWN + 1), #D.errors do
-		local e = D.errors[i]
+	local lines = { #list .. " Lua error" .. (#list == 1 and "" or "s") .. " from Claude WoW this UI session" .. (list == D.errors and (" (" .. D.caught .. " in all)") or ", from BugGrabber") .. ", newest last:" }
+	for i = math.max(1, #list - ERRORS_SHOWN + 1), #list do
+		local e = list[i]
 		lines[#lines + 1] = (e.count > 1 and ("x" .. e.count .. " ") or "") .. Short(e.message)
 		local head = StackHead(e.stack)
 		if head ~= "" then lines[#lines + 1] = head end
@@ -80,8 +107,9 @@ function D.Attachment(max)
 	max = max or ATTACHMENT_MAX
 	local parts = {}
 	local used = 0
-	for i = #D.errors, 1, -1 do
-		local e = D.errors[i]
+	local list = D.All()
+	for i = #list, 1, -1 do
+		local e = list[i]
 		local part = (e.count > 1 and ("x" .. e.count .. " ") or "") .. Short(e.message)
 		local head = StackHead(e.stack)
 		if head ~= "" then part = part .. "\n" .. head end

@@ -33,7 +33,7 @@ const HELP = [
   '/claude dev test [args]: the test command (plugins.dev.testCommand, else npm test)',
   '/claude dev doctor: the health check (dev/doctor.js in this folder)',
   '/claude dev errors: Lua errors from the game log and the addon',
-  '/claude wrong [note]: mark the last reply in this chat as wrong',
+  '/claude wrong [#reply] [note]: mark the last reply in this chat (or reply #n) as wrong',
   '/claude bug <text>: report a bug with the addon state attached',
   '/claude dev feedback [close <n> | fix <n>]: the open wrong-reply and bug reports',
   'The agent in this chat sees the output of the last dev command with your next message.',
@@ -55,7 +55,7 @@ function lastLines(text, n) {
   return lines.slice(Math.max(0, lines.length - n)).join('\n');
 }
 
-function runCommand(file, args, { cwd, timeoutMs = GIT_TIMEOUT_MS, env, onTick, spawn = PR.spawnChild } = {}) {
+function runCommand(file, args, { cwd, timeoutMs = GIT_TIMEOUT_MS, env, onTick, onSpawn, spawn = PR.spawnChild } = {}) {
   return new Promise(resolve => {
     let out = '';
     let err = '';
@@ -75,6 +75,7 @@ function runCommand(file, args, { cwd, timeoutMs = GIT_TIMEOUT_MS, env, onTick, 
       resolve({ code: -1, out: '', err: String(e && e.message || e), missing: e && e.code === 'ENOENT', timedOut: false });
       return;
     }
+    if (onSpawn) onSpawn(child);
     const timer = setTimeout(() => { timedOut = true; PR.killTree(child); }, timeoutMs);
     const ticker = onTick ? setInterval(onTick, HEARTBEAT_MS) : null;
     child.stdout.on('data', d => { if (out.length < OUTPUT_CAP) out += d.toString('utf8'); });
@@ -381,7 +382,8 @@ function wrong(ctx) {
   const { args, core, job, rest } = ctx;
   let replyId = null;
   let note = rest;
-  if (args.length && /^\d+$/.test(args[0])) { replyId = Number(args[0]); note = rest.replace(/^\d+\s*/, ''); }
+  const ref = /^#(\d+)$/.exec(args[0] || '');
+  if (ref) { replyId = Number(ref[1]); note = rest.replace(/^#\d+\s*/, ''); }
   const turn = core.lastTurn(job, replyId);
   if (!turn) return 'There is no reply in this chat to mark.';
   const item = core.feedback.add({
@@ -432,10 +434,13 @@ async function handleDev(job, core, deps = {}) {
     core.reply(job, `Unknown dev command "${command}".\n${HELP}`);
     return;
   }
+  core.claimRun(job);
+  core.log(`${core.tag(job)} dev ${command} starting in ${core.resolveCwd(job)}`);
+  const run = deps.run || runCommand;
   const ctx = {
     job, core, args: restArgs, rest, addonErrors: addon,
     cwd: core.resolveCwd(job),
-    run: deps.run || runCommand,
+    run: (file, args, opts = {}) => (job.cancelled ? Promise.resolve({ code: -1, out: '', err: '', timedOut: false, cancelled: true }) : run(file, args, { ...opts, onSpawn: child => core.runChild(job, child) })),
     now: deps.now || Date.now,
     setNote: text => core.setDevNote(job, text),
   };
@@ -444,6 +449,10 @@ async function handleDev(job, core, deps = {}) {
   catch (e) {
     core.log(`${core.tag(job)} dev ${command}: ${e && e.stack ? e.stack : e}`);
     core.fail(job, `dev ${command} failed: ${e && e.message ? e.message : e}`);
+    return;
+  }
+  if (job.cancelled) {
+    core.fail(job, 'Cancelled from the game.');
     return;
   }
   const reply = capText(text);
@@ -458,6 +467,7 @@ const plugin = {
   tools: '',
   surfaces: [],
   achievements: false,
+  sessionless: true,
   banner: () => 'git status, diffs, logs, tests, doctor, Lua errors and feedback for the chat\'s folder (/claude dev help)',
   handle: (job, core) => handleDev(job, core),
 };

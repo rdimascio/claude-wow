@@ -281,7 +281,7 @@ end
 
 local function HasUserMessage(c)
 	for _, m in ipairs(c.history or {}) do
-		if m.role == "user" then return true end
+		if m.role == "user" and not tostring(m.text or ""):find("^@dev ") then return true end
 	end
 	return false
 end
@@ -1808,7 +1808,7 @@ local function ApplyReplies(replies)
 			matched = true
 			MarkAcked(r.id)
 			local denied = type(r.denied) == "table" and #r.denied > 0 and r.denied or nil
-			if r.status == "done" or r.status == "error" then
+			if (r.status == "done" or r.status == "error") and r.plugin ~= Cli.DEV_PLUGIN then
 				NoteUsage(c, r)
 				if c.adoptCwd and type(r.cwd) == "string" and r.cwd ~= "" then c.cwd = r.cwd end
 				if type(r.session) == "string" and r.session ~= "" then c.session = r.session end
@@ -3347,7 +3347,8 @@ function ClaudeWoW.Send(text, allow, opts)
 	local id = db.lastSeq
 	local tokens = {}
 	local plugin = Cli.ChatPlugin(c)
-	if c.resetNext then table.insert(tokens, "n") end
+	local verbatim = opts and opts.verbatim
+	if c.resetNext and not verbatim then table.insert(tokens, "n") end
 	if c.agent and c.agent ~= "" then table.insert(tokens, "agent=" .. c.agent) end
 	if plugin ~= "" then table.insert(tokens, "plugin=" .. plugin) end
 	if db.settings.vision or (opts and opts.vision) then table.insert(tokens, "v") end
@@ -3363,14 +3364,19 @@ function ClaudeWoW.Send(text, allow, opts)
 		end
 	end
 	local optionTokens = Cli.ChatOptionTokens(c, opts and opts.onceDirs)
+	if verbatim then
+		for i = #optionTokens, 1, -1 do
+			if optionTokens[i]:find("^resume=") or optionTokens[i]:find("^live=") then table.remove(optionTokens, i) end
+		end
+	end
 	local wantsTitle = c.name:match("^Chat %d+$") and not HasUserMessage(c) and not (opts and opts.verbatim)
 	if wantsTitle then table.insert(optionTokens, "t") end
 	for _, t in ipairs(optionTokens) do table.insert(tokens, t) end
 	local flags = table.concat(tokens, ";")
 	local outboxTokens = { "ver=" .. ClaudeWoW.Version.Own(), "proto=" .. ClaudeWoW.Version.PROTO }
 	for _, t in ipairs(optionTokens) do table.insert(outboxTokens, t) end
-	local newSession = c.resetNext and true or nil
-	c.resetNext = nil
+	local newSession = (c.resetNext and not verbatim) and true or nil
+	if not verbatim then c.resetNext = nil end
 	db.outbox = {
 		id = id,
 		session = db.session,
@@ -6738,7 +6744,7 @@ HELP = table.concat({
 	"/claude reset                      the next message in this chat starts a fresh session",
 	"/claude cancel                     stop waiting on this chat's reply",
 	"/claude dev [command]              dev tools for this chat's folder, run by the bridge: status, diff, log, run, test, doctor, errors, feedback (/claude dev help)",
-	"/claude wrong [note]               mark the last reply in this chat as wrong; it lands in the bridge's feedback list",
+	"/claude wrong [#n] [note]          mark the last reply in this chat (or reply #n) as wrong; it lands in the bridge's feedback list",
 	"/claude bug <text>                 report a bug, with the addon's state and Lua errors attached",
 	"/claude errors                     the Lua errors the addon caught this UI session",
 	"/claude resend                     show the strip again if the bridge missed it",
@@ -7628,6 +7634,10 @@ Cli.DEV_ATTACH_MAX = 1400
 
 function Cli.DevCommand(c, cmd, rest)
 	if not c then return end
+	if c.pendingId then
+		Cli.Say(c, "This chat is still waiting on a reply. Run the dev command when it is back, or in another chat.")
+		return
+	end
 	if not (run.bridgePlugins and Contains(run.bridgePlugins, Cli.DEV_PLUGIN)) then
 		Cli.Say(c, "The bridge has not said it has dev tools: it is older than this addon, or it has not answered since you logged in. Update it (claude-wow update), send any message, then try again.")
 		return

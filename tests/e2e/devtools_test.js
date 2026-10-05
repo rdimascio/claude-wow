@@ -84,3 +84,48 @@ test('/claude wrong files the last agent reply in feedback.jsonl, and /claude de
     assert.match(list.text, /^1 open item:\n#1 wrong/);
   });
 });
+
+const SS = require('../../bridge/sessions');
+const OLD = 'f02436b8-8a5f-4c05-823e-bef25f88ff7b';
+
+function seedSession(sb) {
+  const dir = path.join(sb.user, '.claude', 'projects', SS.projectSlug(sb.project));
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, `${OLD}.jsonl`), [{ type: 'user', cwd: sb.project, sessionId: OLD }, { type: 'ai-title', aiTitle: 'Fix the build', sessionId: OLD }].map(l => JSON.stringify(l)).join('\n') + '\n');
+  fs.writeFileSync(path.join(sb.agentState, `${OLD}.json`), JSON.stringify({ id: OLD, turns: 4, total: {}, created: Date.now() - 3600000 }));
+}
+
+test('a dev command in a chat attached with /claude -r leaves the session to resume with the next message', async () => {
+  await withGame({ beforeLaunch: seedSession }, async h => {
+    await h.client.connect();
+    h.client.slash(`/claude -r ${OLD}`);
+    await h.client.waitFor(() => (h.client.activeChat() || {}).resumeId === OLD, { label: 'the chat to attach' });
+    const status = await slash(h, '/claude dev run');
+    assert.match(status.text, /No agent run in this chat/);
+    assert.equal(h.client.activeChat().resumeId, OLD, 'the dev reply keeps the resume id');
+    const typed = await say(h, '@dev run');
+    assert.match(typed.text, /No agent run in this chat/);
+    assert.ok(!Object.values(h.state().sessionPlugin || {}).includes('dev'), 'a typed @dev with resume= adopts nothing for the dev plugin');
+    const reply = await say(h, 'carry on');
+    assert.match(reply.text, /carry on/);
+    const call = h.agentCalls().at(-1);
+    assert.equal(call.argv[call.argv.indexOf('--resume') + 1], OLD);
+  });
+});
+
+test('/claude cancel ends a long dev test and frees the chat', async () => {
+  const slow = ['node', '-e', 'setTimeout(() => {}, 120000)'];
+  await withGame({ config: { plugins: { dev: { testCommand: slow } } } }, async h => {
+    await h.client.connect();
+    const id = h.client.lastSeq() + 1;
+    h.client.slash('/claude dev test');
+    await h.bridge.waitForLine(new RegExp(`#${id}@\\S+ dev test starting in `));
+    await new Promise(r => setTimeout(r, 1500));
+    h.client.slash('/claude cancel');
+    await h.bridge.waitForLine(new RegExp(`#${id}@\\S+ cancelled from the game; ending it`));
+    await h.bridge.waitForLine(new RegExp(`#${id}@\\S+ error`));
+    const reply = await say(h, 'after the cancel');
+    assert.match(reply.text, /after the cancel/);
+    assert.doesNotMatch(h.agentCalls().at(-1).prompt, /Output of "\/claude dev/);
+  });
+});

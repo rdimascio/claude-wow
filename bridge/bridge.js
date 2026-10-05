@@ -371,6 +371,8 @@ function forgetChat(job) {
   if (state.sessionPlugin) delete state.sessionPlugin[sessKey(job)];
   if (state.sessionRules) delete state.sessionRules[sessKey(job)];
   if (state.sessionUsage) delete state.sessionUsage[sessKey(job)];
+  if (state.lastRuns) delete state.lastRuns[sessKey(job)];
+  devNotes.delete(chatKey(job));
   if (pendingRestore) pendingRestore.chats = pendingRestore.chats.filter(c => c.id !== job.chat);
   saveTranscripts();
   log(`#${job.id}${job.session ? '@' + job.session : ''} forgot chat ${job.chat}${had ? '' : ' (nothing stored)'}`);
@@ -1344,7 +1346,9 @@ function runJob(job) {
     finish(job, 'error', refusal);
     return;
   }
-  if (job.resume && !job.liveTarget) {
+  const early = registry.route(job, { fallback: DEFAULT_PLUGIN });
+  const sessionless = !!(early.plugin && early.plugin.sessionless);
+  if (job.resume && !job.liveTarget && !sessionless) {
     const found = resolveResume(job);
     if (found.error) {
       log(`${tag} resume ${job.resume}: ${found.error.split('\n')[0]}`);
@@ -1413,6 +1417,16 @@ const core = {
   get feedback() { return feedbackStore; },
   lastRun: job => (state.lastRuns && state.lastRuns[sessKey(job)]) || null,
   lastTurn: (job, replyId) => lastTurn(job, replyId),
+  claimRun: job => {
+    const key = chatKey(job);
+    if (running.has(key)) return false;
+    running.set(key, { job, child: null, startedAt: Date.now() });
+    return true;
+  },
+  runChild: (job, child) => {
+    const cur = running.get(chatKey(job));
+    if (cur && cur.job === job) cur.child = child;
+  },
   setDevNote: (job, text) => { devNotes.set(chatKey(job), { text: String(text || ''), at: Date.now() }); },
   agentPids: () => [...running.values()].map(r => r.child).concat(T.titleChildren(), factory.children()).filter(Boolean).map(c => c.pid),
 };
@@ -1420,9 +1434,10 @@ const core = {
 const feedbackStore = FB.createStore(HOME.dir);
 const devNotes = new Map();
 const DEV_NOTE_TTL_MS = 30 * 60000;
-const LAST_RUNS_MAX = 100;
+const LAST_RUNS_MAX = 30;
 const RUN_TOOLS_KEPT = 12;
-const RUN_STDERR_KEPT = 800;
+const RUN_TOOL_CHARS = 160;
+const RUN_STDERR_KEPT = 600;
 
 function takeDevNote(job) {
   const key = chatKey(job);
@@ -1847,7 +1862,7 @@ function runAgent(job, opts = {}) {
   const pushProgress = (line) => {
     progress.push(line);
     while (progress.length > 10) progress.shift();
-    toolTrail.push(String(line).slice(0, 200));
+    toolTrail.push(String(line).slice(0, RUN_TOOL_CHARS));
     while (toolTrail.length > RUN_TOOLS_KEPT) toolTrail.shift();
     beat(job);
     publish(key, { chat: job.chat, id: job.id, status: 'working', text: checkedProgress(job, progress.join('\n')), steps, cwd: job.cwd, session: sessionId, agent: agentId, plugin: plugin.id, client: job.client }, false);
@@ -2108,8 +2123,11 @@ function finish(job, status, text, session, denied) {
   }
   job.finished = true;
   lastActivityAt = Date.now();
-  running.delete(chatKey(job));
-  if (state.inflight) delete state.inflight[chatKey(job)];
+  const owned = running.get(chatKey(job));
+  if (!owned || owned.job === job) {
+    running.delete(chatKey(job));
+    if (state.inflight) delete state.inflight[chatKey(job)];
+  }
   dropHandling(handlingKey(job));
   markHandled(job);
   saveState();

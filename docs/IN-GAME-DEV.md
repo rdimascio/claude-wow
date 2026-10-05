@@ -28,7 +28,7 @@ Dev commands need a bridge that lists the `dev` plugin. An older bridge would ru
 
 | Command | What it does |
 |---|---|
-| `/claude wrong [note]` | marks the chat's last agent reply as wrong, with the prompt, the reply, the agent session and your note |
+| `/claude wrong [#n] [note]` | marks the chat's last agent reply (or reply `#n`) as wrong, with the prompt, the reply, the agent session and your note |
 | `/claude bug <text>` | files a bug with the addon version, the client build, the mode and the caught Lua errors |
 | `/claude dev feedback [all]` | the open items (`all`: closed ones too) |
 | `/claude dev feedback fix <n>` | shows item `n` and hands it to the agent in this chat with your next message |

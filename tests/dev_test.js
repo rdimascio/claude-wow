@@ -15,7 +15,7 @@ function tmpDir(t) {
 
 function fakeCore(t, over = {}) {
   const home = tmpDir(t);
-  const calls = { replies: [], fails: [], progress: [], beats: 0, notes: [], logs: [] };
+  const calls = { replies: [], fails: [], progress: [], beats: 0, notes: [], logs: [], claimed: 0, children: [] };
   const core = {
     log: line => calls.logs.push(line),
     tag: job => `#${job.id}`,
@@ -31,6 +31,8 @@ function fakeCore(t, over = {}) {
     lastRun: () => over.lastRun || null,
     lastTurn: (job, replyId) => (over.lastTurn ? over.lastTurn(replyId) : null),
     setDevNote: (job, text) => calls.notes.push(text),
+    claimRun: () => { calls.claimed++; return true; },
+    runChild: (job, child) => calls.children.push(child),
     get logFile() { return over.logFile || path.join(home, 'bridge.log'); },
   };
   return { core, calls, home };
@@ -259,12 +261,35 @@ test('wrong stores the last reply with its prompt and note; bug stores the addon
   assert.equal(calls.notes.length, 0);
 });
 
-test('wrong with a reply id passes it on, and with no reply says so', async t => {
-  let asked;
-  const { core, calls } = fakeCore(t, { lastTurn: id => { asked = id; return null; } });
-  await DEV.handleDev(job('wrong 3 bad answer'), core, {});
-  assert.equal(asked, 3);
+test('wrong takes a reply id only with #, so a note may start with a number', async t => {
+  const asked = [];
+  const { core, calls } = fakeCore(t, { lastTurn: id => { asked.push(id); return id === null ? { id: 9, prompt: 'p', reply: 'r' } : null; } });
+  await DEV.handleDev(job('wrong #3 bad answer'), core, {});
   assert.equal(calls.replies.pop(), 'There is no reply in this chat to mark.');
+  await DEV.handleDev(job('wrong 2 quests are missing'), core, {});
+  assert.deepEqual(asked, [3, null]);
+  assert.equal(core.feedback.list()[0].note, '2 quests are missing');
+});
+
+test('a dev job claims the chat, hands each child to the core, and a cancel ends it with no note', async t => {
+  const { core, calls } = fakeCore(t);
+  const j = job('status');
+  const fakeChild = { pid: 1 };
+  const run = async (file, args, opts) => {
+    opts.onSpawn(fakeChild);
+    j.cancelled = true;
+    return { code: 0, out: '/r\n', err: '', timedOut: false };
+  };
+  await DEV.handleDev(j, core, { run: (f, a, o) => run(f, a, o) });
+  assert.equal(calls.claimed, 1);
+  assert.deepEqual(calls.children, [fakeChild]);
+  assert.deepEqual(calls.fails, ['Cancelled from the game.']);
+  assert.deepEqual(calls.replies, []);
+  assert.deepEqual(calls.notes, []);
+});
+
+test('the dev plugin is sessionless, so the bridge never adopts a session for it', () => {
+  assert.equal(DEV.sessionless, true);
 });
 
 test('feedback lists open items, fix hands one to the agent, close closes it', async t => {
