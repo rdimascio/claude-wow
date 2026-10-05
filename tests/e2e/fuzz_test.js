@@ -8,6 +8,7 @@ const { makeRoot, gameRunner, replyTo } = require('./helpers');
 const ROOT = makeRoot('fuzz');
 const withGame = gameRunner(ROOT);
 const SEED = (Number(process.env.CLAUDE_WOW_FUZZ_SEED) || Date.now() ^ (process.pid << 8)) >>> 0;
+const PERIODIC_SWEEP_ONLY_MS = 5000;
 const EPISODES = Number(process.env.CLAUDE_WOW_FUZZ_EPISODES) || 8;
 
 function mulberry32(seed) {
@@ -73,12 +74,13 @@ test(`seeded fuzz: random messages, directives, reloads, restarts and combat eac
   try {
     await withGame({}, async h => {
       const sent = [];
-      let lastRestart = 0;
+      const restarts = [];
       for (const p of plans) {
         log.push(JSON.stringify(p));
         if (p.restartBefore) {
+          const from = Date.now();
           await h.bridge.restart();
-          lastRestart = Date.now();
+          restarts.push([from, Date.now() + PERIODIC_SWEEP_ONLY_MS]);
         }
         await h.client.connect();
         if (p.newChat) h.client.runLua(`ClaudeWoW.NewChat("Fuzz ${p.nonce}")`);
@@ -106,7 +108,8 @@ test(`seeded fuzz: random messages, directives, reloads, restarts and combat eac
         const answers = (chat.history || []).filter(m => m.id === s.id && m.role !== 'user');
         assert.equal(answers.length, 1, `#${s.id} has exactly one answer`);
       }
-      const fresh = () => h.screenshots().filter(n => fs.statSync(path.join(h.sb.screenshots, n)).mtimeMs >= lastRestart);
+      const nearRestart = at => restarts.some(([from, to]) => at >= from && at <= to);
+      const fresh = () => h.screenshots().filter(n => !nearRestart(fs.statSync(path.join(h.sb.screenshots, n)).mtimeMs));
       const settleBy = Date.now() + 5000;
       while (fresh().length && Date.now() < settleBy) await new Promise(r => setTimeout(r, 100));
       assert.deepEqual(fresh(), [], 'no strip screenshot taken while the bridge ran is left behind');
