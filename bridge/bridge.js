@@ -399,9 +399,16 @@ function noteMessage(job, role, text) {
   if (job.cwd) c.cwd = job.cwd;
   if (job.plugin) c.plugin = job.plugin;
   if (job.client) c.client = job.client;
+  if (job.char && !c.cwd && job.plugin !== 'claude-code' && !c.char) c.char = job.char;
   const m = { role, text: String(text ?? '').slice(0, 4000), id: job.id, t: Math.floor(Date.now() / 1000) };
   if (role === 'assistant' && job.agent) m.agent = job.agent;
   if (job.plugin) m.plugin = job.plugin;
+  if (job.via === 'discord') {
+    c.seq = (c.seq || 0) + 1;
+    m.via = 'discord';
+    m.seq = c.seq;
+    if (role === 'assistant' && Array.isArray(job.mirrorDenied) && job.mirrorDenied.length) m.denied = job.mirrorDenied.slice(0, 20);
+  }
   c.messages.push(m);
   while (c.messages.length > 200) c.messages.shift();
   c.updated = Date.now();
@@ -432,10 +439,11 @@ function restoreFor(client) {
 }
 
 function maybeOfferRestore(job) {
-  if (!job.session || transcripts.tokens[job.session]) return;
-  transcripts.tokens[job.session] = Date.now();
+  const tokenKey = job.char ? `${job.session}#${job.char}` : job.session;
+  if (!job.session || transcripts.tokens[tokenKey]) return;
+  transcripts.tokens[tokenKey] = Date.now();
   const chats = Object.values(transcripts.chats)
-    .filter(c => c.id !== job.chat && c.messages.length && (!c.client || c.client === job.client))
+    .filter(c => c.id !== job.chat && c.messages.length && (!c.client || c.client === job.client) && (c.cwd || !c.char || c.char === job.char))
     .sort((a, b) => (b.updated || 0) - (a.updated || 0))
     .slice(0, RESTORE_CHATS)
     .map(c => ({
@@ -448,7 +456,7 @@ function maybeOfferRestore(job) {
     }));
   saveTranscripts();
   if (chats.length) {
-    pendingRestore = { token: job.session, chats, client: job.client || '' };
+    pendingRestore = { token: job.session, char: job.char || '', chats, client: job.client || '' };
     log(`new addon session ${job.session}: offering ${chats.length} chat(s) to restore`);
   }
 }
@@ -666,26 +674,45 @@ process.on('unhandledRejection', e => crash('unhandledRejection', e));
 // Map layers the agent drew (see protocol.js, "Map layers"). The bridge is the source of
 // truth; slot files carry the whole set while the game may not have it yet: for a
 // while after it changes, and after every hello (a fresh or wiped client).
-if (!state.map) state.map = P.newMap();
+delete state.map;
+if (!state.maps) state.maps = {};
+if (!transcripts.perCharacter) {
+  transcripts.chats = {};
+  transcripts.perCharacter = true;
+  for (const k of ['sessions', 'sessionCwd', 'sessionAgent', 'sessionPlugin', 'sessionRules', 'sessionUsage', 'lastRuns']) if (state[k]) state[k] = {};
+  saveTranscripts();
+  saveState();
+}
+const characterKeyOf = text => (GOALS.characterOf(text || '') || {}).key || '';
+const mapFor = key => MH.mapOf(state, key, P.newMap);
 const MAP_DIR = HOME.mapjobs;
 // Every publish rewrites all slot files, so the map rides along only for a short
 // while, and on progress publishes only while it is small.
 const MAP_SHARE_MS = 3 * 60 * 1000;
 const MAP_PROGRESS_MAX = 20000;
 const mapShare = MH.createMapShare({ state, shareMs: MAP_SHARE_MS, save: () => saveState() });
-let mapLuaCache = { version: -1, epoch: '', text: '' };
-function mapLuaSize() {
-  if (mapLuaCache.version !== state.map.version || mapLuaCache.epoch !== state.map.epoch) {
-    mapLuaCache = { version: state.map.version, epoch: state.map.epoch, text: P.luaMap(state.map) };
-  }
-  return mapLuaCache.text.length;
+const mapLuaSizes = new Map();
+function mapLuaSize(map) {
+  const hit = mapLuaSizes.get(map);
+  if (hit && hit.version === map.version && hit.epoch === map.epoch) return hit.size;
+  const size = P.luaMap(map).length;
+  mapLuaSizes.set(map, { version: map.version, epoch: map.epoch, size });
+  return size;
+}
+
+function slotMap(client, urgent) {
+  const key = clientStateOf(client).char || characterKeyOf(CLI.contextText(state, client.key));
+  const map = mapFor(key);
+  if (!key && !Object.keys(map.layers).length) return null;
+  return mapShare.inSlots({ urgent, size: mapLuaSize(map), progressMax: MAP_PROGRESS_MAX }) ? map : null;
 }
 
 function applyToolMap(cmds) {
-  const { changed, notes } = P.applyMapCommands(state.map, cmds);
+  const map = mapFor(runGrantCharacter());
+  const { changed, notes } = P.applyMapCommands(map, cmds);
   if (changed) {
     mapShare.hold();
-    log(`map: ${notes.join('; ')} (version ${state.map.version}), kept in the slot files until the next reply or hello`);
+    log(`map: ${notes.join('; ')} for ${map.char || 'no character'} (version ${map.version}), kept in the slot files until the next reply or hello`);
     publishNow(true, { refresh: true });
   }
   return { changed, notes };
@@ -714,13 +741,14 @@ function takeMapCommands(job, text) {
   cmds.push(...blocks.cmds);
   errors.push(...blocks.errors);
   if (!cmds.length && !errors.length) return { text: blocks.text, note: '' };
-  const { changed, notes } = P.applyMapCommands(state.map, cmds);
+  const map = mapFor(job.char);
+  const { changed, notes } = P.applyMapCommands(map, cmds);
   if (changed) {
     saveState();
     mapShare.touch();
   }
   const all = [...notes, ...errors];
-  log(`#${job.id} map: ${all.join('; ') || 'no change'} (version ${state.map.version})`);
+  log(`#${job.id} map: ${all.join('; ') || 'no change'} for ${map.char || 'no character'} (version ${map.version})`);
   return { text: blocks.text, note: all.length ? `map: ${all.join('; ')}` : '' };
 }
 
@@ -778,7 +806,6 @@ function addonOnDisk(client) {
 }
 
 function sharedSlotFields(urgent) {
-  const map = mapShare.inSlots({ urgent, size: mapLuaSize(), progressMax: MAP_PROGRESS_MAX }) ? state.map : null;
   const widgets = Date.now() < widgetShareUntil && (urgent || widgetSourceBytes() <= WIDGET_PROGRESS_MAX) ? state.widgets : null;
   const transportNote = TRANSPORT_SOURCE === 'fallback' ? P.transportNote(state.transportFallback) : '';
   const achievementsLua = ACHIEVEMENTS_ON ? ACH.luaAchievements(state) : '';
@@ -805,13 +832,14 @@ function sharedSlotFields(urgent) {
     projects: projectList(),
     mcp: mcpSlotList(),
     home: os.homedir(),
+    skills: FACTORY.slotSkills(FACTORY.settings(pluginsCfg['claude-code'])),
     discord: !!discordHub,
+    mirror: discordMirror(),
     cwd: DEFAULT_CWD,
     agent: DEFAULT_AGENT,
     agents: A.agentIds(),
     plugin: DEFAULT_PLUGIN,
     plugins: registry.ids(),
-    map,
     widgets,
     transport: TRANSPORT,
     levels: LEVELS,
@@ -1054,7 +1082,7 @@ function publishNow(urgent = true, { refresh = false } = {}) {
   const shared = sharedSlotFields(urgent);
   let restoreSent = false;
   for (const r of CLIENT_RT.values()) {
-    if (publishClient(r, CLI.recordsFor(all, r.client.key), shared) && restoreFor(r.client)) restoreSent = true;
+    if (publishClient(r, CLI.recordsFor(all, r.client.key), { ...shared, map: slotMap(r.client, urgent) }) && restoreFor(r.client)) restoreSent = true;
   }
   // The restore bundle is large; it rides along once and is then dropped.
   // (The game keeps loading fresh slots until it has read one carrying it.)
@@ -1504,6 +1532,9 @@ function submit(job) {
   }
   if (job.ctx !== undefined) setContext(job);
   else noteContextHeard();
+  const reporter = clientFor(job);
+  if (job.reportedChar && reporter) clientStateOf(reporter).char = job.reportedChar;
+  job.char = characterKeyOf(contextTextFor(job)) || (reporter && clientStateOf(reporter).char) || '';
   if (job.forget) {
     // A deleted chat: forget it and ack. No agent run.
     markHandled(job);
@@ -2084,6 +2115,21 @@ const discordLinks = {
   },
   all: () => Object.entries(state.discordLinks || {}).map(([chatId, link]) => ({ chatId, ...link })),
 };
+
+const MIRROR_PER_CHAT = 10;
+const MIRROR_TEXT_MAX = 1500;
+
+function discordMirror() {
+  const out = [];
+  for (const chatId of Object.keys(state.discordLinks || {})) {
+    const t = transcripts.chats[chatId];
+    if (!t) continue;
+    for (const m of t.messages.filter(x => x.via === 'discord').slice(-MIRROR_PER_CHAT)) {
+      out.push({ chat: chatId, seq: m.seq, role: m.role, text: String(m.text).slice(0, MIRROR_TEXT_MAX), agent: m.agent || '', denied: m.denied || [] });
+    }
+  }
+  return out;
+}
 
 function discordReplyText(status, text, denied) {
   const body = status === 'error' ? `Error: ${text}` : text;
@@ -3093,6 +3139,7 @@ function finish(job, status, text, session, denied) {
     }
   }
   const shown = status === 'done' ? checkedReply(job, { text, summary }) : { text, summary };
+  if (job.via === 'discord') job.mirrorDenied = denied;
   if (!chatDeletedSince(job)) noteMessage(job, status === 'done' ? 'assistant' : 'system', status === 'done' ? shown.text : 'Bridge error: ' + text);
   awardAchievements(job, status);
   const usage = P.usageFields(job.usage);

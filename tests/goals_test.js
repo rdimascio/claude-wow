@@ -577,11 +577,11 @@ function argList(argv, flag) {
   return out;
 }
 
-function writeOutbox(saved, id, ctx) {
+function writeOutbox(saved, id, ctx, session = 'sess1', chat = 'chat1') {
   const ctxLine = ctx === undefined ? '' : `["ctx"] = "${hex(ctx)}",\n`;
   fs.writeFileSync(
     saved,
-    `ClaudeWoWDB = {\n["outbox"] = {\n["id"] = ${id},\n["session"] = "sess1",\n["chat"] = "chat1",\n["text"] = "${hex('hi')}",\n["cwd"] = "",\n["plugin"] = "ask",\n${ctxLine}["t"] = 1,\n},\n}\n`,
+    `ClaudeWoWDB = {\n["outbox"] = {\n["id"] = ${id},\n["session"] = "${session}",\n["chat"] = "${chat}",\n["text"] = "${hex('hi')}",\n["cwd"] = "",\n["plugin"] = "ask",\n${ctxLine}["t"] = 1,\n},\n}\n`,
   );
 }
 
@@ -921,6 +921,153 @@ test('slot field through the real bridge: the slot files carry the current order
       assert.deepEqual(data.goals, { rev: 12, char: BONE_KEY, order: { id: 'o_12', text: 'Skin 30 more', pct: 83 }, goals: {} });
       assert.ok(Array.isArray(data.replies), 'the replies are still there');
     }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test(
+  'map layers through the real bridge: the old account-wide map and chats are dropped, a route lands on the character that asked, and an alt gets an empty map',
+  { timeout: 120000 },
+  () => {
+    const dir = tmpDir('mapchar');
+    try {
+      const { home, addons, saved } = fakeInstall(dir);
+      const replyFile = path.join(dir, 'reply.txt');
+      fs.writeFileSync(
+        path.join(dir, 'fake-claude.js'),
+        `process.stdout.write(JSON.stringify({ type: 'result', result: require('fs').readFileSync(${JSON.stringify(replyFile)}, 'utf8'), session_id: 'sess-1' }) + '\\n');`,
+      );
+      fs.writeFileSync(
+        path.join(home, 'state.json'),
+        JSON.stringify({
+          lastId: 0,
+          sessions: { 'old:legacy': 'agent-session-1' },
+          sessionUsage: { 'chat:legacy': { cost: 3 } },
+          handled: {},
+          map: { epoch: 'old', version: 3, layers: { barrens: { title: 'Old', points: [] } } },
+        }),
+      );
+      fs.writeFileSync(
+        path.join(home, 'transcripts.json'),
+        JSON.stringify({ chats: { legacy: { id: 'legacy', name: 'Old', cwd: '', messages: [{ role: 'user', text: 'x', id: 1, t: 1 }] } }, tokens: {} }),
+      );
+      const run = () => {
+        const r = spawnSync(process.execPath, [BRIDGE, '--once'], { encoding: 'utf8', env: { ...process.env, CLAUDE_WOW_HOME: home }, timeout: 60000 });
+        assert.equal(r.status, 0, r.stdout + r.stderr);
+        return {
+          state: JSON.parse(fs.readFileSync(path.join(home, 'state.json'), 'utf8')),
+          slot: slotData(fs.readFileSync(path.join(addons, 'ClaudeWoW_S001', 'Inbox.lua'), 'utf8')),
+        };
+      };
+      const HELEN_CONTEXT = BONE_CONTEXT.replace(
+        'Character: Bone on Classic Beta PvP 2, level 20 Orc Rogue',
+        'Character: Helen on Classic Beta PvP 2, level 8 Human Mage',
+      );
+      const HELEN_KEY = 'Helen-ClassicBetaPvP2';
+
+      fs.writeFileSync(replyFile, 'Route drawn.\n```wowmap\n{"op":"set","layer":"skins","ordered":true,"points":[{"m":1413,"x":50,"y":40}]}\n```');
+      writeOutbox(saved, 7, BONE_CONTEXT);
+      const bone = run();
+      assert.equal(bone.state.map, undefined, 'the account-wide map is gone');
+      assert.deepEqual(Object.keys(bone.state.maps[BONE_KEY].layers), ['skins'], 'the old layer is dropped and the new route is on Bone');
+      assert.equal(bone.slot.map.char, BONE_KEY);
+      assert.deepEqual(
+        bone.slot.map.layers.map(l => l.name),
+        ['skins'],
+      );
+      const transcripts = JSON.parse(fs.readFileSync(path.join(home, 'transcripts.json'), 'utf8'));
+      assert.equal(transcripts.chats.legacy, undefined, 'the old chats are forgotten');
+      assert.equal(transcripts.chats.chat1.char, BONE_KEY, 'a general chat is owned by the character that wrote it');
+
+      fs.writeFileSync(replyFile, 'Hello.');
+      writeOutbox(saved, 8, HELEN_CONTEXT, 'sess1', 'helen1');
+      const helen = run();
+      assert.equal(helen.slot.map.char, HELEN_KEY, "Helen's slots carry Helen's map");
+      assert.deepEqual(helen.slot.map.layers, {}, "and none of Bone's routes");
+      assert.deepEqual(Object.keys(helen.state.maps[BONE_KEY].layers), ['skins'], "Bone's route is kept for Bone");
+
+      const stored = JSON.parse(fs.readFileSync(path.join(home, 'transcripts.json'), 'utf8'));
+      stored.chats.repo1 = { id: 'repo1', name: 'Repo', cwd: dir, char: BONE_KEY, messages: [{ role: 'user', text: 'fix it', id: 2, t: 2 }], updated: 1 };
+      fs.writeFileSync(path.join(home, 'transcripts.json'), JSON.stringify(stored));
+      writeOutbox(saved, 1, HELEN_CONTEXT, 'wiped', 'helenchat');
+      const helenRestore = run();
+      assert.equal(helenRestore.slot.restore.char, HELEN_KEY, 'the bundle names the character it is for');
+      const helenOffered = (helenRestore.slot.restore || { chats: [] }).chats.map(c => c.id);
+      assert.ok(!helenOffered.includes('chat1'), "a wiped alt is never offered Bone's general chat");
+      assert.ok(helenOffered.includes('repo1'), 'but a project chat is offered to every character');
+      writeOutbox(saved, 2, BONE_CONTEXT, 'wiped', 'bonechat');
+      const boneRestore = run();
+      const offered = boneRestore.slot.restore.chats.find(c => c.id === 'chat1');
+      assert.ok(offered, 'Bone gets his general chat back after a wipe');
+      assert.equal(offered.plugin, 'ask', 'as the general chat it was, not bound to Claude Code');
+      assert.equal(boneRestore.state.sessions['old:legacy'], undefined, "the old chats' agent sessions are dropped with them");
+      assert.equal((boneRestore.state.sessionUsage || {})['chat:legacy'], undefined);
+
+      writeOutbox(saved, 3, '', 'wiped', 'bonechat');
+      const contextOff = run();
+      assert.equal(contextOff.slot.map, undefined, 'with no character known at all and nothing drawn, no map is sent, so the addon keeps its route');
+
+      fs.writeFileSync(replyFile, 'Route drawn.\n```wowmap\n{"op":"set","layer":"offroute","ordered":true,"points":[{"m":1413,"x":20,"y":30}]}\n```');
+      writeOutbox(saved, 4, '', 'wiped', 'bonechat');
+      fs.writeFileSync(saved, fs.readFileSync(saved, 'utf8').replace('["t"] = 1', `["opts"] = "${hex('char=' + hex(BONE_KEY))}",\n["t"] = 1`));
+      const flagged = run();
+      assert.ok(flagged.state.maps[BONE_KEY].layers.offroute, 'with the game context off, the character the addon reports still owns the route');
+      assert.equal(flagged.slot.map.char, BONE_KEY);
+      assert.ok(!flagged.state.maps[''] || !flagged.state.maps[''].layers.offroute, 'and it is never kept under no character');
+
+      fs.rmSync(path.join(home, 'state.json'));
+      writeOutbox(saved, 5, BONE_CONTEXT, 'wiped', 'bonechat');
+      run();
+      const kept = JSON.parse(fs.readFileSync(path.join(home, 'transcripts.json'), 'utf8'));
+      assert.ok(kept.chats.chat1, 'a lost state.json never wipes the transcripts a second time');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
+
+test("two clients on two characters: each slot file carries the map of its own client's character", { timeout: 120000 }, () => {
+  const dir = tmpDir('mapclients');
+  try {
+    const a = fakeInstall(path.join(dir, 'a'));
+    const b = fakeInstall(path.join(dir, 'b'));
+    const cfg = JSON.parse(fs.readFileSync(path.join(a.home, 'config.json'), 'utf8'));
+    const clientOf = install => ({ addonDir: install.addons, savedVariablesFile: install.saved });
+    cfg.clients = [clientOf(a), clientOf(b)];
+    delete cfg.addonDir;
+    delete cfg.savedVariablesFile;
+    delete cfg.inboxFile;
+    fs.writeFileSync(path.join(a.home, 'config.json'), JSON.stringify(cfg, null, 2));
+    const replyFile = path.join(dir, 'reply.txt');
+    fs.writeFileSync(
+      path.join(dir, 'a', 'fake-claude.js'),
+      [
+        `const fs = require('fs');`,
+        `let prompt = process.argv.join(' ');`,
+        `try { prompt += fs.readFileSync(0, 'utf8'); } catch {}`,
+        `const result = prompt.includes('quiet') ? 'ok' : fs.readFileSync(${JSON.stringify(replyFile)}, 'utf8');`,
+        `process.stdout.write(JSON.stringify({ type: 'result', result, session_id: 'sess-1' }) + '\\n');`,
+      ].join('\n'),
+    );
+    fs.writeFileSync(replyFile, 'Route drawn.\n```wowmap\n{"op":"set","layer":"skins","ordered":true,"points":[{"m":1413,"x":50,"y":40}]}\n```');
+    const HELEN_CONTEXT = BONE_CONTEXT.replace(
+      'Character: Bone on Classic Beta PvP 2, level 20 Orc Rogue',
+      'Character: Helen on Classic Beta PvP 2, level 8 Human Mage',
+    );
+    writeOutbox(b.saved, 3, HELEN_CONTEXT, 'sessB', 'helen1');
+    fs.writeFileSync(b.saved, fs.readFileSync(b.saved, 'utf8').replace(hex('hi'), hex('quiet')));
+    writeOutbox(a.saved, 7, BONE_CONTEXT, 'sessA', 'bone1');
+    const r = spawnSync(process.execPath, [BRIDGE, '--once'], { encoding: 'utf8', env: { ...process.env, CLAUDE_WOW_HOME: a.home }, timeout: 60000 });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    const mapIn = install => slotData(fs.readFileSync(path.join(install.addons, 'ClaudeWoW_S001', 'Inbox.lua'), 'utf8')).map;
+    assert.equal(mapIn(a).char, BONE_KEY, r.stdout);
+    assert.deepEqual(
+      mapIn(a).layers.map(l => l.name),
+      ['skins'],
+    );
+    assert.equal(mapIn(b).char, 'Helen-ClassicBetaPvP2', "client B's slots carry Helen's map");
+    assert.deepEqual(mapIn(b).layers, {}, "and never Bone's route");
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
