@@ -144,7 +144,7 @@ function ruleForPermission(req) {
     command = m ? m[1] : '';
   }
   const word = command.trim().split(/\s+/)[0];
-  return word && /^[\w.\-]+$/.test(word) ? `Bash(${word}:*)` : 'Bash';
+  return word && /^[\w.-]+$/.test(word) ? `Bash(${word}:*)` : 'Bash';
 }
 
 function permissionPrompt(req, sessionName) {

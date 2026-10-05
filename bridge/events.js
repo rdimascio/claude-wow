@@ -30,7 +30,7 @@ function coalesceKey(e) {
 }
 
 function mergeEvents(older, newer) {
-  const data = { ...(newer.data || {}) };
+  const data = { ...newer.data };
   if (older.data && 'from' in older.data && 'from' in data) data.from = older.data.from;
   if (older.data && 'delta' in older.data && 'delta' in data) data.delta = Number(older.data.delta) + Number(data.delta);
   return { ...newer, importance: Math.max(older.importance, newer.importance), count: (older.count || 1) + 1, data };
@@ -97,10 +97,6 @@ function allEventsFiles(goalsDir) {
   let names = [];
   try { names = fs.readdirSync(goalsDir); } catch { return []; }
   return names.map(n => path.join(goalsDir, n, TL.EVENTS_FILE)).filter(f => { try { return fs.statSync(f).isFile(); } catch { return false; } });
-}
-
-function sizeOf(file) {
-  try { return fs.statSync(file).size; } catch { return 0; }
 }
 
 function follow(opts) {

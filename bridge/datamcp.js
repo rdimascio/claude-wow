@@ -646,7 +646,6 @@ const TOOLS = [
       }
       const name = nameArg(args, true);
       const limit = limitArg(args);
-      const cs = store.community;
       const results = store.search('instances', name).filter(h => real(h.row)).map(h => ({ inst: h.row, boss: null }));
       const encounterHits = store.search('encounters', name);
       const notes = [];

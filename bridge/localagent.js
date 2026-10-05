@@ -248,7 +248,7 @@ function trimHistory(messages) {
 
 function pruneSessions(dir, keep = MAX_SESSION_FILES) {
   let files;
-  try { files = fs.readdirSync(dir).filter(f => /\.json$/.test(f)); } catch { return; }
+  try { files = fs.readdirSync(dir).filter(f => f.endsWith('.json')); } catch { return; }
   if (files.length <= keep) return;
   const aged = files.map(f => {
     const file = path.join(dir, f);

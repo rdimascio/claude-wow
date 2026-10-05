@@ -31,7 +31,7 @@ function pad3(n) { return String(n).padStart(3, '0'); }
 // inspected and tested elsewhere.
 function isWindowsAbsolute(p) {
   const value = String(p || '');
-  return /^[A-Za-z]:[\\/]/.test(value) || /^\\\\/.test(value);
+  return /^[A-Za-z]:[\\/]/.test(value) || value.startsWith('\\\\');
 }
 
 function baseName(p) {
@@ -217,7 +217,7 @@ function sameFolder(a, b) {
 // "plugin=ask" = the chat is bound to that plugin instead of the bridge's
 // default (see plugins.js; only set when the flag is there, so a record from
 // an addon that predates plugins parses exactly as before).
-const SETTING_RE = /^[A-Za-z0-9._:\[\]-]{1,80}$/;
+const SETTING_RE = /^[A-Za-z0-9._:[\]-]{1,80}$/;
 const RESUME_REF_RE = /^[A-Za-z0-9._-]{1,80}$/;
 const ADD_DIRS_MAX = 8;
 const PERMISSION_MODES = ['acceptEdits', 'auto', 'bypassPermissions', 'manual', 'default', 'dontAsk', 'plan'];
@@ -631,7 +631,7 @@ function ruleFor(d) {
   if (name === 'Bash') {
     const cmd = String((d.tool_input && d.tool_input.command) || '').trim();
     const word = cmd.split(/\s+/)[0];
-    if (word && /^[\w.\-]+$/.test(word)) return `Bash(${word}:*)`;
+    if (word && /^[\w.-]+$/.test(word)) return `Bash(${word}:*)`;
     return 'Bash';
   }
   return name;

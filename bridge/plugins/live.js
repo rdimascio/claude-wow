@@ -104,7 +104,7 @@ function createLive(overrides = {}) {
       const key = info.id || `${info.name}\n${info.cwd}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      const { pidName, ...entry } = info;
+      const { pidName: _pidName, ...entry } = info;
       out.push(entry);
     }
     return out.sort((a, b) => Number(b.listening) - Number(a.listening) || b.at - a.at);

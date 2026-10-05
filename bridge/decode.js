@@ -179,7 +179,7 @@ function readImage(buf) {
 // ---------------------------------------------------------------------------
 
 function options(opts) {
-  return { ...DEFAULTS, ...(opts || {}) };
+  return { ...DEFAULTS, ...opts };
 }
 
 function cellValue(img, o, c, r, ox, oy) {
@@ -274,7 +274,7 @@ function denseReader(img, o, ox, oy) {
 // Decode a codec-2 strip at (ox, oy); same results as decodeStrip. opts.dense
 // may override DENSE (tests); the addon's geometry is fixed.
 function decodeDense(img, opts, ox = 0, oy = 0) {
-  const o = { ...DENSE, ...((opts && opts.dense) || {}) };
+  const o = { ...DENSE, ...(opts && opts.dense) };
   if (ox + o.cells * o.cell > img.width || oy + o.cell > img.height) return null;
   const cellAt = denseReader(img, o, ox, oy);
   if (!cellAt) return null;

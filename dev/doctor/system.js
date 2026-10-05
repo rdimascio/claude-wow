@@ -29,7 +29,7 @@ function isReadOnlyCommand(cmd, args) {
 
 function spawnReadOnly(cmd, args, opts = {}) {
   if (!isReadOnlyCommand(cmd, args)) throw new Error(`doctor refuses to run a command that is not on its read-only list: ${cmd} ${args.join(' ')}`);
-  const result = spawnSync(cmd, args, { encoding: 'utf8', timeout: 15000, ...opts, env: { ...process.env, GIT_OPTIONAL_LOCKS: '0', ...(opts.env || {}) } });
+  const result = spawnSync(cmd, args, { encoding: 'utf8', timeout: 15000, ...opts, env: { ...process.env, GIT_OPTIONAL_LOCKS: '0', ...opts.env } });
   return { ok: !result.error && result.status === 0, status: result.status, out: result.stdout || '', err: (result.stderr || '') + (result.error ? String(result.error.message) : '') };
 }
 

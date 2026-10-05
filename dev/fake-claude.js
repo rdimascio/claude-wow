@@ -141,7 +141,7 @@ function mcpConfigOf(argv) {
 
 function rpcClient(server, opts = {}) {
   const { spawn } = require('child_process');
-  const child = spawn(server.command, server.args || [], { env: { ...process.env, ...(server.env || {}) }, stdio: ['pipe', 'pipe', 'ignore'], detached: !!opts.detached });
+  const child = spawn(server.command, server.args || [], { env: { ...process.env, ...server.env }, stdio: ['pipe', 'pipe', 'ignore'], detached: !!opts.detached });
   const waiting = new Map();
   let buf = '';
   child.on('error', () => {});
@@ -205,7 +205,7 @@ function mcpRuleAllows(argv, server, tool) {
 function rpcExchange(server, requests) {
   return new Promise(resolve => {
     const { spawn } = require('child_process');
-    const child = spawn(server.command, server.args || [], { env: { ...process.env, ...(server.env || {}) }, stdio: ['pipe', 'pipe', 'ignore'] });
+    const child = spawn(server.command, server.args || [], { env: { ...process.env, ...server.env }, stdio: ['pipe', 'pipe', 'ignore'] });
     const wanted = requests.filter(r => r.id !== undefined).map(r => r.id);
     const got = new Map();
     let buf = '';

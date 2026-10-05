@@ -694,7 +694,7 @@ const AGENTS = {
     mcp: true,
     resolve: () => {
       const [file, args] = R.scriptCommand('local-agent');
-      const script = args.find(a => /\.js$/.test(a));
+      const script = args.find(a => a.endsWith('.js'));
       return { file, args, found: script ? exists(script) : true };
     },
     args({ cfg, resume, mcpConfig }) {
@@ -742,7 +742,7 @@ function withChatSettings(agentCfg, id, chosen) {
 }
 
 const PLUGIN_SETTINGS = ['model', 'effort'];
-const PLUGIN_SETTING_RE = /^[A-Za-z0-9._:\[\]-]{1,80}$/;
+const PLUGIN_SETTING_RE = /^[A-Za-z0-9._:[\]-]{1,80}$/;
 
 function withPluginSettings(agentCfg, id, pluginOpts) {
   const block = pluginOpts && pluginOpts.agents && pluginOpts.agents[id];

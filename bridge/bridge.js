@@ -1033,11 +1033,11 @@ function allowRules(agentId, rules) {
   if (!added.length) return [];
   const list = [...current, ...added];
   cfg.agents = cfg.agents || {};
-  cfg.agents[agentId] = { ...(cfg.agents[agentId] || {}), allowedTools: list };
+  cfg.agents[agentId] = { ...cfg.agents[agentId], allowedTools: list };
   try {
     const onDisk = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
     onDisk.agents = onDisk.agents || {};
-    onDisk.agents[agentId] = { ...(onDisk.agents[agentId] || {}), allowedTools: list };
+    onDisk.agents[agentId] = { ...onDisk.agents[agentId], allowedTools: list };
     if (agentId === 'claude') delete onDisk.allowedTools;
     atomicWrite(CONFIG_FILE, JSON.stringify(onDisk, null, 2) + '\n');
   } catch (e) { log('could not save config.json:', e.message); }

@@ -46,11 +46,27 @@ Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) first. The two transports (pix
 ```powershell
 git clone https://github.com/rdimascio/claude-wow
 cd claude-wow
-npm install          # test tooling only: fengari (Lua VM) and luaparse
-npm test
+npm install          # dev tooling only: fengari (Lua VM), luaparse, oxlint, oxfmt
+npm run check        # lint, unit suite, e2e suite
 ```
 
-`npm test` runs the portable suite on every platform. The codec round-trip decodes through `capture.ps1` on Windows and through `capture_x11.py` (python3) elsewhere. `npm run test:bun` runs the same suite under [Bun](https://bun.sh) (`bun test` runs the `node:test` files as they are; the two scripts list the same files, so a new test file goes into both): Node is the runtime the checkout is written for and the fallback install, Bun is what the shipped binary is built with, and the bridge must keep working on both. CI runs both on `windows-latest`, `ubuntu-latest` and `macos-latest` (`.github/workflows/test.yml`).
+`npm test` runs the portable suite on every platform. `tests/unit.js` finds every `tests/*_test.js` file by itself, so a new test file needs no list entry. The codec round-trip decodes through `capture.ps1` on Windows and through `capture_x11.py` (python3) elsewhere. `npm run test:bun` runs the same files under [Bun](https://bun.sh): Node is the runtime the checkout is written for and the fallback install, Bun is what the shipped binary is built with, and the bridge must keep working on both.
+
+`npm run lint` runs oxlint (`.oxlintrc.json`, warnings fail) and `oxfmt --check` (`.oxfmtrc.json`). `npm run format` rewrites the files. `npm run test:coverage` runs the unit suite with coverage floors for `bridge/`, `setup.js` and `build.js`: a change that drops coverage below a floor fails.
+
+### CI gates (`.github/workflows/test.yml`)
+
+| Job | Runs on | What fails it |
+|---|---|---|
+| `lint` | Ubuntu | an oxlint finding, an unformatted file, a Lua local used before it is declared |
+| `unit` | Node on Ubuntu (with coverage floors) and Windows; Bun on Ubuntu, macOS and Windows | any unit test, or coverage under a floor |
+| `e2e` | Ubuntu, macOS and Windows, two shards each | any end-to-end scenario, including the seeded fuzz scenario |
+| `build` | Ubuntu | a binary that does not build or start |
+| `gate` | Ubuntu | any job above that did not pass. This is the one check to require in branch protection. |
+
+The e2e suite is deterministic except `tests/e2e/fuzz_test.js`. That test draws random messages (odd characters, agent directives, errors and rate limits) and random interleavings (`/reload`, bridge restarts, movement, combat) from a seed, and checks that every message ends in exactly one reply, no chat stays pending, and no strip screenshot is left. Each run picks a new seed and prints it in the test name. To replay a failure, run `CLAUDE_WOW_FUZZ_SEED=<seed> npm run test:fuzz`. A nightly run uses 40 episodes per OS (`CLAUDE_WOW_FUZZ_EPISODES`).
+
+Unit tests that add no coverage are not kept. A new test must cover a branch, a line or a Lua line that no other test covers, or pin a safety rule (a refused path, a denied permission, a user file never touched) that no other test asserts.
 
 To try changes in the game, run `node setup.js` (it re-copies the addon into `Interface\AddOns\ClaudeWoW`) and `/reload`. Bridge changes take effect on the next `npm start`.
 

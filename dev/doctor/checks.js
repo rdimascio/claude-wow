@@ -268,7 +268,7 @@ function checkDrift(ctx) {
         'Node loaded the files at start; edits and commits after that are not live until a restart.',
         'Run "claude-wow service restart" when no chat is mid-run.'));
     }
-    const switches = movesAfterStart.filter(e => /^checkout: moving from /.test(e.subject));
+    const switches = movesAfterStart.filter(e => e.subject.startsWith('checkout: moving from '));
     if (switches.length) {
       const first = /^checkout: moving from (\S+) to (\S+)/.exec(switches[switches.length - 1].subject);
       issues.push(warn(`The checkout switched branch since the bridge started (${first ? first[1] + ' -> ' + first[2] : switches.length + ' switch(es)'}, now ${repo.branch}).`,
@@ -585,7 +585,7 @@ function checkDisk(ctx) {
 function checkData(ctx) {
   const issues = [];
   const describe = (name, parsed) => (!parsed.present ? `${name} absent` : parsed.error ? `${name} BROKEN` : `${name} ok`);
-  for (const [name, parsed, file] of [['state.json', ctx.stateJson, ctx.homePaths.state], ['transcripts.json', ctx.transcriptsJson, ctx.homePaths.transcripts]]) {
+  for (const [, parsed, file] of [['state.json', ctx.stateJson, ctx.homePaths.state], ['transcripts.json', ctx.transcriptsJson, ctx.homePaths.transcripts]]) {
     if (parsed.present && parsed.error) {
       issues.push(fail(`${file} does not parse: ${parsed.error}.`, 'The bridge reads it with a silent fallback to empty and overwrites it on the next write, so every chat session and transcript is lost.', `Copy ${file} aside now and repair the JSON before you send another message.`));
     }
