@@ -634,10 +634,12 @@ function agentRunIdentity(record, proc) {
   return proc.command.includes(record.marker) ? 'match' : 'stale';
 }
 
-function endWinAgentRun(record, exec = run) {
+function endWinAgentRun(record, exec = run, seen = () => {}) {
   if (!record || !isPid(record.pid)) return 'gone';
   const query = exec(POWERSHELL, [...POWERSHELL_ARGS, winProcessQuery(record.pid)]);
-  const identity = query.ok ? agentRunIdentity(record, parseWinProcess(query.out)) : 'unknown';
+  const proc = query.ok ? parseWinProcess(query.out) : { state: 'unknown' };
+  seen(proc, query);
+  const identity = query.ok ? agentRunIdentity(record, proc) : 'unknown';
   if (identity !== 'match') return identity;
   const kill = exec(POWERSHELL, [...POWERSHELL_ARGS, winVerifiedKill({ pid: record.pid, started: record.startedAt })]);
   if (kill.ok) return 'ended';

@@ -2603,12 +2603,25 @@ function noteInflight(key, job, child, agentName, marker) {
 }
 
 function endOrphanOnWindows(run) {
-  if (!pidAlive(run.pid) || !Number.isFinite(run.startedAt) || run.startedAt < BOOTED_AT) return;
-  const outcome = SVC.endWinAgentRun(run);
+  if (!pidAlive(run.pid)) {
+    log(`#${run.id}: the ${run.agent || 'agent'} process ${run.pid} the previous bridge started is already gone`);
+    return;
+  }
+  if (!Number.isFinite(run.startedAt) || run.startedAt < BOOTED_AT) return;
+  let found = '';
+  const outcome = SVC.endWinAgentRun(run, undefined, (proc, query) => {
+    found =
+      proc.state === 'found'
+        ? `created ${proc.created} vs started ${run.startedAt}, command ${proc.command}`
+        : `${proc.state}: ${String(query.out || query.error || '')
+            .trim()
+            .slice(0, 200)}`;
+  });
   const agent = run.agent || 'agent';
   if (outcome === 'ended') log(`#${run.id}: ended the orphaned ${agent} process tree ${run.pid} left by the previous bridge`);
   else if (outcome === 'unknown' || outcome === 'failed')
     log(`#${run.id}: could not confirm and end the orphaned ${agent} process ${run.pid} (${outcome}); if it still runs, end it in Task Manager`);
+  else log(`#${run.id}: left pid ${run.pid} alone (${outcome}): it is not the ${agent} run the previous bridge started (${found})`);
 }
 
 function recoverInflight() {
