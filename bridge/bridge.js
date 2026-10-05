@@ -401,6 +401,12 @@ function noteMessage(job, role, text) {
   const m = { role, text: String(text ?? '').slice(0, 4000), id: job.id, t: Math.floor(Date.now() / 1000) };
   if (role === 'assistant' && job.agent) m.agent = job.agent;
   if (job.plugin) m.plugin = job.plugin;
+  if (job.via === 'discord') {
+    c.seq = (c.seq || 0) + 1;
+    m.via = 'discord';
+    m.seq = c.seq;
+    if (role === 'assistant' && Array.isArray(job.mirrorDenied) && job.mirrorDenied.length) m.denied = job.mirrorDenied.slice(0, 20);
+  }
   c.messages.push(m);
   while (c.messages.length > 200) c.messages.shift();
   c.updated = Date.now();
@@ -804,6 +810,7 @@ function sharedSlotFields(urgent) {
     projects: projectList(),
     home: os.homedir(),
     discord: !!discordHub,
+    mirror: discordMirror(),
     cwd: DEFAULT_CWD,
     agent: DEFAULT_AGENT,
     agents: A.agentIds(),
@@ -2083,6 +2090,21 @@ const discordLinks = {
   all: () => Object.entries(state.discordLinks || {}).map(([chatId, link]) => ({ chatId, ...link })),
 };
 
+const MIRROR_PER_CHAT = 10;
+const MIRROR_TEXT_MAX = 1500;
+
+function discordMirror() {
+  const out = [];
+  for (const chatId of Object.keys(state.discordLinks || {})) {
+    const t = transcripts.chats[chatId];
+    if (!t) continue;
+    for (const m of t.messages.filter(x => x.via === 'discord').slice(-MIRROR_PER_CHAT)) {
+      out.push({ chat: chatId, seq: m.seq, role: m.role, text: String(m.text).slice(0, MIRROR_TEXT_MAX), agent: m.agent || '', denied: m.denied || [] });
+    }
+  }
+  return out;
+}
+
 function discordReplyText(status, text, denied) {
   const body = status === 'error' ? `Error: ${text}` : text;
   const rules = Array.isArray(denied) ? denied.filter(Boolean) : [];
@@ -3041,6 +3063,7 @@ function finish(job, status, text, session, denied) {
     }
   }
   const shown = status === 'done' ? checkedReply(job, { text, summary }) : { text, summary };
+  if (job.via === 'discord') job.mirrorDenied = denied;
   if (!chatDeletedSince(job)) noteMessage(job, status === 'done' ? 'assistant' : 'system', status === 'done' ? shown.text : 'Bridge error: ' + text);
   awardAchievements(job, status);
   const usage = P.usageFields(job.usage);

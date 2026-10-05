@@ -3020,3 +3020,55 @@ test('/claude discord refuses when the bridge has no Discord, and in a general c
   assert.equal(sent[0].text, '/claude discord');
   assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].discordLinkPending'), null, 'the flag is one-shot');
 });
+
+test('Discord mirror: messages from a linked thread join the game chat once, in order, with a gap notice, and a permission ask keeps its rules', () => {
+  const vm = newVM();
+  login(vm);
+  const chatId = vm.evaluate('ClaudeWoWDB.chats[1].id');
+  vm.run('STUB.RunTimers()');
+  nextSlot(
+    vm,
+    `{ now = time(), cwd = "/Users/me/every", discord = true, mirror = {
+    { chat = "${chatId}", seq = 1, role = "user", text = "from my phone", agent = "", denied = {} },
+    { chat = "${chatId}", seq = 2, role = "assistant", text = "done it", agent = "claude", denied = {} },
+    { chat = "nochat", seq = 1, role = "user", text = "ignored", agent = "", denied = {} },
+  }, replies = {} }`,
+  );
+  vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
+  const texts = () =>
+    JSON.parse(
+      vm
+        .evaluate(
+          '(function() local t = {} for _, m in ipairs(ClaudeWoWDB.chats[1].history) do table.insert(t, string.format("%q", m.role .. "|" .. m.text)) end return "[" .. table.concat(t, ",") .. "]" end)()',
+        )
+        .replace(/\\\n/g, '\\n'),
+    );
+  assert.deepEqual(texts().slice(-2), ['user|(Discord) from my phone', 'assistant|done it']);
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].mirrorSeq'), '2');
+
+  vm.run(`ClaudeWoW.ApplyMirror({ { chat = "${chatId}", seq = 2, role = "assistant", text = "done it", agent = "claude", denied = {} } })`);
+  assert.equal(texts().filter(t => t === 'assistant|done it').length, 1, 'a message already shown is not added again');
+
+  vm.run(
+    `ClaudeWoW.ApplyMirror({ { chat = "${chatId}", seq = 6, role = "assistant", text = "needs Bash", agent = "claude", denied = { "Bash(npm test:*)" } } })`,
+  );
+  assert.deepEqual(texts().slice(-2), ['system|3 earlier message(s) are in Discord.', 'assistant|needs Bash']);
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history].denied[1]'), 'Bash(npm test:*)');
+});
+
+test('attaching a session from another chat that this client does not have keeps that chat id', () => {
+  const vm = newVM();
+  login(vm);
+  vm.run('STUB.RunTimers()');
+  nextSlot(
+    vm,
+    `{ now = time(), cwd = "/Users/me/every", plugins = { "ask", "claude-code" }, sessions = {
+    { id = "abcd1111-0000-4000-8000-000000000001", name = "From Discord", cwd = "/Users/me/every", agent = "claude", at = time() - 60, chat = "d0123456789" },
+  }, replies = {} }`,
+  );
+  vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
+  vm.run('SlashCmdList.CLAUDE("-r abcd1111 carry on")');
+  const rec = stripRecords(vm).find(r => r.text === 'carry on');
+  assert.ok(rec, 'sent');
+  assert.equal(rec.chat, 'd0123456789', 'the game chat has the same id as the Discord chat');
+});

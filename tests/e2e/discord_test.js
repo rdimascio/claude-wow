@@ -142,6 +142,16 @@ test('/claude discord links a game chat to a new thread with a recap, game repli
       const fromGame = h.agentCalls().find(c => c.prompt.includes('now do step one'));
       assert.equal(fromPhone.resume, fromGame.session, 'the same agent session');
       assert.ok(h.state().discordLinks[chatId], 'the link is saved by chat id');
+
+      await h.client.say('back in game');
+      const history = h.client.activeChat().history.map(m => `${m.role}|${m.text}`);
+      const phone = history.indexOf('user|(Discord) from my phone');
+      assert.ok(phone >= 0, `the Discord message is in the game chat: ${JSON.stringify(history.slice(-6))}`);
+      assert.ok(
+        history.slice(phone).some(t => /^assistant\|echo \(turn 3\): from my phone/.test(t)),
+        'and so is its reply',
+      );
+      assert.equal(history.filter(t => t === 'user|(Discord) from my phone').length, 1, 'shown once');
     });
   } finally {
     await fake.close();

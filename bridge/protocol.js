@@ -1185,6 +1185,15 @@ function luaTable(globalName, records, opts = {}) {
   }
   if (opts.home) lines.splice(lines.length - 1, 0, `\thome = ${luaStr(opts.home)},`);
   if (opts.discord === true) lines.splice(lines.length - 1, 0, '\tdiscord = true,');
+  if (Array.isArray(opts.mirror) && opts.mirror.length) {
+    const rows = opts.mirror
+      .filter(m => m && m.chat && Number.isInteger(m.seq))
+      .map(
+        m =>
+          `\t\t{ chat = ${luaStr(m.chat)}, seq = ${m.seq}, role = ${luaStr(m.role)}, text = ${luaStr(m.text)}, agent = ${luaStr(m.agent || '')}, denied = { ${(m.denied || []).map(luaStr).join(', ')} } },`,
+      );
+    lines.splice(lines.length - 1, 0, '\tmirror = {', ...rows, '\t},');
+  }
   if (Array.isArray(opts.acks)) {
     const acks = opts.acks.filter(a => a && Number.isInteger(a.id) && a.id > 0);
     lines.splice(lines.length - 1, 0, `\tacks = { ${acks.map(a => `{ session = ${luaStr(a.session || '')}, id = ${a.id} }`).join(', ')} },`);

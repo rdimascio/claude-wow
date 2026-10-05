@@ -628,3 +628,20 @@ test('the ask plugin speaks as a player: one lowercase line, no TL;DR block; oth
     'a chat with no game context gets no loot rule',
   );
 });
+
+test('luaTable carries the Discord capability and mirrored messages with their permission rules', () => {
+  assert.ok(!/discord =|mirror =/.test(P.luaTable('X', [], { mirror: [] })));
+  const lua = P.luaTable('X', [], {
+    discord: true,
+    mirror: [
+      { chat: 'c1', seq: 3, role: 'assistant', text: 'needs "Bash"', agent: 'claude', denied: ['Bash(npm test:*)'] },
+      { chat: '', seq: 1, role: 'user', text: 'x' },
+    ],
+  });
+  assert.match(lua, /^\tdiscord = true,$/m);
+  assert.match(
+    lua,
+    /^\t\t\{ chat = "c1", seq = 3, role = "assistant", text = "needs \\"Bash\\"", agent = "claude", denied = \{ "Bash\(npm test:\*\)" \} \},$/m,
+  );
+  assert.equal((lua.match(/chat = /g) || []).length, 1, 'an entry with no chat is left out');
+});
