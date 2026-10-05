@@ -32,7 +32,7 @@ function newVM({ before = '', saved = '' } = {}) {
   run(fs.readFileSync(path.join(__dirname, 'wow_stub.lua'), 'utf8'));
   run(BLIZZARD);
   if (before) run(before);
-  for (const f of ['Codec.lua', 'Inbox.lua', 'ClaudeWoW.lua', 'LootRoll.lua', 'Window.lua'])
+  for (const f of ['Codec.lua', 'Inbox.lua', 'ClaudeWoW.lua', 'LootRoll.lua', 'Window.lua', 'Help.lua'])
     run(fs.readFileSync(path.join(ADDON, f), 'utf8'), 'ClaudeWoW', 'addon/' + f);
   if (saved) run(saved);
   run('STUB.FireEvent("ADDON_LOADED", "ClaudeWoW"); STUB.FireEvent("PLAYER_LOGIN")');
@@ -987,11 +987,13 @@ test('the black bar shows the chat title up to the project button, with folder, 
   assert.equal(vm.evaluate('table.concat(CALLS, "|")'), `rename:${id}|menu:${id}`);
 });
 
-test('help lives in the gear menu, and Clear moves from the bottom bar into the chat menu', () => {
+test('help lives in the gear menu and opens the Commands and tips page, and Clear moves from the bottom bar into the chat menu', () => {
   const vm = nativeVM();
   const active = '(function() for _, c in ipairs(ClaudeWoWDB.chats) do if c.id == ClaudeWoWDB.activeChat then return c end end end)()';
+  const before = vm.num(`#${active}.history`);
   vm.run('ClaudeWoWChatSettings.scripts.OnClick(ClaudeWoWChatSettings); STUB.Pick("Commands and tips")');
-  assert.ok(vm.evaluate(`${active}.history[#${active}.history].text`).includes('/claude'));
+  assert.equal(vm.num(`#${active}.history`), before, 'the help is not written into the chat');
+  assert.equal(vm.evaluate('ClaudeWoWHelpPanel.shown'), 'true', 'the page opens');
   assert.equal(vm.evaluate('ClaudeWoWHelpButton'), null, 'no help button crowds the breadcrumb bar');
 
   const clearButton = '(function() for _, c in ipairs(ClaudeWoWFrame.children) do if c.kind == "Button" and c.text == "Clear" then return c end end end)()';

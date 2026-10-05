@@ -11,6 +11,7 @@ addon/ClaudeWoW/     the in-game addon (Lua 5.1, WoW API)
   Inbox.lua             placeholder the bridge overwrites at runtime
   Widgets.lua           live UI widgets from the agent, sandboxed, /claude config ui list|remove|run
   Window.lua            the workspace window's behaviour: dodging Blizzard panels, dimming, per-character layout
+  Help.lua              the Commands and tips page in the game's Options (AddOns), built from ClaudeWoW.HELP
   Bindings.xml          the "open or close the workspace" key binding
   ClaudeWoW.toc
 bridge/               the companion process (Node.js, no runtime dependencies)
