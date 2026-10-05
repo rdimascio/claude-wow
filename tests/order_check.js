@@ -21,6 +21,7 @@ function mainChunkLocals(ast) {
 }
 
 for (const f of [
+  'Dev.lua',
   'Codec.lua',
   'ClaudeWoW.lua',
   'Inbox.lua',
