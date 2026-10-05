@@ -1585,7 +1585,25 @@ function admit(job) {
   if (shuttingDown || inFlight(job)) return;
   lastActivityAt = Date.now();
   if (holdForDeploy(job)) return;
+  if (answerStatusNow(job)) return;
   dispatchMessage(job);
+}
+
+const STATUS_COMMANDS = new Set(['runs', 'stop']);
+
+function answerStatusNow(job) {
+  const cmd = FACTORY.parseSlash(job.text);
+  if (!cmd || !STATUS_COMMANDS.has(cmd.name) || !running.has(chatKey(job))) return false;
+  const routed = registry.route(job, { fallback: DEFAULT_PLUGIN });
+  if (!routed.plugin || routed.plugin.id !== 'claude-code') return false;
+  const conf = FACTORY.settings(core.options('claude-code'));
+  const result = FACTORY.slashCommand(factory, job.text, { key: chatKey(job), job, cwd: job.cwd, conf, label: tagOf(job) });
+  if (!result) return false;
+  ackJob(job);
+  noteMessage(job, 'user', job.text);
+  log(`${tagOf(job)} /${cmd.name} answered while the chat is busy`);
+  finish(job, result.ok ? 'done' : 'error', result.text);
+  return true;
 }
 
 function agentSessionOf(job) {
