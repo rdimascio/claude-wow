@@ -77,8 +77,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        shard: [1, 2]
+        include:
+          - { os: ubuntu-latest, shard: 1, of: 2, fileTimeout: 180000 }
+          - { os: ubuntu-latest, shard: 2, of: 2, fileTimeout: 180000 }
+          - { os: macos-latest, shard: 1, of: 2, fileTimeout: 180000 }
+          - { os: macos-latest, shard: 2, of: 2, fileTimeout: 180000 }
+          - { os: windows-latest, shard: 1, of: 4, fileTimeout: 400000 }
+          - { os: windows-latest, shard: 2, of: 4, fileTimeout: 400000 }
+          - { os: windows-latest, shard: 3, of: 4, fileTimeout: 400000 }
+          - { os: windows-latest, shard: 4, of: 4, fileTimeout: 400000 }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     env:
@@ -92,7 +99,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
       - run: npm ci --ignore-scripts
-      - run: node --test --test-shard=${{ matrix.shard }}/2 --test-concurrency=2 --test-timeout=180000 --test-reporter=spec "tests/e2e/*_test.js"
+      - run: node --test --test-shard=${{ matrix.shard }}/${{ matrix.of }} --test-concurrency=2 --test-timeout=${{ matrix.fileTimeout }} --test-reporter=spec "tests/e2e/*_test.js"
 
   fuzz:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
