@@ -4856,6 +4856,10 @@ function Cli.Links.macro(arg)
 	if macro then ClaudeWoW.MacroPrompt(macro) end
 end
 
+function Cli.Links.url(arg)
+	if arg ~= "" then ClaudeWoW.ShowCopy(arg) end
+end
+
 function Cli.Links.map(arg)
 	if ClaudeWoWMap and ClaudeWoWMap.ShowLayer then ClaudeWoWMap.ShowLayer(arg) end
 end
@@ -5170,8 +5174,52 @@ function Q.OnParchment(link)
 	end))
 end
 
+Q.URL_CHARS = "[%w%-%._~:/%?#@!%$&'%*%+,;=%%]"
+Q.TEXT_INK = {
+	game = { strong = "ffffffff", code = "ffa8c8d8", link = "ff71d5ff" },
+	parchment = { strong = "ff5c1a00", code = "ff1f4a5a", link = "ff00577a" },
+}
+
+function Q.UrlLabel(url)
+	local n = url:match("^https?://github%.com/[^/]+/[^/]+/pull/(%d+)")
+	if n then return "PR #" .. n end
+	n = url:match("^https?://github%.com/[^/]+/[^/]+/issues/(%d+)")
+	if n then return "Issue #" .. n end
+	local key = url:match("^https?://linear%.app/[^/]+/issue/(%u+%-%d+)")
+	if key then return key end
+	local short = url:gsub("^https?://", ""):gsub("^www%.", ""):gsub("/$", "")
+	return #short > 32 and (short:sub(1, 31) .. "\226\128\166") or short
+end
+
+function Q.UrlLink(url, label, ink)
+	return "|c" .. ink.link .. "|H" .. LINK_PREFIX .. "url:" .. url .. "|h[" .. label:gsub("[%[%]]", "") .. "]|h|r"
+end
+
+function Q.Markdown(text, parchment)
+	local ink = parchment and Q.TEXT_INK.parchment or Q.TEXT_INK.game
+	local lines = {}
+	for line in (text .. "\n"):gmatch("(.-)\n") do
+		if not line:match("^%s*```") then
+			local held = {}
+			local function hold(link) table.insert(held, link) return "\1" .. #held .. "\2" end
+			line = line:gsub("^%s*#+%s+(.+)$", "**%1**")
+			line = line:gsub("%[([^%]]+)%]%((https?://" .. Q.URL_CHARS .. "+)%)", function(label, url) return hold(Q.UrlLink(url, label, ink)) end)
+			line = line:gsub("(https?://" .. Q.URL_CHARS .. "+)", function(url)
+				local trail = url:match("[%.,;:!%?%)]+$") or ""
+				url = url:sub(1, #url - #trail)
+				return hold(Q.UrlLink(url, Q.UrlLabel(url), ink)) .. trail
+			end)
+			line = line:gsub("%*%*([^%*]+)%*%*", "|c" .. ink.strong .. "%1|r")
+			line = line:gsub("`([^`]+)`", "|c" .. ink.code .. "%1|r")
+			line = line:gsub("\1(%d+)\2", function(k) return held[tonumber(k)] end)
+			table.insert(lines, line)
+		end
+	end
+	return table.concat(lines, "\n")
+end
+
 function Q.RichText(text, parchment)
-	text = tostring(text or "")
+	text = Q.Markdown(tostring(text or ""), parchment)
 	text = text:gsub("{(%a+):(%d+)}", function(kind, id)
 		local shown = Q.RichToken(kind:lower(), id) or ("|cff9d9d9d" .. kind .. " " .. id .. "|r")
 		return parchment and Q.OnParchment(shown) or shown

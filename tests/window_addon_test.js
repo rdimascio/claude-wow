@@ -455,6 +455,42 @@ test('a quest token is a real quest link in parchment ink, and clicking it opens
   assert.equal(vm.num('#STUB.selected'), 1, 'and not the old quest log');
 });
 
+test('a coding reply reads cleanly: bold, code and headings are styled, fences dropped, and GitHub and Linear URLs become short links that open the copy box', () => {
+  const vm = nativeVM();
+  vm.run(`
+    STUB.copied = {}
+    ClaudeWoW.ShowCopy = function(text) table.insert(STUB.copied, text) end
+    local c = ClaudeWoWDB.chats[1]
+    ClaudeWoW.SwitchChat(c.id)
+    c.history = { { role = "assistant", t = 1, text = table.concat({
+      "## Merge train",
+      "I merged **2 of the 3** PRs into \`internal\`.",
+      "- **#18610** (PRD-7671): **merged**",
+      "\`\`\`bash",
+      "gh pr merge 18610",
+      "\`\`\`",
+      "See [the ticket](https://linear.app/every/issue/PRD-8708/pandl-month) and https://github.com/every-io/every/pull/18632.",
+      "Docs: https://example.com/a/very/long/path/that/goes/on/and/on",
+      "Ticket: https://linear.app/every/issue/PRD-7671/enrollment-state",
+    }, "\\n") } }
+    ClaudeWoW.Render()
+    STUB.bubble = (function() for _, b in ipairs(ClaudeWoW.UI.bubbles) do if b.shown then return b end end end)()
+  `);
+  const body = vm.evaluate('STUB.bubble.body:GetText()');
+  assert.ok(!body.includes('**') && !body.includes('`') && !body.includes('## '), 'no raw markdown marks: ' + body);
+  assert.ok(body.includes('|cff5c1a00Merge train|r'), 'a heading is emphasized');
+  assert.ok(body.includes('|cff5c1a002 of the 3|r'), 'bold is emphasized');
+  assert.ok(body.includes('|cff1f4a5ainternal|r'), 'inline code has its own ink');
+  assert.ok(body.includes('gh pr merge 18610') && !body.includes('bash'), 'fence lines are dropped, the code stays');
+  assert.ok(body.includes('|Haddon:claudewow:url:https://linear.app/every/issue/PRD-8708/pandl-month|h[the ticket]|h'), 'a markdown link keeps its label');
+  assert.ok(body.includes('|Haddon:claudewow:url:https://github.com/every-io/every/pull/18632|h[PR #18632]|h|r.'), 'a bare PR URL is a short link, its full stop kept outside');
+  assert.ok(body.includes('[example.com/a/very/long/path/th…]'), 'another long URL is shortened: ' + body);
+  assert.ok(body.includes('|h[PRD-7671]|h'), 'a bare Linear URL is named by its issue key');
+  assert.equal((body.match(/\|Haddon:claudewow:url:/g) || []).length, 4, 'each URL becomes exactly one link');
+  vm.run('STUB.bubble.scripts.OnHyperlinkClick(STUB.bubble, "addon:claudewow:url:https://github.com/every-io/every/pull/18632", "[PR #18632]", "LeftButton")');
+  assert.equal(vm.evaluate('STUB.copied[1]'), 'https://github.com/every-io/every/pull/18632', 'a click opens the copy box with the full URL');
+});
+
 test('clicking a link in a reply opens the link, not the copy box; clicking the text around it still opens the copy box', () => {
   const vm = nativeVM();
   vm.run(`

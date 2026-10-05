@@ -254,3 +254,12 @@ test('factory-mcp lists only the dispatch and status tools with the configured s
   assert.ok(launch.args.some(a => a.endsWith(path.join('bridge', 'factory.js'))));
   assert.ok(!launch.args.includes('t'), 'the token is only in the env');
 });
+
+test('a run summary keeps a full merge report, not just its first lines', () => {
+  const report = ['I merged 2 of the 3 approved AI PRs into internal.', ...Array.from({ length: 12 }, (_, k) => `- #${18600 + k}: merged`), 'Before each merge, the two required checks passed.'].join('\n');
+  const summary = F.summaryOf(report);
+  assert.equal(summary, report, 'every line of a normal report is kept');
+  assert.ok(!summary.endsWith('...'));
+  const flood = Array.from({ length: 100 }, (_, k) => `line ${k}`).join('\n');
+  assert.equal(F.summaryOf(flood).split('\n').length, 40, 'a flood is still capped');
+});
