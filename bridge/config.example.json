@@ -94,6 +94,10 @@
       "extraArgs": []
     }
   },
+  "mcp": {
+    "strict": false,
+    "servers": {}
+  },
   "gameContext": true,
   "primerFile": "docs/WOW-ADDON-PRIMER.md",
   "pollMs": 750,
