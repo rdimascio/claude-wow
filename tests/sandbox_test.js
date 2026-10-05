@@ -46,14 +46,14 @@ test('the live checkout named by the LaunchAgent is a forbidden root', { skip: p
 
 test('install-slots rewrites slot .toc files when tocInterface changes', () => {
   const { spawnSync } = require('child_process');
-  const sb = SB.create('iface', { root: ROOT });
+  const sb = SB.create('iface', { root: ROOT, slots: 8 });
   try {
     const toc = path.join(sb.addons, 'ClaudeWoW_S007', 'ClaudeWoW_S007.toc');
     assert.match(fs.readFileSync(toc, 'utf8'), /## Interface: 16001/);
     SB.writeConfig(sb, { tocInterface: '16002' });
     const r = spawnSync(process.execPath, [path.join(SB.REPO, 'bridge', 'install-slots.js')], { env: sb.env, encoding: 'utf8' });
     assert.equal(r.status, 0, r.stderr);
-    assert.match(r.stdout, /updated: 201/, 'the 200 slot tocs and the runtime toc');
+    assert.match(r.stdout, /updated: 9/, 'the 8 slot tocs and the runtime toc');
     assert.match(fs.readFileSync(toc, 'utf8'), /## Interface: 16002/);
     assert.match(fs.readFileSync(path.join(sb.addons, 'ClaudeWoW_Runtime', 'ClaudeWoW_Runtime.toc'), 'utf8'), /## Interface: 16002/);
   } finally {
@@ -79,6 +79,18 @@ test('an explicit empty agentPath is kept so the bridge finds the real CLI; no a
   assert.equal(SB.buildConfig(L, { agentPath: '' }).agents.claude.path, '');
   assert.equal(SB.buildConfig(L, {}).agents.claude.path, SB.FAKE_AGENT);
   assert.equal(SB.buildConfig(L, { agentPath: '/opt/x/claude' }).agents.claude.path, '/opt/x/claude');
+});
+
+test("a bridge started with the sandbox environment can read a live session's command line", () => {
+  const { spawnSync } = require('child_process');
+  const liveproto = path.join(SB.REPO, 'bridge', 'liveproto.js');
+  const readOwnCommandLine = `require(${JSON.stringify(liveproto)}).commandLine(process.pid).then(line => process.stdout.write(String(line)))`;
+  const r = spawnSync(process.execPath, ['-e', readOwnCommandLine], {
+    env: SB.envFor(SB.layout(path.join(ROOT, 'cmdline-env'))),
+    encoding: 'utf8',
+    windowsHide: true,
+  });
+  assert.match(r.stdout, /node|bun/i, `the command line read with the sandbox environment: ${r.stdout}${r.stderr}`);
 });
 
 test('a plain reopen of a --real-agent sandbox goes back to the fake agent; a custom path is kept', () => {

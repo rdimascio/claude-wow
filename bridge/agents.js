@@ -231,6 +231,9 @@ function claudeParser(opts = {}) {
       if (ev.type === 'system' && ev.subtype === 'init' && Array.isArray(ev.mcp_servers)) {
         const down = ev.mcp_servers.filter(s => s && typeof s === 'object' && s.status !== 'connected');
         if (down.length) out.mcpDown = down.map(s => ({ name: String(s.name || '?').slice(0, 80), status: String(s.status || 'no status').slice(0, 40) }));
+        out.mcpStatus = ev.mcp_servers
+          .filter(s => s && typeof s === 'object' && typeof s.name === 'string')
+          .map(s => ({ name: s.name.slice(0, 80), status: String(s.status || 'unknown').slice(0, 40) }));
       }
       if (ev.type === 'system' && ev.subtype === 'permission_denied') {
         noteRefusal(ev.tool_use_id, ev.message || ev.decision_reason, ev.decision_reason_type, true);
@@ -670,11 +673,11 @@ const AGENTS = {
   claude: {
     name: 'Claude',
     command: 'claude',
-    settings: ['model', 'effort', 'permissionMode', 'addDirs'],
+    settings: ['model', 'effort', 'permissionMode', 'addDirs', 'mcp'],
     install: 'https://claude.com/claude-code, then run `claude` once and log in',
     windowsPaths: () => [path.join(os.homedir(), '.local', 'bin', 'claude.exe')],
     posixPaths: () => [path.join(os.homedir(), '.local', 'bin', 'claude')],
-    args({ cfg, resume, system, images, mcpConfig }) {
+    args({ cfg, resume, system, images, mcpConfig, strictMcpConfig }) {
       const a = ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', cfg.permissionMode || 'acceptEdits'];
       // With an image the prompt is a stream-json user message (see input below).
       if (Array.isArray(images) && images.some(i => i && i.data)) a.push('--input-format', 'stream-json');
@@ -683,6 +686,7 @@ const AGENTS = {
       const denied = Array.isArray(cfg.deniedTools) ? cfg.deniedTools.filter(Boolean) : [];
       if (denied.length) a.push('--disallowedTools', ...denied);
       if (mcpConfig) a.push('--mcp-config', mcpConfig);
+      if (strictMcpConfig === true) a.push('--strict-mcp-config');
       if (cfg.model) a.push('--model', cfg.model);
       if (cfg.effort) a.push('--effort', cfg.effort);
       const capUsd = costCap(cfg.maxCostUsd);
@@ -708,14 +712,14 @@ const AGENTS = {
   codex: {
     name: 'Codex',
     command: 'codex',
-    settings: ['model', 'effort', 'permissionMode', 'addDirs'],
+    settings: ['model', 'effort', 'permissionMode', 'addDirs', 'mcp'],
     install: 'npm install -g @openai/codex, then run `codex` once and log in',
     windowsPaths: () => [],
     posixPaths: () => [],
     envPath: 'CODEX_BIN',
     npmPackage: '@openai/codex',
-    args({ cfg, resume, cwd, images }) {
-      const a = [];
+    args({ cfg, resume, cwd, images, codexMcpArgs }) {
+      const a = Array.isArray(codexMcpArgs) ? [...codexMcpArgs] : [];
       if (cfg.networkAccess) a.push('-c', 'sandbox_workspace_write.network_access=true');
       a.push('exec', '--json', '--skip-git-repo-check', '-C', cwd);
       const mode = cfg.permissionMode || 'acceptEdits';
@@ -868,7 +872,7 @@ const AGENTS = {
 
 const DEFAULT_AGENT = 'claude';
 
-const SETTING_FLAGS = { model: '--model', effort: '--effort', permissionMode: '--permission-mode', addDirs: '--add-dir' };
+const SETTING_FLAGS = { model: '--model', effort: '--effort', permissionMode: '--permission-mode', addDirs: '--add-dir', mcp: 'mcp' };
 
 function unsupportedSettings(id, chosen) {
   const agent = AGENTS[id];
@@ -887,6 +891,7 @@ function withChatSettings(agentCfg, id, chosen) {
   if (!agent || !chosen) return agentCfg;
   const out = { ...agentCfg };
   for (const key of agent.settings) {
+    if (key === 'mcp') continue;
     const v = chosen[key];
     if (Array.isArray(v) ? v.length : v) out[key] = v;
   }

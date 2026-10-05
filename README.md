@@ -220,6 +220,7 @@ The client's own commands, with the same rule: a command word followed by someth
 | `/claude rename [name]`, `/claude delete`, `/claude clear` | manage the current chat |
 | `/claude reset` | wipe this chat's agent memory, keep the transcript |
 | `/claude cancel` | stop waiting on this chat's reply |
+| `/claude mcp [on\|off <name>\|none\|default]` | the MCP servers from `mcp.servers` that this chat's Claude or Codex runs get, with their health; the **MCP** button in the chat header does the same with checkboxes |
 | `/claude -r all` | one chat per session handed off with `claude-wow handoff --stop` in a terminal, each resuming its session headless ([docs/IN-GAME-DEV.md](docs/IN-GAME-DEV.md)) |
 | `/claude dev <command>` | dev tools for the chat's folder, run by the bridge without an agent: `status`, `diff`, `log`, `run`, `test`, `doctor`, `errors`, `feedback` ([docs/IN-GAME-DEV.md](docs/IN-GAME-DEV.md)) |
 | `/claude wrong [#n] [note]`, `/claude bug <text>`, `/claude errors` | mark a reply as wrong, file a bug with the addon's Lua errors, list the Lua errors the addon caught |
@@ -398,6 +399,7 @@ The keys you are most likely to touch. Every key, flag and environment variable 
 | `agent` | the agent for chats that haven't picked one with `/claude -c --agent` (`claude`, `codex`, `grok`, `agy`, `hermes` or `local`) |
 | `claudeDir`, `claudeSessions` | where Claude Code keeps its sessions for `/claude -r` (default `$CLAUDE_CONFIG_DIR`, else `~/.claude`), and `false` to list only the bridge's own chats and the running sessions |
 | `agents.<id>.permissionMode`, `.allowedTools`, `.deniedTools`, `.model` | that agent's permissions, allowlist, denylist and model; `.path` where its executable is if the bridge can't find it, `.extraArgs` anything else to pass it |
+| `mcp` | your own MCP servers for Claude chat runs, each with an `allow` list of tools, and `strict` (see [docs/CONFIGURATION.md](docs/CONFIGURATION.md#your-own-mcp-servers)); absent = Claude's own servers as before |
 | `agents.codex.networkAccess` | let Codex's sandbox reach the network (default `false`) |
 | `maxParallel` | how many chats may run an agent at once (default 3) |
 | `gameContext` | `false` never tells the agent about your character, whatever the addon sends (default `true`) |

@@ -52,5 +52,10 @@
     "luaparse": "^0.3.1",
     "oxfmt": "0.71.0",
     "oxlint": "1.86.0"
+  },
+  "dependencies": {
+    "@chat-adapter/discord": "4.41.1",
+    "@chat-adapter/state-memory": "4.41.1",
+    "chat": "4.41.1"
   }
 }

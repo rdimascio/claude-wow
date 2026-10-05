@@ -4,8 +4,15 @@ function inSlots({ now, shareUntil, held, urgent, size, progressMax }) {
   return (now < shareUntil || held === true) && (urgent || size <= progressMax);
 }
 
+function mapOf(state, key, newMap) {
+  if (!state.maps) state.maps = {};
+  if (!state.maps[key]) state.maps[key] = newMap();
+  if (key) state.maps[key].char = key;
+  return state.maps[key];
+}
+
 function createMapShare({ state, shareMs, now = Date.now, save = () => {} }) {
-  let shareUntil = state.map && Object.keys(state.map.layers || {}).length ? now() + shareMs : 0;
+  let shareUntil = Object.values(state.maps || {}).some(m => Object.keys(m.layers || {}).length) ? now() + shareMs : 0;
 
   function touch() {
     shareUntil = now() + shareMs;
@@ -39,4 +46,4 @@ function createMapShare({ state, shareMs, now = Date.now, save = () => {} }) {
   };
 }
 
-module.exports = { inSlots, createMapShare };
+module.exports = { inSlots, createMapShare, mapOf };

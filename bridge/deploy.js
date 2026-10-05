@@ -99,6 +99,11 @@ function bunPath(env = process.env, home = os.homedir()) {
 
 function bunBuild(srcDir, outDir, run) {
   const bun = bunPath();
+  if (!isDir(path.join(srcDir, 'node_modules'))) {
+    const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+    const i = run(npm, ['ci', '--omit=dev'], { cwd: srcDir, env: process.env });
+    if (!i.ok) throw new Error(`npm ci --omit=dev failed in ${srcDir}${i.error ? ` (${i.error.message})` : ''}:\n${tail(i.out)}`);
+  }
   const r = run(bun, [path.join(srcDir, 'build.js'), '--host', '--out', outDir], { cwd: srcDir, env: { ...process.env, BUN: bun } });
   if (!r.ok) throw new Error(`bun build.js --host failed in ${srcDir}${r.error ? ` (${r.error.message})` : ''}:\n${tail(r.out)}`);
   const built = fs.readdirSync(outDir).filter(f => f.startsWith('claude-wow-'));
