@@ -8,7 +8,7 @@ a live install.
 
 | Command | What it does |
 |---|---|
-| `npm run dev` | Starts a sandbox, a real bridge, and a headless game client. Type messages; watch replies. `:help` lists the console commands. |
+| `npm run dev` | Starts a sandbox, a real bridge, and a headless game client. Type messages; watch replies. `:help` lists the console commands. On an existing sandbox it copies the current `addon/ClaudeWoW` and re-runs install-slots first, and keeps SavedVariables, transcripts, config and the sandbox project. |
 | `npm run dev -- --fresh` | The same, from a clean sandbox. |
 | `npm run dev -- --speed 8` | The game clock runs 8× faster, so the addon's 40 s retries and 120 s give-ups happen in seconds. |
 | `npm run dev -- --real-agent` | Uses your real `claude` CLI in the sandbox project, with your real `HOME` so it can log in. It uses your plan quota and writes its session files to `~/.claude`. |

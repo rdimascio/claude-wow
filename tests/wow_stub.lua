@@ -193,6 +193,8 @@ end
 -- Tooltip scanning: SetHyperlink fills <name>TextLeft<i> / TextRight<i> from
 -- STUB.tooltips[link], a list of strings or { left, right } pairs.
 function Methods.ClearLines(self) self.lines = {} end
+function Methods.SetOwner(self, owner) self.owner = owner; self.lines = {} end
+function Methods.AddLine(self, text) self.lines = self.lines or {}; table.insert(self.lines, tostring(text)) end
 function Methods.NumLines(self) return #(self.lines or {}) end
 function Methods.SetHyperlink(self, link)
 	self.lines = STUB.tooltips[link] or {}
