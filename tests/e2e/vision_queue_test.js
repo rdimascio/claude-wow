@@ -48,17 +48,26 @@ test('vision messages that share one screenshot each keep their own copy when th
 
     const second = h.client.lastSeq() + 1;
     const third = second + 1;
-    h.client.runLua('ClaudeWoW.NewChat("Two"); ClaudeWoW.Send("look two", nil, { vision = true }); ClaudeWoW.NewChat("Three"); ClaudeWoW.Send("look three", nil, { vision = true })');
+    h.client.runLua(
+      'ClaudeWoW.NewChat("Two"); ClaudeWoW.Send("look two", nil, { vision = true }); ClaudeWoW.NewChat("Three"); ClaudeWoW.Send("look three", nil, { vision = true })',
+    );
     await h.bridge.waitForLine(new RegExp(`vision: \\S+ -> \\d+x\\d+ png, \\d+ KB, for #${second}, #${third}`));
     await h.bridge.waitForLine(new RegExp(`#${third}@\\S+ queued \\(1 running\\)`));
 
     h.client.runLua(`ClaudeWoW.SwitchChat(${JSON.stringify(firstChat)})`);
     h.client.slash('/claude cancel');
-    const runs = await h.client.waitFor(() => {
-      const calls = ['look two', 'look three'].map(text => h.agentCalls().find(c => c.prompt.includes(text)));
-      return calls.every(Boolean) && calls;
-    }, { label: 'both queued vision messages to run' });
-    assert.deepEqual(runs.map(r => r.images), [1, 1], 'each message of the shared screenshot runs with it');
+    const runs = await h.client.waitFor(
+      () => {
+        const calls = ['look two', 'look three'].map(text => h.agentCalls().find(c => c.prompt.includes(text)));
+        return calls.every(Boolean) && calls;
+      },
+      { label: 'both queued vision messages to run' },
+    );
+    assert.deepEqual(
+      runs.map(r => r.images),
+      [1, 1],
+      'each message of the shared screenshot runs with it',
+    );
     assert.doesNotMatch(h.bridge.output, /vision: \S+ is gone/);
   });
 });

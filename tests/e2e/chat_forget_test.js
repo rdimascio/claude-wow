@@ -10,7 +10,7 @@ const withGame = gameRunner(ROOT);
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const inflightIds = h => Object.values(h.state().inflight || {}).map(r => r.id);
 
-test('deleting a chat while its agent run works ends the run, and the run never writes the chat\'s session back', async () => {
+test("deleting a chat while its agent run works ends the run, and the run never writes the chat's session back", async () => {
   await withGame({}, async h => {
     await h.client.connect();
     h.client.runLua('ClaudeWoW.NewChat("Doomed")');
@@ -22,7 +22,7 @@ test('deleting a chat while its agent run works ends the run, and the run never 
 
     h.client.runLua(`ClaudeWoW.DeleteChat(${JSON.stringify(chat)})`);
     await h.bridge.waitForLine(new RegExp(`forgot chat ${chat}`));
-    await h.client.waitFor(() => !isAlive(run.pid), { timeoutMs: 15000, label: 'the deleted chat\'s agent process to end' });
+    await h.client.waitFor(() => !isAlive(run.pid), { timeoutMs: 15000, label: "the deleted chat's agent process to end" });
     await h.bridge.waitForLine(new RegExp(`#${id}@\\S+ error`));
     const st = h.state();
     assert.equal(st.sessions[`chat:${chat}`], undefined, 'the deleted chat has no agent session to resume');

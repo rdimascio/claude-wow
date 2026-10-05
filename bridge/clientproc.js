@@ -33,10 +33,14 @@ function cleanSupported(platform) {
 
 const RUNNING = { running: true, why: 'the game is running' };
 const CLOSED = { running: false, why: 'the game is closed' };
-const unknown = (why) => ({ running: null, why });
+const unknown = why => ({ running: null, why });
 
 function errorCode(e) {
-  return String((e && e.code) || 'error').replace(/[^A-Za-z0-9_]/g, '').slice(0, 24) || 'error';
+  return (
+    String((e && e.code) || 'error')
+      .replace(/[^A-Za-z0-9_]/g, '')
+      .slice(0, 24) || 'error'
+  );
 }
 
 function trimSeparators(p) {
@@ -54,7 +58,11 @@ async function folderCandidates(folder, fsApi) {
 }
 
 function windowsKey(p) {
-  return String(p).replace(WINDOWS_LONG_PATH_PREFIX, '').replace(/[\\/]+/g, '\\').replace(/\\$/, '').toLowerCase();
+  return String(p)
+    .replace(WINDOWS_LONG_PATH_PREFIX, '')
+    .replace(/[\\/]+/g, '\\')
+    .replace(/\\$/, '')
+    .toLowerCase();
 }
 
 function insideWindowsFolder(file, folders) {
@@ -97,7 +105,10 @@ function decodeBase64(text) {
 }
 
 function parseWindowsList(out) {
-  const lines = String(out).split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+  const lines = String(out)
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean);
   if (lines[0] !== WINDOWS_BEGIN || lines[lines.length - 1] !== WINDOWS_END) return null;
   const rows = [];
   for (const line of lines.slice(1, -1)) {
@@ -143,7 +154,9 @@ function namesWowExe(arg) {
 }
 
 async function commandArgs(dir, fsApi) {
-  return String(await fsApi.readFile(`${dir}/cmdline`, 'utf8')).split('\0').filter(Boolean);
+  return String(await fsApi.readFile(`${dir}/cmdline`, 'utf8'))
+    .split('\0')
+    .filter(Boolean);
 }
 
 function argsPlaceGame(args, folders) {
@@ -186,9 +199,14 @@ async function exists(file, fsApi) {
 }
 
 async function linuxEnvironment(folders, fsApi) {
-  if (folders.some(folder => WINDOWS_DRIVE_MOUNT.test(folder))) return unknown('the client folder is on a Windows drive (/mnt/<letter>), where the game runs outside this Linux');
+  if (folders.some(folder => WINDOWS_DRIVE_MOUNT.test(folder)))
+    return unknown('the client folder is on a Windows drive (/mnt/<letter>), where the game runs outside this Linux');
   let release;
-  try { release = String(await fsApi.readFile(KERNEL_RELEASE_FILE, 'utf8')); } catch (e) { return unknown(`cannot read ${KERNEL_RELEASE_FILE} (${errorCode(e)})`); }
+  try {
+    release = String(await fsApi.readFile(KERNEL_RELEASE_FILE, 'utf8'));
+  } catch (e) {
+    return unknown(`cannot read ${KERNEL_RELEASE_FILE} (${errorCode(e)})`);
+  }
   if (WSL_KERNEL.test(release)) return unknown('the bridge runs in WSL, where the game runs on Windows');
   for (const marker of CONTAINER_MARKERS) {
     try {
@@ -205,13 +223,19 @@ async function linuxState(folders, fsApi, uid) {
   const outside = await linuxEnvironment(folders, fsApi);
   if (outside) return outside;
   let entries;
-  try { entries = await fsApi.readdir('/proc'); } catch (e) { return unknown(`cannot read /proc (${errorCode(e)})`); }
+  try {
+    entries = await fsApi.readdir('/proc');
+  } catch (e) {
+    return unknown(`cannot read /proc (${errorCode(e)})`);
+  }
   let state = CLOSED;
   for (const entry of entries) {
     if (!NUMERIC.test(entry)) continue;
     try {
       const own = (await fsApi.stat(`/proc/${entry}`)).uid === uid;
-      const one = own ? await ownProcessState(entry, folders, fsApi) : await cmdlineOnlyState(entry, folders, fsApi, 'a process of another user may be the game');
+      const one = own
+        ? await ownProcessState(entry, folders, fsApi)
+        : await cmdlineOnlyState(entry, folders, fsApi, 'a process of another user may be the game');
       if (one.running === true) return one;
       if (one.running === null && state.running === false) state = one;
     } catch (e) {
@@ -229,7 +253,7 @@ function currentUid() {
 async function clientState(folder, { platform = process.platform, listProcesses, run, fs: fsApi = fsPromises, uid = currentUid() } = {}) {
   if (!cleanSupported(platform)) return unknown(`no process check on ${platform}`);
   if (!folder || !trimSeparators(folder)) return unknown('no client folder');
-  const runner = listProcesses ? async () => listProcesses() : (run || runText);
+  const runner = listProcesses ? async () => listProcesses() : run || runText;
   try {
     const folders = await folderCandidates(folder, fsApi);
     if (platform === 'darwin') return await darwinState(folders, runner);

@@ -19,15 +19,26 @@ async function connectLiveSession(h) {
   const received = [];
   const sock = net.connect(LP.endpoint(h.sb.home));
   sock.on('error', () => {});
-  sock.on('data', LP.lineReader(msg => received.push(msg)));
-  await new Promise((resolve, reject) => { sock.once('connect', resolve); sock.once('error', reject); });
+  sock.on(
+    'data',
+    LP.lineReader(msg => received.push(msg)),
+  );
+  await new Promise((resolve, reject) => {
+    sock.once('connect', resolve);
+    sock.once('error', reject);
+  });
   const nonce = LP.nonce();
-  sock.write(LP.encode({ type: 'hello', nonce, proof: LP.proof(token, 'client', nonce), name: SESSION_NAME, cwd: h.sb.project, pid: process.pid, ppid: listener.pid }));
+  sock.write(
+    LP.encode({ type: 'hello', nonce, proof: LP.proof(token, 'client', nonce), name: SESSION_NAME, cwd: h.sb.project, pid: process.pid, ppid: listener.pid }),
+  );
   await h.bridge.waitForLine(new RegExp(`session "${SESSION_NAME}" connected.*, listening`));
   return {
     received,
     reply: (chatId, text) => sock.write(LP.encode({ type: 'reply', call: 1, chat_id: chatId, text })),
-    close: () => { sock.destroy(); listener.kill('SIGKILL'); },
+    close: () => {
+      sock.destroy();
+      listener.kill('SIGKILL');
+    },
   };
 }
 

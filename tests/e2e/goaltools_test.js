@@ -24,7 +24,10 @@ function callServer(server, tool, args) {
   return new Promise((resolve, reject) => {
     const child = spawn(server.command, server.args, { env: { ...process.env, ...server.env }, stdio: ['pipe', 'pipe', 'ignore'] });
     let buf = '';
-    const timer = setTimeout(() => { child.kill(); reject(new Error('the wowgoals server did not answer')); }, 20000);
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error('the wowgoals server did not answer'));
+    }, 20000);
     child.stdout.on('data', chunk => {
       buf += chunk.toString('utf8');
       const line = buf.split('\n').find(l => l.includes('"id":2'));
@@ -40,7 +43,11 @@ function callServer(server, tool, args) {
 
 test('an in-game ask run gets the wowgoals server for that run only; its calls write through the bridge with the same checks; coding runs and config.json never get it', async () => {
   const stale = { file: '' };
-  const beforeLaunch = async sb => { stale.file = path.join(sb.home, 'tmp', 'mcp', 'mcp-1-stale.json'); fs.mkdirSync(path.dirname(stale.file), { recursive: true }); fs.writeFileSync(stale.file, '{}'); };
+  const beforeLaunch = async sb => {
+    stale.file = path.join(sb.home, 'tmp', 'mcp', 'mcp-1-stale.json');
+    fs.mkdirSync(path.dirname(stale.file), { recursive: true });
+    fs.writeFileSync(stale.file, '{}');
+  };
   await withGame({ plugin: 'ask', beforeLaunch }, async h => {
     assert.ok(!fs.existsSync(stale.file), 'a config file left by a crashed bridge is removed at startup');
     await h.client.say('hello');
@@ -63,7 +70,10 @@ test('an in-game ask run gets the wowgoals server for that run only; its calls w
     const configFile = listAfter(askRun.argv, '--mcp-config')[0];
     assert.equal(path.dirname(configFile), path.join(h.sb.home, 'tmp', 'mcp'));
     assert.ok(!fs.existsSync(configFile), 'the config file is gone after the run');
-    assert.ok(listAfter(askRun.argv, '--disallowedTools').some(r => r.startsWith('Read(') && r.endsWith('/tmp/mcp/**)')), 'the agent may not read the config folder');
+    assert.ok(
+      listAfter(askRun.argv, '--disallowedTools').some(r => r.startsWith('Read(') && r.endsWith('/tmp/mcp/**)')),
+      'the agent may not read the config folder',
+    );
     assert.equal(server.alwaysLoad, true);
     assert.ok(path.isAbsolute(server.command), server.command);
     const runId = server.args[server.args.indexOf('--run') + 1];
@@ -72,8 +82,16 @@ test('an in-game ask run gets the wowgoals server for that run only; its calls w
     const allowed = listAfter(askRun.argv, '--allowedTools');
     for (const rule of GM.RUN_RULES) assert.ok(allowed.includes(rule), `${rule} is a run-only rule`);
     const denied = listAfter(askRun.argv, '--disallowedTools');
-    assert.deepEqual(denied.filter(r => r.startsWith('mcp__wowgoals')), GM.DENIED_WITH_TOOLS.filter(r => r.startsWith('mcp__wowgoals')));
-    for (const rule of ['Bash', ...GM.FILE_SEARCH_TOOLS, ...[...new Set([h.sb.home, fs.realpathSync(h.sb.home)])].map(dir => P.absolutePathRule('Read', path.join(dir, '**')))]) assert.ok(denied.includes(rule), `${rule} is denied to an ask run that holds a grant`);
+    assert.deepEqual(
+      denied.filter(r => r.startsWith('mcp__wowgoals')),
+      GM.DENIED_WITH_TOOLS.filter(r => r.startsWith('mcp__wowgoals')),
+    );
+    for (const rule of [
+      'Bash',
+      ...GM.FILE_SEARCH_TOOLS,
+      ...[...new Set([h.sb.home, fs.realpathSync(h.sb.home)])].map(dir => P.absolutePathRule('Read', path.join(dir, '**'))),
+    ])
+      assert.ok(denied.includes(rule), `${rule} is denied to an ask run that holds a grant`);
     assert.ok(allowed.includes('Bash(node:*)'), 'the sandbox config allows node, so the Bash deny is what holds');
     const previous = runs[runs.length - 2].mcpConfig.mcpServers.wowgoals;
     assert.notEqual(previous.env[GM.TOKEN_ENV], server.env[GM.TOKEN_ENV], 'every run gets its own grant');
@@ -81,7 +99,7 @@ test('an in-game ask run gets the wowgoals server for that run only; its calls w
     assert.equal(replay.isError, true);
     assert.match(replay.content[0].text, /claude-wow bridge closed/);
     await h.bridge.waitForLine(/refused an in-game run connection without a valid run grant/);
-    assert.equal(JSON.parse(fs.readFileSync(ordersFile, 'utf8')).orders.current.text, 'skin 10', 'an ended run\'s grant writes nothing');
+    assert.equal(JSON.parse(fs.readFileSync(ordersFile, 'utf8')).orders.current.text, 'skin 10', "an ended run's grant writes nothing");
 
     const coding = await h.client.say('@claude-code [[mcp-call wowgoals goal_list {}]]');
     assert.match(coding.text, /^mcp goal_list denied/);
@@ -90,51 +108,68 @@ test('an in-game ask run gets the wowgoals server for that run only; its calls w
     assert.ok(!codingRun.argv.includes('--mcp-config'), 'the coding plugin runs without it');
     assert.ok(listAfter(codingRun.argv, '--disallowedTools').includes('mcp__wowgoals'));
     for (const rule of ['Bash', ...GM.FILE_SEARCH_TOOLS]) assert.ok(!listAfter(codingRun.argv, '--disallowedTools').includes(rule), `coding runs keep ${rule}`);
-    for (const rule of [...new Set([h.sb.home, fs.realpathSync(h.sb.home)])].map(dir => P.absolutePathRule('Read', path.join(dir, '**')))) assert.ok(listAfter(codingRun.argv, '--disallowedTools').includes(rule), `coding runs are denied ${rule}`);
+    for (const rule of [...new Set([h.sb.home, fs.realpathSync(h.sb.home)])].map(dir => P.absolutePathRule('Read', path.join(dir, '**'))))
+      assert.ok(listAfter(codingRun.argv, '--disallowedTools').includes(rule), `coding runs are denied ${rule}`);
     assert.ok(!listAfter(codingRun.argv, '--allowedTools').some(r => r.startsWith('mcp__wowgoals')));
     assert.ok(!/wowgoals/.test(fs.readFileSync(h.sb.config, 'utf8')), 'no rule is ever saved');
   });
 });
 
 const termCalls = h => {
-  try { return fs.readFileSync(path.join(h.sb.agentState, 'term-calls.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map(l => JSON.parse(l)); } catch { return []; }
+  try {
+    return fs
+      .readFileSync(path.join(h.sb.agentState, 'term-calls.jsonl'), 'utf8')
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map(l => JSON.parse(l));
+  } catch {
+    return [];
+  }
 };
 
-test('while a run is live a second connection with its token is refused, and a cancel revokes the grant before the process ends', async () => {
-  const beforeLaunch = async sb => {
-    const cfg = JSON.parse(fs.readFileSync(sb.config, 'utf8'));
-    cfg.agents.claude.allowedTools = [...(cfg.agents.claude.allowedTools || []), 'Bash(*)'];
-    fs.writeFileSync(sb.config, JSON.stringify(cfg, null, 2));
-  };
-  await withGame({ plugin: 'ask', beforeLaunch }, async h => {
-    await h.client.say('hello');
-    await h.bridge.waitForLine(/game context updated: Character: Testchar/);
-    h.client.send('[[mcp-term wowgoals order_issue {"text":"skin 20"}]]');
-    const first = await h.client.waitFor(() => termCalls(h).find(c => c.phase === 'first'), { timeoutMs: 30000, label: 'the run\'s own first call' });
-    assert.equal(first.isError, false, `a server under the run's agent is accepted: ${first.text}`);
+test(
+  'while a run is live a second connection with its token is refused, and a cancel revokes the grant before the process ends',
+  { skip: process.platform === 'win32' && 'the fake agent reports its last call from a SIGTERM handler, and Windows has no SIGTERM' },
+  async () => {
+    const beforeLaunch = async sb => {
+      const cfg = JSON.parse(fs.readFileSync(sb.config, 'utf8'));
+      cfg.agents.claude.allowedTools = [...(cfg.agents.claude.allowedTools || []), 'Bash(*)'];
+      fs.writeFileSync(sb.config, JSON.stringify(cfg, null, 2));
+    };
+    await withGame({ plugin: 'ask', beforeLaunch }, async h => {
+      await h.client.say('hello');
+      await h.bridge.waitForLine(/game context updated: Character: Testchar/);
+      h.client.send('[[mcp-term wowgoals order_issue {"text":"skin 20"}]]');
+      const first = await h.client.waitFor(() => termCalls(h).find(c => c.phase === 'first'), { timeoutMs: 30000, label: "the run's own first call" });
+      assert.equal(first.isError, false, `a server under the run's agent is accepted: ${first.text}`);
 
-    const run = h.agentCalls().at(-1);
-    assert.ok(listAfter(run.argv, '--allowedTools').includes('Bash(*)'));
-    assert.ok(listAfter(run.argv, '--disallowedTools').includes('Bash'), 'Bash is denied while the run holds a grant, whatever the config allows');
-    const configFile = listAfter(run.argv, '--mcp-config')[0];
-    assert.ok(fs.existsSync(configFile), 'the config file exists while the run is live');
-    if (process.platform !== 'win32') assert.equal(fs.statSync(configFile).mode & 0o777, 0o600);
-    const server = JSON.parse(fs.readFileSync(configFile, 'utf8')).mcpServers.wowgoals;
-    const replay = await callServer(server, 'order_issue', { text: 'skin 30' });
-    assert.equal(replay.isError, true);
-    await h.bridge.waitForLine(/refused an in-game run connection without a valid run grant \(.*already had its one connection/);
-    const ordersFile = path.join(h.sb.home, 'goals', CHARACTER, 'goals.json');
-    assert.ok(!fs.existsSync(ordersFile), 'the replay wrote nothing');
+      const run = h.agentCalls().at(-1);
+      assert.ok(listAfter(run.argv, '--allowedTools').includes('Bash(*)'));
+      assert.ok(listAfter(run.argv, '--disallowedTools').includes('Bash'), 'Bash is denied while the run holds a grant, whatever the config allows');
+      const configFile = listAfter(run.argv, '--mcp-config')[0];
+      assert.ok(fs.existsSync(configFile), 'the config file exists while the run is live');
+      if (process.platform !== 'win32') assert.equal(fs.statSync(configFile).mode & 0o777, 0o600);
+      const server = JSON.parse(fs.readFileSync(configFile, 'utf8')).mcpServers.wowgoals;
+      const replay = await callServer(server, 'order_issue', { text: 'skin 30' });
+      assert.equal(replay.isError, true);
+      await h.bridge.waitForLine(/refused an in-game run connection without a valid run grant \(.*already had its one connection/);
+      const ordersFile = path.join(h.sb.home, 'goals', CHARACTER, 'goals.json');
+      assert.ok(!fs.existsSync(ordersFile), 'the replay wrote nothing');
 
-    h.client.slash('/claude cancel');
-    const term = await h.client.waitFor(() => termCalls(h).find(c => c.phase === 'term'), { timeoutMs: 30000, label: 'the call the run made after the cancel' });
-    assert.equal(term.isError, true, term.text);
-    await h.bridge.waitForLine(/wowgoals grant revoked before the run is ended/);
-    assert.ok(!fs.existsSync(ordersFile), 'a call after the cancel wrote nothing');
-    await h.client.waitFor(() => !isAlive(run.pid), { timeoutMs: 15000, label: 'the agent process to end' });
-    await h.client.waitFor(() => !fs.existsSync(configFile), { timeoutMs: 15000, label: 'the config file to be removed' });
-  });
-});
+      h.client.slash('/claude cancel');
+      const term = await h.client.waitFor(() => termCalls(h).find(c => c.phase === 'term'), {
+        timeoutMs: 30000,
+        label: 'the call the run made after the cancel',
+      });
+      assert.equal(term.isError, true, term.text);
+      await h.bridge.waitForLine(/wowgoals grant revoked before the run is ended/);
+      assert.ok(!fs.existsSync(ordersFile), 'a call after the cancel wrote nothing');
+      await h.client.waitFor(() => !isAlive(run.pid), { timeoutMs: 15000, label: 'the agent process to end' });
+      await h.client.waitFor(() => !fs.existsSync(configFile), { timeoutMs: 15000, label: 'the config file to be removed' });
+    });
+  },
+);
 
 test('a tool an ask run is denied never becomes a Need roll and is never saved', async () => {
   await withGame({ plugin: 'ask' }, async h => {
