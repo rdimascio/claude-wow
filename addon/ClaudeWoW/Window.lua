@@ -192,7 +192,7 @@ function W.MapDock(home, occupied)
 	for _, o in ipairs(occupied) do
 		if o.name == "WorldMapFrame" then map = o end
 	end
-	if not map then return nil end
+	if not (map and Overlaps(home, map)) then return nil end
 	local h = map.top - map.bottom
 	if h < MIN_H then return nil end
 	local sw = Screen()

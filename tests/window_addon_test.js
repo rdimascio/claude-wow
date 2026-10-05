@@ -1194,3 +1194,28 @@ test("beside the world map the window takes the map's top and height, and goes h
   assert.ok(r.right - r.left >= 560 && !overlaps(r, panelRect(vm, 'WorldMapFrame')), 'no room beside it: it steps aside as for any panel');
   assert.notEqual(r.top - r.bottom, 438);
 });
+
+test('a map that leaves home free does not pull the window: another panel blocking home is a normal step-aside', () => {
+  const vm = newVM();
+  open(vm);
+  const home = rect(vm);
+  vm.run('WorldMapFrame.rect = { left = 1100, right = 1710, top = 900, bottom = 462 }; ShowUIPanel(WorldMapFrame)');
+  settle(vm);
+  assert.deepEqual(rect(vm), home, 'the map alone does not block home');
+  vm.run('CharacterFrame.rect = { left = 16, right = 300, top = 1000, bottom = 400 }; ShowUIPanel(CharacterFrame)');
+  settle(vm);
+  const r = rect(vm);
+  assert.equal(r.top - r.bottom, 500, "it keeps its own height, not the map's");
+  assert.equal(r.right - r.left, 780);
+  assert.ok(!overlaps(r, panelRect(vm, 'CharacterFrame')) && !overlaps(r, panelRect(vm, 'WorldMapFrame')), JSON.stringify(r));
+});
+
+test('in the plain theme Send and Connect stay centered on the tall input box', () => {
+  const vm = newVM();
+  open(vm);
+  for (const b of ['ClaudeWoW.UI.send', 'ClaudeWoW.UI.connect']) {
+    assert.equal(vm.evaluate(`${b}.rel == ClaudeWoWInputScroll.parent`), 'true');
+    assert.equal(vm.evaluate(`${b}.point .. "," .. ${b}.relPoint .. "," .. ${b}.x .. "," .. ${b}.y`), 'LEFT,RIGHT,6,0', `${b} is centered beside the box`);
+    assert.equal(vm.num(`${b}:GetHeight()`), 22);
+  }
+});

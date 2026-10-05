@@ -4592,6 +4592,14 @@ local function GetBubble(i)
 	return b
 end
 
+function Q.BesideInput(button, inputBg, native)
+	if native then
+		button:SetPoint("BOTTOMLEFT", inputBg, "BOTTOMRIGHT", Q.COMPOSER_GAP, 0)
+	else
+		button:SetPoint("LEFT", inputBg, "RIGHT", Q.COMPOSER_GAP, 0)
+	end
+end
+
 function Q.SendTooltip(button)
 	GameTooltip:SetOwner(button, "ANCHOR_TOP")
 	GameTooltip:SetText("Send (Enter)")
@@ -6760,14 +6768,14 @@ local function BuildUI()
 	ui.projectButton = projectButton
 
 	local send = MakeButton(f, "Send", SEND_W, ClaudeWoW.SendFromInput)
-	send:SetPoint("BOTTOMLEFT", inputBg, "BOTTOMRIGHT", Q.COMPOSER_GAP, 0)
+	Q.BesideInput(send, inputBg, native)
 	send:SetScript("OnEnter", Q.SendTooltip)
 	send:SetScript("OnLeave", function() GameTooltip:Hide() end)
 	ui.send = send
 
 	-- Connect stands in for Send until the bridge has been seen (see UpdateConnect).
 	local connect = MakeButton(f, "Connect", SEND_W, function() ClaudeWoW.Connect(true) end)
-	connect:SetPoint("BOTTOMLEFT", inputBg, "BOTTOMRIGHT", Q.COMPOSER_GAP, 0)
+	Q.BesideInput(connect, inputBg, native)
 	connect:SetScript("OnEnter", function(self)
 		GameTooltip:SetOwner(self, "ANCHOR_TOP")
 		GameTooltip:SetText("Connect to the bridge")
