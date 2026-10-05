@@ -3442,7 +3442,10 @@ test('the panel shows Stop instead of Send while the open chat waits; Stop cance
 
   vm.run('ClaudeWoW.UI.stop:GetScript("OnClick")(ClaudeWoW.UI.stop)');
   assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].pendingId'), null, 'the chat is free again');
-  assert.ok(stripRecords(vm).some(r => r.flags === `cancel=${pending}`), 'the bridge is told to stop that run');
+  assert.ok(
+    stripRecords(vm).some(r => r.flags === `cancel=${pending}`),
+    'the bridge is told to stop that run',
+  );
   assert.equal(shown('stop'), 'false');
   assert.equal(shown('send'), 'true');
 
