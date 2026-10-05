@@ -494,17 +494,77 @@ const linux = {
 };
 
 // Windows -------------------------------------------------------------------
+const CLOCK_SLACK_MS = 1000;
+const SUPERVISOR_COMMAND = /supervisor\.js|claude-wow|wow-ai/i;
+const POWERSHELL = 'powershell.exe';
+const POWERSHELL_ARGS = ['-NoProfile', '-NonInteractive', '-Command'];
+const IDENTITY_CHANGED_EXIT = 3;
+
+const isPid = pid => Number.isInteger(pid) && pid > 0;
+const latestCreation = record => Math.floor(record.started) + CLOCK_SLACK_MS;
+
+function winProcessQuery(pid) {
+  if (!isPid(pid)) throw new Error(`not a pid: ${pid}`);
+  return `$ErrorActionPreference = 'Stop'; $p = Get-CimInstance Win32_Process -Filter "ProcessId=${pid}"; if ($p) { @{ created = ([DateTimeOffset]$p.CreationDate).ToUnixTimeMilliseconds(); command = [string]$p.CommandLine } | ConvertTo-Json -Compress }`;
+}
+
+function winVerifiedKill(record) {
+  if (!isPid(record.pid) || !Number.isFinite(record.started)) throw new Error('no verified supervisor to stop');
+  return `$ErrorActionPreference = 'Stop'; $p = Get-Process -Id ${record.pid} -ErrorAction SilentlyContinue; if (-not $p) { exit ${IDENTITY_CHANGED_EXIT} }; $null = $p.Handle; if (([DateTimeOffset]$p.StartTime).ToUnixTimeMilliseconds() -gt ${latestCreation(record)}) { exit ${IDENTITY_CHANGED_EXIT} }; & taskkill.exe /PID ${record.pid} /T /F; exit $LASTEXITCODE`;
+}
+
+function parseWinProcess(out) {
+  const text = String(out || '').trim();
+  if (!text) return { state: 'gone' };
+  try {
+    const j = JSON.parse(text);
+    if (j && Number.isFinite(j.created)) return { state: 'found', created: j.created, command: typeof j.command === 'string' ? j.command : '' };
+  } catch {}
+  return { state: 'unknown' };
+}
+
+function supervisorIdentity(record, proc) {
+  if (proc.state !== 'found') return proc.state;
+  if (!Number.isFinite(record.started)) return 'unknown';
+  if (proc.created > latestCreation(record)) return 'stale';
+  if (!proc.command) return 'unknown';
+  return SUPERVISOR_COMMAND.test(proc.command) ? 'match' : 'stale';
+}
+
+function unverifiedError(record, file) {
+  return new Error(`could not confirm that pid ${record.pid} is the bridge supervisor, so nothing was stopped or started. If it is, end it in Task Manager; then delete ${file} and retry`);
+}
+
 const win = {
+  exec: run,
+  alive,
+  program: () => program(),
+  launch(node, args, opts) { spawn(node, args, opts).unref(); },
+  verify(record) {
+    if (!record || !isPid(record.pid) || !this.alive(record.pid)) return 'gone';
+    const r = this.exec(POWERSHELL, [...POWERSHELL_ARGS, winProcessQuery(record.pid)]);
+    if (!r.ok) return 'unknown';
+    return supervisorIdentity(record, parseWinProcess(r.out));
+  },
+  terminate(record) {
+    const r = this.exec(POWERSHELL, [...POWERSHELL_ARGS, winVerifiedKill(record)]);
+    if (r.ok || r.status === IDENTITY_CHANGED_EXIT) return;
+    throw new Error(`taskkill could not stop the supervisor (pid ${record.pid}): ${(r.out || '').trim() || r.error}`);
+  },
+  stopRecorded(d) {
+    const p = readPid(d);
+    if (!p || p.mode !== 'service') return;
+    const identity = this.verify(p);
+    if (identity === 'unknown') throw unverifiedError(p, pidFile(d));
+    if (identity === 'match') this.terminate(p);
+    clearPid(d, p.pid);
+  },
   // The old name's launcher in the Startup folder, and the bridge it started if
   // its pid file says one is still running.
   removeOld(old = oldDirs('win32')) {
     const had = fs.existsSync(old.definition);
     if (had) try { fs.unlinkSync(old.definition); } catch {}
-    const p = readPid(old);
-    if (p && p.mode === 'service' && alive(p.pid)) {
-      run('taskkill', ['/PID', String(p.pid), '/T', '/F']);
-      try { fs.unlinkSync(pidFile(old)); } catch {}
-    }
+    this.stopRecorded(old);
     return had;
   },
   install(d) {
@@ -524,25 +584,25 @@ const win = {
   },
   start(d) {
     const p = readPid(d);
-    if (p && p.mode === 'service' && alive(p.pid)) return; // already running
-    const { node, script, cwd } = program();
-    const child = spawn(node, programArgs({ node, script }).slice(1), {
+    if (p && p.mode === 'service') {
+      const identity = this.verify(p);
+      if (identity === 'match') return;
+      if (identity === 'unknown') throw unverifiedError(p, pidFile(d));
+      clearPid(d, p.pid);
+    }
+    const { node, script, cwd } = this.program();
+    this.launch(node, programArgs({ node, script }).slice(1), {
       cwd, detached: true, stdio: 'ignore', windowsHide: true,
       env: { ...process.env, CLAUDE_WOW_SERVICE: '1' },
     });
-    child.unref();
   },
-  stop(d) {
-    const p = readPid(d);
-    if (!p || p.mode !== 'service' || !alive(p.pid)) return;
-    run('taskkill', ['/PID', String(p.pid), '/T', '/F']);
-    try { fs.unlinkSync(pidFile(d)); } catch {}
-  },
+  stop(d) { this.stopRecorded(d); },
   restart(d) { this.stop(d); this.start(d); },
   probe(d) {
     const p = readPid(d);
-    const running = !!(p && p.mode === 'service' && alive(p.pid));
-    return { loaded: running, pid: running ? p.pid : 0, state: running ? 'running' : 'stopped' };
+    const identity = p && p.mode === 'service' ? this.verify(p) : 'gone';
+    const running = identity === 'match';
+    return { loaded: running, pid: running ? p.pid : 0, state: running ? 'running' : identity === 'unknown' ? 'unverified' : 'stopped' };
   },
   kind: 'Startup-folder launcher',
 };
@@ -563,12 +623,12 @@ function clientLines(configFile, state) {
   return CLI.describe(clients, state);
 }
 
-function status(d, platform = process.platform, out = console.log, stateFile = H.resolve().state, configFile = H.resolve().config) {
-  const b = backend(platform);
+function status(d, platform = process.platform, out = console.log, stateFile = H.resolve().state, configFile = H.resolve().config, b = backend(platform)) {
   const installed = fs.existsSync(d.definition);
   const probe = installed ? b.probe(d) : { loaded: false, pid: 0, state: '' };
   const p = readPid(d);
-  const supervisorAlive = !!(p && alive(p.pid));
+  const identity = p && b.verify ? b.verify(p) : null;
+  const supervisorAlive = !!(p && (identity ? identity === 'match' : alive(p.pid)));
   const bridgeAlive = !!(p && alive(p.bridgePid));
   out(`claude-wow service (${b.kind})`);
   out(`  installed : ${installed ? 'yes  ' + d.definition : 'no   (claude-wow service install)'}`);
@@ -576,6 +636,8 @@ function status(d, platform = process.platform, out = console.log, stateFile = H
   if (supervisorAlive) {
     const where = p.mode === 'service' ? 'as the service' : 'in a terminal';
     out(`  running   : yes, ${where}: supervisor pid ${p.pid}${bridgeAlive ? ', bridge pid ' + p.bridgePid : ', bridge restarting'}, up ${formatUptime(Date.now() - p.started)} (since ${new Date(p.started).toLocaleString()})`);
+  } else if (identity === 'unknown') {
+    out(`  running   : unknown, pid ${p.pid} could not be confirmed as the supervisor`);
   } else if (probe.pid && alive(probe.pid)) {
     out(`  running   : yes, pid ${probe.pid} (no pid file yet)`);
   } else {
@@ -669,6 +731,7 @@ module.exports = {
   dirs, oldDirs, backend, serviceLogFile, launchdLogFile, pidFile,
   parseArgs, launchdPlist, systemdUnit, startupVbs, xmlEscape, releaseProgram, program, definition,
   rotate, RotatingLog, writePid, readPid, clearPid, alive,
+  CLOCK_SLACK_MS, winProcessQuery, winVerifiedKill, parseWinProcess, supervisorIdentity,
   parseLaunchctlPrint, formatUptime, lastLines, agentEnv,
   status, clientLines, main,
 };
