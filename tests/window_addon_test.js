@@ -384,7 +384,7 @@ test('a reply names items and spells by token: the client turns each into a real
   assert.ok(body.includes('|Hspell:1752|h[Sinister Strike]|h'), body);
   assert.ok(body.includes('|cff5c5248item 999999|r'), 'an ID the client does not have shows plainly, with no invented name, in parchment ink');
   assert.ok(body.includes('|cff2e1f0f|Hitem:2589'), 'a white item name is drawn dark enough to read on the parchment');
-  assert.ok(body.includes('|cff00577a|Hspell:1752'), 'and so is a spell link');
+  assert.ok(body.includes('|cff1c4f9c|Hspell:1752'), 'and so is a spell link');
   assert.equal(vm.evaluate('STUB.itemLoads[1]'), '999999', 'and the client is asked to load it');
   assert.ok(body.includes('\u2022 spare'), 'a "- " line becomes a bullet');
   assert.ok(!body.includes('|cffff0000'), 'color codes the agent typed are neutralized');
@@ -480,7 +480,7 @@ test('a coding reply reads cleanly: bold, code and headings are styled, fences d
   assert.ok(!body.includes('**') && !body.includes('`') && !body.includes('## '), 'no raw markdown marks: ' + body);
   assert.ok(body.includes('|cff5c1a00Merge train|r'), 'a heading is emphasized');
   assert.ok(body.includes('|cff5c1a002 of the 3|r'), 'bold is emphasized');
-  assert.ok(body.includes('|cff1f4a5ainternal|r'), 'inline code has its own ink');
+  assert.ok(body.includes('|cff7a2e0einternal|r'), 'inline code has its own ink');
   assert.ok(body.includes('gh pr merge 18610') && !body.includes('bash'), 'fence lines are dropped, the code stays');
   assert.ok(body.includes('|Haddon:claudewow:url:https://linear.app/every/issue/PRD-8708/pandl-month|h[the ticket]|h'), 'a markdown link keeps its label');
   assert.ok(body.includes('|Haddon:claudewow:url:https://github.com/every-io/every/pull/18632|h[PR #18632]|h|r.'), 'a bare PR URL is a short link, its full stop kept outside');
@@ -489,6 +489,46 @@ test('a coding reply reads cleanly: bold, code and headings are styled, fences d
   assert.equal((body.match(/\|Haddon:claudewow:url:/g) || []).length, 4, 'each URL becomes exactly one link');
   vm.run('STUB.bubble.scripts.OnHyperlinkClick(STUB.bubble, "addon:claudewow:url:https://github.com/every-io/every/pull/18632", "[PR #18632]", "LeftButton")');
   assert.equal(vm.evaluate('STUB.copied[1]'), 'https://github.com/every-io/every/pull/18632', 'a click opens the copy box with the full URL');
+});
+
+const parchmentInkReply = 'use `internal` and see https://github.com/o/r/pull/5 and {spell:1752}';
+const shownBody = '(function() for _, b in ipairs(ClaudeWoW.UI.bubbles) do if b.shown then return b.body:GetText() end end end)()';
+const renderInkReply = (vm) => vm.run(`
+  C_Spell = { GetSpellLink = function(id) if id == 1752 then return "|cff71d5ff|Hspell:1752|h[Sinister Strike]|h|r" end end }
+  local c = ClaudeWoWDB.chats[1]
+  ClaudeWoW.SwitchChat(c.id)
+  c.history = { { role = "assistant", t = 1, text = "${parchmentInkReply}" } }
+  ClaudeWoW.Render()
+`);
+
+test('on the parchment, inline code is dark red-brown and links are dark blue, and a shift-clicked link goes back to its game color', () => {
+  const vm = nativeVM();
+  renderInkReply(vm);
+  const body = vm.evaluate(shownBody);
+  assert.ok(body.includes('|cff7a2e0einternal|r'), 'inline code is dark red-brown: ' + body);
+  assert.ok(body.includes('|cff1c4f9c|Haddon:claudewow:url:https://github.com/o/r/pull/5|h[PR #5]|h|r'), 'a URL link is dark blue: ' + body);
+  assert.ok(body.includes('|cff1c4f9c|Hspell:1752|h[Sinister Strike]|h|r'), 'a spell link uses the same dark blue: ' + body);
+  assert.ok(!body.includes('ff1f4a5a') && !body.includes('ff00577a') && !body.includes('ff71d5ff'), 'no teal ink is left: ' + body);
+  vm.run(`
+    STUB.texts = {}
+    SetItemRef = function(link, text) table.insert(STUB.texts, text) end
+    IsModifiedClick = function() return true end
+    local b = (function() for _, b in ipairs(ClaudeWoW.UI.bubbles) do if b.shown then return b end end end)()
+    b.scripts.OnHyperlinkClick(b, "spell:1752", "|cff1c4f9c|Hspell:1752|h[Sinister Strike]|h|r", "LeftButton")
+    IsModifiedClick = function() return false end
+  `);
+  assert.equal(vm.evaluate('STUB.texts[1]'), '|cff71d5ff|Hspell:1752|h[Sinister Strike]|h|r', 'the chat box gets the game link color');
+});
+
+test('the dark theme keeps its light code and link ink', () => {
+  const vm = newVM();
+  open(vm);
+  renderInkReply(vm);
+  assert.equal(vm.evaluate('ClaudeWoW.UI.parchment'), null, 'this window has no parchment');
+  const body = vm.evaluate(shownBody);
+  assert.ok(body.includes('|cffa8c8d8internal|r'), 'inline code keeps its light ink: ' + body);
+  assert.ok(body.includes('|cff71d5ff|Haddon:claudewow:url:https://github.com/o/r/pull/5|h[PR #5]|h|r'), 'a URL link keeps the game link color: ' + body);
+  assert.ok(body.includes('|cff71d5ff|Hspell:1752|h[Sinister Strike]|h|r'), 'and so does a spell link: ' + body);
 });
 
 test('code fences keep their lines exactly, and URLs keep their whole path but not the marks or punctuation around them', () => {
@@ -516,13 +556,13 @@ test('code fences keep their lines exactly, and URLs keep their whole path but n
   const body = vm.evaluate('STUB.bubble.body:GetText()');
   assert.ok(body.includes('# install deps\necho `pwd` **x** https://a.com {item:2589}\n\n- not a bullet'), 'fenced lines, tokens and blank lines stay exactly as written: ' + body);
   assert.ok(body.includes('|Haddon:claudewow:url:https://github.com/o/r/pull/99|h[PR #99]|h') && !body.includes('pull/99**'), 'bold marks stay outside the URL');
-  assert.ok(body.split('\n').some(l => l.startsWith('|cff5c1a00|cff00577a|Haddon:claudewow:url:https://github.com/o/r/pull/99|h')), 'and are drawn as bold around the link: ' + body);
+  assert.ok(body.split('\n').some(l => l.startsWith('|cff5c1a00|cff1c4f9c|Haddon:claudewow:url:https://github.com/o/r/pull/99|h')), 'and are drawn as bold around the link: ' + body);
   assert.ok(body.includes('url:https://github.com/o/r/blob/main/app/(auth)/page.tsx|h'), 'balanced parentheses stay in the path');
   assert.ok(body.includes('url:https://b.com/x|h') && body.includes('|r).'), 'a closing parenthesis and full stop stay outside');
   assert.ok(body.includes('open https://... later') && !body.includes('url:https://|h'), 'a bare scheme is not a link');
   assert.ok(body.includes('url:https://en.wikipedia.org/wiki/Foo_(bar)|h'), 'a URL that ends in a balanced parenthesis keeps it');
   assert.ok(body.includes('|h[bold label]|h'), 'marks inside a link label are dropped');
-  assert.ok(body.includes('(see |cff00577a|Haddon:claudewow:url:https://github.com/o/r/pull/7|h[PR]|h|r)'), 'a markdown link in parentheses leaves the outer one outside');
+  assert.ok(body.includes('(see |cff1c4f9c|Haddon:claudewow:url:https://github.com/o/r/pull/7|h[PR]|h|r)'), 'a markdown link in parentheses leaves the outer one outside');
 });
 
 test('clicking a link in a reply opens the link, not the copy box; clicking the text around it still opens the copy box', () => {
