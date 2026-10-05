@@ -19,7 +19,8 @@ test('assertSafe refuses every live install path and anything that contains one'
     '/Applications/World of Warcraft/_classic_beta_/WTF',
     '/Users/someone',
     '/',
-  ]) assert.throws(() => SB.assertSafe(p, home), /refusing/, p);
+  ])
+    assert.throws(() => SB.assertSafe(p, home), /refusing/, p);
   assert.equal(SB.assertSafe('/Users/someone/code/wow-ai/.dev/sandboxes/a', home), '/Users/someone/code/wow-ai/.dev/sandboxes/a');
 });
 
@@ -32,7 +33,10 @@ test('the live checkout named by the LaunchAgent is a forbidden root', { skip: p
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'sandbox-home-'));
   try {
     fs.mkdirSync(path.join(home, 'Library', 'LaunchAgents'), { recursive: true });
-    fs.writeFileSync(path.join(home, 'Library', 'LaunchAgents', 'io.claudewow.bridge.plist'), '<key>WorkingDirectory</key>\n<string>/srv/live-checkout</string>');
+    fs.writeFileSync(
+      path.join(home, 'Library', 'LaunchAgents', 'io.claudewow.bridge.plist'),
+      '<key>WorkingDirectory</key>\n<string>/srv/live-checkout</string>',
+    );
     assert.deepEqual(SB.liveCheckouts(home), ['/srv/live-checkout']);
     assert.throws(() => SB.assertSafe('/srv/live-checkout/bridge', home), /refusing/);
   } finally {

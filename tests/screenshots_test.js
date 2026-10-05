@@ -10,7 +10,7 @@ const os = require('os');
 const path = require('path');
 const S = require('../bridge/screenshots');
 
-test('only the client\'s own screenshot names in PNG or TGA count', () => {
+test("only the client's own screenshot names in PNG or TGA count", () => {
   assert.ok(S.isScreenshotFile('WoWScrnShot_092826_103651.png'));
   assert.ok(S.isScreenshotFile('WoWScrnShot_092826_103651.tga'));
   assert.ok(S.isScreenshotFile('WoWScrnShot_092826_103651.PNG'));
@@ -43,12 +43,16 @@ test('a strip the client writes again under the same name while the handler read
   const name = 'WoWScrnShot_010126_000005.png';
   const got = [];
   const verdicts = [];
-  const w = S.watchScreenshots(dir, f => {
-    const key = S.statKey(f);
-    got.push(fs.readFileSync(f, 'utf8'));
-    if (got.length === 1) fs.writeFileSync(f, 'the cancel strip, shot in the same second');
-    verdicts.push(S.removeUnlessRewritten(f, key));
-  }, { settleMs: 20, scanMs: 40 });
+  const w = S.watchScreenshots(
+    dir,
+    f => {
+      const key = S.statKey(f);
+      got.push(fs.readFileSync(f, 'utf8'));
+      if (got.length === 1) fs.writeFileSync(f, 'the cancel strip, shot in the same second');
+      verdicts.push(S.removeUnlessRewritten(f, key));
+    },
+    { settleMs: 20, scanMs: 40 },
+  );
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   try {
     fs.writeFileSync(path.join(dir, name), 'the hello strip');
@@ -88,7 +92,7 @@ test('the watcher reports a new file once its size settles, and never the files 
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   try {
     await sleep(120);
-    assert.deepEqual(got, [], 'a file from before the bridge started is the player\'s');
+    assert.deepEqual(got, [], "a file from before the bridge started is the player's");
     // Written in pieces, like a big TGA: reported once, after the last piece.
     const name = 'WoWScrnShot_010126_000001.tga';
     const fd = fs.openSync(path.join(dir, name), 'w');
@@ -126,17 +130,23 @@ test('the watcher reports a new file once its size settles, and never the files 
 test('the sweep deletes leftover strip screenshots and nothing else, decodes each file once, and works in bounded batches', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wowai-sweep-'));
   const old = new Date(Date.now() - 3600 * 1000);
-  const write = (name, body, when = old) => { fs.writeFileSync(path.join(dir, name), body); fs.utimesSync(path.join(dir, name), when, when); };
+  const write = (name, body, when = old) => {
+    fs.writeFileSync(path.join(dir, name), body);
+    fs.utimesSync(path.join(dir, name), when, when);
+  };
   const seen = [];
-  const hasStrip = buf => { seen.push(buf.toString()); return buf.toString().includes('strip'); };
+  const hasStrip = buf => {
+    seen.push(buf.toString());
+    return buf.toString().includes('strip');
+  };
   try {
-    write('WoWScrnShot_010126_000001.png', 'strip #1');       // the addon's, from a hello nobody read
-    write('WoWScrnShot_010126_000002.tga', 'strip #2');       // the addon's, a retried message
-    write('WoWScrnShot_010126_000003.png', 'a nice sunset');  // the player's
+    write('WoWScrnShot_010126_000001.png', 'strip #1'); // the addon's, from a hello nobody read
+    write('WoWScrnShot_010126_000002.tga', 'strip #2'); // the addon's, a retried message
+    write('WoWScrnShot_010126_000003.png', 'a nice sunset'); // the player's
     write('WoWScrnShot_010126_000004.png', 'strip #4', new Date()); // just written: the watcher's, not the sweep's
-    write('WoWScrnShot_010126_000005.jpg', 'strip #5');       // not a format the addon asks for: never opened
+    write('WoWScrnShot_010126_000005.jpg', 'strip #5'); // not a format the addon asks for: never opened
     write('holiday.png', 'strip in a file the client did not name'); // never opened either
-    write('WoWScrnShot_010126_000006.png', '');               // empty: left for the watcher (still being written)
+    write('WoWScrnShot_010126_000006.png', ''); // empty: left for the watcher (still being written)
     const memo = new Map();
     const r = S.sweepOrphans(dir, hasStrip, { memo, minAgeMs: 60000 });
     assert.deepEqual(r.removed, ['WoWScrnShot_010126_000001.png', 'WoWScrnShot_010126_000002.tga']);
@@ -144,16 +154,28 @@ test('the sweep deletes leftover strip screenshots and nothing else, decodes eac
     assert.equal(r.bytes, 16);
     assert.equal(r.more, false);
     assert.deepEqual(seen.sort(), ['a nice sunset', 'strip #1', 'strip #2'], 'only client-named, settled, non-empty files are ever opened');
-    assert.deepEqual(fs.readdirSync(dir).sort(), ['WoWScrnShot_010126_000003.png', 'WoWScrnShot_010126_000004.png', 'WoWScrnShot_010126_000005.jpg', 'WoWScrnShot_010126_000006.png', 'holiday.png']);
+    assert.deepEqual(fs.readdirSync(dir).sort(), [
+      'WoWScrnShot_010126_000003.png',
+      'WoWScrnShot_010126_000004.png',
+      'WoWScrnShot_010126_000005.jpg',
+      'WoWScrnShot_010126_000006.png',
+      'holiday.png',
+    ]);
     // The next sweep does not decode the sunset again; a rewritten file is looked at afresh.
     seen.length = 0;
     assert.deepEqual(S.sweepOrphans(dir, hasStrip, { memo, minAgeMs: 60000 }).removed, []);
-    assert.deepEqual(seen, [], 'remembered as the player\'s');
+    assert.deepEqual(seen, [], "remembered as the player's");
     write('WoWScrnShot_010126_000003.png', 'strip now'); // same name, new content and mtime
     assert.deepEqual(S.sweepOrphans(dir, hasStrip, { memo, minAgeMs: 60000 }).removed, ['WoWScrnShot_010126_000003.png']);
     // An unreadable file is never ours; a predicate that throws deletes nothing.
     write('WoWScrnShot_010126_000007.png', 'strip #7');
-    const r2 = S.sweepOrphans(dir, () => { throw new Error('truncated'); }, { memo: new Map(), minAgeMs: 60000 });
+    const r2 = S.sweepOrphans(
+      dir,
+      () => {
+        throw new Error('truncated');
+      },
+      { memo: new Map(), minAgeMs: 60000 },
+    );
     assert.deepEqual(r2.removed, []);
     assert.ok(fs.existsSync(path.join(dir, 'WoWScrnShot_010126_000007.png')));
     // A pile is taken down a batch at a time, so the bridge never stalls on it.

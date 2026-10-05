@@ -9,7 +9,10 @@ const withGame = gameRunner(ROOT);
 
 test('a client whose interface version no longer matches the slots tells the player why replies stopped', async () => {
   await withGame({ client: { interface: 16002 } }, async h => {
-    await h.client.waitFor(() => h.client.prints().some(p => /INTERFACE_VERSION.*tocInterface to 16002/.test(p)), { timeoutMs: 20000, label: 'a message about the slot version' });
+    await h.client.waitFor(() => h.client.prints().some(p => /INTERFACE_VERSION.*tocInterface to 16002/.test(p)), {
+      timeoutMs: 20000,
+      label: 'a message about the slot version',
+    });
   });
 });
 

@@ -16,8 +16,12 @@ const ADDON = path.join(__dirname, '..', 'addon', 'ClaudeWoW');
 // ---------------------------------------------------------------------------
 
 test('extractMacros reads name, icon and scope, and leaves a readable version', () => {
-  const r = P.extractMacros('Here.\n\n```wowmacro Charge icon=Ability_Warrior_Charge scope=character\n#showtooltip\r\n/cast [combat] Intercept; Charge   \n```\nDone.');
-  assert.deepEqual(r.macros, [{ name: 'Charge', body: '#showtooltip\n/cast [combat] Intercept; Charge', icon: 'Ability_Warrior_Charge', char: true, risky: false }]);
+  const r = P.extractMacros(
+    'Here.\n\n```wowmacro Charge icon=Ability_Warrior_Charge scope=character\n#showtooltip\r\n/cast [combat] Intercept; Charge   \n```\nDone.',
+  );
+  assert.deepEqual(r.macros, [
+    { name: 'Charge', body: '#showtooltip\n/cast [combat] Intercept; Charge', icon: 'Ability_Warrior_Charge', char: true, risky: false },
+  ]);
   assert.equal(r.text, 'Here.\n\nMacro "Charge":\n#showtooltip\n/cast [combat] Intercept; Charge\nDone.');
   assert.deepEqual(r.notes, []);
 });
@@ -48,8 +52,11 @@ test('bodies over 255 bytes, empty ones and extra macros get no button; code-run
 test('slot files carry macros on the reply record', () => {
   const macros = P.extractMacros('```wowmacro A "q"\n/cast X\n```\n```wowmacro B icon=7\n/run y()\n```').macros;
   const src = P.luaTable('ClaudeWoW_SlotData', [{ chat: 'c', id: 3, status: 'done', text: 't', macros }], { now: 1 });
-  const got = runLua(src, `(function(r) local a, b = r.macros[1], r.macros[2]
-    return table.concat({ #r.macros, a.name, a.body, tostring(a.icon), tostring(a.char), b.icon, tostring(b.risky) }, "|") end)(ClaudeWoW_SlotData.replies[1])`);
+  const got = runLua(
+    src,
+    `(function(r) local a, b = r.macros[1], r.macros[2]
+    return table.concat({ #r.macros, a.name, a.body, tostring(a.icon), tostring(a.char), b.icon, tostring(b.risky) }, "|") end)(ClaudeWoW_SlotData.replies[1])`,
+  );
   assert.equal(got, '2|A q|/cast X|nil|false|7|true');
 });
 
@@ -103,10 +110,13 @@ function newVM() {
   const run = (code, arg) => {
     if (lauxlib.luaL_loadstring(L, to_luastring(code)) !== lua.LUA_OK) throw new Error('Lua load: ' + to_jsstring(lua.lua_tostring(L, -1)));
     let nargs = 0;
-    if (arg !== undefined) { lua.lua_pushstring(L, to_luastring(arg)); nargs = 1; }
+    if (arg !== undefined) {
+      lua.lua_pushstring(L, to_luastring(arg));
+      nargs = 1;
+    }
     if (lua.lua_pcall(L, nargs, 0, 0) !== lua.LUA_OK) throw new Error('Lua error: ' + to_jsstring(lua.lua_tostring(L, -1)));
   };
-  const evaluate = (expr) => {
+  const evaluate = expr => {
     run(`local v = (${expr}); if v == nil then RESULT = nil else RESULT = tostring(v) end`);
     lua.lua_getglobal(L, to_luastring('RESULT'));
     const s = lua.lua_isnil(L, -1) ? null : to_jsstring(lua.lua_tolstring(L, -1));
@@ -164,7 +174,7 @@ test('replacing a different macro asks first, and undo brings the old one back',
   assert.equal(vm.evaluate('select(3, GetMacroInfo(1))'), '/cast Old', 'nothing changed before OK');
   accept(vm);
   assert.equal(vm.evaluate('select(3, GetMacroInfo(1))'), '/cast New');
-  assert.equal(vm.evaluate('select(2, GetMacroInfo(1))'), '99', 'the player\'s icon is kept when the agent set none');
+  assert.equal(vm.evaluate('select(2, GetMacroInfo(1))'), '99', "the player's icon is kept when the agent set none");
   assert.equal(vm.evaluate('STUB.picked'), '1');
   vm.run('SlashCmdList.CLAUDE("config macro undo")');
   assert.equal(vm.evaluate('select(3, GetMacroInfo(1))'), '/cast Old');

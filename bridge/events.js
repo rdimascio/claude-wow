@@ -72,17 +72,27 @@ function parseLine(line) {
     const e = JSON.parse(line);
     if (!e || typeof e.type !== 'string' || !Number.isInteger(e.importance)) return null;
     return e;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 function newestEventsFile(goalsDir) {
   let best = null;
   let names = [];
-  try { names = fs.readdirSync(goalsDir); } catch { return null; }
+  try {
+    names = fs.readdirSync(goalsDir);
+  } catch {
+    return null;
+  }
   for (const name of names) {
     const file = path.join(goalsDir, name, TL.EVENTS_FILE);
     let st;
-    try { st = fs.statSync(file); } catch { continue; }
+    try {
+      st = fs.statSync(file);
+    } catch {
+      continue;
+    }
     if (!best || st.mtimeMs > best.mtimeMs) best = { file, mtimeMs: st.mtimeMs };
   }
   return best ? best.file : null;
@@ -95,8 +105,20 @@ function eventsFile(goalsDir, character) {
 
 function allEventsFiles(goalsDir) {
   let names = [];
-  try { names = fs.readdirSync(goalsDir); } catch { return []; }
-  return names.map(n => path.join(goalsDir, n, TL.EVENTS_FILE)).filter(f => { try { return fs.statSync(f).isFile(); } catch { return false; } });
+  try {
+    names = fs.readdirSync(goalsDir);
+  } catch {
+    return [];
+  }
+  return names
+    .map(n => path.join(goalsDir, n, TL.EVENTS_FILE))
+    .filter(f => {
+      try {
+        return fs.statSync(f).isFile();
+      } catch {
+        return false;
+      }
+    });
 }
 
 function follow(opts) {
@@ -121,7 +143,9 @@ function follow(opts) {
     for (const f of list()) {
       if (resume.has(f)) continue;
       let st = null;
-      try { st = fs.statSync(f); } catch {}
+      try {
+        st = fs.statSync(f);
+      } catch {}
       resume.set(f, { offset: st && atStart && !opts.fromStart ? st.size : 0, inode: st ? st.ino : null, partial: '', decoder: new StringDecoder('utf8') });
     }
   }
@@ -135,15 +159,19 @@ function follow(opts) {
   function attach(found, atStart) {
     file = found;
     let st = null;
-    try { st = fs.statSync(file); } catch {}
+    try {
+      st = fs.statSync(file);
+    } catch {}
     const saved = resume.get(file);
     if (saved) {
       offset = saved.offset;
       partial = saved.partial;
       decoder = saved.decoder;
       inode = saved.inode;
-      if (st && inode !== null && st.ino !== inode) { drainRotated(); startFresh(); }
-      else if (st && offset > st.size) startFresh();
+      if (st && inode !== null && st.ino !== inode) {
+        drainRotated();
+        startFresh();
+      } else if (st && offset > st.size) startFresh();
     } else {
       startFresh();
       if (st && atStart && !opts.fromStart) offset = st.size;
@@ -165,7 +193,11 @@ function follow(opts) {
     const buf = Buffer.alloc(Math.min(to - from, chunk));
     const fd = fs.openSync(target, 'r');
     let n = 0;
-    try { n = fs.readSync(fd, buf, 0, buf.length, from); } finally { fs.closeSync(fd); }
+    try {
+      n = fs.readSync(fd, buf, 0, buf.length, from);
+    } finally {
+      fs.closeSync(fd);
+    }
     if (n > 0) feed(decoder.write(buf.subarray(0, n)));
     return n;
   }
@@ -173,7 +205,11 @@ function follow(opts) {
   function drainRotated() {
     const rotated = path.join(path.dirname(file), TL.EVENTS_ROTATED_FILE);
     let st;
-    try { st = fs.statSync(rotated); } catch { return; }
+    try {
+      st = fs.statSync(rotated);
+    } catch {
+      return;
+    }
     if (inode === null || st.ino !== inode) return;
     let at = offset;
     while (at < st.size) {
@@ -186,9 +222,15 @@ function follow(opts) {
 
   function readNew() {
     let st;
-    try { st = fs.statSync(file); } catch { return; }
-    if (inode !== null && st.ino !== inode) { drainRotated(); startFresh(); }
-    else if (st.size < offset) startFresh();
+    try {
+      st = fs.statSync(file);
+    } catch {
+      return;
+    }
+    if (inode !== null && st.ino !== inode) {
+      drainRotated();
+      startFresh();
+    } else if (st.size < offset) startFresh();
     inode = st.ino;
     offset += readRange(file, offset, st.size);
   }
@@ -197,7 +239,10 @@ function follow(opts) {
     noteNewFiles(atStart);
     const found = resolve();
     if (!found || found === file) return;
-    if (file) { readNew(); resume.set(file, { offset, inode, partial, decoder }); }
+    if (file) {
+      readNew();
+      resume.set(file, { offset, inode, partial, decoder });
+    }
     attach(found, atStart);
   }
 
@@ -219,14 +264,27 @@ function follow(opts) {
 
   reresolve(true);
   const timer = opts.pollMs === 0 ? null : setInterval(tick, opts.pollMs || POLL_MS);
-  return { tick, stop: () => { if (timer) clearInterval(timer); }, file: () => file };
+  return {
+    tick,
+    stop: () => {
+      if (timer) clearInterval(timer);
+    },
+    file: () => file,
+  };
 }
-
 
 function recent(file, min, limit = RECENT_LINES) {
   let text = '';
-  try { text = fs.readFileSync(file, 'utf8'); } catch { return []; }
-  return text.split('\n').map(parseLine).filter(e => e && e.importance >= min).slice(-limit);
+  try {
+    text = fs.readFileSync(file, 'utf8');
+  } catch {
+    return [];
+  }
+  return text
+    .split('\n')
+    .map(parseLine)
+    .filter(e => e && e.importance >= min)
+    .slice(-limit);
 }
 
 function parseArgs(argv) {
@@ -248,19 +306,47 @@ function parseArgs(argv) {
 
 function main(argv, { goalsDir = require('./home').resolve().goals, out = process.stdout, err = process.stderr } = {}) {
   const o = parseArgs(argv);
-  if (o.help) { out.write(USAGE + '\n'); return 0; }
-  if (o.error) { err.write(`events: ${o.error}\n${USAGE}\n`); return 2; }
+  if (o.help) {
+    out.write(USAGE + '\n');
+    return 0;
+  }
+  if (o.error) {
+    err.write(`events: ${o.error}\n${USAGE}\n`);
+    return 2;
+  }
   if (!o.follow) {
     const file = eventsFile(goalsDir, o.character);
-    if (!file) { err.write(`events: no ${TL.EVENTS_FILE} under ${goalsDir} yet\n`); return 1; }
+    if (!file) {
+      err.write(`events: no ${TL.EVENTS_FILE} under ${goalsDir} yet\n`);
+      return 1;
+    }
     for (const e of recent(file, o.min)) out.write(JSON.stringify(e) + '\n');
     return 0;
   }
   const f = follow({ file: () => eventsFile(goalsDir, o.character), list: o.character ? null : () => allEventsFiles(goalsDir), min: o.min, out, err });
-  const stop = () => { f.stop(); process.exit(0); };
+  const stop = () => {
+    f.stop();
+    process.exit(0);
+  };
   process.on('SIGINT', stop);
   process.on('SIGTERM', stop);
   return null;
 }
 
-module.exports = { BURST_WINDOW_MS, WAKES_PER_HOUR, HOUR_MS, RESOLVE_EVERY_TICKS, allEventsFiles, USAGE, coalesceKey, mergeEvents, createCoalescer, follow, recent, eventsFile, newestEventsFile, parseArgs, main };
+module.exports = {
+  BURST_WINDOW_MS,
+  WAKES_PER_HOUR,
+  HOUR_MS,
+  RESOLVE_EVERY_TICKS,
+  allEventsFiles,
+  USAGE,
+  coalesceKey,
+  mergeEvents,
+  createCoalescer,
+  follow,
+  recent,
+  eventsFile,
+  newestEventsFile,
+  parseArgs,
+  main,
+};

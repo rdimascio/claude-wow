@@ -52,7 +52,9 @@ function episodePlan(f, n) {
   if (kind === 'error') body = `[[error E${nonce}]] ${body}`;
   if (kind === 'rate-limit') body = `[[rate-limit]] ${body}`;
   return {
-    nonce, kind, body,
+    nonce,
+    kind,
+    body,
     newChat: f.chance(0.15),
     restartBefore: n > 0 && f.chance(0.1),
     reloadDuring: f.chance(0.2),

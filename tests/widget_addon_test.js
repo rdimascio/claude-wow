@@ -26,10 +26,13 @@ function newVM(savedVariables = '') {
   const run = (code, arg) => {
     if (lauxlib.luaL_loadstring(L, to_luastring(code)) !== lua.LUA_OK) throw new Error('Lua load: ' + to_jsstring(lua.lua_tostring(L, -1)));
     let nargs = 0;
-    if (arg !== undefined) { lua.lua_pushstring(L, to_luastring(arg)); nargs = 1; }
+    if (arg !== undefined) {
+      lua.lua_pushstring(L, to_luastring(arg));
+      nargs = 1;
+    }
     if (lua.lua_pcall(L, nargs, 0, 0) !== lua.LUA_OK) throw new Error('Lua error: ' + to_jsstring(lua.lua_tostring(L, -1)));
   };
-  const evaluate = (expr) => {
+  const evaluate = expr => {
     run(`local v = (${expr}); if v == nil then RESULT = nil else RESULT = tostring(v) end`);
     lua.lua_getglobal(L, to_luastring('RESULT'));
     const s = lua.lua_isnil(L, -1) ? null : to_jsstring(lua.lua_tolstring(L, -1));
@@ -55,7 +58,10 @@ const TARGET_METER = [
 
 function widgetSet(widgets, version = 1, epoch = 'e1') {
   const set = P.newWidgetSet(epoch);
-  P.applyWidgetCommands(set, widgets.map(([name, source]) => ({ op: 'set', name, title: name + ' title', source })));
+  P.applyWidgetCommands(
+    set,
+    widgets.map(([name, source]) => ({ op: 'set', name, title: name + ' title', source })),
+  );
   set.version = version;
   return P.luaTable('ClaudeWoW_SlotData', [], { now: 1, widgets: set }) + '\nClaudeWoWWidgets.Sync(ClaudeWoW_SlotData.widgets)';
 }
@@ -77,14 +83,16 @@ test('a runtime error stops the widget and is reported in the chat window', () =
 
 test('compile errors and blocked calls fail cleanly', () => {
   const vm = newVM();
-  vm.run(widgetSet([
-    ['broken', 'local ui = ...\nif then end'],
-    ['sneaky', 'local ui = ...\nlocal name = "Cast" .. "Spell" .. "ByName"\n_G[name]("Fireball")'],
-    ['secure', 'local ui = ...\nlocal kind = "Sec" .. "ure"\nCreateFrame("Button", nil, nil, kind .. "ActionButtonTemplate")'],
-    ['nosy', 'local ui = ...\nlocal key = "Clau" .. "deWoWDB"\nassert(_G[key] == nil, "leak")\nassert(getmetatable(_G) == false)'],
-    ['logger', 'local ui = ...\nlocal f = CreateFrame("Frame")\nf:RegisterEvent("COMBAT" .. "_LOG_EVENT_UNFILTERED")'],
-    ['pinger', 'local ui = ...\nlocal f = CreateFrame("Frame")\nf:RegisterUnitEvent("UNIT_PING" .. "_PIN_ADDED", "player")'],
-  ]));
+  vm.run(
+    widgetSet([
+      ['broken', 'local ui = ...\nif then end'],
+      ['sneaky', 'local ui = ...\nlocal name = "Cast" .. "Spell" .. "ByName"\n_G[name]("Fireball")'],
+      ['secure', 'local ui = ...\nlocal kind = "Sec" .. "ure"\nCreateFrame("Button", nil, nil, kind .. "ActionButtonTemplate")'],
+      ['nosy', 'local ui = ...\nlocal key = "Clau" .. "deWoWDB"\nassert(_G[key] == nil, "leak")\nassert(getmetatable(_G) == false)'],
+      ['logger', 'local ui = ...\nlocal f = CreateFrame("Frame")\nf:RegisterEvent("COMBAT" .. "_LOG_EVENT_UNFILTERED")'],
+      ['pinger', 'local ui = ...\nlocal f = CreateFrame("Frame")\nf:RegisterUnitEvent("UNIT_PING" .. "_PIN_ADDED", "player")'],
+    ]),
+  );
   assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("broken")'), 'failed');
   assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("sneaky")'), 'failed');
   assert.match(vm.evaluate('select(2, ClaudeWoWWidgets.Status("sneaky"))'), /CastSpellByName is not allowed/);

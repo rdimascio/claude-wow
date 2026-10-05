@@ -24,10 +24,13 @@ function newVM({ beforeLogin = '' } = {}) {
   const run = (code, arg) => {
     if (lauxlib.luaL_loadstring(L, to_luastring(code)) !== lua.LUA_OK) throw new Error('Lua load: ' + to_jsstring(lua.lua_tostring(L, -1)));
     let nargs = 0;
-    if (arg !== undefined) { lua.lua_pushstring(L, to_luastring(arg)); nargs = 1; }
+    if (arg !== undefined) {
+      lua.lua_pushstring(L, to_luastring(arg));
+      nargs = 1;
+    }
     if (lua.lua_pcall(L, nargs, 0, 0) !== lua.LUA_OK) throw new Error('Lua error: ' + to_jsstring(lua.lua_tostring(L, -1)));
   };
-  const evaluate = (expr) => {
+  const evaluate = expr => {
     run(`local v = (${expr}); if v == nil then RESULT = nil else RESULT = tostring(v) end`);
     lua.lua_getglobal(L, to_luastring('RESULT'));
     const s = lua.lua_isnil(L, -1) ? null : to_jsstring(lua.lua_tolstring(L, -1));
@@ -50,7 +53,8 @@ function newVM({ beforeLogin = '' } = {}) {
 const NOW = 'time()';
 const entry = (seq, id, title, ageSeconds = 5) =>
   `{ seq = ${seq}, id = "${id}", title = "${title}", text = "t ${id}", points = 10, icon = "Interface\\\\Icons\\\\INV_Misc_Note_01", at = ${NOW} - ${ageSeconds} }`;
-const earned = (id, title) => `{ id = "${id}", title = "${title}", text = "t ${id}", points = 10, icon = "Interface\\\\Icons\\\\INV_Misc_Note_01", at = ${NOW} - 5, count = 1 }`;
+const earned = (id, title) =>
+  `{ id = "${id}", title = "${title}", text = "t ${id}", points = 10, icon = "Interface\\\\Icons\\\\INV_Misc_Note_01", at = ${NOW} - 5, count = 1 }`;
 const payload = (seq, recent, earnedList = []) =>
   `{ seq = ${seq}, points = ${earnedList.length * 10}, total = 14, recent = { ${recent.join(', ')} }, earned = { ${earnedList.join(', ')} } }`;
 

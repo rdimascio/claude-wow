@@ -103,7 +103,10 @@ test('upgradeConfig: paths naming an old addon are rewritten to the new one, oth
       addonDir: '/Games/WoW/_classic_beta_/Interface/AddOns',
       inboxFile: `/Games/WoW/_classic_beta_/Interface/AddOns/${oldName}/Inbox.lua`,
       savedVariablesFile: `/Games/WoW/_classic_beta_/WTF/Account/A/SavedVariables/${oldName}.lua`,
-      defaultCwd: '/code/x', slots: 200, agent: 'codex', agents: { codex: { model: 'm' } },
+      defaultCwd: '/code/x',
+      slots: 200,
+      agent: 'codex',
+      agents: { codex: { model: 'm' } },
     };
     const notes = S.upgradeConfig(cfg, example);
     assert.deepEqual(notes.sort(), ['inboxFile', 'savedVariablesFile']);
@@ -112,7 +115,12 @@ test('upgradeConfig: paths naming an old addon are rewritten to the new one, oth
     assert.equal(cfg.agent, 'codex');
     assert.deepEqual(cfg.agents, { codex: { model: 'm' } });
     // Windows spelling too.
-    const win = { addonDir: 'C:\\WoW\\Interface\\AddOns', inboxFile: `C:\\WoW\\Interface\\AddOns\\${oldName}\\Inbox.lua`, savedVariablesFile: `C:\\WoW\\WTF\\Account\\A\\SavedVariables\\${oldName}.lua`, agents: {} };
+    const win = {
+      addonDir: 'C:\\WoW\\Interface\\AddOns',
+      inboxFile: `C:\\WoW\\Interface\\AddOns\\${oldName}\\Inbox.lua`,
+      savedVariablesFile: `C:\\WoW\\WTF\\Account\\A\\SavedVariables\\${oldName}.lua`,
+      agents: {},
+    };
     S.upgradeConfig(win, example);
     assert.ok(win.inboxFile.endsWith(path.join(P.RUNTIME_ADDON, 'Inbox.lua')));
     assert.ok(win.savedVariablesFile.endsWith(`\\${P.ADDON}.lua`));
@@ -146,7 +154,11 @@ test('copyAddon refreshes only the shipped ClaudeWoW files and never writes or d
   const { dest } = S.copyAddon(dir);
   const shippedSrc = path.join(__dirname, '..', 'addon', P.ADDON);
   assert.deepEqual(fs.readdirSync(dest).sort(), fs.readdirSync(shippedSrc).sort(), 'the shipped folder holds exactly the shipped files');
-  assert.equal(fs.readFileSync(path.join(dest, 'Inbox.lua'), 'utf8'), fs.readFileSync(path.join(shippedSrc, 'Inbox.lua'), 'utf8'), 'the shipped Inbox.lua is the placeholder again');
+  assert.equal(
+    fs.readFileSync(path.join(dest, 'Inbox.lua'), 'utf8'),
+    fs.readFileSync(path.join(shippedSrc, 'Inbox.lua'), 'utf8'),
+    'the shipped Inbox.lua is the placeholder again',
+  );
   for (const [rel, body] of Object.entries(runtimeFiles)) {
     assert.equal(fs.readFileSync(path.join(runtime, rel), 'utf8'), body, rel);
     assert.equal(fs.statSync(path.join(runtime, rel)).mtimeMs, before[rel], rel);
@@ -167,7 +179,9 @@ test('node setup.js --wow <fake client>: migrates the chats, installs ClaudeWoW 
   fs.mkdirSync(project, { recursive: true });
   const { addons, saved } = fakeClient(client, 'WoWAI', { slots: 5 });
   const r = spawnSync(process.execPath, [path.join(__dirname, '..', 'setup.js'), '--wow', client, '--project', project], {
-    encoding: 'utf8', env: { ...process.env, CLAUDE_WOW_HOME: home }, timeout: 120000,
+    encoding: 'utf8',
+    env: { ...process.env, CLAUDE_WOW_HOME: home },
+    timeout: 120000,
   });
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.match(r.stdout, /migrate {2}: chats and settings copied from WoWAI\.lua to ClaudeWoW\.lua/);
@@ -207,7 +221,11 @@ test('node setup.js --wow <fake client>: migrates the chats, installs ClaudeWoW 
 
   // The config: in the home folder, naming the new addon; nothing in bridge/ was touched.
   const cfg = JSON.parse(fs.readFileSync(path.join(home, 'config.json'), 'utf8'));
-  assert.deepEqual(cfg.clients, [{ dir: path.resolve(client), account: 'ACCT#1', processName: 'World of Warcraft.app' }], 'one client, only what cannot be derived from its folder');
+  assert.deepEqual(
+    cfg.clients,
+    [{ dir: path.resolve(client), account: 'ACCT#1', processName: 'World of Warcraft.app' }],
+    'one client, only what cannot be derived from its folder',
+  );
   for (const k of CLI.LEGACY_KEYS) assert.equal(cfg[k], undefined, `no single-client ${k}`);
   const [resolved] = CLI.clientsOf(cfg);
   assert.equal(resolved.addonDir, addons);
@@ -218,10 +236,13 @@ test('node setup.js --wow <fake client>: migrates the chats, installs ClaudeWoW 
   // A new install is on the screenshot transport: python3 and the macOS
   // permissions are reported as the deprecated pixel fallback's business only.
   assert.equal(cfg.capture.mode, 'screenshot');
-  assert.match(r.stdout, /^transport: screenshot \(the default\): the addon calls Screenshot\(\), the bridge reads the file; no screen capture, no permissions, no python$/m);
+  assert.match(
+    r.stdout,
+    /^transport: screenshot \(the default\): the addon calls Screenshot\(\), the bridge reads the file; no screen capture, no permissions, no python$/m,
+  );
   if (process.platform !== 'win32') assert.match(r.stdout, /^python {3}: .*only the deprecated pixel-capture fallback needs it/m);
   if (process.platform === 'darwin') assert.match(r.stdout, /^capture {2}: screenshot transport, so no Screen Recording or Automation permission is needed/m);
-  assert.ok(!/Screen Recording:|window access:|display scale:/.test(r.stdout), 'the pixel capture\'s permission checks are not run');
+  assert.ok(!/Screen Recording:|window access:|display scale:/.test(r.stdout), "the pixel capture's permission checks are not run");
   assert.ok(!/check the capture with/.test(r.stdout), 'no probe to run either');
 
   // Run again with the config switched to the pixel transport by hand: nothing
@@ -230,7 +251,9 @@ test('node setup.js --wow <fake client>: migrates the chats, installs ClaudeWoW 
   cfg.capture.mode = 'pixel';
   fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify(cfg, null, 2) + '\n');
   const again = spawnSync(process.execPath, [path.join(__dirname, '..', 'setup.js'), '--wow', client], {
-    encoding: 'utf8', env: { ...process.env, CLAUDE_WOW_HOME: home }, timeout: 120000,
+    encoding: 'utf8',
+    env: { ...process.env, CLAUDE_WOW_HOME: home },
+    timeout: 120000,
   });
   assert.equal(again.status, 0, again.stdout + again.stderr);
   assert.ok(!/migrate/.test(again.stdout), 'second run migrates nothing');
@@ -240,7 +263,10 @@ test('node setup.js --wow <fake client>: migrates the chats, installs ClaudeWoW 
     assert.match(again.stdout, /^permissions: 1 of \d+ file\(s\) and folder\(s\) under the ClaudeWoW addon folders set to 0777/m);
   }
   assert.equal(JSON.parse(fs.readFileSync(path.join(home, 'config.json'), 'utf8')).capture.mode, 'pixel', 'an existing config keeps its explicit mode');
-  assert.match(again.stdout, /^transport: pixel \(capture\.mode in config\.json\): DEPRECATED screen capture, kept only until Screenshot\(\) is confirmed on Windows and on Linux under Wine/m);
+  assert.match(
+    again.stdout,
+    /^transport: pixel \(capture\.mode in config\.json\): DEPRECATED screen capture, kept only until Screenshot\(\) is confirmed on Windows and on Linux under Wine/m,
+  );
   if (process.platform !== 'win32') assert.match(again.stdout, /^python {3}: (?!.*only the deprecated)/m, 'on the pixel transport python is simply required');
 
   // And a config from before the mode existed (no capture.mode at all) is left
@@ -252,7 +278,9 @@ test('node setup.js --wow <fake client>: migrates the chats, installs ClaudeWoW 
     fs.writeFileSync(path.join(addons, 'ClaudeWoW', rel), 'RIFF');
   }
   const third = spawnSync(process.execPath, [path.join(__dirname, '..', 'setup.js'), '--wow', client], {
-    encoding: 'utf8', env: { ...process.env, CLAUDE_WOW_HOME: home }, timeout: 120000,
+    encoding: 'utf8',
+    env: { ...process.env, CLAUDE_WOW_HOME: home },
+    timeout: 120000,
   });
   assert.equal(third.status, 0, third.stdout + third.stderr);
   assert.match(third.stdout, /^migrate: removed 2 old signal folder\(s\)/m);
@@ -260,7 +288,11 @@ test('node setup.js --wow <fake client>: migrates the chats, installs ClaudeWoW 
   assert.match(third.stdout, /warning\(s\) to deal with first:\n {2}- the signal files moved/, 'repeated at the end so it is not scrolled past');
   assert.deepEqual(fs.readdirSync(path.join(addons, 'ClaudeWoW')).sort(), fs.readdirSync(path.join(__dirname, '..', 'addon', 'ClaudeWoW')).sort());
   assert.match(third.stdout, /^transport: screenshot \(the default\)/m);
-  assert.equal(JSON.parse(fs.readFileSync(path.join(home, 'config.json'), 'utf8')).capture.mode, undefined, 'setup does not write a mode into an existing config');
+  assert.equal(
+    JSON.parse(fs.readFileSync(path.join(home, 'config.json'), 'utf8')).capture.mode,
+    undefined,
+    'setup does not write a mode into an existing config',
+  );
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -274,9 +306,12 @@ test('node setup.js --wow <another client> adds it next to the first one and ins
   fs.mkdirSync(project, { recursive: true });
   const foreverClient = fakeClient(forever, 'WoWAI', { slots: 1 });
   const eraClient = fakeClient(era, 'WoWClaude', { slots: 1 });
-  const run = (...extra) => spawnSync(process.execPath, [path.join(__dirname, '..', 'setup.js'), ...extra], {
-    encoding: 'utf8', env: { ...process.env, CLAUDE_WOW_HOME: home }, timeout: 120000,
-  });
+  const run = (...extra) =>
+    spawnSync(process.execPath, [path.join(__dirname, '..', 'setup.js'), ...extra], {
+      encoding: 'utf8',
+      env: { ...process.env, CLAUDE_WOW_HOME: home },
+      timeout: 120000,
+    });
   const readCfg = () => JSON.parse(fs.readFileSync(path.join(home, 'config.json'), 'utf8'));
   const tocOf = addons => fs.readFileSync(path.join(addons, P.ADDON, `${P.ADDON}.toc`), 'utf8');
 
@@ -294,10 +329,18 @@ test('node setup.js --wow <another client> adds it next to the first one and ins
   assert.equal(added.status, 0, added.stdout + added.stderr);
   assert.match(added.stdout, /updated \(tocInterface, client\); everything else kept/);
   const after = readCfg();
-  assert.deepEqual(after.clients.map(c => c.dir), [path.resolve(forever), path.resolve(era)], 'the first client stays, the new one is added after it');
+  assert.deepEqual(
+    after.clients.map(c => c.dir),
+    [path.resolve(forever), path.resolve(era)],
+    'the first client stays, the new one is added after it',
+  );
   assert.equal(after.tocInterface, P.TOC_INTERFACE);
   assert.equal(after.defaultCwd, project, 'the rest of the config is kept');
-  assert.deepEqual(after.clients.map(c => c.processName), ['World of Warcraft.app', 'World of Warcraft.app'], 'a stale processName is detected again');
+  assert.deepEqual(
+    after.clients.map(c => c.processName),
+    ['World of Warcraft.app', 'World of Warcraft.app'],
+    'a stale processName is detected again',
+  );
   const build = /^## X-Build: ([0-9a-f]{12})$/m.exec(tocOf(eraClient.addons))[1];
   assert.equal(/^## X-Build: ([0-9a-f]{12})$/m.exec(tocOf(foreverClient.addons))[1], build, 'the stale copy in the first client is replaced by the same build');
   assert.match(added.stdout, new RegExp(`^addon {4}: _classic_beta_: \\d+ file\\(s\\) -> .* \\(build ${build}, `, 'm'));
@@ -335,11 +378,19 @@ test('node setup.js on a single-client config from before clients[] moves it int
   fs.mkdirSync(home, { recursive: true });
   const { addons, saved } = fakeClient(client, 'WoWAI', { slots: 1 });
   const example = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'bridge', 'config.example.json'), 'utf8'));
-  const old = { ...example, addonDir: addons, savedVariablesFile: path.join(saved, `${P.ADDON}.lua`), inboxFile: path.join(addons, P.RUNTIME_ADDON, 'Inbox.lua'), defaultCwd: project };
+  const old = {
+    ...example,
+    addonDir: addons,
+    savedVariablesFile: path.join(saved, `${P.ADDON}.lua`),
+    inboxFile: path.join(addons, P.RUNTIME_ADDON, 'Inbox.lua'),
+    defaultCwd: project,
+  };
   old.capture = { ...old.capture, processName: 'World of Warcraft.app' };
   fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify(old, null, 2) + '\n');
   const r = spawnSync(process.execPath, [path.join(__dirname, '..', 'setup.js'), '--wow', client], {
-    encoding: 'utf8', env: { ...process.env, CLAUDE_WOW_HOME: home }, timeout: 120000,
+    encoding: 'utf8',
+    env: { ...process.env, CLAUDE_WOW_HOME: home },
+    timeout: 120000,
   });
   assert.equal(r.status, 0, r.stdout + r.stderr);
   const cfg = JSON.parse(fs.readFileSync(path.join(home, 'config.json'), 'utf8'));

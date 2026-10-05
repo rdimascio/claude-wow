@@ -66,12 +66,18 @@ test('route: address, then the chat binding, then match(), then the default', ()
   assert.deepEqual(PL.parseAddress('@code   go'), { name: 'code', text: 'go' });
   assert.equal(PL.parseAddress('code go'), null);
   // A match() that throws is a no.
-  reg.register(fake('broken', { match: () => { throw new Error('x'); } }));
+  reg.register(
+    fake('broken', {
+      match: () => {
+        throw new Error('x');
+      },
+    }),
+  );
   assert.equal(reg.route({ text: 'zzz' }, { fallback: 'ask' }).plugin.id, 'ask');
   assert.match(PL.createRegistry().route({ text: 'hi' }).error, /no plugins/);
 });
 
-test('the shipped coding plugin: a folder resolved against the bridge\'s, refused when missing, and a fresh session when it changes', () => {
+test("the shipped coding plugin: a folder resolved against the bridge's, refused when missing, and a fresh session when it changes", () => {
   const code = require('../bridge/plugins/claude-code');
   const reg = PL.createRegistry();
   const p = reg.register(code);
@@ -83,7 +89,9 @@ test('the shipped coding plugin: a folder resolved against the bridge\'s, refuse
   fs.mkdirSync(path.join(base, 'realms'));
   const calls = [];
   const core = {
-    log: noop, tag: j => '#' + j.id, defaultCwd: base,
+    log: noop,
+    tag: j => '#' + j.id,
+    defaultCwd: base,
     options: () => ({}),
     sessionFolder: () => path.join(base, 'realms'),
     fail: (job, text) => calls.push({ fail: text }),
@@ -123,7 +131,9 @@ test('the shipped ask plugin: no folder semantics, a scratch folder of its own, 
   const scratch = path.join(base, 'scratch');
   const calls = [];
   const core = {
-    log: noop, tag: j => '#' + j.id, defaultCwd: '/some/project',
+    log: noop,
+    tag: j => '#' + j.id,
+    defaultCwd: '/some/project',
     options: id => (id === 'ask' ? { cwd: scratch } : {}),
     sessionFolder: () => '/elsewhere',
     fail: (job, text) => calls.push({ fail: text }),
@@ -134,8 +144,8 @@ test('the shipped ask plugin: no folder semantics, a scratch folder of its own, 
   assert.equal(calls[0].run.cwd, scratch, 'runs in the scratch folder');
   assert.equal(calls[0].run.gameData, true, 'ask runs get the read-only wowdata server');
   assert.ok(fs.existsSync(scratch), 'created on demand');
-  assert.equal(calls[0].run.freshSession, undefined, 'no folder-change rule: the session is the chat\'s whatever the folder');
-  assert.equal(job.cwd, 'realms', 'the chat\'s own folder is left as typed for the coding plugin');
+  assert.equal(calls[0].run.freshSession, undefined, "no folder-change rule: the session is the chat's whatever the folder");
+  assert.equal(job.cwd, 'realms', "the chat's own folder is left as typed for the coding plugin");
   assert.match(p.banner({ cwd: scratch }), /scratch/);
   // A scratch folder that cannot be made is an error reply, not a crash.
   fs.writeFileSync(path.join(base, 'file'), '');

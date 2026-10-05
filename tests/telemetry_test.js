@@ -38,7 +38,12 @@ function store(dir, opts = {}) {
 function readEvents(dir) {
   const file = path.join(dir, CHARACTER, TL.EVENTS_FILE);
   if (!fs.existsSync(file)) return [];
-  return fs.readFileSync(file, 'utf8').trim().split('\n').filter(Boolean).map(l => JSON.parse(l));
+  return fs
+    .readFileSync(file, 'utf8')
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .map(l => JSON.parse(l));
 }
 
 function luaEval(chunk, expr) {
@@ -76,7 +81,9 @@ test('parseRecord reads every section into integers and drops what does not pars
   assert.deepEqual(r.sections.life.value, { deaths: 2, lastDeath: 1790000000 });
   assert.deepEqual(r.sections.recipes.value, { learned: [{ id: 3275, at: 1790000001 }] });
 
-  const bad = TL.parseRecord(['gs1', 'money:00000001:12a', 'zone:00000001:Duskwood', 'equip:00000001:25=1', 'nope:00000001:1', 'level:zzzz:1', 'items:00000001:3;2589=1'].join('\n'));
+  const bad = TL.parseRecord(
+    ['gs1', 'money:00000001:12a', 'zone:00000001:Duskwood', 'equip:00000001:25=1', 'nope:00000001:1', 'level:zzzz:1', 'items:00000001:3;2589=1'].join('\n'),
+  );
   assert.deepEqual(Object.keys(bad.sections), ['items']);
   assert.equal(bad.errors.length, 5);
   assert.deepEqual(TL.parseRecord('gs2\nmoney:00000001:1').sections, {}, 'an unknown version is refused whole');
@@ -90,17 +97,29 @@ test('a gs record merges into snapshot.json under the goals folder; the first si
     assert.equal(t.submit(gsJob('s1', 100, { money: '100', zone: '1421', level: '19,10,100' })).status, 'applied');
     assert.deepEqual(readEvents(dir), [], 'nothing to compare with yet');
     const r = t.submit(gsJob('s1', 101, { money: '150', zone: '1420', level: '20,0,200' }));
-    assert.deepEqual(r.events.map(e => [e.type, e.importance]), [['level_up', 3], ['zone', 2], ['money', 1]]);
+    assert.deepEqual(
+      r.events.map(e => [e.type, e.importance]),
+      [
+        ['level_up', 3],
+        ['zone', 2],
+        ['money', 1],
+      ],
+    );
     const snap = JSON.parse(fs.readFileSync(path.join(dir, CHARACTER, TL.SNAPSHOT_FILE), 'utf8'));
     assert.equal(snap.session, 's1');
     assert.equal(snap.seq, 101);
     assert.deepEqual(snap.sections.money.value, { copper: 150 });
     assert.deepEqual(snap.sections.level.value, { level: 20, xp: 0, xpMax: 200 });
     const ev = readEvents(dir);
-    assert.deepEqual(ev.map(e => e.type), ['level_up', 'zone', 'money']);
+    assert.deepEqual(
+      ev.map(e => e.type),
+      ['level_up', 'zone', 'money'],
+    );
     assert.deepEqual(ev[2].data, { from: 100, to: 150, delta: 50 });
     assert.equal(ev[0].character, CHARACTER);
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('handled.gs is keyed by session: a repeated seq is a duplicate, an older seq never overwrites, and a new session starts over', () => {
@@ -118,7 +137,9 @@ test('handled.gs is keyed by session: a repeated seq is a duplicate, an older se
     assert.equal(t.snapshot(CHARACTER).session, 's2');
     assert.ok(t.handled.gs.s2.has(1) && !t.handled.gs.s1.has(1));
     assert.equal(readEvents(dir).filter(e => e.type === 'money').length, 2);
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('the handled map per session stays bounded', () => {
@@ -127,7 +148,9 @@ test('the handled map per session stays bounded', () => {
     const { t } = store(dir);
     for (let seq = 1; seq <= TL.HANDLED_PER_SESSION + 50; seq++) t.submit(gsJob('s1', seq, { money: String(seq) }));
     assert.equal(t.handled.gs.s1.size, TL.HANDLED_PER_SESSION);
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('a record without a usable character in its name field is dropped with one log line, and nothing is written', () => {
@@ -140,9 +163,14 @@ test('a record without a usable character in its name field is dropped with one 
     assert.equal(t.submit(gsJob('s1', 4, { money: '4' }, '../../etc')).status, 'no-character');
     assert.equal(lines.filter(l => /character key "\.\.\/\.\.\/etc"/.test(l)).length, 1, 'one line per distinct rejected key');
     assert.equal(lines.filter(l => /dropped a game state record whose character key/.test(l)).length, 3, 'each distinct raw key is named once');
-    assert.ok(lines.some(l => l.includes(JSON.stringify('Bone Sleeve-Forever'))), 'the raw key is in the log');
+    assert.ok(
+      lines.some(l => l.includes(JSON.stringify('Bone Sleeve-Forever'))),
+      'the raw key is in the log',
+    );
     assert.deepEqual(fs.readdirSync(dir), []);
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('watched item counts are importance 2 only when they cross 25/50/75/100% of the target; bags full is importance 2', () => {
@@ -154,11 +182,23 @@ test('watched item counts are importance 2 only when they cross 25/50/75/100% of
     assert.deepEqual(step(2, '3;2589=10'), [['item', 2, 25]], '10 of 40 is 25%');
     assert.deepEqual(step(3, '3;2589=15'), [['item', 1, null]], 'between marks: a loot tick');
     assert.deepEqual(step(4, '3;2589=14'), [['item', 1, null]], 'a count going down never crosses');
-    assert.deepEqual(step(5, '3;2589=40'), [['item', 2, 100], ['goal_complete', 3, null]], 'several marks at once: the highest, and the target is met');
-    assert.deepEqual(step(6, '0;2589=41'), [['item', 1, null], ['bags_full', 2, null]]);
+    assert.deepEqual(
+      step(5, '3;2589=40'),
+      [
+        ['item', 2, 100],
+        ['goal_complete', 3, null],
+      ],
+      'several marks at once: the highest, and the target is met',
+    );
+    assert.deepEqual(step(6, '0;2589=41'), [
+      ['item', 1, null],
+      ['bags_full', 2, null],
+    ]);
     assert.deepEqual(step(7, '0;2589=41'), [], 'already full: no second event');
     assert.deepEqual(step(8, '2;2589=41,2592=3'), [], 'an item that just joined the watch list is a baseline');
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('deaths and new recipes are importance 3; skill, gear and reputation changes are 1, a new reputation rank 2', () => {
@@ -167,16 +207,38 @@ test('deaths and new recipes are importance 3; skill, gear and reputation change
     const { t } = store(dir);
     t.submit(gsJob('s1', 1, { life: '0,0', recipes: '', skills: '393=70/75', equip: '1=100', factions: '530=4/2900' }));
     const r = t.submit(gsJob('s1', 2, { life: '1,1790000100', recipes: '3275@1790000090', skills: '393=71/75', equip: '1=101', factions: '530=5/3000' }));
-    assert.deepEqual(r.events.map(e => [e.type, e.importance]).sort(), [['death', 3], ['equip', 1], ['recipe', 3], ['reputation', 2], ['skill', 1]].sort());
+    assert.deepEqual(
+      r.events.map(e => [e.type, e.importance]).sort(),
+      [
+        ['death', 3],
+        ['equip', 1],
+        ['recipe', 3],
+        ['reputation', 2],
+        ['skill', 1],
+      ].sort(),
+    );
     const r2 = t.submit(gsJob('s1', 3, { recipes: '3275@1790000090', factions: '530=5/3100' }));
-    assert.deepEqual(r2.events.map(e => [e.type, e.importance]), [['reputation', 1]], 'a known recipe is not new again');
+    assert.deepEqual(
+      r2.events.map(e => [e.type, e.importance]),
+      [['reputation', 1]],
+      'a known recipe is not new again',
+    );
     t.submit(gsJob('s1', 4, { quests: '' }));
     const r3 = t.submit(gsJob('s1', 5, { quests: '7101@1790000200' }));
-    assert.deepEqual(r3.events.map(e => [e.type, e.importance, e.data.id]), [['quest_turnin', 3, 7101]]);
+    assert.deepEqual(
+      r3.events.map(e => [e.type, e.importance, e.data.id]),
+      [['quest_turnin', 3, 7101]],
+    );
     const r4 = t.submit(gsJob('s1', 6, { quests: '7101@1790000200,7101@1790000900' }));
-    assert.deepEqual(r4.events.map(e => [e.type, e.data.at]), [['quest_turnin', 1790000900]], 'a repeatable quest turned in again is new; the old turn-in is not');
+    assert.deepEqual(
+      r4.events.map(e => [e.type, e.data.at]),
+      [['quest_turnin', 1790000900]],
+      'a repeatable quest turned in again is new; the old turn-in is not',
+    );
     assert.equal(TL.parseRecord('gs1\nquests:00000000:1@1,2@2,3@3,4@4,5@5,6@6,7@7,8@8,9@9').errors.length, 1, 'at most 8 turn-ins');
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('the capability probe logs missing collection functions once per change', () => {
@@ -188,7 +250,9 @@ test('the capability probe logs missing collection functions once per change', (
     t.submit(gsJob('s1', 3, { cap: '' }));
     assert.equal(lines.filter(l => /missing C_Item\.GetItemCount/.test(l)).length, 1);
     assert.equal(lines.filter(l => /has every collection function/.test(l)).length, 1);
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('events.jsonl rotates at the size limit and keeps 2 files', () => {
@@ -196,11 +260,16 @@ test('events.jsonl rotates at the size limit and keeps 2 files', () => {
   try {
     const { t, lines } = store(dir, { rotateBytes: 600 });
     for (let seq = 1; seq <= 40; seq++) t.submit(gsJob('s1', seq, { money: String(seq * 10) }));
-    const files = fs.readdirSync(path.join(dir, CHARACTER)).filter(f => f.startsWith('events')).sort();
+    const files = fs
+      .readdirSync(path.join(dir, CHARACTER))
+      .filter(f => f.startsWith('events'))
+      .sort();
     assert.deepEqual(files, [TL.EVENTS_ROTATED_FILE, TL.EVENTS_FILE].sort());
     assert.ok(fs.statSync(path.join(dir, CHARACTER, TL.EVENTS_FILE)).size < 600 + 200);
     assert.ok(lines.filter(l => /rotated to events\.1\.jsonl/.test(l)).length >= 2, 'rotated more than once, still 2 files');
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('the slot field gs carries each recent character with its session, seq and hashes, plus the watch list, and reads back in Lua', () => {
@@ -227,7 +296,9 @@ test('the slot field gs carries each recent character with its session, seq and 
     assert.equal(luaEval(again, `${find}.hashes.money`), hashes.money.hash);
     assert.equal(luaEval(again, `${find}.hashes.zone`), hashes.zone.hash);
     assert.equal(luaEval(again, `${find}.hashes.items`), null);
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('a malformed snapshot.json never crashes the bridge: bad sections are dropped with a log line, unreadable files start fresh', () => {
@@ -236,30 +307,58 @@ test('a malformed snapshot.json never crashes the bridge: bad sections are dropp
     const folder = path.join(dir, CHARACTER);
     fs.mkdirSync(folder, { recursive: true });
     const file = path.join(folder, TL.SNAPSHOT_FILE);
-    fs.writeFileSync(file, JSON.stringify({ v: 1, session: 's1', seq: 5, sections: {
-      money: { seq: 5, hash: '00000003', data: '100' },
-      zone: { seq: 'x', hash: '00000001', data: '1' },
-      level: { seq: 5, hash: '00000001', data: 'banana' },
-      items: null,
-      bogus: { seq: 1, hash: '00000001', data: '1' },
-      skills: { seq: 5, hash: '00000001' },
-    } }));
+    fs.writeFileSync(
+      file,
+      JSON.stringify({
+        v: 1,
+        session: 's1',
+        seq: 5,
+        sections: {
+          money: { seq: 5, hash: '00000003', data: '100' },
+          zone: { seq: 'x', hash: '00000001', data: '1' },
+          level: { seq: 5, hash: '00000001', data: 'banana' },
+          items: null,
+          bogus: { seq: 1, hash: '00000001', data: '1' },
+          skills: { seq: 5, hash: '00000001' },
+        },
+      }),
+    );
     const { t, lines } = store(dir);
     const r = t.submit(gsJob('s1', 6, { money: '120', zone: '1421', level: '20,1,2', items: '1;', skills: '' }));
     assert.equal(r.status, 'applied');
-    assert.deepEqual(r.events.map(e => e.type), ['money'], 'only the section that survived has a baseline to compare with');
-    assert.ok(lines.some(l => /dropped unreadable section\(s\) zone, level, items, bogus, skills/.test(l)), lines.join('\n'));
-    for (const broken of ['{', '[]', JSON.stringify({ v: 1, sections: [] }), JSON.stringify({ v: 1, sections: { money: { seq: 1, hash: 'zz', value: { copper: 'lots' } } } })]) {
+    assert.deepEqual(
+      r.events.map(e => e.type),
+      ['money'],
+      'only the section that survived has a baseline to compare with',
+    );
+    assert.ok(
+      lines.some(l => /dropped unreadable section\(s\) zone, level, items, bogus, skills/.test(l)),
+      lines.join('\n'),
+    );
+    for (const broken of [
+      '{',
+      '[]',
+      JSON.stringify({ v: 1, sections: [] }),
+      JSON.stringify({ v: 1, sections: { money: { seq: 1, hash: 'zz', value: { copper: 'lots' } } } }),
+    ]) {
       fs.writeFileSync(file, broken);
       const fresh = store(dir);
       assert.equal(fresh.t.submit(gsJob('s1', 7, { money: '130' })).status, 'applied', broken);
     }
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('watchFrom takes a target map or a plain list, caps both lists, and drops what is not an ID', () => {
   const w = TL.watchFrom({ watch: { items: { 2589: 40, x: 3, 2592: 'lots' }, factions: [530, '530', -1, 'Orgrimmar', 76] } });
-  assert.deepEqual([...w.items.entries()], [[2589, 40], [2592, 0]]);
+  assert.deepEqual(
+    [...w.items.entries()],
+    [
+      [2589, 40],
+      [2592, 0],
+    ],
+  );
   assert.deepEqual(w.factions, [530, 76]);
   const list = TL.watchFrom({ watch: { items: Array.from({ length: 30 }, (_, i) => i + 1) } });
   assert.equal(list.items.size, TL.WATCH_ITEMS_MAX);
@@ -281,10 +380,10 @@ test('a gs record and a goal for the same character land in the same folder', as
     assert.equal(path.dirname(t.snapshotFile(key)), path.dirname(goals.file(key)));
     assert.ok(fs.existsSync(t.snapshotFile(key)) && fs.existsSync(goals.file(key)));
     assert.deepEqual(fs.readdirSync(dir), [key], 'one folder for the character');
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
-
-
 
 test('goal_complete fires once per watched target: a dip and a recover across it is not a second completion, a new target is', () => {
   const dir = tmpDir('oncecomplete');
@@ -307,7 +406,9 @@ test('goal_complete fires once per watched target: a dip and a recover across it
     t = bridgeWith(60);
     completes(t, 10, '3;2589=50');
     assert.equal(completes(t, 11, '3;2589=60'), 1, 'a new target completes');
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('only keys the addon could send are listed as refused, the newest kept; a 3 KB key is logged cut and never relayed', () => {
@@ -324,5 +425,7 @@ test('only keys the addon could send are listed as refused, the newest kept; a 3
     assert.equal(luaEval(body, 'ClaudeWoW_SlotData.gs.refused[20]'), 'Bone24-For·ever', 'the newest is kept');
     assert.equal(luaEval(body, 'ClaudeWoW_SlotData.gs.refused[1]'), 'Bone5-For·ever', 'the oldest went first');
     assert.ok(!body.includes('ББББББББ'), 'the 3 KB key is not in the slot file');
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

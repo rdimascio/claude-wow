@@ -11,9 +11,27 @@ const TUESDAY_NOON = new Date(2026, 8, 29, 12, 0, 0).getTime();
 const ran = (command, output = '', failed = false) => ({ command, output, failed });
 
 test('test runners are recognised through prefixes, env vars and shell wrappers', () => {
-  for (const cmd of ['npm test', 'npm run test:unit', 'yarn test --watch=false', 'pnpm t', 'bun test', 'npx jest src', 'npx vitest run',
-    'pytest -q', 'python -m pytest tests', 'go test ./...', 'cargo test', 'node --test tests/a_test.js', 'CI=1 npm test',
-    'cd app && npm test', "bash -lc 'npm test'", './gradlew test', 'bundle exec rspec', 'make test', 'deno test']) {
+  for (const cmd of [
+    'npm test',
+    'npm run test:unit',
+    'yarn test --watch=false',
+    'pnpm t',
+    'bun test',
+    'npx jest src',
+    'npx vitest run',
+    'pytest -q',
+    'python -m pytest tests',
+    'go test ./...',
+    'cargo test',
+    'node --test tests/a_test.js',
+    'CI=1 npm test',
+    'cd app && npm test',
+    "bash -lc 'npm test'",
+    './gradlew test',
+    'bundle exec rspec',
+    'make test',
+    'deno test',
+  ]) {
     assert.ok(ACH.isTestCommand(cmd), cmd);
   }
   for (const cmd of ['npm install', 'npm run build', 'git commit -m "npm test"', 'echo test', 'ls tests', 'node build.js']) {
@@ -67,17 +85,38 @@ test('--force is spotted in any command, and -f on a git push', () => {
 
 test('Claude stream-json and Codex items become commands with their results', () => {
   const claude = ACH.createRunLog('claude');
-  claude.feed({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 't1', name: 'Bash', input: { command: 'npm test' } }, { type: 'tool_use', id: 't2', name: 'Read', input: { file_path: 'a' } }] } });
-  claude.feed({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 't1', is_error: true, content: [{ type: 'text', text: 'Exit code 1\n1 failing' }] }] } });
+  claude.feed({
+    type: 'assistant',
+    message: {
+      content: [
+        { type: 'tool_use', id: 't1', name: 'Bash', input: { command: 'npm test' } },
+        { type: 'tool_use', id: 't2', name: 'Read', input: { file_path: 'a' } },
+      ],
+    },
+  });
+  claude.feed({
+    type: 'user',
+    message: { content: [{ type: 'tool_result', tool_use_id: 't1', is_error: true, content: [{ type: 'text', text: 'Exit code 1\n1 failing' }] }] },
+  });
   claude.feed({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 't3', name: 'Bash', input: { command: 'git push' } }] } });
-  assert.deepEqual(claude.commands().map(c => [c.command, c.failed]), [['npm test', true]], 'a call without its result yet is not counted');
+  assert.deepEqual(
+    claude.commands().map(c => [c.command, c.failed]),
+    [['npm test', true]],
+    'a call without its result yet is not counted',
+  );
   claude.feed(null);
   claude.feed({ type: 'user', message: { content: 'plain text' } });
 
   const codex = ACH.createRunLog('codex');
   codex.feed({ type: 'item.started', item: { id: 'c1', type: 'command_execution', command: "bash -lc 'cargo test'" } });
-  codex.feed({ type: 'item.completed', item: { id: 'c1', type: 'command_execution', command: "bash -lc 'cargo test'", aggregated_output: 'test result: ok', exit_code: 0, status: 'completed' } });
-  assert.deepEqual(codex.commands().map(c => [c.command, c.output, c.failed]), [["bash -lc 'cargo test'", 'test result: ok', false]]);
+  codex.feed({
+    type: 'item.completed',
+    item: { id: 'c1', type: 'command_execution', command: "bash -lc 'cargo test'", aggregated_output: 'test result: ok', exit_code: 0, status: 'completed' },
+  });
+  assert.deepEqual(
+    codex.commands().map(c => [c.command, c.output, c.failed]),
+    [["bash -lc 'cargo test'", 'test result: ok', false]],
+  );
   assert.equal(ACH.testVerdict(codex.commands()[0]), 'pass');
 
   const hermes = ACH.createRunLog('hermes');
@@ -86,7 +125,7 @@ test('Claude stream-json and Codex items become commands with their results', ()
 });
 
 function luaUnescape(s) {
-  return s.replace(/\\(\d{1,3}|.)/g, (_, e) => /^\d/.test(e) ? String.fromCharCode(Number(e)) : e === 'n' ? '\n' : e);
+  return s.replace(/\\(\d{1,3}|.)/g, (_, e) => (/^\d/.test(e) ? String.fromCharCode(Number(e)) : e === 'n' ? '\n' : e));
 }
 
 function value(node) {
@@ -114,18 +153,25 @@ test('the slot file carries recent toasts and the earned list, and reads back as
   assert.equal(a.seq, state.achievements.seq);
   assert.equal(a.total, ACH.CATALOG.length);
   assert.equal(a.recent.length, a.seq);
-  assert.deepEqual(a.recent.map(r => r.seq), a.recent.map((_, i) => i + 1));
+  assert.deepEqual(
+    a.recent.map(r => r.seq),
+    a.recent.map((_, i) => i + 1),
+  );
   const leeroy = a.earned.find(e => e.id === 'leeroy');
   assert.equal(leeroy.title, 'Leeroy Jenkins');
   assert.equal(leeroy.icon, 'Interface\\Icons\\Ability_Warrior_Charge');
   assert.equal(leeroy.count, 1);
-  assert.equal(a.points, a.earned.reduce((sum, e) => sum + e.points, 0));
+  assert.equal(
+    a.points,
+    a.earned.reduce((sum, e) => sum + e.points, 0),
+  );
   assert.equal(P.luaTable('X', [], {}).includes('achievements'), false, 'nothing when the bridge sends none');
 });
 
 test('the recent list keeps only the last few toasts', () => {
   const state = {};
-  for (let i = 0; i < 12; i++) ACH.evaluate(state, { chat: 'k', status: 'done', now: TUESDAY_NOON, commands: [ran('npm test', 'Exit code 1', true), ran('npm test', 'ok')] });
+  for (let i = 0; i < 12; i++)
+    ACH.evaluate(state, { chat: 'k', status: 'done', now: TUESDAY_NOON, commands: [ran('npm test', 'Exit code 1', true), ran('npm test', 'ok')] });
   assert.ok(state.achievements.recent.length <= 8);
   assert.equal(state.achievements.recent[state.achievements.recent.length - 1].seq, state.achievements.seq);
 });

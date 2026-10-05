@@ -31,7 +31,11 @@ const probeFile = (addonDir, token) => path.join(ctlDir(addonDir), 'probe-' + to
 const otherRing = ring => (ring === 'a' ? 'b' : 'a');
 
 function arm(file) {
-  try { return G.ensureFile(file, SILENT_WAV); } catch { return false; }
+  try {
+    return G.ensureFile(file, SILENT_WAV);
+  } catch {
+    return false;
+  }
 }
 
 function fire(file) {
@@ -65,7 +69,11 @@ function armRing(addonDir, ring, max) {
 
 function legacyPresenceFiles(addonDir) {
   let names;
-  try { names = fs.readdirSync(presenceDir(addonDir)); } catch { return []; }
+  try {
+    names = fs.readdirSync(presenceDir(addonDir));
+  } catch {
+    return [];
+  }
   return names.filter(n => LEGACY_PRESENCE_FILE.test(n)).map(n => path.join(presenceDir(addonDir), n));
 }
 
@@ -114,7 +122,11 @@ function placeProbe(addonDir, token) {
 
 function clearProbes(addonDir, keep = '') {
   let names;
-  try { names = fs.readdirSync(ctlDir(addonDir)); } catch { return 0; }
+  try {
+    names = fs.readdirSync(ctlDir(addonDir));
+  } catch {
+    return 0;
+  }
   let removed = 0;
   for (const n of names) {
     if (PROBE_FILE.test(n) && n !== 'probe-' + keep + '.wav' && G.remove(path.join(ctlDir(addonDir), n))) removed++;
@@ -136,7 +148,9 @@ function runtimeTocText(tocInterface = TOC_INTERFACE) {
 
 function writeWhenDifferent(file, content) {
   let current = null;
-  try { current = fs.readFileSync(file, 'utf8'); } catch {}
+  try {
+    current = fs.readFileSync(file, 'utf8');
+  } catch {}
   if (current === content) return false;
   G.mkdir(path.dirname(file));
   G.writeFile(file, content);
@@ -162,7 +176,17 @@ function needsMigration(addonDir) {
   return legacySignalFolders(addonDir).length > 0 && !fs.existsSync(validFile(addonDir));
 }
 
-function prepareRuntime(addonDir, { slots = DEFAULT_SLOTS, actMax = DEFAULT_ACT_MAX, presence = null, presenceMax = DEFAULT_PRESENCE_MAX, tocInterface = TOC_INTERFACE, removeLegacy = false } = {}) {
+function prepareRuntime(
+  addonDir,
+  {
+    slots = DEFAULT_SLOTS,
+    actMax = DEFAULT_ACT_MAX,
+    presence = null,
+    presenceMax = DEFAULT_PRESENCE_MAX,
+    tocInterface = TOC_INTERFACE,
+    removeLegacy = false,
+  } = {},
+) {
   const result = { made: 0, updated: 0, armed: 0, cleaned: 0, legacy: legacySignalFolders(addonDir).length, legacyRemoved: 0, presence: null };
   const tocExisted = fs.existsSync(runtimeToc(addonDir));
   if (writeWhenDifferent(runtimeToc(addonDir), runtimeTocText(tocInterface))) {
@@ -187,8 +211,41 @@ function prepareRuntime(addonDir, { slots = DEFAULT_SLOTS, actMax = DEFAULT_ACT_
 }
 
 module.exports = {
-  SCHEME, RINGS, DEFAULT_PRESENCE_MAX, DEFAULT_ACT_MAX, DEFAULT_SLOTS, PROBE_TOKEN, RUNTIME_FOLDERS, INBOX_PLACEHOLDER, RESTART_NOTE,
-  runtimeRoot, runtimeToc, runtimeInbox, runtimeTocText, signalFile, actFile, presenceDir, ringDir, ringFile, ctlDir, validFile, probeFile, otherRing,
-  arm, fire, armSlot, presenceState, armRing, legacyPresenceFiles, removeLegacyPresence, preparePresence, beat, placeProbe, clearProbes,
-  legacySignalFolders, removeLegacySignalFolders, needsMigration, prepareRuntime,
+  SCHEME,
+  RINGS,
+  DEFAULT_PRESENCE_MAX,
+  DEFAULT_ACT_MAX,
+  DEFAULT_SLOTS,
+  PROBE_TOKEN,
+  RUNTIME_FOLDERS,
+  INBOX_PLACEHOLDER,
+  RESTART_NOTE,
+  runtimeRoot,
+  runtimeToc,
+  runtimeInbox,
+  runtimeTocText,
+  signalFile,
+  actFile,
+  presenceDir,
+  ringDir,
+  ringFile,
+  ctlDir,
+  validFile,
+  probeFile,
+  otherRing,
+  arm,
+  fire,
+  armSlot,
+  presenceState,
+  armRing,
+  legacyPresenceFiles,
+  removeLegacyPresence,
+  preparePresence,
+  beat,
+  placeProbe,
+  clearProbes,
+  legacySignalFolders,
+  removeLegacySignalFolders,
+  needsMigration,
+  prepareRuntime,
 };

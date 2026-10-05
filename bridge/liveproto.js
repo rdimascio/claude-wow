@@ -57,7 +57,11 @@ function writeToken(homeDir) {
 }
 
 function readToken(homeDir) {
-  try { return fs.readFileSync(tokenFile(homeDir), 'utf8').trim(); } catch { return ''; }
+  try {
+    return fs.readFileSync(tokenFile(homeDir), 'utf8').trim();
+  } catch {
+    return '';
+  }
 }
 
 function proof(token, role, nonce) {
@@ -88,7 +92,11 @@ function lineReader(onMessage, onOverflow) {
       buffer = buffer.slice(nl + 1);
       if (!line) continue;
       let msg;
-      try { msg = JSON.parse(line); } catch { continue; }
+      try {
+        msg = JSON.parse(line);
+      } catch {
+        continue;
+      }
       if (msg && typeof msg === 'object' && !Array.isArray(msg)) onMessage(msg);
     }
     if (buffer.length > MAX_LINE) {
@@ -102,7 +110,9 @@ function cleanMeta(meta) {
   const out = {};
   for (const [k, v] of Object.entries(meta || {})) {
     if (!META_KEY_RE.test(k) || v === undefined || v === null) continue;
-    const s = String(v).replace(/[\r\n]+/g, ' ').trim();
+    const s = String(v)
+      .replace(/[\r\n]+/g, ' ')
+      .trim();
     if (s) out[k] = s.slice(0, 200);
   }
   return out;
@@ -155,7 +165,9 @@ function permissionPrompt(req, sessionName) {
     `Claude Code (${sessionName}) wants to use ${tool}${what ? ': ' + what : ''}.`,
     preview ? preview.slice(0, 400) : '',
     'Roll Need or Greed to allow it once, Pass to deny it.',
-  ].filter(Boolean).join('\n');
+  ]
+    .filter(Boolean)
+    .join('\n');
 }
 
 function isVerdictJob(job) {
@@ -181,7 +193,10 @@ function startCommand(opts = {}) {
 }
 
 function commandTokens(commandLine) {
-  return String(commandLine || '').split(/\s+/).filter(Boolean).map(t => t.replace(/^["']|["']$/g, ''));
+  return String(commandLine || '')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(t => t.replace(/^["']|["']$/g, ''));
 }
 
 function channelFlagValues(commandLine) {
@@ -191,7 +206,10 @@ function channelFlagValues(commandLine) {
     const tok = tokens[i];
     const flag = [DEV_FLAG, CHANNELS_FLAG].find(f => tok === f || tok.startsWith(f + '='));
     if (!flag) continue;
-    if (tok !== flag) { values.push(...tok.slice(flag.length + 1).split(',')); continue; }
+    if (tok !== flag) {
+      values.push(...tok.slice(flag.length + 1).split(','));
+      continue;
+    }
     while (i + 1 < tokens.length && !tokens[i + 1].startsWith('-')) values.push(...tokens[++i].split(','));
   }
   return values.map(v => v.trim()).filter(Boolean);
@@ -212,8 +230,12 @@ function sessionListens(commandLine) {
 function execText(file, args, timeout) {
   return new Promise(resolve => {
     try {
-      require('child_process').execFile(file, args, { encoding: 'utf8', timeout, windowsHide: true }, (err, stdout) => resolve(err ? '' : String(stdout || '')));
-    } catch { resolve(''); }
+      require('child_process').execFile(file, args, { encoding: 'utf8', timeout, windowsHide: true }, (err, stdout) =>
+        resolve(err ? '' : String(stdout || '')),
+      );
+    } catch {
+      resolve('');
+    }
   });
 }
 
@@ -227,7 +249,9 @@ async function commandLine(pid, { platform = process.platform, run } = {}) {
   try {
     const out = String((await (run || execText)(file, args, win ? WINDOWS_COMMAND_LINE_TIMEOUT_MS : COMMAND_LINE_TIMEOUT_MS)) || '').trim();
     return out || null;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 async function parentPid(pid, { platform = process.platform, run } = {}) {
@@ -240,7 +264,9 @@ async function parentPid(pid, { platform = process.platform, run } = {}) {
   try {
     const out = Number(String((await (run || execText)(file, args, win ? WINDOWS_COMMAND_LINE_TIMEOUT_MS : COMMAND_LINE_TIMEOUT_MS)) || '').trim());
     return Number.isInteger(out) && out > 0 ? out : null;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 function restartCommand(session, home) {
@@ -263,7 +289,8 @@ function channelContent(prompt, chatId) {
 function replyToolSchema() {
   return {
     name: REPLY_TOOL,
-    description: 'Send your answer back to the World of Warcraft player who sent a <channel source="claude-wow"> message. Keep it short: it is shown in an in-game whisper tab.',
+    description:
+      'Send your answer back to the World of Warcraft player who sent a <channel source="claude-wow"> message. Keep it short: it is shown in an in-game whisper tab.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -281,12 +308,52 @@ function socketOwnerOnly(file) {
     const st = fs.statSync(file);
     const mine = typeof process.getuid !== 'function' || st.uid === process.getuid();
     return mine && (st.mode & 0o077) === 0;
-  } catch { return false; }
+  } catch {
+    return false;
+  }
 }
 
 module.exports = {
-  SERVER_NAME, REPLY_TOOL, FULL_REPLY_TOOL, GOAL_WRITE_TOOLS, fullToolName, PASS_TEXT, DEV_FLAG, CHANNELS_FLAG, CHANNEL_ARG, PERMISSION_ID_RE, MAX_LINE, UNIX_PATH_MAX,
-  endpoint, tokenFile, writeToken, readToken, proof, sameProof, nonce, encode, lineReader,
-  cleanMeta, channelMeta, channelContent, channelNotification, permissionVerdict, ruleForPermission, permissionPrompt,
-  isVerdictJob, startCommand, restartCommand, channelFlagValues, listensToChannel, isPrintMode, sessionListens, commandLine, parentPid, shellQuote, instructions, replyToolSchema, socketOwnerOnly, homeHash,
+  SERVER_NAME,
+  REPLY_TOOL,
+  FULL_REPLY_TOOL,
+  GOAL_WRITE_TOOLS,
+  fullToolName,
+  PASS_TEXT,
+  DEV_FLAG,
+  CHANNELS_FLAG,
+  CHANNEL_ARG,
+  PERMISSION_ID_RE,
+  MAX_LINE,
+  UNIX_PATH_MAX,
+  endpoint,
+  tokenFile,
+  writeToken,
+  readToken,
+  proof,
+  sameProof,
+  nonce,
+  encode,
+  lineReader,
+  cleanMeta,
+  channelMeta,
+  channelContent,
+  channelNotification,
+  permissionVerdict,
+  ruleForPermission,
+  permissionPrompt,
+  isVerdictJob,
+  startCommand,
+  restartCommand,
+  channelFlagValues,
+  listensToChannel,
+  isPrintMode,
+  sessionListens,
+  commandLine,
+  parentPid,
+  shellQuote,
+  instructions,
+  replyToolSchema,
+  socketOwnerOnly,
+  homeHash,
 };

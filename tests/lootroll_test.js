@@ -23,17 +23,20 @@ function newVM({ withRollModule = true } = {}) {
   const run = (code, arg) => {
     if (lauxlib.luaL_loadstring(L, to_luastring(code)) !== lua.LUA_OK) throw new Error('Lua load: ' + to_jsstring(lua.lua_tostring(L, -1)));
     let nargs = 0;
-    if (arg !== undefined) { lua.lua_pushstring(L, to_luastring(arg)); nargs = 1; }
+    if (arg !== undefined) {
+      lua.lua_pushstring(L, to_luastring(arg));
+      nargs = 1;
+    }
     if (lua.lua_pcall(L, nargs, 0, 0) !== lua.LUA_OK) throw new Error('Lua error: ' + to_jsstring(lua.lua_tostring(L, -1)));
   };
-  const evaluate = (expr) => {
+  const evaluate = expr => {
     run(`local v = (${expr}); if v == nil then RESULT = nil else RESULT = tostring(v) end`);
     lua.lua_getglobal(L, to_luastring('RESULT'));
     const s = lua.lua_isnil(L, -1) ? null : to_jsstring(lua.lua_tolstring(L, -1));
     lua.lua_pop(L, 1);
     return s;
   };
-  const num = (expr) => Number(evaluate(expr));
+  const num = expr => Number(evaluate(expr));
   run(fs.readFileSync(path.join(__dirname, 'wow_stub.lua'), 'utf8'));
   run(SOUND_STUB);
   const files = ['Codec.lua', 'Inbox.lua', 'ClaudeWoW.lua'].concat(withRollModule ? ['LootRoll.lua'] : []);
@@ -59,12 +62,21 @@ function stripFlags(vm) {
     end
     RESULT = table.concat(parts, ",")`);
   const cells = [];
-  for (const p of vm.evaluate('RESULT').split(',')) { const [i, v] = p.split(':').map(Number); cells[i] = v; }
+  for (const p of vm.evaluate('RESULT').split(',')) {
+    const [i, v] = p.split(':').map(Number);
+    cells[i] = v;
+  }
   const bytes = [];
-  let acc = 0, nbits = 0;
+  let acc = 0,
+    nbits = 0;
   for (let i = 0; i < cells.length; i++) {
-    acc = (acc << 3) | (cells[i] || 0); nbits += 3;
-    while (nbits >= 8) { bytes.push((acc >> (nbits - 8)) & 0xff); nbits -= 8; acc &= (1 << nbits) - 1; }
+    acc = (acc << 3) | (cells[i] || 0);
+    nbits += 3;
+    while (nbits >= 8) {
+      bytes.push((acc >> (nbits - 8)) & 0xff);
+      nbits -= 8;
+      acc &= (1 << nbits) - 1;
+    }
   }
   const len = bytes[4] * 256 + bytes[5];
   const payload = Buffer.from(bytes.slice(6, 6 + len)).toString('utf8');
@@ -76,7 +88,9 @@ function deliverDenial(vm, rules, agent = 'claude', chatIndex = 1) {
   const chatId = vm.evaluate(`ClaudeWoWDB.chats[${chatIndex}].id`);
   const id = vm.num(`ClaudeWoWDB.chats[${chatIndex}].pendingId`);
   const luaRules = rules.map(r => JSON.stringify(r)).join(', ');
-  vm.run(`STUB.onLoadAddOn = function(name) ClaudeWoW_SlotData = { now = time(), cwd = "", replies = { { chat = "${chatId}", id = ${id}, status = "done", text = "I need permission", agent = "${agent}", denied = { ${luaRules} } } } } end`);
+  vm.run(
+    `STUB.onLoadAddOn = function(name) ClaudeWoW_SlotData = { now = time(), cwd = "", replies = { { chat = "${chatId}", id = ${id}, status = "done", text = "I need permission", agent = "${agent}", denied = { ${luaRules} } } } } end`,
+  );
   vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
   assert.equal(vm.evaluate(`ClaudeWoWDB.chats[${chatIndex}].pendingId`), null);
   return { chatId, id };
@@ -165,7 +179,10 @@ test('Need on a folder adds it to the chat for good, like /claude --add-dir, and
   assert.equal(rec.flags, `dirs=${hexDirs('/tmp')}`);
   assert.equal(vm.evaluate('ClaudeWoWDB.outbox.allow'), null);
   assert.equal(vm.evaluate('ClaudeWoWDB.outbox.allowOnce'), null);
-  assert.match(vm.evaluate('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history - 1].text'), /^Allowed: folder \/tmp\. Extra folders for this chat: \/tmp$/);
+  assert.match(
+    vm.evaluate('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history - 1].text'),
+    /^Allowed: folder \/tmp\. Extra folders for this chat: \/tmp$/,
+  );
 });
 
 test('Pass on a folder denies it; the Allow & retry button names the folder', () => {

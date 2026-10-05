@@ -34,10 +34,13 @@ function seedClaudeStore(sb, folder) {
 }
 
 function answerTo(h, id, label) {
-  return h.client.waitFor(() => {
-    const c = h.client.activeChat();
-    return c && !c.pendingId && (c.history || []).find(m => m.id === id && m.role !== 'user');
-  }, { timeoutMs: 60000, label });
+  return h.client.waitFor(
+    () => {
+      const c = h.client.activeChat();
+      return c && !c.pendingId && (c.history || []).find(m => m.id === id && m.role !== 'user');
+    },
+    { timeoutMs: 60000, label },
+  );
 }
 
 async function slash(h, line, label) {
@@ -70,36 +73,39 @@ test('the ask plugin runs on its own model and effort from plugins.ask.agents, a
 
 test('/claude -r resumes a Claude Code session headless in its folder: from the list by prefix, by an id only the bridge can find, and refuses one it cannot', async () => {
   let folder = '';
-  await withGame({
-    beforeLaunch: sb => {
-      folder = path.join(sb.dir, 'elsewhere');
-      seedClaudeStore(sb, folder);
+  await withGame(
+    {
+      beforeLaunch: sb => {
+        folder = path.join(sb.dir, 'elsewhere');
+        seedClaudeStore(sb, folder);
+      },
     },
-  }, async h => {
-    await h.client.connect();
-    const r = await slash(h, '/claude -r f024 carry on');
-    assert.match(r.text, /echo \(turn 5\): carry on/, 'the agent continued the old session');
-    const call = h.agentCalls().at(-1);
-    assert.equal(call.resume, OLD);
-    assert.equal(fs.realpathSync(call.cwd), fs.realpathSync(folder), 'the run happens in the session\'s folder');
-    assert.equal(h.client.activeChat().cwd, folder);
-    await slash(h, '/claude -c and again');
-    assert.equal(h.agentCalls().at(-1).resume, OLD, 'later turns keep the adopted session');
+    async h => {
+      await h.client.connect();
+      const r = await slash(h, '/claude -r f024 carry on');
+      assert.match(r.text, /echo \(turn 5\): carry on/, 'the agent continued the old session');
+      const call = h.agentCalls().at(-1);
+      assert.equal(call.resume, OLD);
+      assert.equal(fs.realpathSync(call.cwd), fs.realpathSync(folder), "the run happens in the session's folder");
+      assert.equal(h.client.activeChat().cwd, folder);
+      await slash(h, '/claude -c and again');
+      assert.equal(h.agentCalls().at(-1).resume, OLD, 'later turns keep the adopted session');
 
-    const found = await slash(h, `/claude -r ${UNLISTED.slice(0, 8)} hello there`);
-    assert.match(found.text, /hello there/);
-    assert.equal(h.agentCalls().at(-1).resume, UNLISTED, 'an id the list did not have is looked up by the bridge');
-    assert.equal(h.client.activeChat().cwd, folder, 'and the chat learns its folder from the reply');
+      const found = await slash(h, `/claude -r ${UNLISTED.slice(0, 8)} hello there`);
+      assert.match(found.text, /hello there/);
+      assert.equal(h.agentCalls().at(-1).resume, UNLISTED, 'an id the list did not have is looked up by the bridge');
+      assert.equal(h.client.activeChat().cwd, folder, 'and the chat learns its folder from the reply');
 
-    const calls = h.agentCalls().length;
-    const none = await slash(h, '/claude -r deadbeef nope');
-    assert.equal(none.role, 'system');
-    assert.match(none.text, /No session matches "deadbeef"/);
-    const twins = await slash(h, '/claude -r abcdef12 hi');
-    assert.equal(twins.role, 'system');
-    assert.match(twins.text, /"abcdef12" matches 2 sessions:\nabcdef12  [^\n]*\nabcdef12  [^\n]*\nUse more of the id\./);
-    assert.equal(h.agentCalls().length, calls, 'no agent ran for either');
-  });
+      const calls = h.agentCalls().length;
+      const none = await slash(h, '/claude -r deadbeef nope');
+      assert.equal(none.role, 'system');
+      assert.match(none.text, /No session matches "deadbeef"/);
+      const twins = await slash(h, '/claude -r abcdef12 hi');
+      assert.equal(twins.role, 'system');
+      assert.match(twins.text, /"abcdef12" matches 2 sessions:\nabcdef12  [^\n]*\nabcdef12  [^\n]*\nUse more of the id\./);
+      assert.equal(h.agentCalls().length, calls, 'no agent ran for either');
+    },
+  );
 });
 
 test.after(() => {

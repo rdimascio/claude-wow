@@ -51,10 +51,13 @@ function newVM({ extra = '', saved = '' } = {}) {
   const run = (code, arg) => {
     if (lauxlib.luaL_loadstring(L, to_luastring(code)) !== lua.LUA_OK) throw new Error('Lua load: ' + to_jsstring(lua.lua_tostring(L, -1)));
     let nargs = 0;
-    if (arg !== undefined) { lua.lua_pushstring(L, to_luastring(arg)); nargs = 1; }
+    if (arg !== undefined) {
+      lua.lua_pushstring(L, to_luastring(arg));
+      nargs = 1;
+    }
     if (lua.lua_pcall(L, nargs, 0, 0) !== lua.LUA_OK) throw new Error('Lua error: ' + to_jsstring(lua.lua_tostring(L, -1)));
   };
-  const evaluate = (expr) => {
+  const evaluate = expr => {
     run(`local v = (${expr}); if v == nil then RESULT = nil else RESULT = tostring(v) end`);
     lua.lua_getglobal(L, to_luastring('RESULT'));
     const s = lua.lua_isnil(L, -1) ? null : to_jsstring(lua.lua_tolstring(L, -1));
@@ -80,12 +83,21 @@ function decodeStrip(vm) {
     end
     RESULT = table.concat(parts, ",")`);
   const cells = [];
-  for (const p of vm.evaluate('RESULT').split(',')) { const [i, v] = p.split(':').map(Number); cells[i] = v; }
+  for (const p of vm.evaluate('RESULT').split(',')) {
+    const [i, v] = p.split(':').map(Number);
+    cells[i] = v;
+  }
   const bytes = [];
-  let acc = 0, nbits = 0;
+  let acc = 0,
+    nbits = 0;
   for (let i = 0; i < cells.length; i++) {
-    acc = (acc << 3) | (cells[i] || 0); nbits += 3;
-    while (nbits >= 8) { bytes.push((acc >> (nbits - 8)) & 0xff); nbits -= 8; acc &= (1 << nbits) - 1; }
+    acc = (acc << 3) | (cells[i] || 0);
+    nbits += 3;
+    while (nbits >= 8) {
+      bytes.push((acc >> (nbits - 8)) & 0xff);
+      nbits -= 8;
+      acc &= (1 << nbits) - 1;
+    }
   }
   const len = bytes[4] * 256 + bytes[5];
   return { id: bytes[2] * 256 + bytes[3], text: Buffer.from(bytes.slice(6, 6 + len)).toString('utf8') };
@@ -116,7 +128,9 @@ function ready({ gs = GS_OBSERVED, extra, saved } = {}) {
   const vm = newVM({ extra, saved });
   vm.run('STUB.FireEvent("ADDON_LOADED", "ClaudeWoW"); STUB.FireEvent("PLAYER_LOGIN")');
   vm.run('STUB.RunTimers()');
-  vm.run(`STUB.onLoadAddOn = function(name) ClaudeWoW_SlotData = { now = time(), cwd = "", transport = "screenshot", strip = { on = 255, off = 0 }, gs = ${gs}, replies = {} } end`);
+  vm.run(
+    `STUB.onLoadAddOn = function(name) ClaudeWoW_SlotData = { now = time(), cwd = "", transport = "screenshot", strip = { on = 255, off = 0 }, gs = ${gs}, replies = {} } end`,
+  );
   tick(vm, 6);
   shoot(vm);
   tick(vm, 21);
@@ -138,26 +152,44 @@ function lootSlot(itemID, qty, sources) {
 
 test('auction prices come only from results of searches the player ran; the addon never calls an auction house query', () => {
   const vm = ready();
-  vm.run('STUB.browse = { { itemKey = { itemID = 501 }, minPrice = 1500, totalQuantity = 4 }, { itemKey = { itemID = 505 }, minPrice = 7, totalQuantity = 200 } }; STUB.FireEvent("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")');
+  vm.run(
+    'STUB.browse = { { itemKey = { itemID = 501 }, minPrice = 1500, totalQuantity = 4 }, { itemKey = { itemID = 505 }, minPrice = 7, totalQuantity = 200 } }; STUB.FireEvent("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")',
+  );
   vm.run('STUB.commodity = { { itemID = 2589, unitPrice = 31, quantity = 80 } }; STUB.FireEvent("COMMODITY_SEARCH_RESULTS_UPDATED", 2589)');
   vm.run('STUB.FireEvent("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")');
-  vm.run('STUB.browse = { { itemKey = { itemID = 4000, itemSuffix = 0 }, minPrice = 500, totalQuantity = 1 }, { itemKey = { itemID = 4000, itemSuffix = 1179 }, minPrice = 9000, totalQuantity = 1 } }');
+  vm.run(
+    'STUB.browse = { { itemKey = { itemID = 4000, itemSuffix = 0 }, minPrice = 500, totalQuantity = 1 }, { itemKey = { itemID = 4000, itemSuffix = 1179 }, minPrice = 9000, totalQuantity = 1 } }',
+  );
   vm.run('STUB.FireEvent("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED"); STUB.FireEvent("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")');
   const r = nextRecord(vm);
-  assert.deepEqual(r.sections.ah.value.quotes.map(q => [q.itemID, q.price, q.quantity]), [[501, 1500, 4], [505, 7, 200], [2589, 31, 80], [4000, 500, 1]], 'results seen again are not counted twice, and a suffix variant is never priced as the item');
+  assert.deepEqual(
+    r.sections.ah.value.quotes.map(q => [q.itemID, q.price, q.quantity]),
+    [
+      [501, 1500, 4],
+      [505, 7, 200],
+      [2589, 31, 80],
+      [4000, 500, 1],
+    ],
+    'results seen again are not counted twice, and a suffix variant is never priced as the item',
+  );
   for (let i = 0; i < 30; i++) tick(vm, 60);
   assert.equal(vm.evaluate('#STUB.ahCalls'), '0', 'no search, refresh or purchase call from addon code, ever');
 });
 
 test('a loot window from the living target is a pick pocket: no sample and no mark, and the kill loot of that GUID later is recorded', () => {
-  const vm = ready({ extra: `STUB.unitGUIDs.target = "${NPC_GUID}"\nSTUB.targetDead = false\nfunction UnitIsDead(unit) return unit == "target" and STUB.targetDead end` });
+  const vm = ready({
+    extra: `STUB.unitGUIDs.target = "${NPC_GUID}"\nSTUB.targetDead = false\nfunction UnitIsDead(unit) return unit == "target" and STUB.targetDead end`,
+  });
   vm.run(`STUB.FireEvent("UNIT_SPELLCAST_SUCCEEDED", "player", "Cast-4", ${PICK_POCKET_LIKE})`);
   vm.run(`STUB.lootSlots = { ${lootSlot(5374, 1, [NPC_GUID, 1])} }; STUB.FireEvent("LOOT_READY"); STUB.FireEvent("LOOT_CLOSED")`);
   tick(vm, 3);
   vm.run('STUB.targetDead = true');
   vm.run(`STUB.lootSlots = { ${lootSlot(501, 2, [NPC_GUID, 2])} }; STUB.FireEvent("LOOT_READY"); STUB.FireEvent("LOOT_CLOSED")`);
   const r = nextRecord(vm);
-  assert.deepEqual(r.sections.loot.value.samples.map(s => [s.source, s.items]), [[{ type: 'npc', id: 3100, spell: 0 }, { 501: 2 }]]);
+  assert.deepEqual(
+    r.sections.loot.value.samples.map(s => [s.source, s.items]),
+    [[{ type: 'npc', id: 3100, spell: 0 }, { 501: 2 }]],
+  );
 });
 
 test('gathering objects and fishing are their own source types, one fishing window is one sample, and a secret GUID is never read', () => {
@@ -165,18 +197,23 @@ test('gathering objects and fishing are their own source types, one fishing wind
   vm.run(`STUB.lootSlots = { ${lootSlot(2447, 3, [HERB_GUID, 3])} }; STUB.FireEvent("LOOT_READY")`);
   vm.run('STUB.FireEvent("LOOT_CLOSED")');
   tick(vm, 3);
-  vm.run(`STUB.fishing = true; STUB.lootSlots = { ${lootSlot(6303, 1, ['GameObject-0-4372-0-17-35591-00000ABCE1', 1])} }; STUB.FireEvent("LOOT_READY"); STUB.FireEvent("LOOT_OPENED", false, false)`);
+  vm.run(
+    `STUB.fishing = true; STUB.lootSlots = { ${lootSlot(6303, 1, ['GameObject-0-4372-0-17-35591-00000ABCE1', 1])} }; STUB.FireEvent("LOOT_READY"); STUB.FireEvent("LOOT_OPENED", false, false)`,
+  );
   vm.run('STUB.FireEvent("LOOT_CLOSED"); STUB.fishing = false');
   tick(vm, 3);
   vm.run(`STUB.lootSlots = { ${lootSlot(501, 1, [OTHER_GUID, 1])} }; STUB.FireEvent("LOOT_READY")`);
   const r = nextRecord(vm);
-  assert.deepEqual(r.sections.loot.value.samples.map(s => [s.source, s.items]), [
-    [{ type: 'object', id: 1617, spell: 0 }, { 2447: 3 }],
-    [{ type: 'fishing', id: 1431, spell: 0 }, { 6303: 1 }],
-  ]);
+  assert.deepEqual(
+    r.sections.loot.value.samples.map(s => [s.source, s.items]),
+    [
+      [{ type: 'object', id: 1617, spell: 0 }, { 2447: 3 }],
+      [{ type: 'fishing', id: 1431, spell: 0 }, { 6303: 1 }],
+    ],
+  );
 });
 
-test('round trip: the addon\'s observed sections land in observed.jsonl through the real bridge parser', () => {
+test("round trip: the addon's observed sections land in observed.jsonl through the real bridge parser", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cw-observed-addon-'));
   try {
     const vm = ready();
@@ -192,7 +229,9 @@ test('round trip: the addon\'s observed sections land in observed.jsonl through 
     const lines = observed.lines(CHARACTER);
     assert.deepEqual(lines.map(l => l.kind).sort(), ['loot', 'vendor']);
     assert.ok(lines.every(l => l.trust === 'observed' && l.n === 1));
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 const ERA_FACTION = 76;
@@ -232,7 +271,10 @@ test('Classic Era vendor window: prices come from GetMerchantItemInfo, extended-
   const r = nextRecord(vm);
   assert.ok(r && r.sections.vendor, 'the vendor section went out');
   assert.deepEqual(r.errors, []);
-  assert.deepEqual(r.sections.vendor.value.visit.items, [{ itemID: 501, price: 600, stack: 1 }, { itemID: 505, price: 25, stack: 5 }]);
+  assert.deepEqual(r.sections.vendor.value.visit.items, [
+    { itemID: 501, price: 600, stack: 1 },
+    { itemID: 505, price: 25, stack: 5 },
+  ]);
 });
 
 const ERA_AUCTION = `
@@ -277,7 +319,14 @@ end
 `;
 
 function auctionList(rows) {
-  return `{ ${rows.map(r => `{ ${Object.entries(r).map(([k, v]) => `${k} = ${typeof v === 'string' ? JSON.stringify(v) : v}`).join(', ')} }`).join(', ')} }`;
+  return `{ ${rows
+    .map(
+      r =>
+        `{ ${Object.entries(r)
+          .map(([k, v]) => `${k} = ${typeof v === 'string' ? JSON.stringify(v) : v}`)
+          .join(', ')} }`,
+    )
+    .join(', ')} }`;
 }
 
 function eraAuctionHouse({ extra = '', load = true } = {}) {
@@ -302,7 +351,7 @@ function eraQuotes(vm) {
   return r && r.sections.ah ? r.sections.ah.value.quotes.map(q => [q.itemID, q.price, q.quantity, q.rows, q.stack]) : [];
 }
 
-test('Classic Era: a search sent while queries are throttled arms nothing, so another addon\'s result in flight is not stored', () => {
+test("Classic Era: a search sent while queries are throttled arms nothing, so another addon's result in flight is not stored", () => {
   const vm = eraAuctionHouse();
   vm.run('QueryAuctionItems("addon scan"); STUB.canSend = false; AuctionFrameBrowse_Search()');
   assert.equal(vm.evaluate('ClaudeWoWObserved.debug.ah'), 'the search was throttled');
@@ -313,11 +362,16 @@ test('Classic Era: a search sent while queries are throttled arms nothing, so an
 });
 
 test('Classic Era: a search call that sends no query of its own (the token page) or two queries arms nothing', () => {
-  const noQuery = eraAuctionHouse({ extra: 'function DequoteString() return nil end\nfunction AuctionFrameBrowse_Search() DequoteString(BrowseName:GetText()) end' });
+  const noQuery = eraAuctionHouse({
+    extra: 'function DequoteString() return nil end\nfunction AuctionFrameBrowse_Search() DequoteString(BrowseName:GetText()) end',
+  });
   noQuery.run('QueryAuctionItems("addon scan"); AuctionFrameBrowse_Search()');
   assert.equal(noQuery.evaluate('ClaudeWoWObserved.debug.ah'), 'the search sent no query of its own');
   assert.equal(results(noQuery, [{ id: 2589, count: 1, buyout: 7 }]), 'no player search waiting');
-  const twice = eraAuctionHouse({ extra: 'function DequoteString() return nil end\nfunction AuctionFrameBrowse_Search() DequoteString(BrowseName:GetText()); QueryAuctionItems("cloth"); QueryAuctionItems("addon scan") end' });
+  const twice = eraAuctionHouse({
+    extra:
+      'function DequoteString() return nil end\nfunction AuctionFrameBrowse_Search() DequoteString(BrowseName:GetText()); QueryAuctionItems("cloth"); QueryAuctionItems("addon scan") end',
+  });
   twice.run('AuctionFrameBrowse_Search()');
   assert.equal(twice.evaluate('ClaudeWoWObserved.debug.ah'), 'the search sent no query of its own');
   assert.equal(results(twice, [{ id: 2589, count: 1, buyout: 7 }]), 'no player search waiting');
@@ -328,11 +382,15 @@ test('Classic Era: a search call that sends no query of its own (the token page)
   stale.run('DequoteString("cloth")');
   tick(stale, 1);
   stale.run('AuctionFrameBrowse_Search()');
-  assert.equal(stale.evaluate('ClaudeWoWObserved.debug.ah'), 'the search sent no query of its own', 'a DequoteString call from an earlier frame does not vouch for this query');
+  assert.equal(
+    stale.evaluate('ClaudeWoWObserved.debug.ah'),
+    'the search sent no query of its own',
+    'a DequoteString call from an earlier frame does not vouch for this query',
+  );
   assert.equal(results(stale, [{ id: 2589, count: 1, buyout: 7 }]), 'no player search waiting');
 });
 
-test('Classic Era: a bid or buyout while the player\'s search still waits for its refire drops the search, so the refreshed list is not stored', () => {
+test("Classic Era: a bid or buyout while the player's search still waits for its refire drops the search, so the refreshed list is not stored", () => {
   const vm = eraAuctionHouse();
   vm.run('AuctionFrameBrowse_Search()');
   assert.equal(results(vm, [{ id: 2589, count: 1, buyout: 40, noLink: true }]), 'a row has no item info yet');

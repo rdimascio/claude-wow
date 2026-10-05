@@ -3,7 +3,6 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const SW = require('../bridge/slotwindow');
 
-
 test('republishQueued: the queue republish is an urgent refresh that never uses up the restore', () => {
   const calls = [];
   let pending = { token: 't', chats: [] };

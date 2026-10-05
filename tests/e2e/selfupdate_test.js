@@ -24,8 +24,19 @@ test('an installed update does not restart the bridge while a deploy is switchin
     const lock = REL.acquireLock(REL.layout(h.sb.home).lock, { command: 'e2e deploy' });
     try {
       lock.setPhase(REL.SWITCHING);
-      UPD.writeRecord(h.sb.home, { pendingRestart: true, version: '99.0.0', from: VERSION, attemptAt: Date.now(), ok: true, status: 'updated', message: 'test' });
-      await h.bridge.waitForLine(new RegExp(`self-update: 99\\.0\\.0 is installed; the restart waits: a deploy \\(pid ${process.pid}\\) is switching releases`), { timeoutMs: 20000 });
+      UPD.writeRecord(h.sb.home, {
+        pendingRestart: true,
+        version: '99.0.0',
+        from: VERSION,
+        attemptAt: Date.now(),
+        ok: true,
+        status: 'updated',
+        message: 'test',
+      });
+      await h.bridge.waitForLine(
+        new RegExp(`self-update: 99\\.0\\.0 is installed; the restart waits: a deploy \\(pid ${process.pid}\\) is switching releases`),
+        { timeoutMs: 20000 },
+      );
       await new Promise(res => setTimeout(res, UPD.RESTART_TICK_MS + 1000));
       assert.equal(count(h.bridge.output, /self-update: restarting on/), 0, 'no restart under the switching mark');
     } finally {

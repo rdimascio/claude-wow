@@ -65,7 +65,9 @@ function slotPoll(vm, bridge, nowLua = 'time()', extra = '') {
 }
 
 function told(vm, needle) {
-  vm.run(`STUB.found = 0; for _, c in ipairs(ClaudeWoWDB.chats) do for _, m in ipairs(c.history) do if m.role == "system" and m.text:find(${JSON.stringify(needle)}, 1, true) then STUB.found = STUB.found + 1 end end end`);
+  vm.run(
+    `STUB.found = 0; for _, c in ipairs(ClaudeWoWDB.chats) do for _, m in ipairs(c.history) do if m.role == "system" and m.text:find(${JSON.stringify(needle)}, 1, true) then STUB.found = STUB.found + 1 end end end`,
+  );
   return vm.num('STUB.found');
 }
 
@@ -104,7 +106,11 @@ test('verdicts: equal, the older side by semver, different builds, either side o
     assert.equal(v.refuse, refuse, JSON.stringify(addon));
     assert.equal(v.text === '', verdict === 'equal', JSON.stringify(addon));
   }
-  assert.equal(P.versionVerdict({ version: '', proto: null }, bridgeAt('1.4.0', 1, 1)).verdict, 'unknown', 'an addon from before the handshake speaks protocol 1');
+  assert.equal(
+    P.versionVerdict({ version: '', proto: null }, bridgeAt('1.4.0', 1, 1)).verdict,
+    'unknown',
+    'an addon from before the handshake speaks protocol 1',
+  );
   assert.match(P.versionVerdict({ version: '1.4.0', proto: 1 }, b).text, /CurseForge.*claude-wow setup, then type \/reload\./);
   assert.match(P.versionVerdict({ version: '1.4.0', proto: 4 }, b).text, /brew upgrade claude-wow.*claude-wow service restart/);
 });
@@ -168,7 +174,13 @@ test('service status and the doctor show both versions and the verdict of the la
     fs.writeFileSync(path.join(dir, 'state.json'), JSON.stringify(state));
     const lines = [];
     fs.writeFileSync(path.join(dir, 'bridge.log'), '');
-    S.status({ run: dir, logs: dir, definition: path.join(dir, 'none.plist') }, 'darwin', l => lines.push(l), path.join(dir, 'state.json'), path.join(dir, 'config.json'));
+    S.status(
+      { run: dir, logs: dir, definition: path.join(dir, 'none.plist') },
+      'darwin',
+      l => lines.push(l),
+      path.join(dir, 'state.json'),
+      path.join(dir, 'config.json'),
+    );
     const line = lines.find(l => l.startsWith('  versions  :'));
     assert.match(line, /addon 0\.3\.0 \(protocol 9\), bridge 0\.4\.0 \(protocol 1\): update-bridge, at the last hello 2026-10-02T00:00:00\.000Z/);
     assert.match(line, new RegExp(`this install is bridge ${PACKAGE_VERSION.replace(/\./g, '\\.')}`));
@@ -199,14 +211,24 @@ test('a bridge whose protocol range is above the addon: the addon is told to upd
 const BUILD_A = 'aaaaaaaaaaaa';
 const BUILD_B = 'bbbbbbbbbbbb';
 const luaDisk = (version, build = '') => `, addonDisk = { version = "${version}", build = "${build}" }`;
-const loadedAs = (version, build) => ({ prelude: `STUB.addonMeta = { ClaudeWoW = { Version = ${version === null ? 'nil' : `"${version}"`}${build ? `, ["X-Build"] = "${build}"` : ''} } }` });
+const loadedAs = (version, build) => ({
+  prelude: `STUB.addonMeta = { ClaudeWoW = { Version = ${version === null ? 'nil' : `"${version}"`}${build ? `, ["X-Build"] = "${build}"` : ''} } }`,
+});
 
 test('the build hash covers every shipped file but the toc, in any order', () => {
-  const files = [{ name: 'B.lua', data: Buffer.from('b') }, { name: 'A.lua', data: Buffer.from('a') }, { name: 'ClaudeWoW.toc', data: Buffer.from('x') }];
+  const files = [
+    { name: 'B.lua', data: Buffer.from('b') },
+    { name: 'A.lua', data: Buffer.from('a') },
+    { name: 'ClaudeWoW.toc', data: Buffer.from('x') },
+  ];
   const build = P.addonBuild(files);
   assert.match(build, P.BUILD_RE);
   assert.equal(P.addonBuild([...files].reverse()), build);
-  assert.equal(P.addonBuild(files.map(f => (f.name.endsWith('.toc') ? { ...f, data: Buffer.from('changed') } : f))), build, 'the toc carries the build, so it is not in it');
+  assert.equal(
+    P.addonBuild(files.map(f => (f.name.endsWith('.toc') ? { ...f, data: Buffer.from('changed') } : f))),
+    build,
+    'the toc carries the build, so it is not in it',
+  );
   assert.notEqual(P.addonBuild(files.map(f => (f.name === 'A.lua' ? { ...f, data: Buffer.from('a2') } : f))), build);
   assert.notEqual(P.addonBuild(files.map(f => (f.name === 'A.lua' ? { ...f, name: 'A2.lua' } : f))), build, 'a renamed file in the same order is a new build');
 });
@@ -224,7 +246,10 @@ test('the toc gets one X-Build line after its Version line, and the bridge reads
 });
 
 test('slot files carry the addon toc on disk, and none without a version', () => {
-  assert.match(P.luaTable('ClaudeWoW_SlotData', [], { now: 1000, addonDisk: { version: '1.2.3', build: BUILD_A } }), /\taddonDisk = \{ version = "1\.2\.3", build = "aaaaaaaaaaaa" \},/);
+  assert.match(
+    P.luaTable('ClaudeWoW_SlotData', [], { now: 1000, addonDisk: { version: '1.2.3', build: BUILD_A } }),
+    /\taddonDisk = \{ version = "1\.2\.3", build = "aaaaaaaaaaaa" \},/,
+  );
   assert.doesNotMatch(P.luaTable('ClaudeWoW_SlotData', [], { now: 1000, addonDisk: { version: '', build: '' } }), /addonDisk/);
   assert.doesNotMatch(P.luaTable('ClaudeWoW_SlotData', [], { now: 1000, addonDisk: null }), /addonDisk/);
 });
@@ -249,17 +274,31 @@ test('a runtime folder installed after launch asks for a full restart, once', ()
   assert.equal(told(present, 'restart the game'), 0);
 });
 
-const luaClients = rows => `, clients = { ${rows.map(r => `{ ${Object.entries(r).map(([k, v]) => `${k} = ${typeof v === 'string' && k !== 'heard' ? JSON.stringify(v) : v}`).join(', ')} }`).join(', ')} }`;
+const luaClients = rows =>
+  `, clients = { ${rows
+    .map(
+      r =>
+        `{ ${Object.entries(r)
+          .map(([k, v]) => `${k} = ${typeof v === 'string' && k !== 'heard' ? JSON.stringify(v) : v}`)
+          .join(', ')} }`,
+    )
+    .join(', ')} }`;
 const ERA = { name: '_classic_era_', version: '1.2.3', build: BUILD_A, heard: 'time() - 120', here: true, last: true };
 const FOREVER = { name: '_classic_beta_', version: '1.2.2', build: BUILD_B, heard: 0 };
 const clientsStatus = vm => vm.evaluate('ClaudeWoW.Version.ClientsStatus()');
 
 test('the bridge writes one clients row per client, marks this one and the last speaker, and drops a malformed build', () => {
-  const lua = P.luaTable('ClaudeWoW_SlotData', [], { now: 1000, clients: [
-    { name: '_classic_era_', version: '1.2.3', build: BUILD_A, heard: 900.7, here: true, last: true },
-    { name: '_classic_beta_', version: '', build: 'not-a-build', heard: -5 },
-  ] });
-  assert.match(lua, /\tclients = \{ \{ name = "_classic_era_", version = "1\.2\.3", build = "aaaaaaaaaaaa", heard = 900, here = true, last = true \}, \{ name = "_classic_beta_", version = "", build = "", heard = 0 \} \},/);
+  const lua = P.luaTable('ClaudeWoW_SlotData', [], {
+    now: 1000,
+    clients: [
+      { name: '_classic_era_', version: '1.2.3', build: BUILD_A, heard: 900.7, here: true, last: true },
+      { name: '_classic_beta_', version: '', build: 'not-a-build', heard: -5 },
+    ],
+  });
+  assert.match(
+    lua,
+    /\tclients = \{ \{ name = "_classic_era_", version = "1\.2\.3", build = "aaaaaaaaaaaa", heard = 900, here = true, last = true \}, \{ name = "_classic_beta_", version = "", build = "", heard = 0 \} \},/,
+  );
   assert.match(P.luaTable('ClaudeWoW_SlotData', [], { now: 1000, clients: [] }), /\tclients = \{  \},/, 'a bridge with no client still sends the field');
   assert.doesNotMatch(P.luaTable('ClaudeWoW_SlotData', [], { now: 1000 }), /clients =/);
 });
@@ -268,7 +307,10 @@ test('diag shows every client with its build, which one this is and which spoke 
   const vm = newVM();
   assert.equal(clientsStatus(vm), 'clients: not reported (an older bridge, or not heard yet)');
   helloPoll(vm, null, 'time()', luaClients([ERA, FOREVER]));
-  assert.equal(clientsStatus(vm), 'clients: _classic_era_ (this client): 1.2.3 build aaaaaaaaaaaa, heard 2m00s ago, spoke last; _classic_beta_: 1.2.2 build bbbbbbbbbbbb, not heard yet');
+  assert.equal(
+    clientsStatus(vm),
+    'clients: _classic_era_ (this client): 1.2.3 build aaaaaaaaaaaa, heard 2m00s ago, spoke last; _classic_beta_: 1.2.2 build bbbbbbbbbbbb, not heard yet',
+  );
   vm.run('SlashCmdList.CLAUDEWOW("diag")');
   assert.equal(told(vm, 'clients: _classic_era_ (this client): 1.2.3 build aaaaaaaaaaaa'), 1, 'the line is part of /claude diag');
   slotPoll(vm, null, 'time()', luaClients([]));

@@ -15,21 +15,25 @@ function newVM({ before = '', saved = '' } = {}) {
     const loaded = chunk ? lauxlib.luaL_loadbuffer(L, buf, buf.length, to_luastring('@' + chunk)) : lauxlib.luaL_loadstring(L, buf);
     if (loaded !== lua.LUA_OK) throw new Error('Lua load: ' + to_jsstring(lua.lua_tostring(L, -1)));
     let nargs = 0;
-    if (arg !== undefined) { lua.lua_pushstring(L, to_luastring(arg)); nargs = 1; }
+    if (arg !== undefined) {
+      lua.lua_pushstring(L, to_luastring(arg));
+      nargs = 1;
+    }
     if (lua.lua_pcall(L, nargs, 0, 0) !== lua.LUA_OK) throw new Error('Lua error: ' + to_jsstring(lua.lua_tostring(L, -1)));
   };
-  const evaluate = (expr) => {
+  const evaluate = expr => {
     run(`local v = (${expr}); if v == nil then RESULT = nil else RESULT = tostring(v) end`);
     lua.lua_getglobal(L, to_luastring('RESULT'));
     const s = lua.lua_isnil(L, -1) ? null : to_jsstring(lua.lua_tolstring(L, -1));
     lua.lua_pop(L, 1);
     return s;
   };
-  const num = (expr) => Number(evaluate(expr));
+  const num = expr => Number(evaluate(expr));
   run(fs.readFileSync(path.join(__dirname, 'wow_stub.lua'), 'utf8'));
   run(BLIZZARD);
   if (before) run(before);
-  for (const f of ['Codec.lua', 'Inbox.lua', 'ClaudeWoW.lua', 'LootRoll.lua', 'Window.lua']) run(fs.readFileSync(path.join(ADDON, f), 'utf8'), 'ClaudeWoW', 'addon/' + f);
+  for (const f of ['Codec.lua', 'Inbox.lua', 'ClaudeWoW.lua', 'LootRoll.lua', 'Window.lua'])
+    run(fs.readFileSync(path.join(ADDON, f), 'utf8'), 'ClaudeWoW', 'addon/' + f);
   if (saved) run(saved);
   run('STUB.FireEvent("ADDON_LOADED", "ClaudeWoW"); STUB.FireEvent("PLAYER_LOGIN")');
   return { run, evaluate, num };
@@ -47,13 +51,20 @@ const BLIZZARD = `
   function ToggleAllBags() if ContainerFrameCombinedBags:IsShown() then ContainerFrameCombinedBags:Hide() else ContainerFrameCombinedBags:Show() end end
 `;
 
-const rect = (vm) => ({
-  left: vm.num('ClaudeWoWFrame:GetLeft()'), top: vm.num('ClaudeWoWFrame:GetTop()'),
-  right: vm.num('ClaudeWoWFrame:GetRight()'), bottom: vm.num('ClaudeWoWFrame:GetBottom()'),
+const rect = vm => ({
+  left: vm.num('ClaudeWoWFrame:GetLeft()'),
+  top: vm.num('ClaudeWoWFrame:GetTop()'),
+  right: vm.num('ClaudeWoWFrame:GetRight()'),
+  bottom: vm.num('ClaudeWoWFrame:GetBottom()'),
 });
-const settle = (vm) => vm.run('STUB.RunTimers(); STUB.RunTimers()');
-const frames = (vm, n, dt = 0.05) => { for (let i = 0; i < n; i++) vm.run(`STUB.RunFrames(${dt})`); };
-const open = (vm) => { vm.run('ClaudeWoW.Toggle(true)'); settle(vm); };
+const settle = vm => vm.run('STUB.RunTimers(); STUB.RunTimers()');
+const frames = (vm, n, dt = 0.05) => {
+  for (let i = 0; i < n; i++) vm.run(`STUB.RunFrames(${dt})`);
+};
+const open = vm => {
+  vm.run('ClaudeWoW.Toggle(true)');
+  settle(vm);
+};
 const overlaps = (a, b) => a.left < b.right && a.right > b.left && a.bottom < b.top && a.top > b.bottom;
 
 test('it dims while the player moves or fights, fades back smoothly, and is opaque under the mouse or while typing', () => {
@@ -119,7 +130,11 @@ test('in combat the window still steps aside and dims, touches no protected fram
   frames(vm, 8, 0.1);
   vm.run('ClaudeWoW.InstallMacro({ name = "X", body = "/sit" })');
   assert.equal(vm.evaluate('STUB.blocked[1]'), null, 'no protected frame was moved, shown or hidden by addon code');
-  assert.equal(vm.evaluate('(function() for _, c in ipairs(STUB.panelCalls) do if c.addon then return c.name end end end)()'), null, 'no ShowUIPanel/HideUIPanel from addon code');
+  assert.equal(
+    vm.evaluate('(function() for _, c in ipairs(STUB.panelCalls) do if c.addon then return c.name end end end)()'),
+    null,
+    'no ShowUIPanel/HideUIPanel from addon code',
+  );
   assert.ok(vm.evaluate('table.concat(STUB.prints, "\\n")').includes("macros can't be changed in combat"));
 });
 
@@ -131,15 +146,23 @@ test('the window cannot be dragged, the compact bar can, and the size is remembe
   assert.equal(vm.evaluate('ClaudeWoWFrame.scripts.OnDragStop'), null);
   assert.notEqual(vm.evaluate('ClaudeWoWMini.scripts.OnDragStart'), null, 'the compact bar still drags');
 
-  vm.run('ClaudeWoWFrame:SetSize(900, 600); for _, c in ipairs(ClaudeWoWFrame.children) do if c.scripts.OnMouseUp and c.kind == "Button" and not c.name then c.scripts.OnMouseUp(c) end end');
+  vm.run(
+    'ClaudeWoWFrame:SetSize(900, 600); for _, c in ipairs(ClaudeWoWFrame.children) do if c.scripts.OnMouseUp and c.kind == "Button" and not c.name then c.scripts.OnMouseUp(c) end end',
+  );
   assert.equal(vm.num('ClaudeWoWDB.layouts["Testchar-Test Realm"].w'), 900, 'the resize grip saves the size');
   settle(vm);
-  assert.deepEqual(rect(vm), { left: home.left, top: home.top, right: home.left + 900, bottom: home.top - 600 }, 'resizing keeps the top-left corner in the slot');
+  assert.deepEqual(
+    rect(vm),
+    { left: home.left, top: home.top, right: home.left + 900, bottom: home.top - 600 },
+    'resizing keeps the top-left corner in the slot',
+  );
 
   vm.run('local real = UnitName; UnitName = function() return "Alt" end; ALT = ClaudeWoWWindow.Layout(); UnitName = real');
-  assert.equal(vm.num('ALT.w'), 900, 'another character starts at the account\'s last size');
+  assert.equal(vm.num('ALT.w'), 900, "another character starts at the account's last size");
 
-  vm.run('ClaudeWoWFrame:SetSize(780, 500); for _, c in ipairs(ClaudeWoWFrame.children) do if c.scripts.OnMouseUp and c.kind == "Button" and not c.name then c.scripts.OnMouseUp(c) end end');
+  vm.run(
+    'ClaudeWoWFrame:SetSize(780, 500); for _, c in ipairs(ClaudeWoWFrame.children) do if c.scripts.OnMouseUp and c.kind == "Button" and not c.name then c.scripts.OnMouseUp(c) end end',
+  );
   settle(vm);
   vm.run('CharacterFrame:SetScale(0.5); ShowUIPanel(CharacterFrame)');
   settle(vm);
@@ -158,10 +181,12 @@ test('the window cannot be dragged, the compact bar can, and the size is remembe
   assert.equal(vm.evaluate('ClaudeWoWDB.layouts["Testchar-Test Realm"].w'), '780', 'reset goes back to the default size');
 });
 
-test('the window replaces nothing of Blizzard\'s: panel hooks are secure post-hooks and no Blizzard frame script is touched', () => {
-  const vm = newVM({ before: `SNAP = { g = {}, map = {} }
+test("the window replaces nothing of Blizzard's: panel hooks are secure post-hooks and no Blizzard frame script is touched", () => {
+  const vm = newVM({
+    before: `SNAP = { g = {}, map = {} }
     for k, v in pairs(_G) do if type(v) == "function" then SNAP.g[k] = v end end
-    for _, k in ipairs({ "Maximize", "Minimize", "IsMaximized" }) do SNAP.map[k] = WorldMapFrame[k] end` });
+    for _, k in ipairs({ "Maximize", "Minimize", "IsMaximized" }) do SNAP.map[k] = WorldMapFrame[k] end`,
+  });
   open(vm);
   vm.run('ShowUIPanel(CharacterFrame); ToggleAllBags(); WorldMapFrame:Maximize()');
   settle(vm);
@@ -183,9 +208,11 @@ test('the window replaces nothing of Blizzard\'s: panel hooks are secure post-ho
 test('the Dragonflight metal border is used where the client has it, and the plain one elsewhere', () => {
   const plain = newVM();
   assert.equal(plain.evaluate('ClaudeWoWWindow.skinned'), 'false');
-  const metal = newVM({ before: `
+  const metal = newVM({
+    before: `
     NineSliceLayouts = { ButtonFrameTemplateNoPortrait = {} }
-    NineSliceUtil = { ApplyLayoutByName = function(frame, name) STUB.layout = name end }` });
+    NineSliceUtil = { ApplyLayoutByName = function(frame, name) STUB.layout = name end }`,
+  });
   assert.equal(metal.evaluate('ClaudeWoWWindow.skinned'), 'true');
   assert.equal(metal.evaluate('STUB.layout'), 'ButtonFrameTemplateNoPortrait');
   assert.equal(metal.evaluate('ClaudeWoWFrame.claudewowBorder.template'), 'NineSlicePanelTemplate');
@@ -232,14 +259,24 @@ const nativeVM = () => {
   vm.run('ClaudeWoW.Render()');
   return vm;
 };
-const shownHeaders = (vm) => vm.evaluate('(function() local t = {} for _, h in ipairs(ClaudeWoW.UI.questList.headers) do if h.shown then table.insert(t, h.text:GetText()) end end return table.concat(t, "|") end)()');
-const shownRows = (vm) => vm.evaluate('(function() local t = {} for _, r in ipairs(ClaudeWoW.UI.questList.rows) do if r.shown then table.insert(t, r.label:GetText()) end end return table.concat(t, "|") end)()');
+const shownHeaders = vm =>
+  vm.evaluate(
+    '(function() local t = {} for _, h in ipairs(ClaudeWoW.UI.questList.headers) do if h.shown then table.insert(t, h.text:GetText()) end end return table.concat(t, "|") end)()',
+  );
+const shownRows = vm =>
+  vm.evaluate(
+    '(function() local t = {} for _, r in ipairs(ClaudeWoW.UI.questList.rows) do if r.shown then table.insert(t, r.label:GetText()) end end return table.concat(t, "|") end)()',
+  );
 
 test('on Classic Era, where the quest parchment atlas is missing, the transcript uses the Vanilla quest panel parchment', () => {
-  const vm = newVM({ before: NATIVE_TEMPLATES + `
+  const vm = newVM({
+    before:
+      NATIVE_TEMPLATES +
+      `
     function GetBuildInfo() return "1.15.9", "70003", "Sep 1 2026", 11509 end
     local realExists = C_Texture.GetAtlasExists
-    C_Texture.GetAtlasExists = function(name) if name == "QuestBG-Parchment" then return false end return realExists(name) end` });
+    C_Texture.GetAtlasExists = function(name) if name == "QuestBG-Parchment" then return false end return realExists(name) end`,
+  });
   open(vm);
   vm.run('ClaudeWoW.Render()');
   assert.equal(vm.evaluate('ClaudeWoW.UI.art.parchment'), 'Interface\\QuestFrame\\UI-QuestLog-TopLeft');
@@ -300,7 +337,7 @@ test('a quest token is a real quest link in parchment ink, and clicking it opens
   assert.ok(body.includes('|cff5c5248quest 999|r'), 'a quest not in the log stays plain');
   vm.run('STUB.bubble.scripts.OnHyperlinkClick(STUB.bubble, "quest:855:21", "[Tribes at War]", "LeftButton")');
   assert.equal(vm.num('#STUB.panels'), 1, 'the quest log opens');
-  assert.equal(vm.num('STUB.selected[1]'), 2, 'on that quest\'s row');
+  assert.equal(vm.num('STUB.selected[1]'), 2, "on that quest's row");
   assert.equal(vm.num('#STUB.refs'), 0, 'and the click is not also sent to the game');
   vm.run('STUB.bubble.scripts.OnHyperlinkClick(STUB.bubble, "quest:777:5", "[Gone]", "LeftButton")');
   assert.equal(vm.evaluate('STUB.refs[1]'), 'quest:777:5', 'a quest no longer in the log falls back to the game');
@@ -321,7 +358,11 @@ test('a quest token is a real quest link in parchment ink, and clicking it opens
     IsModifiedClick = function() return false end
   `);
   assert.equal(vm.evaluate('STUB.refs[1]'), 'quest:855:21', 'a shift-click goes to the game, which puts the link in the chat box');
-  assert.equal(vm.evaluate('STUB.texts[1]'), '|cffffff00|Hquest:855:21|h[Tribes at War]|h|r', 'with the game color, not the parchment ink, so other players see a normal link');
+  assert.equal(
+    vm.evaluate('STUB.texts[1]'),
+    '|cffffff00|Hquest:855:21|h[Tribes at War]|h|r',
+    'with the game color, not the parchment ink, so other players see a normal link',
+  );
   assert.equal(vm.num('#STUB.selected'), 0, 'and does not open the quest log');
   vm.run(`
     STUB.collapsed = true
@@ -331,10 +372,14 @@ test('a quest token is a real quest link in parchment ink, and clicking it opens
   `);
   assert.equal(vm.evaluate('STUB.collapsed'), 'false', 'a quest under a collapsed zone expands the log');
   assert.equal(vm.num('STUB.selected[1]'), 2, 'and still opens on its row');
-  vm.run('STUB.collapsed = true; STUB.refs = {}; CollapseQuestHeader = function(i) if i == 1 then STUB.collapsed = true end end; STUB.bubble.scripts.OnHyperlinkClick(STUB.bubble, "quest:777:5", "[Gone]", "LeftButton")');
+  vm.run(
+    'STUB.collapsed = true; STUB.refs = {}; CollapseQuestHeader = function(i) if i == 1 then STUB.collapsed = true end end; STUB.bubble.scripts.OnHyperlinkClick(STUB.bubble, "quest:777:5", "[Gone]", "LeftButton")',
+  );
   assert.equal(vm.evaluate('STUB.collapsed'), 'true', 'a quest that is not in the log leaves the zones as they were');
   assert.equal(vm.evaluate('STUB.refs[1]'), 'quest:777:5', 'and goes to the game');
-  vm.run('STUB.mapped = {}; QuestMapFrame_OpenToQuestDetails = function(id) table.insert(STUB.mapped, id) end; STUB.bubble.scripts.OnHyperlinkClick(STUB.bubble, "quest:855:21", "[Tribes at War]", "LeftButton")');
+  vm.run(
+    'STUB.mapped = {}; QuestMapFrame_OpenToQuestDetails = function(id) table.insert(STUB.mapped, id) end; STUB.bubble.scripts.OnHyperlinkClick(STUB.bubble, "quest:855:21", "[Tribes at War]", "LeftButton")',
+  );
   assert.equal(vm.num('STUB.mapped[1]'), 855, 'on a client with the quest map (Forever) it opens the quest details there');
   assert.equal(vm.num('#STUB.selected'), 1, 'and not the old quest log');
 });
@@ -384,16 +429,21 @@ test('the chat list shows the newest chat first, keeps its order when a chat is 
   vm.run('for i = 1, 20 do ClaudeWoW.NewChat() end');
   vm.run('ClaudeWoW.UI.questList.scroll.height = 200; ClaudeWoW.Render()');
   const scroll = () => vm.num('ClaudeWoW.UI.questList.scroll:GetVerticalScroll()');
-  const firstRow = () => vm.evaluate('(function() local best for _, r in ipairs(ClaudeWoW.UI.questList.rows) do if r.shown and (not best or r.y > best.y) then best = r end end return best and best.chatId end)()');
+  const firstRow = () =>
+    vm.evaluate(
+      '(function() local best for _, r in ipairs(ClaudeWoW.UI.questList.rows) do if r.shown and (not best or r.y > best.y) then best = r end end return best and best.chatId end)()',
+    );
   assert.equal(firstRow(), vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].id'), 'the newest chat is the top row');
   assert.equal(scroll(), 0, 'the new chat is already in view at the top');
   vm.run('ClaudeWoW.UI.questList.scroll:SetVerticalScroll(300); ClaudeWoW.Render()');
-  assert.equal(scroll(), 300, 'a render with the same active chat keeps the player\'s scroll');
+  assert.equal(scroll(), 300, "a render with the same active chat keeps the player's scroll");
   vm.run('ClaudeWoW.UI.questList.scroll:SetVerticalScroll(0); STUB.now = STUB.now + 10; ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[1].id)');
   assert.equal(firstRow(), vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].id'), 'opening the oldest chat does not move it to the top');
   assert.ok(scroll() > 0, 'the list scrolls down to the opened chat instead');
   const kept = scroll();
-  const inView = vm.evaluate(`(function() for _, r in ipairs(ClaudeWoW.UI.questList.rows) do if r.shown and not r.active and -r.y >= ${kept} and -r.y + r.height <= ${kept} + 200 then return r.chatId end end end)()`);
+  const inView = vm.evaluate(
+    `(function() for _, r in ipairs(ClaudeWoW.UI.questList.rows) do if r.shown and not r.active and -r.y >= ${kept} and -r.y + r.height <= ${kept} + 200 then return r.chatId end end end)()`,
+  );
   assert.ok(inView, 'another chat row is in view');
   vm.run(`STUB.now = STUB.now + 10; ClaudeWoW.SwitchChat("${inView}")`);
   assert.equal(scroll(), kept, 'opening a chat already in view does not scroll');
@@ -468,7 +518,9 @@ test('the black bar shows the chat title across its whole width, with folder, ag
   vm.run('ClaudeWoWTitleBar.scripts.OnEnter(ClaudeWoWTitleBar)');
   assert.equal(vm.evaluate('table.concat(LINES, "|")'), 'Folder=wow-ai|Agent=AI|Plugin=default');
 
-  vm.run('CALLS = {}; ClaudeWoW.RenamePrompt = function(id) table.insert(CALLS, "rename:" .. id) end; ClaudeWoW.ShowChatMenu = function(id) table.insert(CALLS, "menu:" .. id) end');
+  vm.run(
+    'CALLS = {}; ClaudeWoW.RenamePrompt = function(id) table.insert(CALLS, "rename:" .. id) end; ClaudeWoW.ShowChatMenu = function(id) table.insert(CALLS, "menu:" .. id) end',
+  );
   vm.run('ClaudeWoWTitleBar.scripts.OnClick(ClaudeWoWTitleBar, "LeftButton"); ClaudeWoWTitleBar.scripts.OnClick(ClaudeWoWTitleBar, "RightButton")');
   const id = vm.evaluate('ClaudeWoWDB.chats[2].id');
   assert.equal(vm.evaluate('table.concat(CALLS, "|")'), `rename:${id}|menu:${id}`);
@@ -489,10 +541,12 @@ test('help lives in the gear menu, and Clear moves from the bottom bar into the 
 
 test('the footer is a short state on the left and context and spend on the right, with the detail on hover', () => {
   const vm = nativeVM();
-  vm.run('ClaudeWoWDB.chats[1].cost = 2.414; ClaudeWoWDB.chats[1].ctx = 186700; ClaudeWoWDB.chats[2].cost = 12.39; ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[1].id); ClaudeWoW.Render()');
+  vm.run(
+    'ClaudeWoWDB.chats[1].cost = 2.414; ClaudeWoWDB.chats[1].ctx = 186700; ClaudeWoWDB.chats[2].cost = 12.39; ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[1].id); ClaudeWoW.Render()',
+  );
   const stats = vm.evaluate('ClaudeWoW.UI.stats:GetText()');
   assert.ok(stats.includes('UI-GoldIcon'), stats);
-  assert.ok(stats.includes('$2.41'), 'this chat\'s spend: ' + stats);
+  assert.ok(stats.includes('$2.41'), "this chat's spend: " + stats);
   assert.ok(stats.includes('all chats $14.80'), 'and the total across chats: ' + stats);
   assert.equal(vm.evaluate('ClaudeWoWContextBar.shown'), 'true', 'the context is a bar');
   assert.ok(vm.evaluate('ClaudeWoWContextBar.text:GetText()').startsWith('186.7k / 200'), vm.evaluate('ClaudeWoWContextBar.text:GetText()'));

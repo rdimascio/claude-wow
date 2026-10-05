@@ -21,7 +21,13 @@ test('a held message cancelled from the game never runs when the deploy ends', a
     const mark = h.bridge.output.length;
     fs.rmSync(lockFile);
     await new Promise(r => setTimeout(r, 3000));
-    assert.ok(!h.agentCalls().slice(calls).some(c => c.directives && c.directives.tag === 'held-cancel'), 'the cancelled message did not run');
+    assert.ok(
+      !h
+        .agentCalls()
+        .slice(calls)
+        .some(c => c.directives && c.directives.tag === 'held-cancel'),
+      'the cancelled message did not run',
+    );
     assert.doesNotMatch(h.bridge.since(mark), new RegExp(`#${id}@\\S+ released`));
   });
 });

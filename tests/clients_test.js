@@ -28,12 +28,22 @@ function legacyConfig(dir = FOREVER, extra = {}) {
 test('an entry without an account has no reload outbox, a disabled one is listed but not served, and the same folder twice is one client', () => {
   const cfg = { clients: [{ dir: FOREVER }, { dir: FOREVER + path.sep, account: 'X' }, { dir: ERA, enabled: false }, { account: 'no dir' }, null] };
   const all = CLI.allClients(cfg);
-  assert.deepEqual(all.map(c => c.label), ['_classic_beta_', '_classic_era_']);
+  assert.deepEqual(
+    all.map(c => c.label),
+    ['_classic_beta_', '_classic_era_'],
+  );
   assert.equal(all[0].savedVariablesFile, '', 'no account, no SavedVariables file to poll');
   assert.equal(all[1].enabled, false);
-  assert.deepEqual(CLI.clientsOf(cfg).map(c => c.label), ['_classic_beta_']);
+  assert.deepEqual(
+    CLI.clientsOf(cfg).map(c => c.label),
+    ['_classic_beta_'],
+  );
   assert.deepEqual(CLI.clientsOf({}), []);
-  assert.deepEqual(CLI.clientsOf({ clients: [] , addonDir: addonsOf(ERA) }).map(c => c.label), ['_classic_era_'], 'an empty clients[] falls back to the old keys');
+  assert.deepEqual(
+    CLI.clientsOf({ clients: [], addonDir: addonsOf(ERA) }).map(c => c.label),
+    ['_classic_era_'],
+    'an empty clients[] falls back to the old keys',
+  );
 });
 
 test('migrateConfig moves the old keys into clients[0], keeps only what cannot be derived, and is idempotent', () => {
@@ -61,7 +71,10 @@ test('upsertClient adds a new folder, updates a known one in place, and keeps a 
   assert.equal(CLI.upsertClient(cfg, { dir: ERA, account: 'B' }), 'added');
   assert.equal(CLI.upsertClient(cfg, { dir: FOREVER + path.sep, account: 'A' }), 'same');
   assert.equal(CLI.upsertClient(cfg, { dir: FOREVER, account: 'C', processName: 'World of Warcraft' }), 'updated');
-  assert.deepEqual(cfg.clients, [{ dir: FOREVER, account: 'C', processName: 'World of Warcraft' }, { dir: ERA, account: 'B' }]);
+  assert.deepEqual(cfg.clients, [
+    { dir: FOREVER, account: 'C', processName: 'World of Warcraft' },
+    { dir: ERA, account: 'B' },
+  ]);
   cfg.clients[1].enabled = false;
   assert.equal(CLI.upsertClient(cfg, { dir: ERA, account: 'B' }), 'same');
   assert.equal(cfg.clients[1].enabled, false);
@@ -144,23 +157,37 @@ test('adoptLegacyState copies the old context to the first client listed, disabl
 });
 
 test('contextText: a known client reads only its own context, never the shared one; no client reads the shared one', () => {
-  const a = CLI.keyOf(FOREVER), b = CLI.keyOf(ERA);
+  const a = CLI.keyOf(FOREVER),
+    b = CLI.keyOf(ERA);
   const state = { context: { text: 'shared' }, clients: { [a]: { context: { text: 'mine' } }, [b]: { context: null } } };
   assert.equal(CLI.contextText(state, a), 'mine');
-  assert.equal(CLI.contextText(state, b), '', 'a client that cleared its context gets none, not the other client\'s');
+  assert.equal(CLI.contextText(state, b), '', "a client that cleared its context gets none, not the other client's");
   assert.equal(CLI.contextText(state, CLI.keyOf('/never/heard')), '', 'a client that never sent one gets none');
   assert.equal(CLI.contextText(state, ''), 'shared');
   assert.equal(CLI.contextText({}, ''), '');
 });
 
 test('foreignContext: goal tools are refused when the shared context is another character, or the same character from another client', () => {
-  const a = CLI.keyOf(FOREVER), b = CLI.keyOf(ERA);
+  const a = CLI.keyOf(FOREVER),
+    b = CLI.keyOf(ERA);
   const charOf = text => (/^Character: (\S+)/.exec(text) || [])[1] || '';
   const mine = { text: 'Character: Ann' };
   assert.equal(CLI.foreignContext({ context: { ...mine, client: a }, clients: { [a]: { context: mine } } }, a, charOf), '', 'A reported last');
-  assert.equal(CLI.foreignContext({ context: { text: 'Character: Bob', client: b }, clients: { [a]: { context: mine } } }, a, charOf), 'Bob', 'B reported another character last');
-  assert.equal(CLI.foreignContext({ context: { text: 'Character: Ann', client: b }, clients: { [a]: { context: mine } } }, a, charOf), 'Ann', 'B reported the same name and realm last');
-  assert.equal(CLI.foreignContext({ context: { text: 'Character: Ann' }, clients: { [a]: { context: mine } } }, a, charOf), '', 'a shared context from before clients were recorded, same character');
+  assert.equal(
+    CLI.foreignContext({ context: { text: 'Character: Bob', client: b }, clients: { [a]: { context: mine } } }, a, charOf),
+    'Bob',
+    'B reported another character last',
+  );
+  assert.equal(
+    CLI.foreignContext({ context: { text: 'Character: Ann', client: b }, clients: { [a]: { context: mine } } }, a, charOf),
+    'Ann',
+    'B reported the same name and realm last',
+  );
+  assert.equal(
+    CLI.foreignContext({ context: { text: 'Character: Ann' }, clients: { [a]: { context: mine } } }, a, charOf),
+    '',
+    'a shared context from before clients were recorded, same character',
+  );
   assert.equal(CLI.foreignContext({ context: { text: 'Character: Ann', client: b } }, a, charOf), 'Ann', 'A never reported a context of its own');
   assert.equal(CLI.foreignContext({ context: null }, a, charOf), '', 'no shared context: the caller refuses for that reason');
   assert.equal(CLI.foreignContext({ context: { text: 'Character: Ann', client: b } }, '', charOf), '', 'a job with no client only checks the character');

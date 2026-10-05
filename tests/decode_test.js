@@ -15,14 +15,16 @@ const { lua, lauxlib, lualib, to_luastring, to_jsstring } = fengari;
 const D = require('../bridge/decode');
 
 const CODEC = path.join(__dirname, '..', 'addon', 'ClaudeWoW', 'Codec.lua');
-const CELL = 4, CELLS = 200;
+const CELL = 4,
+  CELLS = 200;
 
 function encodeWithLua(id, payload, codec = 1) {
   const bytes = Buffer.from(payload, 'utf8');
   const lit = '"' + [...bytes].map(b => '\\' + b).join('') + '"';
   const L = lauxlib.luaL_newstate();
   lualib.luaL_openlibs(L);
-  const code = fs.readFileSync(CODEC, 'utf8') +
+  const code =
+    fs.readFileSync(CODEC, 'utf8') +
     `\nlocal cells = ClaudeWoW_Codec.Encode(${id}, ${lit}, ${codec})\n` +
     `local t = {}\nfor i = 1, #cells do t[i] = string.format("%d", cells[i]) end\n` +
     `RESULT = table.concat(t, ",")\n`;
@@ -36,41 +38,52 @@ function encodeWithLua(id, payload, codec = 1) {
 // jitter on the strip itself. Returns an RGB buffer.
 function frame({ width, height, cells, ox = 0, oy = 0, on = 255, off = 0, jitter = 0, seed = 1 }) {
   let s = seed;
-  const rnd = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
+  const rnd = () => {
+    s = (s * 1103515245 + 12345) & 0x7fffffff;
+    return s / 0x7fffffff;
+  };
   const rgb = Buffer.alloc(width * height * 3);
   for (let i = 0; i < rgb.length; i++) rgb[i] = Math.floor(rnd() * 256);
   const rows = Math.ceil(cells.length / CELLS);
-  for (let r = 0; r < rows; r++) for (let c = 0; c < CELLS; c++) {
-    const v = cells[r * CELLS + c] || 0;
-    const lv = [Math.floor(v / 4) % 2, Math.floor(v / 2) % 2, v % 2].map(b => (b ? on : off));
-    for (let y = 0; y < CELL; y++) for (let x = 0; x < CELL; x++) {
-      const o = ((oy + r * CELL + y) * width + (ox + c * CELL + x)) * 3;
-      for (let k = 0; k < 3; k++) {
-        const n = jitter ? Math.round((rnd() * 2 - 1) * jitter) : 0;
-        rgb[o + k] = Math.max(0, Math.min(255, lv[k] + n));
-      }
+  for (let r = 0; r < rows; r++)
+    for (let c = 0; c < CELLS; c++) {
+      const v = cells[r * CELLS + c] || 0;
+      const lv = [Math.floor(v / 4) % 2, Math.floor(v / 2) % 2, v % 2].map(b => (b ? on : off));
+      for (let y = 0; y < CELL; y++)
+        for (let x = 0; x < CELL; x++) {
+          const o = ((oy + r * CELL + y) * width + (ox + c * CELL + x)) * 3;
+          for (let k = 0; k < 3; k++) {
+            const n = jitter ? Math.round((rnd() * 2 - 1) * jitter) : 0;
+            rgb[o + k] = Math.max(0, Math.min(255, lv[k] + n));
+          }
+        }
     }
-  }
   return rgb;
 }
 
 // Codec 2: 2 px cells, each channel at one of four levels (the addon draws
 // 0/20/40/60 by default), `cells` as the encoder emits them, ramp included.
-const DCELL = 2, DCELLS = 400;
+const DCELL = 2,
+  DCELLS = 400;
 function denseFrame({ width, height, cells, ox = 0, oy = 0, levels = [0, 20, 40, 60], seed = 1 }) {
   let s = seed;
-  const rnd = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
+  const rnd = () => {
+    s = (s * 1103515245 + 12345) & 0x7fffffff;
+    return s / 0x7fffffff;
+  };
   const rgb = Buffer.alloc(width * height * 3);
   for (let i = 0; i < rgb.length; i++) rgb[i] = Math.floor(rnd() * 256);
   const rows = Math.ceil(cells.length / DCELLS);
-  for (let r = 0; r < rows; r++) for (let c = 0; c < DCELLS; c++) {
-    const v = cells[r * DCELLS + c] || 0;
-    const lv = [levels[(v >> 4) & 3], levels[(v >> 2) & 3], levels[v & 3]];
-    for (let y = 0; y < DCELL; y++) for (let x = 0; x < DCELL; x++) {
-      const o = ((oy + r * DCELL + y) * width + (ox + c * DCELL + x)) * 3;
-      for (let k = 0; k < 3; k++) rgb[o + k] = lv[k];
+  for (let r = 0; r < rows; r++)
+    for (let c = 0; c < DCELLS; c++) {
+      const v = cells[r * DCELLS + c] || 0;
+      const lv = [levels[(v >> 4) & 3], levels[(v >> 2) & 3], levels[v & 3]];
+      for (let y = 0; y < DCELL; y++)
+        for (let x = 0; x < DCELL; x++) {
+          const o = ((oy + r * DCELL + y) * width + (ox + c * DCELL + x)) * 3;
+          for (let k = 0; k < 3; k++) rgb[o + k] = lv[k];
+        }
     }
-  }
   return rgb;
 }
 
@@ -80,11 +93,15 @@ function png(width, height, rgb, { alpha = false, filters = [0, 1, 2, 3, 4] } = 
   const ch = alpha ? 4 : 3;
   const stride = width * ch;
   const rows = Buffer.alloc(stride * height);
-  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
-    const s = (y * width + x) * 3, d = y * stride + x * ch;
-    rows[d] = rgb[s]; rows[d + 1] = rgb[s + 1]; rows[d + 2] = rgb[s + 2];
-    if (alpha) rows[d + 3] = 255;
-  }
+  for (let y = 0; y < height; y++)
+    for (let x = 0; x < width; x++) {
+      const s = (y * width + x) * 3,
+        d = y * stride + x * ch;
+      rows[d] = rgb[s];
+      rows[d + 1] = rgb[s + 1];
+      rows[d + 2] = rgb[s + 2];
+      if (alpha) rows[d + 3] = 255;
+    }
   const raw = Buffer.alloc((stride + 1) * height);
   for (let y = 0; y < height; y++) {
     const f = filters[y % filters.length];
@@ -100,24 +117,33 @@ function png(width, height, rgb, { alpha = false, filters = [0, 1, 2, 3, 4] } = 
       else if (f === 2) v = x - b;
       else if (f === 3) v = x - ((a + b) >> 1);
       else {
-        const p = a + b - c, pa = Math.abs(p - a), pb = Math.abs(p - b), pc = Math.abs(p - c);
+        const p = a + b - c,
+          pa = Math.abs(p - a),
+          pb = Math.abs(p - b),
+          pc = Math.abs(p - c);
         v = x - (pa <= pb && pa <= pc ? a : pb <= pc ? b : c);
       }
       raw[y * (stride + 1) + 1 + i] = v & 0xff;
     }
   }
   const chunk = (type, data) => {
-    const len = Buffer.alloc(4); len.writeUInt32BE(data.length);
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(data.length);
     const td = Buffer.concat([Buffer.from(type, 'ascii'), data]);
-    const crc = Buffer.alloc(4); crc.writeUInt32BE(zlib.crc32(td) >>> 0);
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(zlib.crc32(td) >>> 0);
     return Buffer.concat([len, td, crc]);
   };
   const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(width, 0); ihdr.writeUInt32BE(height, 4);
-  ihdr[8] = 8; ihdr[9] = alpha ? 6 : 2;
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8;
+  ihdr[9] = alpha ? 6 : 2;
   return Buffer.concat([
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-    chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(raw)), chunk('IEND', Buffer.alloc(0)),
+    chunk('IHDR', ihdr),
+    chunk('IDAT', zlib.deflateSync(raw)),
+    chunk('IEND', Buffer.alloc(0)),
   ]);
 }
 
@@ -127,15 +153,19 @@ function tga(width, height, rgb, { bpp = 32, rle = false, topDown = true } = {})
   const bytesPP = bpp / 8;
   const hdr = Buffer.alloc(18);
   hdr[2] = rle ? 10 : 2;
-  hdr.writeUInt16LE(width, 12); hdr.writeUInt16LE(height, 14);
-  hdr[16] = bpp; hdr[17] = (topDown ? 0x20 : 0) | (bpp === 32 ? 8 : 0);
+  hdr.writeUInt16LE(width, 12);
+  hdr.writeUInt16LE(height, 14);
+  hdr[16] = bpp;
+  hdr[17] = (topDown ? 0x20 : 0) | (bpp === 32 ? 8 : 0);
   const pixels = [];
   for (let row = 0; row < height; row++) {
     const y = topDown ? row : height - 1 - row;
     for (let x = 0; x < width; x++) {
       const s = (y * width + x) * 3;
       const p = Buffer.alloc(bytesPP);
-      p[0] = rgb[s + 2]; p[1] = rgb[s + 1]; p[2] = rgb[s];
+      p[0] = rgb[s + 2];
+      p[1] = rgb[s + 1];
+      p[2] = rgb[s];
       if (bytesPP === 4) p[3] = 255;
       pixels.push(p);
     }
@@ -171,24 +201,33 @@ test('the PNG reader unfilters every filter type, RGB and RGBA', () => {
   const rgb = frame({ width: 320, height: 40, cells: cells.slice(0, 0) }); // pure noise, exact read-back
   for (const alpha of [false, true]) {
     const img = D.readPNG(png(320, 40, rgb, { alpha }));
-    assert.equal(img.width, 320); assert.equal(img.height, 40);
-    for (let y = 0; y < 40; y += 7) for (let x = 0; x < 320; x += 13) {
-      const o = (y * 320 + x) * 3;
-      assert.deepEqual(img.px(x, y), [rgb[o], rgb[o + 1], rgb[o + 2]], `pixel ${x},${y} alpha=${alpha}`);
-    }
+    assert.equal(img.width, 320);
+    assert.equal(img.height, 40);
+    for (let y = 0; y < 40; y += 7)
+      for (let x = 0; x < 320; x += 13) {
+        const o = (y * 320 + x) * 3;
+        assert.deepEqual(img.px(x, y), [rgb[o], rgb[o + 1], rgb[o + 2]], `pixel ${x},${y} alpha=${alpha}`);
+      }
   }
   assert.throws(() => D.readPNG(Buffer.from('not a png')), /not a PNG/);
 });
 
 test('the TGA reader takes raw and RLE, 24 and 32 bit, both row orders', () => {
   const rgb = frame({ width: 300, height: 30, cells: [] });
-  for (const opts of [{ bpp: 24, rle: false, topDown: true }, { bpp: 32, rle: false, topDown: false }, { bpp: 32, rle: true, topDown: true }, { bpp: 24, rle: true, topDown: false }]) {
+  for (const opts of [
+    { bpp: 24, rle: false, topDown: true },
+    { bpp: 32, rle: false, topDown: false },
+    { bpp: 32, rle: true, topDown: true },
+    { bpp: 24, rle: true, topDown: false },
+  ]) {
     const img = D.readTGA(tga(300, 30, rgb, opts));
-    assert.equal(img.width, 300); assert.equal(img.height, 30);
-    for (let y = 0; y < 30; y += 5) for (let x = 0; x < 300; x += 11) {
-      const o = (y * 300 + x) * 3;
-      assert.deepEqual(img.px(x, y), [rgb[o], rgb[o + 1], rgb[o + 2]], `pixel ${x},${y} ${JSON.stringify(opts)}`);
-    }
+    assert.equal(img.width, 300);
+    assert.equal(img.height, 30);
+    for (let y = 0; y < 30; y += 5)
+      for (let x = 0; x < 300; x += 11) {
+        const o = (y * 300 + x) * 3;
+        assert.deepEqual(img.px(x, y), [rgb[o], rgb[o + 1], rgb[o + 2]], `pixel ${x},${y} ${JSON.stringify(opts)}`);
+      }
   }
   // RLE with real runs: a flat strip compresses to run packets.
   const flat = Buffer.alloc(64 * 8 * 3, 200);
@@ -250,7 +289,8 @@ test('codec 2: a dense strip off the origin is found, and a bad checksum, a shor
   const off = D.findStrip(D.readPNG(png(900, 60, denseFrame({ width: 900, height: 60, cells, ox: 3, oy: 5 }))), {});
   assert.equal(off.msg && off.msg.id, 11);
   assert.ok(Math.abs(off.offset[0] - 3) <= 1 && Math.abs(off.offset[1] - 5) <= 1, JSON.stringify(off.offset));
-  const bad = cells.slice(); bad[40] ^= 1; // a payload bit
+  const bad = cells.slice();
+  bad[40] ^= 1; // a payload bit
   assert.deepEqual(D.findStrip(D.readPNG(png(900, 60, denseFrame({ width: 900, height: 60, cells: bad }))), {}).msg, { error: 'checksum' });
   const long = encodeWithLua(12, LONG, 2);
   assert.ok(long.length > DCELLS, 'several rows');

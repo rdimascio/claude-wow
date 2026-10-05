@@ -36,7 +36,8 @@ function fakeWago(fixtures) {
   const fetchImpl = async url => {
     calls.push(url);
     const u = new URL(url);
-    if (u.pathname === '/api/builds') return new Response(fs.readFileSync(path.join(fixtures, 'builds.json'), 'utf8'), { status: 200, headers: { 'content-type': 'application/json' } });
+    if (u.pathname === '/api/builds')
+      return new Response(fs.readFileSync(path.join(fixtures, 'builds.json'), 'utf8'), { status: 200, headers: { 'content-type': 'application/json' } });
     const table = /^\/db2\/(\w+)\/csv$/.exec(u.pathname)[1];
     const headers = { 'content-type': 'text/csv; charset=UTF-8', 'content-disposition': `attachment; filename="${table}.${u.searchParams.get('build')}.csv"` };
     return new Response(fs.readFileSync(path.join(fixtures, `${table}.csv`), 'utf8'), { status: 200, headers });
@@ -54,8 +55,14 @@ async function syncedData(name, { era = true, forever = true } = {}) {
 test('a build of the other flavor is refused before any fetch or folder', async () => {
   const dataDir = path.join(scratch('cross'), 'data');
   const wago = fakeWago(ERA_FIXTURES);
-  await assert.rejects(D.sync({ dataDir, flavor: 'forever', build: ERA_BUILD, fetch: wago.fetchImpl }), /1\.15\.9\.300 is a Classic Era build, not Forever; sync it with --flavor classic_era/);
-  await assert.rejects(D.sync({ dataDir, flavor: 'classic_era', build: FOREVER_BUILD, fetch: wago.fetchImpl }), /is a Forever build, not Classic Era; sync it with --flavor forever/);
+  await assert.rejects(
+    D.sync({ dataDir, flavor: 'forever', build: ERA_BUILD, fetch: wago.fetchImpl }),
+    /1\.15\.9\.300 is a Classic Era build, not Forever; sync it with --flavor classic_era/,
+  );
+  await assert.rejects(
+    D.sync({ dataDir, flavor: 'classic_era', build: FOREVER_BUILD, fetch: wago.fetchImpl }),
+    /is a Forever build, not Classic Era; sync it with --flavor forever/,
+  );
   assert.equal(wago.calls.length, 0);
   assert.equal(fs.existsSync(dataDir), false);
 });
@@ -76,7 +83,10 @@ test('the store follows the client build: an Era client reads Classic Era data, 
   assert.equal(GR.createExpander(unknown).expand(`{item:${ERA_HIDE}}`).errors[0].reason, 'buildUnknown');
   const retail = GD.openStore({ dataDir, clientBuild: '12.0.1.66220' });
   assert.deepEqual([retail.flavor, retail.build], [null, null]);
-  assert.match(GR.errorsText(GR.createExpander(retail).expand(`{item:${ERA_HIDE}}`).errors, retail), /Client build 12\.0\.1\.66220 belongs to no game the bridge has data for/);
+  assert.match(
+    GR.errorsText(GR.createExpander(retail).expand(`{item:${ERA_HIDE}}`).errors, retail),
+    /Client build 12\.0\.1\.66220 belongs to no game the bridge has data for/,
+  );
 });
 
 test('a taught spell whose name starts with "the" is not indexed as a game phrase; other taught spells are', async () => {
@@ -87,7 +97,10 @@ test('a taught spell whose name starts with "the" is not indexed as a game phras
   assert.equal(check('it was the era fixture').ok, true, '"Schematic: The Era Fixture" adds no phrase');
   const blast = check('go era blast');
   assert.equal(blast.ok, false);
-  assert.deepEqual(blast.phrases.map(p => [p.run, p.source]), [['era blast', 'spell taught by an item']]);
+  assert.deepEqual(
+    blast.phrases.map(p => [p.run, p.source]),
+    [['era blast', 'spell taught by an item']],
+  );
 });
 
 test('market_price on Classic Era gives the observed auction quote with rows, n and asOf and says how Era quotes are built; Forever has no such note', async () => {
@@ -103,7 +116,11 @@ test('market_price on Classic Era gives the observed auction quote with rows, n 
   fs.mkdirSync(path.join(dir, key), { recursive: true });
   fs.writeFileSync(path.join(dir, key, 'observed.jsonl'), lines.map(l => JSON.stringify(l)).join('\n') + '\n');
   const price = async (context, itemID) => {
-    const tools = OT.createObservedTools({ observed: OB.createObserved({ dir }), context: () => ({ text: context, at: Date.now() }), gameData: text => GR.openFor(dataDir, text) });
+    const tools = OT.createObservedTools({
+      observed: OB.createObserved({ dir }),
+      context: () => ({ text: context, at: Date.now() }),
+      gameData: text => GR.openFor(dataDir, text),
+    });
     const r = await tools.call('market_price', { itemID });
     assert.equal(r.ok, true, r.text);
     return JSON.parse(r.text);
@@ -111,10 +128,22 @@ test('market_price on Classic Era gives the observed auction quote with rows, n 
   const era = await price(ERA_CONTEXT, ERA_HIDE);
   assert.deepEqual(era.auctionHouse.latest, { price: 90, quantity: 4, rows: 2, stack: 3 });
   assert.deepEqual([era.auctionHouse.n, era.auctionHouse.asOf, era.auctionHouse.trust], [1, at * 1000, 'observed']);
-  assert.deepEqual(era.vendors.map(v => [v.price, v.stack]), [[60, 1]]);
-  assert.ok(era.notes.some(n => /Classic Era\) each auction quote is one complete search result/.test(n)), era.notes.join(' | '));
+  assert.deepEqual(
+    era.vendors.map(v => [v.price, v.stack]),
+    [[60, 1]],
+  );
+  assert.ok(
+    era.notes.some(n => /Classic Era\) each auction quote is one complete search result/.test(n)),
+    era.notes.join(' | '),
+  );
   assert.ok(!era.notes.some(n => /not collected/.test(n)), 'the old "not collected on Era" text is gone');
-  const forever = await price(ERA_CONTEXT.replace(`World of Warcraft Classic (client ${ERA_CLIENT}, interface 11509)`, `World of Warcraft: Forever (client ${FOREVER_CLIENT}, interface 16001)`), FOREVER_BLADE);
+  const forever = await price(
+    ERA_CONTEXT.replace(
+      `World of Warcraft Classic (client ${ERA_CLIENT}, interface 11509)`,
+      `World of Warcraft: Forever (client ${FOREVER_CLIENT}, interface 16001)`,
+    ),
+    FOREVER_BLADE,
+  );
   assert.deepEqual(forever.auctionHouse.latest, { price: 1500, quantity: 1 });
   assert.ok(!forever.notes.some(n => /complete search result/.test(n)));
 });

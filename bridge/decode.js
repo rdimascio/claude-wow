@@ -18,8 +18,8 @@ const zlib = require('zlib');
 // `threshold`. Codec 2 ("dense", screenshot transport only): 2 px cells, four
 // levels per channel read off a four-cell ramp, six bits a cell, its own magic.
 // See Codec.lua for the format. DENSE is fixed: the addon hard-codes it too.
-const MAGIC = 0xC71A;
-const MAGIC_DENSE = 0xC72A;
+const MAGIC = 0xc71a;
+const MAGIC_DENSE = 0xc72a;
 const DEFAULTS = { cell: 4, cells: 200, maxRows: 48, threshold: 128, xSlack: 8, ySlack: 8 };
 const DENSE = { cell: 2, cells: 400, maxRows: 48, ramp: 4, minStep: 2 };
 
@@ -36,7 +36,11 @@ function isPNG(buf) {
 function readPNG(buf) {
   if (!isPNG(buf)) throw new Error('not a PNG');
   let pos = 8;
-  let width = 0, height = 0, depth = 0, ctype = 0, interlace = 0;
+  let width = 0,
+    height = 0,
+    depth = 0,
+    ctype = 0,
+    interlace = 0;
   let palette = null;
   const idat = [];
   while (pos + 8 <= buf.length) {
@@ -45,8 +49,11 @@ function readPNG(buf) {
     const body = buf.subarray(pos + 8, pos + 8 + len);
     pos += 12 + len;
     if (kind === 'IHDR') {
-      width = body.readUInt32BE(0); height = body.readUInt32BE(4);
-      depth = body[8]; ctype = body[9]; interlace = body[12];
+      width = body.readUInt32BE(0);
+      height = body.readUInt32BE(4);
+      depth = body[8];
+      ctype = body[9];
+      interlace = body[12];
     } else if (kind === 'PLTE') {
       palette = body;
     } else if (kind === 'IDAT') {
@@ -78,28 +85,48 @@ function readPNG(buf) {
       const c = prev >= 0 && i >= bpp ? out[prev + i - bpp] : 0;
       let v;
       switch (f) {
-        case 0: v = x; break;
-        case 1: v = x + a; break;
-        case 2: v = x + b; break;
-        case 3: v = x + ((a + b) >> 1); break;
+        case 0:
+          v = x;
+          break;
+        case 1:
+          v = x + a;
+          break;
+        case 2:
+          v = x + b;
+          break;
+        case 3:
+          v = x + ((a + b) >> 1);
+          break;
         case 4: {
           const p = a + b - c;
-          const pa = Math.abs(p - a), pb = Math.abs(p - b), pc = Math.abs(p - c);
+          const pa = Math.abs(p - a),
+            pb = Math.abs(p - b),
+            pc = Math.abs(p - c);
           v = x + (pa <= pb && pa <= pc ? a : pb <= pc ? b : c);
           break;
         }
-        default: throw new Error(`bad PNG filter ${f} on row ${y}`);
+        default:
+          throw new Error(`bad PNG filter ${f} on row ${y}`);
       }
       out[dst + i] = v & 0xff;
     }
   }
   let px;
   if (ctype === 2 || ctype === 6) {
-    px = (x, y) => { const o = y * stride + x * channels; return [out[o], out[o + 1], out[o + 2]]; };
+    px = (x, y) => {
+      const o = y * stride + x * channels;
+      return [out[o], out[o + 1], out[o + 2]];
+    };
   } else if (ctype === 3) {
-    px = (x, y) => { const o = out[y * stride + x] * 3; return [palette[o], palette[o + 1], palette[o + 2]]; };
+    px = (x, y) => {
+      const o = out[y * stride + x] * 3;
+      return [palette[o], palette[o + 1], palette[o + 2]];
+    };
   } else {
-    px = (x, y) => { const g = out[y * stride + x * channels]; return [g, g, g]; };
+    px = (x, y) => {
+      const g = out[y * stride + x * channels];
+      return [g, g, g];
+    };
   }
   return { width, height, px, format: 'png' };
 }
@@ -111,16 +138,23 @@ function readPNG(buf) {
 
 function looksLikeTGA(buf) {
   if (buf.length < 18) return false;
-  const cmapType = buf[1], type = buf[2], bpp = buf[16];
+  const cmapType = buf[1],
+    type = buf[2],
+    bpp = buf[16];
   return (cmapType === 0 || cmapType === 1) && [1, 2, 3, 9, 10, 11].includes(type) && [8, 15, 16, 24, 32].includes(bpp);
 }
 
 function readTGA(buf) {
   if (!looksLikeTGA(buf)) throw new Error('not a TGA');
-  const idLen = buf[0], cmapType = buf[1], type = buf[2];
-  const cmapLen = buf.readUInt16LE(5), cmapBits = buf[7];
-  const width = buf.readUInt16LE(12), height = buf.readUInt16LE(14);
-  const bpp = buf[16], desc = buf[17];
+  const idLen = buf[0],
+    cmapType = buf[1],
+    type = buf[2];
+  const cmapLen = buf.readUInt16LE(5),
+    cmapBits = buf[7];
+  const width = buf.readUInt16LE(12),
+    height = buf.readUInt16LE(14);
+  const bpp = buf[16],
+    desc = buf[17];
   if (cmapType !== 0 || type === 1 || type === 9) throw new Error('color-mapped TGAs are not supported');
   if (!(type === 2 || type === 3 || type === 10 || type === 11)) throw new Error(`unsupported TGA type ${type}`);
   const bytesPP = bpp >> 3;
@@ -157,10 +191,13 @@ function readTGA(buf) {
     const row = topDown ? y : height - 1 - y;
     const col = rightToLeft ? width - 1 - x : x;
     const o = (row * width + col) * bytesPP;
-    if (gray) { const g = out[o]; return [g, g, g]; }
+    if (gray) {
+      const g = out[o];
+      return [g, g, g];
+    }
     if (bytesPP === 2) {
       const v = out.readUInt16LE(o); // ARRRRRGG GGGBBBBB, 5 bits each
-      return [((v >> 10) & 31) * 255 / 31 | 0, ((v >> 5) & 31) * 255 / 31 | 0, (v & 31) * 255 / 31 | 0];
+      return [((((v >> 10) & 31) * 255) / 31) | 0, ((((v >> 5) & 31) * 255) / 31) | 0, (((v & 31) * 255) / 31) | 0];
     }
     return [out[o + 2], out[o + 1], out[o]]; // stored BGR(A)
   };
@@ -190,7 +227,7 @@ function cellValue(img, o, c, r, ox, oy) {
 function hasMagic(img, o, ox, oy) {
   let acc = 0;
   for (let i = 0; i < 6; i++) acc = (acc << 3) | cellValue(img, o, i, 0, ox, oy); // 18 bits cover the two magic bytes
-  return (acc >> 2) === MAGIC;
+  return acc >> 2 === MAGIC;
 }
 
 // The byte stream [magic][id][len][payload][fletcher] out of `total` cells of
@@ -200,7 +237,10 @@ function hasMagic(img, o, ox, oy) {
 // { out, cellsRead } or { error }.
 function readStream(cellAt, total, bits, capacity) {
   const out = [];
-  let acc = 0, nbits = 0, needed = 6, cellsRead = 0;
+  let acc = 0,
+    nbits = 0,
+    needed = 6,
+    cellsRead = 0;
   for (let i = 0; i < total && out.length < needed; i++) {
     acc = (acc << bits) | cellAt(i);
     cellsRead = i + 1;
@@ -225,8 +265,12 @@ function readStream(cellAt, total, bits, capacity) {
 // of the frame (vision) knows how much of the top to cut off.
 function message(out, cellsRead, cells, cellPx, codec) {
   const length = out[4] * 256 + out[5];
-  let s1 = 0, s2 = 0;
-  for (let k = 2; k < 6 + length; k++) { s1 = (s1 + out[k]) % 255; s2 = (s2 + s1) % 255; }
+  let s1 = 0,
+    s2 = 0;
+  for (let k = 2; k < 6 + length; k++) {
+    s1 = (s1 + out[k]) % 255;
+    s2 = (s2 + s1) % 255;
+  }
   if (out[6 + length] !== s1 || out[7 + length] !== s2) return { error: 'checksum' };
   const rows = Math.ceil(cellsRead / cells);
   return { id: out[2] * 256 + out[3], text: Buffer.from(out.slice(6, 6 + length)).toString('utf8'), rows, height: rows * cellPx, codec };
@@ -239,8 +283,12 @@ function decodeStrip(img, opts, ox = 0, oy = 0) {
   if (ox + o.cells * o.cell > img.width || oy + o.cell > img.height) return null;
   if (!hasMagic(img, o, ox, oy)) return null;
   const rowsAvailable = Math.min(o.maxRows, Math.floor((img.height - oy) / o.cell));
-  const r = readStream(i => cellValue(img, o, i % o.cells, Math.floor(i / o.cells), ox, oy),
-    o.cells * rowsAvailable, 3, Math.floor(o.cells * o.maxRows * 3 / 8));
+  const r = readStream(
+    i => cellValue(img, o, i % o.cells, Math.floor(i / o.cells), ox, oy),
+    o.cells * rowsAvailable,
+    3,
+    Math.floor((o.cells * o.maxRows * 3) / 8),
+  );
   if (r.error) return r;
   return message(r.out, r.cellsRead, o.cells, o.cell, 1);
 }
@@ -257,7 +305,10 @@ function decodeStrip(img, opts, ox = 0, oy = 0) {
 function denseReader(img, o, ox, oy) {
   const at = (c, r) => img.px(ox + c * o.cell + (o.cell >> 1), oy + r * o.cell + (o.cell >> 1));
   const levels = [[], [], []];
-  for (let k = 0; k < o.ramp; k++) { const p = at(k, 0); for (let ch = 0; ch < 3; ch++) levels[ch][k] = p[ch]; }
+  for (let k = 0; k < o.ramp; k++) {
+    const p = at(k, 0);
+    for (let ch = 0; ch < 3; ch++) levels[ch][k] = p[ch];
+  }
   for (let ch = 0; ch < 3; ch++) for (let k = 1; k < o.ramp; k++) if (levels[ch][k] - levels[ch][k - 1] < o.minStep) return null;
   const nearest = (v, ch) => {
     let best = 0;
@@ -278,9 +329,9 @@ function decodeDense(img, opts, ox = 0, oy = 0) {
   if (ox + o.cells * o.cell > img.width || oy + o.cell > img.height) return null;
   const cellAt = denseReader(img, o, ox, oy);
   if (!cellAt) return null;
-  if ((((cellAt(0) << 12) | (cellAt(1) << 6) | cellAt(2)) >> 2) !== MAGIC_DENSE) return null; // 18 bits cover the two magic bytes
+  if (((cellAt(0) << 12) | (cellAt(1) << 6) | cellAt(2)) >> 2 !== MAGIC_DENSE) return null; // 18 bits cover the two magic bytes
   const rowsAvailable = Math.min(o.maxRows, Math.floor((img.height - oy) / o.cell));
-  const r = readStream(cellAt, o.cells * rowsAvailable - o.ramp, 6, Math.floor((o.cells * o.maxRows - o.ramp) * 6 / 8));
+  const r = readStream(cellAt, o.cells * rowsAvailable - o.ramp, 6, Math.floor(((o.cells * o.maxRows - o.ramp) * 6) / 8));
   if (r.error) return r;
   return message(r.out, r.cellsRead + o.ramp, o.cells, o.cell, 2);
 }

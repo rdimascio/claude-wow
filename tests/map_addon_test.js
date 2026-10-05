@@ -40,17 +40,20 @@ function newVM(before) {
   const run = (code, arg) => {
     if (lauxlib.luaL_loadstring(L, to_luastring(code)) !== lua.LUA_OK) throw new Error('Lua load: ' + to_jsstring(lua.lua_tostring(L, -1)));
     let nargs = 0;
-    if (arg !== undefined) { lua.lua_pushstring(L, to_luastring(arg)); nargs = 1; }
+    if (arg !== undefined) {
+      lua.lua_pushstring(L, to_luastring(arg));
+      nargs = 1;
+    }
     if (lua.lua_pcall(L, nargs, 0, 0) !== lua.LUA_OK) throw new Error('Lua error: ' + to_jsstring(lua.lua_tostring(L, -1)));
   };
-  const evaluate = (expr) => {
+  const evaluate = expr => {
     run(`local v = (${expr}); if v == nil then RESULT = nil else RESULT = tostring(v) end`);
     lua.lua_getglobal(L, to_luastring('RESULT'));
     const s = lua.lua_isnil(L, -1) ? null : to_jsstring(lua.lua_tolstring(L, -1));
     lua.lua_pop(L, 1);
     return s;
   };
-  const num = (expr) => Number(evaluate(expr));
+  const num = expr => Number(evaluate(expr));
   let stub = fs.readFileSync(path.join(__dirname, 'wow_stub.lua'), 'utf8');
   // Lines are frames too (Frame:CreateLine), and textures can rotate.
   stub += `
@@ -141,7 +144,10 @@ test('herb/ore nodes toggle and follow the gathering skill', () => {
   assert.equal(shownPins(vm).length, 0, 'off by default');
   vm.run('SlashCmdList.CLAUDEWOWMAP("ore on")');
   // No Mining skill line in the stub: every ore shows, flagged as not learned.
-  assert.deepEqual(shownPins(vm).map(p => p.split(',').slice(0, 2).join(',') + ',' + p.split(',')[3]), ['100,140,Copper Vein', '300,280,Copper Vein', '500,350,Tin Vein']);
+  assert.deepEqual(
+    shownPins(vm).map(p => p.split(',').slice(0, 2).join(',') + ',' + p.split(',')[3]),
+    ['100,140,Copper Vein', '300,280,Copper Vein', '500,350,Tin Vein'],
+  );
   // With Mining 50 (Forever's C_SkillInfo: one table per line), Tin (65) is filtered out until "filter all".
   // Forever also lists child lines (parentSkillLineID ~= 0) that repeat the parent.
   vm.run(`C_SkillInfo = { GetNumSkillLines = function() return 3 end, GetSkillLineInfo = function(i)
@@ -179,14 +185,18 @@ test('a route from the agent is a link in its chat tab that opens the map at the
   const vm = newVM('STUB.ChatDock(); function OpenWorldMap(id) STUB.openedMap = id; WorldMapFrame:Show() end; WorldMapFrame.shown = false');
   vm.run(`ClaudeWoWMap.Sync(${LAYER})`);
   const lines = vm.evaluate('STUB.Lines(ChatFrame11)') || '';
-  assert.match(lines, /Copper loop: 3 point\(s\), route\. \|Haddon:claudewow:map:mining\|h\|cffffd100\[show route\]/, 'said in the chat tab with a link: ' + lines);
+  assert.match(
+    lines,
+    /Copper loop: 3 point\(s\), route\. \|Haddon:claudewow:map:mining\|h\|cffffd100\[show route\]/,
+    'said in the chat tab with a link: ' + lines,
+  );
   assert.ok(!vm.evaluate('table.concat(STUB.prints, "\\n")').includes('Copper loop'), 'not in General');
   vm.run('SlashCmdList.CLAUDEWOWMAP("hide mining"); SlashCmdList.CLAUDEWOWMAP("stop")');
   vm.run('STUB.combat = true; STUB.ClickLink("|Haddon:claudewow:map:mining|h[show route]|h")');
   assert.equal(vm.evaluate('STUB.openedMap'), null, 'no map opened in combat');
   assert.match(vm.evaluate('STUB.Lines(ChatFrame11)'), /Copper loop is on the map; it opens after combat, or press M\./);
   vm.run('STUB.combat = false; STUB.ClickLink("|Haddon:claudewow:map:mining|h[show route]|h")');
-  assert.equal(vm.num('STUB.openedMap'), 1432, 'the map opens on the route\'s first stop');
+  assert.equal(vm.num('STUB.openedMap'), 1432, "the map opens on the route's first stop");
   assert.equal(vm.evaluate('ClaudeWoWMapDB.hidden.mining'), null, 'the layer is shown again');
   assert.equal(vm.evaluate('ClaudeWoWMapDB.nav.layer'), 'mining', 'and the navigator follows it');
 });

@@ -28,7 +28,11 @@ const withFactory = async sb => {
 };
 
 const runsOf = h => {
-  try { return JSON.parse(fs.readFileSync(path.join(h.sb.home, 'factory', 'runs.json'), 'utf8')).runs; } catch { return []; }
+  try {
+    return JSON.parse(fs.readFileSync(path.join(h.sb.home, 'factory', 'runs.json'), 'utf8')).runs;
+  } catch {
+    return [];
+  }
 };
 
 const hidden = text => text.replace(/\[/g, '\\u005b').replace(/\]/g, '\\u005d');
@@ -36,7 +40,10 @@ const hidden = text => text.replace(/\[/g, '\\u005b').replace(/\]/g, '\\u005d');
 test('a coding chat with the factory on is a cheap dispatcher: it starts an allowlisted skill as a background claude run, refuses others, and the result reaches the chat', async () => {
   await withGame({ beforeLaunch: withFactory }, async h => {
     const refused = await h.client.say('[[mcp-call wowfactory factory_dispatch {"skill":"implementation-engineer","args":"x"}]]');
-    assert.match(refused.text, /^mcp factory_dispatch error: "implementation-engineer" is not a factory skill this bridge may run\. Allowed: babysit-pr, fresh-eyes\./);
+    assert.match(
+      refused.text,
+      /^mcp factory_dispatch error: "implementation-engineer" is not a factory skill this bridge may run\. Allowed: babysit-pr, fresh-eyes\./,
+    );
     assert.equal(runsOf(h).length, 0, 'a refused skill starts nothing');
 
     const dispatcher = h.agentCalls().at(-1);
@@ -60,7 +67,7 @@ test('a coding chat with the factory on is a cheap dispatcher: it starts an allo
     assert.equal(listAfter(child.argv, '--effort')[0], 'high');
     assert.ok(!child.argv.includes('--mcp-config'));
     assert.ok(!listAfter(child.argv, '--disallowedTools').includes('Edit'), 'the skill run keeps its edit tools');
-    assert.equal(fs.realpathSync(child.cwd), fs.realpathSync(h.sb.project), 'in the chat\'s folder');
+    assert.equal(fs.realpathSync(child.cwd), fs.realpathSync(h.sb.project), "in the chat's folder");
     const run = runsOf(h).find(r => r.id === id);
     assert.equal(run.status, 'done');
     assert.ok(run.costUsd > 0);
@@ -68,7 +75,10 @@ test('a coding chat with the factory on is a cheap dispatcher: it starts an allo
 
     const status = await h.client.say(`[[mcp-call wowfactory factory_status {"runId":"${id}"}]]`);
     assert.match(status.text, new RegExp(`/fresh-eyes PR 42: done after .*Factory run ${id}`));
-    await h.client.waitFor(() => JSON.stringify(h.client.db()).includes(`Factory run ${id}, model`), { timeoutMs: 20000, label: 'the late result in the chat' });
+    await h.client.waitFor(() => JSON.stringify(h.client.db()).includes(`Factory run ${id}, model`), {
+      timeoutMs: 20000,
+      label: 'the late result in the chat',
+    });
   });
 });
 

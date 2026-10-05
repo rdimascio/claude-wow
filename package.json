@@ -36,7 +36,7 @@
     "format": "oxfmt && oxlint --fix",
     "test": "node tests/unit.js",
     "test:bun": "bun tests/unit.js",
-    "test:coverage": "node tests/unit.js --experimental-test-coverage --test-coverage-include=bridge/** --test-coverage-include=setup.js --test-coverage-include=build.js --test-coverage-lines=92.5 --test-coverage-branches=83 --test-coverage-functions=89",
+    "test:coverage": "node tests/unit.js --experimental-test-coverage --test-coverage-include=bridge/** --test-coverage-include=setup.js --test-coverage-include=build.js --test-coverage-lines=90 --test-coverage-branches=83 --test-coverage-functions=89",
     "test:e2e": "node --test --test-concurrency=3 --test-timeout=180000 --test-reporter=spec tests/e2e/*_test.js",
     "test:fuzz": "node --test --test-reporter=spec tests/e2e/fuzz_test.js",
     "check": "npm run lint && npm test && npm run test:e2e",

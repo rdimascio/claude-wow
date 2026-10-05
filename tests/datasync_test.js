@@ -52,8 +52,15 @@ function syncInto(dataDir, extra = {}) {
 }
 
 test('CSV parsing: quotes, doubled quotes, commas and newlines inside quotes, CRLF, BOM', () => {
-  assert.deepEqual(D.parseCsv('﻿a,b\r\n1,"x, ""y"""\r\n2,"two\nlines"\n'), [['a', 'b'], ['1', 'x, "y"'], ['2', 'two\nlines']]);
-  assert.deepEqual(D.parseCsv('a,b\n1,'), [['a', 'b'], ['1', '']]);
+  assert.deepEqual(D.parseCsv('﻿a,b\r\n1,"x, ""y"""\r\n2,"two\nlines"\n'), [
+    ['a', 'b'],
+    ['1', 'x, "y"'],
+    ['2', 'two\nlines'],
+  ]);
+  assert.deepEqual(D.parseCsv('a,b\n1,'), [
+    ['a', 'b'],
+    ['1', ''],
+  ]);
   assert.throws(() => D.parseCsv('a\n"open'), D.SyncError);
 });
 
@@ -68,7 +75,21 @@ test('value checks: integers, numbers, names', () => {
   assert.equal(D.toName('x'.repeat(D.MAX_NAME_LENGTH)), 'x'.repeat(D.MAX_NAME_LENGTH));
   assert.equal(D.toName('  Edge Post '), 'Edge Post');
   assert.equal(D.toName('\u00a0Nbsp Post\u00a0'), 'Nbsp Post');
-  for (const bad of ['', '   ', '\tpadded', 'x'.repeat(D.MAX_NAME_LENGTH + 1), 'a|cffff0000b', 'line\nbreak', 'tab\there', 'c1\u0085next', 'bidi\u202eflip', 'zero\u200bwidth', 'line\u2028sep', 'para\u2029sep']) assert.equal(D.toName(bad), null, JSON.stringify(bad));
+  for (const bad of [
+    '',
+    '   ',
+    '\tpadded',
+    'x'.repeat(D.MAX_NAME_LENGTH + 1),
+    'a|cffff0000b',
+    'line\nbreak',
+    'tab\there',
+    'c1\u0085next',
+    'bidi\u202eflip',
+    'zero\u200bwidth',
+    'line\u2028sep',
+    'para\u2029sep',
+  ])
+    assert.equal(D.toName(bad), null, JSON.stringify(bad));
 });
 
 test('build strings: only four dotted integers reach a path or a URL', () => {
@@ -97,10 +118,23 @@ test('a bad build string stops the sync before any fetch or folder', async () =>
 
   const out = [];
   const err = [];
-  const code = await D.main(['sync', '--build', '../etc'], { env: { CLAUDE_WOW_HOME: scratch('badbuild-main') }, fetch: wago.fetchImpl, out: s => out.push(s), err: s => err.push(s) });
+  const code = await D.main(['sync', '--build', '../etc'], {
+    env: { CLAUDE_WOW_HOME: scratch('badbuild-main') },
+    fetch: wago.fetchImpl,
+    out: s => out.push(s),
+    err: s => err.push(s),
+  });
   assert.equal(code, 2);
   assert.match(err.join(''), /bad build string/);
-  assert.equal(await D.main(['sync', '--flavor=retail'], { env: { CLAUDE_WOW_HOME: scratch('badflag-main') }, fetch: wago.fetchImpl, out: s => out.push(s), err: s => err.push(s) }), 2);
+  assert.equal(
+    await D.main(['sync', '--flavor=retail'], {
+      env: { CLAUDE_WOW_HOME: scratch('badflag-main') },
+      fetch: wago.fetchImpl,
+      out: s => out.push(s),
+      err: s => err.push(s),
+    }),
+    2,
+  );
   assert.match(err.join(''), /unknown flavor "retail": use forever, classic_era/);
   assert.equal(wago.calls.length, 0);
 });
@@ -116,7 +150,12 @@ test('build family: same 1.60.1 family is compatible, the exact build is exact',
 test('placeOnMap: one zone wins, overlapping zones fall back to the world-map continent, a point off every map or out of 0-100 gets no map', () => {
   const assignment = (id, uiMapID, region, uiMax = [1, 1]) => ({ id, uiMapID, mapID: 7, uiMin: [0, 0], uiMax, region });
   const ctx = {
-    uiMaps: new Map([[1, { type: 2, system: 0 }], [2, { type: 3, system: 0 }], [3, { type: 3, system: 0 }], [5, { type: 2, system: 1 }]]),
+    uiMaps: new Map([
+      [1, { type: 2, system: 0 }],
+      [2, { type: 3, system: 0 }],
+      [3, { type: 3, system: 0 }],
+      [5, { type: 2, system: 1 }],
+    ]),
     assignments: [
       assignment(10, 1, [-100, -100, 0, 100, 100, 0]),
       assignment(20, 2, [0, 0, 0, 100, 100, 0]),
@@ -126,12 +165,21 @@ test('placeOnMap: one zone wins, overlapping zones fall back to the world-map co
   };
   assert.deepEqual(D.placeOnMap({ x: 10, y: 90 }, 7, ctx), {
     map: { uiMapID: 2, x: 10, y: 90 },
-    maps: [{ uiMapID: 2, x: 10, y: 90 }, { uiMapID: 1, x: 5, y: 45 }, { uiMapID: 5, x: 10, y: 90 }],
+    maps: [
+      { uiMapID: 2, x: 10, y: 90 },
+      { uiMapID: 1, x: 5, y: 45 },
+      { uiMapID: 5, x: 10, y: 90 },
+    ],
     zoneAmbiguous: false,
   });
   assert.deepEqual(D.placeOnMap({ x: 50, y: 45 }, 7, ctx), {
     map: { uiMapID: 1, x: 27.5, y: 25 },
-    maps: [{ uiMapID: 3, x: 75, y: 50 }, { uiMapID: 2, x: 55, y: 50 }, { uiMapID: 1, x: 27.5, y: 25 }, { uiMapID: 5, x: 55, y: 50 }],
+    maps: [
+      { uiMapID: 3, x: 75, y: 50 },
+      { uiMapID: 2, x: 55, y: 50 },
+      { uiMapID: 1, x: 27.5, y: 25 },
+      { uiMapID: 5, x: 55, y: 50 },
+    ],
     zoneAmbiguous: true,
   });
   assert.deepEqual(D.placeOnMap({ x: -50, y: -50 }, 7, ctx).map, { uiMapID: 1, x: 75, y: 75 });
@@ -139,11 +187,14 @@ test('placeOnMap: one zone wins, overlapping zones fall back to the world-map co
   assert.deepEqual(D.placeOnMap({ x: 500, y: 500 }, 7, ctx), { map: null, maps: [], zoneAmbiguous: false });
   const stretched = { uiMaps: new Map([[4, { type: 3, system: 0 }]]), assignments: [assignment(40, 4, [0, 0, 0, 100, 100, 0], [1.5, 1])] };
   assert.equal(D.placeOnMap({ x: 50, y: 0 }, 7, stretched).map, null);
-  const split = { uiMaps: new Map([[2, { type: 3, system: 0 }]]), assignments: [assignment(22, 2, [0, 0, 0, 200, 200, 0]), assignment(21, 2, [0, 0, 0, 100, 100, 0])] };
+  const split = {
+    uiMaps: new Map([[2, { type: 3, system: 0 }]]),
+    assignments: [assignment(22, 2, [0, 0, 0, 200, 200, 0]), assignment(21, 2, [0, 0, 0, 100, 100, 0])],
+  };
   assert.deepEqual(D.placeOnMap({ x: 50, y: 50 }, 7, split), { map: { uiMapID: 2, x: 50, y: 50 }, maps: [{ uiMapID: 2, x: 50, y: 50 }], zoneAmbiguous: false });
 });
 
-test('a forced re-sync points current at the new folder before cleanup, and a cleanup failure is only logged', async (t) => {
+test('a forced re-sync points current at the new folder before cleanup, and a cleanup failure is only logged', async t => {
   if (process.platform === 'win32' || (process.getuid && process.getuid() === 0)) return t.skip('needs POSIX permissions as a normal user');
   const dataDir = path.join(scratch('cleanup'), 'data');
   const root = path.join(dataDir, 'forever');
@@ -158,7 +209,10 @@ test('a forced re-sync points current at the new folder before cleanup, and a cl
     assert.equal(r.status, 'synced');
     assert.equal(fs.readFileSync(path.join(root, 'current'), 'utf8'), `${BUILD}-1\n`);
     assert.equal(D.readCurrent(root).dir, path.join(root, `${BUILD}-1`));
-    assert.ok(lines.some(l => /could not remove/.test(l)), lines.join('\n'));
+    assert.ok(
+      lines.some(l => /could not remove/.test(l)),
+      lines.join('\n'),
+    );
   } finally {
     fs.chmodSync(locked, 0o700);
   }
@@ -167,9 +221,15 @@ test('a forced re-sync points current at the new folder before cleanup, and a cl
 test('a table whose layout changed, or a file wago did not serve for that build, fails the sync', async () => {
   const dataDir = path.join(scratch('layout'), 'data');
   const root = path.join(dataDir, 'forever');
-  await assert.rejects(syncInto(dataDir, { build: BUILD, wago: fakeWago({ overrides: { QuestV2: 'QuestID,Other\n1,2\n' } }) }), /QuestV2: column ID is missing/);
+  await assert.rejects(
+    syncInto(dataDir, { build: BUILD, wago: fakeWago({ overrides: { QuestV2: 'QuestID,Other\n1,2\n' } }) }),
+    /QuestV2: column ID is missing/,
+  );
   await assert.rejects(syncInto(dataDir, { build: BUILD, wago: fakeWago({ overrides: { QuestV2: 'ID\n-1\n' } }) }), /QuestV2: no row passed validation/);
-  await assert.rejects(syncInto(dataDir, { build: BUILD, wago: fakeWago({ disposition: t => `attachment; filename="${t}.1.60.1.1.csv"` }) }), /did not serve UiMap\.1\.60\.1\.200\.csv/);
+  await assert.rejects(
+    syncInto(dataDir, { build: BUILD, wago: fakeWago({ disposition: t => `attachment; filename="${t}.1.60.1.1.csv"` }) }),
+    /did not serve UiMap\.1\.60\.1\.200\.csv/,
+  );
   assert.equal(D.readCurrent(root), null);
   assert.deepEqual(fs.readdirSync(root), []);
 });
@@ -179,8 +239,20 @@ test('the lock: one sync at a time, a dead or stale holder is taken over', async
   const root = path.join(dataDir, 'forever');
   const lockFile = path.join(root, D.LOCK_FILE);
 
-  const held = D.acquireLock(root, () => FIXED_NOW, () => true);
-  assert.throws(() => D.acquireLock(root, () => FIXED_NOW, () => true), D.LockedError);
+  const held = D.acquireLock(
+    root,
+    () => FIXED_NOW,
+    () => true,
+  );
+  assert.throws(
+    () =>
+      D.acquireLock(
+        root,
+        () => FIXED_NOW,
+        () => true,
+      ),
+    D.LockedError,
+  );
   const wago = fakeWago();
   await assert.rejects(syncInto(dataDir, { wago, pidAlive: () => true }), D.LockedError);
   assert.equal(wago.calls.length, 0);
@@ -189,11 +261,19 @@ test('the lock: one sync at a time, a dead or stale holder is taken over', async
   assert.equal(fs.existsSync(lockFile), false);
 
   fs.writeFileSync(lockFile, JSON.stringify({ pid: 999999, startedAt: FIXED_NOW, token: 'dead' }));
-  D.acquireLock(root, () => FIXED_NOW, () => false).release();
+  D.acquireLock(
+    root,
+    () => FIXED_NOW,
+    () => false,
+  ).release();
   assert.equal(fs.existsSync(lockFile), false);
 
   fs.writeFileSync(lockFile, JSON.stringify({ pid: process.pid, startedAt: FIXED_NOW - D.LOCK_STALE_MS - 1, token: 'old' }));
-  D.acquireLock(root, () => FIXED_NOW, () => true).release();
+  D.acquireLock(
+    root,
+    () => FIXED_NOW,
+    () => true,
+  ).release();
   assert.equal(fs.existsSync(lockFile), false);
 
   const [first, second] = await Promise.allSettled([syncInto(dataDir, { build: BUILD }), syncInto(dataDir, { build: BUILD })]);
@@ -211,12 +291,24 @@ test('the lock: an unreadable lock is held until its file is stale', () => {
   for (const body of ['', '{"pid":']) {
     fs.writeFileSync(lockFile, body);
     fs.utimesSync(lockFile, seconds(FIXED_NOW), seconds(FIXED_NOW));
-    assert.throws(() => D.acquireLock(root, () => FIXED_NOW, () => false), D.LockedError);
+    assert.throws(
+      () =>
+        D.acquireLock(
+          root,
+          () => FIXED_NOW,
+          () => false,
+        ),
+      D.LockedError,
+    );
     assert.equal(fs.readFileSync(lockFile, 'utf8'), body);
   }
   const old = FIXED_NOW - D.LOCK_STALE_MS - 1000;
   fs.utimesSync(lockFile, seconds(old), seconds(old));
-  D.acquireLock(root, () => FIXED_NOW, () => false).release();
+  D.acquireLock(
+    root,
+    () => FIXED_NOW,
+    () => false,
+  ).release();
   assert.equal(fs.existsSync(lockFile), false);
   assert.deepEqual(fs.readdirSync(root), []);
 });
@@ -230,7 +322,10 @@ test('the lock: a stale lock replaced by another taker is not deleted', () => {
   let calls = 0;
   const alive = () => {
     calls++;
-    if (calls === 1) { fs.writeFileSync(lockFile, theirs); return false; }
+    if (calls === 1) {
+      fs.writeFileSync(lockFile, theirs);
+      return false;
+    }
     return true;
   };
   assert.throws(() => D.acquireLock(root, () => FIXED_NOW, alive), D.LockedError);
@@ -240,7 +335,15 @@ test('the lock: a stale lock replaced by another taker is not deleted', () => {
   const guard = `${lockFile}.takeover`;
   fs.mkdirSync(guard);
   fs.utimesSync(guard, FIXED_NOW / 1000, FIXED_NOW / 1000);
-  assert.throws(() => D.acquireLock(root, () => FIXED_NOW, () => false), /taking over/);
+  assert.throws(
+    () =>
+      D.acquireLock(
+        root,
+        () => FIXED_NOW,
+        () => false,
+      ),
+    /taking over/,
+  );
   assert.match(fs.readFileSync(lockFile, 'utf8'), /"dead"/);
   fs.rmdirSync(guard);
 });
@@ -258,7 +361,13 @@ test('a manifest from before the newer table list makes an already-current build
   assert.equal(second.status, 'synced');
   assert.equal(path.basename(second.dir), `${BUILD}-1`);
   assert.deepEqual(second.manifest.previous.changedTables, ['SpellName', 'Spell', 'Faction']);
-  assert.deepEqual(fs.readdirSync(root).filter(n => !n.startsWith('.')).sort(), [`${BUILD}-1`, 'current']);
+  assert.deepEqual(
+    fs
+      .readdirSync(root)
+      .filter(n => !n.startsWith('.'))
+      .sort(),
+    [`${BUILD}-1`, 'current'],
+  );
   assert.equal((await syncInto(dataDir, { build: BUILD })).status, 'current');
 });
 
@@ -269,7 +378,10 @@ test('an upgrade sync that cannot fetch a table the current data has changes not
   const old = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
   delete old.tablesVersion;
   fs.writeFileSync(manifestFile, JSON.stringify(old));
-  await assert.rejects(syncInto(dataDir, { build: BUILD, wago: fakeWago({ failTable: 'SkillLineAbility' }) }), /SkillLineAbility could not be fetched again .* nothing was changed/);
+  await assert.rejects(
+    syncInto(dataDir, { build: BUILD, wago: fakeWago({ failTable: 'SkillLineAbility' }) }),
+    /SkillLineAbility could not be fetched again .* nothing was changed/,
+  );
   assert.equal(D.readCurrent(path.join(dataDir, 'forever')).dir, first.dir);
   const fresh = path.join(scratch('newtable'), 'data');
   const partial = await syncInto(fresh, { build: BUILD, wago: fakeWago({ failTable: 'SkillLineAbility' }) });
@@ -298,7 +410,13 @@ test('claude-wow data sync writes under CLAUDE_WOW_HOME/data and reports counts'
   const home = scratch('main');
   const wago = fakeWago();
   const out = [];
-  const code = await D.main(['sync'], { env: { CLAUDE_WOW_HOME: home }, fetch: wago.fetchImpl, now: () => FIXED_NOW, out: s => out.push(s), err: s => out.push(s) });
+  const code = await D.main(['sync'], {
+    env: { CLAUDE_WOW_HOME: home },
+    fetch: wago.fetchImpl,
+    now: () => FIXED_NOW,
+    out: s => out.push(s),
+    err: s => out.push(s),
+  });
   assert.equal(code, 0);
   assert.match(out.join(''), /35 rows kept, 19 dropped; current build 1\.60\.1\.200/);
   assert.equal(fs.readFileSync(path.join(home, 'data', 'forever', 'current'), 'utf8'), `${BUILD}\n`);
@@ -310,13 +428,30 @@ test('claude-wow data sync writes under CLAUDE_WOW_HOME/data and reports counts'
 
 test('an unexpected error in the sync is one line and exit 1, never a rejection', async () => {
   const err = [];
-  const brokenFetch = async () => ({ status: 200, get headers() { throw new TypeError('headers exploded'); } });
-  const code = await D.main(['sync', '--build', BUILD], { env: { CLAUDE_WOW_HOME: scratch('main-crash') }, fetch: brokenFetch, out: () => {}, err: s => err.push(s) });
+  const brokenFetch = async () => ({
+    status: 200,
+    get headers() {
+      throw new TypeError('headers exploded');
+    },
+  });
+  const code = await D.main(['sync', '--build', BUILD], {
+    env: { CLAUDE_WOW_HOME: scratch('main-crash') },
+    fetch: brokenFetch,
+    out: () => {},
+    err: s => err.push(s),
+  });
   assert.equal(code, 1);
   assert.equal(err.length, 1);
   assert.match(err[0], /^data sync failed: .*headers exploded\n$/);
 
-  const throwingLog = await D.main(['sync', '--build', BUILD], { env: { CLAUDE_WOW_HOME: scratch('main-crash2') }, fetch: fakeWago().fetchImpl, out: () => { throw new RangeError('stdout closed'); }, err: s => err.push(s) });
+  const throwingLog = await D.main(['sync', '--build', BUILD], {
+    env: { CLAUDE_WOW_HOME: scratch('main-crash2') },
+    fetch: fakeWago().fetchImpl,
+    out: () => {
+      throw new RangeError('stdout closed');
+    },
+    err: s => err.push(s),
+  });
   assert.equal(throwingLog, 1);
   assert.match(err[1], /stdout closed/);
 });
@@ -345,7 +480,12 @@ test('fetch: no redirect off wago.tools, the body is capped while it streams', a
   await assert.rejects(syncInto(dataDir, { maxBodyBytes: 32 }), /larger than 32 bytes/);
 
   let pulls = 0;
-  const endless = new ReadableStream({ pull(controller) { pulls++; controller.enqueue(new Uint8Array(1024)); } });
+  const endless = new ReadableStream({
+    pull(controller) {
+      pulls++;
+      controller.enqueue(new Uint8Array(1024));
+    },
+  });
   const streaming = async () => new Response(endless, { status: 200, headers: { 'content-type': 'application/json' } });
   await assert.rejects(D.sync({ dataDir, fetch: streaming, maxBodyBytes: 4096 }), /larger than 4096 bytes/);
   assert.ok(pulls < 16, `read ${pulls} chunks`);
@@ -354,12 +494,28 @@ test('fetch: no redirect off wago.tools, the body is capped while it streams', a
   const declared = async () => {
     const res = new Response('{}', { status: 200, headers: { 'content-type': 'application/json', 'content-length': '999999999' } });
     const realBody = res.body;
-    Object.defineProperty(res, 'body', { get() { bodyRead = true; return realBody; } });
+    Object.defineProperty(res, 'body', {
+      get() {
+        bodyRead = true;
+        return realBody;
+      },
+    });
     return res;
   };
   await assert.rejects(D.sync({ dataDir, fetch: declared, maxBodyBytes: 4096 }), /larger than 4096 bytes/);
   assert.equal(bodyRead, false);
 
-  const failing = async () => new Response(new ReadableStream({ pull(c) { c.error(new TypeError('socket hang up')); } }), { status: 200, headers: { 'content-type': 'application/json' } });
-  await assert.rejects(D.sync({ dataDir, fetch: failing }), e => e instanceof D.SyncError && /^https:\/\/wago\.tools\/api\/builds: socket hang up$/.test(e.message));
+  const failing = async () =>
+    new Response(
+      new ReadableStream({
+        pull(c) {
+          c.error(new TypeError('socket hang up'));
+        },
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    );
+  await assert.rejects(
+    D.sync({ dataDir, fetch: failing }),
+    e => e instanceof D.SyncError && /^https:\/\/wago\.tools\/api\/builds: socket hang up$/.test(e.message),
+  );
 });

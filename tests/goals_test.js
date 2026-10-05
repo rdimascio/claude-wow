@@ -36,11 +36,26 @@ function rig(opts = {}) {
   let ctx = { text: opts.ctx === undefined ? BONE_CONTEXT : opts.ctx, at: CONTEXT_AT };
   const posts = [];
   const streamOptions = opts.streamOptions || { url: 'http://127.0.0.1:9' };
-  const post = opts.post || (async (url, command) => { posts.push({ url, command }); return { ok: true, status: 200, message: '' }; });
+  const post =
+    opts.post ||
+    (async (url, command) => {
+      posts.push({ url, command });
+      return { ok: true, status: 200, message: '' };
+    });
   const store = G.createGoals({ dir, context: () => ctx, streamOptions: () => streamOptions, post, now: () => NOW, gameData: opts.gameData });
   const file = path.join(dir, BONE_KEY, G.GOALS_FILE);
   const read = () => JSON.parse(fs.readFileSync(file, 'utf8'));
-  return { dir, store, posts, file, read, setContext: text => { ctx = { text, at: CONTEXT_AT + 1000 }; }, cleanup: () => fs.rmSync(dir, { recursive: true, force: true }) };
+  return {
+    dir,
+    store,
+    posts,
+    file,
+    read,
+    setContext: text => {
+      ctx = { text, at: CONTEXT_AT + 1000 };
+    },
+    cleanup: () => fs.rmSync(dir, { recursive: true, force: true }),
+  };
 }
 
 test('context parsing: the Professions line with ranks, the character and realm as a folder-safe key', () => {
@@ -103,21 +118,34 @@ test('goal_set: a profession goal by name or skillID, progress from the game con
     assert.equal(doc.v, 1);
     assert.equal(doc.rev, 1);
     assert.equal(doc.character, BONE_KEY);
-    assert.deepEqual(doc.goals, [{ id: 'g_165', type: 'profession', target: { skillID: 165, rank: 150 }, title: 'Leatherworking 150', createdAt: NOW, updatedAt: NOW }]);
+    assert.deepEqual(doc.goals, [
+      { id: 'g_165', type: 'profession', target: { skillID: 165, rank: 150 }, title: 'Leatherworking 150', createdAt: NOW, updatedAt: NOW },
+    ]);
     assert.equal((await r.store.call('goal_set', { skillID: 393, rank: 225 })).ok, true);
     assert.equal((await r.store.call('goal_set', { skillID: 165, rank: 175 })).text.startsWith('Updated the goal "Leatherworking 175"'), true);
     const list = JSON.parse((await r.store.call('goal_list', {})).text);
     assert.equal(list.asOf, CONTEXT_AT);
-    assert.deepEqual(list.goals.map(g => [g.id, g.rank, g.targetRank, g.pct]), [['g_165', 107, 175, 61], ['g_393', 187, 225, 83]]);
+    assert.deepEqual(
+      list.goals.map(g => [g.id, g.rank, g.targetRank, g.pct]),
+      [
+        ['g_165', 107, 175, 61],
+        ['g_393', 187, 225, 83],
+      ],
+    );
     r.setContext(BONE_CONTEXT.replace('Leatherworking 107/150', 'Leatherworking 180/225'));
     const after = JSON.parse((await r.store.call('goal_list', {})).text);
     assert.equal(after.goals[0].pct, 100, 'progress comes from the newest context and caps at 100');
     assert.equal(r.read().rev, 3, 'reading never writes');
     const dropped = await r.store.call('goal_set', { skillID: 393, drop: true });
     assert.match(dropped.text, /Dropped the goal "Skinning 225"/);
-    assert.deepEqual(r.read().goals.map(g => g.id), ['g_165']);
+    assert.deepEqual(
+      r.read().goals.map(g => g.id),
+      ['g_165'],
+    );
     assert.deepEqual(fs.readdirSync(path.dirname(r.file)), [G.GOALS_FILE], 'no temp file is left behind');
-  } finally { r.cleanup(); }
+  } finally {
+    r.cleanup();
+  }
 });
 
 test('goal_set refuses what it cannot track: an unreported profession, a bad rank, a ninth goal, an unknown type, no character', async () => {
@@ -138,9 +166,14 @@ test('goal_set refuses what it cannot track: an unreported profession, a bad ran
     await refuse({ rank: 5 }, /needs profession/);
     assert.equal(fs.existsSync(r.file), false, 'nothing was written');
     assert.equal(r.posts.length, 0, 'nothing was pushed');
-  } finally { r.cleanup(); }
+  } finally {
+    r.cleanup();
+  }
 
-  const nine = Object.values(G.PROFESSION_SKILL_IDS).slice(0, 9).map((n, i) => `${n} ${i + 1}/75`).join(', ');
+  const nine = Object.values(G.PROFESSION_SKILL_IDS)
+    .slice(0, 9)
+    .map((n, i) => `${n} ${i + 1}/75`)
+    .join(', ');
   const full = rig({ ctx: `Character: Bone on Forever\nProfessions: ${nine}` });
   try {
     const names = Object.values(G.PROFESSION_SKILL_IDS).slice(0, 9);
@@ -149,14 +182,18 @@ test('goal_set refuses what it cannot track: an unreported profession, a bad ran
     assert.equal(ninth.ok, false);
     assert.match(ninth.text, /already 8 goals/);
     assert.equal((await full.store.call('goal_set', { profession: names[0], rank: 70 })).ok, true, 'changing an existing goal still works at the limit');
-  } finally { full.cleanup(); }
+  } finally {
+    full.cleanup();
+  }
 
   const none = rig({ ctx: '' });
   try {
     const res = await none.store.call('goal_set', { profession: 'Skinning', rank: 5 });
     assert.equal(res.ok, false);
     assert.match(res.text, /not reported a character/);
-  } finally { none.cleanup(); }
+  } finally {
+    none.cleanup();
+  }
 });
 
 test('a goal store that cannot be read is never replaced with an empty one', async () => {
@@ -167,7 +204,9 @@ test('a goal store that cannot be read is never replaced with an empty one', asy
     assert.equal(res.ok, false);
     assert.match(res.text, /cannot read/);
     assert.equal(r.posts.length, 0);
-  } finally { r.cleanup(); }
+  } finally {
+    r.cleanup();
+  }
 });
 
 test('a goal store that is not valid JSON is never overwritten', async () => {
@@ -179,7 +218,9 @@ test('a goal store that is not valid JSON is never overwritten', async () => {
     assert.equal(res.ok, false);
     assert.match(res.text, /not valid JSON/);
     assert.equal(fs.readFileSync(r.file, 'utf8'), '{ broken');
-  } finally { r.cleanup(); }
+  } finally {
+    r.cleanup();
+  }
 });
 
 test('order_issue: one current order plus the last 20, checked by the validator, tied to a goal when given', async () => {
@@ -207,7 +248,9 @@ test('order_issue: one current order plus the last 20, checked by the validator,
     assert.equal(r.read().orders.history[0].status, 'cleared');
     assert.equal((await r.store.call('order_issue', { clear: true })).ok, false);
     assert.match((await r.store.call('order_nope', {})).text, /Unknown goal tool/);
-  } finally { r.cleanup(); }
+  } finally {
+    r.cleanup();
+  }
 });
 
 const WOWDATA = path.join(__dirname, 'fixtures', 'wowdata');
@@ -228,7 +271,12 @@ test('order tokens: the 90-character cap applies to the expanded text', () => {
 
 test('order tokens: a token glued to a letter, a digit or another token is refused with the reason', () => {
   const store = fixtureData();
-  for (const [text, token] of [['buy 2{item:501} now', '{item:501}'], ['buy {item:501}now', '{item:501}'], ['buy {item:501}{item:502}', '{item:501}'], ['buy 2 {item:501}s', '{item:501}']]) {
+  for (const [text, token] of [
+    ['buy 2{item:501} now', '{item:501}'],
+    ['buy {item:501}now', '{item:501}'],
+    ['buy {item:501}{item:502}', '{item:501}'],
+    ['buy 2 {item:501}s', '{item:501}'],
+  ]) {
     const r = G.validateOrderText(text, NAMES, store);
     assert.equal(r.ok, false, text);
     assert.equal(r.text, `${token} touches a letter, a digit or another token. Put a space or punctuation on both sides of every token.`, text);
@@ -241,7 +289,11 @@ test('order tokens: a data name with a character the order set refuses is refuse
   assert.equal(r.ok, false);
   assert.match(r.text, /\{item:506\}: the name in the data has characters that cannot be shown/);
   const tight = GR.checkText('buy {item:502}', { store: fixtureData(), names: [], plainWords: G.ORDER_WORDS, charRe: /^[A-KM-Za-z0-9 ]$/, maxLength: 90 });
-  assert.deepEqual({ problem: tight.problem, char: tight.char, token: tight.token, name: tight.name }, { problem: 'char', char: 'L', token: '{item:502}', name: 'Fixture Letter' }, 'a caller with a tighter set gets the expanded text checked again, naming the token');
+  assert.deepEqual(
+    { problem: tight.problem, char: tight.char, token: tight.token, name: tight.name },
+    { problem: 'char', char: 'L', token: '{item:502}', name: 'Fixture Letter' },
+    'a caller with a tighter set gets the expanded text checked again, naming the token',
+  );
 });
 
 test('order phrases: the built-in list refuses well-known ability and place names made of plain words, with or without data', () => {
@@ -257,7 +309,11 @@ test('order tokens through the store the bridge builds: the injected home, its d
   const dir = tmpDir('bridgegoals');
   try {
     const home = require('../bridge/home').resolve({ CLAUDE_WOW_HOME: dir });
-    const store = G.createBridgeGoals({ home, context: () => ({ text: BONE_CONTEXT, at: NOW, receivedAt: Date.now() }), streamOptions: () => ({ ...ST.INERT_OPTIONS }) });
+    const store = G.createBridgeGoals({
+      home,
+      context: () => ({ text: BONE_CONTEXT, at: NOW, receivedAt: Date.now() }),
+      streamOptions: () => ({ ...ST.INERT_OPTIONS }),
+    });
     assert.equal(store.home, home);
     assert.equal(store.home.data, path.join(dir, 'data'));
     fs.cpSync(WOWDATA, home.data, { recursive: true });
@@ -266,7 +322,9 @@ test('order tokens through the store the bridge builds: the injected home, its d
     const saved = JSON.parse(fs.readFileSync(path.join(home.goals, BONE_KEY, G.GOALS_FILE), 'utf8'));
     assert.equal(saved.orders.current.text, 'Buy 2 Fixture Blade');
     assert.equal(saved.orders.current.refs[0].build, FIXTURE_BUILD);
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 function copiedData(name) {
@@ -283,12 +341,26 @@ test('order phrases: a missing or damaged phrase table is never taken as a compl
     const d = copiedData('damaged');
     try {
       damage(d);
-      const checked = GR.checkText('take the low road to 150', { store: d.open(), names: NAMES, plainWords: G.ORDER_WORDS, charRe: /^[A-Za-z0-9 ,.'\-:!?%]$/, maxLength: 90 });
+      const checked = GR.checkText('take the low road to 150', {
+        store: d.open(),
+        names: NAMES,
+        plainWords: G.ORDER_WORDS,
+        charRe: /^[A-Za-z0-9 ,.'\-:!?%]$/,
+        maxLength: 90,
+      });
       assert.equal(checked.phrasesChecked, false);
       assert.match(checked.phrasesNote, /The synced game data is missing or has a damaged (uimaps|zones) table/);
-      const again = GR.checkText('take the low road to 150', { store: d.open(), names: NAMES, plainWords: G.ORDER_WORDS, charRe: /^[A-Za-z0-9 ,.'\-:!?%]$/, maxLength: 90 });
+      const again = GR.checkText('take the low road to 150', {
+        store: d.open(),
+        names: NAMES,
+        plainWords: G.ORDER_WORDS,
+        charRe: /^[A-Za-z0-9 ,.'\-:!?%]$/,
+        maxLength: 90,
+      });
       assert.equal(again.phrasesChecked, false, 'the incomplete index was not cached');
-    } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
+    } finally {
+      fs.rmSync(d.dir, { recursive: true, force: true });
+    }
   }
 });
 
@@ -300,10 +372,19 @@ test('order tokens: without synced data, or with data for another build or an un
     assert.equal(tokenOrder.ok, false);
     assert.match(tokenOrder.text, /No game data is synced for this build yet \(claude-wow data sync\).*only names the game itself reported may appear/);
     const word = G.validateOrderText('Buy 2 in Silverpine', NAMES, none);
-    assert.match(word.text, /"silverpine".*Tokens work only once game data is synced for the client's build \(claude-wow data sync, with --flavor classic_era for Classic Era\); until then only names the game reported may appear\./);
-    assert.deepEqual(G.validateOrderText('Raise Leatherworking to 150', NAMES, none), { ok: true, text: 'Raise Leatherworking to 150' }, 'Phase 0 orders work as before');
+    assert.match(
+      word.text,
+      /"silverpine".*Tokens work only once game data is synced for the client's build \(claude-wow data sync, with --flavor classic_era for Classic Era\); until then only names the game reported may appear\./,
+    );
+    assert.deepEqual(
+      G.validateOrderText('Raise Leatherworking to 150', NAMES, none),
+      { ok: true, text: 'Raise Leatherworking to 150' },
+      'Phase 0 orders work as before',
+    );
     assert.match(G.validateOrderText('Buy 2 {item:501}', NAMES, null).text, /No game data is synced/);
-  } finally { fs.rmSync(empty, { recursive: true, force: true }); }
+  } finally {
+    fs.rmSync(empty, { recursive: true, force: true });
+  }
   const mismatch = G.validateOrderText('Buy 2 {item:501}', NAMES, fixtureData('1.60.2.1'));
   assert.match(mismatch.text, /build 1\.60\.1\.200, which is not in the client's build family \(client 1\.60\.2\.1\)/);
   const unknown = G.validateOrderText('Buy 2 {item:501}', NAMES, fixtureData(''));
@@ -314,17 +395,29 @@ test('order tokens: without synced data, or with data for another build or an un
     const res = await r.store.call('order_issue', { text: 'Buy 2 {item:501}' });
     assert.equal(res.ok, false, 'the client build comes from the game context the order is checked against');
     assert.match(res.text, /not in the client's build family \(client 1\.60\.0\.1\)/);
-  } finally { r.cleanup(); }
+  } finally {
+    r.cleanup();
+  }
 });
 
 test('display push: a goal the context no longer reports leaves the overlay list; no context time sends asOf null, never now', () => {
-  const doc = { goals: [{ id: 'g_197', title: 'Tailoring 50', target: { skillID: 197, rank: 50 } }, { id: 'g_393', title: 'Skinning 225', target: { skillID: 393, rank: 225 } }], orders: { current: { text: 'x'.repeat(120), goalId: 'g_197' }, history: [] } };
+  const doc = {
+    goals: [
+      { id: 'g_197', title: 'Tailoring 50', target: { skillID: 197, rank: 50 } },
+      { id: 'g_393', title: 'Skinning 225', target: { skillID: 393, rank: 225 } },
+    ],
+    orders: { current: { text: 'x'.repeat(120), goalId: 'g_197' }, history: [] },
+  };
   const payload = G.overlayPayload(doc, G.snapshotOf({ text: BONE_CONTEXT }));
   assert.deepEqual(payload.goals, [{ title: 'Skinning 225', pct: 83 }]);
   assert.equal(payload.order.text.length, G.ORDER_TEXT_MAX);
   assert.equal(payload.order.pct, null);
   assert.equal(payload.asOf, null);
-  assert.equal(G.overlayPayload(doc, G.snapshotOf({ text: BONE_CONTEXT, at: 7, receivedAt: 99 })).asOf, 7, 'asOf is when the context was taken, not when it was last confirmed');
+  assert.equal(
+    G.overlayPayload(doc, G.snapshotOf({ text: BONE_CONTEXT, at: 7, receivedAt: 99 })).asOf,
+    7,
+    'asOf is when the context was taken, not when it was last confirmed',
+  );
 });
 
 test('order_issue is refused when the game context is older than 15 minutes; clearing still works, and goal_list shows both times', async () => {
@@ -345,7 +438,9 @@ test('order_issue is refused when the game context is older than 15 minutes; cle
     assert.equal((await store.call('order_issue', { clear: true })).ok, true);
     ctx = { text: BONE_CONTEXT, at: 0 };
     assert.match((await store.call('order_issue', { text: 'skin 10' })).text, /does not know when the game sent its context/);
-  } finally { r.cleanup(); }
+  } finally {
+    r.cleanup();
+  }
 });
 
 test('context cut by the addon at 900 bytes: the last Professions entry is dropped, so a cut rank never counts', async () => {
@@ -355,12 +450,17 @@ test('context cut by the addon at 900 bytes: the last Professions entry is dropp
   const tail = 'Professions: Leatherworking 107/150, Skinning 18';
   const cut = head + 'Money: 1g'.padEnd(G.ADDON_CONTEXT_MAX_BYTES - head.length - tail.length - 1, '.') + '\n' + tail;
   assert.equal(Buffer.byteLength(cut), G.ADDON_CONTEXT_MAX_BYTES);
-  assert.deepEqual(G.parseProfessions(cut).map(p => [p.name, p.rank]), [['Leatherworking', 107]]);
+  assert.deepEqual(
+    G.parseProfessions(cut).map(p => [p.name, p.rank]),
+    [['Leatherworking', 107]],
+  );
   const r = rig({ ctx: cut });
   try {
     const res = await r.store.call('goal_set', { profession: 'Skinning', rank: 200 });
     assert.equal(res.ok, false, 'the cut entry is not a reported profession');
-  } finally { r.cleanup(); }
+  } finally {
+    r.cleanup();
+  }
 });
 
 test('display push: stream off never posts, and a stream service that is down does not fail the write', async () => {
@@ -370,23 +470,48 @@ test('display push: stream off never posts, and a stream service that is down do
     assert.equal(res.ok, true);
     assert.match(res.text, /overlay is off/);
     assert.equal(off.posts.length, 0);
-  } finally { off.cleanup(); }
-  const down = rig({ post: async () => { throw new Error('connect ECONNREFUSED'); } });
+  } finally {
+    off.cleanup();
+  }
+  const down = rig({
+    post: async () => {
+      throw new Error('connect ECONNREFUSED');
+    },
+  });
   try {
     const res = await down.store.call('goal_set', { profession: 'Skinning', rank: 200 });
     assert.equal(res.ok, true);
     assert.match(res.text, /Stream service is not running \(http:\/\/127\.0\.0\.1:9\)/);
     assert.equal(down.read().goals.length, 1);
-  } finally { down.cleanup(); }
+  } finally {
+    down.cleanup();
+  }
 });
 
 test('MCP tool schemas: goal_set, goal_list, order_issue and the two vote tools; every writer, route_draw included, is denied to in-game runs', () => {
-  assert.deepEqual(G.toolSchemas().map(t => t.name), ['goal_set', 'goal_list', 'order_issue', 'goal_vote_open', 'goal_vote_close']);
-  assert.equal(G.toolSchemas()[2].inputSchema.properties.text.maxLength, GR.TOKEN_TEXT_MAX, 'raw text may carry tokens; the 90-character cap applies after expansion');
+  assert.deepEqual(
+    G.toolSchemas().map(t => t.name),
+    ['goal_set', 'goal_list', 'order_issue', 'goal_vote_open', 'goal_vote_close'],
+  );
+  assert.equal(
+    G.toolSchemas()[2].inputSchema.properties.text.maxLength,
+    GR.TOKEN_TEXT_MAX,
+    'raw text may carry tokens; the 90-character cap applies after expansion',
+  );
   assert.match(G.toolSchemas()[2].description, /\{item:ID\}, \{skill:ID\}, \{faction:ID\} or \{map:ID,x,y\}/);
   assert.match(G.toolSchemas()[2].description, /never from memory or another game version/);
-  assert.deepEqual(LP.GOAL_WRITE_TOOLS, ['mcp__claude-wow__goal_set', 'mcp__claude-wow__order_issue', 'mcp__claude-wow__goal_vote_open', 'mcp__claude-wow__goal_vote_close', 'mcp__claude-wow__route_draw',
-    'mcp__claude-wow__campaign_start', 'mcp__claude-wow__campaign_end', 'mcp__claude-wow__beat_add', 'mcp__claude-wow__beat_trigger', 'mcp__claude-wow__narrate']);
+  assert.deepEqual(LP.GOAL_WRITE_TOOLS, [
+    'mcp__claude-wow__goal_set',
+    'mcp__claude-wow__order_issue',
+    'mcp__claude-wow__goal_vote_open',
+    'mcp__claude-wow__goal_vote_close',
+    'mcp__claude-wow__route_draw',
+    'mcp__claude-wow__campaign_start',
+    'mcp__claude-wow__campaign_end',
+    'mcp__claude-wow__beat_add',
+    'mcp__claude-wow__beat_trigger',
+    'mcp__claude-wow__narrate',
+  ]);
   const acfg = P.withRunDeniedRules({ allowedTools: ['WebSearch'], deniedTools: ['Bash(rm:*)'] }, LP.GOAL_WRITE_TOOLS);
   assert.deepEqual(acfg.deniedTools, ['Bash(rm:*)', ...LP.GOAL_WRITE_TOOLS]);
   assert.deepEqual(P.withoutRules(['WebSearch', 'mcp__claude-wow__order_issue'], LP.GOAL_WRITE_TOOLS), ['WebSearch']);
@@ -421,17 +546,24 @@ function fakeInstall(dir) {
     { tool_name: 'mcp__wowgoals__future_tool', tool_use_id: 't5', tool_input: {} },
     { tool_name: 'Grep', tool_use_id: 't6', tool_input: { path: '/' } },
   ];
-  fs.writeFileSync(agent, [
-    `require('fs').writeFileSync(${JSON.stringify(argvFile)}, JSON.stringify(process.argv.slice(2)));`,
-    `process.stdout.write(JSON.stringify({ type: 'result', result: 'ok', session_id: 'sess-1', permission_denials: ${JSON.stringify(denials)} }) + '\\n');`,
-  ].join('\n'));
+  fs.writeFileSync(
+    agent,
+    [
+      `require('fs').writeFileSync(${JSON.stringify(argvFile)}, JSON.stringify(process.argv.slice(2)));`,
+      `process.stdout.write(JSON.stringify({ type: 'result', result: 'ok', session_id: 'sess-1', permission_denials: ${JSON.stringify(denials)} }) + '\\n');`,
+    ].join('\n'),
+  );
   const cfg = {
     addonDir: addons,
     savedVariablesFile: path.join(savedDir, 'ClaudeWoW.lua'),
     inboxFile: path.join(addons, 'ClaudeWoW_Runtime', 'Inbox.lua'),
-    slots: 1, agent: 'claude', agents: { claude: { path: agent, allowedTools: ['WebSearch'] } },
+    slots: 1,
+    agent: 'claude',
+    agents: { claude: { path: agent, allowedTools: ['WebSearch'] } },
     plugins: { default: 'ask', ask: { cwd: path.join(dir, 'scratch') }, stream: { ...ST.INERT_OPTIONS } },
-    gameContext: false, primerFile: '', capture: { enabled: true },
+    gameContext: false,
+    primerFile: '',
+    capture: { enabled: true },
   };
   fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify(cfg, null, 2));
   return { home, addons, saved: cfg.savedVariablesFile, argvFile };
@@ -447,66 +579,128 @@ function argList(argv, flag) {
 
 function writeOutbox(saved, id, ctx) {
   const ctxLine = ctx === undefined ? '' : `["ctx"] = "${hex(ctx)}",\n`;
-  fs.writeFileSync(saved, `ClaudeWoWDB = {\n["outbox"] = {\n["id"] = ${id},\n["session"] = "sess1",\n["chat"] = "chat1",\n["text"] = "${hex('hi')}",\n["cwd"] = "",\n["plugin"] = "ask",\n${ctxLine}["t"] = 1,\n},\n}\n`);
+  fs.writeFileSync(
+    saved,
+    `ClaudeWoWDB = {\n["outbox"] = {\n["id"] = ${id},\n["session"] = "sess1",\n["chat"] = "chat1",\n["text"] = "${hex('hi')}",\n["cwd"] = "",\n["plugin"] = "ask",\n${ctxLine}["t"] = 1,\n},\n}\n`,
+  );
 }
 
-test('the bridge stamps when the game last confirmed its context: a message without a context keeps the text and its time, and moves receivedAt', { timeout: 60000 }, () => {
-  const dir = tmpDir('heard');
-  try {
-    const { home, saved } = fakeInstall(dir);
-    const run = () => {
-      const r = spawnSync(process.execPath, [BRIDGE, '--once'], { encoding: 'utf8', env: { ...process.env, CLAUDE_WOW_HOME: home }, timeout: 60000 });
-      assert.equal(r.status, 0, r.stdout + r.stderr);
-      return JSON.parse(fs.readFileSync(path.join(home, 'state.json'), 'utf8')).context;
-    };
-    writeOutbox(saved, 7, BONE_CONTEXT);
-    const first = run();
-    assert.equal(first.text, BONE_CONTEXT);
-    assert.equal(first.receivedAt, first.at);
-    const stateFile = path.join(home, 'state.json');
-    const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
-    state.context.at = 1000;
-    state.context.receivedAt = 1000;
-    fs.writeFileSync(stateFile, JSON.stringify(state));
-    writeOutbox(saved, 8);
-    const before = Date.now();
-    const second = run();
-    assert.equal(second.text, BONE_CONTEXT);
-    assert.equal(second.at, 1000, 'the context time stays when the text did not change');
-    assert.ok(second.receivedAt >= before, `receivedAt ${second.receivedAt} moved to this message`);
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
-});
+test(
+  'the bridge stamps when the game last confirmed its context: a message without a context keeps the text and its time, and moves receivedAt',
+  { timeout: 60000 },
+  () => {
+    const dir = tmpDir('heard');
+    try {
+      const { home, saved } = fakeInstall(dir);
+      const run = () => {
+        const r = spawnSync(process.execPath, [BRIDGE, '--once'], { encoding: 'utf8', env: { ...process.env, CLAUDE_WOW_HOME: home }, timeout: 60000 });
+        assert.equal(r.status, 0, r.stdout + r.stderr);
+        return JSON.parse(fs.readFileSync(path.join(home, 'state.json'), 'utf8')).context;
+      };
+      writeOutbox(saved, 7, BONE_CONTEXT);
+      const first = run();
+      assert.equal(first.text, BONE_CONTEXT);
+      assert.equal(first.receivedAt, first.at);
+      const stateFile = path.join(home, 'state.json');
+      const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+      state.context.at = 1000;
+      state.context.receivedAt = 1000;
+      fs.writeFileSync(stateFile, JSON.stringify(state));
+      writeOutbox(saved, 8);
+      const before = Date.now();
+      const second = run();
+      assert.equal(second.text, BONE_CONTEXT);
+      assert.equal(second.at, 1000, 'the context time stays when the text did not change');
+      assert.ok(second.receivedAt >= before, `receivedAt ${second.receivedAt} moved to this message`);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
 
-test('in-game ask runs without the live socket: the channel goal tools and wowgoals are denied, a Need roll can never grant or persist them, and the roll never offers them', { timeout: 60000 }, () => {
-  const dir = tmpDir('askrun');
-  try {
-    const { home, addons, saved, argvFile } = fakeInstall(dir);
-    const allow = ['mcp__claude-wow__order_issue', 'mcp__wowgoals__order_issue', 'mcp__wowgoals', 'WebFetch', 'mcp__wowgoals__*', 'mcp__wowgoals__goal_set(*)', 'mcp__wowgoals*', ' mcp__wowgoals__new_tool', 'Grep', 'Read(' + home + '/state.json)', P.absolutePathRule('Read', path.join(home, 'state.json')), 'LS'].join('\x1F');
-    const allowOnce = ['mcp__claude-wow__goal_set', 'mcp__wowgoals__goal_set', 'mcp__wowgoals__narrate(x)', 'Glob', 'TodoWrite'].join('\x1F');
-    fs.writeFileSync(saved, `ClaudeWoWDB = {\n["outbox"] = {\n["id"] = 7,\n["session"] = "sess1",\n["chat"] = "chat1",\n["text"] = "${hex('set my order')}",\n["cwd"] = "",\n["plugin"] = "ask",\n["allow"] = "${hex(allow)}",\n["allowOnce"] = "${hex(allowOnce)}",\n["t"] = 1,\n},\n}\n`);
-    const r = spawnSync(process.execPath, [BRIDGE, '--once'], { encoding: 'utf8', env: { ...process.env, CLAUDE_WOW_HOME: home }, timeout: 60000 });
-    const out = r.stdout + r.stderr;
-    assert.equal(r.status, 0, out);
-    assert.match(out, /\[ask\]/, out);
-    const argv = JSON.parse(fs.readFileSync(argvFile, 'utf8'));
-    const homes = [...new Set([home, fs.realpathSync(home)])];
-    const guards = homes.flatMap(h => [P.absolutePathRule('Read', path.join(h, 'live.token')), P.absolutePathRule('Edit', path.join(h, 'goals', '**')), P.absolutePathRule('Read', path.join(h, 'tmp', 'mcp', '**'))]);
-    assert.deepEqual(argList(argv, '--disallowedTools'), [...LP.GOAL_WRITE_TOOLS, 'mcp__wowgoals', ...guards, 'Grep', 'Glob', 'LS', 'NotebookRead', ...homes.map(h => P.absolutePathRule('Read', path.join(h, '**')))], 'the token and the goal store are off limits by their real path too');
-    assert.ok(guards.every(g => /^(Read|Edit)\(\/\/[^/]/.test(g)), 'absolute paths take the // prefix');
-    assert.ok(!argv.includes('--mcp-config'), 'no live socket under --once, so no wowgoals server');
-    assert.match(out, /wowgoals: the live socket is not listening/);
-    const allowed = argList(argv, '--allowedTools');
-    assert.ok(allowed.includes('WebFetch') && allowed.includes('TodoWrite') && !allowed.includes('Glob'), 'other granted rules still work, for good and once');
-    for (const tool of LP.GOAL_WRITE_TOOLS) assert.ok(!allowed.includes(tool), `${tool} is never allowed`);
-    assert.deepEqual(allowed.filter(r => r.trim().startsWith('mcp__wowgoals')), [], 'a roll never grants a wowgoals rule');
-    const config = JSON.parse(fs.readFileSync(path.join(home, 'config.json'), 'utf8'));
-    assert.deepEqual(config.agents.claude.allowedTools, ['WebSearch', 'WebFetch'], 'a Need click never persists a goal write tool');
-    const lua = fs.readFileSync(path.join(addons, 'ClaudeWoW_S001', 'Inbox.lua'), 'utf8');
-    const deniedLine = (/^\s*denied = \{.*\},$/m.exec(lua) || [''])[0];
-    assert.match(deniedLine, /"NotebookEdit"/, lua);
-    assert.doesNotMatch(lua, /goal_set|order_issue|campaign_start|goal_vote_open|future_tool|wowgoals|Grep/, 'neither the roll nor the reply offers a goal write tool');
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
-});
+test(
+  'in-game ask runs without the live socket: the channel goal tools and wowgoals are denied, a Need roll can never grant or persist them, and the roll never offers them',
+  { timeout: 60000 },
+  () => {
+    const dir = tmpDir('askrun');
+    try {
+      const { home, addons, saved, argvFile } = fakeInstall(dir);
+      const allow = [
+        'mcp__claude-wow__order_issue',
+        'mcp__wowgoals__order_issue',
+        'mcp__wowgoals',
+        'WebFetch',
+        'mcp__wowgoals__*',
+        'mcp__wowgoals__goal_set(*)',
+        'mcp__wowgoals*',
+        ' mcp__wowgoals__new_tool',
+        'Grep',
+        'Read(' + home + '/state.json)',
+        P.absolutePathRule('Read', path.join(home, 'state.json')),
+        'LS',
+      ].join('\x1F');
+      const allowOnce = ['mcp__claude-wow__goal_set', 'mcp__wowgoals__goal_set', 'mcp__wowgoals__narrate(x)', 'Glob', 'TodoWrite'].join('\x1F');
+      fs.writeFileSync(
+        saved,
+        `ClaudeWoWDB = {\n["outbox"] = {\n["id"] = 7,\n["session"] = "sess1",\n["chat"] = "chat1",\n["text"] = "${hex('set my order')}",\n["cwd"] = "",\n["plugin"] = "ask",\n["allow"] = "${hex(allow)}",\n["allowOnce"] = "${hex(allowOnce)}",\n["t"] = 1,\n},\n}\n`,
+      );
+      const r = spawnSync(process.execPath, [BRIDGE, '--once'], { encoding: 'utf8', env: { ...process.env, CLAUDE_WOW_HOME: home }, timeout: 60000 });
+      const out = r.stdout + r.stderr;
+      assert.equal(r.status, 0, out);
+      assert.match(out, /\[ask\]/, out);
+      const argv = JSON.parse(fs.readFileSync(argvFile, 'utf8'));
+      const homes = [...new Set([home, fs.realpathSync(home)])];
+      const guards = homes.flatMap(h => [
+        P.absolutePathRule('Read', path.join(h, 'live.token')),
+        P.absolutePathRule('Edit', path.join(h, 'goals', '**')),
+        P.absolutePathRule('Read', path.join(h, 'tmp', 'mcp', '**')),
+      ]);
+      assert.deepEqual(
+        argList(argv, '--disallowedTools'),
+        [
+          ...LP.GOAL_WRITE_TOOLS,
+          'mcp__wowgoals',
+          ...guards,
+          'Grep',
+          'Glob',
+          'LS',
+          'NotebookRead',
+          ...homes.map(h => P.absolutePathRule('Read', path.join(h, '**'))),
+        ],
+        'the token and the goal store are off limits by their real path too',
+      );
+      assert.ok(
+        guards.every(g => /^(Read|Edit)\(\/\/[^/]/.test(g)),
+        'absolute paths take the // prefix',
+      );
+      assert.ok(!argv.includes('--mcp-config'), 'no live socket under --once, so no wowgoals server');
+      assert.match(out, /wowgoals: the live socket is not listening/);
+      const allowed = argList(argv, '--allowedTools');
+      assert.ok(
+        allowed.includes('WebFetch') && allowed.includes('TodoWrite') && !allowed.includes('Glob'),
+        'other granted rules still work, for good and once',
+      );
+      for (const tool of LP.GOAL_WRITE_TOOLS) assert.ok(!allowed.includes(tool), `${tool} is never allowed`);
+      assert.deepEqual(
+        allowed.filter(r => r.trim().startsWith('mcp__wowgoals')),
+        [],
+        'a roll never grants a wowgoals rule',
+      );
+      const config = JSON.parse(fs.readFileSync(path.join(home, 'config.json'), 'utf8'));
+      assert.deepEqual(config.agents.claude.allowedTools, ['WebSearch', 'WebFetch'], 'a Need click never persists a goal write tool');
+      const lua = fs.readFileSync(path.join(addons, 'ClaudeWoW_S001', 'Inbox.lua'), 'utf8');
+      const deniedLine = (/^\s*denied = \{.*\},$/m.exec(lua) || [''])[0];
+      assert.match(deniedLine, /"NotebookEdit"/, lua);
+      assert.doesNotMatch(
+        lua,
+        /goal_set|order_issue|campaign_start|goal_vote_open|future_tool|wowgoals|Grep/,
+        'neither the roll nor the reply offers a goal write tool',
+      );
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
 
 function runPluginOnce(dir, { plugin, agent = '' }) {
   const install = fakeInstall(dir);
@@ -516,35 +710,55 @@ function runPluginOnce(dir, { plugin, agent = '' }) {
   config.agents.grok = { path: config.agents.claude.path, allowedTools: ['WebSearch'] };
   fs.writeFileSync(configFile, JSON.stringify(config, null, 2));
   const agentLine = agent ? `["agent"] = "${agent}",\n` : '';
-  fs.writeFileSync(install.saved, `ClaudeWoWDB = {\n["outbox"] = {\n["id"] = 7,\n["session"] = "sess1",\n["chat"] = "chat1",\n["text"] = "${hex('grep the home')}",\n["cwd"] = "",\n["plugin"] = "${plugin}",\n${agentLine}["allow"] = "${hex('Grep')}",\n["t"] = 1,\n},\n}\n`);
+  fs.writeFileSync(
+    install.saved,
+    `ClaudeWoWDB = {\n["outbox"] = {\n["id"] = 7,\n["session"] = "sess1",\n["chat"] = "chat1",\n["text"] = "${hex('grep the home')}",\n["cwd"] = "",\n["plugin"] = "${plugin}",\n${agentLine}["allow"] = "${hex('Grep')}",\n["t"] = 1,\n},\n}\n`,
+  );
   const r = spawnSync(process.execPath, [BRIDGE, '--once'], { encoding: 'utf8', env: { ...process.env, CLAUDE_WOW_HOME: install.home }, timeout: 60000 });
   const out = r.stdout + r.stderr;
   if (!agent) assert.equal(r.status, 0, out);
   assert.match(out, new RegExp(`\\[${plugin}\\]`), out);
   const homes = [...new Set([install.home, fs.realpathSync(install.home)])];
-  return { ...install, out, argv: JSON.parse(fs.readFileSync(install.argvFile, 'utf8')), homeReads: homes.map(h => P.absolutePathRule('Read', path.join(h, '**'))) };
+  return {
+    ...install,
+    out,
+    argv: JSON.parse(fs.readFileSync(install.argvFile, 'utf8')),
+    homeReads: homes.map(h => P.absolutePathRule('Read', path.join(h, '**'))),
+  };
 }
 
-test('a Claude roast run from the game is denied Grep, Glob, LS, NotebookRead and Read of the bridge home, and a roll cannot grant Grep back', { timeout: 60000 }, () => {
-  const dir = tmpDir('roast');
-  try {
-    const { argv, homeReads } = runPluginOnce(dir, { plugin: 'roast' });
-    const denied = argList(argv, '--disallowedTools');
-    for (const rule of [...GM.FILE_SEARCH_TOOLS, ...homeReads]) assert.ok(denied.includes(rule), `${rule} is denied to a roast run: ${denied.join(' ')}`);
-    assert.ok(!argList(argv, '--allowedTools').includes('Grep'), 'a Need roll for Grep is not granted');
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
-});
+test(
+  'a Claude roast run from the game is denied Grep, Glob, LS, NotebookRead and Read of the bridge home, and a roll cannot grant Grep back',
+  { timeout: 60000 },
+  () => {
+    const dir = tmpDir('roast');
+    try {
+      const { argv, homeReads } = runPluginOnce(dir, { plugin: 'roast' });
+      const denied = argList(argv, '--disallowedTools');
+      for (const rule of [...GM.FILE_SEARCH_TOOLS, ...homeReads]) assert.ok(denied.includes(rule), `${rule} is denied to a roast run: ${denied.join(' ')}`);
+      assert.ok(!argList(argv, '--allowedTools').includes('Grep'), 'a Need roll for Grep is not granted');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
 
-test('a Claude claude-code run from the game keeps Grep, Glob, LS and NotebookRead for its project but is denied Read of the bridge home', { timeout: 60000 }, () => {
-  const dir = tmpDir('coding');
-  try {
-    const { argv, homeReads } = runPluginOnce(dir, { plugin: 'claude-code' });
-    const denied = argList(argv, '--disallowedTools');
-    for (const rule of homeReads) assert.ok(denied.includes(rule), `${rule} is denied to a coding run: ${denied.join(' ')}`);
-    for (const tool of GM.FILE_SEARCH_TOOLS) assert.ok(!denied.includes(tool), `a coding run keeps ${tool}`);
-    assert.ok(argList(argv, '--allowedTools').includes('Grep'), 'a coding run may be granted Grep');
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
-});
+test(
+  'a Claude claude-code run from the game keeps Grep, Glob, LS and NotebookRead for its project but is denied Read of the bridge home',
+  { timeout: 60000 },
+  () => {
+    const dir = tmpDir('coding');
+    try {
+      const { argv, homeReads } = runPluginOnce(dir, { plugin: 'claude-code' });
+      const denied = argList(argv, '--disallowedTools');
+      for (const rule of homeReads) assert.ok(denied.includes(rule), `${rule} is denied to a coding run: ${denied.join(' ')}`);
+      for (const tool of GM.FILE_SEARCH_TOOLS) assert.ok(!denied.includes(tool), `a coding run keeps ${tool}`);
+      assert.ok(argList(argv, '--allowedTools').includes('Grep'), 'a coding run may be granted Grep');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
 
 test('a Grok run gets no home read deny, so it can still read the screenshot the bridge keeps in the home', { timeout: 60000 }, () => {
   const dir = tmpDir('grok');
@@ -555,12 +769,17 @@ test('a Grok run gets no home read deny, so it can still read the screenshot the
     assert.ok(denied.length > 0, 'the in-game deny rules still reach Grok');
     assert.ok(!denied.some(r => homeReads.includes(r)), `no Read of the whole home: ${denied.join(' ')}`);
     for (const tool of GM.FILE_SEARCH_TOOLS) assert.ok(!denied.includes(tool), `Grok keeps ${tool}`);
-    assert.ok(denied.some(r => r.includes(path.basename(home)) && r.includes('live.token')), 'the token file stays denied');
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+    assert.ok(
+      denied.some(r => r.includes(path.basename(home)) && r.includes('live.token')),
+      'the token file stays denied',
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 function luaUnescape(s) {
-  return s.replace(/\\(\d{1,3}|.)/g, (_, e) => /^\d/.test(e) ? String.fromCharCode(Number(e)) : e === 'n' ? '\n' : e);
+  return s.replace(/\\(\d{1,3}|.)/g, (_, e) => (/^\d/.test(e) ? String.fromCharCode(Number(e)) : e === 'n' ? '\n' : e));
 }
 
 function luaValue(node) {
@@ -612,27 +831,48 @@ test('slot field: only text that passes the order validator reaches the game, wh
     assert.deepEqual(field.goals, [{ title: 'Skinning 225', pct: 83 }], 'goal titles go through the same validator');
     writeDoc(r, { orders: { current: { id: 'nine', text: 'Skin 10 more' }, history: [] } });
     assert.deepEqual(slotGoals(r.store).order, { id: 'o_9', text: 'Skin 10 more' }, 'an unknown id falls back, the text stays checked');
-  } finally { r.cleanup(); }
+  } finally {
+    r.cleanup();
+  }
 });
 
 test('slot field: the Lua stays under the byte cap, dropping goals from the end before anything else', () => {
   const longest = 'x'.repeat(G.ORDER_TEXT_MAX);
-  const fits = G.luaGoals({ rev: 1, char: 'Bonebonebonebone-ClassicBetaPvP2Realm', order: { id: 'o_1', text: longest, pct: 100 }, goals: [1, 2, 3].map(i => ({ title: `${'y'.repeat(G.GOAL_TITLE_MAX - 2)} ${i}`, pct: 100 })) });
+  const fits = G.luaGoals({
+    rev: 1,
+    char: 'Bonebonebonebone-ClassicBetaPvP2Realm',
+    order: { id: 'o_1', text: longest, pct: 100 },
+    goals: [1, 2, 3].map(i => ({ title: `${'y'.repeat(G.GOAL_TITLE_MAX - 2)} ${i}`, pct: 100 })),
+  });
   assert.ok(Buffer.byteLength(fits) <= G.SLOT_LUA_MAX_BYTES, `${Buffer.byteLength(fits)} bytes`);
   assert.equal((fits.match(/title =/g) || []).length, 3, 'the longest real content keeps all three goals');
-  const oversized = G.luaGoals({ rev: 1, order: { id: 'o_1', text: longest, pct: 5 }, goals: [1, 2, 3].map(i => ({ title: `${'z'.repeat(250)}${i}`, pct: 1 })) });
+  const oversized = G.luaGoals({
+    rev: 1,
+    order: { id: 'o_1', text: longest, pct: 5 },
+    goals: [1, 2, 3].map(i => ({ title: `${'z'.repeat(250)}${i}`, pct: 1 })),
+  });
   assert.ok(oversized.length > 0, 'the order still goes');
   assert.ok(Buffer.byteLength(oversized) <= G.SLOT_LUA_MAX_BYTES, `${Buffer.byteLength(oversized)} bytes`);
   assert.ok((oversized.match(/title =/g) || []).length < 3, 'goals were dropped to fit');
   assert.match(oversized, /z{250}1/, 'the first goal is kept longest');
-  assert.equal(G.luaGoals({ rev: 1, order: { id: 'o_1', text: 'q'.repeat(G.SLOT_LUA_MAX_BYTES), pct: 5 }, goals: [] }), '', 'a field that cannot fit is not sent at all');
+  assert.equal(
+    G.luaGoals({ rev: 1, order: { id: 'o_1', text: 'q'.repeat(G.SLOT_LUA_MAX_BYTES), pct: 5 }, goals: [] }),
+    '',
+    'a field that cannot fit is not sent at all',
+  );
 });
 
 test('slot field: a store edited on disk is read again; one that cannot be read sends the empty field (the card hides) and is logged once', () => {
   const logs = [];
   const dir = tmpDir('slotlog');
   try {
-    const store = G.createGoals({ dir, context: () => ({ text: BONE_CONTEXT, at: CONTEXT_AT }), streamOptions: () => ({ ...ST.INERT_OPTIONS }), now: () => NOW, log: m => logs.push(m) });
+    const store = G.createGoals({
+      dir,
+      context: () => ({ text: BONE_CONTEXT, at: CONTEXT_AT }),
+      streamOptions: () => ({ ...ST.INERT_OPTIONS }),
+      now: () => NOW,
+      log: m => logs.push(m),
+    });
     const file = path.join(dir, BONE_KEY, G.GOALS_FILE);
     assert.match(store.slotLua(), /rev = 0, char = "Bone-ClassicBetaPvP2", goals = \{ {2}\}/, 'no store yet: an empty field, so a stale card hides');
     fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -646,7 +886,9 @@ test('slot field: a store edited on disk is read again; one that cannot be read 
     assert.deepEqual(slotGoals(store), { rev: 0, char: BONE_KEY, goals: {} }, 'an unreadable store hides the card');
     assert.deepEqual(slotGoals(store), { rev: 0, char: BONE_KEY, goals: {} });
     assert.equal(logs.filter(l => /hide the Orders card/.test(l)).length, 1, logs.join('\n'));
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('slot field through the real bridge: the slot files carry the current order next to the other fields', { timeout: 60000 }, () => {
@@ -655,15 +897,29 @@ test('slot field through the real bridge: the slot files carry the current order
     const { home, addons, saved } = fakeInstall(dir);
     const file = path.join(home, 'goals', BONE_KEY, G.GOALS_FILE);
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, JSON.stringify({ v: 1, rev: 12, character: BONE_KEY, goals: [{ id: 'g_393', title: 'Skinning 225', target: { skillID: 393, rank: 225 } }], orders: { current: { id: 'o_12', text: 'Skin 30 more', goalId: 'g_393' }, history: [] } }));
+    fs.writeFileSync(
+      file,
+      JSON.stringify({
+        v: 1,
+        rev: 12,
+        character: BONE_KEY,
+        goals: [{ id: 'g_393', title: 'Skinning 225', target: { skillID: 393, rank: 225 } }],
+        orders: { current: { id: 'o_12', text: 'Skin 30 more', goalId: 'g_393' }, history: [] },
+      }),
+    );
     writeOutbox(saved, 7, BONE_CONTEXT);
     const r = spawnSync(process.execPath, [BRIDGE, '--once'], { encoding: 'utf8', env: { ...process.env, CLAUDE_WOW_HOME: home }, timeout: 60000 });
     assert.equal(r.status, 0, r.stdout + r.stderr);
-    const files = [['ClaudeWoW_S001', 'ClaudeWoW_SlotData'], ['ClaudeWoW_Runtime', 'ClaudeWoW_Inbox']];
+    const files = [
+      ['ClaudeWoW_S001', 'ClaudeWoW_SlotData'],
+      ['ClaudeWoW_Runtime', 'ClaudeWoW_Inbox'],
+    ];
     for (const [folder, globalName] of files) {
       const data = slotData(fs.readFileSync(path.join(addons, folder, 'Inbox.lua'), 'utf8'), globalName);
       assert.deepEqual(data.goals, { rev: 12, char: BONE_KEY, order: { id: 'o_12', text: 'Skin 30 more', pct: 83 }, goals: {} });
       assert.ok(Array.isArray(data.replies), 'the replies are still there');
     }
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

@@ -21,7 +21,7 @@ function scratch(name) {
 }
 
 function fakeWago(overrides = {}) {
-  return async (url) => {
+  return async url => {
     const u = new URL(url);
     const table = /^\/db2\/(\w+)\/csv$/.exec(u.pathname)[1];
     const body = overrides[table] ?? fs.readFileSync(path.join(FIXTURES, `${table}.csv`), 'utf8');
@@ -50,9 +50,28 @@ test('wow_spell names a spell and its rank from the client tables, with its skil
   const store = GD.openStore({ dataDir, clientBuild: BUILD });
   const r = call(store, 'wow_spell', { id: 4001 });
   assert.equal(r.trust, 'client-data');
-  assert.deepEqual(r.results[0], { kind: 'spell', id: 4001, name: 'Fixture Stitch', subtext: 'Rank 1', skillLines: [{ id: 40, name: 'Fixture Craft', minSkillRank: 1 }], reagents: [{ itemID: 501, name: 'Fixture Blade', count: 2 }, { itemID: 502, name: 'Fixture Letter', count: 1 }], source: 'wago.tools', build: BUILD, trust: 'client-data' });
+  assert.deepEqual(r.results[0], {
+    kind: 'spell',
+    id: 4001,
+    name: 'Fixture Stitch',
+    subtext: 'Rank 1',
+    skillLines: [{ id: 40, name: 'Fixture Craft', minSkillRank: 1 }],
+    reagents: [
+      { itemID: 501, name: 'Fixture Blade', count: 2 },
+      { itemID: 502, name: 'Fixture Letter', count: 1 },
+    ],
+    source: 'wago.tools',
+    build: BUILD,
+    trust: 'client-data',
+  });
   const ranks = call(store, 'wow_spell', { name: 'stitch' });
-  assert.deepEqual(ranks.results.map(x => [x.id, x.subtext]), [[4001, 'Rank 1'], [4002, 'Rank 2']]);
+  assert.deepEqual(
+    ranks.results.map(x => [x.id, x.subtext]),
+    [
+      [4001, 'Rank 1'],
+      [4002, 'Rank 2'],
+    ],
+  );
   assert.match(ranks.notes.join(' '), /2 spells are named "Fixture Stitch" \(IDs 4001, 4002\)/);
   assert.equal(call(store, 'wow_spell', { id: 4003 }).found, false, 'a name with a pipe never made it into the table');
   assert.equal(call(store, 'wow_spell', { id: 4004 }).results[0].development, true, 'a test spell is marked');
@@ -61,7 +80,11 @@ test('wow_spell names a spell and its rank from the client tables, with its skil
   const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'));
   delete manifest.entities.spellreagents;
   fs.writeFileSync(manifestFile, JSON.stringify(manifest));
-  assert.equal(call(GD.openStore({ dataDir, clientBuild: BUILD }), 'wow_spell', { id: 4001 }).results[0].reagents, null, 'an unavailable reagent table is not "no reagents"');
+  assert.equal(
+    call(GD.openStore({ dataDir, clientBuild: BUILD }), 'wow_spell', { id: 4001 }).results[0].reagents,
+    null,
+    'an unavailable reagent table is not "no reagents"',
+  );
 });
 
 test('wow_instance finds dungeons and raids by name or boss, keeps boss sets apart, and hides maps without bosses', async () => {
@@ -70,20 +93,48 @@ test('wow_instance finds dungeons and raids by name or boss, keeps boss sets apa
   const keep = call(store, 'wow_instance', { id: 33 });
   assert.equal(keep.trust, 'client-data');
   assert.deepEqual(keep.unavailable, [], 'Forever has no level table and does not say it is missing');
-  assert.deepEqual(keep.results[0], { kind: 'instance', id: 33, name: 'Fixture Keep', type: 'dungeon', maxPlayers: 10, levels: null, bossSets: [{ difficultyID: 0, bosses: [{ id: 200, name: 'Fixture Gatekeeper' }, { id: 201, name: 'Fixture Warden' }] }, { difficultyID: 7, bosses: [{ id: 204, name: 'Fixture Wardens' }] }], source: 'wago.tools', build: BUILD, trust: 'client-data' });
+  assert.deepEqual(keep.results[0], {
+    kind: 'instance',
+    id: 33,
+    name: 'Fixture Keep',
+    type: 'dungeon',
+    maxPlayers: 10,
+    levels: null,
+    bossSets: [
+      {
+        difficultyID: 0,
+        bosses: [
+          { id: 200, name: 'Fixture Gatekeeper' },
+          { id: 201, name: 'Fixture Warden' },
+        ],
+      },
+      { difficultyID: 7, bosses: [{ id: 204, name: 'Fixture Wardens' }] },
+    ],
+    source: 'wago.tools',
+    build: BUILD,
+    trust: 'client-data',
+  });
   const byBoss = call(store, 'wow_instance', { name: 'firelord' });
-  assert.deepEqual(byBoss.results.map(r => [r.name, r.type, r.matchedBoss.name]), [['Fixture Core', 'raid', 'Fixture Firelord']]);
+  assert.deepEqual(
+    byBoss.results.map(r => [r.name, r.type, r.matchedBoss.name]),
+    [['Fixture Core', 'raid', 'Fixture Firelord']],
+  );
   assert.equal(call(store, 'wow_instance', { id: 2784 }).found, false, 'a map whose only boss is a development encounter is hidden');
   assert.equal(call(store, 'wow_instance', { name: 'testwerk' }).found, false);
   assert.equal(call(store, 'wow_instance', { id: 13 }).found, false, 'a test map is not an instance');
-  assert.deepEqual(call(store, 'wow_instance', { name: 'roamer' }).notes, ['Fixture Roamer (encounter 203) is on map 0, which is not a dungeon or raid in this data.']);
+  assert.deepEqual(call(store, 'wow_instance', { name: 'roamer' }).notes, [
+    'Fixture Roamer (encounter 203) is on map 0, which is not a dungeon or raid in this data.',
+  ]);
 });
 
 test('wow_faction finds reputation factions only, with their parent, and its ID expands as a token', async () => {
   const { dataDir } = await syncedHome('faction');
   const store = GD.openStore({ dataDir, clientBuild: BUILD });
   const r = call(store, 'wow_faction', { name: 'cartel' });
-  assert.deepEqual(r.results.map(x => [x.id, x.name, x.parent]), [[77, 'Fixture Cartel', { id: 76, name: 'Fixture Brotherhood' }]]);
+  assert.deepEqual(
+    r.results.map(x => [x.id, x.name, x.parent]),
+    [[77, 'Fixture Cartel', { id: 76, name: 'Fixture Brotherhood' }]],
+  );
   assert.equal(call(store, 'wow_faction', { id: 78 }).found, false, 'a faction the reputation panel never shows is not in the table');
   assert.equal(GR.createExpander(store).expand('help {faction:78}').ok, false);
 });
@@ -115,7 +166,16 @@ test('wow_quest: IDs only, never a title; the items that start it', async () => 
   const store = GD.openStore({ dataDir, clientBuild: BUILD });
   const r = call(store, 'wow_quest', { id: 101 });
   assert.equal(r.found, true);
-  assert.deepEqual(r.results[0], { kind: 'quest', id: 101, inClientData: true, title: null, startedByItems: [{ id: 502, name: 'Fixture Letter' }], source: 'wago.tools', build: BUILD, trust: 'client-data' });
+  assert.deepEqual(r.results[0], {
+    kind: 'quest',
+    id: 101,
+    inClientData: true,
+    title: null,
+    startedByItems: [{ id: 502, name: 'Fixture Letter' }],
+    source: 'wago.tools',
+    build: BUILD,
+    trust: 'client-data',
+  });
   assert.match(r.notes.join(' '), /titles and text are not in the client tables/);
   const missing = call(store, 'wow_quest', { id: 104 });
   assert.equal(missing.found, false);
@@ -135,11 +195,26 @@ test('wow_flights: by id, by name, and every one on a map with its position ther
   const byId = call(store, 'wow_flights', { id: 601 }).results[0];
   assert.deepEqual(byId.map, { uiMapID: 9001, name: 'Fixture World', x: 27.5, y: 25 });
   assert.equal(byId.zoneAmbiguous, true);
-  assert.deepEqual(byId.maps.map(m => m.name), ['Fixture Town', 'Fixture Vale', 'Fixture World']);
-  assert.deepEqual(call(store, 'wow_flights', { name: 'vale' }).results.map(f => f.id), [602]);
+  assert.deepEqual(
+    byId.maps.map(m => m.name),
+    ['Fixture Town', 'Fixture Vale', 'Fixture World'],
+  );
+  assert.deepEqual(
+    call(store, 'wow_flights', { name: 'vale' }).results.map(f => f.id),
+    [602],
+  );
   const onVale = call(store, 'wow_flights', { uiMapID: 9002 });
-  assert.deepEqual(onVale.results.map(f => [f.id, f.onMap]), [[601, { uiMapID: 9002, name: 'Fixture Vale', x: 55, y: 50 }], [602, { uiMapID: 9002, name: 'Fixture Vale', x: 10, y: 90 }]]);
-  assert.deepEqual(call(store, 'wow_flights', { name: 'roost', uiMapID: 9003 }).results.map(f => f.id), [601]);
+  assert.deepEqual(
+    onVale.results.map(f => [f.id, f.onMap]),
+    [
+      [601, { uiMapID: 9002, name: 'Fixture Vale', x: 55, y: 50 }],
+      [602, { uiMapID: 9002, name: 'Fixture Vale', x: 10, y: 90 }],
+    ],
+  );
+  assert.deepEqual(
+    call(store, 'wow_flights', { name: 'roost', uiMapID: 9003 }).results.map(f => f.id),
+    [601],
+  );
   assert.equal(call(store, 'wow_flights', { uiMapID: 4242 }).found, false);
 });
 
@@ -147,13 +222,23 @@ test('wow_where: maps, areas and flight paths by name; a map by uiMapID with par
   const { dataDir } = await syncedHome('where');
   const store = GD.openStore({ dataDir, flavor: 'forever' });
   const r = call(store, 'wow_where', { name: 'fixture vale' });
-  assert.deepEqual(r.results.map(x => [x.kind, x.name]), [['map', 'Fixture Vale'], ['area', 'Fixture Vale'], ['flightpath', 'Fixture Vale Roost']]);
+  assert.deepEqual(
+    r.results.map(x => [x.kind, x.name]),
+    [
+      ['map', 'Fixture Vale'],
+      ['area', 'Fixture Vale'],
+      ['flightpath', 'Fixture Vale Roost'],
+    ],
+  );
   assert.deepEqual(r.results[1].uiMaps, [{ uiMapID: 9002, name: 'Fixture Vale' }]);
   assert.deepEqual(r.results[0].parent, { uiMapID: 9001, name: 'Fixture World', typeName: 'continent' });
   assert.match(r.notes.join(' '), /NPC and object positions are not in the client tables/);
   const town = call(store, 'wow_where', { uiMapID: 9003 }).results[0];
   assert.equal(town.typeName, 'zone');
-  assert.deepEqual(town.ancestors.map(a => a.uiMapID), [9002, 9001]);
+  assert.deepEqual(
+    town.ancestors.map(a => a.uiMapID),
+    [9002, 9001],
+  );
   assert.equal(town.flightPathCount, 1);
   assert.deepEqual(call(store, 'wow_where', { uiMapID: 9001 }).results[0].children, [{ uiMapID: 9002, name: 'Fixture Vale', typeName: 'zone' }]);
 });
@@ -179,7 +264,13 @@ test('bad input is an error result, not a crash or a guess', async () => {
 test('no synced data: every tool says so with trust none, and nothing is invented', () => {
   const store = GD.openStore({ dataDir: path.join(scratch('nodata'), 'data'), clientBuild: '1.60.1.70124' });
   assert.equal(store.buildCheck, 'no-data');
-  for (const [name, args] of [['wow_item', { id: 502 }], ['wow_quest', { id: 101 }], ['wow_flights', { id: 601 }], ['wow_where', { name: 'vale' }], ['wow_sources', {}]]) {
+  for (const [name, args] of [
+    ['wow_item', { id: 502 }],
+    ['wow_quest', { id: 101 }],
+    ['wow_flights', { id: 601 }],
+    ['wow_where', { name: 'vale' }],
+    ['wow_sources', {}],
+  ]) {
     const r = call(store, name, args);
     assert.equal(r.found, false, name);
     assert.equal(r.trust, 'none', name);
@@ -197,7 +288,9 @@ test('an older sync without the SkillLine table still answers, with no skill nam
   const store = GD.openStore({ dataDir, clientBuild: BUILD });
   assert.equal(store.has('skilllines'), false);
   const r = call(store, 'wow_item', { id: 501 });
-  assert.deepEqual(r.results[0].reagentIn, [{ spellID: 4001, name: 'Fixture Stitch', subtext: 'Rank 1', count: 2, skillLines: [{ id: 40, name: null, minSkillRank: 1 }] }]);
+  assert.deepEqual(r.results[0].reagentIn, [
+    { spellID: 4001, name: 'Fixture Stitch', subtext: 'Rank 1', count: 2, skillLines: [{ id: 40, name: null, minSkillRank: 1 }] },
+  ]);
   assert.deepEqual(r.unavailable, ['skilllines']);
   assert.match(r.notes.join(' '), /Table skilllines is unavailable \(this sync has no such table\)/);
   assert.equal(GR.createExpander(store).expand('{skill:40}').errors[0].reason, 'tableUnavailable');
@@ -207,20 +300,42 @@ test('MCP surface: initialize, tools/list (nine read-only tools), tools/call, er
   const { dataDir } = await syncedHome('mcp');
   const store = GD.openStore({ dataDir, flavor: 'forever' });
   const out = [];
-  const server = DM.createServer({ store, stdout: { write: s => out.push(...s.trim().split('\n').map(l => JSON.parse(l))) } });
-  server.feed(Buffer.from([
-    JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18' } }),
-    JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }),
-    JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' }),
-    JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'wow_flights', arguments: { name: 'town' } } }),
-    JSON.stringify({ jsonrpc: '2.0', id: 4, method: 'resources/list' }),
-    JSON.stringify({ jsonrpc: '2.0', id: 5, method: 'ping' }),
-  ].join('\n') + '\n'));
-  assert.deepEqual(out.map(m => m.id), [1, 2, 3, 4, 5], 'the notification gets no answer');
+  const server = DM.createServer({
+    store,
+    stdout: {
+      write: s =>
+        out.push(
+          ...s
+            .trim()
+            .split('\n')
+            .map(l => JSON.parse(l)),
+        ),
+    },
+  });
+  server.feed(
+    Buffer.from(
+      [
+        JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18' } }),
+        JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }),
+        JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' }),
+        JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'wow_flights', arguments: { name: 'town' } } }),
+        JSON.stringify({ jsonrpc: '2.0', id: 4, method: 'resources/list' }),
+        JSON.stringify({ jsonrpc: '2.0', id: 5, method: 'ping' }),
+      ].join('\n') + '\n',
+    ),
+  );
+  assert.deepEqual(
+    out.map(m => m.id),
+    [1, 2, 3, 4, 5],
+    'the notification gets no answer',
+  );
   assert.equal(out[0].result.protocolVersion, '2025-06-18');
   assert.deepEqual(out[0].result.serverInfo.name, 'wowdata');
   assert.deepEqual(out[0].result.capabilities, { tools: {} });
-  assert.deepEqual(out[1].result.tools.map(t => t.name), ['wow_item', 'wow_spell', 'wow_instance', 'wow_faction', 'wow_quest', 'wow_npc', 'wow_flights', 'wow_where', 'wow_sources']);
+  assert.deepEqual(
+    out[1].result.tools.map(t => t.name),
+    ['wow_item', 'wow_spell', 'wow_instance', 'wow_faction', 'wow_quest', 'wow_npc', 'wow_flights', 'wow_where', 'wow_sources'],
+  );
   for (const t of out[1].result.tools) {
     assert.equal(t.annotations.readOnlyHint, true, t.name);
     assert.equal(t.inputSchema.additionalProperties, false, t.name);
@@ -241,7 +356,10 @@ test('claude-wow data-mcp over real stdio, started the way the bridge starts it'
     child.stdout.on('data', d => {
       buf += d;
       let nl;
-      while ((nl = buf.indexOf('\n')) >= 0) { lines.push(JSON.parse(buf.slice(0, nl))); buf = buf.slice(nl + 1); }
+      while ((nl = buf.indexOf('\n')) >= 0) {
+        lines.push(JSON.parse(buf.slice(0, nl)));
+        buf = buf.slice(nl + 1);
+      }
       if (lines.length === 2) child.stdin.end();
     });
     child.on('exit', resolve);
@@ -265,7 +383,16 @@ test('launch config for ask runs: absolute command, alwaysLoad, the mcp__wowdata
   assert.deepEqual(fromCheckout.rules, ['mcp__wowdata']);
   assert.equal(fromCheckout.build, BUILD);
   assert.equal(fromCheckout.buildCheck, 'family');
-  assert.deepEqual(JSON.parse(fromCheckout.config), { mcpServers: { wowdata: { type: 'stdio', command: '/usr/local/bin/node', args: [path.join('/opt/claude-wow', 'bridge', 'datamcp.js'), '--data', dataDir, '--client-build', '1.60.1.70124'], alwaysLoad: true } } });
+  assert.deepEqual(JSON.parse(fromCheckout.config), {
+    mcpServers: {
+      wowdata: {
+        type: 'stdio',
+        command: '/usr/local/bin/node',
+        args: [path.join('/opt/claude-wow', 'bridge', 'datamcp.js'), '--data', dataDir, '--client-build', '1.60.1.70124'],
+        alwaysLoad: true,
+      },
+    },
+  });
   const binary = { compiled: true, execPath: '/home/p/.local/bin/claude-wow', root: '/$bunfs/root' };
   const fromBinary = JSON.parse(DM.launchConfig({ dataDir, clientBuild: 'junk', flavor: 'forever', runtime: binary }).config).mcpServers.wowdata;
   assert.equal(fromBinary.command, '/home/p/.local/bin/claude-wow');
@@ -280,35 +407,54 @@ test('reference tokens: unknown IDs, bad tokens, coordinates off the map and kin
   const r = ex.expand('{item:501} {item:999} {skill:41} {map:4242,1,1} {map:9002,100.5,3} {map:9002,-1,3} {item:abc} {quest:101} {npc:1} {faction:999}');
   assert.equal(r.ok, false);
   assert.equal(r.text, null, 'nothing partly expanded reaches a player');
-  assert.deepEqual(r.errors.map(e => [e.token, e.reason]), [
-    ['{item:999}', 'unknownId'],
-    ['{skill:41}', 'unknownId'],
-    ['{map:4242,1,1}', 'unknownId'],
-    ['{map:9002,100.5,3}', 'outOfRange'],
-    ['{map:9002,-1,3}', 'badToken'],
-    ['{item:abc}', 'badToken'],
-    ['{quest:101}', 'unsupportedKind'],
-    ['{npc:1}', 'unsupportedKind'],
-    ['{faction:999}', 'unknownId'],
-  ]);
-  assert.deepEqual(r.refs.map(x => x.id), [501]);
-  assert.deepEqual(GR.parseRefs('{item:1}{map:2,3,4}').map(x => x.kind), ['item', 'map']);
+  assert.deepEqual(
+    r.errors.map(e => [e.token, e.reason]),
+    [
+      ['{item:999}', 'unknownId'],
+      ['{skill:41}', 'unknownId'],
+      ['{map:4242,1,1}', 'unknownId'],
+      ['{map:9002,100.5,3}', 'outOfRange'],
+      ['{map:9002,-1,3}', 'badToken'],
+      ['{item:abc}', 'badToken'],
+      ['{quest:101}', 'unsupportedKind'],
+      ['{npc:1}', 'unsupportedKind'],
+      ['{faction:999}', 'unknownId'],
+    ],
+  );
+  assert.deepEqual(
+    r.refs.map(x => x.id),
+    [501],
+  );
+  assert.deepEqual(
+    GR.parseRefs('{item:1}{map:2,3,4}').map(x => x.kind),
+    ['item', 'map'],
+  );
   const faction = ex.expand('help {faction:76}');
   assert.equal(faction.text, 'help Fixture Brotherhood', 'a faction token expands from the client Faction table');
 });
 
 test('reference tokens: no data or another build family rejects every token', async () => {
   const none = GR.createExpander(GD.openStore({ dataDir: path.join(scratch('refs-none'), 'data'), clientBuild: '1.60.1.70124' }));
-  assert.deepEqual(none.expand('{item:501}').errors.map(e => e.reason), ['noData']);
+  assert.deepEqual(
+    none.expand('{item:501}').errors.map(e => e.reason),
+    ['noData'],
+  );
   assert.deepEqual(none.expand('plain text').text, 'plain text');
   const { dataDir } = await syncedHome('refs-mismatch');
   const other = GR.createExpander(GD.openStore({ dataDir, clientBuild: '1.60.2.1' }));
   const r = other.expand('{item:501} and {map:9002,1,1}');
   assert.equal(r.ok, false);
-  assert.deepEqual(r.errors.map(e => e.reason), ['buildMismatch', 'buildMismatch']);
+  assert.deepEqual(
+    r.errors.map(e => e.reason),
+    ['buildMismatch', 'buildMismatch'],
+  );
   const unknown = GR.createExpander(GD.openStore({ dataDir, flavor: 'forever' }));
   assert.equal(unknown.expand('{item:501}').ok, false);
-  assert.deepEqual(unknown.expand('{item:501}').errors.map(e => e.reason), ['buildUnknown'], 'no client build: nothing is expanded as checked client data');
+  assert.deepEqual(
+    unknown.expand('{item:501}').errors.map(e => e.reason),
+    ['buildUnknown'],
+    'no client build: nothing is expanded as checked client data',
+  );
 });
 
 test('trust on a build-family mismatch or an unknown client build is never plain client-data', async () => {
@@ -326,7 +472,10 @@ test('trust on a build-family mismatch or an unknown client build is never plain
   assert.match(unknown.notes.join(' '), /client build is unknown/);
   const same = call(GD.openStore({ dataDir, clientBuild: '1.60.1.70124' }), 'wow_item', { id: 501 });
   assert.equal(same.trust, 'client-data');
-  assert.deepEqual(same.notes.filter(n => !/community loot data/.test(n)), []);
+  assert.deepEqual(
+    same.notes.filter(n => !/community loot data/.test(n)),
+    [],
+  );
   assert.equal(call(GD.openStore({ dataDir, clientBuild: '1.60.2.1' }), 'wow_item', { id: 999 }).trust, 'none');
 });
 

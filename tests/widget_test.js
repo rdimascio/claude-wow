@@ -16,8 +16,8 @@ const DPS_METER = [
   'print("say \\"hi\\" \\\\ ]] done")',
 ].join('\n');
 
-test('validateWidgetCommand refuses protected calls, secure templates and the addon\'s globals', () => {
-  const refused = (source) => {
+test("validateWidgetCommand refuses protected calls, secure templates and the addon's globals", () => {
+  const refused = source => {
     const why = [];
     const c = P.validateWidgetCommand({ op: 'set', name: 'bad', source }, why);
     assert.equal(c, null, source);
@@ -58,7 +58,10 @@ test('applyWidgetCommands bumps the version only on change and keeps the budget'
   r = P.applyWidgetCommands(set, [{ op: 'set', name: 'dps', source: DPS_METER }]);
   assert.ok(!r.changed);
   assert.equal(set.version, 1);
-  r = P.applyWidgetCommands(set, [{ op: 'set', name: 'dps', source: 'local ui = ...' }, { op: 'set', name: 'evil', source: 'CastSpellByName("x")' }]);
+  r = P.applyWidgetCommands(set, [
+    { op: 'set', name: 'dps', source: 'local ui = ...' },
+    { op: 'set', name: 'evil', source: 'CastSpellByName("x")' },
+  ]);
   assert.equal(set.version, 2);
   assert.deepEqual(Object.keys(set.items), ['dps']);
   assert.ok(r.notes.some(n => /evil refused/.test(n)));
@@ -68,7 +71,11 @@ test('applyWidgetCommands bumps the version only on change and keeps the budget'
   assert.ok(r.changed);
   assert.equal(set.version, 3);
   const many = Array.from({ length: P.WIDGET_LIMITS.widgets + 2 }, (_, i) => ({ op: 'set', name: 'w' + i, source: `local n = ${i}` }));
-  P.applyWidgetCommands(set, many.map(c => c), 0);
+  P.applyWidgetCommands(
+    set,
+    many.map(c => c),
+    0,
+  );
   assert.equal(Object.keys(set.items).length, P.WIDGET_LIMITS.widgets);
   r = P.applyWidgetCommands(set, [{ op: 'clearall' }]);
   assert.ok(r.changed);

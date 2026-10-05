@@ -30,13 +30,28 @@ function rig(opts = {}) {
     dir,
     context: () => ({ text: opts.ctx || BONE_CONTEXT, at: 1000 }),
     now: () => 2000,
-    equipped: key => { assert.equal(key, BONE_KEY); return equip; },
-    post: async (url, command) => { posts.push(command); return { ok: true, status: 200 }; },
+    equipped: key => {
+      assert.equal(key, BONE_KEY);
+      return equip;
+    },
+    post: async (url, command) => {
+      posts.push(command);
+      return { ok: true, status: 200 };
+    },
     streamOptions: () => ({ url: 'http://127.0.0.1:9' }),
     gameData: opts.gameData || (text => GD.openStore({ dataDir: WOWDATA, clientBuild: GD.clientBuildOf(text) })),
   });
   const file = path.join(dir, BONE_KEY, G.GOALS_FILE);
-  return { store, posts, file, read: () => JSON.parse(fs.readFileSync(file, 'utf8')), equip: e => { equip = e; }, cleanup: () => fs.rmSync(dir, { recursive: true, force: true }) };
+  return {
+    store,
+    posts,
+    file,
+    read: () => JSON.parse(fs.readFileSync(file, 'utf8')),
+    equip: e => {
+      equip = e;
+    },
+    cleanup: () => fs.rmSync(dir, { recursive: true, force: true }),
+  };
 }
 
 test('gearset: item IDs are checked against the synced data and stored with their refs; the title names the items from the data', async () => {
@@ -49,12 +64,29 @@ test('gearset: item IDs are checked against the synced data and stored with thei
     assert.equal(goal.title, 'Gear set: Tablet of the Stars, Rending Claw and 2 more', 'names until the 60-character cap, then a count of the hidden items');
     assert.ok(goal.title.length <= G.GOAL_TITLE_MAX);
     assert.deepEqual(goal.target, { slots: { 1: HELM, 11: RING, 16: BLADE, 17: BLADE } });
-    assert.deepEqual(goal.refs.map(ref => [ref.id, ref.slot, ref.trust, ref.build]), [[HELM, 1, 'client-data', '1.60.1.200'], [RING, 11, 'client-data', '1.60.1.200'], [BLADE, 16, 'client-data', '1.60.1.200'], [BLADE, 17, 'client-data', '1.60.1.200']]);
-    assert.equal(G.validateOrderText(goal.title, goal.refs.map(ref => ref.name)).ok, true, 'the title passes the viewer text check with its checked names');
+    assert.deepEqual(
+      goal.refs.map(ref => [ref.id, ref.slot, ref.trust, ref.build]),
+      [
+        [HELM, 1, 'client-data', '1.60.1.200'],
+        [RING, 11, 'client-data', '1.60.1.200'],
+        [BLADE, 16, 'client-data', '1.60.1.200'],
+        [BLADE, 17, 'client-data', '1.60.1.200'],
+      ],
+    );
+    assert.equal(
+      G.validateOrderText(
+        goal.title,
+        goal.refs.map(ref => ref.name),
+      ).ok,
+      true,
+      'the title passes the viewer text check with its checked names',
+    );
     assert.equal(G.validateOrderText(goal.title, []).ok, false, 'and only with them');
     await r.store.call('goal_set', { type: 'gearset', slots: { 16: BLADE, 17: BLADE } });
     assert.equal(r.read().goals[0].title, 'Gear set: 2x Fixture Blade');
-  } finally { r.cleanup(); }
+  } finally {
+    r.cleanup();
+  }
 });
 
 test('gearset: unknown IDs, wrong slots, items that cannot be worn, bad slot numbers and no data refuse everything', async () => {
@@ -77,17 +109,23 @@ test('gearset: unknown IDs, wrong slots, items that cannot be worn, bad slot num
     await refuse({}, /needs slots/);
     await refuse([BLADE], /needs slots/);
     assert.equal(fs.existsSync(r.file), false, 'nothing was written');
-  } finally { r.cleanup(); }
+  } finally {
+    r.cleanup();
+  }
   const nodata = rig({ gameData: () => GD.openStore({ dataDir: path.join(os.tmpdir(), 'cw-no-such-data'), clientBuild: '1.60.1.70124' }) });
   try {
     const res = await nodata.store.call('goal_set', { type: 'gearset', slots: { 16: BLADE } });
     assert.equal(res.ok, false);
     assert.match(res.text, /checked against the synced game data\. No game data is synced/);
-  } finally { nodata.cleanup(); }
+  } finally {
+    nodata.cleanup();
+  }
   const otherBuild = rig({ ctx: BONE_CONTEXT.replace('1.60.1.70124', '1.60.2.1') });
   try {
     assert.match((await otherBuild.store.call('goal_set', { type: 'gearset', slots: { 16: BLADE } })).text, /not in the client's build family/);
-  } finally { otherBuild.cleanup(); }
+  } finally {
+    otherBuild.cleanup();
+  }
 });
 
 test('gearset: an item whose synced name cannot be shown falls back to a count title', async () => {
@@ -98,7 +136,9 @@ test('gearset: an item whose synced name cannot be shown falls back to a count t
     assert.equal(r.read().goals[0].title, 'Gear set: 1 item');
     await r.store.call('goal_set', { type: 'gearset', slots: { 1: 504, 16: BLADE } });
     assert.equal(r.read().goals[0].title, 'Gear set: 2 items');
-  } finally { r.cleanup(); }
+  } finally {
+    r.cleanup();
+  }
 });
 
 test('gearset progress reaches the overlay, the Orders card slot field and goal_list from the telemetry snapshot', async () => {
@@ -111,10 +151,15 @@ test('gearset progress reaches the overlay, the Orders card slot field and goal_
     const list = JSON.parse((await r.store.call('goal_list', {})).text);
     assert.equal(list.goals[0].equipped, 2);
     assert.equal(list.goals[0].pct, 100);
-    assert.deepEqual(list.goals[0].items.map(i => i.name), ['Fixture Blade', 'Fixture Blade']);
+    assert.deepEqual(
+      list.goals[0].items.map(i => i.name),
+      ['Fixture Blade', 'Fixture Blade'],
+    );
     r.equip(null);
     assert.match(r.store.slotLua(), /goals = \{  \}/, 'no equipped data: the bar is left out, never shown as 0');
-  } finally { r.cleanup(); }
+  } finally {
+    r.cleanup();
+  }
 });
 
 test('gearset: drop removes it; a second goal_set replaces the one set', async () => {
@@ -127,7 +172,9 @@ test('gearset: drop removes it; a second goal_set replaces the one set', async (
     assert.equal((await r.store.call('goal_set', { type: 'gearset', drop: true })).ok, true);
     assert.deepEqual(r.read().goals, []);
     assert.match((await r.store.call('goal_set', { type: 'gearset', drop: true })).text, /There is no goal for the gear set/);
-  } finally { r.cleanup(); }
+  } finally {
+    r.cleanup();
+  }
 });
 
 test('gearset: the bridge reads equipped items from the same character folder the telemetry writes', () => {
@@ -140,5 +187,7 @@ test('gearset: the bridge reads equipped items from the same character folder th
     assert.deepEqual(TL.equippedReader(tl, true)(BONE_KEY), { 16: BLADE, 17: BLADE });
     assert.equal(TL.equippedReader(tl, false)(BONE_KEY), null, 'telemetry turned off shows no stale bar');
     assert.equal(TL.equippedReader(tl, true)('Nobody-Realm'), null);
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

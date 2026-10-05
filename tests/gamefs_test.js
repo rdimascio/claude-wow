@@ -28,7 +28,14 @@ test('repair sets every file and folder under the ClaudeWoW addon folders to 077
   assert.equal(first.fixed, first.checked);
   assert.ok(first.fixed >= 5);
   assert.deepEqual(first.failed, []);
-  for (const f of [path.join(addons, 'ClaudeWoW'), path.join(addons, 'ClaudeWoW_Runtime'), presence, path.join(presence, '0007.wav'), path.join(addons, 'ClaudeWoW_S001'), path.join(addons, 'ClaudeWoW_S001', 'Inbox.lua')]) {
+  for (const f of [
+    path.join(addons, 'ClaudeWoW'),
+    path.join(addons, 'ClaudeWoW_Runtime'),
+    presence,
+    path.join(presence, '0007.wav'),
+    path.join(addons, 'ClaudeWoW_S001'),
+    path.join(addons, 'ClaudeWoW_S001', 'Inbox.lua'),
+  ]) {
     assert.equal(modeOf(f), 0o777, f);
   }
   assert.equal(modeOf(path.join(addons, 'ClaudeWoW_Runtimes')), 0o755, 'only the exact runtime folder name counts');

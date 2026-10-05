@@ -14,7 +14,10 @@ const ERA_CLIENT = { version: '1.15.9', build: '70003', interface: 11509 };
 
 function eraFetch(url) {
   const u = new URL(url);
-  if (u.pathname === '/api/builds') return Promise.resolve(new Response(fs.readFileSync(path.join(ERA_FIXTURES, 'builds.json'), 'utf8'), { status: 200, headers: { 'content-type': 'application/json' } }));
+  if (u.pathname === '/api/builds')
+    return Promise.resolve(
+      new Response(fs.readFileSync(path.join(ERA_FIXTURES, 'builds.json'), 'utf8'), { status: 200, headers: { 'content-type': 'application/json' } }),
+    );
   const table = /^\/db2\/(\w+)\/csv$/.exec(u.pathname)[1];
   const headers = { 'content-type': 'text/csv', 'content-disposition': `attachment; filename="${table}.${u.searchParams.get('build')}.csv"` };
   return Promise.resolve(new Response(fs.readFileSync(path.join(ERA_FIXTURES, `${table}.csv`), 'utf8'), { status: 200, headers }));

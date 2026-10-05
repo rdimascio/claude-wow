@@ -16,7 +16,13 @@ const ROOT = path.join(__dirname, '..');
 test('every asset exists in the checkout, the addon folder is covered in full, and from a checkout the paths are the checkout', () => {
   for (const rel of AS.FILES) assert.ok(fs.statSync(path.join(ROOT, rel)).isFile(), rel);
   const addon = fs.readdirSync(path.join(ROOT, 'addon', 'ClaudeWoW')).sort();
-  assert.deepEqual(AS.FILES.filter(f => f.startsWith('addon/ClaudeWoW/')).map(f => path.basename(f)).sort(), addon, 'a new addon file must be embedded too');
+  assert.deepEqual(
+    AS.FILES.filter(f => f.startsWith('addon/ClaudeWoW/'))
+      .map(f => path.basename(f))
+      .sort(),
+    addon,
+    'a new addon file must be embedded too',
+  );
   assert.equal(AS.isEmbedded(), false);
   assert.equal(AS.root(), ROOT);
   assert.equal(AS.file('bridge/capture_mac.py'), path.join(ROOT, 'bridge', 'capture_mac.py'));
@@ -55,7 +61,11 @@ test('with an embedded table, files are written out once, rewritten when they di
     assert.equal(fs.readFileSync(py, 'utf8'), fs.readFileSync(path.join(ROOT, 'bridge', 'capture_mac.py'), 'utf8'));
     fs.writeFileSync(py, '# edited\n');
     fs.unlinkSync(path.join(home, AS.DIR_NAME, 'addon', 'ClaudeWoW', 'Map.lua'));
-    assert.deepEqual(AS.extract(path.join(home, AS.DIR_NAME), table).sort(), ['addon/ClaudeWoW/Map.lua', 'bridge/capture_mac.py'], 'only what changed or went missing');
+    assert.deepEqual(
+      AS.extract(path.join(home, AS.DIR_NAME), table).sort(),
+      ['addon/ClaudeWoW/Map.lua', 'bridge/capture_mac.py'],
+      'only what changed or went missing',
+    );
     assert.equal(fs.readFileSync(py, 'utf8'), fs.readFileSync(path.join(ROOT, 'bridge', 'capture_mac.py'), 'utf8'));
 
     AS.embed(table);

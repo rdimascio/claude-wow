@@ -26,10 +26,13 @@ function newVM() {
   const run = (code, arg) => {
     if (lauxlib.luaL_loadstring(L, to_luastring(code)) !== lua.LUA_OK) throw new Error('Lua load: ' + to_jsstring(lua.lua_tostring(L, -1)));
     let nargs = 0;
-    if (arg !== undefined) { lua.lua_pushstring(L, to_luastring(arg)); nargs = 1; }
+    if (arg !== undefined) {
+      lua.lua_pushstring(L, to_luastring(arg));
+      nargs = 1;
+    }
     if (lua.lua_pcall(L, nargs, 0, 0) !== lua.LUA_OK) throw new Error('Lua error: ' + to_jsstring(lua.lua_tostring(L, -1)));
   };
-  const evaluate = (expr) => {
+  const evaluate = expr => {
     run(`local v = (${expr}); if v == nil then RESULT = nil else RESULT = tostring(v) end`);
     lua.lua_getglobal(L, to_luastring('RESULT'));
     const isNil = lua.lua_isnil(L, -1);
@@ -37,7 +40,7 @@ function newVM() {
     lua.lua_pop(L, 1);
     return s;
   };
-  const num = (expr) => Number(evaluate(expr));
+  const num = expr => Number(evaluate(expr));
   run(fs.readFileSync(path.join(__dirname, 'wow_stub.lua'), 'utf8'));
   run(ROAST_STUB);
   for (const f of ['Codec.lua', 'Inbox.lua', 'ClaudeWoW.lua', 'Roast.lua']) run(fs.readFileSync(path.join(ADDON, f), 'utf8'), 'ClaudeWoW');
@@ -57,14 +60,24 @@ function decodeStrip(vm) {
     end
     RESULT = table.concat(parts, ",")`);
   const cells = [];
-  for (const p of vm.evaluate('RESULT').split(',')) { const [i, v] = p.split(':').map(Number); cells[i] = v; }
-  const bytes = [];
-  let acc = 0, nbits = 0;
-  for (let i = 0; i < cells.length; i++) {
-    acc = (acc << 3) | (cells[i] || 0); nbits += 3;
-    while (nbits >= 8) { bytes.push((acc >> (nbits - 8)) & 0xff); nbits -= 8; acc &= (1 << nbits) - 1; }
+  for (const p of vm.evaluate('RESULT').split(',')) {
+    const [i, v] = p.split(':').map(Number);
+    cells[i] = v;
   }
-  assert.equal(bytes[0], 0xc7); assert.equal(bytes[1], 0x1a);
+  const bytes = [];
+  let acc = 0,
+    nbits = 0;
+  for (let i = 0; i < cells.length; i++) {
+    acc = (acc << 3) | (cells[i] || 0);
+    nbits += 3;
+    while (nbits >= 8) {
+      bytes.push((acc >> (nbits - 8)) & 0xff);
+      nbits -= 8;
+      acc &= (1 << nbits) - 1;
+    }
+  }
+  assert.equal(bytes[0], 0xc7);
+  assert.equal(bytes[1], 0x1a);
   const len = bytes[4] * 256 + bytes[5];
   return { id: bytes[2] * 256 + bytes[3], text: Buffer.from(bytes.slice(6, 6 + len)).toString('utf8') };
 }
@@ -105,7 +118,13 @@ function luaValue(v) {
 }
 
 function recapEvent(e) {
-  return '{ ' + Object.entries(e).map(([k, v]) => `${k} = ${luaValue(v)}`).join(', ') + ' }';
+  return (
+    '{ ' +
+    Object.entries(e)
+      .map(([k, v]) => `${k} = ${luaValue(v)}`)
+      .join(', ') +
+    ' }'
+  );
 }
 
 function deathRecap(vm, newestFirst, maxHealth = 0) {
@@ -131,7 +150,9 @@ function ready({ on = true } = {}) {
 }
 
 function registered(vm, event) {
-  return vm.evaluate(`(function() for _, f in ipairs(STUB.frames) do local r = f.events.${event}; if r == true then return "all" end if type(r) == "table" then local u = {} for k in pairs(r) do u[#u + 1] = k end table.sort(u) return table.concat(u, ",") end end end)()`);
+  return vm.evaluate(
+    `(function() for _, f in ipairs(STUB.frames) do local r = f.events.${event}; if r == true then return "all" end if type(r) == "table" then local u = {} for k in pairs(r) do u[#u + 1] = k end table.sort(u) return table.concat(u, ",") end end end)()`,
+  );
 }
 
 test('roast: off by default, the slash command turns it on and off and says so, and nothing is registered, recorded or sent while off', () => {
@@ -160,7 +181,10 @@ test('roast: off by default, the slash command turns it on and off and says so, 
   assert.equal(vm.num('#STUB.actionBlocked'), 0, 'nothing the client blocks');
 
   vm.run('SlashCmdList.CLAUDE("roast the lich king for me please")');
-  assert.ok(stripJobs(vm).some(j => j.text === 'roast the lich king for me please'), 'free text starting with "roast" is a message');
+  assert.ok(
+    stripJobs(vm).some(j => j.text === 'roast the lich king for me please'),
+    'free text starting with "roast" is a message',
+  );
   vm.run('ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[1].id); SlashCmdList.CLAUDE("config")');
   assert.ok(vm.evaluate('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history].text').includes('\nroast = off  -  on|off'));
 });
@@ -212,7 +236,14 @@ test('roast: a long recap is capped to the budget and keeps the killing blow; a 
   const vm = ready();
   vm.run('ClaudeWoWRoast.MAX_BYTES = 420');
   const events = [{ timestamp: 1003.1, event: 'SWING_DAMAGE', sourceName: 'Edwin VanCleef', amount: 300, overkill: 250 }];
-  for (let i = 29; i >= 0; i--) events.push({ timestamp: 1000 + i * 0.1, event: 'SPELL_DAMAGE', spellName: 'An Extremely Long Fireball Name', sourceName: `Defias Pillager Number ${i}`, amount: 10 + i });
+  for (let i = 29; i >= 0; i--)
+    events.push({
+      timestamp: 1000 + i * 0.1,
+      event: 'SPELL_DAMAGE',
+      spellName: 'An Extremely Long Fireball Name',
+      sourceName: `Defias Pillager Number ${i}`,
+      amount: 10 + i,
+    });
   deathRecap(vm, events);
   const recap = vm.evaluate('ClaudeWoWRoast.BuildRecap(STUB.now, ClaudeWoWRoast.ReadRecap(STUB.now))');
   assert.ok(Buffer.byteLength(recap) <= 420, `${Buffer.byteLength(recap)} bytes`);

@@ -53,10 +53,13 @@ function newVM({ prelude = '', beforeLogin = '' } = {}) {
   const run = (code, arg) => {
     if (lauxlib.luaL_loadstring(L, to_luastring(code)) !== lua.LUA_OK) throw new Error('Lua load: ' + to_jsstring(lua.lua_tostring(L, -1)));
     let nargs = 0;
-    if (arg !== undefined) { lua.lua_pushstring(L, to_luastring(arg)); nargs = 1; }
+    if (arg !== undefined) {
+      lua.lua_pushstring(L, to_luastring(arg));
+      nargs = 1;
+    }
     if (lua.lua_pcall(L, nargs, 0, 0) !== lua.LUA_OK) throw new Error('Lua error: ' + to_jsstring(lua.lua_tostring(L, -1)));
   };
-  const evaluate = (expr) => {
+  const evaluate = expr => {
     run(`local v = (${expr}); if v == nil then RESULT = nil else RESULT = tostring(v) end`);
     lua.lua_getglobal(L, to_luastring('RESULT'));
     const s = lua.lua_isnil(L, -1) ? null : to_jsstring(lua.lua_tolstring(L, -1));
@@ -86,7 +89,9 @@ const BEAT1 = { id: 'b1', title: 'A story begins', lines: ['Someone left a lette
 
 function nextSlot(vm, dm, repliesLua = '') {
   const field = dm ? `, dm = ${dm}` : '';
-  vm.run(`STUB.onLoadAddOn = function(name) ClaudeWoW_SlotData = { now = time(), cwd = "", plugin = "ask", plugins = { "ask" }, replies = { ${repliesLua} }${field} } end`);
+  vm.run(
+    `STUB.onLoadAddOn = function(name) ClaudeWoW_SlotData = { now = time(), cwd = "", plugin = "ask", plugins = { "ask" }, replies = { ${repliesLua} }${field} } end`,
+  );
 }
 
 function tick(vm, seconds = 6) {
@@ -94,7 +99,9 @@ function tick(vm, seconds = 6) {
 }
 
 function pending(vm) {
-  vm.run('PENDING_CHAT, PENDING_ID = nil, nil; for _, c in ipairs(ClaudeWoWDB.chats) do if c.pendingId then PENDING_CHAT, PENDING_ID = c.id, c.pendingId end end');
+  vm.run(
+    'PENDING_CHAT, PENDING_ID = nil, nil; for _, c in ipairs(ClaudeWoWDB.chats) do if c.pendingId then PENDING_CHAT, PENDING_ID = c.id, c.pendingId end end',
+  );
   return { chat: vm.evaluate('PENDING_CHAT'), id: vm.evaluate('PENDING_ID') };
 }
 
@@ -131,12 +138,21 @@ function decodeStrip(vm) {
     end
     RESULT = table.concat(parts, ",")`);
   const cells = [];
-  for (const p of vm.evaluate('RESULT').split(',')) { const [i, v] = p.split(':').map(Number); cells[i] = v; }
+  for (const p of vm.evaluate('RESULT').split(',')) {
+    const [i, v] = p.split(':').map(Number);
+    cells[i] = v;
+  }
   const bytes = [];
-  let acc = 0, nbits = 0;
+  let acc = 0,
+    nbits = 0;
   for (let i = 0; i < cells.length; i++) {
-    acc = (acc << 3) | (cells[i] || 0); nbits += 3;
-    while (nbits >= 8) { bytes.push((acc >> (nbits - 8)) & 0xff); nbits -= 8; acc &= (1 << nbits) - 1; }
+    acc = (acc << 3) | (cells[i] || 0);
+    nbits += 3;
+    while (nbits >= 8) {
+      bytes.push((acc >> (nbits - 8)) & 0xff);
+      nbits -= 8;
+      acc &= (1 << nbits) - 1;
+    }
   }
   const len = bytes[4] * 256 + bytes[5];
   return Buffer.from(bytes.slice(6, 6 + len)).toString('utf8');
@@ -154,7 +170,7 @@ function stripRecords(vm) {
 const dmRecords = vm => stripRecords(vm).filter(r => r.flags.split(';').includes(`kind=${C.MANUAL_KIND}`));
 
 function ack(vm, id) {
-  vm.run(`STUB.sounds["Interface\\\\AddOns\\\\ClaudeWoW_Runtime\\\\ack\\\\${String(id).padStart(3, "0")}.wav"] = false`);
+  vm.run(`STUB.sounds["Interface\\\\AddOns\\\\ClaudeWoW_Runtime\\\\ack\\\\${String(id).padStart(3, '0')}.wav"] = false`);
 }
 
 const TEXTURE_STUB = `
@@ -170,14 +186,38 @@ do
 end
 `;
 
-test('dm frame: every fallback branch draws; the parchment is the window\'s own art: the atlas, the Classic Era quest page, then a color', () => {
+test("dm frame: every fallback branch draws; the parchment is the window's own art: the atlas, the Classic Era quest page, then a color", () => {
   const cases = [
-    ['no template, no atlas, not Era', 'C_Texture.GetAtlasExists = function() return nil end', { frame: 'false', plain: 'false', template: null, close: 'none', parchment: 'color' }],
-    ['Classic Era: no template, no atlas', 'C_Texture.GetAtlasExists = function() return nil end; function GetBuildInfo() return "1.15.9", "70003", "Oct 1 2026", 11509 end', { frame: 'false', plain: 'false', template: null, close: 'none', parchment: 'Interface\\QuestFrame\\UI-QuestLog-TopLeft' }],
-    ['Classic Era: the frame template, no parchment atlas', 'C_XMLUtil = { GetTemplateInfo = function(n) if n == "ButtonFrameTemplate" then return {} end end }; C_Texture.GetAtlasExists = function() return false end; function GetBuildInfo() return "1.15.9", "70003", "Oct 1 2026", 11509 end', { frame: 'true', plain: null, template: 'ButtonFrameTemplate', close: null, parchment: 'Interface\\QuestFrame\\UI-QuestLog-TopLeft' }],
-    ['Classic Era, no quest page file either', 'C_Texture.GetAtlasExists = function() return nil end; STUB.noTextureFile = true; function GetBuildInfo() return "1.15.9", "70003", "Oct 1 2026", 11509 end', { frame: 'false', plain: 'false', template: null, close: 'none', parchment: 'color' }],
-    ['plain templates only', 'C_XMLUtil = { GetTemplateInfo = function(n) if n == "BackdropTemplate" or n == "UIPanelCloseButton" then return {} end end }', { frame: 'false', plain: 'true', template: 'BackdropTemplate', close: 'UIPanelCloseButton', parchment: 'QuestBG-Parchment' }],
-    ['GetTemplateInfo answers nil for all', 'C_XMLUtil = { GetTemplateInfo = function() return nil end }', { frame: 'false', plain: 'false', template: null, close: 'none', parchment: 'QuestBG-Parchment' }],
+    [
+      'no template, no atlas, not Era',
+      'C_Texture.GetAtlasExists = function() return nil end',
+      { frame: 'false', plain: 'false', template: null, close: 'none', parchment: 'color' },
+    ],
+    [
+      'Classic Era: no template, no atlas',
+      'C_Texture.GetAtlasExists = function() return nil end; function GetBuildInfo() return "1.15.9", "70003", "Oct 1 2026", 11509 end',
+      { frame: 'false', plain: 'false', template: null, close: 'none', parchment: 'Interface\\QuestFrame\\UI-QuestLog-TopLeft' },
+    ],
+    [
+      'Classic Era: the frame template, no parchment atlas',
+      'C_XMLUtil = { GetTemplateInfo = function(n) if n == "ButtonFrameTemplate" then return {} end end }; C_Texture.GetAtlasExists = function() return false end; function GetBuildInfo() return "1.15.9", "70003", "Oct 1 2026", 11509 end',
+      { frame: 'true', plain: null, template: 'ButtonFrameTemplate', close: null, parchment: 'Interface\\QuestFrame\\UI-QuestLog-TopLeft' },
+    ],
+    [
+      'Classic Era, no quest page file either',
+      'C_Texture.GetAtlasExists = function() return nil end; STUB.noTextureFile = true; function GetBuildInfo() return "1.15.9", "70003", "Oct 1 2026", 11509 end',
+      { frame: 'false', plain: 'false', template: null, close: 'none', parchment: 'color' },
+    ],
+    [
+      'plain templates only',
+      'C_XMLUtil = { GetTemplateInfo = function(n) if n == "BackdropTemplate" or n == "UIPanelCloseButton" then return {} end end }',
+      { frame: 'false', plain: 'true', template: 'BackdropTemplate', close: 'UIPanelCloseButton', parchment: 'QuestBG-Parchment' },
+    ],
+    [
+      'GetTemplateInfo answers nil for all',
+      'C_XMLUtil = { GetTemplateInfo = function() return nil end }',
+      { frame: 'false', plain: 'false', template: null, close: 'none', parchment: 'QuestBG-Parchment' },
+    ],
   ];
   for (const [why, prelude, want] of cases) {
     const vm = newVM({ prelude: `${TEXTURE_STUB}\n${prelude}` });
@@ -229,7 +269,8 @@ function LoggingChat(on) if on ~= nil then LOGGING = on end return LOGGING end
 
 test('/dm next on the chat log: an ack signal while the ack poll is pending costs one slot load, not two', () => {
   const vm = newVM({ prelude: ARMED_SIGNALS + CHAT_LOG_API });
-  const slot = dm => `STUB.onLoadAddOn = function(name) ClaudeWoW_SlotData = { now = time(), cwd = "", plugin = "ask", plugins = { "ask" }, transport = "screenshot", strip = { on = 255, off = 0 }, chatlog = { line = 200, filler = 4096, key = "0123456789abcdef0123456789abcdef" }, acks = { { session = ClaudeWoWDB.session, id = ClaudeWoWDB.lastSeq } }, replies = {}, dm = ${dm} } end`;
+  const slot = dm =>
+    `STUB.onLoadAddOn = function(name) ClaudeWoW_SlotData = { now = time(), cwd = "", plugin = "ask", plugins = { "ask" }, transport = "screenshot", strip = { on = 255, off = 0 }, chatlog = { line = 200, filler = 4096, key = "0123456789abcdef0123456789abcdef" }, acks = { { session = ClaudeWoWDB.session, id = ClaudeWoWDB.lastSeq } }, replies = {}, dm = ${dm} } end`;
   vm.run(slot(dmLua({ manual: true })));
   tick(vm);
   tick(vm, 30);
@@ -356,7 +397,20 @@ test('/dm next: a record the bridge never acks is dropped after its tries, witho
 
 test('dm frame: the module sends nothing to chat and no addon file calls SendChatMessage', () => {
   const src = fs.readFileSync(path.join(ADDON, 'DM.lua'), 'utf8');
-  for (const name of ['SendChatMessage', 'SendAddonMessage', 'C_ChatInfo', 'ChatFrame_OpenChat', 'ChatFrameUtil', 'RunMacro', 'RunScript', 'loadstring', 'CastSpell', 'UseAction', 'LoadAddOn', 'SetBinding']) {
+  for (const name of [
+    'SendChatMessage',
+    'SendAddonMessage',
+    'C_ChatInfo',
+    'ChatFrame_OpenChat',
+    'ChatFrameUtil',
+    'RunMacro',
+    'RunScript',
+    'loadstring',
+    'CastSpell',
+    'UseAction',
+    'LoadAddOn',
+    'SetBinding',
+  ]) {
     assert.ok(!src.includes(name), `DM.lua does not use ${name}`);
   }
   for (const f of fs.readdirSync(ADDON).filter(n => n.endsWith('.lua') && n !== 'Widgets.lua')) {

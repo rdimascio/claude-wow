@@ -20,13 +20,31 @@ function mainChunkLocals(ast) {
   return n;
 }
 
-for (const f of ['Codec.lua', 'ClaudeWoW.lua', 'Inbox.lua', 'Map.lua', 'Roast.lua', 'Stream.lua', 'Voice.lua', 'LootRoll.lua', 'Achievements.lua', 'Orders.lua', 'DM.lua', 'Widgets.lua', 'Window.lua', 'Telemetry.lua', 'Observed.lua']) {
+for (const f of [
+  'Codec.lua',
+  'ClaudeWoW.lua',
+  'Inbox.lua',
+  'Map.lua',
+  'Roast.lua',
+  'Stream.lua',
+  'Voice.lua',
+  'LootRoll.lua',
+  'Achievements.lua',
+  'Orders.lua',
+  'DM.lua',
+  'Widgets.lua',
+  'Window.lua',
+  'Telemetry.lua',
+  'Observed.lua',
+]) {
   const src = fs.readFileSync(path.join(ADDON, f), 'utf8');
   const ast = luaparse.parse(src, { luaVersion: '5.1' });
   const locals = mainChunkLocals(ast);
   if (locals > MAIN_CHUNK_LOCALS_MAX) {
     bad++;
-    console.log(`TOO MANY LOCALS: ${f} has ${locals} main-chunk locals; Lua stops at 200, the budget is ${MAIN_CHUNK_LOCALS_MAX}. Fold constants into a table.`);
+    console.log(
+      `TOO MANY LOCALS: ${f} has ${locals} main-chunk locals; Lua stops at 200, the budget is ${MAIN_CHUNK_LOCALS_MAX}. Fold constants into a table.`,
+    );
   }
   console.log('OK   ' + f + ' parses (' + locals + ' main-chunk locals)');
   // Blank out comments so a name mentioned in prose doesn't count as a use.
@@ -38,9 +56,7 @@ for (const f of ['Codec.lua', 'ClaudeWoW.lua', 'Inbox.lua', 'Map.lua', 'Roast.lu
   ];
   for (const d of defs) {
     if (forward.has(d.name)) continue;
-    const use = d.kind === 'function'
-      ? new RegExp('(?<![\\w.:])' + d.name + '\\s*\\(', 'g')
-      : new RegExp('(?<![\\w.:])' + d.name + '(?![\\w])', 'g');
+    const use = d.kind === 'function' ? new RegExp('(?<![\\w.:])' + d.name + '\\s*\\(', 'g') : new RegExp('(?<![\\w.:])' + d.name + '(?![\\w])', 'g');
     for (const m of code.matchAll(use)) {
       if (m.index < d.at) {
         const line = code.slice(0, m.index).split('\n').length;

@@ -5,7 +5,11 @@ const { spawnSync } = require('child_process');
 
 const SCRIPTS = new Set(['codec_test.js', 'inject_test.js', 'live_session_test.js']);
 const isBun = typeof Bun !== 'undefined';
-const suites = fs.readdirSync(__dirname).filter(f => f.endsWith('_test.js') && !SCRIPTS.has(f)).sort().map(f => path.join('tests', f));
+const suites = fs
+  .readdirSync(__dirname)
+  .filter(f => f.endsWith('_test.js') && !SCRIPTS.has(f))
+  .sort()
+  .map(f => path.join('tests', f));
 const root = path.join(__dirname, '..');
 
 function run(args) {

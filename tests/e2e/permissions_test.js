@@ -15,10 +15,13 @@ function outsideFolder(h) {
 }
 
 function answerTo(h, id, label) {
-  return h.client.waitFor(() => {
-    const c = h.client.activeChat();
-    return c && !c.pendingId && (c.history || []).find(m => m.id === id && m.role !== 'user');
-  }, { timeoutMs: 60000, label });
+  return h.client.waitFor(
+    () => {
+      const c = h.client.activeChat();
+      return c && !c.pendingId && (c.history || []).find(m => m.id === id && m.role !== 'user');
+    },
+    { timeoutMs: 60000, label },
+  );
 }
 
 async function roll(h, choice) {
@@ -48,7 +51,10 @@ test('a retry blocked again for what it was just granted stops the loop: no new 
     assert.deepEqual(first.denied, [`AddDir(${scratch})`]);
     const retry = await roll(h, 'need');
     assert.equal(retry.denied, undefined);
-    assert.match(retry.text, new RegExp(`blocked again on Bash: touch \\S+ although ${scratch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} is already one of this chat's folders`));
+    assert.match(
+      retry.text,
+      new RegExp(`blocked again on Bash: touch \\S+ although ${scratch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} is already one of this chat's folders`),
+    );
     assert.equal(rollOpen(h), false);
     await new Promise(r => setTimeout(r, 1500));
     assert.equal(h.agentCalls().length, 2, 'nothing else ran');

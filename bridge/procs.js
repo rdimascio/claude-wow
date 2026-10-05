@@ -47,7 +47,9 @@ function alive(child) {
 function open(child) {
   return !!child && child.pid !== undefined && !closed.has(child) && (alive(child) || started(child));
 }
-function started(child) { return child.exitCode !== null || child.signalCode !== null; } // it did run once
+function started(child) {
+  return child.exitCode !== null || child.signalCode !== null;
+} // it did run once
 
 // A signal to the child's process group, which outlives the child itself while
 // anything it started is still going; to the child alone if it has no group of
@@ -55,12 +57,19 @@ function started(child) { return child.exitCode !== null || child.signalCode !==
 function signalGroup(child, sig) {
   if (!child || child.pid === undefined) return false;
   if (POSIX) {
-    try { process.kill(-child.pid, sig); return true; } catch (e) {
+    try {
+      process.kill(-child.pid, sig);
+      return true;
+    } catch (e) {
       if (e.code === 'ESRCH' || !alive(child)) return false;
     }
   }
   if (!alive(child)) return false;
-  try { return child.kill(sig); } catch { return false; }
+  try {
+    return child.kill(sig);
+  } catch {
+    return false;
+  }
 }
 
 // End the child and everything it spawned. opts.graceMs: how long SIGTERM gets
@@ -74,8 +83,16 @@ function killTree(child, opts = {}) {
     if (!alive(child)) return;
     try {
       const k = spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
-      k.on('error', () => { try { child.kill(); } catch {} });
-    } catch { try { child.kill(); } catch {} }
+      k.on('error', () => {
+        try {
+          child.kill();
+        } catch {}
+      });
+    } catch {
+      try {
+        child.kill();
+      } catch {}
+    }
     return;
   }
   if (!signalGroup(child, 'SIGTERM')) return;
@@ -97,11 +114,21 @@ function killAll(children, opts, done) {
   const kids = children.filter(open);
   let left = kids.length;
   let called = false;
-  const finish = () => { if (!called) { called = true; done(); } };
+  const finish = () => {
+    if (!called) {
+      called = true;
+      done();
+    }
+  };
   if (!left) return finish();
   const timer = setTimeout(finish, graceMs + 1000);
   for (const c of kids) {
-    c.once('close', () => { if (--left === 0) { clearTimeout(timer); setImmediate(finish); } }); // after the run's own 'close' handler
+    c.once('close', () => {
+      if (--left === 0) {
+        clearTimeout(timer);
+        setImmediate(finish);
+      }
+    }); // after the run's own 'close' handler
     killTree(c, opts);
   }
 }

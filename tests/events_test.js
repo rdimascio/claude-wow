@@ -13,13 +13,27 @@ const SUPERVISOR = path.join(__dirname, '..', 'bridge', 'supervisor.js');
 function clock(start = 1790000000000) {
   let t = start;
   const now = () => t;
-  now.advance = ms => { t += ms; };
+  now.advance = ms => {
+    t += ms;
+  };
   return now;
 }
 
 function sink() {
   const chunks = [];
-  return { write: s => { chunks.push(s); return true; }, chunks, lines: () => chunks.join('').split('\n').filter(Boolean).map(l => JSON.parse(l)) };
+  return {
+    write: s => {
+      chunks.push(s);
+      return true;
+    },
+    chunks,
+    lines: () =>
+      chunks
+        .join('')
+        .split('\n')
+        .filter(Boolean)
+        .map(l => JSON.parse(l)),
+  };
 }
 
 function ev(type, importance, data = {}) {
@@ -48,7 +62,14 @@ test('a 10 s burst is merged per event kind and printed together: first from, la
   assert.equal(c.flush(), null, 'the burst window is still open');
   now.advance(1);
   const out = c.flush();
-  assert.deepEqual(out.events.map(e => [e.type, e.data.id || null, e.importance, e.count]), [['money', null, 1, 2], ['item', 2589, 2, 2], ['item', 2592, 1, 1]]);
+  assert.deepEqual(
+    out.events.map(e => [e.type, e.data.id || null, e.importance, e.count]),
+    [
+      ['money', null, 1, 2],
+      ['item', 2589, 2, 2],
+      ['item', 2592, 1, 1],
+    ],
+  );
   assert.deepEqual(out.events[0].data, { from: 100, to: 175, delta: 75 });
   assert.deepEqual(out.events[1].data, { id: 2589, from: 9, to: 12, threshold: 25 });
   assert.equal(c.flush(), null, 'nothing left');
@@ -73,7 +94,13 @@ test('the coalescer enforces 40 wakes an hour itself: later bursts wait, merged,
   assert.equal(c.flush().events, undefined, 'still inside the hour of the first wake');
   now.advance(1);
   const late = c.flush();
-  assert.deepEqual(late.events.map(e => [e.type, e.count]), [['death', 2], ['level_up', 1]]);
+  assert.deepEqual(
+    late.events.map(e => [e.type, e.count]),
+    [
+      ['death', 2],
+      ['level_up', 1],
+    ],
+  );
   assert.equal(c.wakes(), EV.WAKES_PER_HOUR);
 });
 
@@ -96,15 +123,25 @@ test('follow prints appended events once per burst, filters by --min, survives a
     now.advance(EV.BURST_WINDOW_MS);
     f.tick();
     assert.equal(out.chunks.length, 1, 'one write for the burst');
-    assert.deepEqual(out.lines().map(e => e.type), ['zone', 'bags_full'], 'importance 1 is below --min 2');
+    assert.deepEqual(
+      out.lines().map(e => e.type),
+      ['zone', 'bags_full'],
+      'importance 1 is below --min 2',
+    );
     fs.renameSync(file, path.join(path.dirname(file), TL.EVENTS_ROTATED_FILE));
     appendEvents(file, [ev('death', 3, { at: 5 })]);
     f.tick();
     now.advance(EV.BURST_WINDOW_MS);
     f.tick();
-    assert.deepEqual(out.lines().map(e => e.type), ['zone', 'bags_full', 'death'], 'read from the start of the new file');
+    assert.deepEqual(
+      out.lines().map(e => e.type),
+      ['zone', 'bags_full', 'death'],
+      'read from the start of the new file',
+    );
     f.stop();
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('follow waits for an events file to appear, picks the newest character folder, and reads a file that appeared later from its start', () => {
@@ -123,8 +160,13 @@ test('follow waits for an events file to appear, picks the newest character fold
     assert.equal(f.file(), path.join(dir, 'Bone-Forever', TL.EVENTS_FILE));
     now.advance(EV.BURST_WINDOW_MS);
     f.tick();
-    assert.deepEqual(out.lines().map(e => e.type), ['zone']);
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+    assert.deepEqual(
+      out.lines().map(e => e.type),
+      ['zone'],
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('without --character the newest events file is looked for again, and a character that starts writing later is followed from what is new', () => {
@@ -146,8 +188,14 @@ test('without --character the newest events file is looked for again, and a char
     assert.equal(f.file(), alt, 'the alt is newest now');
     now.advance(EV.BURST_WINDOW_MS);
     f.tick();
-    assert.deepEqual(out.lines().map(e => e.type), ['death'], 'only what the alt wrote after following began');
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+    assert.deepEqual(
+      out.lines().map(e => e.type),
+      ['death'],
+      'only what the alt wrote after following began',
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('the events command parses its options and refuses bad ones', () => {
@@ -165,15 +213,31 @@ test('claude-wow events without --follow prints the recent events at or above --
   try {
     fs.writeFileSync(path.join(dir, 'config.json'), '{}');
     appendEvents(path.join(dir, 'goals', 'Bone-Forever', TL.EVENTS_FILE), [ev('money', 1), ev('level_up', 3, { from: 20, to: 21 })]);
-    const r = spawnSync(process.execPath, [SUPERVISOR, 'events', '--min', '3'], { encoding: 'utf8', env: { ...process.env, CLAUDE_WOW_HOME: dir }, timeout: 20000 });
+    const r = spawnSync(process.execPath, [SUPERVISOR, 'events', '--min', '3'], {
+      encoding: 'utf8',
+      env: { ...process.env, CLAUDE_WOW_HOME: dir },
+      timeout: 20000,
+    });
     assert.equal(r.status, 0, r.stderr);
-    assert.deepEqual(r.stdout.trim().split('\n').map(l => JSON.parse(l).type), ['level_up']);
-    const bad = spawnSync(process.execPath, [SUPERVISOR, 'events', '--min', '9'], { encoding: 'utf8', env: { ...process.env, CLAUDE_WOW_HOME: dir }, timeout: 20000 });
+    assert.deepEqual(
+      r.stdout
+        .trim()
+        .split('\n')
+        .map(l => JSON.parse(l).type),
+      ['level_up'],
+    );
+    const bad = spawnSync(process.execPath, [SUPERVISOR, 'events', '--min', '9'], {
+      encoding: 'utf8',
+      env: { ...process.env, CLAUDE_WOW_HOME: dir },
+      timeout: 20000,
+    });
     assert.equal(bad.status, 2);
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
-test('switching between character files keeps each file\'s half-read line', () => {
+test("switching between character files keeps each file's half-read line", () => {
   const dir = tmpGoals('partial');
   try {
     const bone = path.join(dir, 'Bone-Forever', TL.EVENTS_FILE);
@@ -184,7 +248,16 @@ test('switching between character files keeps each file\'s half-read line', () =
     const now = clock();
     const out = sink();
     let newest = bone;
-    const f = EV.follow({ file: () => newest, list: () => [bone, alt].filter(p => fs.existsSync(p)), min: 1, out, err: sink(), now, pollMs: 0, resolveEvery: 1 });
+    const f = EV.follow({
+      file: () => newest,
+      list: () => [bone, alt].filter(p => fs.existsSync(p)),
+      min: 1,
+      out,
+      err: sink(),
+      now,
+      pollMs: 0,
+      resolveEvery: 1,
+    });
     const line = JSON.stringify(ev('death', 3, { at: 5 }));
     fs.appendFileSync(bone, line.slice(0, 20));
     f.tick();
@@ -196,8 +269,16 @@ test('switching between character files keeps each file\'s half-read line', () =
     f.tick();
     now.advance(EV.BURST_WINDOW_MS);
     f.tick();
-    assert.ok(out.lines().map(e => e.type).includes('death'), 'the line split across the switch is read whole');
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+    assert.ok(
+      out
+        .lines()
+        .map(e => e.type)
+        .includes('death'),
+      'the line split across the switch is read whole',
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('a file that rotated while another character was followed is drained from where it was left', () => {
@@ -220,6 +301,11 @@ test('a file that rotated while another character was followed is drained from w
     f.tick();
     now.advance(EV.BURST_WINDOW_MS);
     f.tick();
-    assert.deepEqual(out.lines().map(e => e.type), ['death', 'level_up']);
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+    assert.deepEqual(
+      out.lines().map(e => e.type),
+      ['death', 'level_up'],
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

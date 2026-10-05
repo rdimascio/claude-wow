@@ -21,7 +21,9 @@ function controlServer(answer) {
   const bodies = [];
   const server = http.createServer((req, res) => {
     let raw = '';
-    req.on('data', c => { raw += c; });
+    req.on('data', c => {
+      raw += c;
+    });
     req.on('end', () => {
       bodies.push({ method: req.method, url: req.url, type: req.headers['content-type'], body: JSON.parse(raw) });
       res.writeHead(200, { 'content-type': 'application/json' });
@@ -34,7 +36,10 @@ function controlServer(answer) {
 function closedPort() {
   return new Promise(resolve => {
     const s = http.createServer();
-    s.listen(0, '127.0.0.1', () => { const port = s.address().port; s.close(() => resolve(port)); });
+    s.listen(0, '127.0.0.1', () => {
+      const port = s.address().port;
+      s.close(() => resolve(port));
+    });
   });
 }
 
@@ -55,7 +60,11 @@ test('stream plugin: a track update is forwarded whole and answered with an empt
   const svc = await controlServer(() => ({ ok: true, message: 'Tracking' }));
   try {
     const { core, calls } = fakeCore({ url: svc.url });
-    const track = { action: 'track', quest: { id: 33, title: 'Wolves Across the Border', objectives: ['Diseased Timber Wolf slain: 3/8'], complete: false }, chat: { title: 'Raid prep' } };
+    const track = {
+      action: 'track',
+      quest: { id: 33, title: 'Wolves Across the Border', objectives: ['Diseased Timber Wolf slain: 3/8'], complete: false },
+      chat: { title: 'Raid prep' },
+    };
     await stream.handle({ id: 8, kind: 'stream', text: JSON.stringify(track) }, core);
     assert.deepEqual(svc.bodies[0].body, track);
     assert.deepEqual(calls, [{ reply: '' }]);

@@ -35,10 +35,13 @@ function newVM(extraStub = LEGACY_QUEST_STUB) {
   const run = (code, arg) => {
     if (lauxlib.luaL_loadstring(L, to_luastring(code)) !== lua.LUA_OK) throw new Error('Lua load: ' + to_jsstring(lua.lua_tostring(L, -1)));
     let nargs = 0;
-    if (arg !== undefined) { lua.lua_pushstring(L, to_luastring(arg)); nargs = 1; }
+    if (arg !== undefined) {
+      lua.lua_pushstring(L, to_luastring(arg));
+      nargs = 1;
+    }
     if (lua.lua_pcall(L, nargs, 0, 0) !== lua.LUA_OK) throw new Error('Lua error: ' + to_jsstring(lua.lua_tostring(L, -1)));
   };
-  const evaluate = (expr) => {
+  const evaluate = expr => {
     run(`local v = (${expr}); if v == nil then RESULT = nil else RESULT = tostring(v) end`);
     lua.lua_getglobal(L, to_luastring('RESULT'));
     const isNil = lua.lua_isnil(L, -1);
@@ -46,7 +49,7 @@ function newVM(extraStub = LEGACY_QUEST_STUB) {
     lua.lua_pop(L, 1);
     return s;
   };
-  const num = (expr) => Number(evaluate(expr));
+  const num = expr => Number(evaluate(expr));
   run(fs.readFileSync(path.join(__dirname, 'wow_stub.lua'), 'utf8'));
   run(extraStub);
   for (const f of ['Codec.lua', 'Inbox.lua', 'ClaudeWoW.lua', 'Roast.lua', 'Stream.lua']) run(fs.readFileSync(path.join(ADDON, f), 'utf8'), 'ClaudeWoW');
@@ -66,14 +69,24 @@ function decodeStrip(vm) {
     end
     RESULT = table.concat(parts, ",")`);
   const cells = [];
-  for (const p of vm.evaluate('RESULT').split(',')) { const [i, v] = p.split(':').map(Number); cells[i] = v; }
-  const bytes = [];
-  let acc = 0, nbits = 0;
-  for (let i = 0; i < cells.length; i++) {
-    acc = (acc << 3) | (cells[i] || 0); nbits += 3;
-    while (nbits >= 8) { bytes.push((acc >> (nbits - 8)) & 0xff); nbits -= 8; acc &= (1 << nbits) - 1; }
+  for (const p of vm.evaluate('RESULT').split(',')) {
+    const [i, v] = p.split(':').map(Number);
+    cells[i] = v;
   }
-  assert.equal(bytes[0], 0xc7); assert.equal(bytes[1], 0x1a);
+  const bytes = [];
+  let acc = 0,
+    nbits = 0;
+  for (let i = 0; i < cells.length; i++) {
+    acc = (acc << 3) | (cells[i] || 0);
+    nbits += 3;
+    while (nbits >= 8) {
+      bytes.push((acc >> (nbits - 8)) & 0xff);
+      nbits -= 8;
+      acc &= (1 << nbits) - 1;
+    }
+  }
+  assert.equal(bytes[0], 0xc7);
+  assert.equal(bytes[1], 0x1a);
   const len = bytes[4] * 256 + bytes[5];
   return { id: bytes[2] * 256 + bytes[3], text: Buffer.from(bytes.slice(6, 6 + len)).toString('utf8') };
 }
@@ -115,7 +128,10 @@ function pendingPayload(vm) {
 
 function answer(vm, text = '') {
   const id = vm.num('StreamChatForTest().pendingId');
-  nextSlot(vm, `{ now = time(), cwd = "", replies = { { chat = StreamChatForTest().id, id = ${id}, status = "done", text = ${JSON.stringify(text)}, agent = "", plugin = "stream" } } }`);
+  nextSlot(
+    vm,
+    `{ now = time(), cwd = "", replies = { { chat = StreamChatForTest().id, id = ${id}, status = "done", text = ${JSON.stringify(text)}, agent = "", plugin = "stream" } } }`,
+  );
   vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
   assert.notEqual(vm.evaluate('StreamChatForTest().pendingId'), String(id), 'the stream reply arrived');
 }
@@ -181,7 +197,9 @@ test('stream: pane, quest text and follow commands build the right payloads, and
 
 test('stream: the track payload has the first watched quest, capped objectives and title, and the open chat title', () => {
   const vm = ready();
-  vm.run(`STUB.watched = { 3 }; STUB.questLog[3].title = string.rep("W", 100); STUB.questLog[3].objectives = { string.rep("o", 90), "b", "c", "d", "e", "f", "g" }; STUB.questLog[3].complete = true`);
+  vm.run(
+    `STUB.watched = { 3 }; STUB.questLog[3].title = string.rep("W", 100); STUB.questLog[3].objectives = { string.rep("o", 90), "b", "c", "d", "e", "f", "g" }; STUB.questLog[3].complete = true`,
+  );
   vm.run('ClaudeWoWDB.chats[1].name = "Raid prep"');
   const track = JSON.parse(vm.evaluate('ClaudeWoWStream.TrackPayload()'));
   assert.equal(track.action, 'track');

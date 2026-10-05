@@ -20,21 +20,24 @@ const MAX_LISTED_DROPS = 10;
 const MAX_BOSS_DROPS = 15;
 const DEV_SPELL = /\((?:OLD|TEST|DND|NYI|PH|DEPRECATED)\)|\bQASpell\b|^zz/i;
 
-const noDataNote = store => `No game data is synced on this machine for this client, so nothing here is verified. The owner can run "${store.syncCommand || 'claude-wow data sync'}".`;
+const noDataNote = store =>
+  `No game data is synced on this machine for this client, so nothing here is verified. The owner can run "${store.syncCommand || 'claude-wow data sync'}".`;
 const NO_FLAVOR_NOTE = 'The client build does not say which game this is (Forever is 1.60.*, Classic Era is 1.15.*), so no game data is used.';
 const MISMATCH_NOTE = 'The cached data is for a different build family than the client. Treat these rows as unverified for this client.';
-const UNKNOWN_BUILD_NOTE = 'The client build is unknown (the situation block has no Game: line), so these rows are not checked against the player\'s client build.';
-const tableUnavailableNote = ({ entity, problem }) => `Table ${entity} is unavailable (${problem}). A missing answer from it does not mean the thing is absent from the client data.`;
+const UNKNOWN_BUILD_NOTE =
+  "The client build is unknown (the situation block has no Game: line), so these rows are not checked against the player's client build.";
+const tableUnavailableNote = ({ entity, problem }) =>
+  `Table ${entity} is unavailable (${problem}). A missing answer from it does not mean the thing is absent from the client data.`;
 const NOT_IN_DATA = Object.freeze([
   'on Forever, any NPC, quest title or quest giver the Classic community data does not share with it',
   'quest text, objectives and rewards',
   'NPC levels, factions and any other number from community data',
-  'drop chances, drop rates and how many of an item drops (the player\'s observed loot has rates)',
+  "drop chances, drop rates and how many of an item drops (the player's observed loot has rates)",
   'vendor and trainer lists',
 ]);
 
 const INSTRUCTIONS = [
-  'Read-only World of Warcraft client data for the player\'s game, cached on this machine from the client tables (DB2) of one build. The bridge picks the client tables from the client build the game reports: Forever (1.60.*) or Classic Era (1.15.*), never the other one\'s. The one exception is the Classic community data below, which Forever is served only where its own client tables back it.',
+  "Read-only World of Warcraft client data for the player's game, cached on this machine from the client tables (DB2) of one build. The bridge picks the client tables from the client build the game reports: Forever (1.60.*) or Classic Era (1.15.*), never the other one's. The one exception is the Classic community data below, which Forever is served only where its own client tables back it.",
   `Each result carries source, build and trust. trust "${GD.TRUST.clientData}" rows come from the client tables of the player's build family; "none" means nothing was found, so say you do not know.`,
   `trust "${GD.TRUST.buildMismatch}" (buildCheck "build-mismatch") means the data is for another build family than the player's client: call it unverified. trust "${GD.TRUST.buildUnchecked}" means the client build is unknown: say the data is not checked against the client.`,
   'A table listed in "unavailable" could not be read: a missing answer from it is not proof that the thing is absent from the game.',
@@ -51,7 +54,11 @@ function pickProtocol(requested) {
 }
 
 function version() {
-  try { return require('../package.json').version; } catch { return '0.0.0'; }
+  try {
+    return require('../package.json').version;
+  } catch {
+    return '0.0.0';
+  }
 }
 
 function idArg(args, key, required) {
@@ -60,7 +67,7 @@ function idArg(args, key, required) {
     if (required) throw new InputError(`${key} is required`);
     return null;
   }
-  const n = typeof v === 'number' ? v : (typeof v === 'string' && ID_TEXT.test(v.trim()) ? Number(v.trim()) : NaN);
+  const n = typeof v === 'number' ? v : typeof v === 'string' && ID_TEXT.test(v.trim()) ? Number(v.trim()) : NaN;
   if (!GD.isId(n)) throw new InputError(`${key} must be a positive integer`);
   return n;
 }
@@ -80,7 +87,7 @@ function nameArg(args, required) {
 function limitArg(args) {
   const v = args.limit;
   if (v === undefined || v === null) return DEFAULT_LIMIT;
-  const n = typeof v === 'number' ? v : (typeof v === 'string' && ID_TEXT.test(v.trim()) ? Number(v.trim()) : NaN);
+  const n = typeof v === 'number' ? v : typeof v === 'string' && ID_TEXT.test(v.trim()) ? Number(v.trim()) : NaN;
   if (!Number.isSafeInteger(n) || n < 1) throw new InputError(`limit must be an integer from 1 to ${MAX_LIMIT}`);
   return Math.min(n, MAX_LIMIT);
 }
@@ -144,12 +151,19 @@ function flightRow(store, f, onMap) {
     zoneAmbiguous: !!f.zoneAmbiguous,
     maps: maps.map(s => placed(store, s)),
   };
-  if (onMap) fields.onMap = placed(store, maps.find(s => s.uiMapID === onMap));
+  if (onMap)
+    fields.onMap = placed(
+      store,
+      maps.find(s => s.uiMapID === onMap),
+    );
   return cited(store, fields);
 }
 
 function startedByItems(store, questID) {
-  return (store.group('items', 'startQuestID', r => (GD.isId(r.startQuestID) ? [r.startQuestID] : [])).get(questID) || []).map(it => ({ id: it.id, name: it.name }));
+  return (store.group('items', 'startQuestID', r => (GD.isId(r.startQuestID) ? [r.startQuestID] : [])).get(questID) || []).map(it => ({
+    id: it.id,
+    name: it.name,
+  }));
 }
 
 function skillLinesFor(store, abilities, spellID) {
@@ -188,10 +202,14 @@ function spellRow(store, spell) {
     id: spell.id,
     ...spellNaming(store, spell.id),
     skillLines: store.has('skilllineabilities') ? skillLinesFor(store, abilities, spell.id) : null,
-    reagents: !store.has('spellreagents') ? null : recipes.length ? recipes[0].reagents.map(x => {
-      const it = store.byId('items', x.itemID);
-      return { itemID: x.itemID, name: it ? it.name : null, count: x.count };
-    }) : [],
+    reagents: !store.has('spellreagents')
+      ? null
+      : recipes.length
+        ? recipes[0].reagents.map(x => {
+            const it = store.byId('items', x.itemID);
+            return { itemID: x.itemID, name: it ? it.name : null, count: x.count };
+          })
+        : [],
   });
 }
 
@@ -209,7 +227,12 @@ function instanceEncounters(store, mapID) {
 }
 
 function exactNpcs(cs, name) {
-  return cs ? cs.search('npcs', name).filter(h => h.rank === 0).map(h => h.row) : [];
+  return cs
+    ? cs
+        .search('npcs', name)
+        .filter(h => h.rank === 0)
+        .map(h => h.row)
+    : [];
 }
 
 function instanceRow(store, inst, matchedBoss, detailed) {
@@ -240,7 +263,9 @@ function bossCommunity(store, cs, encounter, detailed) {
   const npcs = exactNpcs(cs, encounter.name);
   const fields = { npcIn112: npcs.length > 0, outdoorSpawnIn112: npcs.some(npc => npc.spawns.some(s => s.maps.length > 0)) };
   if (detailed && L.hasLoot(cs)) {
-    fields.drops = npcs.filter(npc => GD.isId(npc.lootId) && npcShown(store, cs, npc)).map(npc => ({ npc: { id: npc.id, name: npc.name }, ...itemList(store, cs, L.itemsOf(cs, 'creatureloot', npc.lootId), MAX_BOSS_DROPS) }));
+    fields.drops = npcs
+      .filter(npc => GD.isId(npc.lootId) && npcShown(store, cs, npc))
+      .map(npc => ({ npc: { id: npc.id, name: npc.name }, ...itemList(store, cs, L.itemsOf(cs, 'creatureloot', npc.lootId), MAX_BOSS_DROPS) }));
     const chest = cs.rows('lootobjects').find(o => o.encounter && o.encounter.mapID === encounter.mapID && o.encounter.name === encounter.name);
     if (chest) fields.chest = { ...objectRef(chest), ...itemList(store, cs, L.itemsOf(cs, 'objectloot', chest.lootId), MAX_BOSS_DROPS) };
   }
@@ -250,7 +275,10 @@ function bossCommunity(store, cs, encounter, detailed) {
 function instanceLootNotes(store) {
   const cs = store.community;
   if (!L.hasLoot(cs)) return [];
-  return [lootNote(cs), `Boss drops come from 1.12 NPCs with exactly the boss's name, and a chest when the encounter's loot is in one; each list shows at most ${MAX_BOSS_DROPS} items; wow_npc by ID with offset pages through the rest. The client sets by difficulty are not merged, so a boss in several sets repeats its drops.`];
+  return [
+    lootNote(cs),
+    `Boss drops come from 1.12 NPCs with exactly the boss's name, and a chest when the encounter's loot is in one; each list shows at most ${MAX_BOSS_DROPS} items; wow_npc by ID with offset pages through the rest. The client sets by difficulty are not merged, so a boss in several sets repeats its drops.`,
+  ];
 }
 
 function sharedNameNotes(shown, hits, noun = 'items') {
@@ -264,7 +292,9 @@ function sharedNameNotes(shown, hits, noun = 'items') {
     const ids = idsByName.get(key);
     if (ids.length < 2) continue;
     const name = shown.find(h => GD.foldName(h.row.name) === key).row.name;
-    notes.push(`${ids.length} ${noun} are named "${name}" (IDs ${ids.slice(0, MAX_SHARED_IDS).join(', ')}${ids.length > MAX_SHARED_IDS ? ', ...' : ''}): the name alone does not pick one.`);
+    notes.push(
+      `${ids.length} ${noun} are named "${name}" (IDs ${ids.slice(0, MAX_SHARED_IDS).join(', ')}${ids.length > MAX_SHARED_IDS ? ', ...' : ''}): the name alone does not pick one.`,
+    );
   }
   return notes;
 }
@@ -272,16 +302,30 @@ function sharedNameNotes(shown, hits, noun = 'items') {
 function communityNotes(store) {
   const cs = store.community;
   if (cs) {
-    const notes = [cs.crossGame
-      ? `NPC names, quest titles, givers and spawn points come from Classic community data (cMaNGOS ${cs.version}, the 1.12 world), not from this game. It is shown here only for quest IDs this game's client has and on maps whose rectangles are the same in both games, but this game may have renamed, moved or replaced any of it: say it is Classic community data not checked for this game.`
-      : `NPC names, quest titles, givers and spawn points come from community data (cMaNGOS ${cs.version}, the 1.12 world), not the client. Classic Era renamed some of them and changed some spawns: say it is community data.`];
+    const notes = [
+      cs.crossGame
+        ? `NPC names, quest titles, givers and spawn points come from Classic community data (cMaNGOS ${cs.version}, the 1.12 world), not from this game. It is shown here only for quest IDs this game's client has and on maps whose rectangles are the same in both games, but this game may have renamed, moved or replaced any of it: say it is Classic community data not checked for this game.`
+        : `NPC names, quest titles, givers and spawn points come from community data (cMaNGOS ${cs.version}, the 1.12 world), not the client. Classic Era renamed some of them and changed some spawns: say it is community data.`,
+    ];
     const builtWith = (cs.manifest.client || {}).build || 'of an unknown build';
-    if (cs.crossGame && !cs.madeWith) notes.push('The Classic Era client tables are not synced, so no map can be checked against this game and no community position is shown. The owner can run "claude-wow data sync --flavor classic_era", then "claude-wow data sync --flavor classic_era --source community".');
-    else if (cs.crossGame && cs.stale) notes.push(`The community data was built with Classic Era client data ${builtWith}, not the Classic Era data synced now (${cs.madeWith}), so no community position is shown on this game. The owner can run "claude-wow data sync --flavor classic_era --source community".`);
-    else if (cs.stale) notes.push(`The community spawn points were computed with client data ${builtWith}, not the client data synced now (${store.build || 'none'}), so their coordinates are left out. The owner can run "claude-wow data sync --flavor classic_era --source community".`);
+    if (cs.crossGame && !cs.madeWith)
+      notes.push(
+        'The Classic Era client tables are not synced, so no map can be checked against this game and no community position is shown. The owner can run "claude-wow data sync --flavor classic_era", then "claude-wow data sync --flavor classic_era --source community".',
+      );
+    else if (cs.crossGame && cs.stale)
+      notes.push(
+        `The community data was built with Classic Era client data ${builtWith}, not the Classic Era data synced now (${cs.madeWith}), so no community position is shown on this game. The owner can run "claude-wow data sync --flavor classic_era --source community".`,
+      );
+    else if (cs.stale)
+      notes.push(
+        `The community spawn points were computed with client data ${builtWith}, not the client data synced now (${store.build || 'none'}), so their coordinates are left out. The owner can run "claude-wow data sync --flavor classic_era --source community".`,
+      );
     return notes;
   }
-  if (['classic_era', 'forever'].includes(store.flavor)) return ['No community data for NPCs and quest givers is synced on this machine. The owner can run "claude-wow data sync --flavor classic_era --source community".'];
+  if (['classic_era', 'forever'].includes(store.flavor))
+    return [
+      'No community data for NPCs and quest givers is synced on this machine. The owner can run "claude-wow data sync --flavor classic_era --source community".',
+    ];
   return ['There is no data for NPCs, quest titles or quest givers for this game.'];
 }
 
@@ -365,19 +409,21 @@ function itemSources(store, cs, itemID) {
   const npcs = (entity, field) => {
     const owners = cs.group('npcs', field, r => (GD.isId(r[field]) ? [r[field]] : []));
     const rows = [];
-    for (const [templateID, f] of src.get(entity)) for (const npc of owners.get(templateID) || []) if (npcShown(store, cs, npc)) rows.push({ row: { kind: 'npc', id: npc.id, name: npc.name }, f });
+    for (const [templateID, f] of src.get(entity))
+      for (const npc of owners.get(templateID) || []) if (npcShown(store, cs, npc)) rows.push({ row: { kind: 'npc', id: npc.id, name: npc.name }, f });
     const { total, shown } = capped(rows, MAX_SOURCES);
     return { total, npcs: shown };
   };
   const objectOwners = cs.group('lootobjects', 'lootId', r => (GD.isId(r.lootId) ? [r.lootId] : []));
   const objectRows = [];
-  for (const [templateID, f] of src.get('objectloot')) for (const o of objectOwners.get(templateID) || []) if (objectShown(store, cs, o)) objectRows.push({ row: objectRef(o), f });
+  for (const [templateID, f] of src.get('objectloot'))
+    for (const o of objectOwners.get(templateID) || []) if (objectShown(store, cs, o)) objectRows.push({ row: objectRef(o), f });
   const zoneRows = [];
   for (const [zoneID, f] of src.get('fishingloot')) {
     const z = store.byId('zones', zoneID);
     if (z) zoneRows.push({ row: { id: z.id, name: z.name }, f });
   }
-  const itemRows = (pairs) => {
+  const itemRows = pairs => {
     const rows = [];
     for (const [id, f] of pairs) {
       const it = lootItem(store, cs, id);
@@ -387,7 +433,8 @@ function itemSources(store, cs, itemID) {
     return { total, items: shown };
   };
   const fromDisenchant = [];
-  for (const [templateID, f] of src.get('disenchantloot')) for (const id of (cs.byId('disenchantloot', templateID) || {}).fromItems || []) fromDisenchant.push([id, f]);
+  for (const [templateID, f] of src.get('disenchantloot'))
+    for (const id of (cs.byId('disenchantloot', templateID) || {}).fromItems || []) fromDisenchant.push([id, f]);
   const objects = capped(objectRows, MAX_SOURCES);
   const zones = capped(zoneRows, MAX_SOURCES);
   const disenchantFrom = cs.group('disenchantloot', 'fromItem', r => (Array.isArray(r.fromItems) ? r.fromItems : [])).get(itemID) || [];
@@ -406,11 +453,19 @@ function itemSources(store, cs, itemID) {
 
 function itemCommunity(store, itemID) {
   const cs = store.community;
-  if (!cs) return { notes: ['classic_era', 'forever'].includes(store.flavor) ? ['No community loot data is synced on this machine, so who drops this item is not known here. The owner can run "claude-wow data sync --flavor classic_era --source community".'] : [] };
+  if (!cs)
+    return {
+      notes: ['classic_era', 'forever'].includes(store.flavor)
+        ? [
+            'No community loot data is synced on this machine, so who drops this item is not known here. The owner can run "claude-wow data sync --flavor classic_era --source community".',
+          ]
+        : [],
+    };
   if (!L.hasLoot(cs)) return { notes: [] };
   const old = cs.crossGame ? cs.byId('lootitems', itemID) : null;
   const it = store.byId('items', itemID);
-  if (old && it && old.name !== it.name) return { notes: [`Item ${itemID} has another name in the 1.12 community data than in this game, so no Classic drop sources are shown for it.`] };
+  if (old && it && old.name !== it.name)
+    return { notes: [`Item ${itemID} has another name in the 1.12 community data than in this game, so no Classic drop sources are shown for it.`] };
   return { community: communityCited(cs, itemSources(store, cs, itemID)), notes: [lootNote(cs)] };
 }
 
@@ -421,7 +476,13 @@ function lootNote(cs) {
 }
 
 function onMapRow(store, cs, m) {
-  return { ...mapRef(store, m.uiMapID), count: m.count, ...(cs.stale ? {} : { x: m.x, y: m.y }), ...(m.zoneAmbiguous ? { zoneAmbiguous: true } : {}), ...(m.event ? { event: true } : {}) };
+  return {
+    ...mapRef(store, m.uiMapID),
+    count: m.count,
+    ...(cs.stale ? {} : { x: m.x, y: m.y }),
+    ...(m.zoneAmbiguous ? { zoneAmbiguous: true } : {}),
+    ...(m.event ? { event: true } : {}),
+  };
 }
 
 function spawnRow(store, cs, s) {
@@ -436,10 +497,12 @@ function spawnRow(store, cs, s) {
 }
 
 function questRefs(store, cs, ids) {
-  return ids.filter(id => questAllowed(store, cs, id)).map(id => {
-    const q = cs.byId('questinfo', id);
-    return { id, title: q ? q.title : null };
-  });
+  return ids
+    .filter(id => questAllowed(store, cs, id))
+    .map(id => {
+      const q = cs.byId('questinfo', id);
+      return { id, title: q ? q.title : null };
+    });
 }
 
 function ownerRefs(store, cs, list) {
@@ -449,7 +512,20 @@ function ownerRefs(store, cs, list) {
       return { kind: 'npc', id: o.id, name: npc ? npc.name : null };
     }
     const object = cs.byId('objects', o.id);
-    return { kind: 'object', id: o.id, name: object ? object.name : null, ...(object ? { spawnTotal: cs.crossGame ? null : object.spawnTotal, onMaps: visibleMaps(cs, object.onMaps).map(m => onMapRow(store, cs, m)), spawns: visibleSpawns(cs, object.spawns).slice(0, MAX_OBJECT_SPAWNS).map(sp => spawnRow(store, cs, sp)) } : {}) };
+    return {
+      kind: 'object',
+      id: o.id,
+      name: object ? object.name : null,
+      ...(object
+        ? {
+            spawnTotal: cs.crossGame ? null : object.spawnTotal,
+            onMaps: visibleMaps(cs, object.onMaps).map(m => onMapRow(store, cs, m)),
+            spawns: visibleSpawns(cs, object.spawns)
+              .slice(0, MAX_OBJECT_SPAWNS)
+              .map(sp => spawnRow(store, cs, sp)),
+          }
+        : {}),
+    };
   });
 }
 
@@ -470,9 +546,15 @@ function npcRow(store, cs, npc, uiMapID, maxDrops = MAX_DROPS, offset = 0) {
     ...(uiMapID ? { onMap: onMap ? onMapRow(store, cs, onMap) : null } : {}),
     spawns: spawns.map(s => spawnRow(store, cs, s)),
     ...npcLoot(store, cs, npc, maxDrops, offset),
-    ...(uiMapID ? { spawnsShown: `${spawns.length} sampled of ${onMap ? onMap.count : 0} on this map; onMap has the count and one position` }
-      : cs.crossGame ? { spawnsShown: `${spawns.length} of a ${npc.spawns.length}-spawn sample; dungeon spawns and spawns on maps drawn differently in this game are left out, and so is the Classic total` }
-        : npc.spawnTotal > npc.spawns.length ? { spawnsShown: `${npc.spawns.length} of ${npc.spawnTotal}, spread over its maps; onMaps lists every map` } : {}),
+    ...(uiMapID
+      ? { spawnsShown: `${spawns.length} sampled of ${onMap ? onMap.count : 0} on this map; onMap has the count and one position` }
+      : cs.crossGame
+        ? {
+            spawnsShown: `${spawns.length} of a ${npc.spawns.length}-spawn sample; dungeon spawns and spawns on maps drawn differently in this game are left out, and so is the Classic total`,
+          }
+        : npc.spawnTotal > npc.spawns.length
+          ? { spawnsShown: `${npc.spawns.length} of ${npc.spawnTotal}, spread over its maps; onMaps lists every map` }
+          : {}),
   });
 }
 
@@ -489,7 +571,8 @@ function sharedTitleNotes(shown, hits) {
   const notes = [];
   for (const h of shown) {
     const n = counts.get(GD.foldName(h.row.title));
-    if (n > 1 && !notes.some(t => t.includes(`"${h.row.title}"`))) notes.push(`${n} quests are titled "${h.row.title}": the title alone does not pick one (factions and chains often share titles).`);
+    if (n > 1 && !notes.some(t => t.includes(`"${h.row.title}"`)))
+      notes.push(`${n} quests are titled "${h.row.title}": the title alone does not pick one (factions and chains often share titles).`);
   }
   return notes;
 }
@@ -560,7 +643,7 @@ function flightsOnMap(store, uiMapID) {
 function offsetArg(args) {
   const v = args.offset;
   if (v === undefined || v === null || v === 0) return 0;
-  const n = typeof v === 'number' ? v : (typeof v === 'string' && ID_TEXT.test(v.trim()) ? Number(v.trim()) : NaN);
+  const n = typeof v === 'number' ? v : typeof v === 'string' && ID_TEXT.test(v.trim()) ? Number(v.trim()) : NaN;
   if (!Number.isSafeInteger(n) || n < 0) throw new InputError('offset must be a non-negative integer');
   return n;
 }
@@ -572,7 +655,8 @@ function requireOne(args, keys) {
 const TOOLS = [
   {
     name: 'wow_item',
-    description: 'Look up an item by ID or by name in the client item table: name, quality, item level, required level, inventory type, sell and buy price in copper, the quest it starts, and (by ID) the profession recipes that use it as a reagent. By ID it also lists, from community loot tables (cMaNGOS, 1.12; trust "community-db", on Forever "community-db-unchecked-for-this-game"), who drops it (droppedBy), skinnedFrom, pickpocketedFrom, the chests, nodes and fishing holes that hold it (objects), fishedIn (zones), inContainers and disenchantedFrom, and for a container or a disenchantable item what it gives (contains, disenchantsInto). No chances, counts or vendors. Several items can share one name; a note then lists their IDs, and the name alone does not pick one.',
+    description:
+      'Look up an item by ID or by name in the client item table: name, quality, item level, required level, inventory type, sell and buy price in copper, the quest it starts, and (by ID) the profession recipes that use it as a reagent. By ID it also lists, from community loot tables (cMaNGOS, 1.12; trust "community-db", on Forever "community-db-unchecked-for-this-game"), who drops it (droppedBy), skinnedFrom, pickpocketedFrom, the chests, nodes and fishing holes that hold it (objects), fishedIn (zones), inContainers and disenchantedFrom, and for a container or a disenchantable item what it gives (contains, disenchantsInto). No chances, counts or vendors. Several items can share one name; a note then lists their IDs, and the name alone does not pick one.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -589,18 +673,27 @@ const TOOLS = [
         const it = store.byId('items', id);
         if (!it) return envelope(store, 'wow_item', { id }, []);
         const loot = itemCommunity(store, id);
-        return envelope(store, 'wow_item', { id }, [{ ...itemRow(store, it, true), ...(loot.community ? { community: loot.community } : {}) }], { notes: loot.notes });
+        return envelope(store, 'wow_item', { id }, [{ ...itemRow(store, it, true), ...(loot.community ? { community: loot.community } : {}) }], {
+          notes: loot.notes,
+        });
       }
       const name = nameArg(args, true);
       const limit = limitArg(args);
       const hits = store.search('items', name);
       const shown = hits.slice(0, limit);
-      return envelope(store, 'wow_item', { name }, shown.map(h => itemRow(store, h.row, false)), { total: hits.length, notes: sharedNameNotes(shown, hits) });
+      return envelope(
+        store,
+        'wow_item',
+        { name },
+        shown.map(h => itemRow(store, h.row, false)),
+        { total: hits.length, notes: sharedNameNotes(shown, hits) },
+      );
     },
   },
   {
     name: 'wow_spell',
-    description: 'Look up a spell by ID or by name in the client spell table: its name, the client\'s subtext (a rank such as "Rank 3", or "Passive", "Racial"), the skill lines it belongs to (professions and class skills) and, for a recipe, its reagents (null when that table is unavailable). Several ranks share one name; a note then lists their IDs. development: true marks a test or unused spell. It has no trainers, costs or descriptions.',
+    description:
+      'Look up a spell by ID or by name in the client spell table: its name, the client\'s subtext (a rank such as "Rank 3", or "Passive", "Racial"), the skill lines it belongs to (professions and class skills) and, for a recipe, its reagents (null when that table is unavailable). Several ranks share one name; a note then lists their IDs. development: true marks a test or unused spell. It has no trainers, costs or descriptions.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -621,7 +714,13 @@ const TOOLS = [
       const limit = limitArg(args);
       const hits = store.search('spells', name);
       const shown = hits.slice(0, limit);
-      return envelope(store, 'wow_spell', { name }, shown.map(h => spellRow(store, h.row)), { total: hits.length, notes: sharedNameNotes(shown, hits, 'spells') });
+      return envelope(
+        store,
+        'wow_spell',
+        { name },
+        shown.map(h => spellRow(store, h.row)),
+        { total: hits.length, notes: sharedNameNotes(shown, hits, 'spells') },
+      );
     },
   },
   {
@@ -642,11 +741,16 @@ const TOOLS = [
       const id = idArg(args, 'id');
       if (id) {
         const inst = store.byId('instances', id);
-        return envelope(store, 'wow_instance', { id }, real(inst) ? [instanceRow(store, inst, null, true)] : [], { notes: real(inst) ? instanceLootNotes(store) : [] });
+        return envelope(store, 'wow_instance', { id }, real(inst) ? [instanceRow(store, inst, null, true)] : [], {
+          notes: real(inst) ? instanceLootNotes(store) : [],
+        });
       }
       const name = nameArg(args, true);
       const limit = limitArg(args);
-      const results = store.search('instances', name).filter(h => real(h.row)).map(h => ({ inst: h.row, boss: null }));
+      const results = store
+        .search('instances', name)
+        .filter(h => real(h.row))
+        .map(h => ({ inst: h.row, boss: null }));
       const encounterHits = store.search('encounters', name);
       const notes = [];
       for (const h of encounterHits) {
@@ -660,12 +764,29 @@ const TOOLS = [
         }
       }
       const detailed = results.length === 1;
-      return envelope(store, 'wow_instance', { name }, results.slice(0, limit).map(r => instanceRow(store, r.inst, r.boss, detailed)), { total: results.length, notes: [...new Set(notes), ...(detailed ? instanceLootNotes(store) : results.length ? ['Boss drops are listed only when one instance matches; look one up by its ID for them.'] : [])] });
+      return envelope(
+        store,
+        'wow_instance',
+        { name },
+        results.slice(0, limit).map(r => instanceRow(store, r.inst, r.boss, detailed)),
+        {
+          total: results.length,
+          notes: [
+            ...new Set(notes),
+            ...(detailed
+              ? instanceLootNotes(store)
+              : results.length
+                ? ['Boss drops are listed only when one instance matches; look one up by its ID for them.']
+                : []),
+          ],
+        },
+      );
     },
   },
   {
     name: 'wow_faction',
-    description: 'Look up a reputation faction by ID or by name in the client faction table (only factions the reputation panel can show): its name and parent group. Use its ID for a {faction:ID} order token. It has no reputation rewards or standings.',
+    description:
+      'Look up a reputation faction by ID or by name in the client faction table (only factions the reputation panel can show): its name and parent group. Use its ID for a {faction:ID} order token. It has no reputation rewards or standings.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -688,12 +809,19 @@ const TOOLS = [
       }
       const name = nameArg(args, true);
       const hits = store.search('factions', name);
-      return envelope(store, 'wow_faction', { name }, hits.slice(0, limitArg(args)).map(h => row(h.row)), { total: hits.length });
+      return envelope(
+        store,
+        'wow_faction',
+        { name },
+        hits.slice(0, limitArg(args)).map(h => row(h.row)),
+        { total: hits.length },
+      );
     },
   },
   {
     name: 'wow_quest',
-    description: 'Check a quest ID against the client quest table and list the items that start it. The client tables hold quest IDs only. On Classic Era, community data (cMaNGOS, 1.12) adds the title and the NPCs or objects that give and end the quest, and a search by title; those fields carry trust "community-db". On Forever the same community data is used only for quest IDs the Forever client has, with trust "community-db-unchecked-for-this-game".',
+    description:
+      'Check a quest ID against the client quest table and list the items that start it. The client tables hold quest IDs only. On Classic Era, community data (cMaNGOS, 1.12) adds the title and the NPCs or objects that give and end the quest, and a search by title; those fields carry trust "community-db". On Forever the same community data is used only for quest IDs the Forever client has, with trust "community-db-unchecked-for-this-game".',
     inputSchema: {
       type: 'object',
       properties: {
@@ -713,13 +841,21 @@ const TOOLS = [
         const hits = cs ? cs.search('questinfo', name, 'title').filter(h => questAllowed(store, cs, h.row.id)) : [];
         const shown = hits.slice(0, limit);
         const results = shown.map(h => questRow(store, cs, h.row.id, h.row));
-        return communityEnvelope(store, 'wow_quest', { name }, results, { total: hits.length, notes: [...communityNotes(store), ...sharedTitleNotes(shown, hits)] });
+        return communityEnvelope(store, 'wow_quest', { name }, results, {
+          total: hits.length,
+          notes: [...communityNotes(store), ...sharedTitleNotes(shown, hits)],
+        });
       }
       const known = !!store.byId('quests', id);
       const info = cs && questAllowed(store, cs, id) ? cs.byId('questinfo', id) : null;
       const results = known || info ? [questRow(store, cs, id, info)] : [];
-      const notes = cs ? communityNotes(store) : ['Quest titles and text are not in the client tables. Use the name the quest log shows in game.', ...communityNotes(store)];
-      if (!known && store.has('quests')) notes.push(`Quest ID ${id} is not in the client data for build ${store.build}${info ? ', so it may not exist in this game even though community data has it' : ''}.`);
+      const notes = cs
+        ? communityNotes(store)
+        : ['Quest titles and text are not in the client tables. Use the name the quest log shows in game.', ...communityNotes(store)];
+      if (!known && store.has('quests'))
+        notes.push(
+          `Quest ID ${id} is not in the client data for build ${store.build}${info ? ', so it may not exist in this game even though community data has it' : ''}.`,
+        );
       return known ? envelope(store, 'wow_quest', { id }, results, { notes }) : communityEnvelope(store, 'wow_quest', { id }, results, { notes });
     },
   },
@@ -731,7 +867,7 @@ const TOOLS = [
       properties: {
         id: { type: 'integer', minimum: 1, description: 'NPC (creature) ID' },
         name: { type: 'string', maxLength: GD.MAX_QUERY_LENGTH, description: 'NPC name or part of it, any case' },
-        uiMapID: { type: 'integer', minimum: 1, description: 'Keep spawns on this map (the player\'s current map, for example)' },
+        uiMapID: { type: 'integer', minimum: 1, description: "Keep spawns on this map (the player's current map, for example)" },
         offset: { type: 'integer', minimum: 0, description: 'With id: skip this many items in each loot list, to page through a long one' },
         limit: { type: 'integer', minimum: 1, maximum: MAX_LIMIT },
       },
@@ -748,20 +884,48 @@ const TOOLS = [
       if (id) {
         const found = cs ? cs.byId('npcs', id) : null;
         const npc = found && npcShown(store, cs, found) ? found : null;
-        return communityEnvelope(store, 'wow_npc', { id, uiMapID, ...(offset ? { offset } : {}) }, npc ? [npcRow(store, cs, npc, uiMapID, MAX_DROPS, offset)] : [], { notes: npc && L.hasLoot(cs) ? [...notes, lootNote(cs), `Each loot list shows up to ${MAX_DROPS} items, unconditioned first; when total is larger, ask again with offset to see the rest.`] : notes });
+        return communityEnvelope(
+          store,
+          'wow_npc',
+          { id, uiMapID, ...(offset ? { offset } : {}) },
+          npc ? [npcRow(store, cs, npc, uiMapID, MAX_DROPS, offset)] : [],
+          {
+            notes:
+              npc && L.hasLoot(cs)
+                ? [
+                    ...notes,
+                    lootNote(cs),
+                    `Each loot list shows up to ${MAX_DROPS} items, unconditioned first; when total is larger, ask again with offset to see the rest.`,
+                  ]
+                : notes,
+          },
+        );
       }
       const name = nameArg(args, true);
       const limit = limitArg(args);
       let hits = cs ? cs.search('npcs', name).filter(h => npcShown(store, cs, h.row)) : [];
       if (uiMapID) hits = hits.filter(h => visibleMaps(cs, h.row.onMaps).some(m => m.uiMapID === uiMapID));
       const shown = hits.slice(0, limit);
-      const lootNotes = shown.length && L.hasLoot(cs) ? [lootNote(cs), `A search lists at most ${MAX_LISTED_DROPS} items per loot list; look an NPC up by ID for up to ${MAX_DROPS} at a time, with offset for the rest.`] : [];
-      return communityEnvelope(store, 'wow_npc', { name, uiMapID }, shown.map(h => npcRow(store, cs, h.row, uiMapID, MAX_LISTED_DROPS)), { total: hits.length, notes: [...notes, ...lootNotes] });
+      const lootNotes =
+        shown.length && L.hasLoot(cs)
+          ? [
+              lootNote(cs),
+              `A search lists at most ${MAX_LISTED_DROPS} items per loot list; look an NPC up by ID for up to ${MAX_DROPS} at a time, with offset for the rest.`,
+            ]
+          : [];
+      return communityEnvelope(
+        store,
+        'wow_npc',
+        { name, uiMapID },
+        shown.map(h => npcRow(store, cs, h.row, uiMapID, MAX_LISTED_DROPS)),
+        { total: hits.length, notes: [...notes, ...lootNotes] },
+      );
     },
   },
   {
     name: 'wow_flights',
-    description: 'Find flight paths (TaxiNodes) by ID, by name, or every one on a world map (uiMapID). Each has its position in percent on the zone map, or on the continent when zones overlap there (zoneAmbiguous), and on every map that holds it. flags is the raw client value: faction and availability are not decoded.',
+    description:
+      'Find flight paths (TaxiNodes) by ID, by name, or every one on a world map (uiMapID). Each has its position in percent on the zone map, or on the continent when zones overlap there (zoneAmbiguous), and on every map that holds it. flags is the raw client value: faction and availability are not decoded.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -784,12 +948,19 @@ const TOOLS = [
       const name = nameArg(args, !uiMapID);
       let rows = name ? store.search('flightpaths', name).map(h => h.row) : flightsOnMap(store, uiMapID);
       if (name && uiMapID) rows = rows.filter(f => Array.isArray(f.maps) && f.maps.some(s => s.uiMapID === uiMapID));
-      return envelope(store, 'wow_flights', { name, uiMapID }, rows.slice(0, limit).map(f => flightRow(store, f, uiMapID)), { total: rows.length });
+      return envelope(
+        store,
+        'wow_flights',
+        { name, uiMapID },
+        rows.slice(0, limit).map(f => flightRow(store, f, uiMapID)),
+        { total: rows.length },
+      );
     },
   },
   {
     name: 'wow_where',
-    description: 'Find places by name: world maps (UiMap, with uiMapID for map pins), areas and zones (AreaTable, with the maps they are on) and flight paths with their map position. With uiMapID, describe that map: its parents, child maps and how many flight paths it has. NPCs, objects and quest givers are not in this data.',
+    description:
+      'Find places by name: world maps (UiMap, with uiMapID for map pins), areas and zones (AreaTable, with the maps they are on) and flight paths with their map position. With uiMapID, describe that map: its parents, child maps and how many flight paths it has. NPCs, objects and quest givers are not in this data.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -809,50 +980,69 @@ const TOOLS = [
       }
       const name = nameArg(args, true);
       const limit = limitArg(args);
-      const kinds = [['uimaps', h => mapRow(store, h.row, false)], ['zones', h => areaRow(store, h.row)], ['flightpaths', h => flightRow(store, h.row)]];
+      const kinds = [
+        ['uimaps', h => mapRow(store, h.row, false)],
+        ['zones', h => areaRow(store, h.row)],
+        ['flightpaths', h => flightRow(store, h.row)],
+      ];
       const hits = kinds.flatMap(([entity, toRow], order) => store.search(entity, name).map(h => ({ ...h, order, toRow })));
       hits.sort((a, b) => a.rank - b.rank || a.order - b.order || a.row.name.length - b.row.name.length || a.row.id - b.row.id);
-      return envelope(store, 'wow_where', { name }, hits.slice(0, limit).map(h => h.toRow(h)), { total: hits.length, notes });
+      return envelope(
+        store,
+        'wow_where',
+        { name },
+        hits.slice(0, limit).map(h => h.toRow(h)),
+        { total: hits.length, notes },
+      );
     },
   },
   {
     name: 'wow_sources',
-    description: 'Describe the game data behind the other wow_* tools: where it came from, the build, when it was fetched, the license note, the row count of each table, whether it matches the player\'s client build, and what it does not contain.',
+    description:
+      "Describe the game data behind the other wow_* tools: where it came from, the build, when it was fetched, the license note, the row count of each table, whether it matches the player's client build, and what it does not contain.",
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     run(store) {
       const m = store.manifest || {};
       const tables = {};
       for (const [entity, info] of Object.entries(m.entities || {})) tables[entity] = info && Number.isSafeInteger(info.rows) ? info.rows : null;
-      const results = store.build ? [cited(store, {
-        kind: 'dataset',
-        flavor: m.flavor || null,
-        product: m.product || null,
-        url: m.url || null,
-        buildFamily: m.buildFamily || null,
-        fetchedAt: m.fetchedAt || null,
-        license: m.license || null,
-        tableHash: m.tableHash || null,
-        rows: tables,
-        dropped: Number.isSafeInteger(m.dropped) ? m.dropped : null,
-        notInData: [...NOT_IN_DATA],
-      })] : [];
+      const results = store.build
+        ? [
+            cited(store, {
+              kind: 'dataset',
+              flavor: m.flavor || null,
+              product: m.product || null,
+              url: m.url || null,
+              buildFamily: m.buildFamily || null,
+              fetchedAt: m.fetchedAt || null,
+              license: m.license || null,
+              tableHash: m.tableHash || null,
+              rows: tables,
+              dropped: Number.isSafeInteger(m.dropped) ? m.dropped : null,
+              notInData: [...NOT_IN_DATA],
+            }),
+          ]
+        : [];
       const cs = store.community;
       if (cs) {
         const c = cs.manifest;
-        results.push(communityCited(cs, {
-          kind: 'dataset',
-          flavor: c.flavor,
-          url: c.url,
-          file: c.file,
-          fetchedAt: c.fetchedAt,
-          license: c.license,
-          client: c.client,
-          positionsCurrent: !cs.stale,
-          crossGame: cs.crossGame,
-          rows: Object.fromEntries(Object.entries(c.entities || {}).map(([entity, info]) => [entity, info && Number.isSafeInteger(info.rows) ? info.rows : null])),
-          dropped: Number.isSafeInteger(c.dropped) ? c.dropped : null,
-          loot: c.loot && typeof c.loot === 'object' ? c.loot : null,
-        }));
+        results.push(
+          communityCited(cs, {
+            kind: 'dataset',
+            flavor: c.flavor,
+            url: c.url,
+            file: c.file,
+            fetchedAt: c.fetchedAt,
+            license: c.license,
+            client: c.client,
+            positionsCurrent: !cs.stale,
+            crossGame: cs.crossGame,
+            rows: Object.fromEntries(
+              Object.entries(c.entities || {}).map(([entity, info]) => [entity, info && Number.isSafeInteger(info.rows) ? info.rows : null]),
+            ),
+            dropped: Number.isSafeInteger(c.dropped) ? c.dropped : null,
+            loot: c.loot && typeof c.loot === 'object' ? c.loot : null,
+          }),
+        );
       }
       return envelope(store, 'wow_sources', {}, results);
     },
@@ -881,7 +1071,9 @@ function callTool(store, name, args) {
 }
 
 function createServer({ store, stdout, log = () => {} }) {
-  function send(msg) { stdout.write(JSON.stringify(msg) + '\n'); }
+  function send(msg) {
+    stdout.write(JSON.stringify(msg) + '\n');
+  }
 
   function onRequest(msg) {
     const { method, params } = msg;
@@ -950,17 +1142,47 @@ function main(argv, deps = {}) {
   const stdout = deps.stdout || process.stdout;
   const log = deps.log || (line => process.stderr.write(`[claude-wow data-mcp] ${line}\n`));
   let opts;
-  try { opts = parseArgs(argv); } catch (e) { log(e.message); process.exitCode = 2; return null; }
+  try {
+    opts = parseArgs(argv);
+  } catch (e) {
+    log(e.message);
+    process.exitCode = 2;
+    return null;
+  }
   const dataDir = opts.dataDir || require('./home').resolve(deps.env || process.env).data;
-  if (opts.flavor !== undefined && !Object.prototype.hasOwnProperty.call(require('./datasync').FLAVORS, opts.flavor)) { log(`unknown flavor ${JSON.stringify(opts.flavor)}`); process.exitCode = 2; return null; }
+  if (opts.flavor !== undefined && !Object.prototype.hasOwnProperty.call(require('./datasync').FLAVORS, opts.flavor)) {
+    log(`unknown flavor ${JSON.stringify(opts.flavor)}`);
+    process.exitCode = 2;
+    return null;
+  }
   const store = GD.openStore({ dataDir, clientBuild: opts.clientBuild, flavor: opts.flavor });
-  log(store.build ? `serving ${store.flavor} ${store.build} from ${store.dir} (client ${store.clientBuild || 'unknown'}: ${store.buildCheck})` : `no game data under ${dataDir}`);
+  log(
+    store.build
+      ? `serving ${store.flavor} ${store.build} from ${store.dir} (client ${store.clientBuild || 'unknown'}: ${store.buildCheck})`
+      : `no game data under ${dataDir}`,
+  );
   const server = createServer({ store, stdout, log });
   stdin.on('data', server.feed);
-  stdin.on('end', () => { if (!deps.stdin) process.exit(0); });
+  stdin.on('end', () => {
+    if (!deps.stdin) process.exit(0);
+  });
   return server;
 }
 
-module.exports = { SERVER_NAME, RUN_RULE, TOOLS, INSTRUCTIONS, NOT_IN_DATA, InputError, pickProtocol, toolList, callTool, createServer, parseArgs, launchConfig, main };
+module.exports = {
+  SERVER_NAME,
+  RUN_RULE,
+  TOOLS,
+  INSTRUCTIONS,
+  NOT_IN_DATA,
+  InputError,
+  pickProtocol,
+  toolList,
+  callTool,
+  createServer,
+  parseArgs,
+  launchConfig,
+  main,
+};
 
 if (require.main === module) main(process.argv.slice(2));

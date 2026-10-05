@@ -19,7 +19,10 @@ test('this test run is not the compiled binary, and describe() names what it is'
 });
 
 test('from a checkout, a script is run with this interpreter and its path, as before', () => {
-  assert.deepEqual(R.scriptCommand('bridge', ['--once'], checkout), ['/usr/local/bin/node', [path.join('/home/p/claude-wow', 'bridge', 'bridge.js'), '--once']]);
+  assert.deepEqual(R.scriptCommand('bridge', ['--once'], checkout), [
+    '/usr/local/bin/node',
+    [path.join('/home/p/claude-wow', 'bridge', 'bridge.js'), '--once'],
+  ]);
   assert.deepEqual(R.scriptCommand('setup', ['--wow', 'x'], checkout), ['/usr/local/bin/node', [path.join('/home/p/claude-wow', 'setup.js'), '--wow', 'x']]);
   assert.deepEqual(R.scriptCommand('install-slots', [], checkout), ['/usr/local/bin/node', [path.join('/home/p/claude-wow', 'bridge', 'install-slots.js')]]);
   assert.deepEqual(R.scriptCommand('supervisor', [], checkout), ['/usr/local/bin/node', [path.join('/home/p/claude-wow', 'bridge', 'supervisor.js')]]);
@@ -34,8 +37,10 @@ test('a JavaScript launcher runs with this interpreter from a checkout, and with
   assert.deepEqual(R.node(checkout), { file: '/usr/local/bin/node', found: true });
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-wow-rt-'));
   try {
-    const a = path.join(tmp, 'a'), b = path.join(tmp, 'b');
-    fs.mkdirSync(a); fs.mkdirSync(b);
+    const a = path.join(tmp, 'a'),
+      b = path.join(tmp, 'b');
+    fs.mkdirSync(a);
+    fs.mkdirSync(b);
     const PATH = [a, b].join(path.delimiter);
     const none = R.node(binary, { PATH }, 'linux');
     assert.equal(none.found, false);

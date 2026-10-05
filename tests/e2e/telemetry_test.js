@@ -36,9 +36,17 @@ function addonRecordTracker(h) {
     trackedTo = Math.max(trackedTo, h.client.lastSeq());
   };
   return {
-    unsettled: () => { catchUp(); return [...unsettled]; },
-    settled: ids => { for (const id of ids) unsettled.delete(id); },
-    skipTo: lastSeq => { catchUp(); trackedTo = lastSeq; },
+    unsettled: () => {
+      catchUp();
+      return [...unsettled];
+    },
+    settled: ids => {
+      for (const id of ids) unsettled.delete(id);
+    },
+    skipTo: lastSeq => {
+      catchUp();
+      trackedTo = lastSeq;
+    },
   };
 }
 
@@ -52,14 +60,17 @@ function messageIds(h) {
 
 async function settleAddonRecords(h, tracker) {
   await h.bridge.waitForLine(/hello from session /);
-  const ids = await h.client.waitFor(() => {
-    const acks = spentSlots(h.sb, 'ack');
-    const sigs = spentSlots(h.sb, 'sig');
-    const pending = tracker.unsettled();
-    const messages = messageIds(h);
-    const unanswered = pending.filter(id => messages.has(id) && !sigs.includes(slotOfId(id)));
-    return pending.every(id => acks.includes(slotOfId(id))) && unanswered.length === 0 ? pending : null;
-  }, { timeoutMs: 30000, label: 'the bridge to ack every record the addon sent and to answer every message among them' });
+  const ids = await h.client.waitFor(
+    () => {
+      const acks = spentSlots(h.sb, 'ack');
+      const sigs = spentSlots(h.sb, 'sig');
+      const pending = tracker.unsettled();
+      const messages = messageIds(h);
+      const unanswered = pending.filter(id => messages.has(id) && !sigs.includes(slotOfId(id)));
+      return pending.every(id => acks.includes(slotOfId(id))) && unanswered.length === 0 ? pending : null;
+    },
+    { timeoutMs: 30000, label: 'the bridge to ack every record the addon sent and to answer every message among them' },
+  );
   tracker.settled(ids);
 }
 
@@ -89,19 +100,28 @@ function gsRecord(session, seq) {
 }
 
 function stripCells(client, payload) {
-  return client.luaValue(`(function() local c = ClaudeWoW_Codec.Encode(0, ${luaQuote(payload)}, 1); local t = {}; for i = 1, #c do t[i] = c[i] end; return table.concat(t, ",") end)()`).split(',').map(Number);
+  return client
+    .luaValue(
+      `(function() local c = ClaudeWoW_Codec.Encode(0, ${luaQuote(payload)}, 1); local t = {}; for i = 1, #c do t[i] = c[i] end; return table.concat(t, ",") end)()`,
+    )
+    .split(',')
+    .map(Number);
 }
 
 function writeShot(sb, client, payload, n) {
   const cells = stripCells(client, payload);
   const rgb = Buffer.alloc(WIDTH * HEIGHT * 3);
   cells.forEach((v, i) => {
-    const r = Math.floor(i / CELLS), c = i % CELLS;
+    const r = Math.floor(i / CELLS),
+      c = i % CELLS;
     const lv = [(v >> 2) & 1, (v >> 1) & 1, v & 1].map(b => (b ? 255 : 0));
-    for (let y = 0; y < CELL; y++) for (let x = 0; x < CELL; x++) {
-      const o = ((r * CELL + y) * WIDTH + c * CELL + x) * 3;
-      rgb[o] = lv[0]; rgb[o + 1] = lv[1]; rgb[o + 2] = lv[2];
-    }
+    for (let y = 0; y < CELL; y++)
+      for (let x = 0; x < CELL; x++) {
+        const o = ((r * CELL + y) * WIDTH + c * CELL + x) * 3;
+        rgb[o] = lv[0];
+        rgb[o + 1] = lv[1];
+        rgb[o + 2] = lv[2];
+      }
   });
   const file = path.join(sb.screenshots, `WoWScrnShot_010199_${String(n).padStart(6, '0')}.png`);
   fs.writeFileSync(SB.assertSafe(file), encodePng(WIDTH, HEIGHT, rgb));
@@ -110,7 +130,10 @@ function writeShot(sb, client, payload, n) {
 
 async function sendRecords(h, session, seqs, frameNo) {
   for (let i = 0; i < seqs.length; i += PER_FRAME) {
-    const payload = seqs.slice(i, i + PER_FRAME).map(seq => gsRecord(session, seq)).join('\x1E');
+    const payload = seqs
+      .slice(i, i + PER_FRAME)
+      .map(seq => gsRecord(session, seq))
+      .join('\x1E');
     const file = writeShot(h.sb, h.client, payload, frameNo++);
     await h.client.waitFor(() => !fs.existsSync(file), { timeoutMs: 20000, label: `the bridge to read ${path.basename(file)}` });
   }
@@ -143,12 +166,23 @@ test('300 gs records whose seqs overlap the message ids spend no ack or sig file
     frameNo = await sendRecords(h, session, seqs.slice(RECORDS / 2), frameNo);
 
     const snapFile = path.join(h.sb.home, 'goals', CHARACTER, TL.SNAPSHOT_FILE);
-    const snap = await h.client.waitFor(() => {
-      try { const s = JSON.parse(fs.readFileSync(snapFile, 'utf8')); return s.seq === RECORDS ? s : null; } catch { return null; }
-    }, { timeoutMs: 20000, label: 'the snapshot at seq 300' });
+    const snap = await h.client.waitFor(
+      () => {
+        try {
+          const s = JSON.parse(fs.readFileSync(snapFile, 'utf8'));
+          return s.seq === RECORDS ? s : null;
+        } catch {
+          return null;
+        }
+      },
+      { timeoutMs: 20000, label: 'the snapshot at seq 300' },
+    );
     assert.deepEqual(snap.sections.money.value, { copper: 1000 + RECORDS });
     assert.equal(snap.session, session);
-    const events = fs.readFileSync(path.join(h.sb.home, 'goals', CHARACTER, TL.EVENTS_FILE), 'utf8').trim().split('\n');
+    const events = fs
+      .readFileSync(path.join(h.sb.home, 'goals', CHARACTER, TL.EVENTS_FILE), 'utf8')
+      .trim()
+      .split('\n');
     assert.equal(events.length, RECORDS - 1, 'one money event per record after the baseline');
 
     const slotB = ((between.id - 1) % SLOTS) + 1;
@@ -156,15 +190,30 @@ test('300 gs records whose seqs overlap the message ids spend no ack or sig file
     const issuedTo = h.client.lastSeq();
     assertSpends(h, { session, before: ackBefore, kind: 'ack', messageId: between.id, issuedFrom, issuedTo, logFrom });
     const sigs = spentSlots(h.sb, 'sig').filter(s => !sigBefore.includes(s));
-    for (const s of sigs.filter(x => x !== slotB)) assert.ok(Array.from({ length: issuedTo - issuedFrom + 1 }, (_, k) => issuedFrom + k).some(id => id !== between.id && slotOfId(id) === s), `sig slot ${s} belongs to a record the addon itself sent`);
+    for (const s of sigs.filter(x => x !== slotB))
+      assert.ok(
+        Array.from({ length: issuedTo - issuedFrom + 1 }, (_, k) => issuedFrom + k).some(id => id !== between.id && slotOfId(id) === s),
+        `sig slot ${s} belongs to a record the addon itself sent`,
+      );
     const state = h.state();
-    assert.ok(state.lastId >= between.id && state.lastId <= issuedTo, `lastId ${state.lastId} is an id the addon sent (${issuedFrom}..${issuedTo}), never a gs seq up to ${RECORDS}`);
-    assert.ok(Object.keys(state.handled[session]).every(id => Number(id) <= issuedTo), 'no gs seq in the message dedupe map');
+    assert.ok(
+      state.lastId >= between.id && state.lastId <= issuedTo,
+      `lastId ${state.lastId} is an id the addon sent (${issuedFrom}..${issuedTo}), never a gs seq up to ${RECORDS}`,
+    );
+    assert.ok(
+      Object.keys(state.handled[session]).every(id => Number(id) <= issuedTo),
+      'no gs seq in the message dedupe map',
+    );
     assert.equal(h.agentCalls().length, 2, 'no gs record ever reached an agent');
     assert.doesNotMatch(h.bridge.output, /gs1/, 'no gs text was logged or run as a prompt');
-    const published = new RegExp(`\\{ character = "${CHARACTER}", session = "${session}", seq = ${RECORDS}, hashes = \\{ money = "${String(RECORDS).padStart(8, '0')}" \\} \\}`);
+    const published = new RegExp(
+      `\\{ character = "${CHARACTER}", session = "${session}", seq = ${RECORDS}, hashes = \\{ money = "${String(RECORDS).padStart(8, '0')}" \\} \\}`,
+    );
     await h.client.say('publish the slots');
-    await h.client.waitFor(() => published.test(fs.readFileSync(path.join(h.sb.addons, 'ClaudeWoW_S001', 'Inbox.lua'), 'utf8')), { timeoutMs: 45000, label: 'the slot files to publish the gs hashes' });
+    await h.client.waitFor(() => published.test(fs.readFileSync(path.join(h.sb.addons, 'ClaudeWoW_S001', 'Inbox.lua'), 'utf8')), {
+      timeoutMs: 45000,
+      label: 'the slot files to publish the gs hashes',
+    });
   });
 });
 
@@ -172,9 +221,17 @@ test('the real addon sends its game state on a telemetry-only screenshot once th
   await withGame({}, async h => {
     await h.client.say('hello');
     const snapFile = path.join(h.sb.home, 'goals', CHARACTER, TL.SNAPSHOT_FILE);
-    const snap = await h.client.waitFor(() => {
-      try { const s = JSON.parse(fs.readFileSync(snapFile, 'utf8')); return s.sections.level ? s : null; } catch { return null; }
-    }, { timeoutMs: 60000, label: 'the first gs record in snapshot.json' });
+    const snap = await h.client.waitFor(
+      () => {
+        try {
+          const s = JSON.parse(fs.readFileSync(snapFile, 'utf8'));
+          return s.sections.level ? s : null;
+        } catch {
+          return null;
+        }
+      },
+      { timeoutMs: 60000, label: 'the first gs record in snapshot.json' },
+    );
     assert.equal(snap.session, h.client.db().session);
     assert.deepEqual(snap.sections.level.value, { level: 23, xp: 1234, xpMax: 5000 });
     assert.deepEqual(snap.sections.zone.value, { mapID: 1431 });

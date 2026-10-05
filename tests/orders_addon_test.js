@@ -82,10 +82,13 @@ function newVM({ prelude = '', beforeLogin = '' } = {}) {
   const run = (code, arg) => {
     if (lauxlib.luaL_loadstring(L, to_luastring(code)) !== lua.LUA_OK) throw new Error('Lua load: ' + to_jsstring(lua.lua_tostring(L, -1)));
     let nargs = 0;
-    if (arg !== undefined) { lua.lua_pushstring(L, to_luastring(arg)); nargs = 1; }
+    if (arg !== undefined) {
+      lua.lua_pushstring(L, to_luastring(arg));
+      nargs = 1;
+    }
     if (lua.lua_pcall(L, nargs, 0, 0) !== lua.LUA_OK) throw new Error('Lua error: ' + to_jsstring(lua.lua_tostring(L, -1)));
   };
-  const evaluate = (expr) => {
+  const evaluate = expr => {
     run(`local v = (${expr}); if v == nil then RESULT = nil else RESULT = tostring(v) end`);
     lua.lua_getglobal(L, to_luastring('RESULT'));
     const s = lua.lua_isnil(L, -1) ? null : to_jsstring(lua.lua_tolstring(L, -1));
@@ -107,7 +110,9 @@ function newVM({ prelude = '', beforeLogin = '' } = {}) {
 
 function nextSlot(vm, goalsLua, repliesLua = '', nowLua = 'time()') {
   const goals = goalsLua ? `, goals = ${goalsLua}` : '';
-  vm.run(`STUB.onLoadAddOn = function(name) ClaudeWoW_SlotData = { now = ${nowLua}, cwd = "", plugin = "ask", plugins = { "ask" }, replies = { ${repliesLua} }${goals} } end`);
+  vm.run(
+    `STUB.onLoadAddOn = function(name) ClaudeWoW_SlotData = { now = ${nowLua}, cwd = "", plugin = "ask", plugins = { "ask" }, replies = { ${repliesLua} }${goals} } end`,
+  );
 }
 
 function tick(vm, seconds = 6) {
@@ -129,7 +134,9 @@ function scenario(vm, slots) {
 }
 
 function pending(vm) {
-  vm.run('PENDING_CHAT, PENDING_ID = nil, nil; for _, c in ipairs(ClaudeWoWDB.chats) do if c.pendingId then PENDING_CHAT, PENDING_ID = c.id, c.pendingId end end');
+  vm.run(
+    'PENDING_CHAT, PENDING_ID = nil, nil; for _, c in ipairs(ClaudeWoWDB.chats) do if c.pendingId then PENDING_CHAT, PENDING_ID = c.id, c.pendingId end end',
+  );
   return { chat: vm.evaluate('PENDING_CHAT'), id: vm.evaluate('PENDING_ID') };
 }
 
@@ -166,14 +173,16 @@ test('orders card: a draw error that keeps failing is said once across vehicle a
 });
 
 test('orders card: a build that fails after the card frame exists never builds a second frame', () => {
-  const vm = newVM({ prelude: `
+  const vm = newVM({
+    prelude: `
 STUB.cardFrames, STUB.failInside = 0, true
 local plainCreateFrame = CreateFrame
 function CreateFrame(kind, name, parent, ...)
   if name == "ClaudeWoWOrdersCard" then STUB.cardFrames = STUB.cardFrames + 1 end
   if STUB.failInside and parent ~= nil and parent == _G.ClaudeWoWOrdersCard then error("no parts today") end
   return plainCreateFrame(kind, name, parent, ...)
-end` });
+end`,
+  });
   scenario(vm, [null]);
   sendAndRead(vm, ORDER_GOALS(5), 'one');
   sendAndRead(vm, ORDER_GOALS(5), 'two');
@@ -218,7 +227,9 @@ test('orders card: /claude orders off hides it and keeps it hidden through new d
   assert.equal(vm.evaluate('ClaudeWoWOrders.debug.buttonArt'), 'ui-questtrackerbutton-secondary-collapse');
   assert.equal(shownBars(vm), 3);
   assert.equal(vm.evaluate('ClaudeWoWDB.orders'), null);
-  vm.run('RESULT = 0; for k, v in pairs(ClaudeWoWDB.settings) do if tostring(k):find("^orders") then RESULT = RESULT + 1; assert(type(v) == "boolean", k) end end');
+  vm.run(
+    'RESULT = 0; for k, v in pairs(ClaudeWoWDB.settings) do if tostring(k):find("^orders") then RESULT = RESULT + 1; assert(type(v) == "boolean", k) end end',
+  );
   assert.equal(vm.num('RESULT'), 2, 'ordersCard and ordersCollapsed, nothing else');
 });
 
@@ -268,7 +279,21 @@ test('orders card: Blizzard templates when the client has them, plain frames whe
 
 test('orders card: the module sends nothing and automates nothing', () => {
   const src = fs.readFileSync(path.join(ADDON, 'Orders.lua'), 'utf8');
-  for (const name of ['SendChatMessage', 'SendAddonMessage', 'C_ChatInfo', 'ChatFrame_OpenChat', 'ChatFrameUtil', 'RunMacro', 'RunScript', 'loadstring', 'CastSpell', 'UseAction', 'TryLoadSlot', 'LoadAddOn', 'SetBinding']) {
+  for (const name of [
+    'SendChatMessage',
+    'SendAddonMessage',
+    'C_ChatInfo',
+    'ChatFrame_OpenChat',
+    'ChatFrameUtil',
+    'RunMacro',
+    'RunScript',
+    'loadstring',
+    'CastSpell',
+    'UseAction',
+    'TryLoadSlot',
+    'LoadAddOn',
+    'SetBinding',
+  ]) {
     assert.ok(!src.includes(name), `Orders.lua does not use ${name}`);
   }
   const vm = newVM();
@@ -310,20 +335,35 @@ end
 
 test('orders card on Classic Era: follows QuestWatchFrame with its fonts, colors and dash lines, and asks for no tracker template or atlas', () => {
   const vm = newVM({ prelude: QUEST_WATCH_STUB });
-  scenario(vm, [`{ rev = 5, char = "${CHAR}", order = { id = "o_5", text = "Craft until Leatherworking hits 125", pct = 71 }, goals = { { title = "Skinning 225", pct = 83 }, { title = "Cooking 75", pct = 100 } } }`]);
+  scenario(vm, [
+    `{ rev = 5, char = "${CHAR}", order = { id = "o_5", text = "Craft until Leatherworking hits 125", pct = 71 }, goals = { { title = "Skinning 225", pct = 83 }, { title = "Cooking 75", pct = 100 } } }`,
+  ]);
   assert.equal(cardShown(vm), true);
   assert.equal(vm.evaluate('ClaudeWoWOrders.debug.style'), 'watch');
   assert.equal(vm.evaluate('ClaudeWoWOrders.debug.anchoredTo'), 'watch');
   assert.equal(vm.evaluate('ClaudeWoWOrdersCard.rel == QuestWatchFrame'), 'true');
-  assert.deepEqual([vm.evaluate('ClaudeWoWOrdersCard.point'), vm.evaluate('ClaudeWoWOrdersCard.relPoint'), vm.num('ClaudeWoWOrdersCard.y')], ['TOPLEFT', 'BOTTOMLEFT', -4]);
+  assert.deepEqual(
+    [vm.evaluate('ClaudeWoWOrdersCard.point'), vm.evaluate('ClaudeWoWOrdersCard.relPoint'), vm.num('ClaudeWoWOrdersCard.y')],
+    ['TOPLEFT', 'BOTTOMLEFT', -4],
+  );
   assert.deepEqual([vm.evaluate('ClaudeWoWOrdersCard.header.Text.text'), vm.evaluate('ClaudeWoWOrdersCard.header.Text.font')], ['Orders', 'GameFontNormal']);
   const line = expr => [vm.evaluate(`${expr}.text`), vm.evaluate(`${expr}.font`), vm.evaluate(`${expr}.textColor`)];
-  assert.deepEqual(line('ClaudeWoWOrdersCard.orderText'), ['Craft until Leatherworking hits 125', 'GameFontHighlight', '0.75,0.61,0.00'], 'the order is a watched quest title');
+  assert.deepEqual(
+    line('ClaudeWoWOrdersCard.orderText'),
+    ['Craft until Leatherworking hits 125', 'GameFontHighlight', '0.75,0.61,0.00'],
+    'the order is a watched quest title',
+  );
   assert.deepEqual(line('ClaudeWoWOrdersCard.pctLine'), [' - 71%', 'GameFontHighlight', '0.80,0.80,0.80']);
   assert.deepEqual(line('ClaudeWoWOrdersCard.goalLines[1]'), [' - Skinning 225: 83%', 'GameFontHighlight', '0.80,0.80,0.80']);
-  assert.deepEqual(line('ClaudeWoWOrdersCard.goalLines[2]'), [' - Cooking 75: 100%', 'GameFontHighlight', '1.00,1.00,1.00'], 'a finished line is bright, as a finished objective is');
+  assert.deepEqual(
+    line('ClaudeWoWOrdersCard.goalLines[2]'),
+    [' - Cooking 75: 100%', 'GameFontHighlight', '1.00,1.00,1.00'],
+    'a finished line is bright, as a finished objective is',
+  );
   assert.equal(vm.num('#ClaudeWoWOrdersCard.bars'), 0, 'the Era watch list has no progress bars');
-  vm.run('RESULT = 0; local mine = {}; for _, a in pairs(ClaudeWoWOrders.ATLAS) do mine[a] = true end; for _, a in ipairs(STUB.atlasAsked) do if mine[a] then RESULT = RESULT + 1 end end');
+  vm.run(
+    'RESULT = 0; local mine = {}; for _, a in pairs(ClaudeWoWOrders.ATLAS) do mine[a] = true end; for _, a in ipairs(STUB.atlasAsked) do if mine[a] then RESULT = RESULT + 1 end end',
+  );
   assert.equal(vm.num('RESULT'), 0, 'no tracker atlas lookup: Era answers yes for atlases it draws green');
   vm.run('RESULT = 0; for _, t in ipairs(STUB.templatesAsked) do if t:find("^ObjectiveTracker") then RESULT = RESULT + 1 end end');
   assert.equal(vm.num('RESULT'), 0, 'no ObjectiveTracker template lookup');

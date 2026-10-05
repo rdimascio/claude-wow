@@ -47,8 +47,13 @@ function fakeInstall(dir, capture = {}) {
     addonDir: addons,
     savedVariablesFile: path.join(savedDir, 'ClaudeWoW.lua'),
     inboxFile: path.join(addons, 'ClaudeWoW_Runtime', 'Inbox.lua'),
-    defaultCwd: project, slots: 1, agent: 'claude', agents: { claude: { path: agent } },
-    plugins: { default: 'claude-code' }, gameContext: false, primerFile: '',
+    defaultCwd: project,
+    slots: 1,
+    agent: 'claude',
+    agents: { claude: { path: agent } },
+    plugins: { default: 'claude-code' },
+    gameContext: false,
+    primerFile: '',
     capture: { enabled: true, ...capture },
   };
   fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify(cfg, null, 2));
@@ -64,7 +69,9 @@ function outbox(id, text, shot) {
 
 function runOnce(home, project, extra = []) {
   const r = spawnSync(process.execPath, [BRIDGE, '--once', '--project', project, ...extra], {
-    encoding: 'utf8', env: { ...process.env, CLAUDE_WOW_HOME: home }, timeout: 60000,
+    encoding: 'utf8',
+    env: { ...process.env, CLAUDE_WOW_HOME: home },
+    timeout: 60000,
   });
   return { ...r, out: r.stdout + r.stderr };
 }
@@ -81,7 +88,11 @@ test('a new install starts on the screenshot transport; the addon reporting shot
   // The report arrived (through the reload outbox) and the bridge switched, in plain words.
   assert.match(r.out, /#7@sess1 TRANSPORT FALLBACK: the addon reports shot=missing: the game client has no Screenshot\(\) function\./, r.out);
   assert.match(r.out, /switching from the screenshot transport to the pixel capture \(deprecated; it needs /, r.out);
-  assert.match(r.out, /remembered in .*state\.json: the next start goes straight to the pixel transport\. To choose for good, set capture\.mode in .*config\.json to "pixel" \(no more note\) or "screenshot" \(try again\)\./, r.out);
+  assert.match(
+    r.out,
+    /remembered in .*state\.json: the next start goes straight to the pixel transport\. To choose for good, set capture\.mode in .*config\.json to "pixel" \(no more note\) or "screenshot" \(try again\)\./,
+    r.out,
+  );
   // The message itself was still handled (the reload path carried it).
   assert.match(r.out, /#7@sess1 \(reload\) \[claude-code\] Claude starting in /, r.out);
   assert.match(r.out, /#7@sess1 done \(/, r.out);
@@ -94,7 +105,11 @@ test('a new install starts on the screenshot transport; the addon reporting shot
   for (const f of [path.join(addons, 'ClaudeWoW_S001', 'Inbox.lua'), path.join(addons, 'ClaudeWoW_Runtime', 'Inbox.lua')]) {
     const lua = fs.readFileSync(f, 'utf8');
     assert.match(lua, /^\ttransport = "pixel",$/m, f);
-    assert.match(lua, /^\ttransportNote = "pixel transport, fallen back to since \d{4}-\d\d-\d\d \d\d:\d\d UTC because the game client has no Screenshot\(\) function; the pixel capture is deprecated: set capture\.mode in config\.json to \\"pixel\\" to keep it without this note, or to \\"screenshot\\" to try the screenshot transport again",$/m, f);
+    assert.match(
+      lua,
+      /^\ttransportNote = "pixel transport, fallen back to since \d{4}-\d\d-\d\d \d\d:\d\d UTC because the game client has no Screenshot\(\) function; the pixel capture is deprecated: set capture\.mode in config\.json to \\"pixel\\" to keep it without this note, or to \\"screenshot\\" to try the screenshot transport again",$/m,
+      f,
+    );
     assert.ok(!/^\tstrip = /m.test(lua), 'no screenshot strip levels on the pixel transport');
   }
   // The log file has the same lines.
@@ -103,7 +118,11 @@ test('a new install starts on the screenshot transport; the addon reporting shot
   // The next start, nothing pending: straight to the pixel transport, and the banner says why.
   const again = runOnce(home, project);
   assert.equal(again.status, 0, again.out);
-  assert.match(again.out, /^ {2}capture {2}: pixel transport, DEPRECATED \(FALLBACK: pixel transport, fallen back to since .* because the game client has no Screenshot\(\) function; /m, again.out);
+  assert.match(
+    again.out,
+    /^ {2}capture {2}: pixel transport, DEPRECATED \(FALLBACK: pixel transport, fallen back to since .* because the game client has no Screenshot\(\) function; /m,
+    again.out,
+  );
   assert.match(again.out, /nothing pending/);
   assert.match(fs.readFileSync(path.join(addons, 'ClaudeWoW_S001', 'Inbox.lua'), 'utf8'), /^\ttransportNote = /m, 'the note stays in the slot files');
 
@@ -133,8 +152,15 @@ test('a new install starts on the screenshot transport; the addon reporting shot
   const retry = runOnce(home, project);
   assert.equal(retry.status, 0, retry.out);
   assert.match(retry.out, /#11@sess1 TRANSPORT FALLBACK: the addon reports shot=failed: the game client reported SCREENSHOT_FAILED on every try\./, retry.out);
-  assert.match(fs.readFileSync(path.join(addons, 'ClaudeWoW_S001', 'Inbox.lua'), 'utf8'), /^\ttransportNote = "pixel transport, fallen back to since .* because the game client reported SCREENSHOT_FAILED on every try; /m);
-  assert.match(retry.out, /capture\.mode is "screenshot" in .*config\.json, so every start tries the screenshot transport first and falls back again/, retry.out);
+  assert.match(
+    fs.readFileSync(path.join(addons, 'ClaudeWoW_S001', 'Inbox.lua'), 'utf8'),
+    /^\ttransportNote = "pixel transport, fallen back to since .* because the game client reported SCREENSHOT_FAILED on every try; /m,
+  );
+  assert.match(
+    retry.out,
+    /capture\.mode is "screenshot" in .*config\.json, so every start tries the screenshot transport first and falls back again/,
+    retry.out,
+  );
   assert.equal(JSON.parse(fs.readFileSync(path.join(home, 'state.json'), 'utf8')).transportFallback.reason, 'failed');
   // ..."pixel" is simply the pixel transport, deprecated, without the note.
   cfg.capture.mode = 'pixel';
@@ -143,7 +169,11 @@ test('a new install starts on the screenshot transport; the addon reporting shot
   const pixel = runOnce(home, project);
   assert.equal(pixel.status, 0, pixel.out);
   assert.match(pixel.out, /#12@sess1 done \(/, pixel.out);
-  assert.match(pixel.out, /^ {2}capture {2}: pixel transport, DEPRECATED \(capture\.mode in config\.json; kept only until Screenshot\(\) is confirmed on Windows and Linux\/Wine\): /m, pixel.out);
+  assert.match(
+    pixel.out,
+    /^ {2}capture {2}: pixel transport, DEPRECATED \(capture\.mode in config\.json; kept only until Screenshot\(\) is confirmed on Windows and Linux\/Wine\): /m,
+    pixel.out,
+  );
   assert.ok(!/transportNote/.test(fs.readFileSync(path.join(addons, 'ClaudeWoW_S001', 'Inbox.lua'), 'utf8')), 'no note when the pixel transport was chosen');
   // A bad mode is refused with the file name, exit 2 (the supervisor does not loop on it).
   cfg.capture.mode = 'gif';

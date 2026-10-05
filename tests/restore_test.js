@@ -8,7 +8,7 @@ const P = require('../bridge/protocol');
 
 // Undo luaStr's escapes: \\ \" \n and \ddd (a raw tab is legal in a Lua literal).
 function luaUnescape(s) {
-  return s.replace(/\\(\d{1,3}|.)/g, (_, e) => /^\d/.test(e) ? String.fromCharCode(Number(e)) : e === 'n' ? '\n' : e);
+  return s.replace(/\\(\d{1,3}|.)/g, (_, e) => (/^\d/.test(e) ? String.fromCharCode(Number(e)) : e === 'n' ? '\n' : e));
 }
 
 // Walk a luaparse table AST into plain JS values.
@@ -38,14 +38,23 @@ function readSlot(src, globalName) {
 test('slot file round-trips replies, denied rules, cwd, agents and a restore bundle', () => {
   const restore = {
     token: 'tok1',
-    chats: [{ id: 'c1', name: 'realms', cwd: 'C:\\x\\y', messages: [
-      { role: 'user', id: 1, t: 1, text: 'hi "there"\nnew line' },
-      { role: 'assistant', id: 1, t: 2, agent: 'codex', text: 'hello | pipe \\ backslash' },
-    ] }],
+    chats: [
+      {
+        id: 'c1',
+        name: 'realms',
+        cwd: 'C:\\x\\y',
+        messages: [
+          { role: 'user', id: 1, t: 1, text: 'hi "there"\nnew line' },
+          { role: 'assistant', id: 1, t: 2, agent: 'codex', text: 'hello | pipe \\ backslash' },
+        ],
+      },
+    ],
   };
-  const lua = P.luaTable('ClaudeWoW_SlotData',
+  const lua = P.luaTable(
+    'ClaudeWoW_SlotData',
     [{ chat: 'c9', id: 3, status: 'done', text: 'ok\ttab', denied: ['WebSearch', 'Bash(cargo:*)'], agent: 'grok' }],
-    { cwd: 'C:\\proj', restore, now: 1700000000123, agent: 'claude', agents: ['claude', 'codex', 'grok'] });
+    { cwd: 'C:\\proj', restore, now: 1700000000123, agent: 'claude', agents: ['claude', 'codex', 'grok'] },
+  );
   const d = readSlot(lua, 'ClaudeWoW_SlotData');
   assert.equal(d.now, 1700000000);
   assert.equal(d.cwd, 'C:\\proj');
@@ -80,14 +89,38 @@ test('slot file carries the session list for /claude -r: running sessions flagge
 
 test('slot file carries the picker fields (title, branch, running, restart) and the late-reply flags', () => {
   const restart = 'cd /Users/me/wow-ai && claude --resume f02436b8-8a5f-4c05-823e-bef25f88ff7b --dangerously-load-development-channels server:claude-wow';
-  const sessions = [{ id: 'f02436b8-8a5f-4c05-823e-bef25f88ff7b', name: 'wow-ai', title: 'Refactor the bridge', branch: 'main', cwd: '/Users/me/wow-ai', agent: 'claude', at: 5, running: true, restart }];
+  const sessions = [
+    {
+      id: 'f02436b8-8a5f-4c05-823e-bef25f88ff7b',
+      name: 'wow-ai',
+      title: 'Refactor the bridge',
+      branch: 'main',
+      cwd: '/Users/me/wow-ai',
+      agent: 'claude',
+      at: 5,
+      running: true,
+      restart,
+    },
+  ];
   const records = [
     { chat: 'c1', id: 159, status: 'error', text: 'did not pick it up', lateOk: true },
     { chat: 'c1', id: 159, status: 'done', text: 'late hi', late: true },
     { chat: 'c2', id: 3, status: 'done', text: 'plain' },
   ];
   const t = readSlot(P.luaTable('ClaudeWoW_SlotData', records, { sessions }), 'ClaudeWoW_SlotData');
-  assert.deepEqual(t.sessions, [{ id: sessions[0].id, name: 'wow-ai', cwd: '/Users/me/wow-ai', agent: 'claude', at: 5, running: true, title: 'Refactor the bridge', branch: 'main', restart }]);
+  assert.deepEqual(t.sessions, [
+    {
+      id: sessions[0].id,
+      name: 'wow-ai',
+      cwd: '/Users/me/wow-ai',
+      agent: 'claude',
+      at: 5,
+      running: true,
+      title: 'Refactor the bridge',
+      branch: 'main',
+      restart,
+    },
+  ]);
   assert.equal(t.replies[0].lateOk, true);
   assert.equal(t.replies[0].late, undefined);
   assert.equal(t.replies[1].late, true);

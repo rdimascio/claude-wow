@@ -19,7 +19,8 @@ test('a new reply in a chat the bridge first saw long ago is still in the slots 
     await h.bridge.stop();
     const at = Date.now();
     const kept = { [`${token}:${chat}`]: { at, record: { chat, id: 1, status: 'done', text: 'an old reply', cwd: '', client: clientKey } } };
-    for (let i = 1; i <= 30; i++) kept[`${token}:other${i}`] = { at, record: { chat: `other${i}`, id: 1000 + i, status: 'done', text: `other ${i}`, cwd: '', client: clientKey } };
+    for (let i = 1; i <= 30; i++)
+      kept[`${token}:other${i}`] = { at, record: { chat: `other${i}`, id: 1000 + i, status: 'done', text: `other ${i}`, cwd: '', client: clientKey } };
     fs.writeFileSync(h.sb.state, JSON.stringify({ ...h.state(), replies: kept }));
     h.bridge.start();
     await h.bridge.ready();
@@ -47,7 +48,13 @@ test('the slot files name the run limit and the running message with its start t
     h.client.send('waits its turn [[hang]]');
     const second = h.client.activeChat().pendingId;
     await h.bridge.waitForLine(new RegExp(`#${second}@\\S+ queued \\(1 running\\)`));
-    const listed = await h.client.waitFor(() => new RegExp(`alive = \\{ \\{ session = "${token}", id = ${id}, since = (\\d+) \\}, \\{ session = "${token}", id = ${second}, since = 0 \\} \\}`).exec(slot()), { label: 'the running and the queued message in the slot file' });
+    const listed = await h.client.waitFor(
+      () =>
+        new RegExp(`alive = \\{ \\{ session = "${token}", id = ${id}, since = (\\d+) \\}, \\{ session = "${token}", id = ${second}, since = 0 \\} \\}`).exec(
+          slot(),
+        ),
+      { label: 'the running and the queued message in the slot file' },
+    );
     assert.ok(Math.abs(Number(listed[1]) - Date.now() / 1000) < 60, 'since is the run start, in epoch seconds');
     assert.match(slot(), /\trunLimit = 3600,/);
     h.client.slash('/claude cancel');

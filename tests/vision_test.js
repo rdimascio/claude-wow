@@ -10,12 +10,22 @@ const D = require('../bridge/decode');
 // A synthetic frame: px(x, y) from an RGB buffer, like decode.readImage returns.
 function image(width, height, fill) {
   const rgb = Buffer.alloc(width * height * 3);
-  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
-    const [r, g, b] = fill(x, y);
-    const o = (y * width + x) * 3;
-    rgb[o] = r; rgb[o + 1] = g; rgb[o + 2] = b;
-  }
-  return { width, height, px: (x, y) => { const o = (y * width + x) * 3; return [rgb[o], rgb[o + 1], rgb[o + 2]]; } };
+  for (let y = 0; y < height; y++)
+    for (let x = 0; x < width; x++) {
+      const [r, g, b] = fill(x, y);
+      const o = (y * width + x) * 3;
+      rgb[o] = r;
+      rgb[o + 1] = g;
+      rgb[o + 2] = b;
+    }
+  return {
+    width,
+    height,
+    px: (x, y) => {
+      const o = (y * width + x) * 3;
+      return [rgb[o], rgb[o + 1], rgb[o + 2]];
+    },
+  };
 }
 
 test('gameView leaves a frame that is narrow enough alone, apart from the crop, and rounds the height with the width', () => {
@@ -25,7 +35,10 @@ test('gameView leaves a frame that is narrow enough alone, apart from the crop, 
   assert.deepEqual([same.rgb[0], same.rgb[1]], [0, 10], 'the first row is the one just under the crop');
   const half = V.gameView(img, { cropTop: 0, maxWidth: 50 });
   assert.deepEqual([half.width, half.height], [50, 30]);
-  const big = V.gameView(image(1920, 1080, () => [1, 2, 3]), { cropTop: 12, maxWidth: 1280 });
+  const big = V.gameView(
+    image(1920, 1080, () => [1, 2, 3]),
+    { cropTop: 12, maxWidth: 1280 },
+  );
   assert.deepEqual([big.width, big.height], [1280, 712]);
   assert.throws(() => V.gameView({ width: 0, height: 0, px: () => [0, 0, 0] }, {}), /nothing left/);
 });
