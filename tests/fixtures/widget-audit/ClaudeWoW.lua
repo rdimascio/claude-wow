@@ -36,17 +36,14 @@ ClaudeWoWWidgetDB = {
 			"IsAuditReady", -- [4]
 			"UnitSetRole", -- [5]
 		},
-		["refusedFonts"] = {
-			"OddFontObject", -- [1]
-		},
 		["version"] = "1.15.9",
 		["build"] = "64000",
 		["interface"] = 11509,
 		["at"] = 1790000000,
-		["total"] = 12,
-		["saved"] = 12,
+		["total"] = 11,
+		["saved"] = 11,
 		["admittedCount"] = 6,
-		["refusedCount"] = 6,
+		["refusedCount"] = 5,
 		["truncated"] = false,
 	},
 	["data"] = {

@@ -116,18 +116,10 @@ local GAME_FUNCTIONS = {
 	"IsFalling", "IsStealthed", "IsIndoors", "IsOutdoors", "IsSpellKnown", "IsPlayerSpell", "IsUsableSpell", "IsCurrentSpell",
 	"IsSpellInRange", "IsItemInRange", "IsAutoRepeatSpell", "IsEquippedItem", "IsShiftKeyDown", "IsControlKeyDown",
 	"IsAltKeyDown", "IsModifierKeyDown", "IsMouseButtonDown", "HasFullControl", "CheckInteractDistance", "HasPetUI",
-	"PlaySound", "PlaySoundFile", "GetUnitName", "GetRaidTargetIndex",
+	"GetUnitName", "GetRaidTargetIndex",
 }
 
 local DATA_TABLES = { "RAID_CLASS_COLORS", "CLASS_ICON_TCOORDS", "ITEM_QUALITY_COLORS", "FACTION_BAR_COLORS", "PowerBarColor", "Enum", "SOUNDKIT" }
-
-local FONT_OBJECTS = {
-	"GameTooltipText", "GameTooltipTextSmall", "GameTooltipHeaderText", "Tooltip_Med", "Tooltip_Small", "TextStatusBarText",
-	"ChatFontNormal", "ChatFontSmall",
-}
-W.FONT_OBJECTS = FONT_OBJECTS
-
-local FONT_FAMILY_PATTERNS = { "^GameFont%u", "^NumberFont%u", "^SystemFont_", "^QuestFont" }
 
 local TEMPLATES = {
 	"BackdropTemplate", "TooltipBackdropTemplate", "TooltipBorderedFrameTemplate", "BasicFrameTemplate", "BasicFrameTemplateWithInset",
@@ -172,7 +164,6 @@ local GAME_FUNCTION = NameSet(GAME_FUNCTIONS)
 local DATA_TABLE = NameSet(DATA_TABLES)
 local TEMPLATE = NameSet(TEMPLATES)
 local FRAME_KIND = NameSet(FRAME_KINDS)
-local FONT_OBJECT = NameSet(FONT_OBJECTS)
 local UNIT_WRITER_VERB = NameSet(UNIT_WRITER_VERBS)
 
 local function Blocked(name)
@@ -603,14 +594,6 @@ local function IsUnitReader(key)
 	return not UNIT_WRITER_VERB[verb]
 end
 
-local function IsFontName(key)
-	if FONT_OBJECT[key] then return true end
-	for _, pattern in ipairs(FONT_FAMILY_PATTERNS) do
-		if key:find(pattern) then return true end
-	end
-	return false
-end
-
 local function FunctionAdmission(key)
 	if DENIED[key] then return nil end
 	if LUA_FUNCTION[key] then return "lua" end
@@ -632,7 +615,7 @@ local function Resolve(key, membrane)
 	if SHARED_LIBRARY[key] then return ShallowCopy(value) end
 	if DATA_TABLE[key] then return DeepCopy(value) end
 	if key:find("^C_%a") then return NamespaceProxy(key, value, membrane) end
-	if IsFontName(key) and IsFontObject(value) then return membrane.Font(value) end
+	if IsFontObject(value) then return membrane.Font(value) end
 	return nil
 end
 
@@ -688,14 +671,10 @@ local function AuditNamespace(key, namespace, add)
 	end)
 end
 
-local function IsAuditedFontName(key)
-	return (FONT_OBJECT[key] or key:find("Font")) and true or false
-end
-
 local function AuditedGlobals()
-	local admitted, refused, refusedFonts = {}, {}, {}
-	local function Add(name, admits, list)
-		list = admits and admitted or list or refused
+	local admitted, refused = {}, {}
+	local function Add(name, admits)
+		local list = admits and admitted or refused
 		list[#list + 1] = name
 	end
 	for key, value in pairs(_G) do
@@ -706,15 +685,14 @@ local function AuditedGlobals()
 				if admits or MatchesAny(key, AUDITED_FUNCTION_PATTERNS) then Add(key, admits) end
 			elseif kind == "table" and key:find("^C_%a") then
 				AuditNamespace(key, value, Add)
-			elseif kind == "table" and IsAuditedFontName(key) and IsFontObject(value) then
-				Add(key, IsFontName(key), refusedFonts)
+			elseif kind == "table" and IsFontObject(value) then
+				Add(key, true)
 			end
 		end
 	end
 	table.sort(admitted)
 	table.sort(refused)
-	table.sort(refusedFonts)
-	return admitted, refused, refusedFonts
+	return admitted, refused
 end
 
 local function FirstNames(list, room)
@@ -731,14 +709,13 @@ local function ClientBuild()
 end
 
 function W.DumpGlobals()
-	local admitted, refused, refusedFonts = AuditedGlobals()
+	local admitted, refused = AuditedGlobals()
 	local keptAdmitted = FirstNames(admitted, GLOBALS_MAX)
-	local keptFonts = FirstNames(refusedFonts, GLOBALS_MAX - #keptAdmitted)
-	local keptRefused = FirstNames(refused, GLOBALS_MAX - #keptAdmitted - #keptFonts)
+	local keptRefused = FirstNames(refused, GLOBALS_MAX - #keptAdmitted)
 	local version, build, interface = ClientBuild()
-	local refusedCount = #refused + #refusedFonts
+	local refusedCount = #refused
 	local total = #admitted + refusedCount
-	local saved = #keptAdmitted + #keptFonts + #keptRefused
+	local saved = #keptAdmitted + #keptRefused
 	local dump = {
 		version = version,
 		build = build,
@@ -751,7 +728,6 @@ function W.DumpGlobals()
 		truncated = saved < total,
 		admitted = keptAdmitted,
 		refused = keptRefused,
-		refusedFonts = keptFonts,
 	}
 	DB().globals = dump
 	return dump

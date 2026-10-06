@@ -24,14 +24,13 @@ test('parseDump reads the globals the addon saved, past other tables and a quote
   assert.equal(dump.build, '64000');
   assert.equal(dump.interface, 11509);
   assert.equal(dump.at, 1790000000);
-  assert.equal(dump.total, 12);
-  assert.equal(dump.saved, 12);
+  assert.equal(dump.total, 11);
+  assert.equal(dump.saved, 11);
   assert.equal(dump.admittedCount, 6);
-  assert.equal(dump.refusedCount, 6);
+  assert.equal(dump.refusedCount, 5);
   assert.equal(dump.truncated, false);
   assert.deepEqual(dump.admitted, ['C_Fake.GetThing', 'GameFontNormal', 'GetTime', 'PlaySound', 'UnitHealth', 'UnitSelectRole']);
   assert.deepEqual(dump.refused, ['C_Fake.DropThing', 'C_Map.GetBestMapForUnit', 'GetSecretThing', 'IsAuditReady', 'UnitSetRole']);
-  assert.deepEqual(dump.refusedFonts, ['OddFontObject']);
 });
 
 test('parseDump reads the unindented CRLF layout the headless dev client writes', () => {
@@ -61,7 +60,6 @@ test('parseDump reads the unindented CRLF layout the headless dev client writes'
   const dump = A.parseDump(text);
   assert.deepEqual(dump.admitted, ['GetTime']);
   assert.deepEqual(dump.refused, ['SetThing']);
-  assert.deepEqual(dump.refusedFonts, []);
   assert.equal(dump.truncated, true);
   assert.equal(dump.build, '?');
 });
@@ -75,13 +73,13 @@ test('parseDump returns null with no widget table or no globals, and throws on a
   assert.throws(() => A.parseDump('ClaudeWoWWidgetDB = {\n\t["globals"] = {{{\n}\n'), /cannot parse ClaudeWoWWidgetDB/);
 });
 
-test('the audit flags admitted writers, refused getters and refused fonts', () => {
+test('the audit flags admitted writers and refused getters', () => {
   const report = A.audit(A.parseDump(fs.readFileSync(FIXTURE, 'utf8')));
   assert.deepEqual(report.admittedWriters, ['PlaySound', 'UnitSelectRole']);
   assert.deepEqual(report.missedGetters, ['C_Map.GetBestMapForUnit', 'GetSecretThing', 'IsAuditReady']);
-  assert.deepEqual(report.missedFonts, ['OddFontObject']);
+  assert.equal(report.missedFonts, undefined);
   assert.deepEqual(report.client, { version: '1.15.9', build: '64000', interface: 11509, at: 1790000000 });
-  assert.deepEqual(report.counts, { total: 12, saved: 12, admitted: 6, refused: 6, truncated: false });
+  assert.deepEqual(report.counts, { total: 11, saved: 11, admitted: 6, refused: 5, truncated: false });
 });
 
 test('verbs come from the member after a C_ namespace or a Unit prefix', () => {
@@ -103,11 +101,11 @@ test('the text report names the client and lists each section', () => {
   const text = A.formatReport(report, FIXTURE);
   assert.match(text, /^widget allowlist audit: .*ClaudeWoW\.lua$/m);
   assert.match(text, /^client 1\.15\.9 \(64000\), interface 11509, dumped 2026-09-21T/m);
-  assert.match(text, /^12 of 12 names saved: 6 a widget can use, 6 it cannot$/m);
+  assert.match(text, /^11 of 11 names saved: 6 a widget can use, 5 it cannot$/m);
   assert.doesNotMatch(text, /was cut/);
   assert.match(text, /admitted names that look like writers or actions \(check each\): 2\n {2}PlaySound\n {2}UnitSelectRole/);
   assert.match(text, /refused names that look like display getters \(candidates to admit\): 3\n {2}C_Map\.GetBestMapForUnit/);
-  assert.match(text, /refused font objects: 1\n {2}OddFontObject/);
+  assert.doesNotMatch(text, /font objects/);
 });
 
 test('a long section is cut unless --all, a cut dump says so, and a bad time is unknown', () => {
@@ -124,7 +122,6 @@ test('a long section is cut unless --all, a cut dump says so, and a bad time is 
     truncated: true,
     admitted: [],
     refused: names,
-    refusedFonts: [],
   });
   const cut = A.formatReport(report, 'f');
   assert.match(cut, /dumped unknown time/);
@@ -146,7 +143,6 @@ test('main reports a named file as text or JSON and exits 0', () => {
   const parsed = JSON.parse(json.out.join('\n'));
   assert.equal(parsed.length, 1);
   assert.equal(parsed[0].file, FIXTURE);
-  assert.deepEqual(parsed[0].missedFonts, ['OddFontObject']);
 });
 
 test('main exits 2 with a hint when a file is missing, has no dump, or cannot be parsed', () => {
