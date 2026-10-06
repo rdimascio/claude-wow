@@ -35,7 +35,7 @@ PR A is independent. PR D, then PR B, then PR C run one after another: B and C c
 - Branch protection `enforce_admins` is **owner's call** (decision 1); not part of the PR.
 
 ### PR D: bridge MCP planning moves out of `runAgent` (small, no behavior change)
-- Move the off-choice, seen-off and guard composition out of `runAgent` into `bridge/mcpconfig.js` as one pure `planRun({ agentId, choice, cwd, userMcp, seen, codexOwn, reserved })` returning `{ userMcp, seenOff, guard, codexMcp }`. The caller passes every bridge global it needs.
+- Move the off-choice, seen-off and guard composition out of `runAgent` into `bridge/mcpconfig.js` as one `planRun({ agentId, choice, cwd, userMcp, seen, codexOwn, reserved, claudeOwn? })` returning `{ userMcp, seenOff, guard, codexMcp, seen }`. The caller passes every bridge global it needs and assigns `state.mcpSeen = plan.seen`. `codexMcp` leaves out `wowdata`, which `runAgent` still adds first. Done in PR #146.
 - `noteMcpHealth` (stream callback) and `mcpSlotList` (slot writer) stay in `bridge.js`.
 - Existing tests pass unchanged; add unit tests for `planRun`.
 - The addon `Cli.Mcp*` block stays in `ClaudeWoW.lua`. A new Lua file would need shared locals (`Cli`, `run`, `db`), entries in `bridge/assets.js`, `build/entry.js` and both Lua test loaders, and a full restart on Forever before `ApplyMcp` exists. Not worth it for a file split.
