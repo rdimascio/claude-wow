@@ -2,6 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
+const { execFileSync } = require('child_process');
 const path = require('path');
 const AS = require('../bridge/assets');
 const DM = require('../bridge/datamcp');
@@ -13,10 +14,15 @@ const PLUGIN = path.join(ROOT, PLUGIN_REL);
 const AGENTS_DIR = path.join(PLUGIN, 'agents');
 const WOWDATA_PREFIX = 'mcp__wowdata__';
 const WOWDATA_TOOLS = new Set(DM.TOOLS.map(t => WOWDATA_PREFIX + t.name));
-const BUILT_IN_TOOLS = new Set(['Read', 'WebSearch', 'WebFetch']);
-const NEVER_FOR_AGENTS = ['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'Bash'];
+const BUILT_IN_TOOLS = new Set(['WebSearch', 'WebFetch']);
+const FILE_AND_SHELL_TOOLS = ['Read', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'Glob', 'Grep', 'LS', 'Bash'];
 const NEVER_WITH_WOWDATA = ['Bash', 'WebFetch'];
 const MODELS = new Set(['sonnet', 'opus', 'haiku']);
+const FRONTMATTER_KEYS = ['description', 'model', 'name', 'tools'];
+const AGENT_TOOLS = {
+  'wow-code': ['WebSearch', 'WebFetch'],
+  'wow-planner': DM.TOOLS.map(t => WOWDATA_PREFIX + t.name),
+};
 
 function filesUnder(dir) {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap(e => (e.isDirectory() ? filesUnder(path.join(dir, e.name)) : [path.join(dir, e.name)]));
@@ -69,6 +75,21 @@ test('the plugin manifest names claude-wow at the bridge version and the plugin 
   );
 });
 
+test('the CurseForge addon zip leaves out assets and every other top-level folder but addon, and the release guard checks each', () => {
+  const tracked = execFileSync('git', ['ls-files', '-z'], { cwd: ROOT, encoding: 'utf8' }).split('\0');
+  const folders = [...new Set(tracked.filter(f => f.includes('/')).map(f => f.split('/')[0]))].filter(f => !f.startsWith('.') && f !== 'addon').sort();
+  assert.ok(folders.includes('assets'));
+  const pkgmeta = fs.readFileSync(path.join(ROOT, '.pkgmeta'), 'utf8');
+  const ignoreBlock = /^ignore:\n((?:  - .*\n)+)/m.exec(pkgmeta);
+  assert.ok(ignoreBlock, '.pkgmeta has an ignore list');
+  const ignored = new Set(ignoreBlock[1].split('\n').map(l => l.replace(/^  - /, '').trim()));
+  for (const f of folders) assert.ok(ignored.has(f), `.pkgmeta ignores ${f}/`);
+  const release = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'release.yml'), 'utf8');
+  const guard = /grep -E '\^ClaudeWoW\/\(([a-z|]+)\)\/' files\.txt/.exec(release);
+  assert.ok(guard, 'release.yml has the folder guard');
+  assert.deepEqual(guard[1].split('|').sort(), folders);
+});
+
 test('the binary embeds every plugin file, so a release install has the plugin on disk', () => {
   const onDisk = filesUnder(PLUGIN)
     .map(f => path.relative(ROOT, f).split(path.sep).join('/'))
@@ -88,11 +109,18 @@ test('every agent names itself, says when to use it, pins a model and lists its 
   }
 });
 
-test('agents get no Write, Edit or Bash and never see the map file', () => {
-  for (const a of agents()) {
-    for (const t of NEVER_FOR_AGENTS) assert.ok(!a.tools.includes(t), `${a.name} must not get ${t}`);
-    assert.doesNotMatch(a.body + a.meta.description, /CLAUDE_WOW_MAP_FILE/, `${a.name} is not told about the map file`);
+test('every agent has exactly its pinned tools and only the known frontmatter keys', () => {
+  const all = agents();
+  assert.deepEqual(all.map(a => a.name).sort(), Object.keys(AGENT_TOOLS).sort());
+  assert.equal(AGENT_TOOLS['wow-planner'].length, 9);
+  for (const a of all) {
+    assert.deepEqual([...a.tools].sort(), [...AGENT_TOOLS[a.name]].sort(), `${a.name}: tools`);
+    assert.deepEqual(Object.keys(a.meta).sort(), FRONTMATTER_KEYS, `${a.name}: frontmatter keys`);
   }
+});
+
+test('no agent gets a file or shell tool, so none can read or write the map file', () => {
+  for (const a of agents()) for (const t of FILE_AND_SHELL_TOOLS) assert.ok(!a.tools.includes(t), `${a.name} must not get ${t}`);
 });
 
 test('agents that read wowdata get no Bash and no WebFetch', () => {
@@ -135,6 +163,14 @@ test('wow-planner carries the wowmap contract, its example is a valid map comman
   assert.deepEqual(why, []);
   assert.equal(cmd.op, 'set');
   assert.equal(cmd.points[0].kind, 'flight');
+  assert.match(a.body, /Mark the map only when the request is for a route, marks or locations\./);
+  assert.match(a.body, /A spell found with wow_spell is named in plain words with its rank, never as a token\./);
+  assert.match(a.body, /a quest token only for a quest in the player's quest log/);
+  const bridgeRules = P.systemPrompt('Game: World of Warcraft: Classic Era');
+  assert.ok(bridgeRules.includes('A spell found with wow_spell, and not linked in this chat, is named in plain words with its rank, never as a token.'));
+  assert.ok(bridgeRules.includes("A quest token shows only for a quest in the player's quest log."));
+  assert.ok(bridgeRules.includes('Only mark the map when asked for a route, marks or locations'));
+  assert.doesNotMatch(a.body, /Name an item, spell or quest with a token/);
   const kinds = /kind is one of ([a-z, ]+)\./.exec(a.body);
   assert.ok(kinds, 'the body lists the kinds');
   for (const kind of kinds[1].split(',').map(s => s.trim())) {

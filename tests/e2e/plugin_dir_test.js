@@ -23,7 +23,13 @@ test('agents.claude.extraArgs hands the bundled plugin to an ask run, and a back
     const i = call.argv.indexOf('--plugin-dir');
     assert.ok(i >= 0, 'the run got --plugin-dir');
     assert.equal(call.argv[i + 1], PLUGIN_DIR);
-    assert.ok(path.isAbsolute(call.argv[i + 1]), 'the plugin path is absolute: a relative one resolves against the run folder');
+    assert.equal(call.argv.filter(a => a === '--plugin-dir').length, 1, 'the bridge passes the plugin once');
+    const relative = path.relative(REPO, PLUGIN_DIR);
+    assert.ok(fs.existsSync(path.join(REPO, relative, '.claude-plugin', 'plugin.json')));
+    assert.ok(
+      !fs.existsSync(path.join(call.cwd, relative, '.claude-plugin', 'plugin.json')),
+      'a relative plugin path does not resolve from the run folder, so the path must be absolute',
+    );
   });
 });
 

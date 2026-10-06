@@ -4,6 +4,7 @@ move-folders:
   ClaudeWoW/addon/ClaudeWoW: ClaudeWoW
 
 ignore:
+  - assets
   - bridge
   - build
   - build.js

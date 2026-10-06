@@ -119,7 +119,11 @@ A `config.json` from before agents existed kept Claude's settings at the top lev
 
 ### The claude-wow Claude Code plugin
 
-`assets/plugins/claude-wow` is a Claude Code plugin (not a bridge plugin like `ask`) with two subagents. It is off by default. Nothing in the prompt tells the chat to use them yet; Claude picks one when its description fits.
+`assets/plugins/claude-wow` is a Claude Code plugin (not a bridge plugin like `ask`) with two subagents. It is off by default and experimental.
+
+> **Not measured yet. Keep it off for players.** No real run has measured `wow-planner` calling the `wowdata` tools under the bridge's `--allowedTools` (the spike hit the session limit). Until that run is measured, the planner may get no game data. Turn the plugin on only to test it.
+
+ Nothing in the prompt tells the chat to use them yet; Claude picks one when its description fits.
 
 | Agent | Model | Tools | Hands back |
 |---|---|---|---|
