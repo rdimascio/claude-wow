@@ -1158,10 +1158,10 @@ test('whisper tabs: on by default; the active chat is a tab at login, Enter ther
   assert.ok(out.includes('needs permission for Bash(rm:*): |Haddon:claudewow:roll:' + secondId + ':' + deniedId + ':need|h'), out);
   assert.ok(out.includes('[Allow & retry]') && out.includes('[Allow once]') && out.includes('[Pass]'), 'the roll answers are links');
   assert.ok(
-    out.includes('|Haddon:claudewow:macro:' + secondId + ':' + deniedId + ':1|h|cffffd100[Create macro: Burst]'),
+    out.includes('|Haddon:claudewow:macro:' + secondId + ':' + deniedId + ':1|h|cffffd100[Create Macro: Burst]'),
     'a macro button becomes a link: ' + out,
   );
-  vm.run(`STUB.ClickLink("|Haddon:claudewow:macro:${secondId}:${deniedId}:1|h[Create macro: Burst]|h")`);
+  vm.run(`STUB.ClickLink("|Haddon:claudewow:macro:${secondId}:${deniedId}:1|h[Create Macro: Burst]|h")`);
   assert.equal(vm.evaluate('STUB.popup.which'), 'CLAUDEWOW_MACRO', 'the macro link opens the Create-macro prompt');
   assert.match(vm.evaluate('STUB.popup.text'), /Create the macro "Burst"\?[\s\S]*\/cast Arcane Power/);
   assert.equal(vm.evaluate('STUB.popup.data.name'), 'Burst');
@@ -1422,7 +1422,9 @@ test('/r to an agent is swallowed before the send with whisper tabs off too, and
   const leak = vm.evaluate(
     `(function() local hide, msg = STUB.filters.CHAT_MSG_SYSTEM(nil, "CHAT_MSG_SYSTEM", "No player named '${name}' is currently playing.") return tostring(hide) .. "|" .. tostring(msg) end)()`,
   );
-  assert.match(leak, /^false\|.*WHISPER LEAK: No player named 'Claude \[/, leak);
+  assert.match(leak, /^false\|.*\[Azeroth Companion\] WHISPER LEAK: No player named 'Claude \[/, leak);
+  assert.match(leak, /Type \/claude diag and report what it shows/, 'the leak line points to a command that exists');
+  assert.doesNotMatch(leak, /aiwhisper/);
   const other = vm.evaluate(
     `(function() local hide, msg = STUB.filters.CHAT_MSG_SYSTEM(nil, "CHAT_MSG_SYSTEM", "No player named 'Bob' is currently playing.") return tostring(hide) .. "|" .. tostring(msg) end)()`,
   );
@@ -1529,7 +1531,7 @@ test("plugins: a fresh install follows the bridge's default and sends no flag; c
   assert.equal(old.evaluate('ClaudeWoWDB.chats[2].plugin'), '');
 });
 
-test('plugins: /claude config plugin binds the chat like --agent, the Plugin... menu item opens a prefilled prompt, the footer and diag show the binding', () => {
+test('plugins: /claude config plugin binds the chat like --agent, the plugin prompt opens prefilled but the chat menu has no Plugin... item, the footer and diag show the binding', () => {
   const vm = newVM();
   login(vm);
   vm.run('STUB.RunTimers()');
@@ -1538,7 +1540,9 @@ test('plugins: /claude config plugin binds the chat like --agent, the Plugin... 
   assert.equal(vm.evaluate('ClaudeWoW.IsConnected()'), 'true');
   const last = () => vm.evaluate('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history].text');
   const texts = () => vm.evaluate('table.concat(STUB.texts, "|")');
-  assert.ok(vm.evaluate('ClaudeWoWChatMenu ~= nil') === 'true' && texts().includes('Plugin...'), 'the chat menu has a Plugin... item');
+  vm.run('STUB.texts = {}; ClaudeWoW.ShowChatMenu(ClaudeWoWDB.chats[1].id, UIParent)');
+  assert.ok(texts().includes('Rename...') && !texts().includes('Plugin...'), 'the chat menu has no Plugin... item: ' + texts());
+  vm.run('ClaudeWoWChatMenu:Hide(); STUB.texts = {}; ClaudeWoW.UpdateStatus()');
   // Bound to nothing: the footer names the bridge's default, and so does the command.
   assert.ok(texts().includes('vision: off   plugin: ask (bridge default)'), texts());
   vm.run('SlashCmdList.CLAUDE("config plugin")');
@@ -1568,7 +1572,6 @@ test('plugins: /claude config plugin binds the chat like --agent, the Plugin... 
   assert.equal(vm.num('#ClaudeWoWDB.chats'), 2, 'free text after config plugin is a message for a new chat');
   assert.equal(vm.evaluate('ClaudeWoWDB.chats[2].history[#ClaudeWoWDB.chats[2].history].text'), 'config plugin for my warrior please');
   vm.run('SlashCmdList.CLAUDE("cancel"); ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[1].id)');
-  // The Plugin... menu item opens a prompt prefilled with the chat's binding; OK applies it.
   vm.run('ClaudeWoW.SetPlugin("ask"); ClaudeWoW.PluginPrompt()');
   assert.equal(vm.evaluate('STUB.popup.which'), 'CLAUDEWOW_PLUGIN');
   assert.equal(vm.evaluate('STUB.popup.data.plugin'), 'ask');
@@ -2234,9 +2237,9 @@ test('context growth: past the threshold the chat is warned once per crossing, w
   // The button on the warning: a shown "New chat" button whose click is bare /claude.
   vm.run('ClaudeWoW.Render()');
   vm.run(
-    'FOUND = nil; for _, f in ipairs(STUB.frames) do if f.kind == "Button" and f.text == "New chat" and f.shown and f.parent and f.parent.shown then FOUND = f end end',
+    'FOUND = nil; for _, f in ipairs(STUB.frames) do if f.kind == "Button" and f.text == "New Chat" and f.shown and f.parent and f.parent.shown then FOUND = f end end',
   );
-  assert.equal(vm.evaluate('FOUND ~= nil'), 'true', 'a New chat button is shown on the warning');
+  assert.equal(vm.evaluate('FOUND ~= nil'), 'true', 'a New Chat button is shown on the warning');
   const before = vm.num('#ClaudeWoWDB.chats');
   vm.run('FOUND.scripts.OnClick(FOUND)');
   assert.equal(vm.num('#ClaudeWoWDB.chats'), before + 1, 'one click, one new chat');

@@ -45,7 +45,7 @@ local function Settings()
 end
 
 local function Say(msg)
-	print("|cff66ccff[Claude WoW stream]|r " .. msg)
+	print("|cff66ccff[Azeroth Companion]|r " .. msg)
 end
 
 local function SafeCall(fn, ...)

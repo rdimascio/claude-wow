@@ -311,7 +311,7 @@ local function Try(fn, ...)
 end
 
 local function Print(msg)
-	print("|cff66ccff[Claude WoW voice]|r " .. msg)
+	print("|cff66ccff[Azeroth Companion]|r " .. msg)
 end
 
 local function IsIn(list, value)
