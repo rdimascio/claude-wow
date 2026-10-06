@@ -28,6 +28,7 @@ const ROWS = {
   },
 };
 const OFF_ROWS = { claude: ['C1', 'C2'], codex: ['X2a'] };
+const OFF_SOURCES = { claude: ['config', 'claude', 'claude.ai', 'plugin'], codex: ['codex'] };
 const SECRET_ROWS = { codex: ['X2b'] };
 const GATING_ROWS = { claude: OFF_ROWS.claude, codex: [...OFF_ROWS.codex, ...SECRET_ROWS.codex] };
 const AGENT_NAMES = { claude: 'Claude Code', codex: 'Codex' };
@@ -245,12 +246,13 @@ function refusal(s, { off = false, secrets = false } = {}) {
   return (off && offReason(s)) || (secrets && secretReason(s)) || '';
 }
 
-function slotField(statuses) {
+function slotField(statuses, { codexConfig = false } = {}) {
   const out = {};
   for (const [id, s] of Object.entries(statuses || {})) {
     if (!s || !ROWS[id]) continue;
     const reason = offReason(s);
-    out[id] = { version: s.version || '', checked: !!s.checked, off: !reason, reason };
+    const sources = id === 'codex' && codexConfig ? [...OFF_SOURCES.codex, 'config'] : OFF_SOURCES[id];
+    out[id] = { version: s.version || '', checked: !!s.checked, off: !reason, reason, sources };
   }
   return out;
 }
@@ -659,35 +661,24 @@ function main(argv) {
 module.exports = {
   FILE_NAME,
   ROWS,
-  OFF_ROWS,
-  SECRET_ROWS,
   PROBE_SERVER,
-  PROBE_PREFIX,
-  CODEX_SERVER,
-  CODEX_OFF_SERVER,
-  ECHO_ENV,
   parseVersion,
   which,
   binaryOf,
   readVersion,
-  readContract,
   identityOf,
   readIdentity,
   sameIdentity,
-  GATING_ROWS,
   createTracker,
   refusal,
   offReason,
-  secretReason,
   slotField,
   spawnRun,
-  fixtureCommand,
   judgeClaude,
   judgeCodexCall,
   judgeCodexList,
   probeClaude,
   probeCodex,
-  parseCheckArgs,
   check,
   main,
 };

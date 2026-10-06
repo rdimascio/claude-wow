@@ -1,6 +1,17 @@
 # MCP hardening and release discipline
 
-Status: draft, 2026-10-05, revised after a two-seat review. Follows `mcp-and-agent-controls.md` steps 1-4 (PRs #101, #120, #124, #129, #133).
+Status: done, 2026-10-06. Follows `mcp-and-agent-controls.md` steps 1-4 (PRs #101, #120, #124, #129, #133).
+
+Merged:
+- #145: PR A, release gate.
+- #146: PR D, `planRun` in `bridge/mcpconfig.js`.
+- #147: PR B, `claude-wow agents check` and the contract refusals.
+- #148: PR C, `mcp.allow` for discovered servers.
+- #167: fake agents in the tests ignore the tracker's `--version` call.
+
+Open:
+- Decision 1: `enforce_admins` on `main` is still the owner's call.
+- Decision 3: deprecating `mcp.servers` is deferred (see below).
 
 ## Why
 
@@ -37,7 +48,7 @@ PR A is independent. PR D, then PR B, then PR C run one after another: B and C c
 - Branch protection `enforce_admins` is **owner's call** (decision 1); not part of the PR.
 
 ### PR D: bridge MCP planning moves out of `runAgent` (small, no behavior change)
-- Move the off-choice, seen-off and guard composition out of `runAgent` into `bridge/mcpconfig.js` as one `planRun({ agentId, choice, cwd, userMcp, seen, codexOwn, reserved, claudeOwn? })` returning `{ userMcp, seenOff, guard, codexMcp, seen }`. The caller passes every bridge global it needs and assigns `state.mcpSeen = plan.seen`. `codexMcp` leaves out `wowdata`, which `runAgent` still adds first. Done in PR #146.
+- Move the off-choice, seen-off and guard composition out of `runAgent` into `bridge/mcpconfig.js` as one `planRun({ agentId, choice, cwd, userMcp, seen, codexOwn, reserved, claudeOwn, codexOwnNow, codexToolsNow })` returning `{ userMcp, seenOff, guard, codexMcp, seen }`. The caller passes every bridge global it needs, and the three readers of Claude and Codex settings, so `planRun` reads no file itself; it assigns `state.mcpSeen = plan.seen`. `codexMcp` leaves out `wowdata`, which `runAgent` still adds first. Done in PR #146.
 - `noteMcpHealth` (stream callback) and `mcpSlotList` (slot writer) stay in `bridge.js`.
 - Existing tests pass unchanged; add unit tests for `planRun`.
 - The addon `Cli.Mcp*` block stays in `ClaudeWoW.lua`. A new Lua file would need shared locals (`Cli`, `run`, `db`), entries in `bridge/assets.js`, `build/entry.js` and both Lua test loaders, and a full restart on Forever before `ApplyMcp` exists. Not worth it for a file split.

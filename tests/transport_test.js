@@ -551,14 +551,14 @@ test('a C2 fail in agent-contract.json refuses a run whose mcp= choice turns a s
   assert.equal(agentRuns().length, 2);
   assert.match(
     fs.readFileSync(path.join(addons, 'ClaudeWoW_S001', 'Inbox.lua'), 'utf8'),
-    /^\tcontract = \{ claude = \{ version = "[0-9.]*", checked = false, off = true, reason = "" \}(, | \},$)/m,
+    /^\tcontract = \{ claude = \{ version = "[0-9.]*", checked = false, off = true, reason = "", sources = \{ "config", "claude", "claude\.ai", "plugin" \} \}(, | \},$)/m,
   );
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
 test('Codex: an X2a fail refuses a run that turns its own server off, an X2b fail refuses a run that passes a secret, and the other runs still go', () => {
   const dir = scratch('codex-contract');
-  const { home, saved, project, cfg } = fakeInstall(dir);
+  const { home, saved, project, cfg, addons } = fakeInstall(dir);
   const codexHome = path.join(dir, 'codex-home');
   fs.mkdirSync(codexHome, { recursive: true });
   fs.writeFileSync(path.join(codexHome, 'config.toml'), '[mcp_servers.mine]\ncommand = "x"\n');
@@ -626,5 +626,14 @@ test('Codex: an X2a fail refuses a run that turns its own server off, an X2b fai
   assert.equal(runs().length, 2, 'without the secret server, and with X2a passed, it goes');
   assert.ok(!runs()[1].join(' ').includes('MY_TOKEN'));
   assert.ok(runs()[1].includes('mcp_servers.mine.enabled=false'));
+
+  contract({ X1: 'pass', X2a: 'fail', X2b: 'pass' });
+  out = go(55, 'mcp=-secretsrv');
+  assert.match(out, /#55@sess1 done \(/, 'X2a does not refuse turning off a config.json server, which Codex never gets');
+  assert.equal(runs().length, 3);
+  assert.match(
+    fs.readFileSync(path.join(addons, 'ClaudeWoW_S001', 'Inbox.lua'), 'utf8'),
+    /^\tcontract = \{.*codex = \{ version = "0\.160\.1", checked = true, off = false, reason = "Codex 0\.160\.1 failed X2a [^"]*", sources = \{ "codex" \} \}/m,
+  );
   fs.rmSync(dir, { recursive: true, force: true });
 });

@@ -4749,13 +4749,22 @@ function ClaudeWoW.ApplyContract(t)
 		Cli.UpdateMcpButton()
 		return
 	end
+	local known = {}
+	for _, src in ipairs(Cli.MCP_SOURCES) do known[src[1]] = true end
 	local out = {}
 	for id in pairs(Cli.CONTRACT_NAMES) do
 		local e = t[id]
 		if type(e) == "table" then
 			local version = type(e.version) == "string" and (e.version:gsub("[%c|]", "")):sub(1, 40) or ""
 			local reason = type(e.reason) == "string" and (e.reason:gsub("[%c|]", "")):sub(1, 400) or ""
-			out[id] = { version = version, checked = e.checked == true, off = e.off ~= false, reason = reason }
+			local sources
+			if type(e.sources) == "table" then
+				sources = {}
+				for _, src in ipairs(e.sources) do
+					if known[src] then sources[src] = true end
+				end
+			end
+			out[id] = { version = version, checked = e.checked == true, off = e.off ~= false, reason = reason, sources = sources }
 		end
 	end
 	run.bridgeContract = out
@@ -4766,11 +4775,19 @@ function Cli.McpContract(c)
 	return run.bridgeContract and run.bridgeContract[ChatAgent(c)] or nil
 end
 
-function Cli.McpOffBlocked(c)
+function Cli.McpOffBlocked(c, s)
 	local e = Cli.McpContract(c)
 	if not (e and e.off == false) then return nil end
+	if s and e.sources and not e.sources[s.src] then return nil end
 	if e.reason ~= "" then return e.reason end
 	return ChatAgentName(c) .. " failed the MCP off check in claude-wow agents check, so this bridge cannot turn a server off."
+end
+
+function Cli.McpAllOffBlocked(c)
+	for _, s in ipairs(run.bridgeMcp or {}) do
+		local blocked = Cli.McpOffBlocked(c, s)
+		if blocked then return blocked end
+	end
 end
 
 function Cli.McpContractNote(c)
@@ -4856,7 +4873,7 @@ function Cli.SetMcp(c, name, on)
 	local s, ambiguous = Cli.McpFind(name)
 	if ambiguous then return nil, ambiguous end
 	if not s then return nil, "no MCP server named \"" .. tostring(name) .. "\" (servers: " .. Cli.McpNames() .. ")." end
-	local blocked = not on and Cli.McpOffBlocked(c)
+	local blocked = not on and Cli.McpOffBlocked(c, s)
 	if blocked then return nil, blocked end
 	local set = {}
 	for id, v in pairs(c.mcpSet or {}) do set[id] = v end
@@ -4905,7 +4922,7 @@ function Cli.McpReport(c)
 		end
 	end
 	if Cli.McpUnsupported(c) then table.insert(lines, ChatAgentName(c) .. " does not use MCP servers; this list applies to Claude and Codex chats.") end
-	local contractLine = Cli.McpOffBlocked(c) or Cli.McpContractNote(c)
+	local contractLine = Cli.McpAllOffBlocked(c) or Cli.McpContractNote(c)
 	if contractLine then table.insert(lines, contractLine) end
 	table.insert(lines, "/claude mcp on|off <name> changes one; /claude mcp none turns all off; /claude mcp default goes back to the defaults.")
 	return table.concat(lines, "\n")
@@ -4921,7 +4938,7 @@ function Cli.McpCommand(c, rest)
 		c.mcpSet, c.mcpAllOff = nil, nil
 		Cli.Out(c, "MCP: this chat uses the default servers again.")
 	elseif word == "none" then
-		local missing = Cli.McpMissing() or Cli.McpOffBlocked(c)
+		local missing = Cli.McpMissing() or Cli.McpAllOffBlocked(c)
 		if not missing then c.mcpSet, c.mcpAllOff = nil, true end
 		Cli.Out(c, "MCP: " .. (missing or "every server is off for this chat."))
 	else
@@ -4943,11 +4960,11 @@ function Cli.McpMenu(anchor)
 	if not c then return end
 	if not Cli.McpMissing() and type(MenuUtil) == "table" and type(MenuUtil.CreateContextMenu) == "function" then
 		local shown = pcall(MenuUtil.CreateContextMenu, anchor, function(_, root)
-			local blocked = Cli.McpOffBlocked(c)
+			local blocked = Cli.McpAllOffBlocked(c)
 			local note = Cli.McpContractNote(c)
 			if blocked then root:CreateTitle("|cffff9933Turning a server off is disabled: " .. ChatAgentName(c) .. " failed the MCP check|r") end
 			if note then root:CreateTitle("|cff999999" .. note .. "|r") end
-			local function grey(item) if blocked and type(item) == "table" and type(item.SetEnabled) == "function" then item:SetEnabled(false) end end
+			local function grey(item, off) if off and type(item) == "table" and type(item.SetEnabled) == "function" then item:SetEnabled(false) end end
 			for _, g in ipairs(Cli.McpGroups()) do
 				root:CreateTitle(g.title)
 				for _, s in ipairs(g.rows) do
@@ -4956,11 +4973,11 @@ function Cli.McpMenu(anchor)
 						if err then Cli.Out(c, "MCP: " .. err) end
 						ClaudeWoW.Render()
 					end)
-					if Cli.McpOn(c, s) then grey(item) end
+					if Cli.McpOn(c, s) then grey(item, Cli.McpOffBlocked(c, s)) end
 				end
 			end
 			root:CreateDivider()
-			grey(root:CreateButton("Turn all off", function() Cli.McpCommand(c, "none") end))
+			grey(root:CreateButton("Turn all off", function() Cli.McpCommand(c, "none") end), blocked)
 			root:CreateButton("Use the defaults", function() Cli.McpCommand(c, "default") end)
 		end)
 		if shown then return end
@@ -4999,7 +5016,7 @@ function Cli.McpButtonTooltip(b)
 	end
 	for _, line in ipairs(warn) do GameTooltip:AddLine(line, 1, 1, 1) end
 	if c and Cli.McpUnsupported(c) then GameTooltip:AddLine(ChatAgentName(c) .. " does not use MCP servers.", 1, 0.6, 0.2, true) end
-	local contractLine = c and (Cli.McpOffBlocked(c) or Cli.McpContractNote(c))
+	local contractLine = c and (Cli.McpAllOffBlocked(c) or Cli.McpContractNote(c))
 	if contractLine then GameTooltip:AddLine(contractLine, 1, 0.6, 0.2, true) end
 	GameTooltip:AddLine("Click to turn servers on or off for this chat.", 0.8, 0.8, 0.8, true)
 	GameTooltip:Show()
