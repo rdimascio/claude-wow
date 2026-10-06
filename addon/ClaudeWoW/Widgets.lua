@@ -149,7 +149,9 @@ local TOOLTIP_METHODS = {
 	"SetInventoryItem", "SetBagItem", "SetMinimumWidth", "SetPoint", "ClearAllPoints",
 }
 
-local UNIT_WRITER_VERBS = { "Set", "Switch", "Clear", "Popup", "Frame", "Select", "Toggle", "Use", "Cast", "Target" }
+local TIMER_CONSTRUCTORS = { "NewTicker", "NewTimer" }
+
+local UNIT_WRITER_VERBS ={ "Set", "Switch", "Clear", "Popup", "Frame", "Select", "Toggle", "Use", "Cast", "Target" }
 
 local READ_ONLY_MEMBER_PATTERNS = { "^Get%u", "^Is%u", "^Has%u", "^Can%u", "^Does%u", "^Find%u", "^Are%u", "^Should%u" }
 
@@ -516,6 +518,10 @@ local function NewMembrane(widget)
 	return membrane
 end
 
+local function NamespaceAdmits(field)
+	return not DENIED[field] and IsReadOnlyMember(field)
+end
+
 local function NamespaceProxy(namespaceName, namespace, membrane)
 	local exported = {}
 	return setmetatable({}, {
@@ -525,7 +531,7 @@ local function NamespaceProxy(namespaceName, namespace, membrane)
 			local kind = type(value)
 			if kind == "table" then return nil end
 			if kind ~= "function" then return value end
-			if not IsReadOnlyMember(field) then return Blocked(namespaceName .. "." .. tostring(field)) end
+			if not NamespaceAdmits(field) then return Blocked(namespaceName .. "." .. tostring(field)) end
 			exported[field] = exported[field] or membrane.ExportFunction(value)
 			return exported[field]
 		end,
@@ -568,7 +574,7 @@ local function WidgetTimers(widget)
 	timers.After = function(delay, fn)
 		C_Timer.After(delay, Guarded(widget, function() return fn() end))
 	end
-	for _, constructor in ipairs({ "NewTicker", "NewTimer" }) do
+	for _, constructor in ipairs(TIMER_CONSTRUCTORS) do
 		if C_Timer[constructor] then
 			timers[constructor] = function(delay, fn, iterations)
 				local proxy
@@ -600,13 +606,21 @@ local function IsFontName(key)
 	return false
 end
 
+local function FunctionAdmission(key)
+	if DENIED[key] then return nil end
+	if LUA_FUNCTION[key] then return "lua" end
+	if GAME_FUNCTION[key] or IsUnitReader(key) then return "game" end
+	return nil
+end
+
 local function Resolve(key, membrane)
 	local value = _G[key]
 	local kind = type(value)
 	if kind == "string" or kind == "number" or kind == "boolean" then return value end
 	if kind == "function" then
-		if LUA_FUNCTION[key] then return value end
-		if GAME_FUNCTION[key] or IsUnitReader(key) then return membrane.ExportFunction(value) end
+		local admission = FunctionAdmission(key)
+		if admission == "lua" then return value end
+		if admission == "game" then return membrane.ExportFunction(value) end
 		return nil
 	end
 	if kind ~= "table" then return nil end
@@ -640,6 +654,116 @@ local function NewEnvironment(widget, membrane)
 		__metatable = false,
 	})
 	return env
+end
+
+local GLOBALS_MAX = 6000
+W.GLOBALS_MAX = GLOBALS_MAX
+local AUDITED_FUNCTION_PATTERNS = { "^Unit%u", "^Get%u", "^Is%u", "^Has%u", "^Can%u" }
+
+local function MatchesAny(key, patterns)
+	for _, pattern in ipairs(patterns) do
+		if key:find(pattern) then return true end
+	end
+	return false
+end
+
+local TIMER_FUNCTION = NameSet(TIMER_CONSTRUCTORS)
+TIMER_FUNCTION.After = true
+
+local function AuditedFieldAdmits(key, field)
+	if key == "C_Timer" then return TIMER_FUNCTION[field] == true end
+	return NamespaceAdmits(field)
+end
+
+local function AuditNamespace(key, namespace, add)
+	pcall(function()
+		for field, member in pairs(namespace) do
+			if type(field) == "string" and type(member) == "function" then add(key .. "." .. field, AuditedFieldAdmits(key, field)) end
+		end
+	end)
+end
+
+local function IsAuditedFontName(key)
+	return (FONT_OBJECT[key] or key:find("Font")) and true or false
+end
+
+local function AuditedGlobals()
+	local admitted, refused, refusedFonts = {}, {}, {}
+	local function Add(name, admits, list)
+		list = admits and admitted or list or refused
+		list[#list + 1] = name
+	end
+	for key, value in pairs(_G) do
+		if type(key) == "string" and not key:find("^ClaudeWoW") then
+			local kind = type(value)
+			if kind == "function" then
+				local admits = FunctionAdmission(key) ~= nil
+				if admits or MatchesAny(key, AUDITED_FUNCTION_PATTERNS) then Add(key, admits) end
+			elseif kind == "table" and key:find("^C_%a") then
+				AuditNamespace(key, value, Add)
+			elseif kind == "table" and IsAuditedFontName(key) and IsFontObject(value) then
+				Add(key, IsFontName(key), refusedFonts)
+			end
+		end
+	end
+	table.sort(admitted)
+	table.sort(refused)
+	table.sort(refusedFonts)
+	return admitted, refused, refusedFonts
+end
+
+local function FirstNames(list, room)
+	local kept = {}
+	for i = 1, math.min(#list, math.max(room, 0)) do kept[i] = list[i] end
+	return kept
+end
+
+local function ClientBuild()
+	if type(GetBuildInfo) ~= "function" then return "?", "?", 0 end
+	local ok, version, build, _, interface = pcall(GetBuildInfo)
+	if not ok then return "?", "?", 0 end
+	return tostring(version or "?"), tostring(build or "?"), tonumber(interface) or 0
+end
+
+function W.DumpGlobals()
+	local admitted, refused, refusedFonts = AuditedGlobals()
+	local keptAdmitted = FirstNames(admitted, GLOBALS_MAX)
+	local keptFonts = FirstNames(refusedFonts, GLOBALS_MAX - #keptAdmitted)
+	local keptRefused = FirstNames(refused, GLOBALS_MAX - #keptAdmitted - #keptFonts)
+	local version, build, interface = ClientBuild()
+	local refusedCount = #refused + #refusedFonts
+	local total = #admitted + refusedCount
+	local saved = #keptAdmitted + #keptFonts + #keptRefused
+	local dump = {
+		version = version,
+		build = build,
+		interface = interface,
+		at = type(time) == "function" and time() or 0,
+		total = total,
+		saved = saved,
+		admittedCount = #admitted,
+		refusedCount = refusedCount,
+		truncated = saved < total,
+		admitted = keptAdmitted,
+		refused = keptRefused,
+		refusedFonts = keptFonts,
+	}
+	DB().globals = dump
+	return dump
+end
+
+function W.GlobalsCommand(arg)
+	local verb = (arg or ""):lower():match("^%s*(%S*)") or ""
+	if verb == "clear" then
+		DB().globals = nil
+		return "Dropped the saved global names. /reload writes the change to disk."
+	end
+	if verb ~= "" then return "Usage: /claude dev globals saves the names widgets can and cannot use; /claude dev globals clear drops them." end
+	local dump = W.DumpGlobals()
+	return string.format(
+		"Saved %d of %d global names (%d a widget can use, %d it cannot) for client %s (%s). /reload writes them to disk; then run npm run audit:widgets in the claude-wow checkout. /claude dev globals clear drops them.",
+		dump.saved, dump.total, dump.admittedCount, dump.refusedCount, dump.version, dump.build
+	)
 end
 
 local function Compile(source, name, env)

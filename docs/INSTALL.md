@@ -110,7 +110,7 @@ Under the service the bridge's default project folder is `defaultCwd` from `~/.c
 | Linux | systemd user unit `~/.config/systemd/user/claude-wow-bridge.service` (`Restart=always`; needs `systemctl --user`, which every mainstream desktop has) | `~/.local/state/claude-wow/bridge.log` (`$XDG_STATE_HOME`) |
 | Windows | `Claude WoW bridge.vbs` in your Startup folder, which starts the bridge with no window at login; the supervisor does the crash restarts | `%LocalAppData%\claude-wow\logs\bridge.log` |
 
-Logs rotate at 5 MB with five old files kept, so they never grow without bound. The bridge's own `~/.claude-wow/bridge.log` is rotated the same way, in every mode.
+Logs rotate at 5 MB with five old files kept, so they never grow without bound. The bridge's own `~/.claude-wow/bridge.log` is rotated the same way, in every mode. On macOS and Linux the service logs, `launchd.log` and every archive are mode `0600` and the service log folder is `0700`; the supervisor repairs older files when it starts.
 
 Things worth knowing:
 
@@ -119,7 +119,7 @@ Things worth knowing:
 - **Linux and X11 capture.** The deprecated pixel transport needs `DISPLAY`; the unit carries the one you had at install time. The default screenshot transport needs nothing.
 - **If the screenshot transport cannot work on your client** (no `Screenshot()` function, or every shot fails), the bridge falls back to the pixel capture on its own, logs `TRANSPORT FALLBACK` with the reason, remembers it in `state.json`, and `/claude diag` in game shows it; see the README's *Transports* section.
 - **Windows without a restart-on-crash guarantee for the supervisor itself:** the Startup-folder route restarts the bridge when it crashes (that is what the supervisor does) but not the supervisor. If you want that too, create a Task Scheduler task (*Create Basic Task*, trigger *When I log on*, action `node "C:\...\claude-wow\bridge\supervisor.js"` with *Start in* set to the claude-wow folder, and under *Settings* tick *If the task fails, restart every 1 minute*) and delete the Startup-folder launcher with `claude-wow service uninstall`.
-- `claude-wow service install` refuses to run without a `config.json` in the home folder (the service would only loop), warns when a bridge is already running in a terminal, and removes a service installed by the project's old name (`io.wowai.bridge`, `wow-ai-bridge`, *WoW AI bridge.vbs*) so two bridges never start at login; `uninstall` removes that one too.
+- `claude-wow service install` refuses to run without a `config.json` in the home folder (the service would only loop), refuses when a bridge is already running in a terminal (on Windows only when that pid is confirmed as the supervisor, as `stop` and `start` do, so a pid Windows gave to another program does not block it), and removes a service installed by the project's old name (`io.wowai.bridge`, `wow-ai-bridge`, *WoW AI bridge.vbs*) so two bridges never start at login; `uninstall` removes that one too.
 
 ## Updating
 

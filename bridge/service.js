@@ -40,6 +40,9 @@ const OLD_LABEL = 'io.wowai.bridge';
 const OLD_UNIT = 'wow-ai-bridge';
 const LOG_MAX_BYTES = 5 * 1024 * 1024;
 const LOG_KEEP = 5;
+const LAUNCHD_LOG_KEEP = 1;
+const PRIVATE_FILE_MODE = 0o600;
+const PRIVATE_DIR_MODE = 0o700;
 const COMMANDS = ['install', 'uninstall', 'start', 'stop', 'restart', 'status', 'logs'];
 
 // Where the service keeps its files, per platform. All per-user, none need sudo.
@@ -264,7 +267,36 @@ function rotate(file, { maxBytes = LOG_MAX_BYTES, keep = LOG_KEEP } = {}) {
   } catch {
     return false;
   }
+  makePrivate(`${file}.1`, PRIVATE_FILE_MODE);
   return true;
+}
+
+function makePrivate(target, mode, platform = process.platform) {
+  if (platform === 'win32') return false;
+  try {
+    fs.chmodSync(target, mode);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const logFamily = (file, keep = LOG_KEEP) => [file, ...Array.from({ length: keep }, (_, i) => `${file}.${i + 1}`)];
+
+function securePrivateLog(file, { keep = LOG_KEEP, platform = process.platform } = {}) {
+  for (const member of logFamily(file, keep)) makePrivate(member, PRIVATE_FILE_MODE, platform);
+}
+
+function makePrivateLogDir(dir, platform = process.platform) {
+  fs.mkdirSync(dir, { recursive: true, mode: PRIVATE_DIR_MODE });
+  makePrivate(dir, PRIVATE_DIR_MODE, platform);
+}
+
+function secureServiceLogs(d, { platform = process.platform, bridgeLog = null } = {}) {
+  makePrivate(d.logs, PRIVATE_DIR_MODE, platform);
+  securePrivateLog(serviceLogFile(d), { platform });
+  securePrivateLog(launchdLogFile(d), { keep: LAUNCHD_LOG_KEEP, platform });
+  if (bridgeLog) securePrivateLog(bridgeLog, { platform });
 }
 
 // The supervisor's log writer under the service: appends, rotates itself.
@@ -272,7 +304,9 @@ class RotatingLog {
   constructor(file, opts = {}) {
     this.file = file;
     this.opts = opts;
-    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const platform = opts.platform || process.platform;
+    makePrivateLogDir(path.dirname(file), platform);
+    securePrivateLog(file, { keep: opts.keep || LOG_KEEP, platform });
     try {
       this.size = fs.statSync(file).size;
     } catch {
@@ -282,7 +316,7 @@ class RotatingLog {
   write(chunk) {
     const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
     try {
-      fs.appendFileSync(this.file, buf);
+      fs.appendFileSync(this.file, buf, { mode: PRIVATE_FILE_MODE });
     } catch {
       return;
     }
@@ -404,15 +438,25 @@ function definition(platform, d, r = R.DEFAULT, home = H.resolve().dir) {
   return systemdUnit(base);
 }
 
-function preflight(d) {
+function terminalIdentity(p, b) {
+  if (b.verify) return b.verify(p);
+  return alive(p.pid) ? 'match' : 'gone';
+}
+
+function preflight(d, b = backend()) {
   const problems = [];
   const home = H.resolve();
   if (!fs.existsSync(home.config)) {
     problems.push(`${home.config} is missing: run "claude-wow setup" (node setup.js) first, or the service would just restart in a loop.`);
   }
   const p = readPid(d);
-  if (p && p.mode === 'terminal' && alive(p.pid)) {
+  const identity = p && p.mode === 'terminal' ? terminalIdentity(p, b) : 'gone';
+  if (identity === 'match') {
     problems.push(`a bridge is already running in a terminal (pid ${p.pid}). Stop it with Ctrl+C first; two bridges fight over the slot files.`);
+  } else if (identity === 'unknown') {
+    problems.push(
+      `could not confirm whether pid ${p.pid} is a bridge running in a terminal. If it is, stop it with Ctrl+C; if it is not, delete ${pidFile(d)}. Then retry.`,
+    );
   }
   return problems;
 }
@@ -482,7 +526,9 @@ const mac = {
     fs.mkdirSync(path.dirname(d.definition), { recursive: true });
     fs.mkdirSync(d.logs, { recursive: true });
     fs.mkdirSync(d.run, { recursive: true });
-    rotate(launchdLogFile(d), { maxBytes: 1024 * 1024, keep: 1 });
+    rotate(launchdLogFile(d), { maxBytes: 1024 * 1024, keep: LAUNCHD_LOG_KEEP });
+    secureServiceLogs(d, { platform: 'darwin' });
+    fs.closeSync(fs.openSync(launchdLogFile(d), 'a', PRIVATE_FILE_MODE));
     this.removeOld();
     fs.writeFileSync(d.definition, definition('darwin', d));
     if (this.loaded()) {
@@ -549,6 +595,7 @@ const linux = {
   install(d) {
     fs.mkdirSync(path.dirname(d.definition), { recursive: true });
     fs.mkdirSync(d.logs, { recursive: true });
+    secureServiceLogs(d, { platform: 'linux' });
     this.removeOld();
     fs.writeFileSync(d.definition, definition('linux', d));
     this.sys(['daemon-reload']);
@@ -850,7 +897,7 @@ function main(argv, { platform = process.platform, out = console.log, err = cons
   try {
     switch (cmd) {
       case 'install': {
-        const problems = preflight(d);
+        const problems = preflight(d, b);
         if (problems.length) {
           for (const p of problems) err(`claude-wow service: ${p}`);
           return 1;
@@ -927,8 +974,12 @@ module.exports = {
   releaseProgram,
   program,
   definition,
+  preflight,
   rotate,
   RotatingLog,
+  secureServiceLogs,
+  PRIVATE_FILE_MODE,
+  PRIVATE_DIR_MODE,
   writePid,
   readPid,
   clearPid,
@@ -936,6 +987,9 @@ module.exports = {
   CLOCK_SLACK_MS,
   winProcessQuery,
   winVerifiedKill,
+  POWERSHELL,
+  POWERSHELL_ARGS,
+  IDENTITY_CHANGED_EXIT,
   parseWinProcess,
   supervisorIdentity,
   agentRunIdentity,

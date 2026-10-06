@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
-const { makeRoot, gameRunner } = require('./helpers');
+const { makeRoot, gameRunner, sentId } = require('./helpers');
 
 const ROOT = makeRoot('devtools');
 const withGame = gameRunner(ROOT);
@@ -33,15 +33,13 @@ function answerTo(h, id, label) {
 }
 
 async function slash(h, line) {
-  const id = h.client.lastSeq() + 1;
   h.client.slash(line);
-  return answerTo(h, id, line);
+  return answerTo(h, sentId(h.client), line);
 }
 
 async function say(h, text) {
-  const id = h.client.lastSeq() + 1;
   h.client.slash(`/claude -c ${text}`);
-  return answerTo(h, id, text);
+  return answerTo(h, sentId(h.client), text);
 }
 
 test('/claude dev status, diff and run answer from the bridge without an agent run, and the next message carries the output', async () => {
@@ -137,8 +135,8 @@ test('/claude cancel ends a long dev test and frees the chat', async () => {
   const slow = ['node', '-e', 'setTimeout(() => {}, 120000)'];
   await withGame({ config: { plugins: { dev: { testCommand: slow } } } }, async h => {
     await h.client.connect();
-    const id = h.client.lastSeq() + 1;
     h.client.slash('/claude dev test');
+    const id = sentId(h.client);
     await h.bridge.waitForLine(new RegExp(`#${id}@\\S+ dev test starting in `));
     await new Promise(r => setTimeout(r, 1500));
     h.client.slash('/claude cancel');
