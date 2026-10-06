@@ -489,7 +489,7 @@ test('a C2 fail in agent-contract.json refuses a run whose mcp= choice turns a s
   assert.equal(agentRuns().length, 2);
   assert.match(
     fs.readFileSync(path.join(addons, 'ClaudeWoW_S001', 'Inbox.lua'), 'utf8'),
-    /^\tcontract = \{ claude = \{ version = "[0-9.]*", checked = false, off = true, reason = "" \}[,}]/m,
+    /^\tcontract = \{ claude = \{ version = "[0-9.]*", checked = false, off = true, reason = "" \}(, | \},$)/m,
   );
   fs.rmSync(dir, { recursive: true, force: true });
 });
