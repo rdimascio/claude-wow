@@ -63,7 +63,7 @@ npm run check        # lint, unit suite, e2e suite
 |---|---|---|
 | `lint` | Ubuntu | an oxlint finding, an unformatted file, a Lua local used before it is declared |
 | `unit` | Node on Ubuntu (with coverage floors) and Windows; Bun on Ubuntu, macOS and Windows | any unit test, or coverage under a floor |
-| `e2e` | Ubuntu (two shards) on every PR; Ubuntu, macOS (two shards) and Windows (four shards, a longer per-file limit) on every push to `main`, every merge queue run, nightly and a manual run. A PR runs 10 jobs instead of 14, so parallel PRs wait less for runners. A Windows or macOS e2e failure shows on `main` after the merge; to see it first, start the workflow by hand on the branch (`gh workflow run test.yml --ref <branch>`) | any end-to-end scenario, including the seeded fuzz scenario |
+| `e2e` | Ubuntu (two shards) on every PR; Ubuntu, macOS (two shards) and Windows (four shards, a longer per-file limit) on every push to `main`, nightly and a manual run. A PR runs 10 jobs instead of 14, so parallel PRs wait less for runners. A Windows or macOS e2e failure shows on `main` after the merge; to see it first, start the workflow by hand on the branch (`gh workflow run test.yml --ref <branch>`, which also starts the fuzz jobs on all three systems) | any end-to-end scenario, including the seeded fuzz scenario |
 | `build` | Ubuntu | a binary that does not build or start |
 | `gate` | Ubuntu | any job above that did not pass. This is the one check to require in branch protection. |
 
