@@ -77,6 +77,53 @@ function emit(ev) {
   process.stdout.write(JSON.stringify(ev) + '\n');
 }
 
+const SUBAGENT_MODEL = 'claude-sonnet-5-5';
+const BACKGROUND_LAUNCH_TEXT = 'I launched the agent in the background and will answer when it completes.';
+
+function backgroundAgent(session, agentReply) {
+  const toolId = `toolu_agent_${session.turns}`;
+  const u = turnUsage(session.turns);
+  const sub = { input_tokens: 2, cache_creation_input_tokens: 3309, cache_read_input_tokens: 0, output_tokens: 16 };
+  emit({
+    type: 'assistant',
+    session_id: session.id,
+    parent_tool_use_id: null,
+    message: {
+      model: MODEL,
+      role: 'assistant',
+      content: [{ type: 'tool_use', id: toolId, name: 'Agent', input: { subagent_type: 'claude-wow:wow-code', prompt: 'probe' } }],
+      usage: u,
+    },
+  });
+  emit({ type: 'system', subtype: 'task_started', session_id: session.id, tool_use_id: toolId, subagent_type: 'claude-wow:wow-code', is_backgrounded: true });
+  emit({
+    type: 'user',
+    session_id: session.id,
+    message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: toolId, content: [{ type: 'text', text: 'Async agent launched successfully.' }] }] },
+  });
+  const launchTotal = addUsage(session.total, u);
+  emit({
+    type: 'result',
+    subtype: 'success',
+    is_error: false,
+    result: BACKGROUND_LAUNCH_TEXT,
+    session_id: session.id,
+    num_turns: 2,
+    usage: u,
+    permission_denials: [],
+    modelUsage: { [MODEL]: launchTotal },
+    total_cost_usd: launchTotal.costUSD,
+  });
+  emit({
+    type: 'assistant',
+    session_id: session.id,
+    parent_tool_use_id: toolId,
+    message: { model: SUBAGENT_MODEL, role: 'assistant', content: [{ type: 'text', text: agentReply }], usage: sub },
+  });
+  emit({ type: 'system', subtype: 'task_notification', session_id: session.id, tool_use_id: toolId, status: 'completed', summary: agentReply });
+  return addUsage({}, sub);
+}
+
 const SPLIT_UTF8_TEXT = 'h\u00e9llo \u2713 caf\u00e9 \u2603';
 const SPLIT_PAUSE_MS = 150;
 
@@ -520,6 +567,9 @@ async function main() {
     if (r.denial) denials.push(r.denial);
   }
 
+  const subagentUsage = d['background-agent']
+    ? backgroundAgent(session, d['background-agent'] === true ? 'agent answer' : String(d['background-agent']))
+    : null;
   const u = turnUsage(session.turns);
   session.total = addUsage(session.total, u);
   saveSession(session);
@@ -540,14 +590,14 @@ async function main() {
     num_turns: session.turns,
     usage: u,
     permission_denials: denials,
-    modelUsage: { [MODEL]: session.total },
-    total_cost_usd: session.total.costUSD,
+    modelUsage: subagentUsage ? { [MODEL]: session.total, [SUBAGENT_MODEL]: subagentUsage } : { [MODEL]: session.total },
+    total_cost_usd: session.total.costUSD + (subagentUsage ? subagentUsage.costUSD : 0),
   };
   if (d['split-unicode']) await writeSplitInsideCharacter(process.stdout, JSON.stringify(result) + '\n');
   else emit(result);
 }
 
-module.exports = { SPLIT_UTF8_TEXT };
+module.exports = { SPLIT_UTF8_TEXT, BACKGROUND_LAUNCH_TEXT };
 
 if (require.main === module)
   main().catch(e => {
