@@ -19,25 +19,28 @@ Then one place holds every thread, approval and effect, whether you are in Slack
 | Shipping claude-wow | none | `autoDeploy` (PR #166): a merge to main deploys itself, the game asks for `/reload` |
 | Auth | a loopback-only server and one bearer token (`web_token` in its `meta` table); one owner | none: bridge records are unauthenticated (memory `bridge-records-are-unauthenticated`) |
 
-## The constraint that sets the scope
+## Any surface answers any card: the yes is proven by presence, not by the surface
 
-Factory v3 (§3, §5) counts Ryan's merge "yes" (`ryan_yes`) only as an agent-room card clicked in Slack by his Slack `user_id`, and says the room web client cannot answer factory cards, by design. A Loot roll click in game reaches the bridge as a screenshot or SavedVariables record. Any process on the Mac mini that can write a file in the game folder can forge one. So:
+Factory v3 (§3, §5) counts Ryan's merge "yes" (`ryan_yes`) only as a Slack click by his Slack `user_id`, because a click elsewhere can be forged: a Loot roll reaches the bridge as a screenshot or SavedVariables record that any process on the Mac mini can write. We own every layer, so we fix the proof instead of fencing off the surface.
 
-- **A game click never answers `ryan_yes` or any every-io/every factory card.** The game shows the card, its payload and its state, and says "answer in Slack". Slack on the phone is one tap away.
-- **A game click may answer kinds whose worst case is bounded:** claude-wow's own work (a dev-repo merge that auto-deploy ships to Ryan's own game), worker permission rolls for claude-wow runs, `alert_ack`. These need a new per-kind rule in agent-room's settle path: which surface may answer which kind. That is agent-room code; nothing is written there without Ryan's go.
+- **A presence signature.** `~/.claude/tools/factory-control/enclave-signer.swift` already holds a Secure Enclave P-256 key whose access control is `.biometryCurrentSet`: it signs only after a Touch ID match on that Mac, and `LAContext.localizedReason` shows the human what is being signed. No process can produce that signature, and a copied key blob is useless off the enclave.
+- **The flow.** Need on a factory Loot roll → the bridge sends `approve` for that approval id and choice → agent-room's settle builds the canonical payload from its own row (`{kind, approvalId, choice, pr, head_sha}`, never from the game) → the signer asks for Touch ID with the reason "Merge PR #18765 at 1a2b3c (T2)" → the system dialog shows over the game → the signature is stored on the approval row as its proof.
+- **The rule, per kind.** A card that needs Ryan (`ryan_yes`, money or auth writes) resolves only with a valid presence signature over its exact payload, verified against the public key agent-room stores at setup. Where the click came from (Slack, room, game) is recorded but no longer decides anything. A Slack click by Ryan's `user_id` stays a second valid proof, so his phone still works away from the desk. Low-risk kinds (`alert_ack`, a claude-wow worker roll) resolve on the click alone.
+- **What this changes elsewhere.** Factory v3's merge station reads "an approved row with a presence signature or a Slack `user_id` proof for this head", not "a Slack click". That is a change to the every-io/every factory plan, owned with that plan, and to agent-room's settle path (`settleFactoryApproval`). Both are ours.
+- **Prerequisite on the mini.** A Touch ID reader on the Mac mini (a Magic Keyboard with Touch ID) and a key created there, because the key is bound to the enclave and the fingerprints of the Mac that created it. Without a reader, the fallback is the same key with `.userPresence` (Apple Watch or the login password), which proves a human at the Mac but not which one.
 
 ## Work
 
 ### 0. Decisions before code
 
-1. Where agent-room runs. Factory v3 moves it to the Mac mini, where the game and the bridge run. This plan assumes that; a MacBook agent-room would need the WebSocket over Tailscale, which its loopback-only rule refuses.
-2. The kinds a game click may answer (the list above), and whether claude-wow merges get a card at all or keep merging through `merge-train`.
+1. Where agent-room runs. Factory v3 moves it to the Mac mini, where the game and the bridge run. This plan assumes that. A MacBook agent-room works too, but its server then listens on the Tailscale interface instead of loopback, with Tailscale identity in place of the static token; the presence signature still has to come from the Mac Ryan sits at.
+2. The presence policy per card kind (which need a signature), and whether the Mac mini gets a Touch ID keyboard or uses the `.userPresence` fallback.
 3. Whether the async-agents plan (`docs/plans/async-agents.md`, revision 4) stops here. agent-room threads and workflows cover its wake-ups and worker approvals; this plan proposes to supersede its Phases 1 to 3 and keep only Phase 0 (`threads`, merged) and `autoDeploy`.
 
 ### 1. Read-only mirror
 
 - The bridge connects to agent-room's WebSocket on loopback with the room token (read from agent-room's config, never written into claude-wow's config or argv).
-- One agent-room channel per mapped game chat: `plugins.room.channels` maps a channel slug to a game chat. Server `message` and `chunk` events become late replies and progress lines in that chat; `approval` events become a read-only card line ("Factory asks: merge PR #18765 at 1a2b3c? Answer in Slack").
+- One agent-room channel per mapped game chat: `plugins.room.channels` maps a channel slug to a game chat. Server `message` and `chunk` events become late replies and progress lines in that chat; `approval` events become a card line ("Factory asks: merge PR #18765 at 1a2b3c?"), answerable from Phase 3.
 - Reconnect with backoff; the slot data says when the room is unreachable, so the game never shows a stale state as live.
 - No game action reaches agent-room yet.
 
@@ -48,10 +51,11 @@ Factory v3 (§3, §5) counts Ryan's merge "yes" (`ryan_yes`) only as an agent-ro
 - `cancel` and `cancel_run` from `/claude cancel`.
 - A message waits in the bridge's queue while the room is down, and the chat says so.
 
-### 3. Answer what the game may answer
+### 3. Answer every card from the game
 
-- After decision 0.2 and agent-room's per-kind surface rule: an `approval` event for an allowed kind becomes a Loot roll; Need/Greed/Pass map to the card's choices by index (`approve`, never the choice text).
-- Every other kind stays read-only in game.
+- Every `approval` event becomes a Loot roll; its buttons map to the card's choices by index (`approve`, never the choice text), and "Something else…" opens the reply box for `approve_other`.
+- agent-room: the per-kind presence policy and the signature check in the settle path, the signer called with a reason built from the row, and the public key stored at setup. A kind that needs presence shows "Touch ID to confirm" on the roll; a failed or cancelled Touch ID leaves the card pending and says so in the chat.
+- The every-io/every factory: the merge station accepts a presence-signed row as Ryan's yes.
 
 ### 4. Retire the bridge's own factory
 
