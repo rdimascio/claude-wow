@@ -12,6 +12,7 @@ const CLAUDE_INFO_TTL_MS = 5000;
 const DETECT_WAIT_MS = 25000;
 const ANCESTRY_DEPTH_MAX = 64;
 const LATE_REPLIES_MAX = 32;
+const EXPIRED_MAX = 32;
 
 function pickupMarkers(chatId, messageId) {
   const plain = `chat_id="${chatId}" message_id="${messageId}"`;
@@ -23,6 +24,7 @@ function createLive(overrides = {}) {
   const pending = new Map();
   const permissions = new Map();
   const lateReplies = new Map();
+  const expired = new Map();
   const waiters = new Set();
   const runSockets = new Set();
   let server = null;
@@ -186,6 +188,17 @@ function createLive(overrides = {}) {
     pending.set(chatId, held);
   }
 
+  function noteExpired(chatId, perm, seconds) {
+    expired.delete(chatId);
+    while (expired.size >= EXPIRED_MAX) expired.delete(expired.keys().next().value);
+    const s = sessions.get(perm.conn);
+    expired.set(chatId, { rule: perm.rule, seconds, name: s ? s.name : '' });
+  }
+
+  function expiredText(gone) {
+    return `That permission request for ${gone.rule} expired after ${gone.seconds} s and was denied, so your answer was not sent${gone.name ? ' to "' + gone.name + '"' : ''}. A late reply from the session still lands here.`;
+  }
+
   function clearPermission(chatId) {
     const perm = permissions.get(chatId);
     if (!perm) return null;
@@ -347,19 +360,24 @@ function createLive(overrides = {}) {
     const { chatId, p } = target;
     clearPending(chatId);
     clearPermission(chatId);
+    expired.delete(chatId);
     const rule = LP.ruleForPermission(msg);
     const ms = opt('permissionTimeoutMs');
+    const seconds = Math.ceil(ms / 1000);
     const timer = setTimeout(() => {
       const perm = permissions.get(chatId);
       if (!perm || perm.requestId !== requestId) return;
       permissions.delete(chatId);
       sendTo(sessions.get(perm.conn), { type: 'permission', request_id: requestId, behavior: 'deny' });
       log(`${core.tag(p.job)} permission ${requestId} (${rule}) timed out after ${ms} ms: denied, a late reply still lands`);
+      noteExpired(chatId, perm, seconds);
       holdLateReply(chatId, { job: perm.job, conn: perm.conn, messageId: perm.messageId });
     }, ms);
     if (timer.unref) timer.unref();
     permissions.set(chatId, { requestId, conn: s.id, rule, timer, job: p.job, messageId: p.messageId });
     log(`${core.tag(p.job)} permission ${requestId} for ${rule} relayed to the game`);
+    p.job.lateOk = true;
+    p.job.lateIn = Math.min(seconds, P.LATE_IN_MAX);
     core.reply(p.job, LP.permissionPrompt(msg, s.name), [rule]);
   }
 
@@ -588,6 +606,7 @@ function createLive(overrides = {}) {
     for (const [chatId] of [...pending]) clearPending(chatId);
     for (const [chatId] of [...permissions]) clearPermission(chatId);
     for (const key of [...lateReplies.keys()]) dropLate(key);
+    expired.clear();
     for (const s of sessions.values()) s.sock.destroy();
     sessions.clear();
     for (const sock of [...runSockets]) sock.destroy();
@@ -691,6 +710,15 @@ function createLive(overrides = {}) {
         return;
       }
       if (sent) keepLate(chatId, { job: perm.job, conn: perm.conn, messageId: perm.messageId });
+    } else if (expired.has(chatId)) {
+      const gone = expired.get(chatId);
+      expired.delete(chatId);
+      if (!LP.isVerdictJob(job).forward) {
+        log(`${c.tag(job)} answer to the expired permission for ${gone.rule} not sent`);
+        job.lateOk = true;
+        c.fail(job, expiredText(gone));
+        return;
+      }
     }
     if (!server) {
       c.fail(job, 'The live plugin is off on this bridge (plugins.live.enabled is false).');
@@ -742,6 +770,7 @@ function createLive(overrides = {}) {
       pending,
       permissions,
       lateReplies,
+      expired,
       runSockets,
       get address() {
         return address;

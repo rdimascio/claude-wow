@@ -40,14 +40,23 @@ function watchScreenshots(dir, onFile, opts = {}) {
   const settleMs = opts.settleMs ?? 120;
   const scanMs = opts.scanMs ?? 1000;
   const log = opts.log || (() => {});
+  const adoptMs = opts.adoptMs ?? 0;
+  const startedAt = opts.now ?? Date.now();
   const seen = new Map(); // name -> { size, stable, done }
   let closed = false;
   let watcher = null;
   let scanTimer = null;
 
-  // Everything already there is the player's, or a leftover: never touched.
+  const isYoungShot = name => {
+    if (adoptMs <= 0 || !isScreenshotFile(name)) return false;
+    try {
+      return startedAt - fs.statSync(path.join(dir, name)).mtimeMs < adoptMs;
+    } catch {
+      return false;
+    }
+  };
   try {
-    for (const name of fs.readdirSync(dir)) seen.set(name, { done: true });
+    for (const name of fs.readdirSync(dir)) if (!isYoungShot(name)) seen.set(name, { done: true });
   } catch {}
 
   function check(name) {
@@ -130,6 +139,7 @@ function watchScreenshots(dir, onFile, opts = {}) {
   }
   scanTimer = setInterval(scan, scanMs);
   if (scanTimer.unref) scanTimer.unref();
+  scan();
 
   return {
     close() {

@@ -42,13 +42,18 @@ const FILES = [
   'addon/ClaudeWoW/Telemetry.lua',
   'addon/ClaudeWoW/Observed.lua',
   'addon/ClaudeWoW/Dev.lua',
+  'addon/ClaudeWoW/Help.lua',
   'addon/ClaudeWoW/Bindings.xml',
   'addon/ClaudeWoW/Portrait.tga',
+  'addon/ClaudeWoW/MinimapIcon.tga',
   'bridge/capture.ps1',
   'bridge/capture_mac.py',
   'bridge/capture_x11.py',
   'bridge/config.example.json',
   'docs/WOW-ADDON-PRIMER.md',
+  'assets/plugins/claude-wow/.claude-plugin/plugin.json',
+  'assets/plugins/claude-wow/agents/wow-code.md',
+  'assets/plugins/claude-wow/agents/wow-planner.md',
 ];
 const DIR_NAME = 'assets';
 

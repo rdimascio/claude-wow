@@ -108,9 +108,91 @@ test('pins land where the points are, on the zone map and on the continent', () 
   assert.deepEqual(shownPins(vm), []);
 });
 
+const clickStart = vm => vm.run('local b = ClaudeWoWNavigator.start; b.scripts.OnClick(b)');
+
+test('showing a node layer does not count as starting a route: the next route is still offered with Start', () => {
+  const vm = newVM();
+  const NODES = `{ epoch = "e1", version = 1, char = "Testchar-TestRealm", layers = { { name = "herbs", title = "Herbs", ordered = false, points = {
+    { 1432, 40, 40, "Peacebloom", "herb" } } } } }`;
+  vm.run(`ClaudeWoWMap.Sync(${NODES})`);
+  vm.run('ClaudeWoWMap.ShowLayer("herbs")');
+  vm.run(`ClaudeWoWMap.Sync(${LAYER.replace('version = 1', 'version = 2')})`);
+  assert.equal(vm.evaluate('ClaudeWoWMapDB.nav'), null, 'the route did not start on its own');
+  assert.equal(vm.evaluate('ClaudeWoWMap.Offered()'), 'mining');
+  assert.equal(vm.evaluate('ClaudeWoWNavigator.start.shown'), 'true');
+});
+
+test('the first route of a session asks before it starts; later routes start on their own', () => {
+  const vm = newVM();
+  vm.run(`ClaudeWoWMap.Sync(${LAYER})`);
+  assert.equal(vm.evaluate('ClaudeWoWMapDB.nav'), null, 'not started');
+  assert.equal(vm.evaluate('ClaudeWoWMap.Offered()'), 'mining');
+  assert.equal(vm.evaluate('ClaudeWoWNavigator.shown'), 'true');
+  assert.equal(vm.evaluate('ClaudeWoWNavigator.title.text'), 'New route: Copper loop');
+  assert.equal(vm.evaluate('ClaudeWoWNavigator.text.text'), '3 points. Start it?');
+  assert.equal(vm.evaluate('ClaudeWoWNavigator.start.text'), 'Start');
+  assert.equal(vm.evaluate('ClaudeWoWNavigator.start.shown'), 'true');
+  vm.run('STUB.now = STUB.now + 5; ClaudeWoWMap.UpdateNavigator()');
+  assert.equal(vm.evaluate('ClaudeWoWMapDB.nav'), null, 'it waits for the player');
+  clickStart(vm);
+  assert.equal(vm.evaluate('ClaudeWoWMapDB.nav.layer'), 'mining');
+  assert.equal(vm.evaluate('ClaudeWoWNavigator.start.shown'), 'false');
+  vm.run('SlashCmdList.CLAUDEWOWMAP("stop")');
+  vm.run(`ClaudeWoWMap.Sync(${LAYER.replace('version = 1', 'version = 2').replace('"Copper loop"', '"Tin loop"')})`);
+  assert.equal(vm.evaluate('ClaudeWoWMapDB.nav.layer'), 'mining', 'the next route of the session starts at once');
+
+  const dismissed = newVM();
+  dismissed.run(`ClaudeWoWMap.Sync(${LAYER})`);
+  dismissed.run('local b = ClaudeWoWNavigator.close; b.scripts.OnClick(b)');
+  assert.equal(dismissed.evaluate('ClaudeWoWNavigator.shown'), 'false');
+  assert.equal(dismissed.evaluate('ClaudeWoWMap.Offered()'), null);
+  assert.equal(dismissed.evaluate('ClaudeWoWMapDB.nav'), null);
+});
+
+test('the navigator has a close button and a right-click menu with Skip Stop and Stop Route', () => {
+  const vm = newVM();
+  vm.run(`ClaudeWoWMap.Sync(${LAYER})`);
+  clickStart(vm);
+  assert.equal(vm.evaluate('ClaudeWoWNavigator.close.template'), 'UIPanelCloseButton');
+  vm.run(`MENU = {}
+    MenuUtil = { CreateContextMenu = function(anchor, build)
+      local root = { CreateTitle = function(self, t) MENU.title = t end, CreateButton = function(self, label, fn) table.insert(MENU, { label = label, fn = fn }) end }
+      build(anchor, root)
+    end }`);
+  vm.run('ClaudeWoWNavigator.scripts.OnMouseUp(ClaudeWoWNavigator, "RightButton")');
+  assert.equal(vm.evaluate('MENU[1].label'), 'Skip Stop');
+  assert.equal(vm.evaluate('MENU[2].label'), 'Stop Route');
+  assert.equal(vm.evaluate('ClaudeWoWMapDB.nav.index'), '1', 'opening the menu does not skip');
+  vm.run('MENU[1].fn()');
+  assert.equal(vm.evaluate('ClaudeWoWMapDB.nav.index'), '2');
+  vm.run('MENU[2].fn()');
+  assert.equal(vm.evaluate('ClaudeWoWMapDB.nav'), null);
+  assert.equal(vm.evaluate('ClaudeWoWNavigator.shown'), 'false');
+  vm.run('SlashCmdList.CLAUDEWOWMAP("nav mining 1")');
+  vm.run('local b = ClaudeWoWNavigator.close; b.scripts.OnClick(b)');
+  assert.equal(vm.evaluate('ClaudeWoWMapDB.nav'), null, 'the close button stops the route');
+});
+
+test('map prints are sentence case and count points in words', () => {
+  const vm = newVM();
+  const printed = () => vm.evaluate('table.concat(STUB.prints, "\\n")') || '';
+  vm.run('SlashCmdList.CLAUDEWOWMAP("")');
+  assert.match(printed(), /No layers yet\. Ask the agent for a route, for example: \/claude route me through copper veins in Loch Modan/);
+  vm.run(`ClaudeWoWMap.Sync(${LAYER.replace(/\{ 1432, 60, 50[^}]*\}, \{ 1432, 55, 70[^}]*\} /, '')})`);
+  vm.run('STUB.prints = {}; SlashCmdList.CLAUDEWOWMAP("")');
+  assert.match(printed(), /Copper loop \(1 point\)/);
+  assert.doesNotMatch(printed(), /point\(s\)/);
+  assert.match(printed(), /Nodes: ore off, herb off, filter skill\./);
+  assert.match(printed(), /Commands: /);
+  vm.run('STUB.prints = {}; SlashCmdList.CLAUDEWOWMAP("ore on"); SlashCmdList.CLAUDEWOWMAP("show nothing")');
+  assert.match(printed(), /Ore nodes are shown on the world map\./);
+  assert.match(printed(), /No layer named nothing\./);
+});
+
 test('navigator shows yards and bearing, and advances on arrival', () => {
   const vm = newVM();
   vm.run(`ClaudeWoWMap.Sync(${LAYER})`);
+  clickStart(vm);
   // Player at Loch Modan 50,50 -> continent (0.55, 0.45); stop 1 (50,40) is 150 yd due north.
   vm.run('STUB.posX, STUB.posY = 0.5, 0.5; ClaudeWoWMap.UpdateNavigator()');
   assert.match(vm.evaluate('ClaudeWoWNavigator.text.text'), /^150 yd/);
@@ -185,11 +267,7 @@ test('a route from the agent is a link in its chat tab that opens the map at the
   const vm = newVM('STUB.ChatDock(); function OpenWorldMap(id) STUB.openedMap = id; WorldMapFrame:Show() end; WorldMapFrame.shown = false');
   vm.run(`ClaudeWoWMap.Sync(${LAYER})`);
   const lines = vm.evaluate('STUB.Lines(ChatFrame11)') || '';
-  assert.match(
-    lines,
-    /Copper loop: 3 point\(s\), route\. \|Haddon:claudewow:map:mining\|h\|cffffd100\[show route\]/,
-    'said in the chat tab with a link: ' + lines,
-  );
+  assert.match(lines, /Copper loop: 3 points, route\. \|Haddon:claudewow:map:mining\|h\|cffffd100\[show route\]/, 'said in the chat tab with a link: ' + lines);
   assert.ok(!vm.evaluate('table.concat(STUB.prints, "\\n")').includes('Copper loop'), 'not in General');
   vm.run('SlashCmdList.CLAUDEWOWMAP("hide mining"); SlashCmdList.CLAUDEWOWMAP("stop")');
   vm.run('STUB.combat = true; STUB.ClickLink("|Haddon:claudewow:map:mining|h[show route]|h")');

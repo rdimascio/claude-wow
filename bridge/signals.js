@@ -138,7 +138,7 @@ function runtimeTocText(tocInterface = TOC_INTERFACE) {
   return [
     '## Interface: ' + tocInterface,
     '## Title: Azeroth Companion runtime',
-    '## Notes: Files the Claude WoW bridge writes while it runs. Leave it enabled.',
+    '## Notes: Files the Azeroth Companion bridge writes while it runs. Leave it enabled.',
     '## Dependencies: ' + ADDON,
     '',
     'Inbox.lua',

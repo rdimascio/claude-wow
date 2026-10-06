@@ -10,6 +10,11 @@ local ACHIEVEMENT_SOUNDKIT_ID = 12891
 local GOLD_R, GOLD_G, GOLD_B = 1, 0.82, 0
 local FALLBACK_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
 local SHIELD_TEXTURE = "Interface\\CHARACTERFRAME\\TempPortraitAlphaMask"
+local TOAST_NAME = "ClaudeWoWAchievementToast"
+local HEADER_TEXT = "Azeroth Companion"
+local ROLL_FRAME_NAME = "ClaudeWoWRollFrame"
+local ROLL_GAP = 8
+local FALLBACK_BOTTOM = 220
 local BANNER_BACKDROP = {
 	bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
 	edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
@@ -21,7 +26,7 @@ local queue = {}
 local toast
 
 local function Print(msg)
-	print("|cff66ccff[Claude WoW]|r " .. msg)
+	print("|cff66ccff[Azeroth Companion]|r " .. msg)
 end
 
 local function Settings()
@@ -70,10 +75,16 @@ local function Dismiss()
 	ShowNext()
 end
 
+local function FadeScript(self, elapsed)
+	if not self.current then return end
+	self.age = (self.age or 0) + (elapsed or 0)
+	self:SetAlpha(Alpha(self.age))
+	if self.age >= FADE_IN_SECONDS + HOLD_SECONDS + FADE_OUT_SECONDS then Dismiss() end
+end
+
 local function BuildToast()
-	local f = CreateFrame("Frame", "ClaudeWoWAchievementToast", UIParent, "BackdropTemplate")
+	local f = CreateFrame("Frame", TOAST_NAME, UIParent, "BackdropTemplate")
 	f:SetSize(320, 84)
-	f:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, 220)
 	f:SetFrameStrata("DIALOG")
 	f:SetBackdrop(BANNER_BACKDROP)
 	f:SetBackdropColor(0.05, 0.04, 0.02, 0.92)
@@ -107,7 +118,7 @@ local function BuildToast()
 
 	local header = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 	header:SetPoint("TOP", f, "TOP", 0, -12)
-	header:SetText("Achievement Earned")
+	header:SetText(HEADER_TEXT)
 	header:SetTextColor(GOLD_R, GOLD_G, GOLD_B)
 	f.header = header
 
@@ -122,15 +133,19 @@ local function BuildToast()
 	text:SetTextColor(0.85, 0.85, 0.85)
 	f.text = text
 
-	f:SetScript("OnUpdate", function(self, elapsed)
-		if not self.current then return end
-		self.age = (self.age or 0) + (elapsed or 0)
-		local alpha = Alpha(self.age)
-		self:SetAlpha(alpha)
-		if self.age >= FADE_IN_SECONDS + HOLD_SECONDS + FADE_OUT_SECONDS then Dismiss() end
-	end)
+	f:SetScript("OnUpdate", FadeScript)
 	f:Hide()
 	return f
+end
+
+function T.Anchor(f)
+	f:ClearAllPoints()
+	local roll = _G[ROLL_FRAME_NAME]
+	if type(roll) == "table" and type(roll.IsShown) == "function" and roll:IsShown() then
+		f:SetPoint("BOTTOM", roll, "TOP", 0, ROLL_GAP)
+	else
+		f:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, FALLBACK_BOTTOM)
+	end
 end
 
 local function Present(entry)
@@ -139,12 +154,14 @@ local function Present(entry)
 	toast.age = 0
 	toast.icon:SetTexture(entry.icon and entry.icon ~= "" and entry.icon or FALLBACK_ICON)
 	toast.title:SetText(entry.title or "")
-	toast.text:SetText(entry.text or "")
+	if toast.text then toast.text:SetText(entry.text or "") end
 	toast.points:SetText(tostring(entry.points or 0))
+	T.Anchor(toast)
 	toast:SetAlpha(0)
 	toast:Show()
 	T.lastSound = PlayAchievementSound()
-	Print("You have earned the achievement |cffffd100[" .. tostring(entry.title) .. "]|r!")
+	local points = tonumber(entry.points) or 0
+	Print(string.format("New achievement: |cffffd100[%s]|r, %d %s.", tostring(entry.title), points, points == 1 and "point" or "points"))
 end
 
 ShowNext = function()
