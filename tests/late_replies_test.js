@@ -14,6 +14,8 @@ const SESSION_NAME = 'latereplies';
 const SLOTS = 20;
 const SPEED = 8;
 const PERMISSION_TIMEOUT_MS = 1500;
+const PRESENCE_STALL_GAME_SECONDS = 150;
+const BEFORE_ANY_OTHER_READ_MS = (PRESENCE_STALL_GAME_SECONDS / SPEED / 3) * 1000;
 
 const coverageEnv = process.env.NODE_V8_COVERAGE ? { NODE_V8_COVERAGE: process.env.NODE_V8_COVERAGE } : {};
 
@@ -122,9 +124,10 @@ test("after a permission roll times out, the session's answer reaches an idle ad
       session.ask('abcde');
       await h.client.waitFor(() => !h.client.activeChat().pendingId, { label: 'the roll prompt in the chat' });
       await h.client.waitFor(() => session.received.some(m => m.type === 'permission' && m.behavior === 'deny'), { label: 'the timeout denial' });
+      await h.client.waitFor(() => !h.client.db().chats.some(c => c.pendingId), { label: 'no chat waiting, so no scheduled slot read' });
       session.reply(chatId, 'Denied, so I left it.', String(id));
       await h.bridge.waitForLine(new RegExp(`#${id}@\\S+ late reply delivered`));
-      await h.client.waitFor(() => shown(h, 'Denied, so I left it.'), { timeoutMs: 20000, label: 'the late answer in the chat' });
+      await h.client.waitFor(() => shown(h, 'Denied, so I left it.'), { timeoutMs: BEFORE_ANY_OTHER_READ_MS, label: 'the late answer in the chat, from the late poll and not a presence or idle read' });
       assert.ok(!h.client.activeChat().pendingId, 'no message was sent to fetch it');
     } finally {
       session.close();
