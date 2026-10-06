@@ -70,6 +70,8 @@ npm run check        # lint, unit suite, e2e suite
 
 The e2e suite is deterministic except `tests/e2e/fuzz_test.js`. That test draws random messages (odd characters, agent directives, errors and rate limits) and random interleavings (`/reload`, bridge restarts, movement, combat) from a seed, and checks that every message ends in exactly one reply, no chat stays pending, and no strip screenshot is left. Each run picks a new seed and prints it in the test name. To replay a failure, run `CLAUDE_WOW_FUZZ_SEED=<seed> npm run test:fuzz`. A nightly run uses 40 episodes per OS (`CLAUDE_WOW_FUZZ_EPISODES`).
 
+A test that spawns the bridge or `setup.js` passes `SB.isolatedEnv(<scratch>/user, { CLAUDE_WOW_HOME })` from `dev/sandbox.js`, never `{ ...process.env }`. It points `HOME` and `USERPROFILE` (and `LOCALAPPDATA`/`APPDATA` on Windows) at the scratch folder and drops `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GROK_HOME` and the `XDG_*` folders, so the bridge reads `~/.claude.json`, `~/.claude` (sessions, history, plugins) and `~/.codex/config.toml` from the scratch folder, not from your machine. The sandbox harness does the same through `envFor`. Only the opt-in live tests (`test:live`, `test:live-session`) use your real home, because they run a logged-in agent.
+
 Unit tests that add no coverage are not kept. A new test must cover a branch, a line or a Lua line that no other test covers, or pin a safety rule (a refused path, a denied permission, a user file never touched) that no other test asserts.
 
 To try changes in the game, run `node setup.js` (it re-copies the addon into `Interface\AddOns\ClaudeWoW`) and `/reload`. Bridge changes take effect on the next `npm start`.

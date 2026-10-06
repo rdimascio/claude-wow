@@ -9,6 +9,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const SB = require('../dev/sandbox');
 
 const S = require('../setup.js');
 const P = require('../bridge/protocol');
@@ -180,7 +181,7 @@ test('node setup.js --wow <fake client>: migrates the chats, installs ClaudeWoW 
   const { addons, saved } = fakeClient(client, 'WoWAI', { slots: 5 });
   const r = spawnSync(process.execPath, [path.join(__dirname, '..', 'setup.js'), '--wow', client, '--project', project], {
     encoding: 'utf8',
-    env: { ...process.env, CLAUDE_WOW_HOME: home },
+    env: SB.isolatedEnv(path.join(path.dirname(home), 'user'), { CLAUDE_WOW_HOME: home }),
     timeout: 120000,
   });
   assert.equal(r.status, 0, r.stdout + r.stderr);
@@ -252,7 +253,7 @@ test('node setup.js --wow <fake client>: migrates the chats, installs ClaudeWoW 
   fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify(cfg, null, 2) + '\n');
   const again = spawnSync(process.execPath, [path.join(__dirname, '..', 'setup.js'), '--wow', client], {
     encoding: 'utf8',
-    env: { ...process.env, CLAUDE_WOW_HOME: home },
+    env: SB.isolatedEnv(path.join(path.dirname(home), 'user'), { CLAUDE_WOW_HOME: home }),
     timeout: 120000,
   });
   assert.equal(again.status, 0, again.stdout + again.stderr);
@@ -279,7 +280,7 @@ test('node setup.js --wow <fake client>: migrates the chats, installs ClaudeWoW 
   }
   const third = spawnSync(process.execPath, [path.join(__dirname, '..', 'setup.js'), '--wow', client], {
     encoding: 'utf8',
-    env: { ...process.env, CLAUDE_WOW_HOME: home },
+    env: SB.isolatedEnv(path.join(path.dirname(home), 'user'), { CLAUDE_WOW_HOME: home }),
     timeout: 120000,
   });
   assert.equal(third.status, 0, third.stdout + third.stderr);
@@ -309,7 +310,7 @@ test('node setup.js --wow <another client> adds it next to the first one and ins
   const run = (...extra) =>
     spawnSync(process.execPath, [path.join(__dirname, '..', 'setup.js'), ...extra], {
       encoding: 'utf8',
-      env: { ...process.env, CLAUDE_WOW_HOME: home },
+      env: SB.isolatedEnv(path.join(path.dirname(home), 'user'), { CLAUDE_WOW_HOME: home }),
       timeout: 120000,
     });
   const readCfg = () => JSON.parse(fs.readFileSync(path.join(home, 'config.json'), 'utf8'));
@@ -389,7 +390,7 @@ test('node setup.js on a single-client config from before clients[] moves it int
   fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify(old, null, 2) + '\n');
   const r = spawnSync(process.execPath, [path.join(__dirname, '..', 'setup.js'), '--wow', client], {
     encoding: 'utf8',
-    env: { ...process.env, CLAUDE_WOW_HOME: home },
+    env: SB.isolatedEnv(path.join(path.dirname(home), 'user'), { CLAUDE_WOW_HOME: home }),
     timeout: 120000,
   });
   assert.equal(r.status, 0, r.stdout + r.stderr);
