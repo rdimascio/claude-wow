@@ -186,6 +186,36 @@ function W.FindSpot(home, occupied)
 	return best
 end
 
+function W.MapDock(home, occupied)
+	if Free(home, occupied) then return nil end
+	local map
+	for _, o in ipairs(occupied) do
+		if o.name == "WorldMapFrame" then map = o end
+	end
+	if not (map and Overlaps(home, map)) then return nil end
+	local h = map.top - map.bottom
+	if h < MIN_H then return nil end
+	local sw = Screen()
+	local w = home.right - home.left
+	local widthRight = math.min(w, sw - (map.right + GAP))
+	local widthLeft = math.min(w, map.left - GAP)
+	local sides = {
+		{ left = map.right + GAP, width = widthRight },
+		{ left = map.left - GAP - widthLeft, width = widthLeft },
+	}
+	for _, side in ipairs(sides) do
+		if side.width >= MIN_W then
+			local r = { left = side.left, right = side.left + side.width, top = map.top, bottom = map.bottom }
+			if Free(r, occupied) then return r end
+		end
+	end
+	return nil
+end
+
+local function Spot(home, occupied)
+	return W.MapDock(home, occupied) or W.FindSpot(home, occupied)
+end
+
 local function Visible()
 	return win ~= nil and win:IsShown()
 end
@@ -216,14 +246,14 @@ end
 local function DodgeSpot(home)
 	local panels = W.OpenPanels()
 	local loot = LootInPanelSlot()
-	if not loot then return W.FindSpot(home, panels) or home end
+	if not loot then return Spot(home, panels) or home end
 	local others = {}
 	for _, p in ipairs(panels) do
 		if p.name ~= "LootFrame" then table.insert(others, p) end
 	end
-	local spot = W.FindSpot(home, others) or home
+	local spot = Spot(home, others) or home
 	if PlaceLootBeside(loot, spot, others) then return spot end
-	return W.FindSpot(home, panels) or home
+	return Spot(home, panels) or home
 end
 
 function W.Relayout()

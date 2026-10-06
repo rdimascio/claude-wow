@@ -546,7 +546,8 @@ test('a widget reads a font object, writes plain fields to its frame and makes o
   );
   assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("font")'), 'running', vm.evaluate('select(2, ClaudeWoWWidgets.Status("font"))'));
   assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.font.size'), '12');
-  const button = '(function() for i = #STUB.frames, 1, -1 do if STUB.frames[i].kind == "Button" then return STUB.frames[i] end end end)()';
+  const button =
+    '(function() for i = #STUB.frames, 1, -1 do if STUB.frames[i].kind == "Button" and STUB.frames[i].tooltipText ~= nil then return STUB.frames[i] end end end)()';
   assert.equal(vm.evaluate(`${button}.tooltipText`), 'hi');
   assert.equal(vm.evaluate(`rawget(${button}, "onClick")`), null);
   assert.equal(vm.evaluate(`rawget(${button}, "Hide")`), null);

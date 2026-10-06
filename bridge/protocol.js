@@ -104,12 +104,22 @@ const LATE_IN_MAX = 3600;
 const RECENT_ACKS_MAX = 24;
 const RECENT_ACK_MS = 10 * 60 * 1000;
 
-function noteAck(acks, job, now = Date.now()) {
+const OPEN_RESULTS = ['ok', 'refused'];
+
+function noteAck(acks, job, now = Date.now(), result = null) {
   const id = Number(job && job.id);
   if (!Number.isInteger(id) || id <= 0) return acks;
   const session = String((job && job.session) || '');
-  const kept = acks.filter(a => now - a.at < RECENT_ACK_MS && !(a.id === id && a.session === session));
-  return [...kept, { session, id, at: now }].slice(-RECENT_ACKS_MAX);
+  const same = a => a.id === id && a.session === session;
+  const prev = acks.find(same);
+  const entry = { session, id, at: now };
+  const open = result && OPEN_RESULTS.includes(result.open) ? result : prev && prev.open ? prev : null;
+  if (open) {
+    entry.open = open.open;
+    if (open.open === 'refused') entry.why = String(open.why || '').slice(0, 80);
+  }
+  const kept = acks.filter(a => now - a.at < RECENT_ACK_MS && !same(a));
+  return [...kept, entry].slice(-RECENT_ACKS_MAX);
 }
 
 function recentAcks(acks, now = Date.now()) {
@@ -503,10 +513,13 @@ function addonDiskInfo(tocText) {
 // `cwd` is left as typed; the bridge resolves it against its default folder.
 // The ctx field is only there when the flags say "c" (older addons never set
 // it), so a separator inside the text can't be mistaken for it.
+const CHAT_ID_RE = /^[0-9a-zA-Z]*$/;
+
 function jobsFromStrip(headerId, payload) {
   const jobs = [];
   for (const rec of String(payload).split('\x1E')) {
     const p = rec.split('\x1F');
+    if (p.length >= 6 && !CHAT_ID_RE.test(p[1])) continue;
     if (p.length >= 7 && /^\d+$/.test(p[2])) {
       const flags = parseFlags(p[4]);
       const withCtx = flags.context && p.length >= 8;
@@ -1145,6 +1158,7 @@ function luaTable(globalName, records, opts = {}) {
     '\tcancel = true,',
     '\treplies = {',
   ];
+  if (opts.openUrl === true) lines.splice(lines.length - 1, 0, '\topenUrl = true,');
   if (transport === 'screenshot') {
     const lv = screenshotLevels(opts.levels);
     lines.splice(lines.length - 1, 0, `\tstrip = { on = ${lv.on}, off = ${lv.off}, codec = ${stripCodec(opts.codec)} },`);
@@ -1223,7 +1237,13 @@ function luaTable(globalName, records, opts = {}) {
   }
   if (Array.isArray(opts.acks)) {
     const acks = opts.acks.filter(a => a && Number.isInteger(a.id) && a.id > 0);
-    lines.splice(lines.length - 1, 0, `\tacks = { ${acks.map(a => `{ session = ${luaStr(a.session || '')}, id = ${a.id} }`).join(', ')} },`);
+    const ackLua = a => {
+      const f = [`session = ${luaStr(a.session || '')}`, `id = ${a.id}`];
+      if (OPEN_RESULTS.includes(a.open)) f.push(`open = ${luaStr(a.open)}`);
+      if (a.open === 'refused' && a.why) f.push(`why = ${luaStr(String(a.why).slice(0, 80))}`);
+      return `{ ${f.join(', ')} }`;
+    };
+    lines.splice(lines.length - 1, 0, `\tacks = { ${acks.map(ackLua).join(', ')} },`);
   }
   if (Number.isInteger(opts.runLimit) && opts.runLimit > 0) lines.splice(lines.length - 1, 0, `\trunLimit = ${opts.runLimit},`);
   if (Array.isArray(opts.alive)) {
@@ -1888,6 +1908,7 @@ function luaWidgets(set) {
 }
 
 module.exports = {
+  CHAT_ID_RE,
   ADDON,
   RUNTIME_ADDON,
   SHIPPED_INBOX_PATH,

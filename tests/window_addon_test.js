@@ -32,7 +32,7 @@ function newVM({ before = '', saved = '' } = {}) {
   run(fs.readFileSync(path.join(__dirname, 'wow_stub.lua'), 'utf8'));
   run(BLIZZARD);
   if (before) run(before);
-  for (const f of ['Codec.lua', 'Inbox.lua', 'ClaudeWoW.lua', 'LootRoll.lua', 'Window.lua'])
+  for (const f of ['Codec.lua', 'Inbox.lua', 'ClaudeWoW.lua', 'LootRoll.lua', 'Window.lua', 'Help.lua'])
     run(fs.readFileSync(path.join(ADDON, f), 'utf8'), 'ClaudeWoW', 'addon/' + f);
   if (saved) run(saved);
   run('STUB.FireEvent("ADDON_LOADED", "ClaudeWoW"); STUB.FireEvent("PLAYER_LOGIN")');
@@ -677,6 +677,107 @@ test('clicking a link in a reply opens the link, not the copy box; clicking the 
   assert.equal(vm.num('STUB.copies'), 1, 'a click on plain text still opens the copy box');
 });
 
+const shownBodies = vm =>
+  vm
+    .evaluate(
+      '(function() local t = {} for _, b in ipairs(ClaudeWoW.UI.bubbles) do if b.shown then table.insert(t, b.body:GetText()) end end return table.concat(t, "\\n@@\\n") end)()',
+    )
+    .split('\n@@\n');
+
+test('the window leaves out the closing TL;DR block of a reply, but not one in a code fence, one with more text after it, or one that is not the bridge summary', () => {
+  const vm = nativeVM();
+  vm.run(`
+    local c = ClaudeWoWDB.chats[1]
+    ClaudeWoW.SwitchChat(c.id)
+    c.history = {
+      { role = "assistant", t = 1, text = "Renamed the helper.\\nAll green.\\n\\n**TL;DR:** Helper renamed." },
+      { role = "assistant", t = 2, text = "Renamed it.\\n\\nTL;DR: Bridge summary.", summary = "Bridge summary." },
+      { role = "assistant", t = 3, text = "Example:\\n\`\`\`\\nTL;DR: fenced line\\n\`\`\`" },
+      { role = "assistant", t = 4, text = "TL;DR: first\\nline a\\nline b\\nline c\\nline d" },
+      { role = "assistant", t = 5, text = "Body here.\\n\\nTL;DR: Short one.\\n\\nbridge note", summary = "Short one." },
+      { role = "assistant", t = 6, text = "TL;DR: Just the answer." },
+      { role = "user", t = 7, text = "TL;DR: typed by the player" },
+      { role = "assistant", t = 8, text = "Checked the logs.\\n## tldr: heading style" },
+      { role = "assistant", t = 9, text = "Tilde:\\n~~~\\nTL;DR: tilde fenced\\n~~~" },
+      { role = "assistant", t = 10, text = "Nested:\\n\`\`\`\`md\\n\`\`\`\\nTL;DR: long fence\\n\`\`\`\`" },
+    }
+    ClaudeWoW.Render()
+  `);
+  const [plain, bridge, fenced, mid, mismatch, only, user, heading, tilde, nested] = shownBodies(vm);
+  assert.ok(tilde.includes('TL;DR: tilde fenced'), 'a TL;DR inside a ~~~ fence stays: ' + tilde);
+  assert.ok(nested.includes('TL;DR: long fence'), 'a shorter backtick line does not close a longer fence: ' + nested);
+  assert.ok(plain.includes('All green.') && !plain.includes('TL;DR') && !plain.includes('Helper renamed'), 'a bold TL;DR block is left out: ' + plain);
+  assert.ok(bridge.includes('Renamed it.') && !bridge.includes('Bridge summary'), 'the block the bridge split off is left out: ' + bridge);
+  assert.ok(fenced.includes('TL;DR: fenced line'), 'a TL;DR inside a code fence stays: ' + fenced);
+  assert.ok(mid.includes('first') && mid.includes('line d'), 'a TL;DR with more text after it stays: ' + mid);
+  assert.ok(mismatch.includes('Short one.') && mismatch.includes('bridge note'), 'a tail that is not the bridge summary stays: ' + mismatch);
+  assert.ok(only.includes('Just the answer.') && !only.includes('TL;DR'), 'a reply that is only a TL;DR shows its line without the marker: ' + only);
+  assert.ok(user.includes('TL;DR: typed by the player'), 'a player message is never cut: ' + user);
+  assert.ok(heading.includes('Checked the logs.') && !heading.includes('heading style'), 'a heading-style marker is the same block: ' + heading);
+  vm.run(`
+    STUB.copied = {}
+    ClaudeWoW.ShowCopy = function(text) table.insert(STUB.copied, text) end
+    local b = (function() for _, b in ipairs(ClaudeWoW.UI.bubbles) do if b.shown then return b end end end)()
+    b.scripts.OnMouseUp(b, "LeftButton")
+    STUB.RunTimers()
+  `);
+  assert.equal(vm.evaluate('STUB.copied[1]'), 'Renamed the helper.\nAll green.\n\n**TL;DR:** Helper renamed.', 'the copy box gets the whole reply');
+});
+
+const emptyState = vm => ({
+  shown: vm.evaluate('ClaudeWoW.UI.empty and ClaudeWoW.UI.empty.shown'),
+  title: vm.evaluate('ClaudeWoW.UI.empty and ClaudeWoW.UI.empty.title:GetText()'),
+  body: vm.evaluate('ClaudeWoW.UI.empty and ClaudeWoW.UI.empty.body:GetText()'),
+  top: -vm.num('ClaudeWoW.UI.empty.y'),
+});
+
+test('an empty chat shows a centered empty state with the project, not a system bubble, and setting the project adds no message', () => {
+  const vm = nativeVM();
+  vm.run('ClaudeWoW.NewChat(); ClaudeWoW.Render()');
+  let e = emptyState(vm);
+  assert.equal(e.title, 'Restoring your chats', 'fresh saved data waits for the restore in the same style');
+  assert.match(e.body, /restoring your chats\.\.\./);
+  vm.run('STUB.now = STUB.now + 30; STUB.Tick(); ClaudeWoW.IsConnected = function() return true end; ClaudeWoW.Render()');
+  assert.equal(shownBodies(vm).filter(Boolean).length, 0, 'no bubble on an empty chat');
+  e = emptyState(vm);
+  assert.equal(e.shown, 'true');
+  assert.equal(e.title, 'No messages yet');
+  assert.match(e.body, /Type below and press Enter/);
+  assert.match(e.body, /Project: No project/);
+  assert.ok(e.top > 0, 'centered in the parchment, not at the top: ' + e.top);
+
+  vm.run('ClaudeWoWProjectButton.scripts.OnClick(ClaudeWoWProjectButton); STUB.Pick("wow-ai")');
+  assert.equal(vm.num('#ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history'), 0, 'picking a project writes no "project:" message');
+  assert.match(emptyState(vm).body, /Project: wow-ai/, 'the empty state names the new project');
+
+  vm.run('SlashCmdList.CLAUDE("--project nope")');
+  const bodies = shownBodies(vm);
+  assert.equal(bodies.length, 1);
+  assert.match(bodies[0], /Unknown project "nope"/, 'a system answer to a command still shows');
+  e = emptyState(vm);
+  assert.equal(e.shown, 'true', 'a chat with only system lines still gets the hint');
+  assert.equal(vm.evaluate('ClaudeWoW.UI.empty.title.shown'), 'false', 'but no "No messages yet" title under a visible message');
+  assert.match(e.body, /^Type below and press Enter/);
+  assert.ok(!e.body.includes('\n'), 'only the hint line: ' + e.body);
+  assert.ok(e.top > 0, 'below the system line');
+
+  vm.run('ClaudeWoW.IsConnected = function() return false end; ClaudeWoW.Render()');
+  e = emptyState(vm);
+  assert.match(e.body, /^Start the bridge .*click Connect below/, 'under a system line, disconnected shows only its hint: ' + e.body);
+  vm.run('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history = {}; ClaudeWoW.Render()');
+  e = emptyState(vm);
+  assert.equal(e.title, 'Not connected');
+  assert.match(e.body, /click Connect below/);
+
+  vm.run('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history = {}; ClaudeWoW.IsConnected = function() return true end; ClaudeWoW.Render()');
+  e = emptyState(vm);
+  assert.equal(vm.evaluate('ClaudeWoW.UI.empty.title.shown'), 'true', 'a truly empty chat gets its title back');
+  assert.equal(e.title, 'No messages yet');
+  assert.match(e.body, /Project: /);
+  vm.run('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history = { { role = "user", t = 1, text = "hi" } }; ClaudeWoW.Render()');
+  assert.equal(emptyState(vm).shown, 'false', 'a chat with a message has no empty state');
+});
+
 test('general chats sit under Chats, project chats under their project, and the project button in the header switches the project', () => {
   const vm = nativeVM();
   vm.run('ClaudeWoW.NewChat("Best rogue race")');
@@ -901,11 +1002,13 @@ test('the black bar shows the chat title up to the project button, with folder, 
   assert.equal(vm.evaluate('table.concat(CALLS, "|")'), `rename:${id}|menu:${id}`);
 });
 
-test('help lives in the gear menu, and Clear moves from the bottom bar into the chat menu', () => {
+test('help lives in the gear menu and opens the Commands and tips page, and Clear moves from the bottom bar into the chat menu', () => {
   const vm = nativeVM();
   const active = '(function() for _, c in ipairs(ClaudeWoWDB.chats) do if c.id == ClaudeWoWDB.activeChat then return c end end end)()';
+  const before = vm.num(`#${active}.history`);
   vm.run('ClaudeWoWChatSettings.scripts.OnClick(ClaudeWoWChatSettings); STUB.Pick("Commands and tips")');
-  assert.ok(vm.evaluate(`${active}.history[#${active}.history].text`).includes('/claude'));
+  assert.equal(vm.num(`#${active}.history`), before, 'the help is not written into the chat');
+  assert.equal(vm.evaluate('ClaudeWoWHelpPanel.shown'), 'true', 'the page opens');
   assert.equal(vm.evaluate('ClaudeWoWHelpButton'), null, 'no help button crowds the breadcrumb bar');
 
   const clearButton = '(function() for _, c in ipairs(ClaudeWoWFrame.children) do if c.kind == "Button" and c.text == "Clear" then return c end end end)()';
@@ -981,7 +1084,7 @@ test("an empty, unfocused input shows a hint naming the chat's agent; typing or 
     'it sits on the input background, not on the scrolling edit box',
   );
   assert.equal(vm.evaluate(`${hint}.shown`), 'true');
-  assert.equal(vm.evaluate(`${hint}:GetText()`), 'Message Claude. Enter sends; /claude help lists commands.');
+  assert.equal(vm.evaluate(`${hint}:GetText()`), 'Message Claude', 'a short hint that fits the box');
   assert.equal(vm.evaluate('type(ClaudeWoWInput.scripts.OnTextChanged)'), 'function', 'the scrolling text handler is kept');
 
   vm.run('ClaudeWoWInput:SetText("hi")');
@@ -1001,7 +1104,120 @@ test("an empty, unfocused input shows a hint naming the chat's agent; typing or 
   vm.run(
     'ClaudeWoW.NewChat(); ClaudeWoWDB.chats[2].agent = "codex"; ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[2].id); ClaudeWoWInput:ClearFocus(); ClaudeWoW.Render()',
   );
-  assert.equal(vm.evaluate(`${hint}:GetText()`), 'Message Codex. Enter sends; /claude help lists commands.', 'the name follows the chat');
+  assert.equal(vm.evaluate(`${hint}:GetText()`), 'Message Codex', 'the name follows the chat');
+});
+
+test('the input box, Send and New chat sit on one footer line, as 22 px Blizzard buttons, and Send names its key and the help command on hover', () => {
+  const vm = nativeVM();
+  const box = 'ClaudeWoWInputScroll.parent';
+  const anchor = f => vm.evaluate(`(function() local f = ${f} return f.point .. "," .. f.relPoint .. "," .. f.x .. "," .. f.y end)()`);
+  for (const b of ['ClaudeWoW.UI.send', 'ClaudeWoW.UI.connect', 'ClaudeWoW.UI.newChat']) {
+    assert.equal(vm.num(`${b}:GetHeight()`), 22, `${b} has the UIPanelButtonTemplate height`);
+    assert.equal(vm.evaluate(`${b}.template`), 'UIPanelButtonTemplate');
+  }
+  for (const b of ['ClaudeWoW.UI.send', 'ClaudeWoW.UI.connect']) {
+    assert.equal(vm.evaluate(`${b}.rel == ${box}`), 'true');
+    assert.equal(anchor(b), 'BOTTOMLEFT,BOTTOMRIGHT,6,0', `${b} sits on the input box's bottom edge, 6 px to its right`);
+  }
+  assert.equal(vm.evaluate(`${box}.rel == ClaudeWoW.UI.listPanel and ClaudeWoW.UI.newChat.rel == ClaudeWoW.UI.listPanel`), 'true');
+  const newChatY = vm.num('ClaudeWoW.UI.newChat.y');
+  assert.equal(
+    anchor(box),
+    `BOTTOMRIGHT,BOTTOMLEFT,${-6 - 84 - 6},${newChatY}`,
+    'the box ends on the same line as New chat, one 6 px gap before Send and one after',
+  );
+  assert.equal(anchor('ClaudeWoW.UI.newChat'), `BOTTOM,BOTTOM,0,${newChatY}`);
+
+  vm.run('ClaudeWoW.UI.send.scripts.OnEnter(ClaudeWoW.UI.send)');
+  assert.equal(vm.evaluate('GameTooltip:GetText()'), 'Send (Enter)');
+  assert.equal(vm.evaluate('table.concat(GameTooltip.lines, "|")'), '/claude help lists commands.');
+  vm.run('ClaudeWoW.UI.send.scripts.OnLeave(ClaudeWoW.UI.send)');
+  assert.equal(vm.evaluate('GameTooltip.shown'), 'false');
+});
+
+test('a chat row with no preview line keeps the same spacing before the next row as one with a preview line', () => {
+  const vm = nativeVM();
+  vm.run(`ClaudeWoW.NewChat(); ClaudeWoWDB.chats[4].name = "Chat 4"; ClaudeWoW.SetFolder("~/every-io/every", ClaudeWoWDB.chats[4])
+    table.insert(ClaudeWoWDB.chats[3].history, { role = "user", text = "route please", t = time() + 60 })
+    ClaudeWoW.Render()`);
+  const rows = JSON.parse(
+    vm.evaluate(`(function()
+      local out = {}
+      for _, r in ipairs(ClaudeWoW.UI.questList.rows) do
+        if r.shown then
+          local lines = 0
+          for _, l in ipairs(r.objectives) do if l.text.shown then lines = lines + 1 end end
+          table.insert(out, string.format('{"top":%d,"height":%d,"lines":%d}', -r.y, r.height, lines))
+        end
+      end
+      return "[" .. table.concat(out, ",") .. "]"
+    end)()`),
+  ).sort((a, b) => a.top - b.top);
+  const titleH = 14;
+  const lineH = 14;
+  const textBottom = r => r.top + 8 + titleH + (r.lines > 0 ? 3 + r.lines * lineH + (r.lines - 1) * 2 : 0);
+  const gaps = { bare: [], preview: [] };
+  for (let i = 0; i + 1 < rows.length; i++) {
+    const a = rows[i];
+    const b = rows[i + 1];
+    if (b.top !== a.top + a.height - 3) continue;
+    gaps[a.lines > 0 ? 'preview' : 'bare'].push(b.top + 8 - textBottom(a));
+    assert.ok(b.top + 4 >= a.top + 4 + 20 + 3, 'the next POI disc never touches this one');
+  }
+  assert.ok(gaps.bare.length > 0 && gaps.preview.length > 0, JSON.stringify(rows));
+  assert.ok(Math.min(...gaps.bare) >= Math.max(...gaps.preview), 'no crowding under an empty row: ' + JSON.stringify(gaps));
+  for (const r of rows) assert.ok(r.height >= 4 + 20 + 6, 'a row is never shorter than its POI disc and the bottom padding');
+});
+
+test("beside the world map the window takes the map's top and height, and goes home at its own size when the map closes", () => {
+  const vm = newVM();
+  open(vm);
+  const home = rect(vm);
+  const top = 1080 - 106;
+  vm.run(`WorldMapFrame.rect = { left = 0, right = 610, top = ${top}, bottom = ${top - 438} }; ShowUIPanel(WorldMapFrame)`);
+  settle(vm);
+  assert.deepEqual(rect(vm), { left: 618, right: 618 + 780, top, bottom: top - 438 }, 'top and bottom edges line up with the map, 8 px to its right');
+  assert.equal(vm.evaluate('ClaudeWoWWindow.state.dodged'), 'true');
+  assert.equal(vm.num('ClaudeWoWWindow.Layout().h'), 500, 'the saved size is not touched');
+
+  vm.run('HideUIPanel(WorldMapFrame)');
+  settle(vm);
+  assert.deepEqual(rect(vm), home, 'home again at its own size');
+
+  vm.run('UIParent:SetSize(1300, 1080); ShowUIPanel(WorldMapFrame)');
+  settle(vm);
+  assert.deepEqual(rect(vm), { left: 618, right: 1300, top, bottom: top - 438 }, 'a narrower screen: it narrows to fit beside the map');
+
+  vm.run('HideUIPanel(WorldMapFrame); UIParent:SetSize(1100, 1080); ShowUIPanel(WorldMapFrame)');
+  settle(vm);
+  const r = rect(vm);
+  assert.ok(r.right - r.left >= 560 && !overlaps(r, panelRect(vm, 'WorldMapFrame')), 'no room beside it: it steps aside as for any panel');
+  assert.notEqual(r.top - r.bottom, 438);
+});
+
+test('a map that leaves home free does not pull the window: another panel blocking home is a normal step-aside', () => {
+  const vm = newVM();
+  open(vm);
+  const home = rect(vm);
+  vm.run('WorldMapFrame.rect = { left = 1100, right = 1710, top = 900, bottom = 462 }; ShowUIPanel(WorldMapFrame)');
+  settle(vm);
+  assert.deepEqual(rect(vm), home, 'the map alone does not block home');
+  vm.run('CharacterFrame.rect = { left = 16, right = 300, top = 1000, bottom = 400 }; ShowUIPanel(CharacterFrame)');
+  settle(vm);
+  const r = rect(vm);
+  assert.equal(r.top - r.bottom, 500, "it keeps its own height, not the map's");
+  assert.equal(r.right - r.left, 780);
+  assert.ok(!overlaps(r, panelRect(vm, 'CharacterFrame')) && !overlaps(r, panelRect(vm, 'WorldMapFrame')), JSON.stringify(r));
+});
+
+test('in the plain theme Send and Connect stay centered on the tall input box', () => {
+  const vm = newVM();
+  open(vm);
+  for (const b of ['ClaudeWoW.UI.send', 'ClaudeWoW.UI.connect']) {
+    assert.equal(vm.evaluate(`${b}.rel == ClaudeWoWInputScroll.parent`), 'true');
+    assert.equal(vm.evaluate(`${b}.point .. "," .. ${b}.relPoint .. "," .. ${b}.x .. "," .. ${b}.y`), 'LEFT,RIGHT,6,0', `${b} is centered beside the box`);
+    assert.equal(vm.num(`${b}:GetHeight()`), 22);
+  }
 });
 
 const MCP_LIST =
