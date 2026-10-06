@@ -127,7 +127,10 @@ test("after a permission roll times out, the session's answer reaches an idle ad
       await h.client.waitFor(() => !h.client.db().chats.some(c => c.pendingId), { label: 'no chat waiting, so no scheduled slot read' });
       session.reply(chatId, 'Denied, so I left it.', String(id));
       await h.bridge.waitForLine(new RegExp(`#${id}@\\S+ late reply delivered`));
-      await h.client.waitFor(() => shown(h, 'Denied, so I left it.'), { timeoutMs: BEFORE_ANY_OTHER_READ_MS, label: 'the late answer in the chat, from the late poll and not a presence or idle read' });
+      await h.client.waitFor(() => shown(h, 'Denied, so I left it.'), {
+        timeoutMs: BEFORE_ANY_OTHER_READ_MS,
+        label: 'the late answer in the chat, from the late poll and not a presence or idle read',
+      });
       assert.ok(!h.client.activeChat().pendingId, 'no message was sent to fetch it');
     } finally {
       session.close();
