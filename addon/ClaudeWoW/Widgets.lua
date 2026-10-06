@@ -42,12 +42,16 @@ local wdb
 local running = {}
 local failures = {}
 local containers = {}
+local skipped = {}
+
+W.POPUP = "CLAUDEWOW_WIDGET"
+W.TITLE_MAX = 60
 
 local function Print(msg)
 	if ClaudeWoW and ClaudeWoW.Print then
-		ClaudeWoW.Print(msg, "Claude WoW ui")
+		ClaudeWoW.Print(msg)
 	else
-		print("|cff66ccff[Claude WoW ui]|r " .. msg)
+		print("|cff66ccff[Azeroth Companion]|r " .. msg)
 	end
 end
 
@@ -62,6 +66,7 @@ local function DB()
 		wdb = ClaudeWoWWidgetDB
 		wdb.removed = wdb.removed or {}
 		wdb.data = wdb.data or {}
+		wdb.approved = type(wdb.approved) == "table" and wdb.approved or {}
 	end
 	return wdb
 end
@@ -813,8 +818,27 @@ function W.Stop(widget)
 	if running[widget.name] == widget then running[widget.name] = nil end
 end
 
+local function Approved(item)
+	local approval = DB().approved[item.name]
+	return type(approval) == "table" and approval.rev == item.rev and approval.source == item.source
+end
+
+local function Approve(item)
+	DB().approved[item.name] = { rev = item.rev, source = item.source }
+	skipped[item.name] = nil
+end
+
+local function SameCode(item, data)
+	return type(data) == "table" and item.rev == data.rev and item.source == data.source
+end
+
+local function Display(s)
+	return (tostring(s or ""):gsub("|", "¦"))
+end
+
 function W.Start(item, announce)
-	local widget = { name = item.name, title = item.title or item.name, rev = item.rev, frames = {}, timers = {}, containerScripts = {} }
+	if not Approved(item) then return false end
+	local widget = { name = item.name, title = item.title or item.name, rev = item.rev, source = item.source, frames = {}, timers = {}, containerScripts = {} }
 	widget.frame = Container(item.name)
 	widget.frame:Show()
 	failures[item.name] = nil
@@ -847,7 +871,7 @@ function W.Apply(announce)
 	for _, item in ipairs(Items()) do wanted[item.name] = item end
 	for name, widget in pairs(running) do
 		local item = wanted[name]
-		if not item or item.rev ~= widget.rev or d.removed[name] == item.rev then
+		if not item or item.rev ~= widget.rev or item.source ~= widget.source or d.removed[name] == item.rev then
 			W.Stop(widget)
 			if not item and announce then Report(name .. " was removed by the agent.") end
 		end
@@ -855,13 +879,102 @@ function W.Apply(announce)
 	for name, rev in pairs(d.removed) do
 		if not wanted[name] or wanted[name].rev ~= rev then d.removed[name] = nil end
 	end
+	for name in pairs(d.approved) do
+		if not wanted[name] or not Approved(wanted[name]) then d.approved[name] = nil end
+	end
 	for _, item in ipairs(Items()) do
 		local failure = failures[item.name]
 		local failedThisRevision = failure and failure.rev == item.rev
-		if not d.removed[item.name] and not running[item.name] and not failedThisRevision then
+		if not d.removed[item.name] and not running[item.name] and not failedThisRevision and Approved(item) then
 			W.Start(item, announce)
 		end
 	end
+	W.PromptNext()
+end
+
+function W.Waiting()
+	local d = DB()
+	local list = {}
+	for _, item in ipairs(Items()) do
+		if not Approved(item) and d.removed[item.name] ~= item.rev then list[#list + 1] = item end
+	end
+	return list
+end
+
+W.RETRY_SECONDS = 2
+
+local function RetryLater()
+	if W.retrying or not (C_Timer and C_Timer.After) then return end
+	W.retrying = true
+	C_Timer.After(W.RETRY_SECONDS, function()
+		W.retrying = nil
+		W.PromptNext()
+	end)
+end
+
+function W.PromptNext()
+	if W.asking or type(StaticPopup_Show) ~= "function" then return false end
+	for _, item in ipairs(W.Waiting()) do
+		if skipped[item.name] ~= item.rev then
+			local data = { name = item.name, rev = item.rev, source = item.source }
+			W.asking = data
+			local dialog = StaticPopup_Show(W.POPUP, Display(item.title):sub(1, W.TITLE_MAX), nil, data)
+			if dialog then return true end
+			W.asking = nil
+			RetryLater()
+			return false
+		end
+	end
+	return false
+end
+
+local function Current(data)
+	if type(data) ~= "table" then return nil end
+	local item = FindItem(data.name)
+	if not item or not SameCode(item, data) or DB().removed[item.name] == item.rev then return nil end
+	return item
+end
+
+function W.Approve(data)
+	local item = Current(data)
+	if not item then return false end
+	Approve(item)
+	failures[item.name] = nil
+	if running[item.name] then W.Stop(running[item.name]) end
+	return W.Start(item, true)
+end
+
+function W.Decline(data)
+	local item = Current(data)
+	if not item then return false end
+	DB().removed[item.name] = item.rev
+	if running[item.name] then W.Stop(running[item.name]) end
+	Print(string.format("%s stays hidden. /claude config ui run %s shows it.", item.name, item.name))
+	return true
+end
+
+function W.PopupHidden(data)
+	local item = Current(data)
+	if item and not Approved(item) then skipped[item.name] = item.rev end
+	W.asking = nil
+	if C_Timer and C_Timer.After then C_Timer.After(0, W.PromptNext) end
+end
+
+if type(StaticPopupDialogs) == "table" then
+	StaticPopupDialogs[W.POPUP] = {
+		text = "Show the agent's '%s' widget?",
+		button1 = "Show",
+		button2 = "Not Now",
+		timeout = 0,
+		whileDead = true,
+		hideOnEscape = true,
+		noCancelOnEscape = true,
+		OnAccept = function(_, data) W.Approve(data) end,
+		OnCancel = function(dialog, data, reason)
+			if dialog and reason == "clicked" then W.Decline(data) end
+		end,
+		OnHide = function(dialog) W.PopupHidden(dialog and dialog.data) end,
+	}
 end
 
 function W.Sync(set)
@@ -886,6 +999,7 @@ function W.Status(name)
 	if DB().removed[name] == item.rev then return "removed" end
 	local failure = failures[name]
 	if failure and failure.rev == item.rev then return "failed", failure.err end
+	if not Approved(item) then return "waiting" end
 	return "stopped"
 end
 
@@ -897,9 +1011,9 @@ local function List()
 	end
 	for _, item in ipairs(items) do
 		local status, err = W.Status(item.name)
-		Print(string.format("%s  %s  (%s%s, %d bytes)", item.name, item.title, status, err and (": " .. err) or "", #item.source))
+		Print(string.format("%s  %s  (%s%s, %d bytes)", item.name, item.title, status == "waiting" and "waiting for your OK" or status, err and (": " .. err) or "", #item.source))
 	end
-	Print("commands: /claude config ui list, /claude config ui remove <name>, /claude config ui run <name>")
+	Print("commands: /claude config ui list, /claude config ui remove <name>, /claude config ui run <name> (run also says yes to a waiting widget)")
 end
 
 function W.Remove(name)
@@ -914,8 +1028,29 @@ function W.Run(name)
 	local item = FindItem(name)
 	if not item then Print("no widget " .. tostring(name)); return end
 	DB().removed[name] = nil
+	Approve(item)
 	if running[name] then W.Stop(running[name]) end
 	W.Start(item, true)
+end
+
+function W.Show(data)
+	local item = type(data) == "table" and FindItem(data.name)
+	if not item or not SameCode(item, data) then
+		W.PromptNext()
+		return false
+	end
+	DB().removed[item.name] = nil
+	failures[item.name] = nil
+	return W.Approve(data)
+end
+
+function W.Rows()
+	local rows = {}
+	for _, item in ipairs(Items()) do
+		local status, err = W.Status(item.name)
+		rows[#rows + 1] = { name = item.name, title = item.title, rev = item.rev, source = item.source, status = status, err = err }
+	end
+	return rows
 end
 
 function W.Command(msg)

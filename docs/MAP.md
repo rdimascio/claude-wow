@@ -19,7 +19,7 @@ The agent can mark your world map. What it draws are **layers**: a named list of
 ## In game
 
 - **World map:** pins for every visible layer on the map you are looking at, projected onto continent maps too. Hover for the label; click a pin to navigate to it.
-- **Navigator:** a small frame with an arrow and the distance in yards to the current stop of the route. It starts on a route as soon as one arrives (unless you are already following another one), advances when you get within 12 yards, and wraps around on loops. Drag it to move it; right-click skips a stop. It shows "no position here" in instances, where the game gives addons no coordinates.
+- **Navigator:** a small frame with an arrow and the distance in yards to the current stop of the route. The first route that arrives in a session asks first: the frame shows "New route: <title>" with a **Start** button, and nothing moves until you click it. After that, or after you open a route yourself (a `[show route]` link, a pin, `nav`), a new route starts as soon as it arrives (unless you are already following another one). It advances when you get within 12 yards and wraps around on loops. Drag it to move it; right-click opens a menu with **Skip Stop** and **Stop Route**; the close button stops the route. It shows "no position here" in instances, where the game gives addons no coordinates.
 - **Herb and ore nodes:** with a `ClaudeWoW_Nodes` data addon installed (see below), every herb and ore spawn point of the zone on the world map, filtered to what your skill can gather.
 
 | Command | Does |

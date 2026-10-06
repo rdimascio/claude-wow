@@ -9,6 +9,7 @@ local MIN_W, MIN_H = 560, 300
 local DIM_FLOOR = 0.1
 local PANEL_TOP_OFFSET = 116
 local PANEL_LEFT_OFFSET = 16
+local MINIMIZE_X = -2
 
 local PANELS = {
 	"CharacterFrame", "SpellBookFrame", "PlayerSpellsFrame", "PlayerTalentFrame", "TalentFrame", "ClassTalentFrame",
@@ -392,9 +393,17 @@ local function Skin(f)
 		ui.status:SetPoint("TOPLEFT", f, "TOPLEFT", 14, -30)
 		ui.status:SetPoint("RIGHT", f, "RIGHT", -60, 0)
 	end
+	if ui.close then
+		ui.close:ClearAllPoints()
+		ui.close:SetPoint("TOPRIGHT", f, "TOPRIGHT", 2, 1)
+	end
 	if ui.minimize then
 		ui.minimize:ClearAllPoints()
-		ui.minimize:SetPoint("TOPRIGHT", f, "TOPRIGHT", 2, 1)
+		if ui.close then
+			ui.minimize:SetPoint("RIGHT", ui.close, "LEFT", MINIMIZE_X, 0)
+		else
+			ui.minimize:SetPoint("TOPRIGHT", f, "TOPRIGHT", 2, 1)
+		end
 	end
 	f.claudewowBorder = border
 	return true
