@@ -2293,6 +2293,8 @@ function startDiscord() {
     .catch(e => log(`discord: could not start (${e && e.message ? e.message : e})`));
 }
 
+let lastLateSeq = 0;
+
 function lateReply(job, raw) {
   lastActivityAt = Date.now();
   if (chatDeletedSince(job)) {
@@ -2302,13 +2304,17 @@ function lateReply(job, raw) {
   const { text, summary } = checkedReply(job, P.splitSummary(String(raw || '')));
   noteMessage(job, 'assistant', text);
   if (discordHub) discordHub.postTo(job.chat, text);
+  lastLateSeq = SW.nextLateSeq(lastLateSeq, Date.now());
+  const base = chatKey(job);
+  SW.trimLate(live, base, SW.LATE_KEPT_PER_CHAT - 1, state.replies && typeof state.replies === 'object' ? state.replies : null);
   publish(
-    `${chatKey(job)}#late`,
+    SW.lateKey(base, lastLateSeq),
     {
       chat: job.chat,
       id: job.id,
       status: 'done',
       late: true,
+      lateSeq: lastLateSeq,
       text,
       summary,
       cwd: job.cwd,
@@ -3218,6 +3224,7 @@ function finish(job, status, text, session, denied) {
   }
   awardAchievements(job, status);
   const usage = P.usageFields(job.usage);
+  const lateOk = !!job.lateOk && FINAL_STATUSES.has(status);
   publish(
     chatKey(job),
     {
@@ -3232,7 +3239,8 @@ function finish(job, status, text, session, denied) {
       macros,
       agent: job.agent || '',
       plugin: job.plugin || '',
-      lateOk: status === 'error' && !!job.lateOk,
+      lateOk,
+      lateIn: lateOk && Number.isInteger(job.lateIn) && job.lateIn > 0 ? job.lateIn : undefined,
       ...usage,
       client: job.client,
     },
@@ -3382,8 +3390,7 @@ function startCapture() {
 // Screenshots folder is decoded once its size settles. A file holding a strip is
 // deleted after it was read (whatever the strip's verdict once the magic is
 // there, so a retried shot doesn't pile up); one without a strip is the
-// player's own screenshot and stays. Files from before the bridge started are
-// the sweep's business (sweepScreenshots below): strip-bearing ones go, the rest stay.
+// player's own screenshot and stays.
 const stripOptions = () => ({ cell: cap.cellPx, cells: cap.cellsPerRow, maxRows: cap.maxRows, threshold: LEVELS.threshold });
 // The strip the addon is asked to draw, for the banner and the log.
 const stripGeometry = () =>
@@ -3512,9 +3519,10 @@ pruneVisionFiles(0); // leftovers from a bridge that died mid-run
 // leaves every other file, i.e. the player's own screenshots, alone. A file
 // younger than a minute is the watcher's business, not the sweep's.
 const SWEEP_MS = 5 * 60 * 1000;
-function sweepScreenshots(r, why) {
+const WATCHER_AGE_MS = 60 * 1000;
+function sweepScreenshots(r, why, now = Date.now()) {
   const holdsStrip = buf => !!D.findStrip(D.readImage(buf), stripOptions(), r.shotHint).msg;
-  const out = S.sweepOrphans(r.client.screenshotDir, holdsStrip, { memo: r.sweepMemo, log, minAgeMs: why === 'startup' ? 2000 : 60000 });
+  const out = S.sweepOrphans(r.client.screenshotDir, holdsStrip, { memo: r.sweepMemo, log, minAgeMs: WATCHER_AGE_MS, now });
   if (out.removed.length || out.more) {
     log(
       `screenshot sweep (${why}${fromLabel(r.client)}): removed ${out.removed.length} leftover strip screenshot(s), ${(out.bytes / 1048576).toFixed(1)} MB` +
@@ -3534,9 +3542,10 @@ function startScreenshotWatch(r) {
     setTimeout(() => startScreenshotWatch(r), 10000);
     return;
   }
-  r.shotWatch = S.watchScreenshots(dir, file => handleScreenshot(file, r), { log });
+  const startedAt = Date.now();
+  r.shotWatch = S.watchScreenshots(dir, file => handleScreenshot(file, r), { log, adoptMs: WATCHER_AGE_MS, now: startedAt });
   log(`screenshot transport: watching ${dir} (strip codec ${STRIP_CODEC}: ${stripGeometry()})`);
-  sweepScreenshots(r, 'startup');
+  sweepScreenshots(r, 'startup', startedAt);
   const sweeper = setInterval(() => sweepScreenshots(r, 'periodic'), SWEEP_MS);
   if (sweeper.unref) sweeper.unref();
 }

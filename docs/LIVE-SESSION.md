@@ -107,7 +107,7 @@ The MCP `initialize` request carries no channel signal. Claude Code 2.1.285 send
 
 ### When the session does not pick a message up
 
-After a message goes to a live session, the bridge watches the session's transcript for it (`chat_id="..." message_id="..."`). A `wow_reply` or a relayed permission prompt counts too. When none of these arrives within 45 s (`plugins.live.pickupMs`), the chat gets one line and stops waiting: `The session "wow-ai" did not pick it up — it may be busy or not listening. A late reply still lands here.` If the session answers later, the reply still arrives in that chat: the addon checks for it for 5 minutes, and after that it comes with the next slot the addon reads.
+After a message goes to a live session, the bridge watches the session's transcript for it (`chat_id="..." message_id="..."`). A `wow_reply` or a relayed permission prompt counts too. When none of these arrives within 45 s (`plugins.live.pickupMs`), the chat gets one line and stops waiting: `The session "wow-ai" did not pick it up — it may be busy or not listening. A late reply still lands here.` If the session answers later, the reply still arrives in that chat: the addon checks for it for 5 minutes, and after that it comes with the next slot the addon reads. Each late answer shows once, also when two arrive before the addon reads a slot or an answer to an older message arrives after a newer one.
 
 The bridge matches a running session by the Claude Code session id (the channel server tells it the pid of the Claude Code process that started it, and Claude Code's `sessions/<pid>.json` names the session), by the session's name in Claude Code, or by the name the channel server gives it (`CLAUDE_WOW_LIVE_NAME`, else the folder's name). If that session is gone when a message is sent, the chat says so; `/claude -r <id>` then resumes it headless.
 
@@ -135,7 +135,7 @@ When the session needs approval for a tool (a `Bash` command, a `Write`), the pr
 - **Greed** (the first button; only a click answers, never a key): allow this one call. Nothing is saved, so a live chat shows no Need button, and a `[Need]` link from an older line counts as Greed.
 - **Pass** (or letting the roll time out): deny it.
 
-The terminal dialog stays open at the same time. Whichever answer comes first wins. A prompt with no in-game chat waiting stays in the terminal only. If nobody answers in game, the bridge denies it after `plugins.live.permissionTimeoutMs` (2 minutes).
+The terminal dialog stays open at the same time. Whichever answer comes first wins. A prompt with no in-game chat waiting stays in the terminal only. If nobody answers in game, the bridge denies it after `plugins.live.permissionTimeoutMs` (2 minutes). The session's answer after that denial still lands in the chat: the addon starts checking for it when the timeout ends and keeps checking for 5 minutes. A Need, Greed or Pass clicked after the timeout is not sent to the session: the chat says that the request expired and was denied.
 
 Only tool approvals relay. The folder trust dialog and the MCP server consent dialog are terminal-only.
 
