@@ -1982,6 +1982,150 @@ test('a live reply that arrives after the watchdog failed the message still land
   assert.ok(chatTabText(vm, chatId).includes('Sorry, I was busy. Hi!'), 'it shows in the whisper tab');
 });
 
+const chatTexts = (vm, i = 1) =>
+  JSON.parse(
+    vm
+      .evaluate(
+        `(function() local t = {} for _, m in ipairs(ClaudeWoWDB.chats[${i}].history) do t[#t + 1] = string.format("%q", m.role .. ":" .. m.text) end return "[" .. table.concat(t, ",") .. "]" end)()`,
+      )
+      .replace(/\\\n/g, '\\n'),
+  );
+const countOf = (texts, text) => texts.filter(t => t === text).length;
+
+function answered(vm, text, reply = '') {
+  vm.run(`ClaudeWoW.Send(${JSON.stringify(text)})`);
+  const chatId = vm.evaluate('ClaudeWoWDB.chats[1].id');
+  const id = vm.num('ClaudeWoWDB.chats[1].pendingId');
+  assert.ok(id >= 1);
+  nextSlot(vm, `{ now = time(), cwd = "", replies = { { chat = "${chatId}", id = ${id}, status = "done", text = "ok", agent = "claude"${reply} } } }`);
+  vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].pendingId'), null, 'answered');
+  return id;
+}
+
+const lateRecord = (chatId, id, seq, text) =>
+  `{ chat = "${chatId}", id = ${id}, status = "done", late = true,${seq ? ` lateSeq = ${seq},` : ''} text = "${text}", agent = "claude" }`;
+
+function readSlotsWhilePending(vm, body, seconds = 30) {
+  vm.run('ClaudeWoW.Send("still here")');
+  nextSlot(vm, body);
+  for (let t = 0; t < seconds; t += 5) vm.run('STUB.now = STUB.now + 5; STUB.Tick()');
+}
+
+test('late replies: two in one slot read both show, an older one after a newer one shows, a second one for the same message shows, and none shows twice', () => {
+  const vm = newVM();
+  login(vm);
+  connect(vm);
+  const chatId = vm.evaluate('ClaudeWoWDB.chats[1].id');
+  const first = answered(vm, 'first');
+  const second = answered(vm, 'second');
+  const two = `${lateRecord(chatId, second, 1001, 'late to second')}, ${lateRecord(chatId, first, 1002, 'late to first')}`;
+  readSlotsWhilePending(vm, `{ now = time(), cwd = "", replies = { ${two} } }`);
+  let texts = chatTexts(vm);
+  assert.equal(countOf(texts, 'assistant:late to second'), 1, texts.join('\n'));
+  assert.equal(countOf(texts, 'assistant:late to first'), 1, 'the answer to the older message is not dropped');
+  nextSlot(vm, `{ now = time(), cwd = "", replies = { ${two}, ${lateRecord(chatId, first, 1003, 'more for first')} } }`);
+  for (let t = 0; t < 60; t += 5) vm.run('STUB.now = STUB.now + 5; STUB.Tick()');
+  texts = chatTexts(vm);
+  assert.equal(countOf(texts, 'assistant:late to second'), 1, 'each shows once across slot reads');
+  assert.equal(countOf(texts, 'assistant:late to first'), 1);
+  assert.equal(countOf(texts, 'assistant:more for first'), 1, 'a second late answer to one message shows too');
+});
+
+test('late replies: lateSeen from an older addon still hides the late reply it showed, and the list of shown ones stays at 8 per chat', () => {
+  const vm = newVM();
+  login(vm);
+  connect(vm);
+  const chatId = vm.evaluate('ClaudeWoWDB.chats[1].id');
+  const first = answered(vm, 'first');
+  vm.run(`ClaudeWoWDB.chats[1].lateSeen = ${first}`);
+  const results = Array.from({ length: 10 }, (_, i) => lateRecord(chatId, first, 2001 + i, `result ${i + 1}`));
+  readSlotsWhilePending(
+    vm,
+    `{ now = time(), cwd = "", replies = { ${lateRecord(chatId, first, 0, 'shown before the update')}, ${results.slice(0, 3).join(', ')} } }`,
+  );
+  for (let i = 1; i + 3 <= results.length; i++) {
+    nextSlot(vm, `{ now = time(), cwd = "", replies = { ${results.slice(i, i + 4).join(', ')} } }`);
+    for (let t = 0; t < 60; t += 5) vm.run('STUB.now = STUB.now + 5; STUB.Tick()');
+  }
+  const texts = chatTexts(vm);
+  assert.equal(countOf(texts, 'assistant:shown before the update'), 0, texts.join('\n'));
+  for (let i = 1; i <= 10; i++) assert.equal(countOf(texts, `assistant:result ${i}`), 1);
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].lateSeen'), null);
+  assert.equal(vm.num('#ClaudeWoWDB.chats[1].lateShown'), 8);
+  assert.equal(vm.num('ClaudeWoWDB.chats[1].lateShown[8]'), 2010);
+});
+
+const countLoads = vm =>
+  vm.run('LOADS = 0; STUB.onLoadAddOn = function(name) LOADS = LOADS + 1; ClaudeWoW_SlotData = { now = time(), cwd = "", replies = {} } end');
+
+function promptVM(fields) {
+  const vm = newVM();
+  login(vm);
+  connect(vm);
+  const chatId = vm.evaluate('ClaudeWoWDB.chats[1].id');
+  const id = answered(vm, 'touch a file', `, plugin = "live", denied = { "Bash(touch:*)" }${fields}`);
+  countLoads(vm);
+  return { vm, chatId, id };
+}
+
+const loadsAfter = (vm, seconds) => {
+  const step = seconds > 30 ? 5 : 1;
+  for (let t = 0; t < seconds; t += step) vm.run(`STUB.now = STUB.now + ${step}; STUB.Tick()`);
+  return vm.num('LOADS');
+};
+
+test('permission prompt: lateOk with lateIn makes an idle addon read slots after the timeout, where the late answer shows', () => {
+  const { vm, chatId, id } = promptVM(', lateOk = true, lateIn = 120');
+  assert.equal(loadsAfter(vm, 125), 0, 'no reads while the roll can still be answered');
+  nextSlot(vm, `{ now = time(), cwd = "", replies = { ${lateRecord(chatId, id, 3001, 'denied, so I stopped')} } }`);
+  loadsAfter(vm, 10);
+  assert.equal(countOf(chatTexts(vm), 'assistant:denied, so I stopped'), 1);
+
+  const old = promptVM('');
+  assert.equal(loadsAfter(old.vm, 590), 0, 'an older bridge sends no lateOk on the prompt: no reads before the idle read');
+});
+
+test('permission prompt: a lateIn that is missing, not a number, negative, fractional or over 3600 s reads from the prompt on', () => {
+  for (const field of ['', ', lateIn = "120"', ', lateIn = -1', ', lateIn = 1.5', ', lateIn = 3601']) {
+    const { vm } = promptVM(`, lateOk = true${field}`);
+    assert.equal(loadsAfter(vm, 9), 0, `no read before 10 s with${field || ' no lateIn'}`);
+    assert.equal(loadsAfter(vm, 2), 1, `a read 10 s after the prompt with${field || ' no lateIn'}`);
+  }
+  const { vm } = promptVM(', lateOk = true, lateIn = 3600');
+  assert.equal(loadsAfter(vm, 590), 0, 'the largest lateIn is kept');
+});
+
+test('late replies: a late answer to an older message keeps the wait for the newer one going', () => {
+  const vm = newVM();
+  login(vm);
+  connect(vm);
+  const chatId = vm.evaluate('ClaudeWoWDB.chats[1].id');
+  const first = answered(vm, 'first');
+  const second = answered(vm, 'second', ', lateOk = true');
+  vm.run('LOADS = 0');
+  vm.run(
+    `STUB.onLoadAddOn = function(name) LOADS = LOADS + 1; ClaudeWoW_SlotData = { now = time(), cwd = "", replies = { ${lateRecord(chatId, first, 4001, 'old answer')} } } end`,
+  );
+  loadsAfter(vm, 11);
+  assert.equal(countOf(chatTexts(vm), 'assistant:old answer'), 1);
+  nextSlot(vm, `{ now = time(), cwd = "", replies = { ${lateRecord(chatId, first, 4001, 'old answer')}, ${lateRecord(chatId, second, 4002, 'new answer')} } }`);
+  loadsAfter(vm, 60);
+  assert.equal(countOf(chatTexts(vm), 'assistant:new answer'), 1, 'the wait for the newer message read the slot again');
+});
+
+test('permission prompt: answering the roll ends the wait for the late answer', () => {
+  const { vm, chatId } = promptVM(', lateOk = true, lateIn = 120');
+  vm.run(`ClaudeWoW.Allow("${chatId}", { "Bash(touch:*)" })`);
+  const id = vm.num('ClaudeWoWDB.chats[1].pendingId');
+  assert.ok(id >= 1);
+  nextSlot(vm, `{ now = time(), cwd = "", replies = { { chat = "${chatId}", id = ${id}, status = "done", text = "done", agent = "claude" } } }`);
+  loadsAfter(vm, 6);
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].pendingId'), null);
+  countLoads(vm);
+  assert.equal(loadsAfter(vm, 400), 0, 'no late reads after the answer');
+});
+
 test('/claude -r with no running session names the command that starts one, and Pass on a live chat sends the denial to that session', () => {
   const vm = newVM();
   login(vm);

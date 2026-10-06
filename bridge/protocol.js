@@ -100,6 +100,7 @@ function markHandled(state, job, now = Date.now()) {
   (state.seen = state.seen || {})[key] = now;
 }
 
+const LATE_IN_MAX = 3600;
 const RECENT_ACKS_MAX = 24;
 const RECENT_ACK_MS = 10 * 60 * 1000;
 
@@ -1278,7 +1279,9 @@ function luaTable(globalName, records, opts = {}) {
     if (r.title && Number(r.titleFor) > 0) lines.push(`\t\t\ttitleFor = ${Math.floor(Number(r.titleFor))},`);
     if (r.status === 'working' && Number.isInteger(r.steps) && r.steps > 0) lines.push(`\t\t\tsteps = ${r.steps},`);
     if (r.late) lines.push('\t\t\tlate = true,');
+    if (r.late && Number.isSafeInteger(r.lateSeq) && r.lateSeq > 0) lines.push(`\t\t\tlateSeq = ${r.lateSeq},`);
     if (r.lateOk) lines.push('\t\t\tlateOk = true,');
+    if (r.lateOk && Number.isInteger(r.lateIn) && r.lateIn > 0 && r.lateIn <= LATE_IN_MAX) lines.push(`\t\t\tlateIn = ${r.lateIn},`);
     // Context growth (noteUsage): only on a final record, and only what is known.
     if (Number(r.ctx) > 0) lines.push(`\t\t\tctx = ${Math.round(Number(r.ctx))},`);
     if (Number(r.turns) > 0) lines.push(`\t\t\tturns = ${Math.round(Number(r.turns))},`);
@@ -1962,6 +1965,7 @@ module.exports = {
   PERMISSION_MODES,
   permissionModeName,
   ADD_DIRS_MAX,
+  LATE_IN_MAX,
   jobsFromStrip,
   parseOutbox,
   withRunOnlyRules,

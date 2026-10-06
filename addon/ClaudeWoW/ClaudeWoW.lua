@@ -1894,6 +1894,47 @@ function ClaudeWoW.ApplyAcks(acks)
 	return any
 end
 
+Q.LATE_SHOWN_MAX = 8
+Q.LATE_IN_MAX = 3600
+
+function Q.LateKey(r)
+	local seq = r.lateSeq
+	if type(seq) == "number" and seq > 0 and seq == math.floor(seq) then return seq end
+	return tonumber(r.id) or 0
+end
+
+function Q.LateShown(c, key)
+	if c.lateSeen ~= nil then
+		c.lateShown = { tonumber(c.lateSeen) or 0 }
+		c.lateSeen = nil
+	end
+	for _, k in ipairs(c.lateShown or {}) do
+		if k == key then return true end
+	end
+	return false
+end
+
+function Q.NoteLateShown(c, key)
+	c.lateShown = c.lateShown or {}
+	table.insert(c.lateShown, key)
+	while #c.lateShown > Q.LATE_SHOWN_MAX do table.remove(c.lateShown, 1) end
+end
+
+function Q.LateIn(v)
+	if type(v) == "number" and v >= 0 and v <= Q.LATE_IN_MAX and v == math.floor(v) then return v end
+	return 0
+end
+
+function Q.ArmLateWait(c, id, after, prompt)
+	run.lateWait = run.lateWait or {}
+	run.lateWait[c.id] = { id = id, since = GetTime() + after, step = 1, prompt = prompt or nil }
+end
+
+function Q.EndPromptWait(c)
+	local w = run.lateWait and run.lateWait[c.id]
+	if w and w.prompt then run.lateWait[c.id] = nil end
+end
+
 -- Dispatch a list of reply records to the chats waiting for them.
 local function ApplyReplies(replies)
 	local matched = false
@@ -1905,8 +1946,8 @@ local function ApplyReplies(replies)
 			Whisper.Retitle(c)
 		end
 		if c and r.late == true then
-			if r.status == "done" and r.id ~= c.pendingId and (tonumber(c.lateSeen) or 0) < (tonumber(r.id) or 0) then
-				c.lateSeen = r.id
+			if r.status == "done" and r.id ~= c.pendingId and not Q.LateShown(c, Q.LateKey(r)) then
+				Q.NoteLateShown(c, Q.LateKey(r))
 				ClaudeWoW.LateReply(c, r)
 				Q.OfferDraft(c)
 			end
@@ -1921,12 +1962,10 @@ local function ApplyReplies(replies)
 				c.adoptCwd, c.resumeId = nil, nil
 			end
 			if r.status == "done" then
+				if r.lateOk == true then Q.ArmLateWait(c, r.id, Q.LateIn(r.lateIn), true) end
 				Finish(c, "assistant", r.text or "", denied, r.agent, r.summary, ClaudeWoW.CleanMacros(r.macros))
 			elseif r.status == "error" then
-				if r.lateOk == true then
-					run.lateWait = run.lateWait or {}
-					run.lateWait[c.id] = { id = r.id, since = GetTime(), step = 1 }
-				end
+				if r.lateOk == true then Q.ArmLateWait(c, r.id, 0) end
 				Finish(c, "system", "Bridge error: " .. tostring(r.text), denied)
 			elseif r.status == "working" then
 				if ClaudeWoWVoice then ClaudeWoWVoice.Started(r.id) end
@@ -2501,7 +2540,8 @@ end
 function ClaudeWoW.LateReply(chat, r)
 	local text = type(r.text) == "string" and r.text or ""
 	local agent = type(r.agent) == "string" and r.agent ~= "" and r.agent or nil
-	if run.lateWait then run.lateWait[chat.id] = nil end
+	local w = run.lateWait and run.lateWait[chat.id]
+	if w and w.id == r.id then run.lateWait[chat.id] = nil end
 	AddHistory(chat, "assistant", text, r.id, nil, agent, nil, r.summary)
 	local visible = ui.frame and ui.frame:IsShown() and db.activeChat == chat.id
 	if not visible and not Whisper.Active() then chat.unread = (chat.unread or 0) + 1 end
@@ -3779,6 +3819,7 @@ function ClaudeWoW.Allow(chatId, rules)
 	if #dirs > 0 then text = text .. ". Extra folders for this chat: " .. Cli.DirsLabel(c) end
 	if #full > 0 then text = text .. ". No room for " .. table.concat(full, ", ") .. " (at most " .. Cli.ADD_DIRS_MAX .. " folders), so it is added for this retry only" end
 	Cli.Out(c, text)
+	Q.EndPromptWait(c)
 	ClaudeWoW.Send("Those actions are allowed now. Continue from where you left off.", commands, { onceDirs = full })
 end
 
@@ -3789,6 +3830,7 @@ function ClaudeWoW.AllowOnce(chatId, rules)
 	for _, m in ipairs(c.history) do m.denied = nil end
 	local commands, dirs = ClaudeWoW.SplitGrants(rules)
 	Cli.Out(c, "Allowed for this retry only: " .. ClaudeWoW.GrantsLabel(rules))
+	Q.EndPromptWait(c)
 	ClaudeWoW.Send("Those actions are allowed for this run. Continue from where you left off.", commands, { allowForThisRunOnly = true, onceDirs = dirs })
 end
 
@@ -3798,6 +3840,7 @@ function ClaudeWoW.PassOnDenial(chatId, rules, reason)
 	for _, m in ipairs(c.history) do m.denied = nil end
 	Cli.Out(c, "Passed on: " .. ClaudeWoW.GrantsLabel(rules) .. (reason and (" (" .. reason .. ")") or ""))
 	if c.plugin == LIVE_PLUGIN and not c.pendingId then
+		Q.EndPromptWait(c)
 		ClaudeWoW.Send(LIVE_PASS_TEXT, nil, { chat = c.id })
 		return
 	end

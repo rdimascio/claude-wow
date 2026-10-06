@@ -127,3 +127,32 @@ test('slot file carries the picker fields (title, branch, running, restart) and 
   assert.equal(t.replies[2].late, undefined);
   assert.equal(t.replies[2].lateOk, undefined);
 });
+
+test('slot file carries lateSeq only on a late record and lateIn only on a lateOk record, each a positive whole number in range', () => {
+  const late = extra => ({ chat: 'c1', id: 7, status: 'done', text: 'late', late: true, ...extra });
+  const prompt = extra => ({ chat: 'c1', id: 8, status: 'done', text: 'roll', lateOk: true, ...extra });
+  const seq = 1759700000123;
+  const cases = [
+    [late({ lateSeq: seq }), 'lateSeq', seq],
+    [late({}), 'lateSeq', undefined],
+    [late({ lateSeq: '5' }), 'lateSeq', undefined],
+    [late({ lateSeq: 0 }), 'lateSeq', undefined],
+    [late({ lateSeq: -3 }), 'lateSeq', undefined],
+    [late({ lateSeq: 2.5 }), 'lateSeq', undefined],
+    [late({ lateSeq: 2 ** 60 }), 'lateSeq', undefined],
+    [{ ...late({ lateSeq: seq }), late: false }, 'lateSeq', undefined],
+    [prompt({ lateIn: 120 }), 'lateIn', 120],
+    [prompt({ lateIn: P.LATE_IN_MAX }), 'lateIn', P.LATE_IN_MAX],
+    [prompt({}), 'lateIn', undefined],
+    [prompt({ lateIn: '120' }), 'lateIn', undefined],
+    [prompt({ lateIn: 0 }), 'lateIn', undefined],
+    [prompt({ lateIn: -1 }), 'lateIn', undefined],
+    [prompt({ lateIn: 1.5 }), 'lateIn', undefined],
+    [prompt({ lateIn: P.LATE_IN_MAX + 1 }), 'lateIn', undefined],
+    [{ ...prompt({ lateIn: 120 }), lateOk: false }, 'lateIn', undefined],
+  ];
+  for (const [record, field, want] of cases) {
+    const t = readSlot(P.luaTable('ClaudeWoW_SlotData', [record]), 'ClaudeWoW_SlotData');
+    assert.equal(t.replies[0][field], want, `${field} for ${JSON.stringify(record)}`);
+  }
+});
