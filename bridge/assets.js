@@ -42,6 +42,7 @@ const FILES = [
   'addon/ClaudeWoW/Telemetry.lua',
   'addon/ClaudeWoW/Observed.lua',
   'addon/ClaudeWoW/Dev.lua',
+  'addon/ClaudeWoW/Help.lua',
   'addon/ClaudeWoW/Bindings.xml',
   'addon/ClaudeWoW/Portrait.tga',
   'bridge/capture.ps1',

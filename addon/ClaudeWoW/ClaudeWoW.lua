@@ -546,8 +546,9 @@ function ClaudeWoW.MigrateWhisper(s, fresh)
 	if not fresh then s.whisperNews = true end
 end
 
-local function AddHistory(chat, role, text, id, denied, agent, macros)
-	table.insert(chat.history, { role = role, text = text, id = id, t = time(), denied = denied, agent = agent, macros = macros })
+local function AddHistory(chat, role, text, id, denied, agent, macros, summary)
+	local kept = type(summary) == "string" and summary ~= "" and #summary <= Q.SUMMARY_STRIP_CHARS and summary or nil
+	table.insert(chat.history, { role = role, text = text, id = id, t = time(), denied = denied, agent = agent, macros = macros, summary = kept })
 	while #chat.history > MAX_HISTORY do
 		table.remove(chat.history, 1)
 	end
@@ -1041,6 +1042,7 @@ local function ScreenshotDone(ok, fromEvent)
 				rec.shotFails = (rec.shotFails or 0) + 1
 				if rec.shotFails < SHOT_RETRIES then
 					rec.shot = nil
+					rec.sentOnce = nil
 				else
 					-- Every try failed: the bridge should fall back to the pixel
 					-- capture. Said on the record (the reload fallback carries it
@@ -1082,6 +1084,9 @@ local function TakeScreenshot()
 		run.staleShotUntil, run.staleShotGen = nil, nil
 		self:SetScript("OnUpdate", nil)
 		shot.fired = true
+		for _, rec in pairs(run.outbound) do
+			if rec.openUrl and rec.shot == gen then rec.sentOnce = true end
+		end
 		ShotStats().taken = ShotStats().taken + 1
 		pcall(ShotStatus.Quiet, gen)
 		local ok, err = pcall(Screenshot)
@@ -1115,7 +1120,7 @@ end
 RefreshStrip = function()
 	local ids = {}
 	for id, rec in pairs(run.outbound) do
-		if not rec.acked then table.insert(ids, id) end
+		if not rec.acked and not (rec.openUrl and rec.sentOnce) then table.insert(ids, id) end
 	end
 	if #ids == 0 then
 		-- Nothing left to send. A shot still counting frames is called off; one
@@ -1167,6 +1172,7 @@ RefreshStrip = function()
 			if unsent then
 				for _, rec in ipairs(included) do
 					rec.shot = "log"
+					rec.sentOnce = rec.openUrl or nil
 					rec.logged = true
 					rec.loggedAt = GetTime()
 					if (rec.forget or rec.cancelOf or rec.dm) and not run.helloPollAt and not run.ackPollAt then
@@ -1862,7 +1868,7 @@ local function NoteAcked(rec)
 	rec.acked = true
 	ClaudeWoW.ChatLog.Acked(rec)
 	if rec.ctx ~= nil then run.contextSent = rec.ctx end
-	if not (rec.hello or rec.forget or rec.cancelOf or rec.dm) then Q.NoteLife((FindChat(rec.chat))) end
+	if not (rec.hello or rec.forget or rec.cancelOf or rec.dm or rec.openUrl) then Q.NoteLife((FindChat(rec.chat))) end
 end
 
 local function MarkAcked(id)
@@ -2171,6 +2177,7 @@ local function TryLoadSlot(why)
 	if type(data) == "table" and type(data.cwd) == "string" and data.cwd ~= "" then run.bridgeCwd = data.cwd end
 	if type(data) == "table" then
 		if data.cancel == true then run.bridgeCancel = true end
+		run.bridgeOpenUrl = data.openUrl == true
 		if type(data.agent) == "string" and data.agent ~= "" then run.bridgeAgent = data.agent end
 		if type(data.agents) == "table" and #data.agents > 0 then run.bridgeAgents = data.agents end
 		if type(data.plugin) == "string" and data.plugin ~= "" then run.bridgePlugin = data.plugin end
@@ -2183,6 +2190,7 @@ local function TryLoadSlot(why)
 		ClaudeWoW.ApplyMirror(data.mirror)
 		ClaudeWoW.ApplyMcp(data.mcp)
 		local acked = ClaudeWoW.ApplyAcks(data.acks)
+		Q.ApplyOpenResults(data.acks)
 		ApplyTransport(data)
 		if acked then RefreshStrip() end
 		Presence.Check(data.presence, data.now)
@@ -2316,6 +2324,7 @@ local function Tick()
 		run.dmPollAt = nil
 		TryLoadSlot("dm")
 	end
+	Q.TickOpen(now)
 	if run.restoring and now - run.restoring > 25 then
 		run.restoring = nil
 		ClaudeWoW.Render()
@@ -2326,9 +2335,10 @@ local function Tick()
 			NoteAcked(rec)
 			changed = true
 			NotedBridge()
-			if (rec.text or "") ~= "" and ClaudeWoWVoice then ClaudeWoWVoice.Started(id) end
+			if (rec.text or "") ~= "" and not rec.openUrl and ClaudeWoWVoice then ClaudeWoWVoice.Started(id) end
 			if rec.hello and run.lateProbe and not run.lateProbe.result then run.helloPollAt = now + 1 end
 			if rec.dm and not (run.ackPollAt and not PresenceWorks()) then run.dmPollAt = now + 1 end
+			if rec.openUrl then Q.OpenAcked(id, now) end
 		end
 		-- A hello only needs the bridge to have been seen; it never escalates.
 		-- A forget is the same, but the bridge must have been seen a moment after
@@ -2342,6 +2352,11 @@ local function Tick()
 			if rec.forget then db.forget[rec.forget] = nil end
 			run.outbound[id] = nil
 			changed = true
+		elseif rec.openUrl then
+			if now - (rec.clickedAt or rec.sentAt) >= Q.OPEN_URL_EXPIRE_SECONDS then
+				run.outbound[id] = nil
+				changed = true
+			end
 		elseif rec.shot == "log" and now - (rec.loggedAt or rec.sentAt) >= ClaudeWoW.ChatLog.RetrySeconds() then
 			rec.tries = (rec.tries or 1) + 1
 			rec.sentAt = now
@@ -2402,6 +2417,8 @@ local function ProcessInbox()
 	if type(inbox) ~= "table" then return end
 	if type(inbox.cwd) == "string" and inbox.cwd ~= "" then run.bridgeCwd = inbox.cwd end
 	if inbox.cancel == true then run.bridgeCancel = true end
+	local inboxStamp = tonumber(inbox.now)
+	if inboxStamp and time() - inboxStamp <= Q.INBOX_FRESH_SECONDS then run.bridgeOpenUrl = inbox.openUrl == true end
 	if type(inbox.agent) == "string" and inbox.agent ~= "" then run.bridgeAgent = inbox.agent end
 	if type(inbox.agents) == "table" and #inbox.agents > 0 then run.bridgeAgents = inbox.agents end
 	if type(inbox.plugin) == "string" and inbox.plugin ~= "" then run.bridgePlugin = inbox.plugin end
@@ -2451,7 +2468,7 @@ end
 Finish = function(chat, role, text, denied, agent, summary, macros)
 	if chat.quiet then return FinishQuiet(chat, role, text) end
 	local msgId = chat.pendingId
-	AddHistory(chat, role, text, msgId, denied, agent, macros)
+	AddHistory(chat, role, text, msgId, denied, agent, macros, role == "assistant" and summary or nil)
 	chat.pendingId = nil
 	chat.progress = nil
 	ContextWarning(chat)
@@ -2485,7 +2502,7 @@ function ClaudeWoW.LateReply(chat, r)
 	local text = type(r.text) == "string" and r.text or ""
 	local agent = type(r.agent) == "string" and r.agent ~= "" and r.agent or nil
 	if run.lateWait then run.lateWait[chat.id] = nil end
-	AddHistory(chat, "assistant", text, r.id, nil, agent)
+	AddHistory(chat, "assistant", text, r.id, nil, agent, nil, r.summary)
 	local visible = ui.frame and ui.frame:IsShown() and db.activeChat == chat.id
 	if not visible and not Whisper.Active() then chat.unread = (chat.unread or 0) + 1 end
 	ClaudeWoW.Render()
@@ -3577,6 +3594,101 @@ function ClaudeWoW.SendDmNext(charKey)
 	return "sent"
 end
 
+Q.OPEN_URL_MAX = 2048
+Q.OPEN_URL_GAP_SECONDS = 5
+Q.OPEN_URL_EXPIRE_SECONDS = 40
+Q.OPEN_URL_POLLS = { 4, 12, 25 }
+
+function Q.OpenRefused(url, why)
+	if UIErrorsFrame then UIErrorsFrame:AddMessage("Link not opened: " .. why .. ". Copy it from the box.", 1, 0.3, 0.3, 1) end
+	ClaudeWoW.ShowCopy(url)
+end
+
+function Q.ApplyOpenResults(acks)
+	local w = run.openWait
+	if not w or type(acks) ~= "table" or not db then return end
+	for _, a in ipairs(acks) do
+		if type(a) == "table" and a.session == db.session and a.id == w.id and (a.open == "ok" or a.open == "refused") then
+			run.openWait = nil
+			if a.open == "refused" then Q.OpenRefused(w.url, type(a.why) == "string" and a.why ~= "" and a.why or "the bridge refused it") end
+			return
+		end
+	end
+end
+
+function Q.OpenAcked(id, now)
+	local w = run.openWait
+	if w and w.id == id then w.pollAt = now + 1 end
+end
+
+function Q.TickOpen(now)
+	local w = run.openWait
+	if not w then return end
+	if now - w.at >= Q.OPEN_URL_EXPIRE_SECONDS then
+		run.openWait = nil
+		Q.OpenRefused(w.url, "no answer from the bridge")
+		return
+	end
+	local offset = Q.OPEN_URL_POLLS[w.step]
+	if w.pollAt and now >= w.pollAt then
+		w.pollAt = nil
+		TryLoadSlot("open")
+	elseif offset and now - w.at >= offset then
+		w.step = w.step + 1
+		TryLoadSlot("open")
+	end
+end
+
+function Q.OpenableUrl(url)
+	if type(url) ~= "string" or #url > Q.OPEN_URL_MAX then return false end
+	if not url:match("^https?://[%w%-]") then return false end
+	return not url:find("[^%w%-%._~:/%?#@!%$&'%(%)%+,;=%%]")
+end
+
+function Q.HasLink(text, url)
+	if type(text) ~= "string" or not text:find(url, 1, true) then return false end
+	for found in text:gmatch("https?://" .. Q.URL_CHARS .. "+") do
+		if Q.SplitUrl(found) == url then return true end
+	end
+	return false
+end
+
+function Q.ChatForUrl(url)
+	local active = ActiveChat()
+	local order = { active }
+	for _, c in ipairs(db.chats) do
+		if c ~= active then table.insert(order, c) end
+	end
+	for _, c in ipairs(order) do
+		for i = #c.history, 1, -1 do
+			local m = c.history[i]
+			if m.role == "assistant" and Q.HasLink(m.text, url) then return c end
+		end
+	end
+end
+
+function ClaudeWoW.OpenUrl(url)
+	if not db or db.settings.mode ~= "pixel" then return "reload" end
+	if not run.bridgeOpenUrl then return "unsupported" end
+	if ClaudeWoW.BridgeState() == "down" then return "offline" end
+	if not Q.OpenableUrl(url) then return "refused" end
+	local c = Q.ChatForUrl(url)
+	if not c then return "unknown" end
+	local now = GetTime()
+	if run.openWait then return "busy" end
+	for _, rec in pairs(run.outbound) do
+		if rec.openUrl then return "busy" end
+	end
+	if run.openUrlAt and now - run.openUrlAt < Q.OPEN_URL_GAP_SECONDS then return "wait" end
+	run.openUrlAt = now
+	db.lastSeq = db.lastSeq + 1
+	run.outbound[db.lastSeq] = { chat = c.id, cwd = "", flags = "kind=url", name = "", text = url, sentAt = now, clickedAt = now, openUrl = true }
+	run.openWait = { id = db.lastSeq, url = url, at = now, step = 1 }
+	NoteStaleSignals(db.lastSeq)
+	RefreshStrip()
+	return "sent"
+end
+
 local function ForgetOnBridge(c)
 	if not c or not c.id then return end
 	db.forget[c.id] = { name = c.name, cwd = c.cwd }
@@ -4000,7 +4112,7 @@ function Cli.ProjectTag(c, text)
 		if path then
 			if Cli.ProjectOf(c) ~= path then
 				Cli.SetProject(c, path)
-				Cli.Out(c, "project: " .. FolderName(path))
+				Cli.Note(c, "project: " .. FolderName(path))
 			end
 			local escaped = ("#" .. tag):gsub("%p", "%%%0")
 			return (text:gsub(escaped, tag, 1))
@@ -4016,7 +4128,7 @@ end
 
 function Cli.PickProject(c, value)
 	local note, err = Cli.SetProject(c, value)
-	Cli.Out(c, err or ("project: " .. note))
+	if err then Cli.Out(c, err) else Cli.Note(c, "project: " .. note) end
 	ClaudeWoW.Render()
 end
 
@@ -5012,11 +5124,94 @@ local function GetBubble(i)
 	return b
 end
 
+function Q.BesideInput(button, inputBg, native)
+	if native then
+		button:SetPoint("BOTTOMLEFT", inputBg, "BOTTOMRIGHT", Q.COMPOSER_GAP, 0)
+	else
+		button:SetPoint("LEFT", inputBg, "RIGHT", Q.COMPOSER_GAP, 0)
+	end
+end
+
+function Q.SendTooltip(button)
+	GameTooltip:SetOwner(button, "ANCHOR_TOP")
+	GameTooltip:SetText("Send (Enter)")
+	GameTooltip:AddLine("/claude help lists commands.", 0.8, 0.8, 0.8, true)
+	GameTooltip:Show()
+end
+
 function Q.UpdatePlaceholder()
 	local placeholder, input = ui.placeholder, ui.input
 	if not placeholder or not input then return end
-	placeholder:SetText("Message " .. ChatAgentName(ActiveChat()) .. ". Enter sends; /claude help lists commands.")
+	placeholder:SetText("Message " .. ChatAgentName(ActiveChat()))
 	if (input:GetText() or "") == "" and not input:HasFocus() then placeholder:Show() else placeholder:Hide() end
+end
+
+Q.EMPTY_GAP, Q.EMPTY_SIDE, Q.EMPTY_LINE_GAP = 16, 20, 8
+
+function Q.EmptyState(c)
+	for _, m in ipairs(c.history) do
+		if m.role ~= "system" or (type(m.picker) == "table" and #m.picker > 0) then return nil end
+	end
+	if run.restoring then
+		return { title = "Restoring your chats", lines = { "Connecting to the bridge and restoring your chats..." } }
+	end
+	if not ClaudeWoW.IsConnected() then
+		return { title = "Not connected", lines = { "Start the bridge (npm start in the claude-wow folder, or claude-wow in your project), then click Connect below." } }
+	end
+	local start = Whisper.Active()
+		and ("Type below and press Enter, or talk to " .. ChatAgentName(c) .. " in its chat tab.")
+		or "Type below and press Enter. Shift-click an item, spell or quest to link it."
+	return { title = "No messages yet", lines = { start, "Project: " .. Cli.ProjectLabel(c) } }
+end
+
+function Q.EmptyFrame()
+	if ui.empty then return ui.empty end
+	local parchment = ui.parchment ~= nil
+	local f = CreateFrame("Frame", nil, ui.content)
+	f.title = f:CreateFontString(nil, "OVERLAY", parchment and Q.FontObject("QuestTitleFont", "GameFontNormalLarge") or "GameFontNormalLarge")
+	f.title:SetPoint("TOP", f, "TOP", 0, 0)
+	f.title:SetJustifyH("CENTER")
+	f.body = f:CreateFontString(nil, "OVERLAY", parchment and Q.FontObject("QuestFont", "GameFontHighlight") or "GameFontHighlight")
+	f.body:SetPoint("TOP", f.title, "BOTTOM", 0, -Q.EMPTY_LINE_GAP)
+	f.body:SetJustifyH("CENTER")
+	f.body:SetJustifyV("TOP")
+	f.body:SetWordWrap(true)
+	if parchment then
+		f.title:SetTextColor(Q.PARCHMENT_TEXT[1], Q.PARCHMENT_TEXT[2], Q.PARCHMENT_TEXT[3])
+		f.body:SetTextColor(Q.PARCHMENT_DIM[1], Q.PARCHMENT_DIM[2], Q.PARCHMENT_DIM[3])
+	else
+		f.title:SetTextColor(1, 0.82, 0)
+		f.body:SetTextColor(0.8, 0.8, 0.8)
+	end
+	ui.empty = f
+	return f
+end
+
+function Q.PlaceEmpty(state, y, width)
+	local f = Q.EmptyFrame()
+	local inner = math.max(80, width - 2 * Q.EMPTY_SIDE)
+	f:SetWidth(inner)
+	f.title:SetWidth(inner)
+	f.body:SetWidth(inner)
+	local below = y > 0
+	f.title:SetShown(not below)
+	f.title:SetText(below and "" or Display(state.title))
+	f.body:SetText(Display(below and state.lines[1] or table.concat(state.lines, "\n")))
+	f.body:ClearAllPoints()
+	if below then
+		f.body:SetPoint("TOP", f, "TOP", 0, 0)
+	else
+		f.body:SetPoint("TOP", f.title, "BOTTOM", 0, -Q.EMPTY_LINE_GAP)
+	end
+	local h = Try(f.body.GetStringHeight, f.body) or 14
+	if not below then h = h + (Try(f.title.GetStringHeight, f.title) or 14) + Q.EMPTY_LINE_GAP end
+	f:SetHeight(h)
+	local view = Try(ui.scroll.GetHeight, ui.scroll) or 0
+	local top = below and (y + Q.EMPTY_GAP) or math.max(0, math.floor((view - h) / 2))
+	f:ClearAllPoints()
+	f:SetPoint("TOPLEFT", ui.content, "TOPLEFT", math.floor((width - inner) / 2), -top)
+	f:Show()
+	return top + h
 end
 
 function ClaudeWoW.Render()
@@ -5118,31 +5313,32 @@ function ClaudeWoW.Render()
 			b.text = text
 			b:Show()
 			y = y + b:GetHeight() + 6
+			return b
 		end
 		local openDenial = not c.pendingId and Q.DenialIndex(c) or nil
 		for i, m in ipairs(c.history) do
 			local denied = i == openDenial and m.denied or nil
 			local picker = type(m.picker) == "table" and #m.picker > 0 and m.picker or nil
-			Place(m.role, picker and m.head or m.text, m.t and date("%H:%M", m.t) or "", false, denied, m.agent, m.macros, m.newChat, picker)
+			local reply = m.role == "assistant" and not picker
+			local b = Place(m.role, picker and m.head or (reply and Q.StripSummary(m.text, m.summary) or m.text), m.t and date("%H:%M", m.t) or "", false, denied, m.agent, m.macros, m.newChat, picker)
+			if reply then b.text = m.text end
 		end
+		local empty = nil
 		if c.pendingId then
 			local head = "Working " .. SEG.DOT .. " " .. ActivityLine(c)
 			if run.statusText and run.statusText ~= "" and not run.statusWorking then head = head .. "\n" .. run.statusText end
 			local steps = Cli.StepLines(c)
 			Place("assistant", #steps > 0 and (head .. "\n\n" .. table.concat(steps, "\n")) or head, "", true, nil, ChatAgent(c))
-		elseif #c.history == 0 then
-			if run.restoring then
-				Place("system", "Connecting to the bridge and restoring your chats...", "", true)
-			elseif not ClaudeWoW.IsConnected() then
-				Place("system", "Not connected to the bridge. Start it (npm start in the claude-wow folder, or claude-wow in your project), then click Connect below.", "", true)
-			else
-				Place("system", Whisper.Active()
-					and ("Nothing here yet. Type below and press Enter, or talk to " .. ChatAgentName(c) .. " in its chat tab: this window is the full record, the tab is the everyday way in. Shift-click an item, spell or quest to link it. /claude help lists the commands.")
-					or "Click the box below and type to start. Shift-click an item, spell or quest to link it into your message. /claude help lists the commands. From the game chat, /claude <text> starts a new chat with that message, /claude -c <text> continues the current one.", "", true)
-			end
+		else
+			empty = Q.EmptyState(c)
 		end
 		for i = n + 1, #ui.bubbles do
 			ui.bubbles[i]:Hide()
+		end
+		if empty then
+			y = Q.PlaceEmpty(empty, y, width)
+		elseif ui.empty then
+			ui.empty:Hide()
 		end
 		ui.content:SetHeight(math.max(y, 1))
 		C_Timer.After(0.05, function()
@@ -5443,15 +5639,29 @@ function Cli.Links.macro(arg)
 	if macro then ClaudeWoW.MacroPrompt(macro) end
 end
 
-function Cli.Links.url(arg)
-	if arg ~= "" then ClaudeWoW.ShowCopy(arg) end
+function Cli.Links.url(arg, button)
+	if arg == "" then return end
+	local copyClick = button == "RightButton"
+		or (type(IsControlKeyDown) == "function" and IsControlKeyDown())
+		or (type(IsShiftKeyDown) == "function" and IsShiftKeyDown())
+	if copyClick then return ClaudeWoW.ShowCopy(arg) end
+	local result = ClaudeWoW.OpenUrl(arg)
+	if result == "sent" then
+		if UIErrorsFrame then UIErrorsFrame:AddMessage("Opening in your browser", 1, 0.82, 0, 1) end
+	elseif result == "busy" then
+		if UIErrorsFrame then UIErrorsFrame:AddMessage("Still opening the last link", 1, 0.82, 0, 1) end
+	elseif result == "wait" then
+		if UIErrorsFrame then UIErrorsFrame:AddMessage("Wait a moment before the next link", 1, 0.82, 0, 1) end
+	else
+		ClaudeWoW.ShowCopy(arg)
+	end
 end
 
 function Cli.Links.map(arg)
 	if ClaudeWoWMap and ClaudeWoWMap.ShowLayer then ClaudeWoWMap.ShowLayer(arg) end
 end
 
-function ClaudeWoW.OnLink(link)
+function ClaudeWoW.OnLink(link, button)
 	if not db then return false end
 	link = tostring(link or "")
 	local body = link:match("^addon:claudewow:(.*)$") or link:match("^claudewow:(.*)$")
@@ -5459,12 +5669,12 @@ function ClaudeWoW.OnLink(link)
 	local action, arg = body:match("^(%a+):?(.*)$")
 	local fn = action and Cli.Links[action]
 	if not fn then return false end
-	fn(arg or "")
+	fn(arg or "", button)
 	return true
 end
 
-hooksecurefunc("SetItemRef", function(link)
-	ClaudeWoW.OnLink(link)
+hooksecurefunc("SetItemRef", function(link, _, button)
+	ClaudeWoW.OnLink(link, button)
 end)
 
 -- Shift-clicking an item, spell, quest or name puts its link into the chat box
@@ -5508,6 +5718,8 @@ local PANEL_W = 150
 Q.PORTRAIT = "Interface\\AddOns\\ClaudeWoW\\Portrait"
 Q.NATIVE_TEMPLATES = { "ButtonFrameTemplate", "InsetFrameTemplate" }
 Q.LIST_W = 300
+Q.COMPOSER_BOTTOM = 2
+Q.COMPOSER_GAP = 6
 Q.NAV_TOP = -24
 Q.NAV_H = 34
 Q.LIST_ROW_H = 20
@@ -5536,7 +5748,9 @@ Q.QUEST_ART = {
 Q.ROW_TITLE_X = 31
 Q.ROW_TOP = 8
 Q.ROW_BOTTOM = 6
-Q.ROW_BOTTOM_BARE = 4
+Q.POI_TOP = 4
+Q.POI_SIZE = 20
+Q.ROW_MIN_H = Q.POI_TOP + Q.POI_SIZE + Q.ROW_BOTTOM
 Q.OBJECTIVE_GAP = 3
 Q.OBJECTIVE_LINE_GAP = 2
 Q.HEADER_INSET = 9
@@ -5826,6 +6040,56 @@ function Q.MarkFences(text)
 		else table.insert(out, line) end
 	end
 	return table.concat(out, "\n")
+end
+
+Q.SUMMARY_STRIP_CHARS = 400
+
+function Q.SummaryMarkerEnd(line)
+	local s = line:lower()
+	local i = s:match("^[ \t]*#*[ \t]*()")
+	local bold = s:sub(i, i + 1)
+	if bold == "**" or bold == "__" then i = s:match("^..[ \t]*()", i) end
+	i = s:match("^tl;?dr()", i)
+	if not i then return nil end
+	i = s:match("^[ \t]*:?[ \t]*()", i)
+	bold = s:sub(i, i + 1)
+	if bold == "**" or bold == "__" then i = i + 2 end
+	return s:match("^[ \t]*:?[ \t]*()", i)
+end
+
+function Q.FenceRun(line)
+	local run, rest = line:match("^%s*(```+)(.*)$")
+	if not run then run, rest = line:match("^%s*(~~~+)(.*)$") end
+	if not run then return nil end
+	return run:sub(1, 1), #run, rest
+end
+
+function Q.StripSummary(text, summary)
+	text = tostring(text or "")
+	local lines, open, at, after, inFence = {}, nil, nil, nil, false
+	for line in (text .. "\n"):gmatch("(.-)\n") do
+		table.insert(lines, line)
+		local mark, size, rest = Q.FenceRun(line)
+		if open and mark == open.mark and size >= open.size and rest:match("^%s*$") then
+			open = nil
+		elseif not open and mark then
+			open = { mark = mark, size = size }
+		else
+			local e = Q.SummaryMarkerEnd(line)
+			if e then at, after, inFence = #lines, e, open ~= nil end
+		end
+	end
+	if not at or inFence then return text end
+	local rest = { lines[at]:sub(after) }
+	for k = at + 1, #lines do table.insert(rest, lines[k]) end
+	local tail = Trim(table.concat(rest, "\n"))
+	if tail == "" or #tail > Q.SUMMARY_STRIP_CHARS then return text end
+	local tailLines = 0
+	for _ in tail:gmatch("[^\n]*%S[^\n]*") do tailLines = tailLines + 1 end
+	if tailLines > ECHO.SUMMARY_LINES then return text end
+	if type(summary) == "string" and summary ~= "" and Trim(summary) ~= tail then return text end
+	local head = table.concat(lines, "\n", 1, at - 1):gsub("%s+$", "")
+	return head ~= "" and head or tail
 end
 
 function Q.MarkdownLine(line, ink, parchment)
@@ -6121,7 +6385,7 @@ end
 
 function Q.Poi(parent)
 	local poi = CreateFrame("Button", nil, parent)
-	poi:SetSize(20, 20)
+	poi:SetSize(Q.POI_SIZE, Q.POI_SIZE)
 	poi.outer = poi:CreateTexture(nil, "BACKGROUND")
 	poi.outer:SetPoint("CENTER")
 	if Q.SetArt(poi.outer, "poiOuter", true) then poi.outer:SetBlendMode("ADD") end
@@ -6192,7 +6456,7 @@ function Q.QuestRow(i)
 	if not Q.SetArt(r.glow, "rowGlow") then r.glow:SetColorTexture(1, 0.82, 0, 0.12) end
 	r.glow:Hide()
 	r.poi = Q.Poi(r)
-	r.poi:SetPoint("TOPLEFT", r, "TOPLEFT", 6, -4)
+	r.poi:SetPoint("TOPLEFT", r, "TOPLEFT", 6, -Q.POI_TOP)
 	r.del = Q.DeleteButton(r)
 	r.del:SetPoint("TOPRIGHT", r, "TOPRIGHT", -2, -Q.ROW_TOP + 2)
 	r.when = r:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
@@ -6267,7 +6531,8 @@ function Q.FillRow(r, c, index, width)
 		r.objectives[k].dash:Hide()
 		r.objectives[k].text:Hide()
 	end
-	local height = #lines > 0 and (y - Q.OBJECTIVE_LINE_GAP + Q.ROW_BOTTOM) or (Q.ROW_TOP + titleH + Q.ROW_BOTTOM_BARE)
+	local textBottom = #lines > 0 and (y - Q.OBJECTIVE_LINE_GAP) or (Q.ROW_TOP + titleH)
+	local height = math.max(textBottom + Q.ROW_BOTTOM, Q.ROW_MIN_H)
 	r:SetHeight(height)
 	Q.RowColors(r, false)
 	return height
@@ -6553,7 +6818,7 @@ function Q.BuildQuestFrames(f)
 	ui.search = search
 
 	local newChat = MakeButton(list, "New chat", Q.LIST_W - 12, function() ClaudeWoW.NewChat() end)
-	newChat:SetPoint("BOTTOM", list, "BOTTOM", 0, 2)
+	newChat:SetPoint("BOTTOM", list, "BOTTOM", 0, Q.COMPOSER_BOTTOM)
 	ui.newChat = newChat
 
 	local listScroll = CreateFrame("ScrollFrame", "ClaudeWoWChatScroll", list, Q.TemplateExists("ScrollFrameTemplate") and "ScrollFrameTemplate" or "UIPanelScrollFrameTemplate")
@@ -6955,6 +7220,7 @@ local function BuildUI()
 	scroll:SetScrollChild(content)
 	ui.content = content
 	ui.bubbles = {}
+	ui.empty = nil
 	scroll:HookScript("OnSizeChanged", function(self, w, h)
 		if ui.frame:IsShown() then ClaudeWoW.Render() end
 	end)
@@ -6964,10 +7230,10 @@ local function BuildUI()
 	local inputBg = Q.Panel(f, native)
 	if native then
 		inputBg:SetPoint("TOPLEFT", ui.parchment, "BOTTOMLEFT", 0, -4)
-		inputBg:SetPoint("BOTTOMRIGHT", ui.listPanel, "BOTTOMLEFT", -6 - SEND_W - 6, 0)
+		inputBg:SetPoint("BOTTOMRIGHT", ui.listPanel, "BOTTOMLEFT", -Q.COMPOSER_GAP - SEND_W - Q.COMPOSER_GAP, Q.COMPOSER_BOTTOM)
 	else
 		inputBg:SetPoint("BOTTOMLEFT", panel, "BOTTOMRIGHT", 8, 0)
-		inputBg:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -14 - SEND_W - 6, 50)
+		inputBg:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -14 - SEND_W - Q.COMPOSER_GAP, 50)
 		inputBg:SetHeight(54)
 	end
 	if not native then
@@ -7061,10 +7327,10 @@ local function BuildUI()
 	mcpButton:Hide()
 	ui.mcpButton = mcpButton
 
-	-- Send sits to the right of the input box, vertically centred on it.
 	local send = MakeButton(f, "Send", SEND_W, ClaudeWoW.SendFromInput)
-	send:SetHeight(30)
-	send:SetPoint("LEFT", inputBg, "RIGHT", 6, 0)
+	Q.BesideInput(send, inputBg, native)
+	send:SetScript("OnEnter", Q.SendTooltip)
+	send:SetScript("OnLeave", function() GameTooltip:Hide() end)
 	ui.send = send
 
 	local stop = MakeButton(f, "Stop", SEND_W, function() ClaudeWoW.Cancel(ActiveChat()) end)
@@ -7082,8 +7348,7 @@ local function BuildUI()
 
 	-- Connect stands in for Send until the bridge has been seen (see UpdateConnect).
 	local connect = MakeButton(f, "Connect", SEND_W, function() ClaudeWoW.Connect(true) end)
-	connect:SetHeight(30)
-	connect:SetPoint("LEFT", inputBg, "RIGHT", 6, 0)
+	Q.BesideInput(connect, inputBg, native)
 	connect:SetScript("OnEnter", function(self)
 		GameTooltip:SetOwner(self, "ANCHOR_TOP")
 		GameTooltip:SetText("Connect to the bridge")
@@ -7294,53 +7559,93 @@ end
 -- Slash commands
 ---------------------------------------------------------------------------
 
-local HELP
+ClaudeWoW.HELP_MISSING = "The Commands and tips page is in a new addon file. Restart the game client once to load it: a /reload does not load new files."
+
 function ClaudeWoW.ShowHelp()
-	local c = ActiveChat()
-	if not c then return end
-	AddHistory(c, "system", HELP)
-	ClaudeWoW.Render()
+	if ClaudeWoWHelp and ClaudeWoWHelp.Open then return ClaudeWoWHelp.Open() end
+	print("|cff66ccff[Claude WoW]|r " .. ClaudeWoW.HELP_MISSING)
+	return nil
 end
-HELP = table.concat({
-	"/claude <text>                     start a new chat with that message, like claude \"<text>\" in a terminal. Bare /claude in the game chat opens the workspace window; in a chat's tab it starts a new chat",
-	"/claude -c [text]                  continue the current chat (--continue); alone it points at its tab (with the tabs off, it opens the window on it)",
-	"/claude -r all                     open one chat per session handed off with claude-wow handoff in a terminal; each resumes its session headless",
-	"/claude -r [id|name|n] [text]      resume a session (--resume). A Claude Code session started with the claude-wow channel gets the chat live; any other session is resumed headless in its folder. Bare -r lists the sessions (live ones first, marked live, running not listening, or resume): click a row or give its number; -r more lists them all",
-	"/claude -n <name> [text]           name the new chat (--name); with -c it renames the current one",
-	"/claude --model <model> [text]     the model for the chat (opus, sonnet, a full model name)",
-	"/claude --effort <level> [text]    low, medium, high, xhigh or max",
-	"/claude --project <name|path|none> [text]    attach this chat to a repo (or #name in a message); none = a general chat",
-	"/claude --permission-mode <mode>   acceptEdits, auto, plan, manual, dontAsk or bypassPermissions",
-	"/claude --add-dir <path> [text]    one more folder the agent may use (repeat the flag for more)",
-	"/claude --agent <name> [text]      which CLI runs the chat: claude, codex, grok, agy or hermes",
-	"    Flags come before the text and combine: /claude --model opus fix the build starts a new chat on opus. With -c they change the current chat. --flag=value and \"quoted values\" work, a value of - clears a setting, and a flag with no value shows it. The bridge tells you when an agent has no such option",
-	"/claude orders [on|off]            show or hide the Orders card under the quest tracker",
-	"/claude config [key] [value]       settings: voice, roast, whisper, echo, vision, roll, achievements, orders, telemetry, ui, map, macro, context, signal, mode, longchat, auto, bind, diag. Alone it lists them with their values",
-	"/claude config ui [setting]        the tabs and the window: whisper on|off, dim <10-100>|off, dodge on|off, autohide on|off, reset",
-	"/claude cd <folder>                folder this chat's agent works in (relative to the bridge's folder; alone = the default). A chat with a folder is a coding session there, one without is general in-game chat",
-	"/claude look <question>            send one message to the current chat with a picture of your screen",
-	"/claude rename [name]              rename the current chat (alone: a dialog)",
-	"/claude delete                     delete the current chat",
-	"/claude clear                      clear this chat's transcript",
-	"/claude copy                       open the last reply in a selectable box for Ctrl+C",
-	"/claude reset                      the next message in this chat starts a fresh session",
-	"/claude cancel                     stop waiting on this chat's reply",
-	"/claude dev [command]              dev tools for this chat's folder, run by the bridge: status, diff, log, run, test, doctor, errors, feedback (/claude dev help); globals saves the widget audit list in game",
-	"/claude wrong [#n] [note]          mark the last reply in this chat (or reply #n) as wrong; it lands in the bridge's feedback list",
-	"/claude bug <text>                 report a bug, with the addon's state and Lua errors attached",
-	"/claude errors                     the Lua errors the addon caught this UI session",
-	"/claude mcp [on|off <name>|none|default]  the MCP servers this chat's Claude or Codex runs get, with their health; the MCP button in the chat header does the same",
-	"/claude resend                     show the strip again if the bridge missed it",
-	"/claude reload                     reload now (also frees the slot pool)",
-	"/claude slots                      how many reply slots are still free this session",
-	"/claude diag [copy]                transport diagnostics; copy opens them in a box, selected for Ctrl+C",
-	"/claude probe [chatlog|asyncfile]  write test lines to the client's own logs so the bridge can measure them",
-	"/claude hide | mini               hide the window, or collapse it to the small bar",
-	"/claude help                       this list",
-	"/r <text>                          reply to the chat that answered last, until a real player whispers you",
-	"/w <agent> <text>                  send to that agent's chat when whisper tabs are on",
-	"A command word followed by something it does not take is a message: /claude delete the unused imports starts a new chat with that text.",
-}, "\n")
+
+ClaudeWoW.HELP = {
+	{
+		title = "Start and resume chats",
+		rows = {
+			{ "/claude <text>", "Start a new chat with that message, like claude \"<text>\" in a terminal. Bare /claude in the game chat opens the workspace window; in a chat's tab it starts a new chat." },
+			{ "/claude -c [text]", "Continue the current chat (--continue). Alone it points at its tab; with the tabs off, it opens the window on it." },
+			{ "/claude -r [id|name|n] [text]", "Resume a session (--resume). A Claude Code session started with the claude-wow channel gets the chat live; any other session is resumed headless in its folder. Bare -r lists the sessions (live ones first, marked live, running not listening, or resume): click a row or give its number; -r more lists them all." },
+			{ "/claude -r all", "Open one chat per session handed off with claude-wow handoff in a terminal; each resumes its session headless." },
+			{ "/claude -n <name> [text]", "Name the new chat (--name). With -c it renames the current one." },
+		},
+	},
+	{
+		title = "Chat options",
+		rows = {
+			{ "/claude --model <model> [text]", "The model for the chat: opus, sonnet or a full model name." },
+			{ "/claude --effort <level> [text]", "low, medium, high, xhigh or max." },
+			{ "/claude --project <name|path|none> [text]", "Attach this chat to a repo (or #name in a message). none makes it a general chat." },
+			{ "/claude --permission-mode <mode>", "acceptEdits, auto, plan, manual, dontAsk or bypassPermissions." },
+			{ "/claude --add-dir <path> [text]", "One more folder the agent may use. Repeat the flag for more." },
+			{ "/claude --agent <name> [text]", "Which CLI runs the chat: claude, codex, grok, agy or hermes." },
+		},
+		notes = {
+			"Flags come before the text and combine: /claude --model opus fix the build starts a new chat on opus. With -c they change the current chat.",
+			"--flag=value and \"quoted values\" work, a value of - clears a setting, and a flag with no value shows it. The bridge tells you when an agent has no such option.",
+		},
+	},
+	{
+		title = "This chat",
+		rows = {
+			{ "/claude cd <folder>", "The folder this chat's agent works in, relative to the bridge's folder; alone it goes back to the default. A chat with a folder is a coding session there, one without is general in-game chat." },
+			{ "/claude look <question>", "Send one message to the current chat with a picture of your screen." },
+			{ "/claude rename [name]", "Rename the current chat. Alone it opens a dialog." },
+			{ "/claude delete", "Delete the current chat." },
+			{ "/claude clear", "Clear this chat's transcript." },
+			{ "/claude copy", "Open the last reply in a selectable box for Ctrl+C." },
+			{ "/claude reset", "The next message in this chat starts a fresh session." },
+			{ "/claude cancel", "Stop waiting on this chat's reply." },
+			{ "/claude mcp [on|off <name>|none|default]", "The MCP servers this chat's Claude or Codex runs get, with their health. The MCP button in the chat header does the same." },
+			{ "/claude wrong [#n] [note]", "Mark the last reply in this chat (or reply #n) as wrong; it lands in the bridge's feedback list." },
+		},
+	},
+	{
+		title = "Whispers",
+		rows = {
+			{ "/r <text>", "Reply to the chat that answered last, until a real player whispers you." },
+			{ "/w <agent> <text>", "Send to that agent's chat when whisper tabs are on." },
+		},
+	},
+	{
+		title = "Settings and the window",
+		rows = {
+			{ "/claude config [key] [value]", "Settings: voice, roast, whisper, echo, vision, roll, achievements, orders, telemetry, ui, map, macro, context, signal, mode, longchat, auto, bind, diag. Alone it lists them with their values." },
+			{ "/claude config ui [setting]", "The tabs and the window: whisper on|off, dim <10-100>|off, dodge on|off, autohide on|off, reset." },
+			{ "/claude orders [on|off]", "Show or hide the Orders card under the quest tracker." },
+			{ "/claude hide | mini", "Hide the window, or collapse it to the small bar." },
+			{ "/claude help", "Open this page." },
+		},
+	},
+	{
+		title = "Troubleshooting",
+		rows = {
+			{ "/claude dev [command]", "Dev tools for this chat's folder, run by the bridge: status, diff, log, run, test, doctor, errors, feedback (/claude dev help). globals saves the widget audit list in game." },
+			{ "/claude bug <text>", "Report a bug, with the addon's state and Lua errors attached." },
+			{ "/claude errors", "The Lua errors the addon caught this UI session." },
+			{ "/claude resend", "Show the strip again if the bridge missed it." },
+			{ "/claude reload", "Reload now. This also frees the slot pool." },
+			{ "/claude slots", "How many reply slots are still free this session." },
+			{ "/claude diag [copy]", "Transport diagnostics; copy opens them in a box, selected for Ctrl+C." },
+			{ "/claude probe [chatlog|asyncfile]", "Write test lines to the client's own logs so the bridge can measure them." },
+		},
+	},
+	{
+		title = "Tips",
+		notes = {
+			"A command word followed by something it does not take is a message: /claude delete the unused imports starts a new chat with that text.",
+			"Shift-click an item, spell or quest to link it into your message.",
+		},
+	},
+}
 
 local function OnOffOrNumber(rest)
 	return rest == "" or rest == "on" or rest == "off" or tonumber(rest) ~= nil
@@ -7486,6 +7791,16 @@ function Cli.Out(c, text, open)
 	ClaudeWoW.Render()
 	Cli.Emit(c, text)
 	if open then Cli.Show(c) end
+end
+
+function Cli.Note(c, text)
+	if not c then return end
+	ClaudeWoW.Render()
+	if Whisper.Active() then
+		Cli.Emit(c, text)
+	else
+		print("|cff66ccff[Claude WoW]|r " .. Display(text))
+	end
 end
 
 function Cli.Say(c, text)
@@ -7849,10 +8164,10 @@ function Cli.DirsLabel(c)
 end
 
 function Cli.ApplyChatFlags(c, o)
-	local notes = {}
+	local notes, projectNote = {}, nil
 	if o.agent ~= nil then ClaudeWoW.SetAgent(o.agent == true and "" or o.agent, c) end
 	if type(o.project) == "string" then
-		table.insert(notes, "project: " .. (Cli.SetProject(c, o.project) or Cli.ProjectLabel(c)))
+		projectNote = "project: " .. (Cli.SetProject(c, o.project) or Cli.ProjectLabel(c))
 	elseif o.project == true then
 		table.insert(notes, "project: " .. Cli.ProjectLabel(c) .. " (known: " .. Cli.ProjectNames() .. ")")
 	end
@@ -7881,7 +8196,7 @@ function Cli.ApplyChatFlags(c, o)
 		end
 		table.insert(notes, "extra folders: " .. Cli.DirsLabel(c))
 	end
-	return notes
+	return notes, projectNote
 end
 
 function Cli.Age(at)
@@ -8177,7 +8492,8 @@ function Cli.AttachWith(e, o)
 		c.name = o.name:sub(1, 24)
 		Whisper.Retitle(c)
 	end
-	local notes = Cli.ApplyChatFlags(c, o)
+	local notes, projectNote = Cli.ApplyChatFlags(c, o)
+	if projectNote then Cli.Note(c, projectNote) end
 	if #notes > 0 then Cli.Out(c, table.concat(notes, "\n")) end
 	if o.text ~= "" then
 		ClaudeWoW.Send(o.text, nil, { chat = c.id })
@@ -8289,7 +8605,7 @@ end
 
 function ClaudeWoW.RunCli(o)
 	if o.help then
-		Cli.Say(ActiveChat(), HELP)
+		ClaudeWoW.ShowHelp()
 		return
 	end
 	local errors = Cli.CheckFlags(o)
@@ -8301,17 +8617,18 @@ function ClaudeWoW.RunCli(o)
 		Cli.RunResume(o)
 		return
 	end
-	local c, notes
+	local c, notes, projectNote
 	if o.continue or (o.flags > 0 and o.text == "" and not Cli.HasSetters(o)) then
 		c = ActiveChat()
 		if o.continue and type(o.name) == "string" then
 			c.name = o.name:sub(1, 24)
 			Whisper.Retitle(c)
 		end
-		notes = Cli.ApplyChatFlags(c, o)
+		notes, projectNote = Cli.ApplyChatFlags(c, o)
 	else
-		c = ClaudeWoW.NewChat(type(o.name) == "string" and o.name:sub(1, 24) or nil, function(fresh) notes = Cli.ApplyChatFlags(fresh, o) end)
+		c = ClaudeWoW.NewChat(type(o.name) == "string" and o.name:sub(1, 24) or nil, function(fresh) notes, projectNote = Cli.ApplyChatFlags(fresh, o) end)
 	end
+	if projectNote then Cli.Note(c, projectNote) end
 	if #notes > 0 then Cli.Out(c, table.concat(notes, "\n")) end
 	if o.text ~= "" then
 		ClaudeWoW.Send(o.text, nil, { chat = c.id })
@@ -8762,9 +9079,7 @@ RunCommand = function(cmd, rest)
 		wipe(c.history)
 		ClaudeWoW.Render()
 	elseif cmd == "help" then
-		AddHistory(c, "system", HELP)
-		ClaudeWoW.Render()
-		Cli.Show(c)
+		ClaudeWoW.ShowHelp()
 	end
 end
 
