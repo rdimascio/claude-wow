@@ -150,7 +150,7 @@ Two things are different inside the binary, and `bridge/runtime.js` is the one p
 
 ### Releasing
 
-- Tag only a `main` commit whose `ci` push run has a green `gate`. The `gate` job of `.github/workflows/release.yml` runs `node dev/release-gate.js <sha>` on every tag. It stops the release when the tagged commit is not on `main` or its push run on `main` has no green `gate`. It waits up to 20 min for a run that is still in progress.
+- Tag only a `main` commit whose `ci` push run has a green `gate`. The `release-gate` job of `.github/workflows/release.yml` runs `node dev/release-gate.js <sha>` on every tag. It stops the release when the tagged commit is not on `main` or its push run on `main` has no green `gate`. It waits up to 20 min for a run that is still in progress.
 - A pull request run does not count, even for the same commit. A `main` commit can have no push run of its own: `ci` keeps one pending push run per branch and cancels the one it replaces. Tag a later `main` commit then.
 - When GitHub Actions is down, wait or cut no release. Do not tag around the gate.
 
