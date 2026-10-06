@@ -441,6 +441,7 @@ local function InitDB()
 		if s.mode ~= "reload" then s.autoRefresh = false end
 	end
 	if s.signal == nil then s.signal = true end
+	if s.minimap == nil then s.minimap = true end
 	if s.context == nil then s.context = true end -- tell the agent about the character, zone, etc.
 	if not s.contextWarnV2 then
 		s.contextWarnV2 = true
@@ -6094,6 +6095,192 @@ function Q.StatusTooltip()
 		GameTooltip:AddLine("At API list prices: a comparison, not a bill. A subscription is not charged per token.", 0.6, 0.6, 0.6, true)
 	end
 end
+
+Q.MINIMAP_NAME = "ClaudeWoWMinimapButton"
+Q.MINIMAP_SIZE = 31
+Q.MINIMAP_ANGLE_DEFAULT = 225
+Q.MINIMAP_EDGE_PAD = 5
+Q.MINIMAP_DIAGONAL_INSET = 10
+Q.MINIMAP_ICON_MASK = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
+Q.MINIMAP_ICON_INSET = { 0.05, 0.95, 0.05, 0.95 }
+Q.MINIMAP_BORDER = "Interface\\Minimap\\MiniMap-TrackingBorder"
+Q.MINIMAP_BACKGROUND = "Interface\\Minimap\\UI-Minimap-Background"
+Q.MINIMAP_HIGHLIGHT = "Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight"
+Q.MINIMAP_HINT_COLOR = { 0.1, 1, 0.1 }
+Q.MINIMAP_HINT_LEFT = "Left-click: open or close"
+Q.MINIMAP_HINT_RIGHT = "Right-click: options"
+Q.MINIMAP_ROUND_QUADRANTS = {
+	ROUND = { true, true, true, true },
+	SQUARE = { false, false, false, false },
+	["CORNER-TOPLEFT"] = { false, false, false, true },
+	["CORNER-TOPRIGHT"] = { false, false, true, false },
+	["CORNER-BOTTOMLEFT"] = { false, true, false, false },
+	["CORNER-BOTTOMRIGHT"] = { true, false, false, false },
+	["SIDE-LEFT"] = { false, true, false, true },
+	["SIDE-RIGHT"] = { true, false, true, false },
+	["SIDE-TOP"] = { false, false, true, true },
+	["SIDE-BOTTOM"] = { true, true, false, false },
+	["TRICORNER-TOPLEFT"] = { false, true, true, true },
+	["TRICORNER-TOPRIGHT"] = { true, false, true, true },
+	["TRICORNER-BOTTOMLEFT"] = { true, true, false, true },
+	["TRICORNER-BOTTOMRIGHT"] = { true, true, true, false },
+}
+Q.MINIMAP_LAYOUT_MAINLINE = { border = 50, background = 24, icon = 18, centered = true }
+Q.MINIMAP_LAYOUT_CLASSIC = { border = 53, background = 20, backgroundX = 7, backgroundY = -5, icon = 17, iconX = 7, iconY = -6 }
+
+function Q.MinimapButtonOn()
+	return db.settings.minimap ~= false
+end
+
+function Q.MinimapAngle()
+	return tonumber(db.settings.minimapAngle) or Q.MINIMAP_ANGLE_DEFAULT
+end
+
+function Q.MinimapShape()
+	if type(GetMinimapShape) ~= "function" then return "ROUND" end
+	local ok, shape = pcall(GetMinimapShape)
+	return ok and Q.MINIMAP_ROUND_QUADRANTS[shape] and shape or "ROUND"
+end
+
+function Q.MinimapOffset(angle, width, height, shape)
+	local radians = math.rad(angle)
+	local x, y, quadrant = math.cos(radians), math.sin(radians), 1
+	if x < 0 then quadrant = quadrant + 1 end
+	if y > 0 then quadrant = quadrant + 2 end
+	local w, h = width / 2 + Q.MINIMAP_EDGE_PAD, height / 2 + Q.MINIMAP_EDGE_PAD
+	if Q.MINIMAP_ROUND_QUADRANTS[shape or "ROUND"][quadrant] then return x * w, y * h end
+	local diagonalW = math.sqrt(2 * w * w) - Q.MINIMAP_DIAGONAL_INSET
+	local diagonalH = math.sqrt(2 * h * h) - Q.MINIMAP_DIAGONAL_INSET
+	return math.max(-w, math.min(x * diagonalW, w)), math.max(-h, math.min(y * diagonalH, h))
+end
+
+function Q.PlaceMinimapButton(button)
+	local x, y = Q.MinimapOffset(Q.MinimapAngle(), Minimap:GetWidth(), Minimap:GetHeight(), Q.MinimapShape())
+	button:ClearAllPoints()
+	button:SetPoint("CENTER", Minimap, "CENTER", x, y)
+end
+
+function Q.CursorAngle()
+	local mx, my = Minimap:GetCenter()
+	local px, py = GetCursorPosition()
+	if not (mx and my and px and py) then return nil end
+	local scale = Minimap:GetEffectiveScale()
+	local atan2 = math.atan2 or math.atan
+	return math.deg(atan2(py / scale - my, px / scale - mx)) % 360
+end
+
+function Q.MinimapDragUpdate(button)
+	local angle = Q.CursorAngle()
+	if not angle then return end
+	db.settings.minimapAngle = angle
+	Q.PlaceMinimapButton(button)
+end
+
+function Q.PlainStatus(c)
+	local state = Q.StatusState(c)
+	if state == "working" then return Q.STATUS_WORKING end
+	if state == "down" then return Q.STATUS_UNREACHABLE end
+	if state == "reply" then return Q.STATUS_REPLY end
+	return Q.STATUS_READY
+end
+
+function Q.MinimapTooltip(button)
+	if button.dragging then return end
+	local green = Q.MINIMAP_HINT_COLOR
+	GameTooltip:SetOwner(button, "ANCHOR_LEFT")
+	GameTooltip:SetText(ClaudeWoW.PRODUCT)
+	GameTooltip:AddLine(Q.PlainStatus(ActiveChat()), 1, 1, 1, true)
+	Q.StatusTooltip()
+	GameTooltip:AddLine(" ")
+	GameTooltip:AddLine(Q.MINIMAP_HINT_LEFT, green[1], green[2], green[3])
+	GameTooltip:AddLine(Q.MINIMAP_HINT_RIGHT, green[1], green[2], green[3])
+	GameTooltip:Show()
+end
+
+function Q.MinimapClick(_, mouseButton)
+	if mouseButton == "RightButton" then
+		ClaudeWoW.ShowOptions()
+	else
+		ClaudeWoW.ToggleWorkspace()
+	end
+end
+
+function Q.MinimapDragStart(button)
+	button.dragging = true
+	button:LockHighlight()
+	GameTooltip:Hide()
+	button:SetScript("OnUpdate", Q.MinimapDragUpdate)
+end
+
+function Q.MinimapDragStop(button)
+	button:SetScript("OnUpdate", nil)
+	button.dragging = nil
+	button:UnlockHighlight()
+	Q.PlaceMinimapButton(button)
+end
+
+function Q.MinimapLayout()
+	if WOW_PROJECT_ID ~= nil and WOW_PROJECT_ID == WOW_PROJECT_MAINLINE then return Q.MINIMAP_LAYOUT_MAINLINE end
+	return Q.MINIMAP_LAYOUT_CLASSIC
+end
+
+function Q.RoundIcon(icon)
+	if type(icon.SetMask) == "function" and pcall(icon.SetMask, icon, Q.MINIMAP_ICON_MASK) then return true end
+	local inset = Q.MINIMAP_ICON_INSET
+	icon:SetTexCoord(inset[1], inset[2], inset[3], inset[4])
+	return false
+end
+
+function Q.BuildMinimapButton()
+	if ui.minimap then return ui.minimap end
+	if type(Minimap) ~= "table" then return nil end
+	local layout = Q.MinimapLayout()
+	local button = CreateFrame("Button", Q.MINIMAP_NAME, Minimap)
+	button:SetSize(Q.MINIMAP_SIZE, Q.MINIMAP_SIZE)
+	button:SetFrameStrata("MEDIUM")
+	button:SetFrameLevel(8)
+	button:RegisterForClicks("AnyUp")
+	button:RegisterForDrag("LeftButton")
+	button:SetHighlightTexture(Q.MINIMAP_HIGHLIGHT)
+
+	local border = button:CreateTexture(nil, "OVERLAY")
+	border:SetSize(layout.border, layout.border)
+	border:SetTexture(Q.MINIMAP_BORDER)
+	border:SetPoint("TOPLEFT", button, "TOPLEFT", 0, 0)
+	button.border = border
+
+	local background = button:CreateTexture(nil, "BACKGROUND")
+	background:SetSize(layout.background, layout.background)
+	background:SetTexture(Q.MINIMAP_BACKGROUND)
+	local icon = button:CreateTexture(nil, "ARTWORK")
+	icon:SetSize(layout.icon, layout.icon)
+	icon:SetTexture(Q.PORTRAIT)
+	if layout.centered then
+		background:SetPoint("CENTER", button, "CENTER", 0, 0)
+		icon:SetPoint("CENTER", button, "CENTER", 0, 0)
+	else
+		background:SetPoint("TOPLEFT", button, "TOPLEFT", layout.backgroundX, layout.backgroundY)
+		icon:SetPoint("TOPLEFT", button, "TOPLEFT", layout.iconX, layout.iconY)
+	end
+	Q.RoundIcon(icon)
+	button.background, button.icon = background, icon
+
+	button:SetScript("OnClick", Q.MinimapClick)
+	button:SetScript("OnDragStart", Q.MinimapDragStart)
+	button:SetScript("OnDragStop", Q.MinimapDragStop)
+	button:SetScript("OnEnter", Q.MinimapTooltip)
+	button:SetScript("OnLeave", function() GameTooltip:Hide() end)
+	ui.minimap = button
+	Q.PlaceMinimapButton(button)
+	Q.ApplyMinimapButton()
+	return button
+end
+
+function Q.ApplyMinimapButton()
+	if not ui.minimap then return end
+	ui.minimap:SetShown(Q.MinimapButtonOn())
+end
+
 Q.PARCHMENT_STYLE = {
 	user      = { color = { 0.10, 0.22, 0.45 }, bg = { 0.10, 0.20, 0.40, 0.07 } },
 	assistant = { color = { 0.45, 0.13, 0.02 }, bg = { 0, 0, 0, 0 } },
@@ -7984,13 +8171,14 @@ ClaudeWoW.HELP = {
 	{
 		title = "Settings and the window",
 		rows = {
-			{ "/claude config [key] [value]", "Settings: voice, roast, whisper, echo, vision, roll, achievements, orders, telemetry, ui, map, macro, context, bind. Alone it lists them with their values; all adds the troubleshooting keys. The Options page under AddOns, " .. ClaudeWoW.PRODUCT .. " in the game's settings has the same switches." },
+			{ "/claude config [key] [value]", "Settings: voice, roast, whisper, echo, vision, roll, achievements, orders, minimap, telemetry, ui, map, macro, context, bind. Alone it lists them with their values; all adds the troubleshooting keys. The Options page under AddOns, " .. ClaudeWoW.PRODUCT .. " in the game's settings has the same switches." },
 			{ "/claude config ui [setting]", "The tabs and the window: whisper on|off, dim <10-100>|off, dodge on|off, autohide on|off, reset." },
 			{ "/claude orders [on|off]", "Show or hide the Orders card under the quest tracker." },
 			{ "/claude dm [next]", "Show or hide the Dungeon Master; next goes on to a beat that waits for you. /dm is the same." },
 			{ "/claude map [command]", "Map layers and node pins: ore, herb, filter, show, hide, nav, next, prev, stop. /aimap is the same." },
 			{ "/claude stream [command]", "Stream scenes, panes and the quest overlay. /stream is the same." },
 			{ "/claude hide | mini", "Hide the window, or collapse it to the small bar." },
+			{ "/claude config minimap [on|off]", "The minimap button: left-click opens or closes the window, right-click opens Options, drag it around the minimap." },
 			{ "/claude help", "Open this page." },
 		},
 	},
@@ -8042,6 +8230,7 @@ local COMMAND_ARGS = {
 	mode = { [""] = true, pixel = true, reload = true },
 	signal = { [""] = true, on = true, off = true }, longchat = { [""] = true, on = true, off = true },
 	roll = { [""] = true, on = true, off = true },
+	minimap = { [""] = true, on = true, off = true },
 	whisper = { [""] = true, on = true, off = true },
 	vision = { [""] = true, on = true, off = true },
 	look = true,
@@ -8111,7 +8300,7 @@ function Cli.IsModuleCommand(verb, rest)
 end
 
 Cli.CONFIG_KEYS = {
-	"voice", "roast", "whisper", "echo", "vision", "roll", "achievements", "orders", "telemetry", "context", "signal",
+	"voice", "roast", "whisper", "echo", "vision", "roll", "achievements", "orders", "minimap", "telemetry", "context", "signal",
 	"mode", "longchat", "auto", "plugin", "ui", "map", "macro", "bind", "probe", "diag",
 }
 Cli.CONFIG_DEV = { signal = true, mode = true, auto = true, longchat = true, plugin = true, probe = true, diag = true }
@@ -8286,6 +8475,7 @@ function Cli.ConfigValue(key)
 	if key == "echo" then return tostring(s.echo) end
 	if key == "vision" then return s.vision and "on" or "off" end
 	if key == "roll" then return s.lootRoll == false and "off" or "on" end
+	if key == "minimap" then return s.minimap == false and "off" or "on" end
 	if key == "achievements" then return s.toasts == false and "toasts off" or "toasts on" end
 	if key == "orders" then return ClaudeWoWOrders and ClaudeWoWOrders.Status() or "" end
 	if key == "telemetry" then return ClaudeWoWTelemetry and ClaudeWoWTelemetry.Status() or "" end
@@ -8307,6 +8497,7 @@ Cli.CONFIG_HELP = {
 	roll = "on|off: a denied command pops a Greed/Need/Pass roll, or an Allow & retry button; Need and Allow & retry ask before they save a rule",
 	achievements = "on|off|test: achievement toasts; alone it lists what you earned",
 	orders = "on|off: the Orders card under the quest tracker (also /claude orders and the chat list's gear menu)",
+	minimap = "on|off: the minimap button (left-click opens or closes the window, right-click opens Options, drag it around the minimap)",
 	telemetry = "on|off: share game state with the agent (money, level, zone, professions, watched items, gear, reputation); also the chat list's gear menu",
 	context = "on|off|<tokens>: the game context the agent gets, and the context-size warning (0 = never)",
 	signal = "on|off: the cheap sound-file readiness check",
@@ -9380,6 +9571,10 @@ RunCommand = function(cmd, rest)
 		if s.lootRoll == false and ClaudeWoWRoll then ClaudeWoWRoll.CloseAll() end
 		ClaudeWoW.Print("denied commands: " .. (ClaudeWoW.LootRollEnabled() and "Greed/Need/Pass roll frame" or "Allow & retry button in the reply"))
 		ClaudeWoW.Render()
+	elseif cmd == "minimap" then
+		if rest == "on" then s.minimap = true elseif rest == "off" then s.minimap = false end
+		Q.ApplyMinimapButton()
+		ClaudeWoW.Print("minimap button: " .. (Q.MinimapButtonOn() and "on. Left-click opens or closes the window, right-click opens Options, drag it to move it." or "off. /claude config minimap on brings it back."))
 	elseif cmd == "signal" then
 		if rest == "on" then s.signal = true elseif rest == "off" then s.signal = false end
 		AddHistory(c, "system", "signal check is " .. (s.signal and "on" or "off"))
@@ -9544,6 +9739,7 @@ ev:SetScript("OnEvent", function(self, event, arg1)
 	elseif event == "PLAYER_LOGIN" then
 		if not db then InitDB() end
 		BuildUI()
+		Q.BuildMinimapButton()
 		run = { outbound = {}, startedAt = GetTime() }
 		SelfTestSignals()
 		ProcessInbox()
