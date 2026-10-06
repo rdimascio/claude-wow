@@ -1613,7 +1613,10 @@ end
 function ClaudeWoW.UpdateConnect()
 	if not ui.connect or not ui.send then return end
 	local connected = ClaudeWoW.IsConnected()
-	ui.send:SetShown(connected)
+	local c = ActiveChat()
+	local busy = connected and c ~= nil and c.pendingId ~= nil
+	ui.send:SetShown(connected and not busy)
+	if ui.stop then ui.stop:SetShown(busy) end
 	ui.connect:SetShown(not connected)
 	if connected then return end
 	if run.connectingAt then
@@ -5063,6 +5066,7 @@ function ClaudeWoW.Render()
 	local c = ActiveChat()
 	Cli.UpdateMcpButton()
 	Cli.UpdateProjectButton()
+	ClaudeWoW.UpdateConnect()
 	Q.UpdatePlaceholder()
 	if ui.content and c then
 		local width = ui.scroll:GetWidth()
@@ -7106,6 +7110,19 @@ local function BuildUI()
 	send:SetPoint("LEFT", inputBg, "RIGHT", 6, 0)
 	ui.send = send
 
+	local stop = MakeButton(f, "Stop", SEND_W, function() ClaudeWoW.Cancel(ActiveChat()) end)
+	stop:SetHeight(30)
+	stop:SetPoint("LEFT", inputBg, "RIGHT", 6, 0)
+	stop:SetScript("OnEnter", function(self)
+		GameTooltip:SetOwner(self, "ANCHOR_TOP")
+		GameTooltip:SetText("Stop this run")
+		GameTooltip:AddLine("Tells the bridge to end the run this chat is waiting on, and frees the chat for a new message. Same as /claude cancel.", 0.8, 0.8, 0.8, true)
+		GameTooltip:Show()
+	end)
+	stop:SetScript("OnLeave", function() GameTooltip:Hide() end)
+	stop:Hide()
+	ui.stop = stop
+
 	-- Connect stands in for Send until the bridge has been seen (see UpdateConnect).
 	local connect = MakeButton(f, "Connect", SEND_W, function() ClaudeWoW.Connect(true) end)
 	connect:SetHeight(30)
@@ -7351,7 +7368,7 @@ HELP = table.concat({
 	"/claude copy                       open the last reply in a selectable box for Ctrl+C",
 	"/claude reset                      the next message in this chat starts a fresh session",
 	"/claude cancel                     stop waiting on this chat's reply",
-	"/claude dev [command]              dev tools for this chat's folder, run by the bridge: status, diff, log, run, test, doctor, errors, feedback (/claude dev help)",
+	"/claude dev [command]              dev tools for this chat's folder, run by the bridge: status, diff, log, run, test, doctor, errors, feedback (/claude dev help); globals saves the widget audit list in game",
 	"/claude wrong [#n] [note]          mark the last reply in this chat (or reply #n) as wrong; it lands in the bridge's feedback list",
 	"/claude bug <text>                 report a bug, with the addon's state and Lua errors attached",
 	"/claude errors                     the Lua errors the addon caught this UI session",
@@ -8286,6 +8303,11 @@ Cli.DEV_ATTACH_MAX = 1400
 
 function Cli.DevCommand(c, cmd, rest)
 	if not c then return end
+	local devVerb, devArg = rest:match("^%s*(%S+)%s*(.-)%s*$")
+	if cmd == "dev" and devVerb and devVerb:lower() == "globals" then
+		Cli.Say(c, ClaudeWoWWidgets and ClaudeWoWWidgets.GlobalsCommand(devArg) or "Widgets.lua is not loaded. Restart the game client once to load new addon files.")
+		return
+	end
 	if c.pendingId then
 		Cli.Say(c, "This chat is still waiting on a reply. Run the dev command when it is back, or in another chat.")
 		return
