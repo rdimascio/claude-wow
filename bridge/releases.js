@@ -447,6 +447,11 @@ function switchingHolder(file, { alive = pidAlive, now = Date.now, host = os.hos
   return held;
 }
 
+function liveLockHolder(file, { alive = pidAlive, now = Date.now, host = os.hostname(), maxAgeMs = LOCK_MAX_AGE_MS } = {}) {
+  const held = readLock(file);
+  return held && !lockIsStale(held, { alive, now, host, maxAgeMs }) ? held : null;
+}
+
 function lockIsStale(held, { alive, now, host, maxAgeMs }) {
   if (!held) return true;
   if (!held.pid) return now() - held.mtimeMs > UNREADABLE_LOCK_GRACE_MS;
@@ -543,4 +548,5 @@ module.exports = {
   releaseLock,
   takeOverStale,
   switchingHolder,
+  liveLockHolder,
 };

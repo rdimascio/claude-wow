@@ -4,6 +4,11 @@ All notable changes to this project are recorded here. The format follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- Build claude-wow from inside the game with `/reload` as your only step. With `autoDeploy` set in `config.json` (`{ "repo": "~/wow-ai" }`), the bridge checks `origin/main` every 5 minutes while it is idle and runs `claude-wow dev deploy` on its own when main moves to a new commit (turning it on records the current main and deploys from the next merge). The deploy installs the addon, and the game shows its `/reload` notice. Each commit is deployed once, so a `dev rollback` stays until main moves again; a failed deploy is reported in the next message of a coding chat for that repo. The repository's `CLAUDE.md` tells every coding chat, factory run and in-game Claude Code session there that the player is talking from inside the game, that `/reload` (or a full restart when addon files are added) is their only step, and, with `autoDeploy` on, that a merge ships by itself. Off without the key, and only for the macOS service running a `dev deploy` release.
+- `claude-wow dev deploy` also waits for factory runs: a running factory run (`factory/runs.json`) keeps the bridge busy, so a deploy no longer restarts the bridge and kills the run.
+
 ### Changed
 
 - With X2a failed for Codex in `claude-wow agents check`, the MCP menu greys only the servers from `~/.codex/config.toml`, the only ones the bridge refuses to turn off for a Codex chat; a `config.json` server can be turned off again. The slot field `contract` now names the server groups a failed check covers (`sources`); an addon with an older bridge greys every group as before. A `/reload` loads the addon; restart the bridge for the new field. `claude-wow contract-mcp` drops its unused `--mark` option.

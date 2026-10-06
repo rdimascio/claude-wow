@@ -265,7 +265,16 @@ function afterSwitch(l, ctx, flip) {
 }
 
 function idleProbe(l, ctx) {
-  return ctx.probe || I.probeFor({ stateFile: l.state, bridgeLockFile: l.bridgeLock, readPid: () => SVC.readPid(SVC.dirs(ctx.platform)), alive: REL.pidAlive });
+  return (
+    ctx.probe ||
+    I.probeFor({
+      stateFile: l.state,
+      bridgeLockFile: l.bridgeLock,
+      runsFile: path.join(l.base, 'factory', 'runs.json'),
+      readPid: () => SVC.readPid(SVC.dirs(ctx.platform)),
+      alive: REL.pidAlive,
+    })
+  );
 }
 
 function waitIdle(l, ctx, timeoutMs) {
