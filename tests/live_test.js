@@ -6,6 +6,7 @@ const net = require('net');
 const os = require('os');
 const path = require('path');
 const LP = require('../bridge/liveproto');
+const { LATE_IN_MAX } = require('../bridge/protocol');
 const { createChannel, parentListens, pickProtocol } = require('../bridge/channel');
 const { createLive } = require('../bridge/plugins/live');
 
@@ -829,6 +830,134 @@ test("permission relay: after an unanswered roll is denied, the session's answer
     const res2 = await until(() => r.out.lines.find(l => l.id === 31));
     assert.equal(res2.result.isError, false, res2.result.content[0].text);
     assert.deepEqual(r.calls.late.at(-1).job, job2);
+  } finally {
+    r.cleanup();
+  }
+});
+
+const permissionRequest = (r, requestId) =>
+  r.ch.feed(
+    JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'notifications/claude/channel/permission_request',
+      params: { request_id: requestId, tool_name: 'Bash', description: 'x', input_preview: '{"command":"touch x.txt"}' },
+    }) + '\n',
+  );
+const channelMessages = r => r.out.lines.filter(l => l.method === 'notifications/claude/channel').length;
+const verdicts = r => r.out.lines.filter(l => l.method === 'notifications/claude/channel/permission');
+
+test('permission relay: the roll prompt tells the addon to look for a late answer once the roll times out', async () => {
+  const r = await rig({ options: { permissionTimeoutMs: 90500 } });
+  try {
+    await initialize(r.ch, r.out);
+    const job = { id: 81, session: 'tok', chat: 'c1', text: 'touch a file', allow: [] };
+    await r.live.handle(job, r.core);
+    permissionRequest(r, 'kkkkk');
+    await until(() => r.calls.reply.length === 1);
+    assert.equal(r.calls.reply[0].job, job);
+    assert.equal(job.lateOk, true);
+    assert.equal(job.lateIn, 91, 'the timeout in whole seconds, rounded up');
+  } finally {
+    r.cleanup();
+  }
+  const capped = await rig({ options: { permissionTimeoutMs: (LATE_IN_MAX + 5) * 1000 } });
+  try {
+    await initialize(capped.ch, capped.out);
+    const job = { id: 82, session: 'tok', chat: 'c1', text: 'touch a file', allow: [] };
+    await capped.live.handle(job, capped.core);
+    permissionRequest(capped, 'ppppp');
+    await until(() => capped.calls.reply.length === 1);
+    assert.equal(job.lateIn, LATE_IN_MAX, 'a longer timeout is capped at what the slot field allows');
+  } finally {
+    capped.cleanup();
+  }
+});
+
+test('permission relay: Need, Greed or Pass after the timeout is not sent to the session; the chat hears the request expired, and the late answer still lands', async () => {
+  const r = await rig({ options: { permissionTimeoutMs: 30 } });
+  try {
+    await initialize(r.ch, r.out);
+    const job = { id: 91, session: 'tok', chat: 'c1', text: 'touch a file', allow: [] };
+    await r.live.handle(job, r.core);
+    permissionRequest(r, 'mmmmm');
+    await until(() => verdicts(r).length === 1);
+    await until(() => r.live._state.pending.size === 1);
+    const before = channelMessages(r);
+
+    const greed = { id: 92, session: 'tok', chat: 'c1', text: 'Those actions are allowed for this run.', allow: [], allowOnce: ['Bash(touch:*)'] };
+    await r.live.handle(greed, r.core);
+    assert.equal(r.calls.fail.length, 1);
+    assert.equal(r.calls.fail[0].job, greed);
+    assert.match(
+      r.calls.fail[0].text,
+      /^That permission request for Bash\(touch:\*\) expired after 1 s and was denied, so your answer was not sent to "proj"\./,
+    );
+    assert.equal(greed.lateOk, true, 'the addon keeps looking for the late answer');
+    assert.equal(channelMessages(r), before, 'the click is not forwarded as chat');
+    assert.equal(verdicts(r).length, 1, 'no second verdict goes out');
+
+    wowReply(r, 93, { chat_id: 'tok:c1', message_id: '91', text: 'I could not touch it.' });
+    await until(() => r.out.lines.find(l => l.id === 93));
+    assert.deepEqual(
+      (r.calls.late || []).map(l => [l.job, l.text]),
+      [[job, 'I could not touch it.']],
+    );
+
+    const next = { id: 94, session: 'tok', chat: 'c1', text: LP.PASS_TEXT, allow: [] };
+    await r.live.handle(next, r.core);
+    await until(() => channelMessages(r) === before + 1);
+  } finally {
+    r.cleanup();
+  }
+});
+
+test('permission relay: after a timeout, Pass is refused like a roll, and a typed message clears the expired request', async () => {
+  const r = await rig({ options: { permissionTimeoutMs: 30 } });
+  try {
+    await initialize(r.ch, r.out);
+    await r.live.handle({ id: 101, session: 'tok', chat: 'c1', text: 'touch a file', allow: [] }, r.core);
+    permissionRequest(r, 'nnnnn');
+    await until(() => verdicts(r).length === 1);
+    const before = channelMessages(r);
+    const pass = { id: 102, session: 'tok', chat: 'c1', text: LP.PASS_TEXT, allow: [] };
+    await r.live.handle(pass, r.core);
+    assert.equal(r.calls.fail.at(-1).job, pass);
+    assert.match(r.calls.fail.at(-1).text, /expired after 1 s and was denied/);
+    assert.equal(channelMessages(r), before);
+
+    await r.live.handle({ id: 103, session: 'tok', chat: 'c2', text: 'touch b', allow: [] }, r.core);
+    await until(() => channelMessages(r) === before + 1);
+    permissionRequest(r, 'ooooo');
+    await until(() => verdicts(r).length === 2);
+    await r.live.handle({ id: 104, session: 'tok', chat: 'c2', text: 'where is the bank?', allow: [] }, r.core);
+    await until(() => channelMessages(r) === before + 2);
+    await r.live.handle({ id: 105, session: 'tok', chat: 'c2', text: LP.PASS_TEXT, allow: [] }, r.core);
+    await until(() => channelMessages(r) === before + 3);
+    assert.deepEqual(
+      r.calls.fail.filter(f => /expired/.test(f.text)).map(f => f.job.id),
+      [102],
+      'the typed message used up the expired request',
+    );
+    assert.equal(r.live._state.expired.size, 0);
+  } finally {
+    r.cleanup();
+  }
+});
+
+test('permission relay: the bridge remembers at most 32 expired requests, dropping the oldest', async () => {
+  const r = await rig({ options: { permissionTimeoutMs: 5 } });
+  try {
+    await initialize(r.ch, r.out);
+    const ids = 'abcdefghijkmnopqrstuvwxyz';
+    for (let i = 0; i < 33; i++) {
+      await r.live.handle({ id: 200 + i, session: 'tok', chat: `x${i}`, text: 'touch', allow: [] }, r.core);
+      await until(() => channelMessages(r) === i + 1);
+      permissionRequest(r, `${ids[i % 25]}${ids[Math.floor(i / 25)]}aaa`);
+      await until(() => verdicts(r).length === i + 1);
+    }
+    assert.equal(r.live._state.expired.size, 32);
+    assert.equal(r.live._state.expired.has('tok:x0'), false, 'the oldest is gone');
+    assert.equal(r.live._state.expired.has('tok:x32'), true);
   } finally {
     r.cleanup();
   }

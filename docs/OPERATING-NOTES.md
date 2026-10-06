@@ -138,9 +138,9 @@ tokens after 8 turns, 312,458 after 213). So the bridge reads each run's usage
 assistant message is what the next turn carries; the result's usage is the turn's
 sum and prices the run at `CLAUDE_RATES` in `bridge/agents.js`), keeps it per chat
 in `state.json` (`sessionUsage`) and ships it on the reply record; the addon's
-footer shows it like Claude Code's status line (`11m 58s · ↓ 106.9k tokens ·
-≈$2.41 API` — the dollar figure is the API-list-price equivalent, a comparison,
-since a subscription is not billed per token), `/claude config context` and `diag`
+footer shows the context as a bar and the status tooltip shows the cost, labeled
+"Estimated API cost" (the API-list-price equivalent, a comparison, since a
+subscription is not billed per token), `/claude config context` and `diag`
 report it, and past `/claude config context <n>` (300k by default: a coding chat
 can start near 90k before its first tool call, so 100k warned on turn 1) the chat says so once, with a **New chat**
 button. Codex, Grok, agy and Hermes report nothing the bridge can trust, so those

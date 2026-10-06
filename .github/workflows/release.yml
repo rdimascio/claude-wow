@@ -15,7 +15,32 @@ permissions:
   contents: read
 
 jobs:
+  release-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: not a tag, so there is no release to gate
+        if: github.ref_type != 'tag'
+        run: echo "$GITHUB_EVENT_NAME on $GITHUB_REF; the release gate checks tags only"
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        if: github.ref_type == 'tag'
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        if: github.ref_type == 'tag'
+        with:
+          node-version: '22'
+      - name: the tagged commit is on main and its ci push run has a green gate
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node dev/release-gate.js "$(git rev-parse HEAD)"
+
   version:
+    needs: release-gate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -83,7 +108,7 @@ jobs:
           unzip -Z1 "$zip" | tee files.txt
           test -z "$(grep -v '^ClaudeWoW/' files.txt)"
           grep -qx 'ClaudeWoW/ClaudeWoW.toc' files.txt
-          test -z "$(grep -E '^ClaudeWoW/(bridge|tests|dev|docs|build)/' files.txt)"
+          test -z "$(grep -E '^ClaudeWoW/(assets|bridge|build|dev|docs|homebrew|tests)/' files.txt)"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: addon-zip
