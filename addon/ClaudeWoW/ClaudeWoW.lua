@@ -652,8 +652,11 @@ function ClaudeWoW.ArmAutoRefresh()
 		if run.reloadArmed ~= key then return end
 		run.reloadArmed = nil
 		if not Q.ReloadNeeded() or InCombatLockdown() then return end
-		run.reloadAsked = Q.PendingKey()
-		StaticPopup_Show(Q.RELOAD_POPUP)
+		if StaticPopup_Show(Q.RELOAD_POPUP) then
+			run.reloadAsked = Q.PendingKey()
+		else
+			ClaudeWoW.ArmAutoRefresh()
+		end
 	end)
 end
 
@@ -5144,7 +5147,7 @@ Q.STATUS_RELOAD_HINT = "Click Reload to read it."
 
 function Q.StatusState(c)
 	if c and c.pendingId then
-		if db.settings.mode == "pixel" and (run.slotsExhausted or run.slotsMissing) then return "reply", Q.STATUS_RELOAD_HINT end
+		if db.settings.mode == "pixel" and (run.slotsExhausted or run.slotsMissing or run.pixelFailed) then return "reply", Q.STATUS_RELOAD_HINT end
 		local a = run.act and run.act[c.id]
 		return "working", Q.ReloadNeeded() and Q.STATUS_RELOAD_HINT or nil, (a and a.startedAt) or run.sentAt
 	end
@@ -5181,19 +5184,14 @@ function ClaudeWoW.UpdateStatus()
 	if ui.chatTitle then ClaudeWoW.RefreshTitleBar() end
 	if ui.resend then ui.resend:SetShown(c and c.pendingId ~= nil and mode == "pixel") end
 	if ui.refresh then ui.refresh:SetShown(mode ~= "pixel" or run.slotsExhausted or run.slotsMissing or run.pixelFailed or false) end
-	if ui.stats then
-		ui.stats:SetText("")
-		ui.stats:ClearAllPoints()
+	if ui.ctxBar then
+		Q.UpdateContextBar(c)
+		ui.ctxBar:ClearAllPoints()
 		local beside = (ui.refresh:IsShown() and ui.refresh) or (ui.resend:IsShown() and ui.resend) or nil
 		if beside then
-			ui.stats:SetPoint("RIGHT", beside, "LEFT", -10, 0)
+			ui.ctxBar:SetPoint("RIGHT", beside, "LEFT", -Q.CTX_BAR_GAP, 0)
 		else
-			ui.stats:SetPoint("BOTTOMRIGHT", ui.frame, "BOTTOMRIGHT", -26, 9)
-		end
-		Q.UpdateContextBar(c)
-		if ui.ctxBar then
-			ui.ctxBar:ClearAllPoints()
-			ui.ctxBar:SetPoint("RIGHT", ui.stats, "LEFT", -14, 0)
+			ui.ctxBar:SetPoint("RIGHT", ui.frame, "BOTTOMRIGHT", Q.CTX_BAR_RIGHT_X, Q.CTX_BAR_Y)
 		end
 	end
 	ClaudeWoW.UpdateMini()
@@ -5924,6 +5922,8 @@ Q.COUNT_W = 92
 Q.STATUS_HIT_W = 260
 Q.CTX_BAR_W, Q.CTX_BAR_H = 120, 13
 Q.CTX_TICK_W = 2
+Q.CTX_BAR_GAP = 24
+Q.CTX_BAR_RIGHT_X, Q.CTX_BAR_Y = -40, 9
 Q.CTX_WARN_LEVEL = 3
 Q.CTX_DEFAULT_WINDOW = 200000
 Q.CTX_LEVELS = {
@@ -7361,10 +7361,6 @@ local function BuildUI()
 		status:SetPoint("LEFT", dotHolder, "RIGHT", 6, 0)
 		status:SetWidth(Q.STATUS_HIT_W)
 		status:SetWordWrap(false)
-		local stats = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-		stats:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -26, 9)
-		stats:SetJustifyH("RIGHT")
-		ui.stats = stats
 		ui.ctxBar = Q.ContextBar(f)
 	else
 		dotHolder:SetPoint("TOPLEFT", f, "TOPLEFT", 14, -16)
@@ -7709,14 +7705,6 @@ local function BuildUI()
 			ClaudeWoW.Toggle()
 		end
 	end)
-
-	local cwd = f:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-	cwd:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 16, 4)
-	cwd:SetPoint("RIGHT", f, "RIGHT", -30, 0)
-	cwd:SetJustifyH("LEFT")
-	cwd:SetWordWrap(false)
-	ui.cwd = cwd
-	cwd:Hide()
 
 	-- Resize grip
 	local grip = CreateFrame("Button", nil, f)
@@ -8267,7 +8255,7 @@ Cli.CONFIG_HELP = {
 	signal = "on|off: the cheap sound-file readiness check",
 	mode = "pixel|reload: the transport",
 	longchat = "on|off: let the game chat box take 4000 characters",
-	auto = "on|off|<seconds>: reload mode only, auto-reload after the interval",
+	auto = "on|off|<seconds>: how often the Reload needed dialog asks again after Later (reload mode, or when the reply slots are gone)",
 	plugin = "<name>|default: advanced, what this chat is bound to",
 	ui = "whisper on|off, dim <10-100>|off, dodge on|off, autohide on|off, reset: the tabs and the window; list|remove <name>|run <name>: live widgets",
 	map = "map layers, the route navigator and herb/ore nodes (/aimap is the same)",
