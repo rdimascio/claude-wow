@@ -49,7 +49,15 @@ function readText(file) {
 function statPath(file) {
   try {
     const st = fs.statSync(file);
-    return { size: st.size, mtimeMs: st.mtimeMs, isDir: st.isDirectory(), isFile: st.isFile(), mode: st.mode };
+    return { size: st.size, mtimeMs: st.mtimeMs, ctimeMs: st.ctimeMs, ino: st.ino, isDir: st.isDirectory(), isFile: st.isFile(), mode: st.mode };
+  } catch {
+    return null;
+  }
+}
+
+function realPath(file) {
+  try {
+    return fs.realpathSync.native(file);
   } catch {
     return null;
   }
@@ -120,10 +128,11 @@ function createSystem(overrides = {}) {
     readText,
     tailText,
     stat: statPath,
+    realpath: realPath,
     listDir,
     treeSize,
     ...overrides,
   };
 }
 
-module.exports = { createSystem, isReadOnlyCommand, spawnReadOnly, readText, statPath, listDir, treeSize, tailText };
+module.exports = { createSystem, isReadOnlyCommand, spawnReadOnly, readText, statPath, realPath, listDir, treeSize, tailText };

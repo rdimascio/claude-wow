@@ -15,6 +15,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const BRIDGE = path.join(__dirname, '..', 'bridge', 'bridge.js');
+const AC = require('../bridge/agentcontract');
 
 function scratch(name) {
   const dir = path.join(os.tmpdir(), `claude-wow-transport-${name}-${process.pid}-${Date.now().toString(36)}`);
@@ -416,5 +417,157 @@ test('per-chat MCP end to end: discovered servers are listed, a chat turns one o
     argv.slice(argv.indexOf('--disallowedTools') + 1).includes('mcp__repo-srv'),
     "all off also covers a server in the chat folder's .mcp.json that no run reported yet",
   );
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('a C2 fail in agent-contract.json refuses a run whose mcp= choice turns a server off, before the agent starts, and the slot files carry the contract', () => {
+  const dir = scratch('mcp-contract');
+  const { home, saved, project, cfg, addons } = fakeInstall(dir);
+  const userHome = path.join(dir, 'user');
+  fs.mkdirSync(userHome, { recursive: true });
+  fs.writeFileSync(path.join(userHome, '.claude.json'), JSON.stringify({ mcpServers: { mobbin: { type: 'http', url: 'https://m' } } }));
+  const calls = path.join(dir, 'calls.jsonl');
+  fs.writeFileSync(
+    cfg.agents.claude.path,
+    `const a = process.argv.slice(2);\nrequire('fs').appendFileSync(${JSON.stringify(calls)}, JSON.stringify(a) + '\\n');\nif (a.includes('--version')) { console.log('2.1.290 (Claude Code)'); process.exit(0); }\nprocess.stdout.write(${JSON.stringify(JSON.stringify({ type: 'result', result: 'pong', session_id: 'sess-1' }) + '\n')});\n`,
+  );
+  const real = fs.realpathSync.native(cfg.agents.claude.path);
+  const reason = /Claude Code 2\.1\.290 failed C2 in claude-wow agents check, so it may still load an MCP server a chat turns off\./;
+  fs.writeFileSync(
+    path.join(home, 'agent-contract.json'),
+    JSON.stringify({
+      claude: {
+        path: cfg.agents.claude.path,
+        ...AC.readIdentity(real),
+        version: '2.1.290',
+        at: new Date().toISOString(),
+        rows: { C1: 'pass', C2: 'fail', C2u: 'unchecked', C3: 'pass', C4: 'pass' },
+      },
+    }),
+  );
+  const hex = s => Buffer.from(s, 'utf8').toString('hex');
+  const send = (id, opts, allow = '') =>
+    fs.writeFileSync(
+      saved,
+      `ClaudeWoWDB = {\n["outbox"] = {\n["id"] = ${id},\n["session"] = "sess1",\n["chat"] = "chat1",\n["text"] = "${hex('ping')}",\n["cwd"] = "",\n${opts ? `["opts"] = "${hex(opts)}",\n` : ''}${allow ? `["allow"] = "${hex(allow)}",\n` : ''}["t"] = 1,\n},\n}\n`,
+    );
+  const env = { ...process.env, CLAUDE_WOW_HOME: home, HOME: userHome, USERPROFILE: userHome, CLAUDE_CONFIG_DIR: '' };
+  const run = () => spawnSync(process.execPath, [BRIDGE, '--once', '--project', project], { encoding: 'utf8', env, timeout: 60000 });
+  const agentRuns = () =>
+    fs.existsSync(calls)
+      ? fs
+          .readFileSync(calls, 'utf8')
+          .trim()
+          .split('\n')
+          .map(l => JSON.parse(l))
+          .filter(a => a.includes('-p'))
+      : [];
+
+  send(41, 'mcp=-mobbin', 'WebFetch');
+  const r = run();
+  const out = r.stdout + r.stderr;
+  assert.equal(r.status, 1, out);
+  assert.match(out, new RegExp(`#41@sess1 contract: ${reason.source}`), out);
+  assert.equal(agentRuns().length, 0, 'the agent never started');
+  assert.ok(!/allowed for claude/.test(out), out);
+  assert.ok(
+    !(JSON.parse(fs.readFileSync(path.join(home, 'config.json'), 'utf8')).agents.claude.allowedTools || []).includes('WebFetch'),
+    'a refused run saves no Allow grant',
+  );
+  const transcript = fs.readFileSync(path.join(home, 'transcripts.json'), 'utf8');
+  assert.match(transcript, reason, transcript);
+  const slot = fs.readFileSync(path.join(addons, 'ClaudeWoW_S001', 'Inbox.lua'), 'utf8');
+  assert.match(slot, /^\tcontract = \{ claude = \{ version = "2\.1\.290", checked = true, off = false, reason = "Claude Code 2\.1\.290 failed C2 /m, slot);
+
+  send(42, '');
+  const ok = run();
+  assert.equal(ok.status, 0, ok.stdout + ok.stderr);
+  assert.match(ok.stdout + ok.stderr, /#42@sess1 done \(/);
+  assert.equal(agentRuns().length, 1, 'a chat that turns nothing off still runs');
+
+  fs.writeFileSync(path.join(home, 'agent-contract.json'), '{}');
+  send(43, 'mcp=-mobbin');
+  const unchecked = run();
+  const uOut = unchecked.stdout + unchecked.stderr;
+  assert.match(uOut, /contract: Claude Code at .* is not checked against the MCP behaviors the bridge relies on; run claude-wow agents check\./, uOut);
+  assert.match(uOut, /#43@sess1 done \(/, 'not checked turns nothing off');
+  assert.equal(agentRuns().length, 2);
+  assert.match(
+    fs.readFileSync(path.join(addons, 'ClaudeWoW_S001', 'Inbox.lua'), 'utf8'),
+    /^\tcontract = \{ claude = \{ version = "[0-9.]*", checked = false, off = true, reason = "" \}(, | \},$)/m,
+  );
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('Codex: an X2a fail refuses a run that turns its own server off, an X2b fail refuses a run that passes a secret, and the other runs still go', () => {
+  const dir = scratch('codex-contract');
+  const { home, saved, project, cfg } = fakeInstall(dir);
+  const codexHome = path.join(dir, 'codex-home');
+  fs.mkdirSync(codexHome, { recursive: true });
+  fs.writeFileSync(path.join(codexHome, 'config.toml'), '[mcp_servers.mine]\ncommand = "x"\n');
+  const calls = path.join(dir, 'codex-calls.jsonl');
+  const codex = path.join(dir, 'fake-codex.js');
+  const lines = [
+    { type: 'thread.started', thread_id: 'th-1' },
+    { type: 'item.completed', item: { id: 'a', type: 'agent_message', text: 'pong' } },
+    { type: 'turn.completed', usage: { input_tokens: 1, output_tokens: 1 } },
+  ];
+  fs.writeFileSync(
+    codex,
+    `const a = process.argv.slice(2);\nrequire('fs').appendFileSync(${JSON.stringify(calls)}, JSON.stringify(a) + '\\n');\nif (a.includes('--version')) { console.log('codex-cli 0.160.1'); process.exit(0); }\nprocess.stdout.write(${JSON.stringify(lines.map(l => JSON.stringify(l)).join('\n') + '\n')});\n`,
+  );
+  fs.writeFileSync(
+    path.join(home, 'config.json'),
+    JSON.stringify({
+      ...cfg,
+      agents: { ...cfg.agents, codex: { path: codex } },
+      mcp: { servers: { secretsrv: { command: 'node', args: ['x.js'], envVars: ['MY_TOKEN'], default: true } } },
+    }),
+  );
+  const contract = rows =>
+    fs.writeFileSync(
+      path.join(home, 'agent-contract.json'),
+      JSON.stringify({ codex: { path: codex, ...AC.readIdentity(codex), version: '0.160.1', at: new Date().toISOString(), rows } }),
+    );
+  const hex = s => Buffer.from(s, 'utf8').toString('hex');
+  const send = (id, opts) =>
+    fs.writeFileSync(
+      saved,
+      `ClaudeWoWDB = {\n["outbox"] = {\n["id"] = ${id},\n["session"] = "sess1",\n["chat"] = "chat1",\n["text"] = "${hex('ping')}",\n["cwd"] = "",\n["agent"] = "codex",\n${opts ? `["opts"] = "${hex(opts)}",\n` : ''}["t"] = 1,\n},\n}\n`,
+    );
+  const env = { ...process.env, CLAUDE_WOW_HOME: home, CODEX_HOME: codexHome, MY_TOKEN: 't0ken' };
+  const runs = () =>
+    fs.existsSync(calls)
+      ? fs
+          .readFileSync(calls, 'utf8')
+          .trim()
+          .split('\n')
+          .map(l => JSON.parse(l))
+          .filter(a => a.includes('exec'))
+      : [];
+  const go = (id, opts) => {
+    send(id, opts);
+    const r = spawnSync(process.execPath, [BRIDGE, '--once', '--project', project], { encoding: 'utf8', env, timeout: 60000 });
+    return r.stdout + r.stderr;
+  };
+
+  contract({ X1: 'pass', X2a: 'fail', X2b: 'pass' });
+  let out = go(51, 'mcp=-mine');
+  assert.match(out, /#51@sess1 contract: Codex 0\.160\.1 failed X2a in claude-wow agents check, so it may still load an MCP server a chat turns off\./, out);
+  assert.equal(runs().length, 0, 'the agent never started');
+  out = go(52, '');
+  assert.match(out, /#52@sess1 done \(/, out);
+  assert.equal(runs().length, 1, 'a run that turns nothing off goes, with its secret, while X2b passed');
+  assert.ok(runs()[0].includes('mcp_servers.secretsrv.env_vars=["MY_TOKEN"]'), runs()[0].join(' '));
+
+  contract({ X1: 'pass', X2a: 'pass', X2b: 'fail' });
+  out = go(53, '');
+  assert.match(out, /#53@sess1 contract: Codex 0\.160\.1 failed X2b in claude-wow agents check, so its shell may see an MCP server's secret\./, out);
+  assert.equal(runs().length, 1, 'the secret run never started');
+  out = go(54, 'mcp=-secretsrv,-mine');
+  assert.match(out, /#54@sess1 done \(/, out);
+  assert.equal(runs().length, 2, 'without the secret server, and with X2a passed, it goes');
+  assert.ok(!runs()[1].join(' ').includes('MY_TOKEN'));
+  assert.ok(runs()[1].includes('mcp_servers.mine.enabled=false'));
   fs.rmSync(dir, { recursive: true, force: true });
 });

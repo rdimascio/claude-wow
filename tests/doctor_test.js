@@ -10,6 +10,7 @@ const C = require('../dev/doctor/checks');
 const Doctor = require('../dev/doctor');
 const Service = require('../bridge/service');
 const GameFs = require('../bridge/gamefs');
+const AC = require('../bridge/agentcontract');
 
 const NOW = Date.parse('2026-09-29T18:40:00Z');
 const MINUTE = 60 * 1000;
@@ -75,6 +76,24 @@ function makeWorld(name, options = {}) {
         ),
   );
   write(path.join(clawHome, 'transcripts.json'), '{}');
+  const claudeBin = path.join(root, 'claude-bin', 'claude');
+  write(claudeBin, '');
+  fs.utimesSync(claudeBin, new Date(NOW - 48 * 60 * MINUTE), new Date(NOW - 48 * 60 * MINUTE));
+  if (options.contract !== false)
+    write(
+      path.join(clawHome, 'agent-contract.json'),
+      JSON.stringify(
+        options.contract || {
+          claude: {
+            path: claudeBin,
+            ...AC.readIdentity(claudeBin),
+            version: '2.1.290',
+            at: iso(NOW - 60 * MINUTE),
+            rows: { C1: 'pass', C2: 'pass', C2u: 'unchecked' },
+          },
+        },
+      ),
+    );
   write(Service.pidFile(dirs), JSON.stringify({ pid: 100, bridgePid: 101, started: NOW - 3 * 60 * MINUTE, mode: 'service', repo: checkout }));
   const logLines = options.logLines || [
     `[${iso(NOW - 5 * MINUTE)}] strip #70 (screenshot WoWScrnShot_092926_112926.png, 1920x1080 png, codec 2, 3 row(s)): 1 message(s)`,
@@ -105,7 +124,7 @@ function makeWorld(name, options = {}) {
   if (options.sessionBytes) write(path.join(C.claudeProjectDir(home, project), 'sess-1.jsonl'), Buffer.alloc(options.sessionBytes));
   for (const legacy of options.legacy || []) write(path.join(checkout, 'bridge', legacy), '{}');
   GameFs.repair(addonDir);
-  return { root, home, checkout, nodeBin, addonDir, clientDir, project, dirs, clawHome };
+  return { root, home, checkout, nodeBin, addonDir, clientDir, project, dirs, clawHome, claudeBin };
 }
 
 function fakeRunner(world, overrides = {}) {
@@ -180,7 +199,7 @@ test('a healthy world: every check ok, exit code 0', () => {
   Doctor.main(['--json'], ctx.sys, l => json.push(l));
   const parsed = JSON.parse(json[0]);
   assert.equal(parsed.status, 'ok');
-  assert.equal(parsed.checks.length, 14);
+  assert.equal(parsed.checks.length, 15);
 });
 
 test('service: missing plist, missing node, unloaded job, dead child', () => {
@@ -494,4 +513,36 @@ test('clients: each client with its build, a different build in one of them, old
   const gone = C.checkClients(context(world));
   assert.equal(gone.status, 'fail');
   assert.match(gone.problems[0].what, /^_classic_era_: the client folder .* is gone\.$/);
+});
+
+test('contract: a missing file, a failed row, a CLI replaced since the check (even with an older mtime) and a vanished CLI warn', () => {
+  const missing = C.checkContract(context(makeWorld('contract-missing', { contract: false })));
+  assert.equal(missing.status, 'warn');
+  assert.match(missing.problems[0].what, /agent-contract\.json does not exist/);
+  assert.match(missing.problems[0].fix, /claude-wow agents check/);
+  const world = makeWorld('contract-stale');
+  const ok = C.checkContract(context(world));
+  assert.equal(ok.status, 'ok', JSON.stringify(ok));
+  assert.equal(ok.summary, 'claude 2.1.290');
+  const before = fs.statSync(world.claudeBin);
+  fs.writeFileSync(world.claudeBin, 'x');
+  fs.utimesSync(world.claudeBin, before.atime, before.mtime);
+  assert.equal(fs.statSync(world.claudeBin).mtimeMs, before.mtimeMs, 'an update that keeps the old mtime, older than the check');
+  const stale = C.checkContract(context(world));
+  assert.equal(stale.status, 'warn');
+  assert.match(stale.problems[0].what, /is not the file the check at .* measured \(path, size, inode or times differ\)/);
+  const failed = C.checkContract(
+    context(
+      makeWorld('contract-failed', {
+        contract: { codex: { path: '/nowhere/codex', version: '0.160.1', at: iso(NOW), rows: { X1: 'pass', X2b: 'fail' } }, junk: 3 },
+      }),
+    ),
+  );
+  assert.equal(failed.summary, 'codex 0.160.1 (failed X2b)');
+  assert.deepEqual(
+    failed.problems.map(p => p.what),
+    ['codex 0.160.1 failed X2b in the last agents check.', 'codex: the checked CLI /nowhere/codex is gone.'],
+  );
+  const broken = C.checkContract(context(makeWorld('contract-broken', { contract: [] })));
+  assert.match(broken.problems[0].what, /is not a JSON object/);
 });

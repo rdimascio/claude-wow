@@ -18,6 +18,7 @@ bridge/               the companion process (Node.js; the Chat SDK packages are 
   bridge.js             I/O, processes, publishing
   protocol.js           pure functions: strip records, slot files, folders, dedup
   agents.js             one entry per agent (Claude, Codex, Grok, Antigravity, Hermes, Local): command line, prompt delivery, stream parser
+  agentcontract.js      `claude-wow agents check`: probes the MCP behaviors the bridge relies on, agent-contract.json, the per-run gate
   localagent.js         the local agent: an OpenAI-compatible chat loop with the wowdata MCP tools, printing Claude's stream-json
   capture.ps1           screen capture and strip decoder (PowerShell)
   install-slots.js      creates the slot addons and signal files

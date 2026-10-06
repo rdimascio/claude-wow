@@ -3667,6 +3667,37 @@ test('mcp: Inbox.lua carries the list after a /reload only while fresh, and a ch
   assert.equal(next.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].mcpSet.s16'), 'true', 'after none, 16 servers can be turned back on');
 });
 
+test('mcp: the bridge contract arrives in a slot and in a fresh Inbox.lua, refuses turning a server off on a failed check, and a slot without it withdraws it', () => {
+  const vm = newVM();
+  login(vm);
+  vm.run('STUB.RunTimers()');
+  const list = '{ { id = "mobbin", label = "mobbin", src = "claude", on = true, health = "connected" } }';
+  const failed = 'contract = { claude = { version = "2.1.290", checked = true, off = false, reason = "Claude Code 2.1.290 failed C2." } }';
+  const last = v => v.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history[#ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history].text');
+  nextSlot(vm, `{ now = time(), cwd = "/p", agent = "claude", mcp = ${list}, ${failed}, replies = {} }`);
+  vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
+  vm.run('SlashCmdList.CLAUDE("mcp off mobbin")');
+  assert.equal(last(vm), 'MCP: Claude Code 2.1.290 failed C2.');
+  vm.run('SlashCmdList.CLAUDE("mcp")');
+  assert.match(last(vm), /\n {2}on {3}mobbin {2}\|cff33cc33ok\|r\nClaude Code 2\.1\.290 failed C2\.\n\/claude mcp on\|off/);
+  const stale = reloaded(vm, `ClaudeWoW_Inbox = { now = time() - 301, cwd = "", agent = "claude", mcp = ${list}, ${failed}, replies = {} }`);
+  stale.run(`ClaudeWoW.ApplyMcp(${list}); SlashCmdList.CLAUDE("mcp off mobbin")`);
+  assert.equal(last(stale), 'MCP: mobbin is off for this chat.', 'an Inbox.lua older than 5 minutes is not trusted');
+  const fresh = reloaded(vm, `ClaudeWoW_Inbox = { now = time(), cwd = "", agent = "claude", mcp = ${list}, ${failed}, replies = {} }`);
+  fresh.run('SlashCmdList.CLAUDE("mcp off mobbin")');
+  assert.equal(last(fresh), 'MCP: Claude Code 2.1.290 failed C2.');
+  vm.run('SlashCmdList.CLAUDE("hello")');
+  const id = vm.num('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].pendingId');
+  const chat = vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].id');
+  nextSlot(
+    vm,
+    `{ now = time(), cwd = "/p", agent = "claude", mcp = ${list}, replies = { { chat = "${chat}", id = ${id}, status = "done", text = "ok", agent = "claude" } } }`,
+  );
+  vm.run('STUB.now = STUB.now + 10; STUB.Tick()');
+  vm.run('SlashCmdList.CLAUDE("mcp off mobbin")');
+  assert.equal(last(vm), 'MCP: mobbin is off for this chat.');
+});
+
 test('mcp: the send limit counts the mcp= token, so a long message with many changes is refused instead of never reaching the strip', () => {
   const vm = newVM();
   login(vm);

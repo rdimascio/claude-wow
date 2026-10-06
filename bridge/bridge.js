@@ -98,6 +98,7 @@ const REL = require('./releases');
 const OU = require('./openurl');
 const SVC = require('./service');
 const MC = require('./mcpconfig');
+const AC = require('./agentcontract');
 
 const HERE = __dirname;
 // Config, state, transcripts, log and scratch live in the home folder (home.js:
@@ -108,6 +109,7 @@ const STATE_FILE = HOME.state;
 const LOG_FILE = HOME.log;
 const DEPLOY_LOCK_FILE = REL.layout(HOME.dir).lock;
 const DEPLOY_HOLD_POLL_MS = 1000;
+const contracts = AC.createTracker({ file: path.join(HOME.dir, AC.FILE_NAME), log });
 const TMP_DIR = HOME.tmp; // prompt files for agents that read the prompt from disk
 const PRIVATE_FILE_MODE = 0o600;
 const PRIVATE_DIR_MODE = 0o700;
@@ -650,7 +652,7 @@ function shutdown(sig, exitCode) {
   } catch {}
   const kids = [...running.values()]
     .map(r => r.child)
-    .concat(T.titleChildren(), factory.children())
+    .concat(T.titleChildren(), factory.children(), contracts.children())
     .filter(Boolean);
   if (captureChild) kids.push(captureChild);
   const n = kids.filter(PR.alive).length;
@@ -667,7 +669,7 @@ function crash(kind, err) {
   } catch {}
   const kids = [...running.values()]
     .map(r => r.child)
-    .concat(T.titleChildren(), factory.children(), captureChild ? [captureChild] : [])
+    .concat(T.titleChildren(), factory.children(), contracts.children(), captureChild ? [captureChild] : [])
     .filter(Boolean);
   for (const child of kids) {
     try {
@@ -844,6 +846,7 @@ function sharedSlotFields(urgent) {
     sessions: sessionList(),
     projects: projectList(),
     mcp: mcpSlotList(),
+    contract: AC.slotField(contracts.current()),
     home: os.homedir(),
     skills: FACTORY.slotSkills(FACTORY.settings(pluginsCfg['claude-code'])),
     discord: !!discordHub,
@@ -2514,6 +2517,18 @@ function runAgent(job, opts = {}) {
   });
   state.mcpSeen = mcpPlan.seen;
   const { userMcp, seenOff, guard: mcpGuard } = mcpPlan;
+  const contractCmd = A.resolveCommand(agentId, A.agentConfig(cfg, agentId));
+  const contractRefusal = contractCmd.found
+    ? AC.refusal(contracts.status(agentId, contractCmd, agent.env({ ...process.env })), {
+        off: claudeRun ? !!((userMcp && userMcp.offRules.length) || (seenOff && seenOff.rules.length)) : mcpPlan.codexMcp.some(e => e.off),
+        secrets: mcpPlan.codexMcp.some(e => (e.envVars && e.envVars.length) || e.bearerTokenEnvVar),
+      })
+    : '';
+  if (contractRefusal) {
+    log(`${tag} contract: ${contractRefusal}`);
+    finish(job, 'error', contractRefusal);
+    return;
+  }
   const grantForGood = P.splitGrants(inGameGrantable(job.allow, runDenied, mcpGuard));
   const grantOnce = P.splitGrants(inGameGrantable(job.allowOnce, runDenied, mcpGuard));
   if (grantForGood.rules.length) {
@@ -3766,6 +3781,10 @@ if (USER_MCP && (USER_MCP.servers.length || USER_MCP.strict)) {
 for (const id of A.agentIds()) {
   const note = A.costCapNote(id, A.agentConfig(cfg, id));
   if (note) log(note);
+}
+for (const id of Object.keys(AC.ROWS)) {
+  const cmd = A.resolveCommand(id, A.agentConfig(cfg, id));
+  if (cmd.found) contracts.status(id, cmd, A.AGENTS[id].env({ ...process.env }));
 }
 if (!once) startPlugins();
 startDiscord();
