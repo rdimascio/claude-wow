@@ -24,7 +24,7 @@
   "vision": { "maxWidth": 1280, "keep": 6 },
   "plugins": {
     "default": "ask",
-    "ask": { "cwd": "" }
+    "ask": { "cwd": "", "claudePlugin": false }
   },
   "agent": "claude",
   "agents": {

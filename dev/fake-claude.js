@@ -95,6 +95,29 @@ function backgroundAgent(session, agentReply) {
       usage: u,
     },
   });
+  if (process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS === '1') {
+    emit({
+      type: 'system',
+      subtype: 'task_started',
+      session_id: session.id,
+      tool_use_id: toolId,
+      subagent_type: 'claude-wow:wow-code',
+      is_backgrounded: false,
+    });
+    emit({
+      type: 'assistant',
+      session_id: session.id,
+      parent_tool_use_id: toolId,
+      message: { model: SUBAGENT_MODEL, role: 'assistant', content: [{ type: 'text', text: agentReply }], usage: sub },
+    });
+    emit({
+      type: 'user',
+      session_id: session.id,
+      message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: toolId, content: [{ type: 'text', text: agentReply }] }] },
+    });
+    session.total = addUsage(session.total, u);
+    return addUsage({}, sub);
+  }
   emit({ type: 'system', subtype: 'task_started', session_id: session.id, tool_use_id: toolId, subagent_type: 'claude-wow:wow-code', is_backgrounded: true });
   emit({
     type: 'user',
@@ -463,6 +486,7 @@ async function main() {
     cwd: process.cwd(),
     pid: process.pid,
     envNames: Object.keys(process.env),
+    disableBackgroundTasks: process.env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS ?? null,
   });
 
   if (d.auth) {

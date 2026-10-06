@@ -215,6 +215,16 @@ function costCapNote(id, acfg) {
   return '';
 }
 
+function extraArgsHavePluginDir(acfg) {
+  const extra = acfg && Array.isArray(acfg.extraArgs) ? acfg.extraArgs : [];
+  return extra.some(a => /^--plugin-dir(=|$)/.test(String(a)));
+}
+
+function extraArgsPluginDirNote(acfg) {
+  if (!extraArgsHavePluginDir(acfg)) return '';
+  return 'agents.claude.extraArgs has --plugin-dir, so every chat and factory Claude run loads that plugin, coding chats too; move it to plugins.ask.claudePlugin: true, which loads the claude-wow plugin into ask runs only.';
+}
+
 function claudeParser(opts = {}) {
   let usage = null; // the last assistant message's usage: what the next turn will carry
   let model = ''; // the model that wrote it, for pricing a result without modelUsage
@@ -1102,6 +1112,8 @@ module.exports = {
   unsupportedSettings,
   costCap,
   costCapNote,
+  extraArgsHavePluginDir,
+  extraArgsPluginDirNote,
   withChatSettings,
   withPluginSettings,
   PLUGIN_SETTINGS,

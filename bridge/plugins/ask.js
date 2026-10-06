@@ -27,6 +27,16 @@ function scratchFolder(options) {
   return own ? path.resolve(own) : path.join(dataDir(), 'ask');
 }
 
+function usesClaudePlugin(options) {
+  return !!options && options.claudePlugin === true;
+}
+
+function configNote(options) {
+  const v = options && options.claudePlugin;
+  if (v === undefined || typeof v === 'boolean') return '';
+  return `plugins.ask.claudePlugin must be true or false; ${JSON.stringify(v)} is ignored, so ask runs do not load the claude-wow Claude Code plugin.`;
+}
+
 const TOOLS = [
   "This chat is the player's in-game assistant, not a coding session. Answer questions about the game, research quests, items, NPCs, drops, dungeons and reputations, plan routes and mark them on the map when asked, and write macros when asked. Use web search when you need current game data and say when you are unsure.",
   'There is no project or repository behind this chat. The folder you run in is scratch space: do not create, read or edit files unless the player explicitly asks you to keep something, and do not talk about files, code or the folder unless they do.',
@@ -41,9 +51,12 @@ const plugin = {
   surfaces: ['map', 'macro', 'ui'],
   voice: 'player',
   scratchFolder,
+  usesClaudePlugin,
+  configNote,
   banner: options => `runs the chat's agent in ${scratchFolder(options)} (plugins.ask.cwd), no project`,
   handle(job, core) {
-    const cwd = scratchFolder(core.options('ask'));
+    const options = core.options('ask');
+    const cwd = scratchFolder(options);
     try {
       fs.mkdirSync(cwd, { recursive: true });
     } catch (e) {
@@ -56,7 +69,7 @@ const plugin = {
     }
     // The chat's own folder, if it ever had one, is left alone: it is the coding
     // plugin's, and comes back with the chat if it is switched there.
-    core.runAgent(job, { cwd, gameData: true, runTools: true });
+    core.runAgent(job, { cwd, gameData: true, runTools: true, claudePlugin: usesClaudePlugin(options) });
   },
 };
 

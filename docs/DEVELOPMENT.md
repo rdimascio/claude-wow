@@ -83,7 +83,7 @@ AddOns/ClaudeWoW_S###/Inbox.lua ◄── bridge/bridge.js (a real process) ◄�
 | `[[error]]` / `[[error text]]` | An error result, with or without text. |
 | `[[rate-limit]]` / `[[auth]]` | The usage-limit and login errors. |
 | `[[reply text]]` / `[[long 200]]` | A fixed reply, or a long one. |
-| `[[background-agent text]]` | Starts a background subagent as real Claude Code does in `-p` mode: a launch-notice result first, then the subagent's message (`text`), then the reply as a second result, with the subagent's model in `modelUsage`. |
+| `[[background-agent text]]` | Starts a background subagent as real Claude Code does in `-p` mode: a launch-notice result first, then the subagent's message (`text`), then the reply as a second result, with the subagent's model in `modelUsage`. With `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1` in its env it runs the subagent in the foreground instead: the subagent's message, its answer as the tool result, then one result. Each call records the variable's value as `disableBackgroundTasks`. |
 
 Every call is logged to `<sandbox>/agent/calls.jsonl`.
 
