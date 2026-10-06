@@ -133,7 +133,7 @@ local function ShowItemTooltip(owner)
 	if not offer then return end
 	GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
 	GameTooltip:AddLine(R.ItemName(offer.rules), EPIC_COLOR[1], EPIC_COLOR[2], EPIC_COLOR[3])
-	GameTooltip:AddLine(AgentLabel(offer.agent) .. " was denied:", 1, 0.82, 0)
+	GameTooltip:AddLine(Plain(AgentLabel(offer.agent)) .. " was denied:", 1, 0.82, 0)
 	for _, rule in ipairs(offer.rules) do
 		local folder = FolderOf(rule)
 		GameTooltip:AddLine(Plain(folder and ("Folder outside this chat: " .. folder) or rule), 1, 1, 1, true)
@@ -273,12 +273,18 @@ local function Build()
 	return f
 end
 
+function R.ContainerPlaced()
+	local container = _G.GroupLootContainer
+	if type(container) ~= "table" or type(container.IsShown) ~= "function" or not container:IsShown() then return false end
+	if type(container.GetTop) ~= "function" or type(container.GetBottom) ~= "function" then return false end
+	return type(container:GetTop()) == "number" and type(container:GetBottom()) == "number"
+end
+
 function R.Place(f)
 	if f.userPlaced then return end
 	f:ClearAllPoints()
-	local container = _G.GroupLootContainer
-	if type(container) == "table" and type(container.GetTop) == "function" then
-		f:SetPoint("BOTTOM", container, "TOP", 0, DETAIL_GAP)
+	if R.ContainerPlaced() then
+		f:SetPoint("BOTTOM", _G.GroupLootContainer, "TOP", 0, DETAIL_GAP)
 	else
 		f:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, FALLBACK_BOTTOM)
 	end
@@ -312,10 +318,10 @@ local function Present(offer)
 	offer.expiresAt = GetTime() + ROLL_SECONDS
 	frame.Name:SetText(R.ItemName(offer.rules))
 	frame.IconFrame.Icon:SetTexture(R.IconFor(offer.rules))
-	Layout(frame, offer)
 	R.Place(frame)
 	frame.Timer:SetValue(ROLL_SECONDS)
 	frame:Show()
+	Layout(frame, offer)
 	HighlightGreed(frame)
 	PlayKit(SOUND_ON_OFFER)
 end
@@ -385,8 +391,18 @@ function R.Park(chatId, msgId)
 	return true
 end
 
-function R.Resume(chatId, msgId)
+function R.Requeue(chatId, msgId)
 	if not SameOffer(parked, chatId, msgId) then return false end
+	table.insert(waiting, 1, parked)
+	parked = nil
+	return true
+end
+
+function R.Resume(chatId, msgId)
+	if not SameOffer(parked, chatId, msgId) then
+		PresentNext()
+		return false
+	end
 	local offer = parked
 	parked = nil
 	if current then
@@ -400,7 +416,10 @@ function R.Resume(chatId, msgId)
 end
 
 function R.Settle(chatId, msgId, granted)
-	if not SameOffer(parked, chatId, msgId) then return false end
+	if not SameOffer(parked, chatId, msgId) then
+		PresentNext()
+		return false
+	end
 	parked = nil
 	if granted then PlayKit(SOUND_ON_CHOICE.need) end
 	PresentNext()

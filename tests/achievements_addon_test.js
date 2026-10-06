@@ -89,6 +89,10 @@ test('the toast is headed Azeroth Companion, sits above the roll frame, and neve
   assert.equal(vm.evaluate('ClaudeWoWAchievementToast.rel == ClaudeWoWRollFrame'), 'true');
   assert.equal(vm.evaluate('ClaudeWoWAchievementToast.relPoint'), 'TOP');
   assert.ok(Number(vm.evaluate('ClaudeWoWAchievementToast.y')) > 0, 'with a gap');
+  vm.run('ClaudeWoWRollFrame:Hide(); local f = ClaudeWoWAchievementToast; f.scripts.OnUpdate(f, 10)');
+  vm.run(`ClaudeWoWAchievements.Sync(${payload(3, [entry(3, 'c', 'Third')])})`);
+  assert.equal(vm.evaluate('ClaudeWoWAchievementToast.title.text'), 'Third');
+  assert.equal(vm.evaluate('ClaudeWoWAchievementToast.rel == UIParent'), 'true', 'a hidden roll frame is not the anchor');
 });
 
 const ALERT_TEMPLATE_STUB = `

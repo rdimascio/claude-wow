@@ -189,7 +189,7 @@ end
 function T.Anchor(f)
 	f:ClearAllPoints()
 	local roll = _G[ROLL_FRAME_NAME]
-	if type(roll) == "table" and type(roll.GetTop) == "function" then
+	if type(roll) == "table" and type(roll.IsShown) == "function" and roll:IsShown() then
 		f:SetPoint("BOTTOM", roll, "TOP", 0, ROLL_GAP)
 	else
 		f:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, FALLBACK_BOTTOM)

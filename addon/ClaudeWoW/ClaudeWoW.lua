@@ -3840,12 +3840,17 @@ end
 function Q.DenialAgentName(c, agent)
 	local name = ReplyAgentName(c, agent)
 	if name == AgentName("") then return "this agent" end
-	return name
+	return Display(name)
+end
+
+function Q.GrantTarget(c)
+	return ChatAgent(c), Cli.ChatPlugin(c)
 end
 
 function Q.AlwaysTarget(c, rules, agent)
 	local commands, dirs = ClaudeWoW.SplitGrants(rules)
-	local name = Q.DenialAgentName(c, agent)
+	local target = Q.GrantTarget(c)
+	local name = Q.DenialAgentName(c, target ~= "" and target or agent)
 	if #dirs > 0 and #commands > 0 then return name .. " and this chat" end
 	if #dirs > 0 then return "this chat" end
 	return name
@@ -3937,7 +3942,10 @@ function ClaudeWoW.AcceptAllow(data)
 	if not data or run.allowConfirm ~= data then return false end
 	run.allowConfirm = nil
 	local rules, openId = ClaudeWoW.OpenDenial(data.chatId)
-	local fresh = rules ~= nil and openId == data.msgId and Q.SameRules(rules, data.rules)
+	local c = FindChat(data.chatId)
+	local agent, plugin = Q.GrantTarget(c)
+	local sameTarget = c ~= nil and agent == data.agent and plugin == data.plugin
+	local fresh = rules ~= nil and openId == data.msgId and Q.SameRules(rules, data.rules) and sameTarget
 	if fresh then AllowAlways(data.chatId, rules) end
 	if ClaudeWoWRoll then ClaudeWoWRoll.Settle(data.chatId, data.msgId, fresh) end
 	if not fresh then Q.SayAboutDenial(FindChat(data.chatId), Q.STALE_DENIAL_TEXT) end
@@ -3946,7 +3954,7 @@ end
 
 function ClaudeWoW.ConfirmAllow(chatId, msgId, rules)
 	local c = FindChat(chatId)
-	local open, openId, agent = ClaudeWoW.OpenDenial(chatId)
+	local open, openId, deniedBy = ClaudeWoW.OpenDenial(chatId)
 	if not c or not open or openId ~= msgId or not Q.SameRules(open, rules) then
 		Q.SayAboutDenial(c, Q.STALE_DENIAL_TEXT)
 		return false
@@ -3955,13 +3963,19 @@ function ClaudeWoW.ConfirmAllow(chatId, msgId, rules)
 		ClaudeWoW.AllowOnce(chatId, open)
 		return true
 	end
-	if run.allowConfirm then ClaudeWoW.CancelAllow(run.allowConfirm) end
+	if ClaudeWoW.AllowPending(chatId, msgId) then return true end
+	local previous = run.allowConfirm
+	if previous then
+		run.allowConfirm = nil
+		if ClaudeWoWRoll then ClaudeWoWRoll.Requeue(previous.chatId, previous.msgId) end
+	end
 	local copied = {}
 	for i, rule in ipairs(open) do copied[i] = rule end
-	local data = { chatId = chatId, msgId = msgId, rules = copied }
+	local targetAgent, targetPlugin = Q.GrantTarget(c)
+	local data = { chatId = chatId, msgId = msgId, rules = copied, agent = targetAgent, plugin = targetPlugin }
 	run.allowConfirm = data
 	if ClaudeWoWRoll then ClaudeWoWRoll.Park(chatId, msgId) end
-	local dialog = StaticPopup_Show(Q.ALLOW_POPUP, ClaudeWoW.GrantText(chatId, "confirm", copied, agent), nil, data)
+	local dialog = StaticPopup_Show(Q.ALLOW_POPUP, ClaudeWoW.GrantText(chatId, "confirm", copied, deniedBy), nil, data)
 	if not dialog then
 		ClaudeWoW.CancelAllow(data)
 		Q.SayAboutDenial(c, "The confirm dialog did not open. Close other dialogs and try again.")
