@@ -514,6 +514,38 @@ test('a widget can read unit names and raid marks and use tooltip and game font 
   assert.equal(vm.evaluate(`${strings}[3].font == GameFontHighlightSmall`), 'true');
 });
 
+test('a widget plays no sound: PlaySound and PlaySoundFile are nil', () => {
+  const source = ['local ui = ...', 'ui.db.sound = type(PlaySound)', 'ui.db.file = type(PlaySoundFile)'].join('\n');
+  const vm = newVM(savedWidgets([['sound', source]]));
+  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("sound")'), 'running', vm.evaluate('select(2, ClaudeWoWWidgets.Status("sound"))'));
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.sound.sound'), 'nil');
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.sound.file'), 'nil');
+});
+
+test('a widget uses any global font object, whatever its name, as a read-only proxy', () => {
+  const fonts = ['Fancy24Font', 'ErrorFont', 'Game13FontShadow', 'Tooltip_Large'];
+  const setup = [
+    ...fonts.map(name => `${name} = CreateFrame("Font", "${name}")\n${name}.GetObjectType = function() return "Font" end`),
+    'NotAFontTable = { GetObjectType = function() return "Frame" end }',
+  ].join('\n');
+  const source = [
+    'local ui = ...',
+    'local f = CreateFrame("Frame")',
+    ...fonts.map(name => `f:CreateFontString():SetFontObject(${name})`),
+    'ui.db.notFont = type(NotAFontTable)',
+    'ui.db.readOnly = not pcall(function() Fancy24Font.widgetWrote = 1 end)',
+  ].join('\n');
+  const vm = newVM();
+  vm.run(setup);
+  vm.run(widgetSet([['fonts', source]]));
+  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("fonts")'), 'running', vm.evaluate('select(2, ClaudeWoWWidgets.Status("fonts"))'));
+  const strings = `(function() for i = #STUB.frames, 1, -1 do local f = STUB.frames[i] if #f.children == ${fonts.length} then return f.children end end end)()`;
+  fonts.forEach((name, i) => assert.equal(vm.evaluate(`${strings}[${i + 1}].font == ${name}`), 'true', name));
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.fonts.notFont'), 'nil');
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.fonts.readOnly'), 'true');
+  assert.equal(vm.evaluate('rawget(Fancy24Font, "widgetWrote")'), null);
+});
+
 test('a named font string, texture or animation never replaces a global', () => {
   const source = [
     'local ui = ...',
@@ -617,6 +649,8 @@ const AUDIT_EXTRAS = [
   'NotAFontTable = { GetObjectType = function() return "Frame" end }',
   'ClaudeWoWAuditFont = CreateFrame("Font", "ClaudeWoWAuditFont")',
   'ClaudeWoWAuditFont.GetObjectType = function() return "Font" end',
+  'Tooltip_Large = CreateFrame("Font", "Tooltip_Large")',
+  'Tooltip_Large.GetObjectType = function() return "Font" end',
 ].join('\n');
 
 const auditList = (vm, which) => {
@@ -635,11 +669,9 @@ test('/claude dev globals saves the sorted names the widget sandbox admits and r
   assert.equal(vm.evaluate('AUDIT_SENT'), null, 'the dump went to the bridge');
   const admitted = auditList(vm, 'admitted');
   const refusedFunctions = auditList(vm, 'refused');
-  const refusedFonts = auditList(vm, 'refusedFonts');
-  assert.deepEqual(refusedFonts, ['OddFontObject']);
-  assert.ok(!refusedFunctions.includes('OddFontObject'));
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.globals.refusedFonts'), null);
   assert.deepEqual(refusedFunctions, byteOrder(refusedFunctions));
-  const refused = [...refusedFunctions, ...refusedFonts];
+  const refused = refusedFunctions;
   for (const name of [
     'UnitPowerMax',
     'GetUnitName',
@@ -650,11 +682,12 @@ test('/claude dev globals saves the sorted names the widget sandbox admits and r
     'GameFontNormal',
     'GameTooltipText',
     'QuestFontHighlight',
+    'OddFontObject',
+    'Tooltip_Large',
   ])
     assert.ok(admitted.includes(name), `${name} should be admitted`);
-  for (const name of ['UnitSetRole', 'GetSecretThing', 'IsAuditReady', 'C_Fake.DropThing', 'OddFontObject'])
-    assert.ok(refused.includes(name), `${name} should be refused`);
-  for (const name of ['DoAuditAction', 'NotAFontTable', 'ClaudeWoWAuditFont'])
+  for (const name of ['UnitSetRole', 'GetSecretThing', 'IsAuditReady', 'C_Fake.DropThing']) assert.ok(refused.includes(name), `${name} should be refused`);
+  for (const name of ['DoAuditAction', 'NotAFontTable', 'ClaudeWoWAuditFont', 'PlaySound', 'PlaySoundFile'])
     assert.ok(!admitted.includes(name) && !refused.includes(name), `${name} is outside the audited patterns`);
   assert.deepEqual(admitted, byteOrder(admitted));
   assert.equal(vm.evaluate('ClaudeWoWWidgetDB.globals.admittedCount'), String(admitted.length));
@@ -681,7 +714,7 @@ test('every name the globals dump admits resolves in a widget, and every name it
   vm.run(AUDIT_EXTRAS);
   vm.run('SlashCmdList.CLAUDE("dev globals")');
   const admitted = auditList(vm, 'admitted');
-  const refused = [...auditList(vm, 'refused'), ...auditList(vm, 'refusedFonts')];
+  const refused = auditList(vm, 'refused');
   assert.ok(admitted.length > 20 && refused.length >= 5);
   const source = [
     'local ui = ...',

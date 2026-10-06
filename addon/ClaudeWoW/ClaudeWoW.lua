@@ -311,6 +311,15 @@ local function HasUserMessage(c)
 	return false
 end
 
+Q.NEW_CHAT_TITLE = "New chat"
+
+function Q.ShownName(c)
+	if not c then return "" end
+	local name = tostring(c.name or "")
+	if name:match("^Chat %d+$") and not HasUserMessage(c) then return Q.NEW_CHAT_TITLE end
+	return name
+end
+
 -- First few words of a message, as a chat title.
 local function AutoTitle(text)
 	local words = {}
@@ -441,6 +450,7 @@ local function InitDB()
 		if s.mode ~= "reload" then s.autoRefresh = false end
 	end
 	if s.signal == nil then s.signal = true end
+	if s.minimap == nil then s.minimap = true end
 	if s.context == nil then s.context = true end -- tell the agent about the character, zone, etc.
 	if not s.contextWarnV2 then
 		s.contextWarnV2 = true
@@ -1647,7 +1657,9 @@ function ClaudeWoW.UpdateConnect()
 	local connected = ClaudeWoW.IsConnected()
 	local c = ActiveChat()
 	local busy = connected and c ~= nil and c.pendingId ~= nil
-	ui.send:SetShown(connected and not busy)
+	ui.send:SetShown(connected)
+	ui.send:SetEnabled(not busy)
+	if ui.effort then ui.effort:SetShown(connected) end
 	if ui.stop then ui.stop:SetShown(busy) end
 	ui.connect:SetShown(not connected)
 	if connected then return end
@@ -4388,32 +4400,165 @@ function Cli.ProjectMenu(anchor)
 	Cli.Out(c, "project: " .. Cli.ProjectLabel(c) .. " (known: " .. Cli.ProjectNames() .. "). Use /claude --project <name|path|none>.")
 end
 
+Cli.EFFORT_CHOICES = { "low", "medium", "high", "xhigh", "max" }
+
+function Cli.EffortLabel(c)
+	local e = c and c.effort
+	return (e and e ~= "") and e or "default"
+end
+
+function Cli.PickEffort(c, value)
+	c.effort = (value and value ~= "") and value or nil
+	Cli.Out(c, "effort: " .. Cli.EffortLabel(c))
+	Cli.UpdateEffortButton()
+end
+
+function Cli.UpdateEffortButton()
+	local b = ui.effort
+	if not b then return end
+	b.fullName = Cli.EffortLabel(ActiveChat())
+	b.text:SetText("|cffffffff" .. b.fullName .. "|r")
+end
+
+function Cli.EffortButtonTooltip(b)
+	GameTooltip:SetOwner(b, ui.chatTitle and "ANCHOR_BOTTOMRIGHT" or "ANCHOR_TOP")
+	GameTooltip:SetText("Effort: " .. (b.fullName or "default"))
+	GameTooltip:AddLine("How hard the agent thinks in this chat. Default uses the bridge's setting. You can also use /claude --effort <level>.", 0.8, 0.8, 0.8, true)
+	GameTooltip:Show()
+end
+
+function Cli.EffortMenu(anchor)
+	local c = ActiveChat()
+	if not c then return end
+	if type(MenuUtil) == "table" and type(MenuUtil.CreateContextMenu) == "function" then
+		local shown = pcall(MenuUtil.CreateContextMenu, anchor, function(_, root)
+			root:CreateTitle("Effort")
+			root:CreateButton("Default", function() Cli.PickEffort(c, nil) end)
+			for _, e in ipairs(Cli.EFFORT_CHOICES) do
+				root:CreateButton(e, function() Cli.PickEffort(c, e) end)
+			end
+		end)
+		if shown then return end
+	end
+	local at = 0
+	for i, e in ipairs(Cli.EFFORT_CHOICES) do
+		if e == c.effort then at = i end
+	end
+	Cli.PickEffort(c, Cli.EFFORT_CHOICES[at + 1])
+end
+
 Cli.PROJECT_W_MIN = 60
 Cli.PROJECT_W_MAX = 240
-Cli.PROJECT_HEADER_SHARE = 0.5
 Cli.PROJECT_PAD = 8
+Cli.HEADER_TITLE_MIN = 16
 
-function Cli.ProjectButtonRoom(b)
-	local host = b:GetParent()
+function Cli.HeaderLabelWidth(b, text)
+	b.text:SetWidth(0)
+	b.text:SetText(text)
+	return (Try(b.text.GetStringWidth, b.text) or 100) + Cli.PROJECT_PAD
+end
+
+function Cli.HeaderRoom(host)
 	local hostWidth = (host and Try(host.GetWidth, host)) or 0
-	if ui.chatTitle then
-		return math.max(Cli.PROJECT_W_MIN, math.min(Cli.PROJECT_W_MAX, math.floor(hostWidth * Cli.PROJECT_HEADER_SHARE)))
+	if ui.chatTitle then return hostWidth - 2 * Cli.PROJECT_PAD - Cli.HEADER_TITLE_MIN end
+	return hostWidth - 2 * Cli.PROJECT_PAD
+end
+
+function Cli.HeaderSlots()
+	local slots = {}
+	for _, spec in ipairs({
+		{ b = ui.projectButton, label = "Project: ", min = Cli.PROJECT_W_MIN, max = Cli.PROJECT_W_MAX },
+		{ b = ui.mcpButton, fixed = true },
+	}) do
+		if spec.b and spec.b.wanted then table.insert(slots, spec) end
 	end
-	local mcp = ui.mcpButton and ui.mcpButton:IsShown() and ((Try(ui.mcpButton.GetWidth, ui.mcpButton) or 0) + Cli.PROJECT_PAD) or 0
-	return math.max(Cli.PROJECT_W_MIN, hostWidth - 2 * Cli.PROJECT_PAD - mcp)
+	return slots
+end
+
+function Cli.MeasureHeaderSlot(slot)
+	local b = slot.b
+	if slot.fixed then
+		slot.full = Cli.HeaderLabelWidth(b, b.fullText)
+		slot.short, slot.min, slot.max = slot.full, slot.full, slot.full
+		return
+	end
+	slot.full = Cli.HeaderLabelWidth(b, slot.label .. "|cffffffff" .. b.fullName .. "|r")
+	slot.short = Cli.HeaderLabelWidth(b, "|cffffffff" .. b.fullName .. "|r")
+end
+
+function Cli.HeaderSlotFloor(slot)
+	return slot.compact and math.min(slot.min, slot.short) or slot.min
+end
+
+function Cli.HeaderSlotWidth(slot)
+	local natural = slot.compact and slot.short or slot.full
+	return math.min(slot.max, math.max(Cli.HeaderSlotFloor(slot), natural)), natural
+end
+
+function Cli.HeaderTotal(slots)
+	local total = 0
+	for i, slot in ipairs(slots) do
+		if not slot.hidden then
+			total = total + (slot.width or Cli.HeaderSlotWidth(slot)) + (i > 1 and Cli.PROJECT_PAD or 0)
+		end
+	end
+	return total
+end
+
+function Cli.FitHeaderSlots(slots, room)
+	for _, i in ipairs({ 2, 1 }) do
+		if Cli.HeaderTotal(slots) <= room then return end
+		if slots[i] and not slots[i].fixed then slots[i].compact = true end
+	end
+	for _, i in ipairs({ 1, 2 }) do
+		local slot = slots[i]
+		local over = Cli.HeaderTotal(slots) - room
+		if over <= 0 then return end
+		if slot and not slot.fixed then slot.width = math.max(Cli.HeaderSlotFloor(slot), Cli.HeaderSlotWidth(slot) - over) end
+	end
+	for i = #slots, 2, -1 do
+		if Cli.HeaderTotal(slots) <= room then return end
+		slots[i].hidden = true
+	end
+end
+
+function Cli.LayoutHeaderButtons()
+	local project = ui.projectButton
+	if not project then return end
+	local slots = Cli.HeaderSlots()
+	for _, slot in ipairs(slots) do Cli.MeasureHeaderSlot(slot) end
+	Cli.FitHeaderSlots(slots, Cli.HeaderRoom(project:GetParent()))
+	local leftmost = project
+	for _, b in ipairs({ ui.mcpButton }) do
+		if b then b:Hide() end
+	end
+	for _, slot in ipairs(slots) do
+		local b = slot.b
+		if not slot.hidden then
+			local width, natural = Cli.HeaderSlotWidth(slot)
+			width = slot.width or width
+			b.truncated = natural > width
+			b.text:SetWidth(0)
+			b.text:SetText(slot.fixed and b.fullText or ((slot.compact and "" or slot.label) .. "|cffffffff" .. b.fullName .. "|r"))
+			b:SetWidth(width)
+			b.text:SetWidth(width - Cli.PROJECT_PAD)
+			if b ~= project then
+				b:ClearAllPoints()
+				b:SetPoint("RIGHT", leftmost, "LEFT", -Cli.PROJECT_PAD, 0)
+				b:Show()
+			end
+			leftmost = b
+		end
+	end
+	if ui.titleBar and ui.chatTitle then ui.chatTitle:SetPoint("RIGHT", leftmost, "LEFT", -Cli.PROJECT_PAD, 0) end
 end
 
 function Cli.UpdateProjectButton()
 	local b = ui.projectButton
 	if not b then return end
 	b.fullName = Display(Cli.ProjectLabel(ActiveChat()))
-	b.text:SetWidth(0)
-	b.text:SetText("Project: |cffffffff" .. b.fullName .. "|r")
-	local natural = (Try(b.text.GetStringWidth, b.text) or 100) + Cli.PROJECT_PAD
-	local width = math.min(Cli.ProjectButtonRoom(b), math.max(Cli.PROJECT_W_MIN, natural))
-	b.truncated = natural > width
-	b:SetWidth(width)
-	b.text:SetWidth(width - Cli.PROJECT_PAD)
+	b.wanted = true
+	Cli.LayoutHeaderButtons()
 end
 
 function Cli.ProjectButtonTooltip(b)
@@ -4655,12 +4800,9 @@ function Cli.UpdateMcpButton()
 	if not b then return end
 	local c = ActiveChat()
 	local on, total = Cli.McpCounts(c)
-	local show = c ~= nil and total > 0
-	if ui.titleBar and ui.chatTitle and ui.projectButton then
-		ui.chatTitle:SetPoint("RIGHT", show and b or ui.projectButton, "LEFT", -Cli.PROJECT_PAD, 0)
-	end
-	if not show then
-		b:Hide()
+	b.wanted = c ~= nil and total > 0
+	if not b.wanted then
+		Cli.LayoutHeaderButtons()
 		return
 	end
 	local warn = false
@@ -4668,10 +4810,8 @@ function Cli.UpdateMcpButton()
 		if Cli.McpOn(c, s) and (s.health == "failed" or s.health == "needs-auth") then warn = true end
 	end
 	local color = Cli.McpUnsupported(c) and "999999" or (warn and "ff9933" or "ffffff")
-	b.text:SetWidth(0)
-	b.text:SetText("MCP |cff" .. color .. on .. "/" .. total .. "|r")
-	b:SetWidth((Try(b.text.GetStringWidth, b.text) or 50) + Cli.PROJECT_PAD)
-	b:Show()
+	b.fullText = "MCP |cff" .. color .. on .. "/" .. total .. "|r"
+	Cli.LayoutHeaderButtons()
 end
 
 function Cli.McpButtonTooltip(b)
@@ -5228,7 +5368,7 @@ function ClaudeWoW.UpdateStatus()
 	ClaudeWoW.UpdateDot()
 	ClaudeWoW.UpdateConnect()
 	if ui.title then
-		local t = c and Display(c.name) or Q.PANEL_TITLE
+		local t = c and Display(Q.ShownName(c)) or Q.PANEL_TITLE
 		if ui.chatTitle then
 			t = Q.PANEL_TITLE
 		else
@@ -5330,6 +5470,29 @@ local function GetBubble(i)
 	return b
 end
 
+function Q.HeaderButton(host, name, rightOf, onClick, onEnter)
+	local b = CreateFrame("Button", name, host)
+	b:SetSize(60, ui.titleBar and Q.NAV_H - 10 or 16)
+	b:SetPoint("RIGHT", rightOf, "LEFT", -Cli.PROJECT_PAD, 0)
+	b:SetFrameLevel((Try(host.GetFrameLevel, host) or 1) + 5)
+	b.text = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+	b.text:SetPoint("RIGHT", b, "RIGHT", -2, 0)
+	b.text:SetJustifyH("RIGHT")
+	b.text:SetWordWrap(false)
+	local hl = b:CreateTexture(nil, "HIGHLIGHT")
+	hl:SetAllPoints()
+	hl:SetColorTexture(1, 1, 1, 0.08)
+	b:RegisterForClicks("LeftButtonUp")
+	b:SetScript("OnClick", function(self)
+		GameTooltip:Hide()
+		onClick(self)
+	end)
+	b:SetScript("OnEnter", onEnter)
+	b:SetScript("OnLeave", function() GameTooltip:Hide() end)
+	b:Hide()
+	return b
+end
+
 function Q.BesideInput(button, inputBg, native)
 	if native then
 		button:SetPoint("BOTTOMLEFT", inputBg, "BOTTOMRIGHT", Q.COMPOSER_GAP, 0)
@@ -5424,6 +5587,7 @@ function ClaudeWoW.Render()
 	local c = ActiveChat()
 	Cli.UpdateMcpButton()
 	Cli.UpdateProjectButton()
+	Cli.UpdateEffortButton()
 	ClaudeWoW.UpdateConnect()
 	Q.UpdatePlaceholder()
 	if ui.content and c then
@@ -5625,7 +5789,7 @@ function ClaudeWoW.RenderChatList()
 	for i, btn in ipairs(ui.chatButtons) do
 		local c = listed[offset + i]
 		if c then
-			local label = Display(c.name)
+			local label = Display(Q.ShownName(c))
 			local folder = FolderName(ChatFolder(c))
 			if folder ~= "" and folder:lower() ~= c.name:lower() then
 				label = label .. " |cff888888" .. Display(folder) .. "|r"
@@ -5924,6 +6088,11 @@ Q.NATIVE_TEMPLATES = { "ButtonFrameTemplate", "InsetFrameTemplate" }
 Q.LIST_W = 300
 Q.COMPOSER_BOTTOM = 2
 Q.COMPOSER_GAP = 6
+Q.EFFORT_H = 16
+Q.EFFORT_GAP = 2
+Q.STOP_W = 48
+Q.STOP_H = 18
+Q.STOP_INSET = 5
 Q.NAV_TOP = -24
 Q.NAV_H = 34
 Q.LIST_ROW_H = 20
@@ -6094,6 +6263,220 @@ function Q.StatusTooltip()
 		GameTooltip:AddLine("At API list prices: a comparison, not a bill. A subscription is not charged per token.", 0.6, 0.6, 0.6, true)
 	end
 end
+
+Q.MINIMAP_NAME = "ClaudeWoWMinimapButton"
+Q.MINIMAP_SIZE = 31
+Q.MINIMAP_ANGLE_DEFAULT = 225
+Q.MINIMAP_EDGE_PAD = 5
+Q.MINIMAP_DIAGONAL_INSET = 10
+Q.MINIMAP_ICON = "Interface\\AddOns\\ClaudeWoW\\MinimapIcon"
+Q.MINIMAP_ICON_MASK = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
+Q.MINIMAP_ICON_INSET = { 0.05, 0.95, 0.05, 0.95 }
+Q.MINIMAP_ICON_PRESSED = { 0, 1, 0, 1 }
+Q.MINIMAP_PORTRAIT_INSET = { 0.2, 0.8, 0.2, 0.8 }
+Q.MINIMAP_PORTRAIT_PRESSED = { 0.18, 0.82, 0.18, 0.82 }
+Q.MINIMAP_BORDER = "Interface\\Minimap\\MiniMap-TrackingBorder"
+Q.MINIMAP_BACKGROUND = "Interface\\Minimap\\UI-Minimap-Background"
+Q.MINIMAP_HIGHLIGHT = "Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight"
+Q.MINIMAP_HINT_COLOR = { 0.1, 1, 0.1 }
+Q.MINIMAP_HINT_LEFT = "Left-click: open or close"
+Q.MINIMAP_HINT_RIGHT = "Right-click: options"
+Q.MINIMAP_ROUND_QUADRANTS = {
+	ROUND = { true, true, true, true },
+	SQUARE = { false, false, false, false },
+	["CORNER-TOPLEFT"] = { false, false, false, true },
+	["CORNER-TOPRIGHT"] = { false, false, true, false },
+	["CORNER-BOTTOMLEFT"] = { false, true, false, false },
+	["CORNER-BOTTOMRIGHT"] = { true, false, false, false },
+	["SIDE-LEFT"] = { false, true, false, true },
+	["SIDE-RIGHT"] = { true, false, true, false },
+	["SIDE-TOP"] = { false, false, true, true },
+	["SIDE-BOTTOM"] = { true, true, false, false },
+	["TRICORNER-TOPLEFT"] = { false, true, true, true },
+	["TRICORNER-TOPRIGHT"] = { true, false, true, true },
+	["TRICORNER-BOTTOMLEFT"] = { true, true, false, true },
+	["TRICORNER-BOTTOMRIGHT"] = { true, true, true, false },
+}
+Q.MINIMAP_LAYOUT_MAINLINE = { border = 50, background = 24, icon = 18, centered = true }
+Q.MINIMAP_LAYOUT_CLASSIC = { border = 53, background = 20, backgroundX = 7, backgroundY = -5, icon = 17, iconX = 7, iconY = -6 }
+
+function Q.MinimapButtonOn()
+	return db.settings.minimap ~= false
+end
+
+function Q.MinimapAngle()
+	return tonumber(db.settings.minimapAngle) or Q.MINIMAP_ANGLE_DEFAULT
+end
+
+function Q.MinimapShape()
+	if type(GetMinimapShape) ~= "function" then return "ROUND" end
+	local ok, shape = pcall(GetMinimapShape)
+	return ok and Q.MINIMAP_ROUND_QUADRANTS[shape] and shape or "ROUND"
+end
+
+function Q.MinimapOffset(angle, width, height, shape)
+	local radians = math.rad(angle)
+	local x, y, quadrant = math.cos(radians), math.sin(radians), 1
+	if x < 0 then quadrant = quadrant + 1 end
+	if y > 0 then quadrant = quadrant + 2 end
+	local w, h = width / 2 + Q.MINIMAP_EDGE_PAD, height / 2 + Q.MINIMAP_EDGE_PAD
+	if Q.MINIMAP_ROUND_QUADRANTS[shape or "ROUND"][quadrant] then return x * w, y * h end
+	local diagonalW = math.sqrt(2 * w * w) - Q.MINIMAP_DIAGONAL_INSET
+	local diagonalH = math.sqrt(2 * h * h) - Q.MINIMAP_DIAGONAL_INSET
+	return math.max(-w, math.min(x * diagonalW, w)), math.max(-h, math.min(y * diagonalH, h))
+end
+
+function Q.PlaceMinimapButton(button)
+	local x, y = Q.MinimapOffset(Q.MinimapAngle(), Minimap:GetWidth(), Minimap:GetHeight(), Q.MinimapShape())
+	button:ClearAllPoints()
+	button:SetPoint("CENTER", Minimap, "CENTER", x, y)
+end
+
+function Q.CursorAngle()
+	local mx, my = Minimap:GetCenter()
+	local px, py = GetCursorPosition()
+	if not (mx and my and px and py) then return nil end
+	local scale = Minimap:GetEffectiveScale()
+	local atan2 = math.atan2 or math.atan
+	return math.deg(atan2(py / scale - my, px / scale - mx)) % 360
+end
+
+function Q.MinimapDragUpdate(button)
+	local angle = Q.CursorAngle()
+	if not angle then return end
+	db.settings.minimapAngle = angle
+	Q.PlaceMinimapButton(button)
+end
+
+function Q.PlainStatus(c)
+	local state = Q.StatusState(c)
+	if state == "working" then return Q.STATUS_WORKING end
+	if state == "down" then return Q.STATUS_UNREACHABLE end
+	if state == "reply" then return Q.STATUS_REPLY end
+	return Q.STATUS_READY
+end
+
+function Q.MinimapTooltip(button)
+	if button.dragging then return end
+	local green = Q.MINIMAP_HINT_COLOR
+	GameTooltip:SetOwner(button, "ANCHOR_LEFT")
+	GameTooltip:SetText(ClaudeWoW.PRODUCT)
+	GameTooltip:AddLine(Q.PlainStatus(ActiveChat()), 1, 1, 1, true)
+	Q.StatusTooltip()
+	GameTooltip:AddLine(" ")
+	GameTooltip:AddLine(Q.MINIMAP_HINT_LEFT, green[1], green[2], green[3])
+	GameTooltip:AddLine(Q.MINIMAP_HINT_RIGHT, green[1], green[2], green[3])
+	GameTooltip:Show()
+end
+
+function Q.MinimapClick(_, mouseButton)
+	if mouseButton == "RightButton" then
+		ClaudeWoW.ShowOptions()
+	else
+		ClaudeWoW.ToggleWorkspace()
+	end
+end
+
+function Q.MinimapDragStart(button)
+	button.dragging = true
+	button:LockHighlight()
+	Q.MinimapMouseDown(button)
+	GameTooltip:Hide()
+	button:SetScript("OnUpdate", Q.MinimapDragUpdate)
+end
+
+function Q.MinimapDragStop(button)
+	button:SetScript("OnUpdate", nil)
+	button.dragging = nil
+	button:UnlockHighlight()
+	Q.MinimapMouseUp(button)
+	Q.PlaceMinimapButton(button)
+end
+
+function Q.MinimapLayout()
+	if WOW_PROJECT_ID ~= nil and WOW_PROJECT_ID == WOW_PROJECT_MAINLINE then return Q.MINIMAP_LAYOUT_MAINLINE end
+	return Q.MINIMAP_LAYOUT_CLASSIC
+end
+
+function Q.SetMinimapIcon(icon)
+	local ok, found = pcall(icon.SetTexture, icon, Q.MINIMAP_ICON)
+	if ok and found ~= false then return Q.MINIMAP_ICON end
+	icon:SetTexture(Q.PORTRAIT)
+	if type(icon.SetMask) == "function" then pcall(icon.SetMask, icon, Q.MINIMAP_ICON_MASK) end
+	return Q.PORTRAIT
+end
+
+function Q.UpdateMinimapIconCoord(button)
+	local portrait = button.iconFile == Q.PORTRAIT
+	local rest = portrait and Q.MINIMAP_PORTRAIT_INSET or Q.MINIMAP_ICON_INSET
+	local pressed = portrait and Q.MINIMAP_PORTRAIT_PRESSED or Q.MINIMAP_ICON_PRESSED
+	local coords = button.isMouseDown and pressed or rest
+	button.icon:SetTexCoord(coords[1], coords[2], coords[3], coords[4])
+end
+
+function Q.MinimapMouseDown(button)
+	button.isMouseDown = true
+	Q.UpdateMinimapIconCoord(button)
+end
+
+function Q.MinimapMouseUp(button)
+	button.isMouseDown = false
+	Q.UpdateMinimapIconCoord(button)
+end
+
+function Q.BuildMinimapButton()
+	if ui.minimap then return ui.minimap end
+	if type(Minimap) ~= "table" then return nil end
+	local layout = Q.MinimapLayout()
+	local button = CreateFrame("Button", Q.MINIMAP_NAME, Minimap)
+	button:SetSize(Q.MINIMAP_SIZE, Q.MINIMAP_SIZE)
+	button:SetFrameStrata("MEDIUM")
+	button:SetFrameLevel(8)
+	button:RegisterForClicks("AnyUp")
+	button:RegisterForDrag("LeftButton")
+	button:SetHighlightTexture(Q.MINIMAP_HIGHLIGHT)
+
+	local border = button:CreateTexture(nil, "OVERLAY")
+	border:SetSize(layout.border, layout.border)
+	border:SetTexture(Q.MINIMAP_BORDER)
+	border:SetPoint("TOPLEFT", button, "TOPLEFT", 0, 0)
+	button.border = border
+
+	local background = button:CreateTexture(nil, "BACKGROUND")
+	background:SetSize(layout.background, layout.background)
+	background:SetTexture(Q.MINIMAP_BACKGROUND)
+	local icon = button:CreateTexture(nil, "ARTWORK")
+	icon:SetSize(layout.icon, layout.icon)
+	button.iconFile = Q.SetMinimapIcon(icon)
+	if layout.centered then
+		background:SetPoint("CENTER", button, "CENTER", 0, 0)
+		icon:SetPoint("CENTER", button, "CENTER", 0, 0)
+	else
+		background:SetPoint("TOPLEFT", button, "TOPLEFT", layout.backgroundX, layout.backgroundY)
+		icon:SetPoint("TOPLEFT", button, "TOPLEFT", layout.iconX, layout.iconY)
+	end
+	button.background, button.icon = background, icon
+	button.isMouseDown = false
+	Q.UpdateMinimapIconCoord(button)
+
+	button:SetScript("OnClick", Q.MinimapClick)
+	button:SetScript("OnDragStart", Q.MinimapDragStart)
+	button:SetScript("OnDragStop", Q.MinimapDragStop)
+	button:SetScript("OnMouseDown", Q.MinimapMouseDown)
+	button:SetScript("OnMouseUp", Q.MinimapMouseUp)
+	button:SetScript("OnEnter", Q.MinimapTooltip)
+	button:SetScript("OnLeave", function() GameTooltip:Hide() end)
+	ui.minimap = button
+	Q.PlaceMinimapButton(button)
+	Q.ApplyMinimapButton()
+	return button
+end
+
+function Q.ApplyMinimapButton()
+	if not ui.minimap then return end
+	ui.minimap:SetShown(Q.MinimapButtonOn())
+end
+
 Q.PARCHMENT_STYLE = {
 	user      = { color = { 0.10, 0.22, 0.45 }, bg = { 0.10, 0.20, 0.40, 0.07 } },
 	assistant = { color = { 0.45, 0.13, 0.02 }, bg = { 0, 0, 0, 0 } },
@@ -6722,7 +7105,7 @@ function Q.FillRow(r, c, index, width)
 	r.active = active
 	r:SetWidth(width)
 	r.glow:SetShown(active)
-	local title = Display(c.name)
+	local title = Display(Q.ShownName(c))
 	r.fullTitle = title
 	r.summary = Q.MessageSummary(last, count)
 	if c.agent and c.agent ~= "" then title = title .. " |cff9d9d9d" .. AgentName(c.agent) .. "|r" end
@@ -6967,7 +7350,7 @@ function ClaudeWoW.RefreshTitleBar()
 	local label = ui.chatTitle
 	if not label then return end
 	local c = ActiveChat()
-	label:SetText(c and Display(c.name) or Q.PANEL_TITLE)
+	label:SetText(c and Display(Q.ShownName(c)) or Q.PANEL_TITLE)
 end
 
 function Q.TitleBarTooltip(bar)
@@ -7670,29 +8053,10 @@ local function BuildUI()
 	end)
 	projectButton:SetScript("OnEnter", Cli.ProjectButtonTooltip)
 	projectButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
-	projectHost:HookScript("OnSizeChanged", function() Cli.UpdateProjectButton() end)
+	projectHost:HookScript("OnSizeChanged", function() Cli.LayoutHeaderButtons() end)
 	ui.projectButton = projectButton
 
-	local mcpButton = CreateFrame("Button", "ClaudeWoWMcpButton", projectHost)
-	mcpButton:SetSize(60, ui.titleBar and Q.NAV_H - 10 or 16)
-	mcpButton:SetPoint("RIGHT", projectButton, "LEFT", -Cli.PROJECT_PAD, 0)
-	mcpButton:SetFrameLevel((Try(projectHost.GetFrameLevel, projectHost) or 1) + 5)
-	mcpButton.text = mcpButton:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-	mcpButton.text:SetPoint("RIGHT", mcpButton, "RIGHT", -2, 0)
-	mcpButton.text:SetJustifyH("RIGHT")
-	mcpButton.text:SetWordWrap(false)
-	local mcpHl = mcpButton:CreateTexture(nil, "HIGHLIGHT")
-	mcpHl:SetAllPoints()
-	mcpHl:SetColorTexture(1, 1, 1, 0.08)
-	mcpButton:RegisterForClicks("LeftButtonUp")
-	mcpButton:SetScript("OnClick", function(self)
-		GameTooltip:Hide()
-		Cli.McpMenu(self)
-	end)
-	mcpButton:SetScript("OnEnter", Cli.McpButtonTooltip)
-	mcpButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
-	mcpButton:Hide()
-	ui.mcpButton = mcpButton
+	ui.mcpButton = Q.HeaderButton(projectHost, "ClaudeWoWMcpButton", projectButton, Cli.McpMenu, Cli.McpButtonTooltip)
 
 	local send = MakeButton(f, "Send", SEND_W, ClaudeWoW.SendFromInput)
 	Q.BesideInput(send, inputBg, native)
@@ -7700,9 +8064,20 @@ local function BuildUI()
 	send:SetScript("OnLeave", function() GameTooltip:Hide() end)
 	ui.send = send
 
-	local stop = MakeButton(f, "Stop", SEND_W, function() ClaudeWoW.Cancel(ActiveChat()) end)
-	stop:SetHeight(30)
-	stop:SetPoint("LEFT", inputBg, "RIGHT", 6, 0)
+	local effort = Q.HeaderButton(f, "ClaudeWoWEffortButton", send, Cli.EffortMenu, Cli.EffortButtonTooltip)
+	effort:ClearAllPoints()
+	effort:SetSize(SEND_W, Q.EFFORT_H)
+	effort:SetPoint("BOTTOMRIGHT", send, "TOPRIGHT", 0, Q.EFFORT_GAP)
+	ui.effort = effort
+
+	local stop = MakeButton(inputBg, "Stop", Q.STOP_W, function() ClaudeWoW.Cancel(ActiveChat()) end)
+	stop:SetHeight(Q.STOP_H)
+	if ui.titleBar then
+		stop:SetPoint("BOTTOMRIGHT", inputBg, "BOTTOMRIGHT", -Q.STOP_INSET, Q.STOP_INSET)
+	else
+		stop:SetPoint("TOPRIGHT", inputBg, "TOPRIGHT", -Q.STOP_INSET, -Q.STOP_INSET)
+	end
+	stop:SetFrameLevel((Try(inputBg.GetFrameLevel, inputBg) or 1) + 6)
 	stop:SetScript("OnEnter", function(self)
 		GameTooltip:SetOwner(self, "ANCHOR_TOP")
 		GameTooltip:SetText("Stop this run")
@@ -7984,13 +8359,14 @@ ClaudeWoW.HELP = {
 	{
 		title = "Settings and the window",
 		rows = {
-			{ "/claude config [key] [value]", "Settings: voice, roast, whisper, echo, vision, roll, achievements, orders, telemetry, ui, map, macro, context, bind. Alone it lists them with their values; all adds the troubleshooting keys. The Options page under AddOns, " .. ClaudeWoW.PRODUCT .. " in the game's settings has the same switches." },
+			{ "/claude config [key] [value]", "Settings: voice, roast, whisper, echo, vision, roll, achievements, orders, minimap, telemetry, ui, map, macro, context, bind. Alone it lists them with their values; all adds the troubleshooting keys. The Options page under AddOns, " .. ClaudeWoW.PRODUCT .. " in the game's settings has the same switches." },
 			{ "/claude config ui [setting]", "The tabs and the window: whisper on|off, dim <10-100>|off, dodge on|off, autohide on|off, reset." },
 			{ "/claude orders [on|off]", "Show or hide the Orders card under the quest tracker." },
 			{ "/claude dm [next]", "Show or hide the Dungeon Master; next goes on to a beat that waits for you. /dm is the same." },
 			{ "/claude map [command]", "Map layers and node pins: ore, herb, filter, show, hide, nav, next, prev, stop. /aimap is the same." },
 			{ "/claude stream [command]", "Stream scenes, panes and the quest overlay. /stream is the same." },
 			{ "/claude hide | mini", "Hide the window, or collapse it to the small bar." },
+			{ "/claude config minimap [on|off]", "The minimap button: left-click opens or closes the window, right-click opens Options, drag it around the minimap." },
 			{ "/claude help", "Open this page." },
 		},
 	},
@@ -8042,6 +8418,7 @@ local COMMAND_ARGS = {
 	mode = { [""] = true, pixel = true, reload = true },
 	signal = { [""] = true, on = true, off = true }, longchat = { [""] = true, on = true, off = true },
 	roll = { [""] = true, on = true, off = true },
+	minimap = { [""] = true, on = true, off = true },
 	whisper = { [""] = true, on = true, off = true },
 	vision = { [""] = true, on = true, off = true },
 	look = true,
@@ -8111,7 +8488,7 @@ function Cli.IsModuleCommand(verb, rest)
 end
 
 Cli.CONFIG_KEYS = {
-	"voice", "roast", "whisper", "echo", "vision", "roll", "achievements", "orders", "telemetry", "context", "signal",
+	"voice", "roast", "whisper", "echo", "vision", "roll", "achievements", "orders", "minimap", "telemetry", "context", "signal",
 	"mode", "longchat", "auto", "plugin", "ui", "map", "macro", "bind", "probe", "diag",
 }
 Cli.CONFIG_DEV = { signal = true, mode = true, auto = true, longchat = true, plugin = true, probe = true, diag = true }
@@ -8286,6 +8663,7 @@ function Cli.ConfigValue(key)
 	if key == "echo" then return tostring(s.echo) end
 	if key == "vision" then return s.vision and "on" or "off" end
 	if key == "roll" then return s.lootRoll == false and "off" or "on" end
+	if key == "minimap" then return s.minimap == false and "off" or "on" end
 	if key == "achievements" then return s.toasts == false and "toasts off" or "toasts on" end
 	if key == "orders" then return ClaudeWoWOrders and ClaudeWoWOrders.Status() or "" end
 	if key == "telemetry" then return ClaudeWoWTelemetry and ClaudeWoWTelemetry.Status() or "" end
@@ -8307,6 +8685,7 @@ Cli.CONFIG_HELP = {
 	roll = "on|off: a denied command pops a Greed/Need/Pass roll, or an Allow & retry button; Need and Allow & retry ask before they save a rule",
 	achievements = "on|off|test: achievement toasts; alone it lists what you earned",
 	orders = "on|off: the Orders card under the quest tracker (also /claude orders and the chat list's gear menu)",
+	minimap = "on|off: the minimap button (left-click opens or closes the window, right-click opens Options, drag it around the minimap)",
 	telemetry = "on|off: share game state with the agent (money, level, zone, professions, watched items, gear, reputation); also the chat list's gear menu",
 	context = "on|off|<tokens>: the game context the agent gets, and the context-size warning (0 = never)",
 	signal = "on|off: the cheap sound-file readiness check",
@@ -9380,6 +9759,10 @@ RunCommand = function(cmd, rest)
 		if s.lootRoll == false and ClaudeWoWRoll then ClaudeWoWRoll.CloseAll() end
 		ClaudeWoW.Print("denied commands: " .. (ClaudeWoW.LootRollEnabled() and "Greed/Need/Pass roll frame" or "Allow & retry button in the reply"))
 		ClaudeWoW.Render()
+	elseif cmd == "minimap" then
+		if rest == "on" then s.minimap = true elseif rest == "off" then s.minimap = false end
+		Q.ApplyMinimapButton()
+		ClaudeWoW.Print("minimap button: " .. (Q.MinimapButtonOn() and "on. Left-click opens or closes the window, right-click opens Options, drag it to move it." or "off. /claude config minimap on brings it back."))
 	elseif cmd == "signal" then
 		if rest == "on" then s.signal = true elseif rest == "off" then s.signal = false end
 		AddHistory(c, "system", "signal check is " .. (s.signal and "on" or "off"))
@@ -9544,6 +9927,7 @@ ev:SetScript("OnEvent", function(self, event, arg1)
 	elseif event == "PLAYER_LOGIN" then
 		if not db then InitDB() end
 		BuildUI()
+		Q.BuildMinimapButton()
 		run = { outbound = {}, startedAt = GetTime() }
 		SelfTestSignals()
 		ProcessInbox()

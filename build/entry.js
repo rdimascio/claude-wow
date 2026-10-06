@@ -25,6 +25,7 @@ import addonDev from '../addon/ClaudeWoW/Dev.lua' with { type: 'file' };
 import addonHelp from '../addon/ClaudeWoW/Help.lua' with { type: 'file' };
 import addonBindings from '../addon/ClaudeWoW/Bindings.xml' with { type: 'file' };
 import addonPortrait from '../addon/ClaudeWoW/Portrait.tga' with { type: 'file' };
+import addonMinimapIcon from '../addon/ClaudeWoW/MinimapIcon.tga' with { type: 'file' };
 import capturePs1 from '../bridge/capture.ps1' with { type: 'file' };
 import captureMac from '../bridge/capture_mac.py' with { type: 'file' };
 import captureX11 from '../bridge/capture_x11.py' with { type: 'file' };
@@ -55,6 +56,7 @@ require('../bridge/assets').embed({
   'addon/ClaudeWoW/Help.lua': addonHelp,
   'addon/ClaudeWoW/Bindings.xml': addonBindings,
   'addon/ClaudeWoW/Portrait.tga': addonPortrait,
+  'addon/ClaudeWoW/MinimapIcon.tga': addonMinimapIcon,
   'bridge/capture.ps1': capturePs1,
   'bridge/capture_mac.py': captureMac,
   'bridge/capture_x11.py': captureX11,

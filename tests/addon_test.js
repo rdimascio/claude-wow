@@ -3731,7 +3731,7 @@ test('mcp: an off choice is kept even when the server is off by default, ids mat
   assert.match(vm.evaluate(`${chat}.history[#${chat}.history].text`), /already changes 16 servers/, 'choices for servers not listed right now still count');
 });
 
-test('the panel shows Stop instead of Send while the open chat waits; Stop cancels the run and brings Send back', () => {
+test('while the open chat waits, Send stays in place but is disabled and a Stop button shows inside the input; Stop cancels the run', () => {
   const vm = newVM();
   login(vm);
   vm.run('STUB.RunTimers()');
@@ -3740,14 +3740,18 @@ test('the panel shows Stop instead of Send while the open chat waits; Stop cance
   assert.equal(vm.evaluate('ClaudeWoW.IsConnected()'), 'true');
   vm.run('ClaudeWoW.Toggle()');
   const shown = name => vm.evaluate(`ClaudeWoW.UI.${name}.shown`);
+  const enabled = name => vm.evaluate(`ClaudeWoW.UI.${name}:IsEnabled()`);
   assert.equal(shown('send'), 'true');
+  assert.equal(enabled('send'), 'true');
   assert.equal(shown('stop'), 'false');
+  assert.equal(vm.evaluate('ClaudeWoW.UI.stop.parent == ClaudeWoWInput:GetParent():GetParent()'), 'true', 'Stop lives inside the input box');
 
   vm.run('ClaudeWoW.Send("long job")');
   const pending = vm.num('ClaudeWoWDB.chats[1].pendingId');
   assert.ok(pending > 0);
   assert.equal(shown('stop'), 'true', 'Stop while the chat waits');
-  assert.equal(shown('send'), 'false');
+  assert.equal(shown('send'), 'true', 'Send keeps its place');
+  assert.equal(enabled('send'), 'false', 'but is disabled');
 
   vm.run('ClaudeWoW.UI.stop:GetScript("OnClick")(ClaudeWoW.UI.stop)');
   assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].pendingId'), null, 'the chat is free again');
@@ -3756,8 +3760,42 @@ test('the panel shows Stop instead of Send while the open chat waits; Stop cance
     'the bridge is told to stop that run',
   );
   assert.equal(shown('stop'), 'false');
-  assert.equal(shown('send'), 'true');
+  assert.equal(enabled('send'), 'true');
 
+  vm.run('ClaudeWoW.Send("again")');
   vm.run('ClaudeWoW.NewChat("other")');
-  assert.equal(shown('stop'), 'false', 'another chat that is not waiting shows Send');
+  assert.equal(shown('stop'), 'false', 'a chat that is not waiting has no Stop');
+  assert.equal(enabled('send'), 'true');
+});
+
+test('the effort button above Send shows the chat effort, sets it for this chat, and the next message carries it', () => {
+  const vm = newVM();
+  login(vm);
+  vm.run('STUB.RunTimers()');
+  nextSlot(vm, '{ now = time(), cwd = "/Users/me/every", replies = {} }');
+  vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
+  vm.run('ClaudeWoW.Toggle()');
+  const label = () => vm.evaluate('ClaudeWoW.UI.effort.text:GetText()');
+  assert.equal(label(), '|cffffffffdefault|r');
+  assert.equal(vm.evaluate('ClaudeWoW.UI.effort.shown'), 'true');
+  assert.equal(vm.evaluate('ClaudeWoW.UI.effort.rel == ClaudeWoW.UI.send'), 'true', 'it sits above Send');
+  const click = () => vm.run('ClaudeWoW.UI.effort:GetScript("OnClick")(ClaudeWoW.UI.effort)');
+  click();
+  assert.equal(label(), '|cfffffffflow|r', 'without a menu, a click steps to the next effort');
+  click();
+  click();
+  assert.equal(label(), '|cffffffffhigh|r');
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].effort'), 'high');
+  vm.run('ClaudeWoW.Send("think hard")');
+  const rec = stripRecords(vm).find(r => r.text === 'think hard');
+  assert.ok(rec.flags.split(';').includes('effort=high'), rec.flags);
+  vm.run('ClaudeWoW.NewChat("fresh")');
+  assert.equal(label(), '|cffffffffdefault|r', 'each chat has its own effort');
+  click();
+  click();
+  click();
+  click();
+  click();
+  click();
+  assert.equal(label(), '|cffffffffdefault|r', 'after max it goes back to default');
 });

@@ -144,11 +144,16 @@ function Methods.SetScale(self, k) self.scale = k end
 function Methods.GetScale(self) return self.scale or 1 end
 function Methods.GetEffectiveScale(self) return self.scale or 1 end
 function Methods.SetFrameStrata(self, strata) self.strata = strata end
+function Methods.SetFrameLevel(self, level) self.frameLevel = level end
 function Methods.SetBackdropColor(self, r, g, b, a) self.bg = { r, g, b, a } end
 function Methods.SetAlpha(self, a) self.alpha = a end
 function Methods.GetAlpha(self) return self.alpha or 1 end
 function Methods.IsMouseOver(self) return STUB.mouseOver == self end
 function Methods.EnableMouse(self, v) self.mouseEnabled = v and true or false end
+function Methods.SetEnabled(self, v) self.disabled = not v end
+function Methods.Enable(self) self.disabled = false end
+function Methods.Disable(self) self.disabled = true end
+function Methods.IsEnabled(self) return not self.disabled end
 function Methods.StartMoving(self) self.moving = true end
 function Methods.StopMovingOrSizing(self) self.moving = nil end
 function Methods.GetVerticalScrollRange(self) return 0 end
@@ -156,6 +161,7 @@ function Methods.GetVerticalScroll(self) return self.vscroll or 0 end
 function Methods.SetVerticalScroll(self, v) self.vscroll = v end
 function Methods.CreateTexture(self, name, layer)
 	local t = NewObject("Texture", name, self)
+	t.layer = layer
 	table.insert(self.textures, t)
 	return t
 end
@@ -166,7 +172,26 @@ function Methods.IsPlaying(self) return self.playing or false end
 function Methods.Play(self) self.playing = true end
 function Methods.Stop(self) self.playing = false end
 function Methods.SetColorTexture(self, r, g, b, a) self.color = { r, g, b, a } end
-function Methods.SetTexture(self, path) self.texture = path; return true end
+function Methods.SetTexCoord(self, ...) self.stubTexCoord = { ... } end
+function Methods.SetMask(self, path)
+	if STUB.noMask then error("SetMask is not available") end
+	self.stubMask = path
+end
+function Methods.SetHighlightTexture(self, path) self.stubHighlight = path end
+function Methods.LockHighlight(self) self.stubHighlightLocked = true end
+function Methods.UnlockHighlight(self) self.stubHighlightLocked = false end
+function Methods.RegisterForDrag(self, ...) self.stubDragButtons = { ... } end
+function Methods.RegisterForClicks(self, ...) self.stubClickButtons = { ... } end
+function Methods.GetCenter(self)
+	local r = STUB.Rect(self)
+	if not r then return nil end
+	return (r.left + r.right) / 2, (r.bottom + r.top) / 2
+end
+function Methods.SetTexture(self, path)
+	if STUB.missingTextures and STUB.missingTextures[path] then return false end
+	self.texture = path
+	return true
+end
 function Methods.SetStatusBarColor(self, r, g, b) self.color = { r, g, b } end
 function Methods.GetTexture(self) return self.texture end
 function Methods.SetBackdrop(self, t)
@@ -257,6 +282,11 @@ end
 UIParent = CreateFrame("Frame", "UIParent")
 UIParent:SetSize(1920, 1080)
 GameTooltip = CreateFrame("Frame", "GameTooltip")
+Minimap = CreateFrame("Frame", "Minimap", UIParent)
+Minimap:SetSize(140, 140)
+Minimap:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -20, -20)
+STUB.cursor = { 0, 0 }
+function GetCursorPosition() return STUB.cursor[1], STUB.cursor[2] end
 UIErrorsFrame = CreateFrame("Frame", "UIErrorsFrame")
 ChatFontNormal = {}
 OKAY, CANCEL = "Okay", "Cancel"

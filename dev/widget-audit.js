@@ -187,7 +187,6 @@ function parseDump(text) {
     truncated: globals.truncated === true,
     admitted: listOf(globals.admitted),
     refused: listOf(globals.refused),
-    refusedFonts: listOf(globals.refusedFonts),
   };
 }
 
@@ -212,7 +211,6 @@ function audit(dump) {
     counts: { total: dump.total, saved: dump.saved, admitted: dump.admittedCount, refused: dump.refusedCount, truncated: dump.truncated },
     admittedWriters: dump.admitted.filter(looksLikeWriter),
     missedGetters: dump.refused.filter(looksLikeGetter),
-    missedFonts: dump.refusedFonts,
   };
 }
 
@@ -236,7 +234,6 @@ function formatReport(report, file, shown = SHOWN_DEFAULT) {
   lines.push('');
   lines.push(...section('admitted names that look like writers or actions (check each)', report.admittedWriters, shown));
   lines.push(...section('refused names that look like display getters (candidates to admit)', report.missedGetters, shown));
-  lines.push(...section('refused font objects', report.missedFonts, shown));
   return lines.join('\n');
 }
 
