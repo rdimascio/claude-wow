@@ -989,12 +989,14 @@ function resolveResume(job) {
 
 function adoptSession(job, m) {
   const skey = sessKey(job);
+  const madeBy = m.plugin || SS.sessionPluginOf(state, m.id);
+  job.adoptedPlugin = madeBy && madeBy !== 'live' ? madeBy : '';
   state.sessions[skey] = m.id;
   delete state.sessions[chatKey(job)];
   (state.sessionAgent = state.sessionAgent || {})[skey] = m.agent || 'claude';
   if (m.cwd) (state.sessionCwd = state.sessionCwd || {})[skey] = m.cwd;
   if (!job.agent) job.agent = m.agent || 'claude';
-  const plugin = !job.plugin && m.plugin && m.plugin !== 'live' ? m.plugin : '';
+  const plugin = !job.plugin ? job.adoptedPlugin : '';
   if (plugin) job.plugin = plugin;
   if (!job.plugin && m.cwd) job.plugin = 'claude-code';
   if (!job.cwd && m.cwd && registry.normalize(job.plugin) === 'claude-code') job.cwd = m.cwd;
@@ -1901,7 +1903,7 @@ function runJob(job) {
   }
   job.plugin = r.plugin.id;
   if (job.adopted) {
-    (state.sessionPlugin = state.sessionPlugin || {})[sessKey(job)] = job.plugin;
+    (state.sessionPlugin = state.sessionPlugin || {})[sessKey(job)] = job.adoptedPlugin || job.plugin;
     saveState();
   }
   if (r.text !== undefined) job.text = r.text; // "@ask ..." addressed it; the address is not part of the prompt
@@ -2809,6 +2811,7 @@ function runAgent(job, opts = {}) {
   let buffer = '';
   let stdoutText = '';
   let parserError = false;
+  let pluginErrorsLogged = false;
 
   let steps = 0;
   const pushProgress = line => {
@@ -2890,6 +2893,10 @@ function runAgent(job, opts = {}) {
     if (Array.isArray(r.deniedAgain)) for (const d of r.deniedAgain) deniedAgain.add(d);
     if (Array.isArray(r.mcpDown)) noteMcpDown(r.mcpDown);
     if (Array.isArray(r.mcpStatus)) noteMcpHealth(r.mcpStatus, cwd);
+    if (Array.isArray(r.pluginErrors) && r.pluginErrors.length && !pluginErrorsLogged) {
+      pluginErrorsLogged = true;
+      log(`${tag} Claude Code could not load plugin(s): ${r.pluginErrors.map(e => `${e.plugin} (${e.type}${e.message ? ': ' + e.message : ''})`).join('; ')}`);
+    }
     notes.push(...r.notes);
     if (r.done) result = r.done;
   };

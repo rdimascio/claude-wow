@@ -273,6 +273,13 @@ function ownSessions(state, transcripts) {
   return out;
 }
 
+function sessionPluginOf(state, id) {
+  const sessions = (state && state.sessions) || {};
+  const plugins = (state && state.sessionPlugin) || {};
+  for (const [key, sid] of Object.entries(sessions)) if (sid === id && typeof plugins[key] === 'string' && plugins[key]) return plugins[key];
+  return '';
+}
+
 function mergeSessions({ live = [], own = [], claude = [], limit = 12 } = {}) {
   const seen = new Set();
   const out = [];
@@ -350,6 +357,7 @@ module.exports = {
   findClaudeSessions,
   runningClaude,
   ownSessions,
+  sessionPluginOf,
   mergeSessions,
   matchRef,
   resolveResume,

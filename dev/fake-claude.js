@@ -5,7 +5,8 @@ const path = require('path');
 const crypto = require('crypto');
 
 const MODEL = 'claude-opus-5';
-const RATES = { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 };
+const RATES = { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 10 };
+const MAIN_WINDOW = 200000;
 const BASE_CONTEXT = 20000;
 const TURN_GROWTH = 1500;
 const ACCEPT_EDITS_COMMANDS = new Set(['mkdir', 'touch', 'rm', 'rmdir', 'mv', 'cp', 'sed']);
@@ -49,28 +50,41 @@ function turnUsage(turn) {
     cache_creation_input_tokens: TURN_GROWTH,
     cache_read_input_tokens: BASE_CONTEXT + TURN_GROWTH * (turn - 1),
     output_tokens: 200,
+    cache_creation: { ephemeral_1h_input_tokens: TURN_GROWTH, ephemeral_5m_input_tokens: 0 },
   };
 }
 
-function priceOf(u) {
+function priceOf(u, rates = RATES) {
   return (
-    (u.input_tokens * RATES.input +
-      u.output_tokens * RATES.output +
-      u.cache_read_input_tokens * RATES.cacheRead +
-      u.cache_creation_input_tokens * RATES.cacheWrite) /
+    (u.input_tokens * rates.input +
+      u.output_tokens * rates.output +
+      u.cache_read_input_tokens * rates.cacheRead +
+      u.cache_creation_input_tokens * rates.cacheWrite) /
     1e6
   );
 }
 
-function addUsage(total, u) {
+function addUsage(total, u, rates = RATES, contextWindow = MAIN_WINDOW) {
   return {
     inputTokens: (total.inputTokens || 0) + u.input_tokens,
     outputTokens: (total.outputTokens || 0) + u.output_tokens,
     cacheReadInputTokens: (total.cacheReadInputTokens || 0) + u.cache_read_input_tokens,
     cacheCreationInputTokens: (total.cacheCreationInputTokens || 0) + u.cache_creation_input_tokens,
-    costUSD: (total.costUSD || 0) + priceOf(u),
-    contextWindow: 1000000,
+    costUSD: (total.costUSD || 0) + priceOf(u, rates),
+    contextWindow,
   };
+}
+
+function pluginDirErrors(argv) {
+  const errors = [];
+  let inline = 0;
+  argv.forEach((a, i) => {
+    if (a !== '--plugin-dir' || argv[i + 1] === undefined) return;
+    const dir = path.resolve(process.cwd(), argv[i + 1]);
+    const plugin = `inline[${inline++}]`;
+    if (!fs.existsSync(dir)) errors.push({ plugin, type: 'path-not-found', message: `Path not found: ${dir} (commands)`, path: dir });
+  });
+  return errors;
 }
 
 function emit(ev) {
@@ -78,12 +92,21 @@ function emit(ev) {
 }
 
 const SUBAGENT_MODEL = 'claude-sonnet-5-5';
+const SUBAGENT_RATES = { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 };
+const SUBAGENT_WINDOW = 1000000;
+const subagentTotal = sub => addUsage({}, sub, SUBAGENT_RATES, SUBAGENT_WINDOW);
 const BACKGROUND_LAUNCH_TEXT = 'I launched the agent in the background and will answer when it completes.';
 
-function backgroundAgent(session, agentReply) {
+function backgroundAgent(session, agentReply, init) {
   const toolId = `toolu_agent_${session.turns}`;
   const u = turnUsage(session.turns);
-  const sub = { input_tokens: 2, cache_creation_input_tokens: 3309, cache_read_input_tokens: 0, output_tokens: 16 };
+  const sub = {
+    input_tokens: 2,
+    cache_creation_input_tokens: 3309,
+    cache_read_input_tokens: 0,
+    output_tokens: 16,
+    cache_creation: { ephemeral_1h_input_tokens: 0, ephemeral_5m_input_tokens: 3309 },
+  };
   emit({
     type: 'assistant',
     session_id: session.id,
@@ -116,7 +139,7 @@ function backgroundAgent(session, agentReply) {
       message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: toolId, content: [{ type: 'text', text: agentReply }] }] },
     });
     session.total = addUsage(session.total, u);
-    return addUsage({}, sub);
+    return subagentTotal(sub);
   }
   emit({ type: 'system', subtype: 'task_started', session_id: session.id, tool_use_id: toolId, subagent_type: 'claude-wow:wow-code', is_backgrounded: true });
   emit({
@@ -137,6 +160,7 @@ function backgroundAgent(session, agentReply) {
     modelUsage: { [MODEL]: launchTotal },
     total_cost_usd: launchTotal.costUSD,
   });
+  emit(init);
   emit({
     type: 'assistant',
     session_id: session.id,
@@ -144,7 +168,7 @@ function backgroundAgent(session, agentReply) {
     message: { model: SUBAGENT_MODEL, role: 'assistant', content: [{ type: 'text', text: agentReply }], usage: sub },
   });
   emit({ type: 'system', subtype: 'task_notification', session_id: session.id, tool_use_id: toolId, status: 'completed', summary: agentReply });
-  return addUsage({}, sub);
+  return subagentTotal(sub);
 }
 
 const SPLIT_UTF8_TEXT = 'h\u00e9llo \u2713 caf\u00e9 \u2603';
@@ -494,7 +518,18 @@ async function main() {
     process.exit(1);
   }
   if (d['no-result']) process.exit(Number(d['no-result']) || 1);
-  emit({ type: 'system', subtype: 'init', session_id: session.id, model: MODEL, cwd: process.cwd(), tools: [], mcp_servers: mcpServers(argv, d['mcp-fail']) });
+  const init = {
+    type: 'system',
+    subtype: 'init',
+    session_id: session.id,
+    model: MODEL,
+    cwd: process.cwd(),
+    tools: [],
+    mcp_servers: mcpServers(argv, d['mcp-fail']),
+  };
+  const pluginErrors = pluginDirErrors(argv);
+  if (pluginErrors.length) init.plugin_errors = pluginErrors;
+  emit(init);
   if (d.crash) {
     process.stderr.write('fake-claude: crashing on request\n');
     process.exit(Number(d.crash) || 3);
@@ -600,10 +635,12 @@ async function main() {
   }
 
   const subagentUsage = d['background-agent']
-    ? backgroundAgent(session, d['background-agent'] === true ? 'agent answer' : String(d['background-agent']))
+    ? backgroundAgent(session, d['background-agent'] === true ? 'agent answer' : String(d['background-agent']), init)
     : null;
   const u = turnUsage(session.turns);
   session.total = addUsage(session.total, u);
+  const totalCostUSD = session.total.costUSD + (subagentUsage ? subagentUsage.costUSD : 0);
+  session.lastTotalCostUSD = totalCostUSD;
   saveSession(session);
   const said = mcpSaid || (denials.length ? `blocked (turn ${session.turns}): ${command}` : command ? `ran (turn ${session.turns}): ${command}` : '');
   const reply = d['split-unicode']
@@ -623,7 +660,7 @@ async function main() {
     usage: u,
     permission_denials: denials,
     modelUsage: subagentUsage ? { [MODEL]: session.total, [SUBAGENT_MODEL]: subagentUsage } : { [MODEL]: session.total },
-    total_cost_usd: session.total.costUSD + (subagentUsage ? subagentUsage.costUSD : 0),
+    total_cost_usd: totalCostUSD,
   };
   if (d['split-unicode']) await writeSplitInsideCharacter(process.stdout, JSON.stringify(result) + '\n');
   else emit(result);

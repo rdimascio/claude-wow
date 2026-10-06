@@ -143,8 +143,11 @@ grows monotonically until the chat is new. A long-lived chat silently gets more
 expensive per message — 312k tokens of context per "hey" is real (measured: 106,863
 tokens after 8 turns, 312,458 after 213). So the bridge reads each run's usage
 (Claude Code's `stream-json`: input + cache_read + cache_creation of the last
-assistant message is what the next turn carries; the result's usage is the turn's
-sum and prices the run at `CLAUDE_RATES` in `bridge/agents.js`), keeps it per chat
+assistant message of the main session is what the next turn carries; a subagent's
+messages carry `parent_tool_use_id` and are skipped; the window is the main model's
+`modelUsage` entry; the cost is the result's `total_cost_usd`, which counts every
+subagent at its own rates, and `CLAUDE_RATES` in `bridge/agents.js` prices a result
+without one; a model with no listed rate shows tokens only), keeps it per chat
 in `state.json` (`sessionUsage`) and ships it on the reply record; the addon's
 footer shows the context as a bar and the status tooltip shows the cost, labeled
 "Estimated API cost" (the API-list-price equivalent, a comparison, since a

@@ -251,3 +251,15 @@ test('merged list: listening sessions first, then running ones that cannot hear 
     ],
   );
 });
+
+test('sessionPluginOf names the plugin that made a session under any key, --inject runs too', () => {
+  const state = {
+    sessions: { ':default': 'inject-id', 'chat:a': 'chat-id', 'chat:b': 'legacy-id' },
+    sessionPlugin: { ':default': 'ask', 'chat:a': 'claude-code' },
+  };
+  assert.equal(SS.sessionPluginOf(state, 'inject-id'), 'ask');
+  assert.equal(SS.sessionPluginOf(state, 'chat-id'), 'claude-code');
+  assert.equal(SS.sessionPluginOf(state, 'legacy-id'), '', 'a session from before plugins has no record');
+  assert.equal(SS.sessionPluginOf(state, 'other'), '');
+  assert.equal(SS.sessionPluginOf({}, 'inject-id'), '');
+});
