@@ -770,11 +770,11 @@ test('an empty chat shows a centered empty state with the project, not a system 
 
   vm.run('ClaudeWoW.IsConnected = function() return false end; ClaudeWoW.Render()');
   e = emptyState(vm);
-  assert.match(e.body, /^Start the bridge .*click Connect below/, 'under a system line, disconnected shows only its hint: ' + e.body);
+  assert.equal(e.body, "Can't reach the bridge. Start it, then click Connect.", 'under a system line, disconnected shows only its hint');
   vm.run('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history = {}; ClaudeWoW.Render()');
   e = emptyState(vm);
   assert.equal(e.title, 'Not connected');
-  assert.match(e.body, /click Connect below/);
+  assert.ok(!/npm|claude-wow/.test(e.body), 'no commands or folder names: ' + e.body);
 
   vm.run('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history = {}; ClaudeWoW.IsConnected = function() return true end; ClaudeWoW.Render()');
   e = emptyState(vm);
@@ -1416,12 +1416,23 @@ test('autoRefresh is turned off once outside reload mode, an explicit choice aft
   reload.run('StaticPopupDialogs.CLAUDEWOW_RELOAD.OnAccept()');
   assert.equal(reload.evaluate('STUB.reloaded'), 'true');
 
-  reload.run('STUB.popup = nil; STUB.reloaded = false; SlashCmdList.CLAUDE("config auto off"); STUB.RunTimers()');
-  assert.equal(reload.evaluate('STUB.popup'), null, 'auto off asks nothing');
-  pixel.run('STUB.popup = nil; ClaudeWoWDB.chats[1].pendingId = 9; SlashCmdList.CLAUDE("config auto on")');
-  assert.equal(pixel.evaluate('ClaudeWoWDB.settings.autoRefresh'), 'true', 'the explicit choice is recorded');
-  pixel.run('STUB.RunTimers()');
+  reload.run('STUB.popup = nil; StaticPopupDialogs.CLAUDEWOW_RELOAD.OnCancel(); STUB.RunTimers()');
+  assert.equal(reload.evaluate('STUB.popup.which'), 'CLAUDEWOW_RELOAD', 'auto on: Later asks again after the interval');
+
+  reload.run(
+    'SlashCmdList.CLAUDE("config auto off"); STUB.popup = nil; StaticPopupDialogs.CLAUDEWOW_RELOAD.OnCancel(); ClaudeWoW.ArmAutoRefresh(); STUB.RunTimers()',
+  );
+  assert.equal(reload.evaluate('STUB.popup'), null, 'auto off: Later means once per waiting reply');
+  reload.run('ClaudeWoWDB.chats[1].pendingId = 10; ClaudeWoW.ArmAutoRefresh(); STUB.RunTimers()');
+  assert.equal(reload.evaluate('STUB.popup.which'), 'CLAUDEWOW_RELOAD', 'auto off: a new waiting reply asks once');
+
+  pixel.run('STUB.popup = nil; ClaudeWoWDB.chats[1].pendingId = 9; ClaudeWoW.ArmAutoRefresh(); STUB.RunTimers()');
   assert.equal(pixel.evaluate('STUB.popup'), null, 'pixel mode with working slots needs no reload');
+  assert.equal(pixel.evaluate('ClaudeWoWDB.settings.autoRefresh'), 'false');
+  pixel.run('C_AddOns.LoadAddOn = function() return false, "MISSING" end; for i = 1, 3 do STUB.now = STUB.now + 30; STUB.Tick() end; STUB.RunTimers()');
+  assert.equal(pixel.evaluate('STUB.popup.which'), 'CLAUDEWOW_RELOAD', 'missing slots ask even with auto off');
+  pixel.run('SlashCmdList.CLAUDE("config auto on")');
+  assert.equal(pixel.evaluate('ClaudeWoWDB.settings.autoRefresh'), 'true', 'the explicit choice is recorded');
 });
 
 test('a reply makes no sound or screen line in combat, and out of combat one line only while the window is closed', () => {

@@ -615,6 +615,7 @@ StaticPopupDialogs[Q.RELOAD_POPUP] = {
 	button1 = "Reload",
 	button2 = "Later",
 	OnAccept = function() SafeReload() end,
+	OnCancel = function() ClaudeWoW.ReloadLater() end,
 	timeout = 0,
 	whileDead = true,
 	hideOnEscape = true,
@@ -622,8 +623,16 @@ StaticPopupDialogs[Q.RELOAD_POPUP] = {
 }
 
 function ClaudeWoW.DisarmReload()
-	ClaudeWoW.reloadArm = nil
+	run.reloadArmed, run.reloadAsked = nil, nil
 	if StaticPopup_Hide then StaticPopup_Hide(Q.RELOAD_POPUP) end
+end
+
+function Q.PendingKey()
+	local ids = {}
+	for _, c in ipairs(db.chats) do
+		if c.pendingId then table.insert(ids, c.id .. ":" .. c.pendingId) end
+	end
+	return table.concat(ids, ",")
 end
 
 function Q.ReloadNeeded()
@@ -633,15 +642,23 @@ function Q.ReloadNeeded()
 end
 
 function ClaudeWoW.ArmAutoRefresh()
-	ClaudeWoW.reloadArm = nil
-	if not db.settings.autoRefresh or not Q.ReloadNeeded() then return end
-	local arm = {}
-	ClaudeWoW.reloadArm = arm
+	if not Q.ReloadNeeded() then return end
+	local key = Q.PendingKey()
+	if run.reloadAsked == key or run.reloadArmed == key then return end
+	run.reloadArmed = key
 	C_Timer.After(db.settings.interval, function()
-		if ClaudeWoW.reloadArm ~= arm or not db.settings.autoRefresh or not Q.ReloadNeeded() then return end
-		if InCombatLockdown() then return end
+		if run.reloadArmed ~= key then return end
+		run.reloadArmed = nil
+		if not Q.ReloadNeeded() or InCombatLockdown() then return end
+		run.reloadAsked = Q.PendingKey()
 		StaticPopup_Show(Q.RELOAD_POPUP)
 	end)
+end
+
+function ClaudeWoW.ReloadLater()
+	if not db.settings.autoRefresh then return end
+	run.reloadAsked = nil
+	ClaudeWoW.ArmAutoRefresh()
 end
 
 ---------------------------------------------------------------------------
@@ -5106,7 +5123,7 @@ function Q.EmptyState(c)
 		return { title = "Restoring your chats", lines = { "Connecting to the bridge and restoring your chats..." } }
 	end
 	if not ClaudeWoW.IsConnected() then
-		return { title = "Not connected", lines = { "Start the bridge (npm start in the claude-wow folder, or claude-wow in your project), then click Connect below." } }
+		return { title = "Not connected", lines = { Q.STATUS_UNREACHABLE } }
 	end
 	local start = Whisper.Active()
 		and ("Type below and press Enter, or talk to " .. ChatAgentName(c) .. " in its chat tab.")
