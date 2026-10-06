@@ -1,4 +1,5 @@
 'use strict';
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { execFile, spawn: nodeSpawn } = require('child_process');
@@ -16,7 +17,7 @@ const STATE_FILE = 'autodeploy.json';
 const GIT_ENV = { GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: '/usr/bin/false', SSH_ASKPASS: '/usr/bin/false', GCM_INTERACTIVE: 'never' };
 const DEPLOY_TIMEOUT_S = 7200;
 const LAUNCH_FAILED = 127;
-const DEPLOY_SCRIPT = `"$1" dev deploy "$2" --repo "$3" --timeout ${DEPLOY_TIMEOUT_S}; code=$?; printf '{"sha":"%s","exit":%d}\\n' "$2" "$code" > "$4.tmp" && mv "$4.tmp" "$4"`;
+const DEPLOY_SCRIPT = `"$1" dev deploy "$2" --repo "$3" --timeout ${DEPLOY_TIMEOUT_S}; code=$?; printf '{"key":"%s","sha":"%s","exit":%d}\\n' "$5" "$2" "$code" > "$4.tmp" && mv "$4.tmp" "$4"`;
 
 function settings(cfg, defaultCwd) {
   const a = cfg && cfg.autoDeploy;
@@ -77,20 +78,26 @@ function createAutoDeploy({ conf, home, log, idle, run = git, spawn = nodeSpawn,
   const logFile = path.join(home, LOG_FILE);
   const branch = conf.ref.slice('origin/'.length);
   const repoReal = realFolder(conf.repo);
+  const key = crypto.createHash('sha256').update(`${conf.ref}\0${repoReal}`).digest('hex').slice(0, 16);
+  const readState = () => {
+    const s = readJson(stateFile);
+    return s.key === key ? s : {};
+  };
+  const writeState = s => writeJson(stateFile, { key, ...s });
   let checking = false;
   let lastError = '';
 
   function launchFailed(sha, e) {
     log(`auto-deploy: could not start the deploy of ${sha.slice(0, 12)} (${e && e.message ? e.message : e})`);
-    writeJson(stateFile, { sha, exit: LAUNCH_FAILED });
+    writeState({ sha, exit: LAUNCH_FAILED });
   }
 
   function startDeploy(sha) {
-    writeJson(stateFile, { sha });
+    writeState({ sha });
     let fd;
     try {
       fd = fs.openSync(logFile, 'a', 0o600);
-      const child = spawn('/bin/sh', ['-c', DEPLOY_SCRIPT, 'claude-wow-autodeploy', REL.currentBinary(l), sha, conf.repo, stateFile], {
+      const child = spawn('/bin/sh', ['-c', DEPLOY_SCRIPT, 'claude-wow-autodeploy', REL.currentBinary(l), sha, conf.repo, stateFile, key], {
         cwd: home,
         detached: true,
         stdio: ['ignore', fd, fd],
@@ -116,10 +123,10 @@ function createAutoDeploy({ conf, home, log, idle, run = git, spawn = nodeSpawn,
       await run(conf.repo, ['fetch', '--quiet', '--no-write-fetch-head', 'origin', `+refs/heads/${branch}:refs/remotes/origin/${branch}`]);
       const sha = await run(conf.repo, ['rev-parse', '--verify', `${conf.ref}^{commit}`]);
       lastError = '';
-      const last = readJson(stateFile);
+      const last = readState();
       if (last.sha === sha) return 'seen';
       if (!last.sha) {
-        writeJson(stateFile, { sha, exit: 0 });
+        writeState({ sha, exit: 0 });
         log(`auto-deploy: recorded ${conf.ref} at ${sha.slice(0, 12)}; the next commit there is deployed`);
         return 'recorded';
       }
@@ -136,9 +143,9 @@ function createAutoDeploy({ conf, home, log, idle, run = git, spawn = nodeSpawn,
 
   function failureNote(cwd) {
     if (!cwd || realFolder(cwd) !== repoReal) return '';
-    const last = readJson(stateFile);
+    const last = readState();
     if (!last.sha || !Number.isInteger(last.exit) || last.exit === 0 || last.reported) return '';
-    writeJson(stateFile, { ...last, reported: true });
+    writeState({ ...last, reported: true });
     return `[claude-wow bridge] The automatic deploy of ${conf.ref} at ${String(last.sha).slice(0, 12)} did not complete (exit ${last.exit}), so that merge may be only partly live or not live at all. Tell the player in one line. The deploy output is in ${logFile}. The next merge to ${conf.ref} deploys again.`;
   }
 
@@ -153,6 +160,10 @@ function createAutoDeploy({ conf, home, log, idle, run = git, spawn = nodeSpawn,
   return { check, failureNote, start };
 }
 
+function forget(home) {
+  fs.rmSync(path.join(home, STATE_FILE), { force: true });
+}
+
 function realFolder(p) {
   try {
     return fs.realpathSync.native(p);
@@ -161,4 +172,4 @@ function realFolder(p) {
   }
 }
 
-module.exports = { DEFAULT_REF, CHECK_MS, FIRST_CHECK_MS, LOG_FILE, STATE_FILE, settings, eligible, createAutoDeploy };
+module.exports = { DEFAULT_REF, CHECK_MS, FIRST_CHECK_MS, LOG_FILE, STATE_FILE, settings, eligible, forget, createAutoDeploy };

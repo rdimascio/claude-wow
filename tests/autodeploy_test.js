@@ -64,7 +64,11 @@ function rig(name, { spawn } = {}) {
         return { on() {}, unref() {} };
       }),
   });
-  const saved = () => JSON.parse(fs.readFileSync(path.join(home, AD.STATE_FILE), 'utf8'));
+  const saved = () => {
+    const { key, ...rest } = JSON.parse(fs.readFileSync(path.join(home, AD.STATE_FILE), 'utf8'));
+    assert.match(key, /^[0-9a-f]{16}$/);
+    return rest;
+  };
   return { ...r, home, spawned, logs, state, ad, saved };
 }
 
@@ -134,7 +138,7 @@ test('the first check records origin/main; each later commit starts one detached
   const [call] = t.spawned;
   assert.equal(call.file, '/bin/sh');
   assert.deepEqual(
-    call.args.slice(3),
+    call.args.slice(3, 7),
     [REL.currentBinary(REL.layout(t.home)), sha, t.repo, path.join(t.home, AD.STATE_FILE)],
     'the deploy builds the commit the check saw',
   );
@@ -158,6 +162,25 @@ test('the first check records origin/main; each later commit starts one detached
   t.push('three');
   assert.equal(await t.ad.check(), 'started', 'a newer commit is deployed');
   assert.equal(t.spawned.length, 2);
+});
+
+test('turning auto-deploy off and on, or pointing it at another branch or checkout, records first again', async () => {
+  const t = rig('rekey');
+  assert.equal(await t.ad.check(), 'recorded');
+  t.push('two');
+  const other = AD.createAutoDeploy({
+    conf: { repo: t.repo, ref: 'origin/other' },
+    home: t.home,
+    log() {},
+    idle: () => ({ idle: true }),
+    run: async (repo, args) => (args[0] === 'rev-parse' ? 'd'.repeat(40) : ''),
+    spawn: () => assert.fail('another ref starts by recording, not deploying'),
+  });
+  assert.equal(await other.check(), 'recorded');
+  AD.forget(t.home);
+  assert.ok(!fs.existsSync(path.join(t.home, AD.STATE_FILE)));
+  assert.equal(await t.ad.check(), 'recorded', 'after auto-deploy was off, main is recorded, not deployed over a manual deploy');
+  assert.equal(t.spawned.length, 0);
 });
 
 test('a check waits while the bridge is busy or a live deploy holds the lock; a stale lock does not block', async () => {

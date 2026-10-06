@@ -3767,10 +3767,10 @@ function startAutoDeploy() {
   if (!holdsLock) return;
   const conf = AD.settings(cfg, DEFAULT_CWD);
   if (conf.error) log(`auto-deploy: off (${conf.error})`);
-  if (!conf.enabled) return;
-  const ok = AD.eligible({ home: HOME.dir, compiled: R.compiled });
+  const ok = conf.enabled ? AD.eligible({ home: HOME.dir, compiled: R.compiled }) : { ok: false };
   if (!ok.ok) {
-    log(`auto-deploy: off (${ok.why})`);
+    if (ok.why) log(`auto-deploy: off (${ok.why})`);
+    AD.forget(HOME.dir);
     return;
   }
   autoDeploy = AD.createAutoDeploy({ conf, home: HOME.dir, log, idle: bridgeIdleStatus });
