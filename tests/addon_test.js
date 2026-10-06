@@ -1592,6 +1592,8 @@ test('plugins: /claude config plugin binds the chat like --agent, the plugin pro
   assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].plugin'), 'claude-code');
   // Help lists the command.
   vm.run('SlashCmdList.CLAUDE("config")');
+  assert.ok(!last().includes('\nplugin = '), 'plugin is a troubleshooting key, not in the plain list');
+  vm.run('SlashCmdList.CLAUDE("config all")');
   assert.ok(last().includes('\nplugin = claude-code  -  <name>|default: advanced'), last());
   vm.run('SlashCmdList.CLAUDE("help")');
   assert.ok(!/\bplugin\b/.test(helpPage(vm)), 'help does not need the word plugin');
@@ -2037,28 +2039,18 @@ test('/claude config lists every setting with its value, gets one, sets one, and
   const last = () => vm.evaluate('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history].text');
   vm.run('SlashCmdList.CLAUDE("config")');
   const list = last();
-  for (const key of [
-    'voice',
-    'roast',
-    'whisper',
-    'echo',
-    'vision',
-    'roll',
-    'achievements',
-    'context',
-    'signal',
-    'mode',
-    'longchat',
-    'auto',
-    'plugin',
-    'ui',
-    'map',
-    'macro',
-    'bind',
-    'diag',
-  ]) {
-    assert.match(list, new RegExp(`\\n${key}( = [^\\n]*)?  -  `), `${key} is listed`);
-  }
+  const player = ['voice', 'roast', 'whisper', 'echo', 'vision', 'roll', 'achievements', 'orders', 'telemetry', 'context', 'ui', 'map', 'macro', 'bind'];
+  const dev = ['signal', 'mode', 'longchat', 'auto', 'plugin', 'probe', 'diag'];
+  for (const key of player) assert.match(list, new RegExp(`\\n${key}( = [^\\n]*)?  -  `), `${key} is listed`);
+  for (const key of dev) assert.doesNotMatch(list, new RegExp(`\\n${key}( = [^\\n]*)?  -  `), `${key} is only in config all`);
+  assert.match(list, /\n\/claude config all also lists the troubleshooting keys\.$/);
+  assert.match(list, /Options window has the same settings: AddOns, Azeroth Companion, Options\./);
+  vm.run('SlashCmdList.CLAUDE("config all")');
+  const all = last();
+  for (const key of [...player, ...dev]) assert.match(all, new RegExp(`\\n${key}( = [^\\n]*)?  -  `), `${key} is in config all`);
+  assert.doesNotMatch(all, /config all also lists/);
+  vm.run('SlashCmdList.CLAUDE("config ALL")');
+  assert.equal(last(), all, 'all is not case sensitive');
   assert.match(list, /\nvision = off  -  /);
   assert.match(list, /\necho = summary  -  /);
   vm.run('SlashCmdList.CLAUDE("config vision on")');
@@ -3182,8 +3174,11 @@ test('help: the addon title from the .toc names the category', () => {
 
 test('help: without the Settings API the page goes through Interface Options', () => {
   const vm = helpVM(LEGACY_OPTIONS_API);
-  assert.equal(vm.num('#STUB.legacy.added'), 1);
+  assert.equal(vm.num('#STUB.legacy.added'), 2, 'the help page, then the Options page under it');
   assert.equal(vm.evaluate('STUB.legacy.added[1] == ClaudeWoWHelpPanel'), 'true');
+  assert.equal(vm.evaluate('STUB.legacy.added[2] == ClaudeWoWOptionsPanel'), 'true');
+  assert.equal(vm.evaluate('ClaudeWoWOptionsPanel.parent'), 'Azeroth Companion', 'Interface Options nests a panel by its parent field');
+  assert.equal(vm.evaluate('ClaudeWoWOptionsPanel.name'), 'Options');
   assert.equal(vm.evaluate('ClaudeWoWHelpPanel.name'), 'Azeroth Companion', 'Interface Options lists a panel by its name field');
   const before = activeHistory(vm);
   vm.run('SlashCmdList.CLAUDE("help")');

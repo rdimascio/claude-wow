@@ -51,6 +51,30 @@ function Methods.SetPropagateKeyboardInput(self, v) self.propagateKeys = v and t
 function Methods.SetAutoFocus(self, v) self.autoFocus = v and true or false end
 function GetUnitName(unit) if unit == "player" then return "Testchar" end end
 function GetRaidTargetIndex(unit) if unit == "target" then return 8 end end
+STUB.popups = {}
+function StaticPopup_Show(which, a, b, data)
+  if STUB.popupBusy then return nil end
+  local dialog = { which = which, data = data, text = a }
+  STUB.popup = { which = which, text = a, data = data, dialog = dialog }
+  table.insert(STUB.popups, STUB.popup)
+  return dialog
+end
+function STUB.ClickPopup(button)
+  local p = STUB.popup
+  STUB.popup = nil
+  local info = StaticPopupDialogs[p.which]
+  if button == 1 then info.OnAccept(p.dialog, p.data)
+  elseif button == 2 then info.OnCancel(p.dialog, p.data, "clicked")
+  elseif button == "escape" and info.OnCancel and not info.noCancelOnEscape then info.OnCancel(p.dialog, p.data, "clicked") end
+  if info.OnHide then info.OnHide(p.dialog) end
+  return p
+end
+function ACCEPT_WIDGETS()
+  while STUB.popup and STUB.popup.which == "CLAUDEWOW_WIDGET" do
+    STUB.ClickPopup(1)
+    ClaudeWoWWidgets.PromptNext()
+  end
+end
 for _, name in ipairs({ "GameTooltipText", "Tooltip_Med", "GameFontHighlightSmall" }) do
   local font = CreateFrame("Font", name)
   font.GetObjectType = function() return "Font" end
@@ -94,14 +118,18 @@ const TARGET_METER = [
   'C_Timer.NewTicker(1, function() end)',
 ].join('\n');
 
-function widgetSet(widgets, version = 1, epoch = 'e1') {
+function widgetSet(widgets, version = 1, epoch = 'e1', accept = true) {
   const set = P.newWidgetSet(epoch);
   P.applyWidgetCommands(
     set,
     widgets.map(([name, source]) => ({ op: 'set', name, title: name + ' title', source })),
   );
   set.version = version;
-  return P.luaTable('ClaudeWoW_SlotData', [], { now: 1, widgets: set }) + '\nClaudeWoWWidgets.Sync(ClaudeWoW_SlotData.widgets)';
+  return (
+    P.luaTable('ClaudeWoW_SlotData', [], { now: 1, widgets: set }) +
+    '\nClaudeWoWWidgets.Sync(ClaudeWoW_SlotData.widgets)' +
+    (accept ? '\nACCEPT_WIDGETS()' : '')
+  );
 }
 
 const meterFrame = `(function() for _, f in ipairs(STUB.frames) do if f.events.PLAYER_TARGET_CHANGED and f.scripts.OnEvent then return f end end end)()`;
@@ -166,9 +194,10 @@ test('/claude config ui lists widgets, and free text starting with "ui" is still
   assert.equal(vm.evaluate('SENT_TEXT'), 'ui for my bags would be nice');
 });
 
-function savedWidgets(widgets) {
+function savedWidgets(widgets, approve = true) {
   const items = widgets.map(([name, source]) => `{ name = "${name}", title = "${name}", rev = "${P.widgetRevision(source)}", source = ${P.luaStr(source)} }`);
-  return `ClaudeWoWWidgetDB = { removed = {}, data = {}, set = { epoch = "e1", version = 1, items = { ${items.join(', ')} } } }`;
+  const approved = approve ? widgets.map(([name, source]) => `["${name}"] = "${P.widgetRevision(source)}"`).join(', ') : '';
+  return `ClaudeWoWWidgetDB = { removed = {}, data = {}, approved = { ${approved} }, set = { epoch = "e1", version = 1, items = { ${items.join(', ')} } } }`;
 }
 
 test('a saved widget cannot reach code outside the sandbox', () => {
@@ -674,7 +703,7 @@ test('every name the globals dump admits resolves in a widget, and every name it
     'ui.db.checked = #admitted + #refused',
   ].join('\n');
   vm.run(
-    `ClaudeWoWWidgetDB.set = { epoch = "audit", version = 1, items = { { name = "audit", title = "audit", rev = "r1", source = ${P.luaStr(source)} } } }; ClaudeWoWWidgets.Apply(false)`,
+    `ClaudeWoWWidgetDB.set = { epoch = "audit", version = 1, items = { { name = "audit", title = "audit", rev = "r1", source = ${P.luaStr(source)} } } }; ClaudeWoWWidgetDB.approved = { audit = "r1" }; ClaudeWoWWidgets.Apply(false)`,
   );
   assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("audit")'), 'running', vm.evaluate('select(2, ClaudeWoWWidgets.Status("audit"))'));
   assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.audit.checked'), String(admitted.length + refused.length));
@@ -701,4 +730,139 @@ test('/claude dev globals with an unknown word saves nothing and says how to use
   vm.run('SlashCmdList.CLAUDE("dev globals now")');
   assert.equal(vm.evaluate('ClaudeWoWWidgetDB.globals'), null);
   assert.match(vm.evaluate(lastSystemNote), /Usage: \/claude dev globals/);
+});
+
+test('a widget from the agent waits for the player: one popup at a time, Show runs it and remembers that revision', () => {
+  const vm = newVM();
+  vm.run(
+    widgetSet(
+      [
+        ['meter', TARGET_METER],
+        ['clock', 'local ui = ...\nui.db.ran = true'],
+      ],
+      1,
+      'e1',
+      false,
+    ),
+  );
+  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("meter")'), 'waiting');
+  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("clock")'), 'waiting');
+  assert.equal(vm.evaluate(meterFrame), null, 'nothing of the widget runs before the player says yes');
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.clock'), null);
+  assert.equal(vm.evaluate('#STUB.popups'), '1', 'one popup at a time');
+  assert.equal(vm.evaluate('STUB.popup.which'), 'CLAUDEWOW_WIDGET');
+  assert.equal(vm.evaluate('STUB.popup.text'), 'meter title');
+  assert.equal(vm.evaluate('StaticPopupDialogs.CLAUDEWOW_WIDGET.text'), "Show the agent's '%s' widget?");
+  assert.equal(vm.evaluate('StaticPopupDialogs.CLAUDEWOW_WIDGET.button1'), 'Show');
+  assert.equal(vm.evaluate('StaticPopupDialogs.CLAUDEWOW_WIDGET.button2'), 'Not Now');
+  vm.run('ClaudeWoWWidgets.PromptNext()');
+  assert.equal(vm.evaluate('#STUB.popups'), '1', 'no second popup while one is open');
+  vm.run('STUB.ClickPopup(1)');
+  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("meter")'), 'running');
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.approved.meter'), vm.evaluate('ClaudeWoWWidgetDB.set.items[1].rev'));
+  vm.run('STUB.RunTimers()');
+  assert.equal(vm.evaluate('STUB.popup.text'), 'clock title', 'the next one is asked after the first closes');
+  vm.run('STUB.ClickPopup(1)');
+  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("clock")'), 'running');
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.clock.ran'), 'true');
+  vm.run(
+    widgetSet(
+      [
+        ['meter', TARGET_METER],
+        ['clock', 'local ui = ...\nui.db.ran = true'],
+      ],
+      2,
+      'e1',
+      false,
+    ),
+  );
+  assert.equal(vm.evaluate('STUB.popup'), null, 'the same revisions are not asked again');
+  vm.run(
+    widgetSet(
+      [
+        ['meter', TARGET_METER + '\nlocal changed = true'],
+        ['clock', 'local ui = ...\nui.db.ran = true'],
+      ],
+      3,
+      'e1',
+      false,
+    ),
+  );
+  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("meter")'), 'waiting', 'a new revision is asked again');
+  assert.equal(vm.evaluate('STUB.popup.text'), 'meter title');
+  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("clock")'), 'running');
+});
+
+test('Not Now keeps the widget hidden until a new revision, and Escape only puts the question off', () => {
+  const vm = newVM();
+  vm.run(widgetSet([['meter', TARGET_METER]], 1, 'e1', false));
+  vm.run('STUB.ClickPopup(2); STUB.RunTimers()');
+  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("meter")'), 'removed');
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.removed.meter'), vm.evaluate('ClaudeWoWWidgetDB.set.items[1].rev'));
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.approved.meter'), null);
+  assert.equal(vm.evaluate('STUB.popup'), null);
+  assert.equal(vm.evaluate(meterFrame), null);
+  vm.run(widgetSet([['meter', TARGET_METER + '\nlocal v2 = true']], 2, 'e1', false));
+  assert.equal(vm.evaluate('STUB.popup.text'), 'meter title', 'a new revision asks again');
+  vm.run('STUB.ClickPopup("escape"); STUB.RunTimers()');
+  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("meter")'), 'waiting', 'Escape is not an answer');
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.removed.meter'), null);
+  assert.equal(vm.evaluate('STUB.popup'), null, 'and it does not ask again at once');
+  vm.run('SlashCmdList.CLAUDE("config ui run meter")');
+  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("meter")'), 'running', '/claude config ui run says yes');
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.approved.meter'), vm.evaluate('ClaudeWoWWidgetDB.set.items[1].rev'));
+});
+
+test('a stale answer does nothing: the agent sent a new revision, or the widget was removed, after the popup opened', () => {
+  const vm = newVM();
+  vm.run(widgetSet([['meter', TARGET_METER]], 1, 'e1', false));
+  vm.run('OLD_POPUP = STUB.popup');
+  vm.run(widgetSet([['meter', TARGET_METER + '\nlocal v2 = true']], 2, 'e1', false));
+  vm.run('StaticPopupDialogs.CLAUDEWOW_WIDGET.OnAccept(OLD_POPUP.dialog, OLD_POPUP.data)');
+  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("meter")'), 'waiting');
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.approved.meter'), null);
+  assert.equal(vm.evaluate(meterFrame), null);
+  vm.run('StaticPopupDialogs.CLAUDEWOW_WIDGET.OnCancel(OLD_POPUP.dialog, OLD_POPUP.data, "clicked")');
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.removed.meter'), null, 'a stale Not Now does not hide the new revision');
+  vm.run('NOW_DATA = { name = "meter", rev = ClaudeWoWWidgetDB.set.items[1].rev }; SlashCmdList.CLAUDE("config ui remove meter")');
+  vm.run('StaticPopupDialogs.CLAUDEWOW_WIDGET.OnAccept({}, NOW_DATA)');
+  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("meter")'), 'removed', 'a removed widget is not started by a late Show');
+  vm.run(widgetSet([], 3, 'e1', false));
+  vm.run('StaticPopupDialogs.CLAUDEWOW_WIDGET.OnAccept({}, NOW_DATA)');
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.approved.meter'), null, 'nor one the agent took away');
+});
+
+test('the popup system refusing keeps the widget queued, and a cancel it makes is not a Not Now', () => {
+  const vm = newVM();
+  vm.run('STUB.popupBusy = true');
+  vm.run(widgetSet([['meter', TARGET_METER]], 1, 'e1', false));
+  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("meter")'), 'waiting');
+  assert.equal(vm.evaluate('ClaudeWoWWidgets.asking'), null);
+  vm.run('StaticPopupDialogs.CLAUDEWOW_WIDGET.OnCancel(nil, { name = "meter", rev = ClaudeWoWWidgetDB.set.items[1].rev })');
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.removed.meter'), null);
+  vm.run('StaticPopupDialogs.CLAUDEWOW_WIDGET.OnCancel({}, { name = "meter", rev = ClaudeWoWWidgetDB.set.items[1].rev }, "override")');
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.removed.meter'), null);
+  vm.run('STUB.popupBusy = false; ClaudeWoWWidgets.Apply(false)');
+  assert.equal(vm.evaluate('STUB.popup.text'), 'meter title', 'the next pass asks');
+});
+
+test('W.Start refuses a revision the player has not approved, on the sync path and at login', () => {
+  const vm = newVM();
+  vm.run(widgetSet([['meter', TARGET_METER]], 1, 'e1', false));
+  assert.equal(vm.evaluate('ClaudeWoWWidgets.Start(ClaudeWoWWidgetDB.set.items[1], true)'), 'false');
+  assert.equal(vm.evaluate(meterFrame), null);
+  const login = newVM(savedWidgets([['meter', TARGET_METER]], false));
+  assert.equal(login.evaluate('ClaudeWoWWidgets.Status("meter")'), 'waiting', 'a saved widget without approval does not run at login');
+  assert.equal(login.evaluate(meterFrame), null);
+  assert.equal(login.evaluate('STUB.popup.text'), 'meter');
+  const approved = newVM(savedWidgets([['meter', TARGET_METER]]));
+  assert.equal(approved.evaluate('ClaudeWoWWidgets.Status("meter")'), 'running', 'an approved revision runs at login without asking');
+  assert.equal(approved.evaluate('STUB.popup'), null);
+});
+
+test('a widget title goes into the popup through Display, without UI escapes', () => {
+  const vm = newVM(
+    'ClaudeWoWWidgetDB = { set = { epoch = "e1", version = 1, items = { { name = "meter", title = "|cffff0000Red|r meter", rev = "r1", source = "local ui = ..." } } } }',
+  );
+  assert.equal(vm.evaluate('STUB.popup.text'), '¦cffff0000Red¦r meter');
 });
