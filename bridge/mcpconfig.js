@@ -12,7 +12,7 @@ const ALL_TOOLS = '*';
 const AGENT_KEYS = ['claude', 'codex'];
 const STDIO_KEYS = new Set(['type', 'command', 'args', 'envVars', 'allow', 'default', 'alwaysLoad']);
 const HTTP_KEYS = new Set(['type', 'url', 'bearerTokenEnvVar', 'allow', 'default', 'alwaysLoad']);
-const MCP_KEYS = new Set(['servers', 'strict']);
+const MCP_KEYS = new Set(['servers', 'strict', 'allow']);
 
 const isObject = v => !!v && typeof v === 'object' && !Array.isArray(v);
 const envRef = name => '${' + name + '}';
@@ -40,6 +40,54 @@ function parseAllow(v, where) {
     allow[a] = r.tools;
   }
   return { allow };
+}
+
+function parseDiscoveredAllow(v, where) {
+  if (!isObject(v)) {
+    const r = toolList(v, where);
+    return r.error ? r : { allow: Object.fromEntries(AGENT_KEYS.map(a => [a, r.tools])) };
+  }
+  const unknown = Object.keys(v).find(k => !AGENT_KEYS.includes(k));
+  if (unknown) return { error: `${where} names "${unknown}", which is not one of ${AGENT_KEYS.join(', ')}` };
+  const allow = {};
+  for (const a of AGENT_KEYS) {
+    if (v[a] === undefined) continue;
+    const r = toolList(v[a], `${where}.${a}`);
+    if (r.error) return r;
+    allow[a] = r.tools;
+  }
+  return { allow };
+}
+
+function parseAllowLists(raw, { servers, reserved, log }) {
+  const out = {};
+  if (raw === undefined) return out;
+  if (!isObject(raw)) {
+    log(`mcp.allow in config.json must be an object of server ids; it is ignored`);
+    return out;
+  }
+  for (const [id, v] of Object.entries(raw)) {
+    const where = `mcp.allow.${id}`;
+    if (!ID_RE.test(id)) {
+      log(`${where}: the id must be a server's tool prefix (letters, digits, - and _, at most 64 characters); it is ignored`);
+      continue;
+    }
+    if (reserved.includes(id)) {
+      log(`${where}: "${id}" is a bridge server name (${reserved.join(', ')}); it is ignored`);
+      continue;
+    }
+    if (servers.some(s => s.name === id)) {
+      log(`${where}: "${id}" is also in mcp.servers, so mcp.servers.${id}.allow is used and this list is ignored`);
+      continue;
+    }
+    const r = parseDiscoveredAllow(v, where);
+    if (r.error) {
+      log(`${r.error}; it is ignored`);
+      continue;
+    }
+    out[id] = r.allow;
+  }
+  return out;
 }
 
 function parseServer(name, s, reserved) {
@@ -85,7 +133,7 @@ function parse(raw, { reserved = [], log = () => {}, env = {} } = {}) {
   if (raw === undefined) return null;
   if (!isObject(raw)) {
     log(`mcp in config.json must be an object; it is ignored`);
-    return { servers: [], strict: false };
+    return { servers: [], strict: false, allow: {} };
   }
   for (const k of Object.keys(raw)) if (!MCP_KEYS.has(k)) log(`mcp.${k} in config.json is not a key of mcp (${[...MCP_KEYS].join(', ')}); it is ignored`);
   let strict = false;
@@ -108,7 +156,7 @@ function parse(raw, { reserved = [], log = () => {}, env = {} } = {}) {
         );
     servers.push(r);
   }
-  return { servers, strict };
+  return { servers, strict, allow: parseAllowLists(raw.allow, { servers, reserved, log }) };
 }
 
 function toolRule(server, tool) {
@@ -153,11 +201,21 @@ function parseChoice(value) {
 const explicitOff = (choice, id) => !!choice && (choice.off.includes(id) || (choice.allOff && !choice.on.includes(id)));
 const isOn = (choice, id, dflt) => (choice && choice.on.includes(id) ? true : explicitOff(choice, id) ? false : dflt);
 
+function discoveredAllow(mcp, agent) {
+  return Object.entries((mcp && mcp.allow) || {})
+    .filter(([, lists]) => Array.isArray(lists[agent]))
+    .map(([id, lists]) => [id, lists[agent]]);
+}
+
 function forClaude(mcp, { choice } = {}) {
   if (!mcp) return null;
   const loaded = mcp.servers.filter(s => isOn(choice, s.name, s.default));
-  const allowed = new Map(mcp.servers.map(s => [s.name, s.allow.claude]));
-  const allowRules = loaded.flatMap(s => s.allow.claude.map(t => toolRule(s.name, t)));
+  const listed = discoveredAllow(mcp, 'claude');
+  const allowed = new Map([...mcp.servers.map(s => [s.name, s.allow.claude]), ...listed]);
+  const allowRules = [
+    ...loaded.flatMap(s => s.allow.claude.map(t => toolRule(s.name, t))),
+    ...listed.filter(([id]) => !explicitOff(choice, id)).flatMap(([id, tools]) => tools.map(t => toolRule(id, t))),
+  ];
   const off = mcp.servers.filter(s => explicitOff(choice, s.name)).map(s => s.name);
   const blocks = rule => {
     const r = serverOf(rule);
@@ -261,8 +319,13 @@ function codexOwnServers({ home = os.homedir(), codexHome = process.env.CODEX_HO
 
 function forCodex(mcp, { choice, own = [] } = {}) {
   const configured = mcp ? mcp.servers : [];
+  const lists = new Map(discoveredAllow(mcp, 'codex').filter(([, tools]) => !tools.includes(ALL_TOOLS)));
+  const ownTools = name => (lists.has(name) ? { enabledTools: lists.get(name) } : {});
   const turnedOff = own.filter(n => ID_RE.test(n) && explicitOff(choice, n)).map(name => ({ name, off: true }));
-  const turnedOn = own.filter(n => ID_RE.test(n) && choice && choice.on.includes(n)).map(name => ({ name, on: true }));
+  const turnedOn = own.filter(n => ID_RE.test(n) && choice && choice.on.includes(n)).map(name => ({ name, on: true, ...ownTools(name) }));
+  const trimmed = own
+    .filter(n => ID_RE.test(n) && lists.has(n) && !explicitOff(choice, n) && !(choice && choice.on.includes(n)))
+    .map(name => ({ name, own: true, ...ownTools(name) }));
   return configured
     .filter(s => isOn(choice, s.name, s.default) && !own.includes(s.name))
     .map(s => ({
@@ -272,7 +335,7 @@ function forCodex(mcp, { choice, own = [] } = {}) {
       bearerTokenEnvVar: s.bearerTokenEnvVar || '',
       enabledTools: s.allow.codex.includes(ALL_TOOLS) ? null : s.allow.codex,
     }))
-    .concat(turnedOff, turnedOn);
+    .concat(turnedOff, turnedOn, trimmed);
 }
 
 const tomlString = v => JSON.stringify(String(v).replace(/[\ud800-\udfff]/gu, '\ufffd')).replace(/\u007f/g, '\\u007f');
@@ -283,8 +346,9 @@ function codexArgs(entries) {
   for (const e of entries || []) {
     const key = `mcp_servers.${e.name}`;
     const set = (k, v) => out.push('-c', `${key}.${k}=${v}`);
-    if (e.off || e.on) {
-      set('enabled', e.on ? 'true' : 'false');
+    if (e.off || e.on || e.own) {
+      if (e.off || e.on) set('enabled', e.on ? 'true' : 'false');
+      if (!e.off && Array.isArray(e.enabledTools)) set('enabled_tools', tomlList(e.enabledTools));
       continue;
     }
     if (e.server.type === 'http') {
@@ -307,7 +371,8 @@ function codexArgs(entries) {
 function summary(mcp) {
   if (!mcp) return '';
   const names = mcp.servers.map(s => `${s.name} (${s.default ? 'on' : 'off'} by default)`);
-  return `${names.length ? names.join(', ') : 'no servers'}${mcp.strict ? '; strict: Claude runs load only these and the bridge servers' : ''}`;
+  const lists = Object.keys(mcp.allow || {});
+  return `${names.length ? names.join(', ') : 'no servers'}${lists.length ? `; allow lists for ${lists.join(', ')}` : ''}${mcp.strict ? '; strict: Claude runs load only these and the bridge servers' : ''}`;
 }
 
 const SOURCES = ['config', 'claude', 'claude.ai', 'plugin', 'codex'];

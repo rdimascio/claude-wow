@@ -301,7 +301,11 @@ test('mcp.servers end to end: servers reach --mcp-config with ${VAR} only, stric
     /#21@sess1 mcp: mcp__notion__create_page was denied; its server is off for this chat or the tool is outside its allow list, so it is not offered to allow/,
     out,
   );
-  assert.match(out, /mcp: allowed tool rules that mcp\.servers does not allow are left out of Claude runs: mcp__notion, mcp__notion__notion-create-pages/, out);
+  assert.match(
+    out,
+    /mcp: allowed tool rules that mcp\.servers or mcp\.allow does not allow are left out of Claude runs: mcp__notion, mcp__notion__notion-create-pages/,
+    out,
+  );
   const { argv, mcp } = JSON.parse(fs.readFileSync(record, 'utf8'));
   assert.ok(argv.includes('--strict-mcp-config'), argv.join(' '));
   const allowed = argv.slice(argv.indexOf('--allowedTools') + 1, argv.indexOf('--disallowedTools'));
@@ -328,6 +332,53 @@ test('mcp.servers end to end: servers reach --mcp-config with ${VAR} only, stric
   for (const f of [record, path.join(home, 'config.json'), path.join(home, 'state.json'), path.join(home, 'transcripts.json')])
     assert.ok(!fs.readFileSync(f, 'utf8').includes(secret), f);
   assert.ok(!(first.stdout + first.stderr + second.stdout + second.stderr).includes(secret));
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('mcp.allow end to end: a discovered server gets its listed tools, other tools leave allowedTools and the roll, and mcp.servers wins a same-name list', () => {
+  const dir = scratch('mcp-allow');
+  const { home, saved, project, cfg } = fakeInstall(dir);
+  const record = path.join(dir, 'run.json');
+  mcpAgent(cfg.agents.claude.path, record, {
+    type: 'result',
+    result: 'pong',
+    session_id: 'sess-1',
+    permission_denials: [
+      { tool_name: 'mcp__claude_ai_Slack__slack_send_message', tool_use_id: 't1', tool_input: {} },
+      { tool_name: 'mcp__claude_ai_Slack__slack_list_channels', tool_use_id: 't3', tool_input: {} },
+      { tool_name: 'mcp__mobbin__search', tool_use_id: 't2', tool_input: {} },
+    ],
+  });
+  fs.writeFileSync(
+    path.join(home, 'config.json'),
+    JSON.stringify({
+      ...cfg,
+      agents: { claude: { ...cfg.agents.claude, allowedTools: ['WebSearch', 'mcp__claude_ai_Slack', 'mcp__claude_ai_Slack__slack_send_message'] } },
+      mcp: {
+        servers: { notion: { type: 'http', url: 'https://mcp.notion.com/mcp', allow: ['notion-search'] } },
+        allow: { claude_ai_Slack: ['slack_search_public'], notion: '*' },
+      },
+    }),
+  );
+  fs.writeFileSync(saved, outbox(23, 'ping', ''));
+  const r = runOnce(home, project);
+  assert.equal(r.status, 0, r.out);
+  assert.match(r.out, /mcp\.allow\.notion: "notion" is also in mcp\.servers, so mcp\.servers\.notion\.allow is used and this list is ignored/, r.out);
+  assert.match(r.out, /mcp: notion \(off by default\); allow lists for claude_ai_Slack/, r.out);
+  assert.match(
+    r.out,
+    /mcp: allowed tool rules that mcp\.servers or mcp\.allow does not allow are left out of Claude runs: mcp__claude_ai_Slack, mcp__claude_ai_Slack__slack_send_message/,
+    r.out,
+  );
+  assert.match(r.out, /#23@sess1 mcp: mcp__claude_ai_Slack__slack_list_channels was denied; .*not offered to allow/, r.out);
+  const { argv } = JSON.parse(fs.readFileSync(record, 'utf8'));
+  const allowed = argv.slice(argv.indexOf('--allowedTools') + 1, argv.indexOf('--disallowedTools'));
+  assert.ok(allowed.includes('mcp__claude_ai_Slack__slack_search_public') && allowed.includes('WebSearch'), allowed.join(' '));
+  assert.ok(!allowed.includes('mcp__claude_ai_Slack') && !allowed.includes('mcp__claude_ai_Slack__slack_send_message'), allowed.join(' '));
+  assert.ok(!allowed.includes('mcp__notion'), 'the mcp.allow list for a config server is ignored');
+  assert.ok(argv.slice(argv.indexOf('--disallowedTools')).includes('mcp__claude_ai_Slack__slack_send_message'));
+  const inbox = fs.readFileSync(path.join(cfg.addonDir, 'ClaudeWoW_S001', 'Inbox.lua'), 'utf8');
+  assert.match(inbox, /denied = \{ "mcp__mobbin__search" \},/, inbox);
   fs.rmSync(dir, { recursive: true, force: true });
 });
 

@@ -2508,7 +2508,7 @@ function runAgent(job, opts = {}) {
   const scoped = MC.scopeAllowed(A.withPluginSettings(A.agentConfig(cfg, agentId), agentId, core.options(plugin.id)), userMcp);
   if (scoped.dropped && !loggedMcpDropped.has(scoped.dropped.join(' '))) {
     loggedMcpDropped.add(scoped.dropped.join(' '));
-    log(`${tag} mcp: allowed tool rules that mcp.servers does not allow are left out of Claude runs: ${scoped.dropped.join(', ')}`);
+    log(`${tag} mcp: allowed tool rules that mcp.servers or mcp.allow does not allow are left out of Claude runs: ${scoped.dropped.join(', ')}`);
   }
   const acfg = A.withChatSettings(
     P.withRunDeniedRules(P.withRunOnlyRules(scoped.agentCfg, runOnlyRules), [
@@ -3724,7 +3724,7 @@ for (const n of CODEX_OWN_MCP)
   log(
     `mcp.servers.${n}: ~/.codex/config.toml has a server of the same name, and Codex would merge the two (its url, auth and env with this one), so Codex runs leave this server out; rename one of them`,
   );
-if (USER_MCP && (USER_MCP.servers.length || USER_MCP.strict)) {
+if (USER_MCP && (USER_MCP.servers.length || USER_MCP.strict || Object.keys(USER_MCP.allow).length)) {
   log(`mcp: ${MC.summary(USER_MCP)}`);
   if (USER_MCP.strict) {
     const own = MC.claudeOwnServers({ cwd: DEFAULT_CWD });
