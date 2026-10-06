@@ -13,7 +13,7 @@ Chat with your local coding agents from inside **World of Warcraft: Forever** or
 - The agent can draw on your world map: numbered routes, quest stops and marks, with a navigator arrow that walks you from stop to stop
 - Herb and ore spawns on the world map, filtered by your gathering skill (`/claude config map ore`, `/claude config map herb`)
 - Ready-made macros: ask for one and the reply carries a **Create macro** button that saves it and puts it on your cursor, ready to drop on an action bar (`/claude config macro undo` reverts it)
-- Live UI widgets: ask for *"a DPS meter"* or *"a timer bar for my buffs"* and the agent's Lua loads in the game at once, no `/reload`; display-only, listed and removed with `/claude config ui`
+- Live UI widgets: ask for *"a DPS meter"* or *"a timer bar for my buffs"* and the agent's Lua loads in the game once you click **Show**, no `/reload`; display-only, listed and removed with `/claude config ui` or the **Widgets** page in the game's AddOns settings
 - **Need / Greed / Pass** on permissions: when Claude or Grok needs a command outside your allowlist, it drops as an epic item in a group-loot roll frame
 - A status light for the bridge, automatic retries, and recovery of your chats (and map layers) if the beta client wipes addon data
 - Runs on Windows, on Linux with the game under Wine, and on macOS with a native client
@@ -207,7 +207,7 @@ Right-clicking a chat in the left panel opens a small menu with **Rename...**, *
 | `/claude --permission-mode <mode> [text]` | `claude --permission-mode` | `acceptEdits`, `auto`, `plan`, `manual`, `dontAsk` or `bypassPermissions` |
 | `/claude --add-dir <path> [text]` | `claude --add-dir` | one more folder the agent may use; repeat it for more |
 | `/claude --agent <name> [text]` | | which CLI runs the chat: `claude`, `codex`, `grok`, `agy`, `hermes` or `local` (a model on your own PC, see [docs/CONFIGURATION.md](docs/CONFIGURATION.md#the-local-agent)). A chat that changes agent starts a fresh session with it |
-| `/claude config [key] [value]` | `claude config` | the addon's settings (below); alone it lists them with their values |
+| `/claude config [key] [value]` | `claude config` | the addon's settings (below); alone it lists them with their values, `/claude config all` adds the troubleshooting keys |
 
 Flags come before the text and combine: `/claude --model opus fix the build` starts a new chat on Opus with that message, and `/claude -c --effort high` changes the current chat. `--flag=value` and `"quoted values"` work, a value of `-` (or `default`) clears a setting, and a flag with no value shows it. The settings stay with the chat and go to the agent on every message; each agent gets them in its own spelling (Codex `-m`, `-c model_reasoning_effort=`, `--add-dir`; Grok `-m`), and when an agent has no such option the reply says so and the run goes on without it. A message that starts with something that only looks like a flag (`/claude --verbose output is too long, why?`) is a message.
 
@@ -232,7 +232,7 @@ The client's own commands, with the same rule: a command word followed by someth
 | `/r <text>` | replies to the chat that answered last, with the game's own `To Claude [chat]:` header; once a real player whispers you, `/r` answers them, until the next reply |
 | `/w <agent> <text>` | sends to that agent's chat when whisper tabs are on |
 
-Settings, with `/claude config <key> [value]`:
+Settings, with `/claude config <key> [value]`. The everyday ones are also on the **Options** page in the game's settings (AddOns, Azeroth Companion, Options): whisper tabs, window dimming, dodge and auto-hide, game chat echo, voice lines, death roasts, the roll window, achievement toasts, the Orders card, sharing game state, and ore and herb nodes. Each control calls the same handler as its `/claude config` key, so both always agree. The troubleshooting keys (`signal`, `mode`, `auto`, `longchat`, `plugin`, `probe`, `diag`) are left off that page and out of the plain `/claude config` list; `/claude config all` shows them.
 
 | Key | What it does |
 |---|---|
@@ -244,6 +244,7 @@ Settings, with `/claude config <key> [value]`:
 | `roast [on\|off]` | when you die, the agent gets a recap of what killed you and writes a short roast in the **Death roasts** chat (off by default; at most one every 2 minutes). See [Death roast](#death-roast) |
 | `achievements [on\|off\|test]` | list the achievements your agents earned; `on`/`off` turns the toasts on or off, `test` shows a sample (see [Achievement toasts](#achievement-toasts)) |
 | `orders [on\|off]` | the Orders card under the quest tracker: the current order from a live Claude Code session and up to 3 goal bars (on by default; also `/claude orders` and the chat list's gear menu). It hides when there is no order |
+| `telemetry [on\|off]` | share game state with the agent: money, level, zone, professions, watched items, gear and reputation, plus prices and loot from windows you open (on by default; see [docs/CONFIGURATION.md](docs/CONFIGURATION.md)) |
 | `echo summary\|full\|short\|off\|<chars>` | how much of each reply to print into the game chat. `summary` (the default) prints only the agent's closing TL;DR lines, the full reply is in the window behind `[open]`; `full` prints up to 4000 chars, `short` one preview line |
 | `voice ...`, `map ...`, `macro undo`, `roll on\|off` | see [Voice lines](#voice-lines), [Map](#map-routes-and-gathering-nodes), [Macros](#macros-ready-to-use) and [Need, Greed or Pass](#need-greed-or-pass) |
 | `longchat on` | let the game chat box take 4000 characters, for long `/claude` messages |
@@ -365,11 +366,11 @@ Ask for a small UI element (*"give me a DPS meter"*, *"a timer bar for my buffs"
 
 | Command | What it does |
 |---|---|
-| `/claude config ui` | list the widgets and their state (running, removed, failed) |
+| `/claude config ui` | list the widgets and their state (running, waiting for your OK, removed, failed) |
 | `/claude config ui remove <name>` | stop a widget and keep it off after login, until the agent sends a new version |
-| `/claude config ui run <name>` | start a widget again |
+| `/claude config ui run <name>` | start a widget again, or say yes to one that waits |
 
-Widgets start again at login. The contract, the allowlist, what a widget cannot do and the limits are in [docs/UI-WIDGETS.md](docs/UI-WIDGETS.md). `/claude dev globals` and `npm run audit:widgets` check the allowlist against your client.
+A widget runs only after you say yes. Each new widget, and each new version of one, opens a popup, one at a time: "Show the agent's '<title>' widget?" with **Show** and **Not Now**. **Show** runs it and remembers that version; **Not Now** keeps it off until the agent sends a new version; Escape asks again at the next login. The **Widgets** page in the game's AddOns settings lists them with **Remove** and **Show** buttons. Widgets you said yes to start again at login. The contract, the allowlist, what a widget cannot do and the limits are in [docs/UI-WIDGETS.md](docs/UI-WIDGETS.md). `/claude dev globals` and `npm run audit:widgets` check the allowlist against your client.
 
 ### Permissions
 

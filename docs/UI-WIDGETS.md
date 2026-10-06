@@ -121,9 +121,11 @@ The first run is in a `pcall`, and so are the widget's script handlers (`SetScri
 
 | Command | Does |
 |---|---|
-| `/claude config ui` or `/claude config ui list` | list the widgets: running, removed, or failed with the error (bare, it also shows the tab and window settings) |
+| `/claude config ui` or `/claude config ui list` | list the widgets: running, waiting for your OK, removed, or failed with the error (bare, it also shows the tab and window settings) |
 | `/claude config ui remove <name>` | stop a widget and keep it off after login. It comes back only when the agent sends a new version |
-| `/claude config ui run <name>` | start a widget again (after an error or a remove) |
+| `/claude config ui run <name>` | start a widget again (after an error or a remove), or say yes to one that waits |
 | `/claude dev globals [clear]` | save (or drop) the names the widget allowlist admits and refuses on this client, for `npm run audit:widgets` |
 
-Widgets live in `ClaudeWoWWidgetDB` and start again at login, in the same sandbox. To delete a widget on the bridge too, ask the agent ("remove the DPS meter").
+A widget runs only after the player says yes to that revision. `W.Start` refuses any revision that is not in `ClaudeWoWWidgetDB.approved[name]`, on both paths: a sync from the bridge (`W.Sync`) and the saved set at login (`W.Apply`). Each waiting widget opens one `CLAUDEWOW_WIDGET` popup at a time ("Show the agent's '<title>' widget?", the title through `Display`). **Show** stores `approved[name] = rev` and starts it; **Not Now** stores `removed[name] = rev`, as `remove` does. Both re-check that the revision is still current and was not removed. Escape is no answer: the widget waits and is asked again at the next login. When the popup system refuses (`StaticPopup_Show` returns nil, or cancels it), the widget stays queued and nothing is recorded. The **Widgets** page in the game's AddOns settings lists the widgets with **Remove** and **Show** buttons.
+
+Widgets live in `ClaudeWoWWidgetDB` and approved ones start again at login, in the same sandbox. To delete a widget on the bridge too, ask the agent ("remove the DPS meter").
