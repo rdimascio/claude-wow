@@ -479,7 +479,7 @@ local function WidgetRow(panel)
 		local data = self:GetParent().data
 		if not data or not ClaudeWoWWidgets then return end
 		if data.status == "removed" or data.status == "waiting" then
-			ClaudeWoWWidgets.Run(data.name)
+			ClaudeWoWWidgets.Show(data)
 		else
 			ClaudeWoWWidgets.Remove(data.name)
 		end

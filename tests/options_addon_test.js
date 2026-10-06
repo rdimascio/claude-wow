@@ -268,7 +268,7 @@ test('options: without the Settings API, an Options panel under the help page wo
 test('options: the Widgets page lists the agent widgets with Remove and Show buttons that use the widget commands', () => {
   const vm = newVM(
     SETTINGS_API,
-    'ClaudeWoWWidgetDB = { approved = { meter = "r1" }, set = { epoch = "e1", version = 1, items = { { name = "meter", title = "DPS meter", rev = "r1", source = "local ui = ..." }, { name = "clock", title = "Clock", rev = "r2", source = "local ui = ..." } } } }',
+    'ClaudeWoWWidgetDB = { approved = { meter = { rev = "r1", source = "local ui = ..." } }, set = { epoch = "e1", version = 1, items = { { name = "meter", title = "DPS meter", rev = "r1", source = "local ui = ..." }, { name = "clock", title = "Clock", rev = "r2", source = "local ui = ..." } } } }',
   );
   vm.run('ClaudeWoWWidgetsPanel.scripts.OnShow(ClaudeWoWWidgetsPanel)');
   const row = i => `ClaudeWoWWidgetsPanel.rows[${i}]`;
@@ -283,7 +283,7 @@ test('options: the Widgets page lists the agent widgets with Remove and Show but
   assert.equal(vm.evaluate(`${row(1)}.button.text`), 'Show');
   vm.run(`${row(2)}.button.scripts.OnClick(${row(2)}.button)`);
   assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("clock")'), 'running');
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.approved.clock'), 'r2');
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.approved.clock.rev'), 'r2');
 });
 
 const NATIVE_TEMPLATES = `
@@ -325,4 +325,25 @@ test('options: the gear menu has an Options item that opens the Options page, in
   const bare = newVM(NATIVE_TEMPLATES);
   pickGear(bare, 'Options');
   assert.equal(bare.evaluate('ClaudeWoWHelpWindow.shown'), 'true', 'no options API: the help window with the /claude config commands');
+});
+
+test('options: a Show button with stale row data does not approve the newer code, it refreshes and asks', () => {
+  const vm = newVM(
+    SETTINGS_API,
+    'ClaudeWoWWidgetDB = { set = { epoch = "e1", version = 1, items = { { name = "clock", title = "Clock", rev = "r2", source = "local ui = ..." } } } }',
+  );
+  vm.run('ClaudeWoWWidgetsPanel.scripts.OnShow(ClaudeWoWWidgetsPanel)');
+  const row = 'ClaudeWoWWidgetsPanel.rows[1]';
+  assert.equal(vm.evaluate(`${row}.button.text`), 'Show');
+  vm.run(
+    'ClaudeWoWWidgets.Sync({ epoch = "e1", version = 2, items = { { name = "clock", title = "Clock", rev = "r2", source = "local ui = ...\\nui.db.swapped = true" } } })',
+  );
+  vm.run(`${row}.data = { name = "clock", title = "Clock", rev = "r2", source = "local ui = ...", status = "waiting" }`);
+  vm.run(`${row}.button.scripts.OnClick(${row}.button)`);
+  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("clock")'), 'waiting');
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.clock and ClaudeWoWWidgetDB.data.clock.swapped'), null);
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.approved.clock'), null);
+  assert.equal(vm.evaluate(`${row}.data.source`), 'local ui = ...\nui.db.swapped = true', 'the row shows the current code after the click');
+  vm.run(`${row}.button.scripts.OnClick(${row}.button)`);
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.clock and ClaudeWoWWidgetDB.data.clock.swapped'), 'true', 'a click on the fresh row approves that code');
 });
