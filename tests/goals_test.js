@@ -549,6 +549,7 @@ function fakeInstall(dir) {
   fs.writeFileSync(
     agent,
     [
+      `if (process.argv.includes('--version')) process.exit(0);`,
       `require('fs').writeFileSync(${JSON.stringify(argvFile)}, JSON.stringify(process.argv.slice(2)));`,
       `process.stdout.write(JSON.stringify({ type: 'result', result: 'ok', session_id: 'sess-1', permission_denials: ${JSON.stringify(denials)} }) + '\\n');`,
     ].join('\n'),
