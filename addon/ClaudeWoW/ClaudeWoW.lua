@@ -5825,6 +5825,14 @@ function Q.AddEvent(chat, text)
 	chat.history[#chat.history].event = true
 end
 
+Q.EMPTY_ICON, Q.EMPTY_ROW_H, Q.EMPTY_ROWS_W, Q.EMPTY_ROW_ICON = 56, 22, 300, 16
+Q.STARTER_ICON = "Interface\\GossipFrame\\AvailableQuestIcon"
+Q.STARTERS = {
+	project = { "Summarize what changed today", "Find and fix the failing test", "Explain how this repo is laid out" },
+	game = { "What should I do next?", "Plan a route for my quests", "Which gear upgrades should I look for?" },
+}
+Q.EMPTY_HINT = "Shift-click an item, spell or quest to link it."
+
 function Q.EmptyState(c)
 	for _, m in ipairs(c.history) do
 		if m.role ~= "system" or (type(m.picker) == "table" and #m.picker > 0) then return nil end
@@ -5835,21 +5843,59 @@ function Q.EmptyState(c)
 	if not ClaudeWoW.IsConnected() then
 		return { title = "Not connected", lines = { Q.STATUS_UNREACHABLE } }
 	end
-	local start = Whisper.Active()
-		and ("Type below and press Enter, or talk to " .. ChatAgentName(c) .. " in its chat tab.")
-		or "Type below and press Enter. Shift-click an item, spell or quest to link it."
-	return { title = "No messages yet", lines = { start, "Project: " .. Cli.ProjectLabel(c) } }
+	local project = Cli.ProjectOf(c) ~= ""
+	return {
+		title = project and "What are we working on?" or "What do you need?",
+		lines = { Q.EMPTY_HINT },
+		starters = project and Q.STARTERS.project or Q.STARTERS.game,
+	}
+end
+
+function Q.UseStarter(text)
+	local input = ui.input
+	if not input then return end
+	input:SetText(text)
+	input:SetFocus()
+	if input.SetCursorPosition then input:SetCursorPosition(#text) end
+	Q.UpdatePlaceholder()
+end
+
+function Q.StarterRow(f, k)
+	local row = f.rows[k]
+	if row then return row end
+	local parchment = ui.parchment ~= nil
+	row = CreateFrame("Button", nil, f)
+	row:SetHeight(Q.EMPTY_ROW_H)
+	row.icon = row:CreateTexture(nil, "ARTWORK")
+	row.icon:SetSize(Q.EMPTY_ROW_ICON, Q.EMPTY_ROW_ICON)
+	row.icon:SetPoint("LEFT", row, "LEFT", 4, 0)
+	row.icon:SetTexture(Q.STARTER_ICON)
+	row.label = row:CreateFontString(nil, "OVERLAY", parchment and Q.FontObject("QuestFont", "GameFontHighlight") or "GameFontHighlight")
+	row.label:SetPoint("LEFT", row.icon, "RIGHT", 6, 0)
+	row.label:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+	row.label:SetJustifyH("LEFT")
+	row.label:SetWordWrap(false)
+	if parchment then row.label:SetTextColor(Q.PARCHMENT_TEXT[1], Q.PARCHMENT_TEXT[2], Q.PARCHMENT_TEXT[3]) end
+	row:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
+	row:SetScript("OnClick", function(self) Q.UseStarter(self.starter) end)
+	f.rows[k] = row
+	return row
 end
 
 function Q.EmptyFrame()
 	if ui.empty then return ui.empty end
 	local parchment = ui.parchment ~= nil
 	local f = CreateFrame("Frame", nil, ui.content)
+	f.rows = {}
+	f.icon = f:CreateTexture(nil, "ARTWORK")
+	f.icon:SetSize(Q.EMPTY_ICON, Q.EMPTY_ICON)
+	if not (type(SetPortraitToTexture) == "function" and pcall(SetPortraitToTexture, f.icon, Q.PORTRAIT)) then
+		f.icon:SetTexture(Q.PORTRAIT)
+		if type(f.icon.SetMask) == "function" then pcall(f.icon.SetMask, f.icon, Q.MINIMAP_ICON_MASK) end
+	end
 	f.title = f:CreateFontString(nil, "OVERLAY", parchment and Q.FontObject("QuestTitleFont", "GameFontNormalLarge") or "GameFontNormalLarge")
-	f.title:SetPoint("TOP", f, "TOP", 0, 0)
 	f.title:SetJustifyH("CENTER")
-	f.body = f:CreateFontString(nil, "OVERLAY", parchment and Q.FontObject("QuestFont", "GameFontHighlight") or "GameFontHighlight")
-	f.body:SetPoint("TOP", f.title, "BOTTOM", 0, -Q.EMPTY_LINE_GAP)
+	f.body = f:CreateFontString(nil, "OVERLAY", parchment and Q.FontObject("QuestFontNormalSmall", "GameFontHighlightSmall") or "GameFontHighlightSmall")
 	f.body:SetJustifyH("CENTER")
 	f.body:SetJustifyV("TOP")
 	f.body:SetWordWrap(true)
@@ -5871,17 +5917,30 @@ function Q.PlaceEmpty(state, y, width)
 	f.title:SetWidth(inner)
 	f.body:SetWidth(inner)
 	local below = y > 0
+	local h = 0
+	local function Stack(region, height, gap)
+		region:ClearAllPoints()
+		region:SetPoint("TOP", f, "TOP", 0, -h)
+		h = h + height + (gap or Q.EMPTY_LINE_GAP)
+	end
+	f.icon:SetShown(not below)
+	if not below then Stack(f.icon, Q.EMPTY_ICON) end
 	f.title:SetShown(not below)
 	f.title:SetText(below and "" or Display(state.title))
-	f.body:SetText(Display(below and state.lines[1] or table.concat(state.lines, "\n")))
-	f.body:ClearAllPoints()
-	if below then
-		f.body:SetPoint("TOP", f, "TOP", 0, 0)
-	else
-		f.body:SetPoint("TOP", f.title, "BOTTOM", 0, -Q.EMPTY_LINE_GAP)
+	if not below then Stack(f.title, Try(f.title.GetStringHeight, f.title) or 14) end
+	local starters = state.starters or {}
+	local rowsW = math.min(inner, Q.EMPTY_ROWS_W)
+	for k, text in ipairs(starters) do
+		local row = Q.StarterRow(f, k)
+		row.starter = text
+		row.label:SetText(Display(text))
+		row:SetWidth(rowsW)
+		Stack(row, Q.EMPTY_ROW_H, k == #starters and Q.EMPTY_LINE_GAP or 0)
+		row:Show()
 	end
-	local h = Try(f.body.GetStringHeight, f.body) or 14
-	if not below then h = h + (Try(f.title.GetStringHeight, f.title) or 14) + Q.EMPTY_LINE_GAP end
+	for k = #starters + 1, #f.rows do f.rows[k]:Hide() end
+	f.body:SetText(Display(below and state.lines[1] or table.concat(state.lines, "\n")))
+	Stack(f.body, Try(f.body.GetStringHeight, f.body) or 14, 0)
 	f:SetHeight(h)
 	local view = Try(ui.scroll.GetHeight, ui.scroll) or 0
 	local top = below and (y + Q.EMPTY_GAP) or math.max(0, math.floor((view - h) / 2))

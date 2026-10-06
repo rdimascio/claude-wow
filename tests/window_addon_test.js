@@ -738,6 +738,13 @@ test('the window leaves out the closing TL;DR block of a reply, but not one in a
   assert.equal(vm.evaluate('STUB.copied[1]'), 'Renamed the helper.\nAll green.\n\n**TL;DR:** Helper renamed.', 'the copy box gets the whole reply');
 });
 
+const starters = vm =>
+  JSON.parse(
+    vm.evaluate(
+      '(function() local t = {} for _, r in ipairs(ClaudeWoW.UI.empty.rows) do if r.shown then table.insert(t, string.format("%q", r.label:GetText())) end end return "[" .. table.concat(t, ",") .. "]" end)()',
+    ),
+  );
+
 const emptyState = vm => ({
   shown: vm.evaluate('ClaudeWoW.UI.empty and ClaudeWoW.UI.empty.shown'),
   title: vm.evaluate('ClaudeWoW.UI.empty and ClaudeWoW.UI.empty.title:GetText()'),
@@ -745,7 +752,7 @@ const emptyState = vm => ({
   top: -vm.num('ClaudeWoW.UI.empty.y'),
 });
 
-test('an empty chat shows a centered empty state with the project, not a system bubble, and setting the project adds no message', () => {
+test('an empty chat shows a centered empty state with starters for its kind of chat, not a system bubble, and setting the project adds no message', () => {
   const vm = nativeVM();
   vm.run('ClaudeWoW.NewChat(); ClaudeWoW.Render()');
   let e = emptyState(vm);
@@ -755,14 +762,20 @@ test('an empty chat shows a centered empty state with the project, not a system 
   assert.equal(shownBodies(vm).filter(Boolean).length, 0, 'no bubble on an empty chat');
   e = emptyState(vm);
   assert.equal(e.shown, 'true');
-  assert.equal(e.title, 'No messages yet');
-  assert.match(e.body, /Type below and press Enter/);
-  assert.match(e.body, /Project: No project/);
+  assert.equal(e.title, 'What do you need?', 'a chat with no project is a game chat');
+  assert.equal(e.body, 'Shift-click an item, spell or quest to link it.');
+  assert.equal(vm.evaluate('ClaudeWoW.UI.empty.icon.shown'), 'true', 'the spark sits above the title');
+  assert.deepEqual(starters(vm), ['What should I do next?', 'Plan a route for my quests', 'Which gear upgrades should I look for?']);
   assert.ok(e.top > 0, 'centered in the parchment, not at the top: ' + e.top);
+  vm.run('ClaudeWoW.UI.empty.rows[2].scripts.OnClick(ClaudeWoW.UI.empty.rows[2])');
+  assert.equal(vm.evaluate('ClaudeWoWInput:GetText()'), 'Plan a route for my quests', 'a starter fills the box and sends nothing');
+  assert.equal(vm.num('#ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history'), 0);
+  vm.run('ClaudeWoWInput:SetText("")');
 
   vm.run('ClaudeWoWProjectButton.scripts.OnClick(ClaudeWoWProjectButton); STUB.Pick("wow-ai")');
   assert.equal(vm.num('#ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history'), 0, 'picking a project writes no "project:" message');
-  assert.match(emptyState(vm).body, /Project: wow-ai/, 'the empty state names the new project');
+  assert.equal(emptyState(vm).title, 'What are we working on?', 'a project chat gets the coding starters');
+  assert.deepEqual(starters(vm), ['Summarize what changed today', 'Find and fix the failing test', 'Explain how this repo is laid out']);
 
   vm.run('SlashCmdList.CLAUDE("--project nope")');
   const bodies = shownBodies(vm);
@@ -771,8 +784,9 @@ test('an empty chat shows a centered empty state with the project, not a system 
   e = emptyState(vm);
   assert.equal(e.shown, 'true', 'a chat with only system lines still gets the hint');
   assert.equal(vm.evaluate('ClaudeWoW.UI.empty.title.shown'), 'false', 'but no "No messages yet" title under a visible message');
-  assert.match(e.body, /^Type below and press Enter/);
-  assert.ok(!e.body.includes('\n'), 'only the hint line: ' + e.body);
+  assert.equal(e.body, 'Shift-click an item, spell or quest to link it.');
+  assert.equal(vm.evaluate('ClaudeWoW.UI.empty.icon.shown'), 'false', 'no spark under a visible message');
+  assert.equal(starters(vm).length, 3, 'the starters stay under a system line');
   assert.ok(e.top > 0, 'below the system line');
 
   vm.run('ClaudeWoW.IsConnected = function() return false end; ClaudeWoW.Render()');
@@ -782,12 +796,12 @@ test('an empty chat shows a centered empty state with the project, not a system 
   e = emptyState(vm);
   assert.equal(e.title, 'Not connected');
   assert.ok(!/npm|claude-wow/.test(e.body), 'no commands or folder names: ' + e.body);
+  assert.equal(starters(vm).length, 0, 'no starters while nothing can answer');
 
   vm.run('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history = {}; ClaudeWoW.IsConnected = function() return true end; ClaudeWoW.Render()');
   e = emptyState(vm);
   assert.equal(vm.evaluate('ClaudeWoW.UI.empty.title.shown'), 'true', 'a truly empty chat gets its title back');
-  assert.equal(e.title, 'No messages yet');
-  assert.match(e.body, /Project: /);
+  assert.equal(e.title, 'What are we working on?');
   vm.run('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history = { { role = "user", t = 1, text = "hi" } }; ClaudeWoW.Render()');
   assert.equal(emptyState(vm).shown, 'false', 'a chat with a message has no empty state');
 });
