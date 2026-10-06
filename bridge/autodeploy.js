@@ -17,7 +17,7 @@ const STATE_FILE = 'autodeploy.json';
 const GIT_ENV = { GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: '/usr/bin/false', SSH_ASKPASS: '/usr/bin/false', GCM_INTERACTIVE: 'never' };
 const DEPLOY_TIMEOUT_S = 7200;
 const LAUNCH_FAILED = 127;
-const DEPLOY_SCRIPT = `"$1" dev deploy "$2" --repo "$3" --timeout ${DEPLOY_TIMEOUT_S}; code=$?; printf '{"key":"%s","sha":"%s","exit":%d}\\n' "$5" "$2" "$code" > "$4.tmp" && mv "$4.tmp" "$4"`;
+const DEPLOY_SCRIPT = `"$1" dev deploy "$2" --repo "$3" --timeout ${DEPLOY_TIMEOUT_S}; code=$?; [ -e "$4" ] && printf '{"key":"%s","sha":"%s","exit":%d}\\n' "$5" "$2" "$code" > "$4.tmp" && mv "$4.tmp" "$4"`;
 
 function settings(cfg, defaultCwd) {
   const a = cfg && cfg.autoDeploy;
