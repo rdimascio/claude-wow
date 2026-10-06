@@ -3,22 +3,17 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
-const { makeRoot, gameRunner, TWO_CLIENTS: TWO, withEra } = require('./helpers');
-const { luaQuote } = require('../../dev/wow/client');
+const { makeRoot, gameRunner, TWO_CLIENTS: TWO, withEra, chatById, sentId } = require('./helpers');
 
 const ROOT = makeRoot('sessionbusy');
 const withGame = gameRunner(ROOT);
 const LONG_RUN_RELEASE = 'long-run-release';
 
-function chatById(client, chatId) {
-  return client.json(`(function() for _, c in ipairs(ClaudeWoWDB.chats) do if c.id == ${luaQuote(chatId)} then return c end end end)()`);
-}
-
-function answerTo(client, chatId, id, label) {
+function answerTo(client, chatId, id, text, label) {
   return client.waitFor(
     () => {
       const c = chatById(client, chatId);
-      return c && !c.pendingId && (c.history || []).find(m => m.id === id && m.role !== 'user');
+      return c && !c.pendingId && (c.history || []).find(m => m.id === id && m.role === 'assistant' && m.text.includes(text));
     },
     { timeoutMs: 60000, label },
   );
@@ -37,16 +32,15 @@ test('a chat on another client attached to an agent session that is running wait
 
       era.slash(`/claude -r ${session.slice(0, 8)} and from here`);
       const attached = era.activeChat();
-      const id = attached.pendingId;
-      assert.ok(Number.isInteger(id), 'the attached chat sent its message');
+      const id = sentId(era, attached);
       assert.ok(
-        attached.history.find(m => m.id === id && m.role === 'user' && m.text === 'and from here'),
-        `#${id} is the attached chat's own message`,
+        attached.history.find(m => m.id === id && m.text === 'and from here'),
+        `#${id} carries the attached chat's text`,
       );
 
       await h.bridge.waitForLine(new RegExp(`#${id}@\\w+ queued \\(its agent session is busy in another chat\\)`), { timeoutMs: 20000 });
       fs.writeFileSync(path.join(h.sb.agentState, LONG_RUN_RELEASE), '');
-      await answerTo(era, attached.id, id, 'the attached chat answer');
+      await answerTo(era, attached.id, id, 'and from here', 'the attached chat answer');
     });
 
     const calls = h.agentCalls();

@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
-const { makeRoot, gameRunner } = require('./helpers');
+const { makeRoot, gameRunner, sentId } = require('./helpers');
 const SS = require('../../bridge/sessions');
 
 const ROOT = makeRoot('commands');
@@ -44,9 +44,8 @@ function answerTo(h, id, label) {
 }
 
 async function slash(h, line, label) {
-  const id = h.client.lastSeq() + 1;
   h.client.slash(line);
-  return answerTo(h, id, label || line);
+  return answerTo(h, sentId(h.client), label || line);
 }
 
 const flagAfter = (argv, flag) => argv[argv.indexOf(flag) + 1];
