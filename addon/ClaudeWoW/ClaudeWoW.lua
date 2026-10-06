@@ -1651,7 +1651,6 @@ function ClaudeWoW.UpdateConnect()
 	ui.send:SetShown(connected)
 	ui.send:SetEnabled(not busy)
 	if ui.stop then ui.stop:SetShown(busy) end
-	if ui.effort then ui.effort:SetShown(connected) end
 	ui.connect:SetShown(not connected)
 	if connected then return end
 	if run.connectingAt then
@@ -4407,7 +4406,16 @@ end
 function Cli.UpdateEffortButton()
 	local b = ui.effort
 	if not b then return end
-	b:SetText("Effort: " .. Cli.EffortLabel(ActiveChat()))
+	b.fullName = Cli.EffortLabel(ActiveChat())
+	b.wanted = ActiveChat() ~= nil
+	Cli.LayoutHeaderButtons()
+end
+
+function Cli.EffortButtonTooltip(b)
+	GameTooltip:SetOwner(b, ui.chatTitle and "ANCHOR_BOTTOMRIGHT" or "ANCHOR_TOP")
+	GameTooltip:SetText("Effort: " .. (b.fullName or "default"))
+	GameTooltip:AddLine("How hard the agent thinks in this chat. Default uses the bridge's setting. You can also use /claude --effort <level>.", 0.8, 0.8, 0.8, true)
+	GameTooltip:Show()
 end
 
 function Cli.EffortMenu(anchor)
@@ -4432,30 +4440,119 @@ end
 
 Cli.PROJECT_W_MIN = 60
 Cli.PROJECT_W_MAX = 240
-Cli.PROJECT_HEADER_SHARE = 0.5
 Cli.PROJECT_PAD = 8
+Cli.EFFORT_W_MIN = 40
+Cli.EFFORT_W_MAX = 120
+Cli.HEADER_TITLE_MIN = 16
 
-function Cli.ProjectButtonRoom(b)
-	local host = b:GetParent()
+function Cli.HeaderLabelWidth(b, text)
+	b.text:SetWidth(0)
+	b.text:SetText(text)
+	return (Try(b.text.GetStringWidth, b.text) or 100) + Cli.PROJECT_PAD
+end
+
+function Cli.HeaderRoom(host)
 	local hostWidth = (host and Try(host.GetWidth, host)) or 0
-	if ui.chatTitle then
-		return math.max(Cli.PROJECT_W_MIN, math.min(Cli.PROJECT_W_MAX, math.floor(hostWidth * Cli.PROJECT_HEADER_SHARE)))
+	if ui.chatTitle then return hostWidth - 2 * Cli.PROJECT_PAD - Cli.HEADER_TITLE_MIN end
+	return hostWidth - 2 * Cli.PROJECT_PAD
+end
+
+function Cli.HeaderSlots()
+	local slots = {}
+	for _, spec in ipairs({
+		{ b = ui.projectButton, label = "Project: ", min = Cli.PROJECT_W_MIN, max = Cli.PROJECT_W_MAX },
+		{ b = ui.effort, label = "Effort: ", min = Cli.EFFORT_W_MIN, max = Cli.EFFORT_W_MAX },
+		{ b = ui.mcpButton, fixed = true },
+	}) do
+		if spec.b and spec.b.wanted then table.insert(slots, spec) end
 	end
-	local mcp = ui.mcpButton and ui.mcpButton:IsShown() and ((Try(ui.mcpButton.GetWidth, ui.mcpButton) or 0) + Cli.PROJECT_PAD) or 0
-	return math.max(Cli.PROJECT_W_MIN, hostWidth - 2 * Cli.PROJECT_PAD - mcp)
+	return slots
+end
+
+function Cli.MeasureHeaderSlot(slot)
+	local b = slot.b
+	if slot.fixed then
+		slot.full = Cli.HeaderLabelWidth(b, b.fullText)
+		slot.short, slot.min, slot.max = slot.full, slot.full, slot.full
+		return
+	end
+	slot.full = Cli.HeaderLabelWidth(b, slot.label .. "|cffffffff" .. b.fullName .. "|r")
+	slot.short = Cli.HeaderLabelWidth(b, "|cffffffff" .. b.fullName .. "|r")
+end
+
+function Cli.HeaderSlotFloor(slot)
+	return slot.compact and math.min(slot.min, slot.short) or slot.min
+end
+
+function Cli.HeaderSlotWidth(slot)
+	local natural = slot.compact and slot.short or slot.full
+	return math.min(slot.max, math.max(Cli.HeaderSlotFloor(slot), natural)), natural
+end
+
+function Cli.HeaderTotal(slots)
+	local total = 0
+	for i, slot in ipairs(slots) do
+		if not slot.hidden then
+			total = total + (slot.width or Cli.HeaderSlotWidth(slot)) + (i > 1 and Cli.PROJECT_PAD or 0)
+		end
+	end
+	return total
+end
+
+function Cli.FitHeaderSlots(slots, room)
+	for _, i in ipairs({ 2, 1 }) do
+		if Cli.HeaderTotal(slots) <= room then return end
+		if slots[i] and not slots[i].fixed then slots[i].compact = true end
+	end
+	for _, i in ipairs({ 1, 2 }) do
+		local slot = slots[i]
+		local over = Cli.HeaderTotal(slots) - room
+		if over <= 0 then return end
+		if slot and not slot.fixed then slot.width = math.max(Cli.HeaderSlotFloor(slot), Cli.HeaderSlotWidth(slot) - over) end
+	end
+	for i = #slots, 2, -1 do
+		if Cli.HeaderTotal(slots) <= room then return end
+		slots[i].hidden = true
+	end
+end
+
+function Cli.LayoutHeaderButtons()
+	local project = ui.projectButton
+	if not project then return end
+	local slots = Cli.HeaderSlots()
+	for _, slot in ipairs(slots) do Cli.MeasureHeaderSlot(slot) end
+	Cli.FitHeaderSlots(slots, Cli.HeaderRoom(project:GetParent()))
+	local leftmost = project
+	for _, b in ipairs({ ui.effort, ui.mcpButton }) do
+		if b then b:Hide() end
+	end
+	for _, slot in ipairs(slots) do
+		local b = slot.b
+		if not slot.hidden then
+			local width, natural = Cli.HeaderSlotWidth(slot)
+			width = slot.width or width
+			b.truncated = natural > width
+			b.text:SetWidth(0)
+			b.text:SetText(slot.fixed and b.fullText or ((slot.compact and "" or slot.label) .. "|cffffffff" .. b.fullName .. "|r"))
+			b:SetWidth(width)
+			b.text:SetWidth(width - Cli.PROJECT_PAD)
+			if b ~= project then
+				b:ClearAllPoints()
+				b:SetPoint("RIGHT", leftmost, "LEFT", -Cli.PROJECT_PAD, 0)
+				b:Show()
+			end
+			leftmost = b
+		end
+	end
+	if ui.titleBar and ui.chatTitle then ui.chatTitle:SetPoint("RIGHT", leftmost, "LEFT", -Cli.PROJECT_PAD, 0) end
 end
 
 function Cli.UpdateProjectButton()
 	local b = ui.projectButton
 	if not b then return end
 	b.fullName = Display(Cli.ProjectLabel(ActiveChat()))
-	b.text:SetWidth(0)
-	b.text:SetText("Project: |cffffffff" .. b.fullName .. "|r")
-	local natural = (Try(b.text.GetStringWidth, b.text) or 100) + Cli.PROJECT_PAD
-	local width = math.min(Cli.ProjectButtonRoom(b), math.max(Cli.PROJECT_W_MIN, natural))
-	b.truncated = natural > width
-	b:SetWidth(width)
-	b.text:SetWidth(width - Cli.PROJECT_PAD)
+	b.wanted = true
+	Cli.LayoutHeaderButtons()
 end
 
 function Cli.ProjectButtonTooltip(b)
@@ -4697,12 +4794,9 @@ function Cli.UpdateMcpButton()
 	if not b then return end
 	local c = ActiveChat()
 	local on, total = Cli.McpCounts(c)
-	local show = c ~= nil and total > 0
-	if ui.titleBar and ui.chatTitle and ui.projectButton then
-		ui.chatTitle:SetPoint("RIGHT", show and b or ui.projectButton, "LEFT", -Cli.PROJECT_PAD, 0)
-	end
-	if not show then
-		b:Hide()
+	b.wanted = c ~= nil and total > 0
+	if not b.wanted then
+		Cli.LayoutHeaderButtons()
 		return
 	end
 	local warn = false
@@ -4710,10 +4804,8 @@ function Cli.UpdateMcpButton()
 		if Cli.McpOn(c, s) and (s.health == "failed" or s.health == "needs-auth") then warn = true end
 	end
 	local color = Cli.McpUnsupported(c) and "999999" or (warn and "ff9933" or "ffffff")
-	b.text:SetWidth(0)
-	b.text:SetText("MCP |cff" .. color .. on .. "/" .. total .. "|r")
-	b:SetWidth((Try(b.text.GetStringWidth, b.text) or 50) + Cli.PROJECT_PAD)
-	b:Show()
+	b.fullText = "MCP |cff" .. color .. on .. "/" .. total .. "|r"
+	Cli.LayoutHeaderButtons()
 end
 
 function Cli.McpButtonTooltip(b)
@@ -5372,6 +5464,29 @@ local function GetBubble(i)
 	return b
 end
 
+function Q.HeaderButton(host, name, rightOf, onClick, onEnter)
+	local b = CreateFrame("Button", name, host)
+	b:SetSize(60, ui.titleBar and Q.NAV_H - 10 or 16)
+	b:SetPoint("RIGHT", rightOf, "LEFT", -Cli.PROJECT_PAD, 0)
+	b:SetFrameLevel((Try(host.GetFrameLevel, host) or 1) + 5)
+	b.text = b:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+	b.text:SetPoint("RIGHT", b, "RIGHT", -2, 0)
+	b.text:SetJustifyH("RIGHT")
+	b.text:SetWordWrap(false)
+	local hl = b:CreateTexture(nil, "HIGHLIGHT")
+	hl:SetAllPoints()
+	hl:SetColorTexture(1, 1, 1, 0.08)
+	b:RegisterForClicks("LeftButtonUp")
+	b:SetScript("OnClick", function(self)
+		GameTooltip:Hide()
+		onClick(self)
+	end)
+	b:SetScript("OnEnter", onEnter)
+	b:SetScript("OnLeave", function() GameTooltip:Hide() end)
+	b:Hide()
+	return b
+end
+
 function Q.BesideInput(button, inputBg, native)
 	if native then
 		button:SetPoint("BOTTOMLEFT", inputBg, "BOTTOMRIGHT", Q.COMPOSER_GAP, 0)
@@ -5967,8 +6082,6 @@ Q.NATIVE_TEMPLATES = { "ButtonFrameTemplate", "InsetFrameTemplate" }
 Q.LIST_W = 300
 Q.COMPOSER_BOTTOM = 2
 Q.COMPOSER_GAP = 6
-Q.EFFORT_H = 18
-Q.EFFORT_GAP = 2
 Q.STOP_W = 48
 Q.STOP_H = 18
 Q.STOP_INSET = 5
@@ -6148,8 +6261,10 @@ Q.MINIMAP_SIZE = 31
 Q.MINIMAP_ANGLE_DEFAULT = 225
 Q.MINIMAP_EDGE_PAD = 5
 Q.MINIMAP_DIAGONAL_INSET = 10
+Q.MINIMAP_ICON = "Interface\\AddOns\\ClaudeWoW\\MinimapIcon"
 Q.MINIMAP_ICON_MASK = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
 Q.MINIMAP_ICON_INSET = { 0.05, 0.95, 0.05, 0.95 }
+Q.MINIMAP_ICON_PRESSED = { 0, 1, 0, 1 }
 Q.MINIMAP_BORDER = "Interface\\Minimap\\MiniMap-TrackingBorder"
 Q.MINIMAP_BACKGROUND = "Interface\\Minimap\\UI-Minimap-Background"
 Q.MINIMAP_HIGHLIGHT = "Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight"
@@ -6255,6 +6370,7 @@ end
 function Q.MinimapDragStart(button)
 	button.dragging = true
 	button:LockHighlight()
+	Q.MinimapMouseDown(button)
 	GameTooltip:Hide()
 	button:SetScript("OnUpdate", Q.MinimapDragUpdate)
 end
@@ -6263,6 +6379,7 @@ function Q.MinimapDragStop(button)
 	button:SetScript("OnUpdate", nil)
 	button.dragging = nil
 	button:UnlockHighlight()
+	Q.MinimapMouseUp(button)
 	Q.PlaceMinimapButton(button)
 end
 
@@ -6271,11 +6388,27 @@ function Q.MinimapLayout()
 	return Q.MINIMAP_LAYOUT_CLASSIC
 end
 
-function Q.RoundIcon(icon)
-	if type(icon.SetMask) == "function" and pcall(icon.SetMask, icon, Q.MINIMAP_ICON_MASK) then return true end
-	local inset = Q.MINIMAP_ICON_INSET
-	icon:SetTexCoord(inset[1], inset[2], inset[3], inset[4])
-	return false
+function Q.SetMinimapIcon(icon)
+	local ok, found = pcall(icon.SetTexture, icon, Q.MINIMAP_ICON)
+	if ok and found ~= false then return Q.MINIMAP_ICON end
+	icon:SetTexture(Q.PORTRAIT)
+	if type(icon.SetMask) == "function" then pcall(icon.SetMask, icon, Q.MINIMAP_ICON_MASK) end
+	return Q.PORTRAIT
+end
+
+function Q.UpdateMinimapIconCoord(button)
+	local coords = button.isMouseDown and Q.MINIMAP_ICON_PRESSED or Q.MINIMAP_ICON_INSET
+	button.icon:SetTexCoord(coords[1], coords[2], coords[3], coords[4])
+end
+
+function Q.MinimapMouseDown(button)
+	button.isMouseDown = true
+	Q.UpdateMinimapIconCoord(button)
+end
+
+function Q.MinimapMouseUp(button)
+	button.isMouseDown = false
+	Q.UpdateMinimapIconCoord(button)
 end
 
 function Q.BuildMinimapButton()
@@ -6301,7 +6434,7 @@ function Q.BuildMinimapButton()
 	background:SetTexture(Q.MINIMAP_BACKGROUND)
 	local icon = button:CreateTexture(nil, "ARTWORK")
 	icon:SetSize(layout.icon, layout.icon)
-	icon:SetTexture(Q.PORTRAIT)
+	button.iconFile = Q.SetMinimapIcon(icon)
 	if layout.centered then
 		background:SetPoint("CENTER", button, "CENTER", 0, 0)
 		icon:SetPoint("CENTER", button, "CENTER", 0, 0)
@@ -6309,12 +6442,15 @@ function Q.BuildMinimapButton()
 		background:SetPoint("TOPLEFT", button, "TOPLEFT", layout.backgroundX, layout.backgroundY)
 		icon:SetPoint("TOPLEFT", button, "TOPLEFT", layout.iconX, layout.iconY)
 	end
-	Q.RoundIcon(icon)
 	button.background, button.icon = background, icon
+	button.isMouseDown = false
+	Q.UpdateMinimapIconCoord(button)
 
 	button:SetScript("OnClick", Q.MinimapClick)
 	button:SetScript("OnDragStart", Q.MinimapDragStart)
 	button:SetScript("OnDragStop", Q.MinimapDragStop)
+	button:SetScript("OnMouseDown", Q.MinimapMouseDown)
+	button:SetScript("OnMouseUp", Q.MinimapMouseUp)
 	button:SetScript("OnEnter", Q.MinimapTooltip)
 	button:SetScript("OnLeave", function() GameTooltip:Hide() end)
 	ui.minimap = button
@@ -7904,48 +8040,17 @@ local function BuildUI()
 	end)
 	projectButton:SetScript("OnEnter", Cli.ProjectButtonTooltip)
 	projectButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
-	projectHost:HookScript("OnSizeChanged", function() Cli.UpdateProjectButton() end)
+	projectHost:HookScript("OnSizeChanged", function() Cli.LayoutHeaderButtons() end)
 	ui.projectButton = projectButton
 
-	local mcpButton = CreateFrame("Button", "ClaudeWoWMcpButton", projectHost)
-	mcpButton:SetSize(60, ui.titleBar and Q.NAV_H - 10 or 16)
-	mcpButton:SetPoint("RIGHT", projectButton, "LEFT", -Cli.PROJECT_PAD, 0)
-	mcpButton:SetFrameLevel((Try(projectHost.GetFrameLevel, projectHost) or 1) + 5)
-	mcpButton.text = mcpButton:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-	mcpButton.text:SetPoint("RIGHT", mcpButton, "RIGHT", -2, 0)
-	mcpButton.text:SetJustifyH("RIGHT")
-	mcpButton.text:SetWordWrap(false)
-	local mcpHl = mcpButton:CreateTexture(nil, "HIGHLIGHT")
-	mcpHl:SetAllPoints()
-	mcpHl:SetColorTexture(1, 1, 1, 0.08)
-	mcpButton:RegisterForClicks("LeftButtonUp")
-	mcpButton:SetScript("OnClick", function(self)
-		GameTooltip:Hide()
-		Cli.McpMenu(self)
-	end)
-	mcpButton:SetScript("OnEnter", Cli.McpButtonTooltip)
-	mcpButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
-	mcpButton:Hide()
-	ui.mcpButton = mcpButton
+	ui.effort = Q.HeaderButton(projectHost, "ClaudeWoWEffortButton", projectButton, Cli.EffortMenu, Cli.EffortButtonTooltip)
+	ui.mcpButton = Q.HeaderButton(projectHost, "ClaudeWoWMcpButton", ui.effort, Cli.McpMenu, Cli.McpButtonTooltip)
 
 	local send = MakeButton(f, "Send", SEND_W, ClaudeWoW.SendFromInput)
 	Q.BesideInput(send, inputBg, native)
 	send:SetScript("OnEnter", Q.SendTooltip)
 	send:SetScript("OnLeave", function() GameTooltip:Hide() end)
 	ui.send = send
-
-	local effort = MakeButton(f, "Effort", SEND_W, function(self) Cli.EffortMenu(self) end)
-	effort:SetHeight(Q.EFFORT_H)
-	if effort.SetNormalFontObject then effort:SetNormalFontObject("GameFontNormalSmall") end
-	effort:SetPoint("BOTTOMLEFT", send, "TOPLEFT", 0, Q.EFFORT_GAP)
-	effort:SetScript("OnEnter", function(self)
-		GameTooltip:SetOwner(self, "ANCHOR_TOP")
-		GameTooltip:SetText("Effort")
-		GameTooltip:AddLine("How hard the agent thinks in this chat. Default uses the bridge's setting. Same as /claude --effort.", 0.8, 0.8, 0.8, true)
-		GameTooltip:Show()
-	end)
-	effort:SetScript("OnLeave", function() GameTooltip:Hide() end)
-	ui.effort = effort
 
 	local stop = MakeButton(inputBg, "Stop", Q.STOP_W, function() ClaudeWoW.Cancel(ActiveChat()) end)
 	stop:SetHeight(Q.STOP_H)
