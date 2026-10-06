@@ -1139,6 +1139,32 @@ function luaSession(s) {
 
 const ALIVE_MAX = 30;
 
+const EFFORT_KEY_RE = /^[a-z0-9_-]{1,32}$/;
+const EFFORT_VALUE_RE = /^[a-z]{0,16}$/;
+
+function luaEffortRow(row) {
+  if (!row || typeof row !== 'object') return null;
+  const cells = Object.entries(row)
+    .filter(([k, v]) => EFFORT_KEY_RE.test(k) && typeof v === 'string' && EFFORT_VALUE_RE.test(v))
+    .map(([k, v]) => `[${luaStr(k)}] = ${luaStr(v)}`);
+  return `{ ${cells.join(', ')} }`;
+}
+
+function luaEfforts(efforts, lock) {
+  const out = [];
+  if (efforts && typeof efforts === 'object') {
+    const rows = Object.entries(efforts)
+      .filter(([k]) => EFFORT_KEY_RE.test(k))
+      .map(([k, row]) => [k, luaEffortRow(row)])
+      .filter(([, row]) => row)
+      .map(([k, row]) => `[${luaStr(k)}] = ${row}`);
+    out.push(`\tefforts = { ${rows.join(', ')} },`);
+  }
+  const lockRow = luaEffortRow(lock);
+  if (lockRow) out.push(`\teffortLock = ${lockRow},`);
+  return out;
+}
+
 function luaTable(globalName, records, opts = {}) {
   const now = opts.now || Date.now();
   const agents = Array.isArray(opts.agents) ? opts.agents : [];
@@ -1170,6 +1196,8 @@ function luaTable(globalName, records, opts = {}) {
   // Why a bridge is on the pixel transport when nobody asked for it (transportFallback);
   // the addon shows it in /claude-wow diag.
   if (opts.transportNote) lines.splice(lines.length - 1, 0, `\ttransportNote = ${luaStr(opts.transportNote)},`);
+  const efforts = luaEfforts(opts.efforts, opts.effortLock);
+  if (efforts.length) lines.splice(lines.length - 1, 0, ...efforts);
   if (opts.bridge && typeof opts.bridge === 'object') {
     const b = opts.bridge;
     lines.splice(

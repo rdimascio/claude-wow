@@ -59,14 +59,19 @@ test('the ask plugin runs on its own model and effort from plugins.ask.agents, a
   };
   await withGame({ plugin: 'ask', beforeLaunch }, async h => {
     await h.client.connect();
+    h.client.runLua('if not (ClaudeWoW.UI and ClaudeWoW.UI.effort) then ClaudeWoW.Toggle() end; ClaudeWoW.Render()');
+    const meter = () => h.client.luaValue('ClaudeWoW.UI.effort.text:GetText()');
+    await h.client.waitFor(() => meter() === '|cffffffffmedium|r', { timeoutMs: 20000, label: 'the effort meter to show what the ask plugin passes' });
     await h.client.say('best race for a rogue');
     let call = h.agentCalls().at(-1);
     assert.equal(flagAfter(call.argv, '--model'), 'claude-sonnet-5-5');
-    assert.equal(flagAfter(call.argv, '--effort'), 'medium');
+    assert.equal(flagAfter(call.argv, '--effort'), 'medium', 'the run got the value the meter showed');
     await slash(h, '/claude -c --model opus[1m] --effort max plan the whole route');
     call = h.agentCalls().at(-1);
     assert.equal(flagAfter(call.argv, '--model'), 'opus[1m]');
     assert.equal(flagAfter(call.argv, '--effort'), 'max');
+    h.client.runLua('ClaudeWoW.Render()');
+    assert.equal(meter(), '|cffffffffmax|r', 'the chat flag shows on the meter too');
   });
 });
 

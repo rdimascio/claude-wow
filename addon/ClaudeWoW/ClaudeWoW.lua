@@ -2259,6 +2259,7 @@ local function TryLoadSlot(why)
 		if type(data.agents) == "table" and #data.agents > 0 then run.bridgeAgents = data.agents end
 		if type(data.plugin) == "string" and data.plugin ~= "" then run.bridgePlugin = data.plugin end
 		if type(data.plugins) == "table" and #data.plugins > 0 then run.bridgePlugins = data.plugins end
+		ClaudeWoW.ApplyEfforts(data)
 		ClaudeWoW.ApplyLive(data.live)
 		ClaudeWoW.ApplySessions(data.sessions, data.now)
 		ClaudeWoW.ApplyProjects(data.projects, data.home)
@@ -2501,6 +2502,7 @@ local function ProcessInbox()
 	if type(inbox.agents) == "table" and #inbox.agents > 0 then run.bridgeAgents = inbox.agents end
 	if type(inbox.plugin) == "string" and inbox.plugin ~= "" then run.bridgePlugin = inbox.plugin end
 	if type(inbox.plugins) == "table" and #inbox.plugins > 0 then run.bridgePlugins = inbox.plugins end
+	ClaudeWoW.ApplyEfforts(inbox)
 	ClaudeWoW.ApplyLive(inbox.live)
 	ClaudeWoW.ApplySessions(inbox.sessions, inbox.now)
 	ClaudeWoW.ApplyProjects(inbox.projects, inbox.home)
@@ -4403,10 +4405,54 @@ function Cli.ProjectMenu(anchor)
 end
 
 Cli.EFFORT_CHOICES = { "low", "medium", "high", "xhigh", "max" }
+Cli.EFFORT_AUTO = "auto"
+Cli.EFFORT_LEVEL_OF = { minimal = 0, low = 1, medium = 2, high = 3, xhigh = 4, max = 5, ultra = 5 }
+Cli.EFFORT_BAR_W = 3
+Cli.EFFORT_BAR_GAP = 2
+Cli.EFFORT_BAR_MIN_H = 4
+Cli.EFFORT_BAR_MAX_H = 14
+Cli.EFFORT_WORD_GAP = 4
+Cli.EFFORT_PAD = 2
+Cli.EFFORT_GOLD = { 1, 0.82, 0, 1 }
+Cli.EFFORT_DIM = { 0.4, 0.4, 0.4, 0.55 }
+Cli.EFFORT_OFF = { 0.25, 0.25, 0.25, 0.45 }
+
+function Cli.EffortPlugin(c)
+	local p = Cli.ChatPlugin(c)
+	if p == "" then p = run.bridgePlugin or "" end
+	return p
+end
+
+function Cli.EffortState(c)
+	local agent = ChatAgent(c)
+	local plugin = Cli.EffortPlugin(c)
+	if c and plugin == LIVE_PLUGIN then return { supported = false, agent = agent, why = "live" } end
+	local rows = type(run.bridgeEfforts) == "table" and run.bridgeEfforts or nil
+	local row = rows and (rows[plugin] or rows[run.bridgePlugin or ""])
+	if type(row) == "table" and agent ~= "" and row[agent] == nil then return { supported = false, agent = agent, why = "agent" } end
+	local lock = type(run.bridgeEffortLock) == "table" and run.bridgeEffortLock[agent]
+	if type(lock) == "string" and lock ~= "" then return { supported = true, agent = agent, value = lock, source = "lock" } end
+	local own = c and c.effort
+	if own and own ~= "" then return { supported = true, agent = agent, value = own, source = "chat" } end
+	local bridge = type(row) == "table" and row[agent]
+	if type(bridge) == "string" and bridge ~= "" then return { supported = true, agent = agent, value = bridge, source = "bridge" } end
+	return { supported = true, agent = agent, value = Cli.EFFORT_AUTO, source = rows and "agent" or "unknown" }
+end
+
+function ClaudeWoW.ApplyEfforts(data)
+	if type(data) ~= "table" or type(data.efforts) ~= "table" then return end
+	run.bridgeEfforts = data.efforts
+	run.bridgeEffortLock = type(data.effortLock) == "table" and data.effortLock or nil
+	Cli.UpdateEffortButton()
+end
 
 function Cli.EffortLabel(c)
-	local e = c and c.effort
-	return (e and e ~= "") and e or "default"
+	local s = Cli.EffortState(c)
+	return s.supported and s.value or "none"
+end
+
+function Cli.EffortLevel(value)
+	return Cli.EFFORT_LEVEL_OF[value or ""] or 0
 end
 
 function Cli.PickEffort(c, value)
@@ -4415,27 +4461,98 @@ function Cli.PickEffort(c, value)
 	Cli.UpdateEffortButton()
 end
 
+function Cli.EffortBars(b)
+	if b.bars then return b.bars end
+	b.bars = {}
+	local n = #Cli.EFFORT_CHOICES
+	for i = 1, n do
+		local bar = b:CreateTexture(nil, "ARTWORK")
+		local h = Cli.EFFORT_BAR_MIN_H + math.floor((Cli.EFFORT_BAR_MAX_H - Cli.EFFORT_BAR_MIN_H) * (i - 1) / (n - 1) + 0.5)
+		bar:SetSize(Cli.EFFORT_BAR_W, h)
+		bar:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -Cli.EFFORT_PAD - (n - i) * (Cli.EFFORT_BAR_W + Cli.EFFORT_BAR_GAP), 1)
+		b.bars[i] = bar
+	end
+	return b.bars
+end
+
+function Cli.EffortBarsWidth()
+	local n = #Cli.EFFORT_CHOICES
+	return n * Cli.EFFORT_BAR_W + (n - 1) * Cli.EFFORT_BAR_GAP
+end
+
+function Cli.PaintEffortBars(b, filled, supported)
+	for i, bar in ipairs(Cli.EffortBars(b)) do
+		local color = not supported and Cli.EFFORT_OFF or (i <= filled and Cli.EFFORT_GOLD or Cli.EFFORT_DIM)
+		bar:SetColorTexture(color[1], color[2], color[3], color[4])
+		bar.filled = supported and i <= filled
+	end
+end
+
+function Cli.LayoutEffortWord(b)
+	local text = b.text
+	local barsRight = Cli.EFFORT_PAD + Cli.EffortBarsWidth() + Cli.EFFORT_WORD_GAP
+	text:ClearAllPoints()
+	text:SetPoint("RIGHT", b, "RIGHT", -barsRight, 0)
+	text:SetWidth(0)
+	local room = (Try(b.GetWidth, b) or 0) - barsRight - Cli.EFFORT_PAD
+	local need = Try(text.GetStringWidth, text) or 0
+	b.wordShown = b.word ~= "" and need <= room
+	text:SetShown(b.wordShown)
+end
+
 function Cli.UpdateEffortButton()
 	local b = ui.effort
 	if not b then return end
-	b.fullName = Cli.EffortLabel(ActiveChat())
-	b.text:SetText("|cffffffff" .. b.fullName .. "|r")
+	local s = Cli.EffortState(ActiveChat())
+	b.state = s
+	b.fullName = s.supported and s.value or "none"
+	b.word = s.supported and s.value or ""
+	local color = (s.supported and s.source ~= "agent" and s.source ~= "unknown") and "|cffffffff" or "|cff9d9d9d"
+	b.text:SetText(b.word ~= "" and (color .. b.word .. "|r") or "")
+	Cli.PaintEffortBars(b, s.supported and Cli.EffortLevel(s.value) or 0, s.supported)
+	Cli.LayoutEffortWord(b)
+	b:SetEnabled(s.supported)
 end
 
+Cli.EFFORT_SOURCE_NOTE = {
+	chat = "Set for this chat.",
+	bridge = "The bridge's setting for this agent; it passes it on every run.",
+	lock = "Fixed by CLAUDE_CODE_EFFORT_LEVEL on the bridge's computer, which overrides any other choice.",
+	agent = "The bridge sets no effort, so the agent picks: its own settings, else the model's built-in level.",
+	unknown = "This bridge does not report its effort setting; update it to see the real value.",
+}
+
 function Cli.EffortButtonTooltip(b)
-	GameTooltip:SetOwner(b, ui.chatTitle and "ANCHOR_BOTTOMRIGHT" or "ANCHOR_TOP")
-	GameTooltip:SetText("Effort: " .. (b.fullName or "default"))
-	GameTooltip:AddLine("How hard the agent thinks in this chat. Default uses the bridge's setting. You can also use /claude --effort <level>.", 0.8, 0.8, 0.8, true)
+	local s = b.state or Cli.EffortState(ActiveChat())
+	GameTooltip:SetOwner(b, "ANCHOR_TOP")
+	if not s.supported then
+		GameTooltip:SetText("Effort")
+		local what = s.why == "live" and "A running session keeps its own effort." or (AgentName(s.agent) .. " has no effort setting.")
+		GameTooltip:AddLine(what, 0.8, 0.8, 0.8, true)
+		GameTooltip:Show()
+		return
+	end
+	GameTooltip:SetText("Effort: " .. s.value)
+	GameTooltip:AddLine(Cli.EFFORT_SOURCE_NOTE[s.source] or "", 0.8, 0.8, 0.8, true)
+	GameTooltip:AddLine("How hard the agent thinks in this chat. Click to change it, or use /claude --effort <level>.", 0.8, 0.8, 0.8, true)
 	GameTooltip:Show()
+end
+
+function Cli.EffortAutoLabel(c)
+	local saved = c.effort
+	c.effort = nil
+	local s = Cli.EffortState(c)
+	c.effort = saved
+	return s.value == Cli.EFFORT_AUTO and "Auto" or ("Auto (" .. s.value .. ")")
 end
 
 function Cli.EffortMenu(anchor)
 	local c = ActiveChat()
-	if not c then return end
+	if not c or not Cli.EffortState(c).supported then return end
 	if type(MenuUtil) == "table" and type(MenuUtil.CreateContextMenu) == "function" then
 		local shown = pcall(MenuUtil.CreateContextMenu, anchor, function(_, root)
 			root:CreateTitle("Effort")
-			root:CreateButton("Default", function() Cli.PickEffort(c, nil) end)
+			root:CreateButton(Cli.EffortAutoLabel(c), function() Cli.PickEffort(c, nil) end)
 			for _, e in ipairs(Cli.EFFORT_CHOICES) do
 				root:CreateButton(e, function() Cli.PickEffort(c, e) end)
 			end
@@ -8119,6 +8236,7 @@ local function BuildUI()
 	effort:ClearAllPoints()
 	effort:SetSize(SEND_W, Q.EFFORT_H)
 	effort:SetPoint("BOTTOMRIGHT", send, "TOPRIGHT", 0, Q.EFFORT_GAP)
+	Cli.EffortBars(effort)
 	ui.effort = effort
 
 	local stop = MakeButton(inputBg, "Stop", Q.STOP_W, function() ClaudeWoW.Cancel(ActiveChat()) end)
@@ -9013,7 +9131,7 @@ function Cli.ApplyChatFlags(c, o)
 	elseif o.project == true then
 		table.insert(notes, "project: " .. Cli.ProjectLabel(c) .. " (known: " .. Cli.ProjectNames() .. ")")
 	end
-	local function Setting(key, label, canonical)
+	local function Setting(key, label, canonical, unset)
 		if o[key] == nil then return end
 		if o[key] ~= true then
 			if Cli.Cleared(o[key]) then
@@ -9022,10 +9140,10 @@ function Cli.ApplyChatFlags(c, o)
 				c[key] = canonical and canonical(o[key]) or o[key]
 			end
 		end
-		table.insert(notes, label .. ": " .. ((c[key] or "") ~= "" and c[key] or "the agent's default"))
+		table.insert(notes, label .. ": " .. ((c[key] or "") ~= "" and c[key] or (unset and unset() or "the agent's default")))
 	end
 	Setting("model", "model")
-	Setting("effort", "effort", function(v) return Cli.Canonical(Cli.EFFORTS, v) end)
+	Setting("effort", "effort", function(v) return Cli.Canonical(Cli.EFFORTS, v) end, function() return Cli.EffortLabel(c) end)
 	Setting("permissionMode", "permission mode", function(v) return Cli.Canonical(Cli.PERMISSION_MODES, v) end)
 	if #o.addDir > 0 or o.addDirShow then
 		for _, dir in ipairs(o.addDir) do
