@@ -72,6 +72,7 @@ const UPD = require('./selfupdate');
 const IDLE = require('./idle');
 const CLI = require('./clients');
 const SW = require('./slotwindow');
+const PUBR = require('./publishretry');
 
 // The plugins this bridge has (docs/PLATFORM.md). Registration order is the
 // order match() is asked in, and the first one is the default unless
@@ -541,6 +542,7 @@ const live = new Map(); // chatKey -> latest record shown to the game
 let lastActivityAt = Date.now();
 let lastPublish = 0;
 let publishTimer = null;
+const publishRetry = PUBR.createPublishRetry({ write: G.atomicWrite, log, republish: () => publishNow(true, { refresh: true }) });
 
 // ---------------------------------------------------------------------------
 // Small utilities
@@ -1076,23 +1078,23 @@ function slotsInstalled(client) {
 // won't see replies until `node setup.js` has run and WoW was restarted.
 function publishClient(r, records, shared) {
   const c = r.client;
-  try {
-    G.atomicWrite(c.inboxFile, slotFile('ClaudeWoW_Inbox', records, shared, c));
-  } catch (e) {
+  const batch = publishRetry.begin(c.key);
+  const inboxError = batch.write(c.inboxFile, slotFile('ClaudeWoW_Inbox', records, shared, c));
+  if (inboxError && !batch.locked()) {
+    batch.end();
     if (!r.warnedNoAddon) {
       r.warnedNoAddon = true;
-      log(G.publishFailureNote(c.inboxFile, c.label, e));
+      log(G.publishFailureNote(c.inboxFile, c.label, inboxError));
     }
     return false;
   }
-  if (!slotsInstalled(c)) return false;
-  const body = slotFile('ClaudeWoW_SlotData', records, shared, c);
-  for (let i = 1; i <= SLOTS; i++) {
-    try {
-      G.atomicWrite(path.join(c.addonDir, 'ClaudeWoW_S' + pad3(i), 'Inbox.lua'), body);
-    } catch {}
+  const slots = slotsInstalled(c);
+  if (slots) {
+    const body = slotFile('ClaudeWoW_SlotData', records, shared, c);
+    for (let i = 1; i <= SLOTS; i++) batch.write(path.join(c.addonDir, 'ClaudeWoW_S' + pad3(i), 'Inbox.lua'), body);
   }
-  return true;
+  batch.end(inLabel(c));
+  return slots;
 }
 
 function publishNow(urgent = true, { refresh = false } = {}) {
