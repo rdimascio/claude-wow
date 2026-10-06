@@ -321,12 +321,17 @@ const NATIVE_TEMPLATES = `
   function NavBar_AddButton(bar, data) table.insert(STUB.nav.buttons, data) end
   function ScrollingEdit_OnCursorChanged() end
   function ScrollingEdit_OnTextChanged() end
+  local function MenuNode()
+    local node = { items = {} }
+    function node:CreateTitle(t) table.insert(self.items, { text = t }) end
+    function node:CreateButton(t, fn) local sub = MenuNode(); table.insert(self.items, { text = t, fn = fn, sub = sub }); return sub end
+    function node:CreateCheckbox(t, get, fn) table.insert(self.items, { text = t, fn = fn, get = get }) end
+    function node:CreateRadio(t, get, fn) table.insert(self.items, { text = t, fn = fn, get = get, radio = true }) end
+    function node:CreateDivider() table.insert(self.items, { divider = true }) end
+    return node
+  end
   MenuUtil = { CreateContextMenu = function(owner, gen)
-    local root = { items = {} }
-    function root:CreateTitle(t) table.insert(self.items, { text = t }) end
-    function root:CreateButton(t, fn) table.insert(self.items, { text = t, fn = fn }) end
-    function root:CreateCheckbox(t, get, fn) table.insert(self.items, { text = t, fn = fn, get = get }) end
-    function root:CreateDivider() end
+    local root = MenuNode()
     STUB.menu = root
     gen(owner, root)
   end }
@@ -1032,8 +1037,11 @@ test('help lives in the gear menu and opens the Commands and tips page, and Clea
 
   const clearButton = '(function() for _, c in ipairs(ClaudeWoWFrame.children) do if c.kind == "Button" and c.text == "Clear" then return c end end end)()';
   assert.equal(vm.evaluate(`${clearButton}.shown`), 'false', 'no Clear button in the bottom bar');
-  vm.run(`ClaudeWoW.ShowChatMenu(ClaudeWoWDB.activeChat, ClaudeWoWFrame); STUB.Pick("Clear messages")`);
-  assert.equal(vm.num(`#${active}.history`), 0, 'the chat menu clears the chat');
+  vm.run(`ClaudeWoW.ShowChatMenu(ClaudeWoWDB.activeChat, ClaudeWoWFrame); STUB.Pick("Clear Messages")`);
+  assert.equal(vm.evaluate('STUB.popup.which'), 'CLAUDEWOW_CLEAR', 'Clear Messages asks first');
+  assert.ok(vm.num(`#${active}.history`) > 0, 'nothing is cleared before the confirm');
+  vm.run('StaticPopupDialogs.CLAUDEWOW_CLEAR.OnAccept({}, STUB.popup.data)');
+  assert.equal(vm.num(`#${active}.history`), 0, 'the confirm clears the chat');
 });
 
 test('the footer is a short state on the left and context and spend on the right, with the detail on hover', () => {
@@ -1350,17 +1358,17 @@ test('first login prints one line; a bridge that is not there after the first ch
   const vm = newVM();
   const prints = () => vm.evaluate('table.concat(STUB.prints, "\\n")');
   const count = text => prints().split(text).length - 1;
-  assert.equal(count('loaded. Type /claude to open it.'), 1);
+  assert.equal(count('Loaded. Type /claude to open it.'), 1);
   vm.run('STUB.RunTimers()');
-  assert.equal(count("can't reach the bridge"), 0, 'not before the first check');
+  assert.equal(count("Can't reach the bridge. Start it, then type"), 0, 'not before the first check');
   vm.run('STUB.RunTimers(); STUB.RunTimers()');
-  assert.equal(count("can't reach the bridge"), 1);
+  assert.equal(count("Can't reach the bridge. Start it, then type"), 1);
   vm.run('STUB.FireEvent("PLAYER_LOGIN"); STUB.RunTimers(); STUB.RunTimers()');
-  assert.equal(count('loaded. Type /claude to open it.'), 1, 'the first-run line is not repeated');
+  assert.equal(count('Loaded. Type /claude to open it.'), 1, 'the first-run line is not repeated');
 
   const up = newVM();
   up.run('STUB.RunTimers(); ClaudeWoW.IsConnected = function() return true end; STUB.RunTimers()');
-  assert.ok(!up.evaluate('table.concat(STUB.prints, "\\n")').includes("can't reach the bridge"), 'a bridge that answered gets no line');
+  assert.ok(!up.evaluate('table.concat(STUB.prints, "\\n")').includes("Can't reach the bridge. Start it, then type"), 'a bridge that answered gets no line');
 });
 
 test('the status line has four plain states and no file names, ids or commands; the detail moves to diag', () => {
@@ -1456,4 +1464,16 @@ test('a reply makes no sound or screen line in combat, and out of combat one lin
   vm.run('ClaudeWoW.Toggle(true); ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[1].id)');
   notify();
   assert.equal(lines(), 1, 'open window: no line');
+});
+
+test('without native frames the bottom-bar Clear asks first and the new-chat button is title case', () => {
+  const vm = newVM();
+  open(vm);
+  const button = text => `(function() for _, f in ipairs(STUB.frames) do if f.kind == "Button" and f.text == "${text}" then return f end end end)()`;
+  assert.notEqual(vm.evaluate(button('New Chat')), null);
+  assert.equal(vm.evaluate(button('+ New chat')), null);
+  vm.run('table.insert(ClaudeWoWDB.chats[1].history, { role = "user", text = "keep me", t = time() }); STUB.popup = nil');
+  vm.run(`local b = ${button('Clear')}; b.scripts.OnClick(b)`);
+  assert.equal(vm.evaluate('STUB.popup.which'), 'CLAUDEWOW_CLEAR', 'Clear opens the confirm');
+  assert.equal(vm.num('#ClaudeWoWDB.chats[1].history'), 1, 'nothing is cleared before the click');
 });

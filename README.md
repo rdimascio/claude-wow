@@ -1,7 +1,7 @@
 # claude-wow
 
 <p align="center">
-  <img src="docs/screenshot.jpg" alt="The Claude WoW chat window open in Goldshire, with a message on its way to a coding agent" width="900">
+  <img src="docs/screenshot.jpg" alt="The Azeroth Companion chat window open in Goldshire, with a message on its way to a coding agent" width="900">
 </p>
 
 Chat with your local coding agents from inside **World of Warcraft: Forever** or **World of Warcraft Classic** (Classic Era): [Claude Code](https://claude.com/claude-code), [OpenAI Codex](https://developers.openai.com/codex), [xAI's Grok Build](https://docs.x.ai/build/overview), Google's Antigravity CLI and Hermes Agent. Send a task, go back to questing, get pinged in-game when the answer lands. No alt-tabbing, no `/reload` per message.
@@ -12,7 +12,7 @@ Chat with your local coding agents from inside **World of Warcraft: Forever** or
 - The agent knows your character, level, zone, talents, professions and quest log (optional), and you can shift-click items, spells and quests into a message
 - The agent can draw on your world map: numbered routes, quest stops and marks, with a navigator arrow that walks you from stop to stop
 - Herb and ore spawns on the world map, filtered by your gathering skill (`/claude config map ore`, `/claude config map herb`)
-- Ready-made macros: ask for one and the reply carries a **Create macro** button that saves it and puts it on your cursor, ready to drop on an action bar (`/claude config macro undo` reverts it)
+- Ready-made macros: ask for one and the reply carries a **Create Macro** button that saves it and puts it on your cursor, ready to drop on an action bar (`/claude config macro undo` reverts it)
 - Live UI widgets: ask for *"a DPS meter"* or *"a timer bar for my buffs"* and the agent's Lua loads in the game at once, no `/reload`; display-only, listed and removed with `/claude config ui`
 - **Need / Greed / Pass** on permissions: when Claude or Grok needs a command outside your allowlist, it drops as an epic item in a group-loot roll frame
 - A status light for the bridge, automatic retries, and recovery of your chats (and map layers) if the beta client wipes addon data
@@ -49,11 +49,11 @@ The bridge drives whichever of these you have installed; each chat can use a dif
 | **Hermes** (`hermes`) | `hermes chat --query-file -`, resumed with `--resume` | default only; the bridge never uses `--yolo` | no |
 | **Local** (`local`) | the bridge's own `bridge/localagent.js`, which calls an OpenAI-compatible server such as `llama-server` on your PC; costs nothing | no file or shell tools; ask chats get the read-only `wowdata` tools | no |
 
-`agent` in `~/.claude-wow/config.json` is the default (`claude`). `/claude -c --agent codex` switches the current chat, or right-click a chat in the left panel and pick **Agent...**; the reply bubbles and the game-chat echo are labelled with whoever answered. A session belongs to the agent that made it, so a chat that changes agent starts a fresh session there (its transcript stays). Install notes, the exact command lines, what each permission mode means per agent, and known limits are in [docs/AGENTS.md](docs/AGENTS.md).
+`agent` in `~/.claude-wow/config.json` is the default (`claude`). `/claude -c --agent codex` switches the current chat, or right-click a chat in the left panel and pick one under **Agent**; the reply bubbles and the game-chat echo are labelled with whoever answered. A session belongs to the agent that made it, so a chat that changes agent starts a fresh session there (its transcript stays). Install notes, the exact command lines, what each permission mode means per agent, and known limits are in [docs/AGENTS.md](docs/AGENTS.md).
 
 ## Install
 
-Claude WoW has two parts, and you need both:
+Azeroth Companion (this project, claude-wow) has two parts, and you need both:
 
 - **The addon** (`ClaudeWoW`), which runs inside the game.
 - **The bridge** (`claude-wow`), a small program on the same computer. It reads your messages from the game, runs your agent, and writes the replies back. The addon cannot do anything without it.
@@ -170,7 +170,7 @@ Setup looks for the client under `/Applications/World of Warcraft` and `~/Applic
 
 This project was called wow-ai (and wow-claude before that): the addon was `WoWAI`, the command `wow-ai`, the slash command `/wow-ai` with `/ai`, `/ask`, `/wowai` and `/wow-claude` as aliases. It is claude-wow now, and the old names are gone rather than aliased: the addon is `ClaudeWoW`, the command `claude-wow`, the slash command `/claude`, the service `io.claudewow.bridge`, the environment variables `CLAUDE_WOW_*`. Nothing of yours is lost:
 
-- **Chats.** Run the installer again, or `git pull` and `node setup.js`. Setup copies your chats and settings from the old addon's saved data (`WoWAI.lua`, or `WoWClaude.lua`) to `ClaudeWoW.lua` with the globals renamed, removes the old addon and its 200 slot folders so two addons do not fight over `/r` and the shift-click hook, and rewrites the paths in `config.json`. The old saved file is left where it was. Then **fully quit and relaunch WoW** and enable *Claude WoW* on the AddOns screen (the old *WoW AI* entry is gone).
+- **Chats.** Run the installer again, or `git pull` and `node setup.js`. Setup copies your chats and settings from the old addon's saved data (`WoWAI.lua`, or `WoWClaude.lua`) to `ClaudeWoW.lua` with the globals renamed, removes the old addon and its 200 slot folders so two addons do not fight over `/r` and the shift-click hook, and rewrites the paths in `config.json`. The old saved file is left where it was. Then **fully quit and relaunch WoW** and enable *Azeroth Companion* on the AddOns screen (the old *WoW AI* entry is gone).
 - **Agent sessions.** The bridge keys them by chat id in `state.json`, so they follow the chats. Config, state and transcripts move from `bridge/` in the checkout to `~/.claude-wow` (`CLAUDE_WOW_HOME`, see [docs/CONFIGURATION.md](docs/CONFIGURATION.md#where-the-bridge-keeps-its-files)); setup and the installer copy them there once and leave the originals.
 - **The service and the command.** `claude-wow service install` (and `uninstall`) remove the old `io.wowai.bridge` / `wow-ai-bridge` / *WoW AI bridge.vbs* service first, so two bridges do not start at login. The installer removes the old `wow-ai` shim; `npm unlink -g wow-ai` if you had linked it by hand. A hotkey set with `/wow-ai bind` needs `/claude config bind <key>` again, and macros that typed `/ai ...` need `/claude ...`.
 
@@ -187,17 +187,17 @@ Every chat that hasn't picked its own folder now works in `realms`, and the pane
 
 ## Use
 
-In game, the chat tab is the way in. Once the bridge answers, a **Claude** tab opens in the chat dock, next to General, like a whisper from a friend. Click it, type, press Enter: the message goes to the agent and never to the server. You see `To Claude: ...`, then one progress line that updates in place (`Claude is working... 45s · 12 actions - Editing Map.lua  [cancel]`), then the reply as a whisper. A short reply shows whole; a long one shows its TL;DR and a **[full reply]** link. Everything else happens in the tab too: `/claude` commands answer there, a denied command offers **[Need] [Greed] [Pass]** links, a macro comes as a **[Create macro: Name]** link that opens the Create-macro prompt, a route as a **[show route]** link that opens the map, and the bridge status says itself in one line with a **[connect]** link when the bridge goes quiet. A compact bar with the status light (green/yellow/red, hover for details) sits at the top of the screen.
+In game, the chat tab is the way in. Once the bridge answers, a **Claude** tab opens in the chat dock, next to General, like a whisper from a friend. Click it, type, press Enter: the message goes to the agent and never to the server. You see `To Claude: ...`, then one progress line that updates in place (`Claude is working... 45s · 12 actions - Editing Map.lua  [cancel]`), then the reply as a whisper. A short reply shows whole; a long one shows its TL;DR and a **[full reply]** link. Everything else happens in the tab too: `/claude` commands answer there, a denied command offers **[Need] [Greed] [Pass]** links, a macro comes as a **[Create Macro: Name]** link that opens the Create-macro prompt, a route as a **[show route]** link that opens the map, and the bridge status says itself in one line with a **[connect]** link when the bridge goes quiet. A compact bar with the status light (green/yellow/red, hover for details) sits at the top of the screen.
 
-The big window is the workspace: full transcripts, the chat list and settings. It opens only when you ask: bare `/claude`, the **Claude WoW: open or close the workspace** key binding (Key Bindings > AddOns), a click on the compact bar or on **[full reply]**. The X button and Esc close it (Esc in the message box closes it too and keeps your draft); the minimize button next to the X collapses it to the compact bar, and the bar's own X hides the bar. A window that was closed at logout stays closed at login, with nothing on screen. When a reload is needed to read a reply, the game asks first (**Reload** / **Later**) and never reloads on a keypress or in combat. With `/claude config auto` on it asks again after the interval when you pick Later; off, it asks once per waiting reply. While it is open it keeps out of the way: it steps aside when bags, the character sheet, the spellbook, a vendor, the bank, the mail or another Blizzard panel opens and goes back when they close (a loot window that opens in its slot moves to its right instead, as beside the map; beside the small world map it takes the map's top and height, so the edges line up), it steps away while the maximized map or the game menu is up, and it dims to 35% while you move or fight (full again under the mouse or while you type). It opens in the left panel slot like a Blizzard panel, and it cannot be dragged; the compact bar can. It remembers its size per character. Until the bridge has answered, a **Connect** button sits where Send would be.
+The big window is the workspace: full transcripts, the chat list and settings. It opens only when you ask: bare `/claude`, the **Azeroth Companion: open or close the workspace** key binding (Key Bindings > AddOns), a click on the compact bar or on **[full reply]**. The X button and Esc close it (Esc in the message box closes it too and keeps your draft); the minimize button next to the X collapses it to the compact bar, and the bar's own X hides the bar. A window that was closed at logout stays closed at login, with nothing on screen. When a reload is needed to read a reply, the game asks first (**Reload** / **Later**) and never reloads on a keypress or in combat. With `/claude config auto` on it asks again after the interval when you pick Later; off, it asks once per waiting reply. While it is open it keeps out of the way: it steps aside when bags, the character sheet, the spellbook, a vendor, the bank, the mail or another Blizzard panel opens and goes back when they close (a loot window that opens in its slot moves to its right instead, as beside the map; beside the small world map it takes the map's top and height, so the edges line up), it steps away while the maximized map or the game menu is up, and it dims to 35% while you move or fight (full again under the mouse or while you type). It opens in the left panel slot like a Blizzard panel, and it cannot be dragged; the compact bar can. It remembers its size per character. Until the bridge has answered, a **Connect** button sits where Send would be.
 
-Right-clicking a chat in the left panel opens a small menu with **Rename...**, **Folder...**, **Agent...** and **Plugin...** (right-click again to close it); the trash can on the row deletes the chat after an OK/Cancel confirm. **Folder...** sets the folder this chat's agent works in (same as `/claude cd` below), **Agent...** which agent answers it (same as `/claude -c --agent`), **Plugin...** the advanced binding (same as `/claude config plugin`); each chat keeps its own, so you can have a general chat next to chats on different projects, with different agents, side by side. The window's footer shows them.
+Right-clicking a chat in the left panel opens a small menu with **Rename...**, **Folder...**, **Agent**, **Clear Messages** and **Delete** (right-click again to close it); the trash can on the row deletes the chat too. Delete and Clear Messages ask first, in a dialog with **Delete** (or **Clear**) and **Cancel**. **Folder...** sets the folder this chat's agent works in (same as `/claude cd` below), **Agent** lists the agents the bridge has, with the chat's own checked (same as `/claude -c --agent`; before the bridge has listed them it is **Agent...**, a text prompt). The advanced plugin binding is `/claude config plugin`; each chat keeps its own, so you can have a general chat next to chats on different projects, with different agents, side by side. The window's footer shows them.
 
 `/claude` works like the `claude` command in a terminal: a message starts a new chat, `-c` continues the current one, `-r` resumes a session, and the same flags set the model, the effort and the rest for that chat.
 
 | In game | Like | What it does |
 |---|---|---|
-| `/claude <text>` | `claude "<text>"` | start a new chat and send `<text>` there, straight from the normal chat box; the new chat gets a tab of its own. There is no chat limit. Bare `/claude` in the game chat opens the workspace window; in a chat's tab it starts a new chat |
+| `/claude <text>` | `claude "<text>"` | start a new chat and send `<text>` there, straight from the normal chat box; the new chat gets a tab of its own. There is no chat limit. Bare `/claude` opens the workspace window on the current chat; `/claude new` starts an empty chat |
 | `/claude -c <text>` | `claude -c` | continue the current chat (`--continue`); alone it opens the window on it |
 | `/claude -r <id\|name\|n> [text]` | `claude -r` | resume a session (`--resume`). A Claude Code session that is running in a terminal with the claude-wow channel gets the chat live; any other session (one of your chats, or a Claude Code session from its history) is resumed headless with `claude -p --resume <id>` in its own folder. Names match chat and session names, ids match by prefix; a prefix two sessions share lists both |
 | `/claude -r` | `/resume` | list the running and recent sessions (id, name, folder, age) in the window and the game chat; click one, or `/claude -r <n>` |
@@ -228,6 +228,7 @@ The client's own commands, with the same rule: a command word followed by someth
 | `/claude reload` | reload the UI now (also frees the slot pool) |
 | `/claude diag`, `/claude slots` | transport diagnostics |
 | `/claude hide`, `/claude mini` | close the window (the X button or Esc does the same), or collapse it to the small bar (the minimize button does the same; click the bar to expand) |
+| `/claude dm [next]`, `/claude map [command]`, `/claude stream [command]` | the same as `/dm`, `/aimap` and `/stream`; only their own words are commands (`/claude dm next`, `/claude map ore on`, `/claude stream brb`), so `/claude map out a route` is a message |
 | `/claude help` | opens the Commands and tips page in the game's Options, under AddOns (the gear menu in the window opens it too) |
 | `/r <text>` | replies to the chat that answered last, with the game's own `To Claude [chat]:` header; once a real player whispers you, `/r` answers them, until the next reply |
 | `/w <agent> <text>` | sends to that agent's chat when whisper tabs are on |
@@ -247,7 +248,7 @@ Settings, with `/claude config <key> [value]`:
 | `echo summary\|full\|short\|off\|<chars>` | how much of each reply to print into the game chat. `summary` (the default) prints only the agent's closing TL;DR lines, the full reply is in the window behind `[open]`; `full` prints up to 4000 chars, `short` one preview line |
 | `voice ...`, `map ...`, `macro undo`, `roll on\|off` | see [Voice lines](#voice-lines), [Map](#map-routes-and-gathering-nodes), [Macros](#macros-ready-to-use) and [Need, Greed or Pass](#need-greed-or-pass) |
 | `longchat on` | let the game chat box take 4000 characters, for long `/claude` messages |
-| `bind <key>` | hotkey: checks for a reply while waiting, otherwise toggles the window (the **Claude WoW: open or close the workspace** binding in Key Bindings > AddOns does the toggle alone) |
+| `bind <key>` | hotkey: checks for a reply while waiting, otherwise toggles the window (the **Azeroth Companion: open or close the workspace** binding in Key Bindings > AddOns does the toggle alone) |
 | `mode reload` | fallback transport that costs a `/reload` per step, if pixels or slots can't work |
 | `signal on\|off`, `auto on\|off\|<seconds>` | the sound-file readiness check, and the reload-mode auto refresh |
 | `plugin <name>\|default` | advanced: pin the chat to `ask`, `claude-code` or `live` by hand |
@@ -314,7 +315,7 @@ Each one-time award is given once and kept in the bridge's `state.json`, so it s
 
 ### Macros, ready to use
 
-Ask for a macro (*"a Charge macro that uses Intercept in combat"*, *"a mouseover heal"*) and the reply comes with a **Create macro: <name>** button under it. A click saves it (an account macro, or a character one if the agent says so) and puts it on your cursor: click an action bar slot to place it. It is also in `/macro` as usual.
+Ask for a macro (*"a Charge macro that uses Intercept in combat"*, *"a mouseover heal"*) and the reply comes with a **Create Macro: <name>** button under it. A click saves it (an account macro, or a character one if the agent says so) and puts it on your cursor: click an action bar slot to place it. It is also in `/macro` as usual.
 
 - A macro with that name already there? The button says **Update**, and it asks before replacing a different one of yours. `/claude config macro undo` brings back what was there (or removes the macro the button created).
 - Macros that run code (`/run`, `/script`, `/click`) are marked on the button and ask before being saved.
@@ -340,7 +341,7 @@ The system prompt tells every agent how to hand marks to the bridge: append comm
 | `/claude config map hide <layer>`, `/claude config map show <layer>` | hide or show one of the agent's layers |
 | `/claude config map nav <layer> [n]`, `next`, `prev`, `stop` | drive the navigator |
 
-`/aimap` is a shorter alias. To remove layers for good, ask the agent ("clear the map", "remove the mining route").
+`/aimap` and `/claude map` do the same. To remove layers for good, ask the agent ("clear the map", "remove the mining route").
 
 ### Voice lines
 

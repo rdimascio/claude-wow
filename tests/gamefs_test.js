@@ -106,6 +106,30 @@ test('a write into a folder that is a link is refused and leaves the linked fold
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('the publish note gives the refusal reason for an unsafe folder and the setup hint only for a missing one', posixOnly, () => {
+  const dir = scratch('publish-note');
+  const home = path.join(dir, 'home');
+  fs.mkdirSync(home);
+  const linked = path.join(dir, 'ClaudeWoW_Runtime');
+  fs.symlinkSync(home, linked);
+  const failure = target => {
+    try {
+      G.atomicWrite(target, 'payload');
+    } catch (e) {
+      return e;
+    }
+    assert.fail('the write did not fail');
+  };
+  const unsafeFile = path.join(linked, 'Inbox.lua');
+  const unsafeNote = G.publishFailureNote(unsafeFile, '_classic_era_', failure(unsafeFile));
+  assert.match(unsafeNote, /^publish: refused to write .*Inbox\.lua in _classic_era_: .*not a real folder$/);
+  assert.doesNotMatch(unsafeNote, /setup|not installed/);
+  const missingFile = path.join(dir, 'Gone', 'Inbox.lua');
+  const missingNote = G.publishFailureNote(missingFile, '_classic_era_', failure(missingFile));
+  assert.equal(missingNote, `publish: cannot write ${missingFile} (ENOENT); addon not installed in _classic_era_? run: node setup.js, then restart WoW`);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test('repair does not chmod a link swapped in after the walk checked the entry', posixOnly, t => {
   const addons = scratch('repair-swap');
   const victim = victimIn(addons);

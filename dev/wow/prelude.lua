@@ -194,19 +194,41 @@ function DEV.ns(name)
 	return DEV.namespaces[name]
 end
 
+function DEV.RequiredDeps(meta)
+	local keys, deps = {}, {}
+	for k in pairs(meta) do
+		if k:match("^Dep") or k == "RequiredDeps" then keys[#keys + 1] = k end
+	end
+	table.sort(keys)
+	for _, k in ipairs(keys) do
+		for dep in meta[k]:gmatch("[^,%s]+") do deps[#deps + 1] = dep end
+	end
+	return deps
+end
+
+DEV.loading = {}
 function DEV.LoadAddOn(name)
 	if DEV.loaded[name] then return true end
 	if not DEV.indexed[name] then return false, "MISSING" end
 	if DEV.disabled[name] then return false, "DISABLED" end
 	local src = HOST_read(tocPath(name))
 	if not src then return false, "MISSING" end
-	local meta = DEV.ParseToc(src)
-	local _, files = DEV.ParseToc(src)
+	local meta, files = DEV.ParseToc(src)
 	local fits = false
 	for v in tostring(meta.Interface or ""):gmatch("%d+") do
 		if tonumber(v) == DEV.interface then fits = true end
 	end
 	if not fits and not DEV.loadOutOfDate then return false, "INTERFACE_VERSION" end
+	if DEV.loading[name] then return false, "DEP_LOOP" end
+	DEV.loading[name] = true
+	for _, dep in ipairs(DEV.RequiredDeps(meta)) do
+		local ok, reason = DEV.LoadAddOn(dep)
+		if not ok then
+			DEV.loading[name] = nil
+			return false, "DEP_" .. tostring(reason)
+		end
+	end
+	DEV.loading[name] = nil
 	for _, f in ipairs(files) do
 		local ok, reason = DEV.RunAddonFile(name, f)
 		if not ok then return false, reason end

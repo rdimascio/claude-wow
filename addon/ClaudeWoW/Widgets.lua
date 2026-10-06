@@ -45,9 +45,9 @@ local containers = {}
 
 local function Print(msg)
 	if ClaudeWoW and ClaudeWoW.Print then
-		ClaudeWoW.Print(msg, "Claude WoW ui")
+		ClaudeWoW.Print(msg)
 	else
-		print("|cff66ccff[Claude WoW ui]|r " .. msg)
+		print("|cff66ccff[Azeroth Companion]|r " .. msg)
 	end
 end
 
