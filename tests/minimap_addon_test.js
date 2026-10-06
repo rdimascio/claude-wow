@@ -88,10 +88,12 @@ test('minimap button: a 31 px button on the Minimap with the Claude portrait, ro
   assert.deepEqual(offset(vm), [-53, -53], 'the default angle, 225 degrees, at the lower left');
 });
 
-test('minimap button: without SetMask the icon falls back to an inset texture crop', () => {
+test('minimap button: the icon is cropped to the spark so it fills the circle, with the round mask or without it', () => {
+  const masked = newVM();
+  assert.equal(masked.evaluate(`table.concat(${B}.icon.stubTexCoord, ",")`), '0.2,0.8,0.2,0.8');
   const vm = newVM('STUB.noMask = true');
   assert.equal(vm.evaluate(`${B}.icon.stubMask`), null);
-  assert.equal(vm.evaluate(`table.concat(${B}.icon.stubTexCoord, ",")`), '0.05,0.95,0.05,0.95');
+  assert.equal(vm.evaluate(`table.concat(${B}.icon.stubTexCoord, ",")`), '0.2,0.8,0.2,0.8');
 });
 
 test('minimap button: left-click opens and closes the window, right-click opens the Options page', () => {

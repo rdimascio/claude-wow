@@ -4407,7 +4407,7 @@ end
 function Cli.UpdateEffortButton()
 	local b = ui.effort
 	if not b then return end
-	b:SetText("Effort: " .. Cli.EffortLabel(ActiveChat()))
+	b.text:SetText("Effort: |cffffffff" .. Cli.EffortLabel(ActiveChat()) .. "|r")
 end
 
 function Cli.EffortMenu(anchor)
@@ -6149,7 +6149,7 @@ Q.MINIMAP_ANGLE_DEFAULT = 225
 Q.MINIMAP_EDGE_PAD = 5
 Q.MINIMAP_DIAGONAL_INSET = 10
 Q.MINIMAP_ICON_MASK = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
-Q.MINIMAP_ICON_INSET = { 0.05, 0.95, 0.05, 0.95 }
+Q.MINIMAP_ICON_INSET = { 0.2, 0.8, 0.2, 0.8 }
 Q.MINIMAP_BORDER = "Interface\\Minimap\\MiniMap-TrackingBorder"
 Q.MINIMAP_BACKGROUND = "Interface\\Minimap\\UI-Minimap-Background"
 Q.MINIMAP_HIGHLIGHT = "Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight"
@@ -6272,10 +6272,9 @@ function Q.MinimapLayout()
 end
 
 function Q.RoundIcon(icon)
-	if type(icon.SetMask) == "function" and pcall(icon.SetMask, icon, Q.MINIMAP_ICON_MASK) then return true end
 	local inset = Q.MINIMAP_ICON_INSET
 	icon:SetTexCoord(inset[1], inset[2], inset[3], inset[4])
-	return false
+	return type(icon.SetMask) == "function" and pcall(icon.SetMask, icon, Q.MINIMAP_ICON_MASK) and true or false
 end
 
 function Q.BuildMinimapButton()
@@ -7934,10 +7933,21 @@ local function BuildUI()
 	send:SetScript("OnLeave", function() GameTooltip:Hide() end)
 	ui.send = send
 
-	local effort = MakeButton(f, "Effort", SEND_W, function(self) Cli.EffortMenu(self) end)
-	effort:SetHeight(Q.EFFORT_H)
-	if effort.SetNormalFontObject then effort:SetNormalFontObject("GameFontNormalSmall") end
-	effort:SetPoint("BOTTOMLEFT", send, "TOPLEFT", 0, Q.EFFORT_GAP)
+	local effort = CreateFrame("Button", "ClaudeWoWEffortButton", f)
+	effort:SetSize(SEND_W, Q.EFFORT_H)
+	effort:SetPoint("BOTTOMRIGHT", send, "TOPRIGHT", 0, Q.EFFORT_GAP)
+	effort.text = effort:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+	effort.text:SetPoint("RIGHT", effort, "RIGHT", -2, 0)
+	effort.text:SetJustifyH("RIGHT")
+	effort.text:SetWordWrap(false)
+	local effortHl = effort:CreateTexture(nil, "HIGHLIGHT")
+	effortHl:SetAllPoints()
+	effortHl:SetColorTexture(1, 1, 1, 0.08)
+	effort:RegisterForClicks("LeftButtonUp")
+	effort:SetScript("OnClick", function(self)
+		GameTooltip:Hide()
+		Cli.EffortMenu(self)
+	end)
 	effort:SetScript("OnEnter", function(self)
 		GameTooltip:SetOwner(self, "ANCHOR_TOP")
 		GameTooltip:SetText("Effort")
