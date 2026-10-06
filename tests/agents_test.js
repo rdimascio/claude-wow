@@ -769,7 +769,16 @@ test('Claude stream: usage on the assistant messages is the context the next tur
   assert.equal(A.claudeUsage({ input_tokens: 'x' }), null);
   assert.equal(A.claudeUsage(null), null);
   assert.equal(A.claudeWindow({ modelUsage: { a: { contextWindow: 200000 }, b: { contextWindow: 1000000 } } }, 'a'), 200000, "the main model's window");
-  assert.equal(A.claudeWindow({ modelUsage: { 'claude-opus-5-5[1m]': { contextWindow: 1000000 }, b: { contextWindow: 200000 } } }, 'claude-opus-5-5'), 1000000);
+  assert.equal(
+    A.claudeWindow({ modelUsage: { b: { contextWindow: 2000000 }, 'claude-opus-5-5[1m]': { contextWindow: 1000000 } } }, 'claude-opus-5-5'),
+    1000000,
+    'the main model with a [1m] suffix, not the largest window',
+  );
+  assert.equal(
+    A.claudeWindow({ modelUsage: { b: { contextWindow: 2000000 }, 'claude-opus-5-5': { contextWindow: 1000000 } } }, 'claude-opus-5-5[1m]'),
+    1000000,
+    'a [1m] model named against a plain modelUsage key',
+  );
   assert.equal(A.claudeWindow({ modelUsage: { a: { contextWindow: 200000 } } }, 'other'), 200000, 'one model: its window');
   assert.equal(
     A.claudeWindow({ modelUsage: { a: { contextWindow: 200000 }, b: { contextWindow: 1000000 } } }, ''),

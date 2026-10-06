@@ -81,9 +81,25 @@ function claudeWindow(ev, model) {
   const keys = Object.keys(mu);
   const main = model ? keys.find(k => k === model) || keys.find(k => k.replace(/\[[^\]]*\]$/, '') === String(model).replace(/\[[^\]]*\]$/, '')) : '';
   if (main) return windowOf(mu[main]);
-  if (keys.length === 1) return windowOf(mu[keys[0]]);
   const w = keys.map(k => windowOf(mu[k])).filter(x => x > 0);
   return w.length ? Math.max(...w) : 0;
+}
+
+function pluginErrorsOf(ev) {
+  if (!ev || ev.type !== 'system' || ev.subtype !== 'init' || !Array.isArray(ev.plugin_errors)) return [];
+  return ev.plugin_errors
+    .filter(e => e && typeof e === 'object')
+    .map(e => ({
+      plugin: String(e.plugin || '?').slice(0, 80),
+      type: String(e.type || 'error').slice(0, 40),
+      message: String(e.message || '')
+        .replace(/\s+/g, ' ')
+        .slice(0, 300),
+    }));
+}
+
+function pluginErrorsLine(errors) {
+  return `Claude Code could not load plugin(s): ${errors.map(e => `${e.plugin} (${e.type}${e.message ? ': ' + e.message : ''})`).join('; ')}`;
 }
 
 function claudeRunCost(ev, model) {
@@ -259,17 +275,8 @@ function claudeParser(opts = {}) {
           .filter(s => s && typeof s === 'object' && typeof s.name === 'string')
           .map(s => ({ name: s.name.slice(0, 80), status: String(s.status || 'unknown').slice(0, 40), source: String(s.source || '').slice(0, 40) }));
       }
-      if (ev.type === 'system' && ev.subtype === 'init' && Array.isArray(ev.plugin_errors) && ev.plugin_errors.length) {
-        out.pluginErrors = ev.plugin_errors
-          .filter(e => e && typeof e === 'object')
-          .map(e => ({
-            plugin: String(e.plugin || '?').slice(0, 80),
-            type: String(e.type || 'error').slice(0, 40),
-            message: String(e.message || '')
-              .replace(/\s+/g, ' ')
-              .slice(0, 300),
-          }));
-      }
+      const pluginErrors = pluginErrorsOf(ev);
+      if (pluginErrors.length) out.pluginErrors = pluginErrors;
       if (ev.type === 'system' && ev.subtype === 'permission_denied') {
         noteRefusal(ev.tool_use_id, ev.message || ev.decision_reason, ev.decision_reason_type, true);
       } else if (ev.type === 'user' && ev.message && Array.isArray(ev.message.content)) {
@@ -304,7 +311,6 @@ function claudeParser(opts = {}) {
         const window = claudeWindow(ev, model);
         if (u) {
           out.usage = window ? { ...u, window } : { ...u };
-          // The run's API-equivalent price: the result's usage is the sum over its calls.
           const cost = claudeRunCost(ev, model);
           if (cost && !cost.unknown.length) {
             out.usage.cost = cost.usd;
@@ -1171,6 +1177,8 @@ module.exports = {
   claudeWindow,
   claudeCost,
   claudeRunCost,
+  pluginErrorsOf,
+  pluginErrorsLine,
   claudeRate,
   CLAUDE_RATES,
   resolveCommand,

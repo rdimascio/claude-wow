@@ -1980,6 +1980,15 @@ function Q.EndPromptWait(c)
 	if w and w.prompt then run.lateWait[c.id] = nil end
 end
 
+function Cli.BindAdoptedPlugin(c, plugin)
+	if type(plugin) ~= "string" or #plugin > 32 or not plugin:match("^[%w_-]+$") then return false end
+	if plugin == "claude-code" or plugin == LIVE_PLUGIN then return false end
+	if (c.plugin or "") ~= "" then return false end
+	c.plugin = plugin
+	c.cwd = ""
+	return true
+end
+
 -- Dispatch a list of reply records to the chats waiting for them.
 local function ApplyReplies(replies)
 	local matched = false
@@ -2002,7 +2011,8 @@ local function ApplyReplies(replies)
 			local denied = type(r.denied) == "table" and #r.denied > 0 and r.denied or nil
 			if (r.status == "done" or r.status == "error") and r.plugin ~= Cli.DEV_PLUGIN then
 				NoteUsage(c, r)
-				if c.adoptCwd and type(r.cwd) == "string" and r.cwd ~= "" then c.cwd = r.cwd end
+				local bound = c.resumeId and Cli.BindAdoptedPlugin(c, r.plugin)
+				if not bound and c.adoptCwd and type(r.cwd) == "string" and r.cwd ~= "" then c.cwd = r.cwd end
 				if type(r.session) == "string" and r.session ~= "" then c.session = r.session end
 				c.adoptCwd, c.resumeId = nil, nil
 			end

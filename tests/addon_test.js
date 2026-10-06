@@ -1843,6 +1843,61 @@ test('/claude -r: bare lists running and recent sessions; a number, a name or an
   assert.equal(vm.num('#ClaudeWoWDB.chats'), 5);
 });
 
+function adoptedReplyVM(plugin, { resume = true, bound = '' } = {}) {
+  const vm = newVM();
+  login(vm);
+  vm.run('STUB.RunTimers()');
+  nextSlot(
+    vm,
+    `{ now = time(), cwd = "/home/me", plugins = { "ask", "claude-code", "live", "roast" }, sessions = {
+    { id = "f02436b8-8a5f-4c05-823e-bef25f88ff7b", name = "Claude version check", cwd = "/Users/me/proj", agent = "claude", at = time() - 7200 },
+  }, replies = {} }`,
+  );
+  vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
+  if (resume) vm.run('SlashCmdList.CLAUDE("-r f024 hi")');
+  else vm.run('local c = ClaudeWoWDB.chats[1]; c.cwd = "/Users/me/proj"; ClaudeWoW.Send("hi")');
+  const field = f => vm.evaluate(`(function() for _, c in ipairs(ClaudeWoWDB.chats) do if c.id == ClaudeWoWDB.activeChat then return c.${f} end end end)()`);
+  assert.equal(field('cwd'), '/Users/me/proj', 'the chat starts as a coding chat');
+  if (bound) vm.run(`(function() for _, c in ipairs(ClaudeWoWDB.chats) do if c.id == ClaudeWoWDB.activeChat then c.plugin = "${bound}" end end end)()`);
+  const value = typeof plugin === 'string' ? JSON.stringify(plugin) : String(plugin);
+  replyTo(
+    vm,
+    field('id'),
+    `status = "done", text = "ok", agent = "claude", session = "f02436b8-8a5f-4c05-823e-bef25f88ff7b", cwd = "/srv/ask", plugin = ${value}`,
+  );
+  return { vm, field };
+}
+
+test('the first reply to an adopted chat binds the chat to the plugin that answered, so the next message stays on that session', () => {
+  const { vm, field } = adoptedReplyVM('ask');
+  assert.equal(field('resumeId'), null);
+  assert.equal(field('plugin'), 'ask');
+  assert.equal(field('cwd'), '', 'an ask chat has no coding folder');
+  vm.run('ClaudeWoW.Send("next turn")');
+  const flags = stripRecords(vm)
+    .find(r => r.text === 'next turn')
+    .flags.split(';');
+  assert.ok(flags.includes('plugin=ask'), flags.join(';'));
+});
+
+test('an adopted chat is not bound to a coding, live, dev, malformed or second plugin, and a chat that adopted nothing never is', () => {
+  const cases = [
+    ['claude-code', {}, '', 'a coding session keeps its folder'],
+    ['live', {}, '', 'live'],
+    ['dev', {}, '', 'dev'],
+    ['a;b', {}, '', 'a plugin name that would break the flags'],
+    ['x'.repeat(33), {}, '', 'too long'],
+    [5, {}, '', 'not a string'],
+    ['ask', { resume: false }, '', 'not an adopted chat'],
+    ['ask', { bound: 'roast' }, 'roast', 'a chat that already has a plugin'],
+  ];
+  for (const [plugin, opts, want, label] of cases) {
+    const { field } = adoptedReplyVM(plugin, opts);
+    assert.equal(field('plugin') || '', want, label);
+    assert.equal(field('cwd'), '/Users/me/proj', label);
+  }
+});
+
 const PICK_LIVE = '6624f327-7126-423e-a653-d7cf7a4e492b';
 const PICK_DEAF = 'f02436b8-8a5f-4c05-823e-bef25f88ff7b';
 const PICK_RESTART = `cd /Users/ryan/wow-ai && claude --resume ${PICK_DEAF} --dangerously-load-development-channels server:claude-wow`;

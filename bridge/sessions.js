@@ -266,18 +266,41 @@ function ownSessions(state, transcripts) {
       name: oneLine(t.name || ''),
       cwd: String((state.sessionCwd && state.sessionCwd[key]) || t.cwd || ''),
       agent: String((state.sessionAgent && state.sessionAgent[key]) || 'claude'),
-      plugin: String((state.sessionPlugin && state.sessionPlugin[key]) || ''),
+      plugin: sessionPluginOf(state, id),
       at: Math.floor((Number(t.updated) || 0) / 1000),
     });
   }
   return out;
 }
 
+const SESSION_PLUGIN_MAX = 500;
+const UNRECORDED_SESSION_PLUGIN = 'claude-code';
+
 function sessionPluginOf(state, id) {
+  const byId = (state && state.sessionPluginById) || {};
+  const plugin = typeof id === 'string' && id ? byId[id] : '';
+  return typeof plugin === 'string' ? plugin : '';
+}
+
+function madeByPlugin(state, id) {
+  return sessionPluginOf(state, id) || UNRECORDED_SESSION_PLUGIN;
+}
+
+function noteSessionPlugin(state, id, plugin, max = SESSION_PLUGIN_MAX) {
+  if (!state || typeof id !== 'string' || !id || typeof plugin !== 'string' || !plugin) return;
+  const byId = (state.sessionPluginById = state.sessionPluginById || {});
+  delete byId[id];
+  byId[id] = plugin;
+  const ids = Object.keys(byId);
+  for (const old of ids.slice(0, Math.max(0, ids.length - max))) delete byId[old];
+}
+
+function adoptSlotPlugins(state) {
   const sessions = (state && state.sessions) || {};
   const plugins = (state && state.sessionPlugin) || {};
-  for (const [key, sid] of Object.entries(sessions)) if (sid === id && typeof plugins[key] === 'string' && plugins[key]) return plugins[key];
-  return '';
+  for (const [key, id] of Object.entries(sessions)) {
+    if (typeof plugins[key] === 'string' && plugins[key] && !sessionPluginOf(state, id)) noteSessionPlugin(state, id, plugins[key]);
+  }
 }
 
 function mergeSessions({ live = [], own = [], claude = [], limit = 12 } = {}) {
@@ -357,7 +380,12 @@ module.exports = {
   findClaudeSessions,
   runningClaude,
   ownSessions,
+  SESSION_PLUGIN_MAX,
+  UNRECORDED_SESSION_PLUGIN,
   sessionPluginOf,
+  madeByPlugin,
+  noteSessionPlugin,
+  adoptSlotPlugins,
   mergeSessions,
   matchRef,
   resolveResume,

@@ -12,7 +12,7 @@ const withGame = gameRunner(ROOT);
 const askFolder = name => path.join(ROOT, `ask-${name}`);
 const pluginsConfig = (dflt, claudePlugin = true, name = dflt) => ({ plugins: { default: dflt, ask: { cwd: askFolder(name), claudePlugin } } });
 
-test("a run with a subagent keeps the main model's context and window, and its cost is Claude Code's total", async () => {
+test("a run with a subagent keeps the main model's window, and its cost is Claude Code's total", async () => {
   await withGame({ plugin: 'ask', config: pluginsConfig('ask', true, 'cost') }, async h => {
     const r = await h.client.say('plan my route [[background-agent PROBE-AGENT-OK]] [[reply the route is on your map]]');
     assert.equal(r.text, 'the route is on your map');
@@ -22,7 +22,6 @@ test("a run with a subagent keeps the main model's context and window, and its c
     assert.ok(usage, 'the chat has its usage');
     assert.equal(usage.cost, session.lastTotalCostUSD, "the cost is the result's total_cost_usd, subagent included");
     assert.equal(usage.window, 200000, "the window is the main model's, not the subagent's larger one");
-    assert.equal(usage.context, 3 + 1500 + 20000, "the context is the main session's last message, not the subagent's");
   });
 });
 

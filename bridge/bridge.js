@@ -343,6 +343,7 @@ const fromLabel = client => (CLIENTS.length > 1 && client ? ` from ${client.labe
 let state = Object.keys(stateEarly).length ? stateEarly : { lastId: 0, sessions: {}, handled: {} };
 if (!state.handled) state.handled = {};
 if (!state.sessions) state.sessions = {};
+SS.adoptSlotPlugins(state);
 const adoptedLegacyState = CLI.adoptLegacyState(state, CLI.allClients(cfg));
 // Older versions stored handled[session] as "highest id so far"; expand to a map.
 for (const [k, v] of Object.entries(state.handled)) {
@@ -971,7 +972,11 @@ function sessionList() {
   const lp = livePlugin();
   const live = lp && typeof lp.sessions === 'function' ? lp.sessions() : [];
   const merged = SS.mergeSessions({ live, own: SS.ownSessions(state, transcripts), claude: recentClaudeSessions(), limit: SESSION_LIST_MAX });
-  return HO.withHandoff(merged, handoffEntries()).map(s => ({ ...s, branch: s.branch || SS.gitBranch(s.cwd) }));
+  return HO.withHandoff(merged, handoffEntries()).map(s => ({
+    ...s,
+    branch: s.branch || SS.gitBranch(s.cwd),
+    plugin: s.plugin || SS.sessionPluginOf(state, s.id),
+  }));
 }
 
 function resolveResume(job) {
@@ -989,16 +994,12 @@ function resolveResume(job) {
 
 function adoptSession(job, m) {
   const skey = sessKey(job);
-  const madeBy = m.plugin || SS.sessionPluginOf(state, m.id);
-  job.adoptedPlugin = madeBy && madeBy !== 'live' ? madeBy : '';
   state.sessions[skey] = m.id;
   delete state.sessions[chatKey(job)];
   (state.sessionAgent = state.sessionAgent || {})[skey] = m.agent || 'claude';
   if (m.cwd) (state.sessionCwd = state.sessionCwd || {})[skey] = m.cwd;
   if (!job.agent) job.agent = m.agent || 'claude';
-  const plugin = !job.plugin ? job.adoptedPlugin : '';
-  if (plugin) job.plugin = plugin;
-  if (!job.plugin && m.cwd) job.plugin = 'claude-code';
+  if (!job.plugin) job.plugin = SS.madeByPlugin(state, m.id);
   if (!job.cwd && m.cwd && registry.normalize(job.plugin) === 'claude-code') job.cwd = m.cwd;
   job.newSession = false;
   job.adopted = m;
@@ -1902,10 +1903,6 @@ function runJob(job) {
     return;
   }
   job.plugin = r.plugin.id;
-  if (job.adopted) {
-    (state.sessionPlugin = state.sessionPlugin || {})[sessKey(job)] = job.adoptedPlugin || job.plugin;
-    saveState();
-  }
   if (r.text !== undefined) job.text = r.text; // "@ask ..." addressed it; the address is not part of the prompt
   const failed = e => {
     log(`${tag} ${r.plugin.id}: ${e && e.stack ? e.stack : e}`);
@@ -2608,8 +2605,7 @@ function runAgent(job, opts = {}) {
     delete state.sessions[skey];
     delete state.sessions[key];
   }
-  // Sessions from before plugins existed were all the coding plugin's.
-  const prevPlugin = (state.sessionPlugin && state.sessionPlugin[skey]) || 'claude-code';
+  const prevPlugin = SS.madeByPlugin(state, state.sessions[skey]);
   if (prevPlugin !== plugin.id && state.sessions[skey]) {
     log(`${tag} plugin changed (${prevPlugin} -> ${plugin.id}): new session`);
     delete state.sessions[skey];
@@ -2895,7 +2891,7 @@ function runAgent(job, opts = {}) {
     if (Array.isArray(r.mcpStatus)) noteMcpHealth(r.mcpStatus, cwd);
     if (Array.isArray(r.pluginErrors) && r.pluginErrors.length && !pluginErrorsLogged) {
       pluginErrorsLogged = true;
-      log(`${tag} Claude Code could not load plugin(s): ${r.pluginErrors.map(e => `${e.plugin} (${e.type}${e.message ? ': ' + e.message : ''})`).join('; ')}`);
+      log(`${tag} ${A.pluginErrorsLine(r.pluginErrors)}`);
     }
     notes.push(...r.notes);
     if (r.done) result = r.done;
@@ -2977,6 +2973,7 @@ function runAgent(job, opts = {}) {
       (state.sessionCwd = state.sessionCwd || {})[skey] = cwd;
       (state.sessionAgent = state.sessionAgent || {})[skey] = agentId;
       (state.sessionPlugin = state.sessionPlugin || {})[skey] = plugin.id;
+      SS.noteSessionPlugin(state, sessionId, plugin.id);
       if (sessionId !== resume) P.noteRules(state, skey, rulesHash);
       // Context growth: one more turn on this session, and what the next one will carry.
       job.usage = P.noteUsage(state, skey, { usage, fresh: !resume, agent: agentId, startedAt });
