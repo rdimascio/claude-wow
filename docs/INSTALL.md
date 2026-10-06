@@ -110,7 +110,7 @@ Under the service the bridge's default project folder is `defaultCwd` from `~/.c
 | Linux | systemd user unit `~/.config/systemd/user/claude-wow-bridge.service` (`Restart=always`; needs `systemctl --user`, which every mainstream desktop has) | `~/.local/state/claude-wow/bridge.log` (`$XDG_STATE_HOME`) |
 | Windows | `Claude WoW bridge.vbs` in your Startup folder, which starts the bridge with no window at login; the supervisor does the crash restarts | `%LocalAppData%\claude-wow\logs\bridge.log` |
 
-Logs rotate at 5 MB with five old files kept, so they never grow without bound. The bridge's own `~/.claude-wow/bridge.log` is rotated the same way, in every mode.
+Logs rotate at 5 MB with five old files kept, so they never grow without bound. The bridge's own `~/.claude-wow/bridge.log` is rotated the same way, in every mode. On macOS and Linux the service logs, `launchd.log` and every archive are mode `0600` and the service log folder is `0700`; the supervisor repairs older files when it starts.
 
 Things worth knowing:
 
