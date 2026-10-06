@@ -361,7 +361,7 @@ The settings are saved with the addon's other settings (`ClaudeWoWDB.voice`).
 
 ### Live UI widgets
 
-Ask for a small UI element (*"give me a DPS meter"*, *"a timer bar for my buffs"*) and it shows up in the game a moment later, without `/reload`. The agent writes addon Lua in a ```` ```wowui <name> ```` block (or appends it to the file in `CLAUDE_WOW_UI_FILE`). The bridge refuses anything that names a protected or outward action (casting, targeting, movement, chat, macros, bindings, secure templates), keeps the rest versioned in `state.json` and ships it in the slot files, like map layers. The addon runs each widget in its own sandbox inside a `pcall`; an error stops the widget and shows up in the chat window.
+Ask for a small UI element (*"give me a DPS meter"*, *"a timer bar for my buffs"*) and it shows up in the game a moment later, without `/reload`. The agent writes addon Lua in a ```` ```wowui <name> ```` block (or appends it to the file in `CLAUDE_WOW_UI_FILE`). The bridge refuses anything that names a protected or outward action (casting, targeting, movement, chat, macros, bindings, secure templates), keeps the rest versioned in `state.json` and ships it in the slot files, like map layers. The addon runs each widget in its own sandbox inside a `pcall`: the widget sees only an allowlist of display APIs, through wrapped frames, and no Blizzard frame. An error stops the widget and shows up in the chat window.
 
 | Command | What it does |
 |---|---|
@@ -369,7 +369,7 @@ Ask for a small UI element (*"give me a DPS meter"*, *"a timer bar for my buffs"
 | `/claude config ui remove <name>` | stop a widget and keep it off after login, until the agent sends a new version |
 | `/claude config ui run <name>` | start a widget again |
 
-Widgets start again at login. The contract, the deny-list and the limits are in [docs/UI-WIDGETS.md](docs/UI-WIDGETS.md).
+Widgets start again at login. The contract, the allowlist, what a widget cannot do and the limits are in [docs/UI-WIDGETS.md](docs/UI-WIDGETS.md). `/claude dev globals` and `npm run audit:widgets` check the allowlist against your client.
 
 ### Permissions
 
@@ -444,7 +444,7 @@ The keys you are most likely to touch. Every key, flag and environment variable 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): how the pixel strip, slot pool and signal files work, and why
 - [docs/INSTALL-LINUX.md](docs/INSTALL-LINUX.md): Linux + Wine notes, systemd, and how to check the screen capture
 - [docs/MAP.md](docs/MAP.md): map layers, the navigator and herb/ore nodes
-- [docs/UI-WIDGETS.md](docs/UI-WIDGETS.md): live UI widgets the agent writes, their contract and the display-only checks
+- [docs/UI-WIDGETS.md](docs/UI-WIDGETS.md): live UI widgets the agent writes, their contract, the display-only allowlist and how to audit it
 - [CONTRIBUTING.md](CONTRIBUTING.md): repo layout, running the tests, conventions
 - [CHANGELOG.md](CHANGELOG.md): release notes
 

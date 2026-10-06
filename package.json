@@ -32,6 +32,7 @@
     "slots": "node bridge/install-slots.js",
     "dev": "node dev/cli.js",
     "doctor": "node dev/doctor.js",
+    "audit:widgets": "node dev/widget-audit.js",
     "lint": "oxlint --deny-warnings && oxfmt --check",
     "format": "oxfmt && oxlint --fix",
     "test": "node tests/unit.js",

@@ -7325,7 +7325,7 @@ HELP = table.concat({
 	"/claude copy                       open the last reply in a selectable box for Ctrl+C",
 	"/claude reset                      the next message in this chat starts a fresh session",
 	"/claude cancel                     stop waiting on this chat's reply",
-	"/claude dev [command]              dev tools for this chat's folder, run by the bridge: status, diff, log, run, test, doctor, errors, feedback (/claude dev help)",
+	"/claude dev [command]              dev tools for this chat's folder, run by the bridge: status, diff, log, run, test, doctor, errors, feedback (/claude dev help); globals saves the widget audit list in game",
 	"/claude wrong [#n] [note]          mark the last reply in this chat (or reply #n) as wrong; it lands in the bridge's feedback list",
 	"/claude bug <text>                 report a bug, with the addon's state and Lua errors attached",
 	"/claude errors                     the Lua errors the addon caught this UI session",
@@ -8260,6 +8260,11 @@ Cli.DEV_ATTACH_MAX = 1400
 
 function Cli.DevCommand(c, cmd, rest)
 	if not c then return end
+	local devVerb, devArg = rest:match("^%s*(%S+)%s*(.-)%s*$")
+	if cmd == "dev" and devVerb and devVerb:lower() == "globals" then
+		Cli.Say(c, ClaudeWoWWidgets and ClaudeWoWWidgets.GlobalsCommand(devArg) or "Widgets.lua is not loaded. Restart the game client once to load new addon files.")
+		return
+	end
 	if c.pendingId then
 		Cli.Say(c, "This chat is still waiting on a reply. Run the dev command when it is back, or in another chat.")
 		return
