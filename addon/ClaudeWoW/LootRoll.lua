@@ -11,15 +11,19 @@ local TIMER_BAR = "Interface\\PaperDollInfoFrame\\UI-Character-Skills-Bar"
 local SCROLL_ICON = "Interface\\Icons\\INV_Scroll_03"
 local GEAR_ICON = "Interface\\Icons\\Trade_Engineering"
 
+local DETAIL_GAP = 4
+local DETAIL_PAD = 6
+local DETAIL_RULES_SHOWN = 3
+local DETAIL_COMMAND_CHARS = 90
+local TOAST_WIDTH, TOAST_HEIGHT = 277, 67
+local FALLBACK_BOTTOM = 240
+
 local ROLL_BUTTONS = {
-	need = { atlas = "lootroll-toast-icon-need", file = "Interface\\Buttons\\UI-GroupLoot-Dice", label = NEED or "Need", hint = "Allow it, add it to the allowlist in config.json, and retry." },
-	greed = { atlas = "lootroll-toast-icon-greed", file = "Interface\\Buttons\\UI-GroupLoot-Coin", label = GREED or "Greed", hint = "Allow it for this one retry only. Nothing is added to the allowlist." },
-	pass = { atlas = "lootroll-toast-icon-pass", file = "Interface\\Buttons\\UI-GroupLoot-Pass", label = PASS or "Pass", hint = "Deny it. The agent is not retried." },
+	need = { atlas = "lootroll-toast-icon-need", file = "Interface\\Buttons\\UI-GroupLoot-Dice", label = NEED or "Need" },
+	greed = { atlas = "lootroll-toast-icon-greed", file = "Interface\\Buttons\\UI-GroupLoot-Coin", label = GREED or "Greed" },
+	pass = { atlas = "lootroll-toast-icon-pass", file = "Interface\\Buttons\\UI-GroupLoot-Pass", label = PASS or "Pass" },
 }
-local FOLDER_HINTS = {
-	need = "Add the folder to this chat for good, like /claude --add-dir, and retry.",
-	greed = "Add the folder for this one retry only. The chat's folders stay as they are.",
-}
+local CHOICE_ORDER = { "greed", "need", "pass" }
 
 local SOUND_KIT_IDS = {
 	UI_EPICLOOT_TOAST = 31578,
@@ -32,6 +36,7 @@ local SOUND_ON_CHOICE = { need = "UI_NEED_ROLL_POSITIVE", greed = "LOOT_WINDOW_C
 
 local frame
 local current
+local parked
 local waiting = {}
 
 local function PlayKit(name)
@@ -47,18 +52,9 @@ local function FolderOf(rule)
 	return tostring(rule):match("^AddDir%((.+)%)$")
 end
 
-function R.HasFolder(rules)
-	for _, rule in ipairs(rules or {}) do
-		if FolderOf(rule) then return true end
-	end
-	return false
-end
-
-function R.Hint(choice, rules)
-	local spec = ROLL_BUTTONS[choice]
-	if not spec then return "" end
-	if FOLDER_HINTS[choice] and R.HasFolder(rules) then return FOLDER_HINTS[choice] end
-	return spec.hint
+function R.Hint(choice, rules, chatId, agent)
+	if not ROLL_BUTTONS[choice] then return "" end
+	return ClaudeWoW.GrantText(chatId, choice, rules, agent)
 end
 
 function R.CommandOf(rule)
@@ -89,9 +85,47 @@ local function AgentLabel(agent)
 	return agent:sub(1, 1):upper() .. agent:sub(2)
 end
 
+local function SameOffer(offer, chatId, msgId)
+	return offer ~= nil and offer.chatId == chatId and offer.msgId == msgId
+end
+
 local function StillOpen(offer)
 	local rules, msgId = ClaudeWoW.OpenDenial(offer.chatId)
 	return rules ~= nil and msgId == offer.msgId
+end
+
+local function IsLive(offer)
+	return offer ~= nil and ClaudeWoW.IsLiveChat(offer.chatId)
+end
+
+local function Choices(offer)
+	if IsLive(offer) then return { "greed", "pass" } end
+	return CHOICE_ORDER
+end
+
+local function Clip(text, max)
+	text = tostring(text or "")
+	if #text <= max then return text end
+	return text:sub(1, max - 3) .. "..."
+end
+
+local function Plain(text)
+	return (tostring(text or ""):gsub("|", "||"))
+end
+
+function R.DetailLines(offer)
+	local lines = {}
+	for i, rule in ipairs(offer.rules) do
+		if i > DETAIL_RULES_SHOWN then
+			table.insert(lines, "|cffffffffand " .. (#offer.rules - DETAIL_RULES_SHOWN) .. " more|r")
+			break
+		end
+		table.insert(lines, "|cffffffff" .. Plain(ClaudeWoW.GrantLabel(rule)) .. "|r")
+	end
+	local details = ClaudeWoW.DenialDetails(offer.chatId)
+	if details[1] then table.insert(lines, "|cffbbbbbb" .. Plain(Clip(details[1], DETAIL_COMMAND_CHARS)) .. "|r") end
+	table.insert(lines, "|cffffd100" .. ClaudeWoW.GrantText(offer.chatId, "scope", offer.rules, offer.agent) .. "|r")
+	return lines
 end
 
 local function ShowItemTooltip(owner)
@@ -102,21 +136,28 @@ local function ShowItemTooltip(owner)
 	GameTooltip:AddLine(AgentLabel(offer.agent) .. " was denied:", 1, 0.82, 0)
 	for _, rule in ipairs(offer.rules) do
 		local folder = FolderOf(rule)
-		GameTooltip:AddLine(folder and ("Folder outside this chat: " .. folder) or rule, 1, 1, 1, true)
+		GameTooltip:AddLine(Plain(folder and ("Folder outside this chat: " .. folder) or rule), 1, 1, 1, true)
+	end
+	local details = ClaudeWoW.DenialDetails(offer.chatId)
+	if #details > 0 then
+		GameTooltip:AddLine(" ")
+		GameTooltip:AddLine("What it tried:", 1, 0.82, 0)
+		for _, detail in ipairs(details) do GameTooltip:AddLine(Plain(detail), 0.8, 0.8, 0.8, true) end
 	end
 	GameTooltip:AddLine(" ")
-	for _, choice in ipairs({ "need", "greed", "pass" }) do
+	for _, choice in ipairs(Choices(offer)) do
 		local spec = ROLL_BUTTONS[choice]
-		GameTooltip:AddLine(spec.label .. ": " .. R.Hint(choice, offer.rules), 0.8, 0.8, 0.8, true)
+		GameTooltip:AddLine(spec.label .. ": " .. R.Hint(choice, offer.rules, offer.chatId, offer.agent), 0.8, 0.8, 0.8, true)
 	end
 	GameTooltip:Show()
 end
 
 local function ShowButtonTooltip(button)
 	local spec = ROLL_BUTTONS[button.choice]
+	local offer = current
 	GameTooltip:SetOwner(button, "ANCHOR_RIGHT")
 	GameTooltip:AddLine(spec.label)
-	GameTooltip:AddLine(R.Hint(button.choice, current and current.rules), 1, 1, 1, true)
+	if offer then GameTooltip:AddLine(R.Hint(button.choice, offer.rules, offer.chatId, offer.agent), 1, 1, 1, true) end
 	GameTooltip:Show()
 end
 
@@ -143,10 +184,20 @@ local function RollButton(parent, choice)
 	return b
 end
 
+local function CanCaptureKeys()
+	return not (type(InCombatLockdown) == "function" and InCombatLockdown())
+end
+
+function R.OnKey(f, key)
+	local capture = CanCaptureKeys()
+	local greed = key == "ENTER" and current ~= nil and f.keyboard == true and capture
+	if capture then pcall(f.SetPropagateKeyboardInput, f, not greed) end
+	if greed then R.Choose("greed") end
+end
+
 local function Build()
 	local f = CreateFrame("Frame", "ClaudeWoWRollFrame", UIParent)
-	f:SetSize(277, 67)
-	f:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, 240)
+	f:SetSize(TOAST_WIDTH, TOAST_HEIGHT)
 	f:SetFrameStrata("DIALOG")
 	f:SetToplevel(true)
 	f:SetClampedToScreen(true)
@@ -154,18 +205,22 @@ local function Build()
 	f:EnableMouse(true)
 	f:RegisterForDrag("LeftButton")
 	f:SetScript("OnDragStart", function(self) self:StartMoving() end)
-	f:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+	f:SetScript("OnDragStop", function(self)
+		self:StopMovingOrSizing()
+		self.userPlaced = true
+	end)
 
 	f.Background = f:CreateTexture(nil, "BACKGROUND")
 	f.Background:SetTexture(LOOT_TOAST)
 	f.Background:SetTexCoord(LOOT_TOAST_BACKGROUND_COORDS[1], LOOT_TOAST_BACKGROUND_COORDS[2], LOOT_TOAST_BACKGROUND_COORDS[3], LOOT_TOAST_BACKGROUND_COORDS[4])
-	f.Background:SetAllPoints()
+	f.Background:SetSize(TOAST_WIDTH, TOAST_HEIGHT)
+	f.Background:SetPoint("TOP", f, "TOP", 0, 0)
 
 	f.Border = f:CreateTexture(nil, "BORDER")
 	f.Border:SetTexture(LOOT_TOAST)
 	f.Border:SetTexCoord(LOOT_TOAST_BORDER_COORDS[1], LOOT_TOAST_BORDER_COORDS[2], LOOT_TOAST_BORDER_COORDS[3], LOOT_TOAST_BORDER_COORDS[4])
 	f.Border:SetSize(286, 76)
-	f.Border:SetPoint("CENTER")
+	f.Border:SetPoint("CENTER", f.Background, "CENTER")
 	f.Border:SetVertexColor(EPIC_COLOR[1], EPIC_COLOR[2], EPIC_COLOR[3])
 
 	f.IconFrame = CreateFrame("Button", nil, f)
@@ -191,16 +246,16 @@ local function Build()
 	f.Name:SetJustifyV("MIDDLE")
 	f.Name:SetTextColor(EPIC_COLOR[1], EPIC_COLOR[2], EPIC_COLOR[3])
 
-	f.NeedButton = RollButton(f, "need")
-	f.NeedButton:SetPoint("TOPLEFT", f, "TOPLEFT", 202, -7)
-	f.PassButton = RollButton(f, "pass")
-	f.PassButton:SetPoint("LEFT", f.NeedButton, "RIGHT", 6, 2)
 	f.GreedButton = RollButton(f, "greed")
-	f.GreedButton:SetPoint("TOP", f.NeedButton, "BOTTOM", 0, 5)
+	f.GreedButton:SetPoint("TOPLEFT", f, "TOPLEFT", 202, -7)
+	f.PassButton = RollButton(f, "pass")
+	f.PassButton:SetPoint("LEFT", f.GreedButton, "RIGHT", 6, 2)
+	f.NeedButton = RollButton(f, "need")
+	f.NeedButton:SetPoint("TOP", f.GreedButton, "BOTTOM", 0, 5)
 
 	f.Timer = CreateFrame("StatusBar", nil, f)
 	f.Timer:SetSize(190, 8)
-	f.Timer:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 3, 2)
+	f.Timer:SetPoint("BOTTOMLEFT", f.Background, "BOTTOMLEFT", 3, 2)
 	f.Timer.Background = f.Timer:CreateTexture(nil, "BACKGROUND")
 	f.Timer.Background:SetAllPoints()
 	f.Timer.Background:SetColorTexture(0, 0, 0)
@@ -208,23 +263,87 @@ local function Build()
 	f.Timer:SetStatusBarColor(1, 1, 0)
 	f.Timer:SetMinMaxValues(0, ROLL_SECONDS)
 
+	f.Details = CreateFrame("Frame", nil, f)
+	f.Details:SetPoint("TOPLEFT", f, "TOPLEFT", DETAIL_GAP, -TOAST_HEIGHT)
+	f.Details:SetWidth(TOAST_WIDTH - 2 * DETAIL_GAP)
+	f.Details.Background = f.Details:CreateTexture(nil, "BACKGROUND")
+	f.Details.Background:SetAllPoints()
+	f.Details.Background:SetColorTexture(0, 0, 0, 0.75)
+	f.Details.Text = f.Details:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+	f.Details.Text:SetPoint("TOPLEFT", f.Details, "TOPLEFT", DETAIL_PAD, -DETAIL_PAD)
+	f.Details.Text:SetWidth(TOAST_WIDTH - 2 * DETAIL_GAP - 2 * DETAIL_PAD)
+	f.Details.Text:SetJustifyH("LEFT")
+	f.Details.Text:SetWordWrap(true)
+	f.Details.Text:SetNonSpaceWrap(true)
+	f.Details:EnableMouse(true)
+	f.Details:SetScript("OnEnter", ShowItemTooltip)
+	f.Details:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+	f:EnableKeyboard(false)
+	f:SetScript("OnKeyDown", function(self, key) R.OnKey(self, key) end)
 	f:SetScript("OnUpdate", function() R.Update() end)
 	f:Hide()
 	return f
 end
 
+function R.Place(f)
+	if f.userPlaced then return end
+	f:ClearAllPoints()
+	local container = _G.GroupLootContainer
+	if type(container) == "table" and type(container.GetTop) == "function" then
+		f:SetPoint("BOTTOM", container, "TOP", 0, DETAIL_GAP)
+	else
+		f:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, FALLBACK_BOTTOM)
+	end
+end
+
+local function Layout(f, offer)
+	f.NeedButton:SetShown(not IsLive(offer))
+	f.Details.Text:SetText(table.concat(R.DetailLines(offer), "\n"))
+	local height = (f.Details.Text:GetStringHeight() or 0) + 2 * DETAIL_PAD
+	f.Details:SetHeight(height)
+	f:SetHeight(TOAST_HEIGHT + height)
+end
+
+local function FocusGreed(f)
+	f.GreedButton:LockHighlight()
+	f.keyboard = CanCaptureKeys()
+	if f.keyboard then
+		pcall(f.SetPropagateKeyboardInput, f, true)
+		f:EnableKeyboard(true)
+	else
+		f:EnableKeyboard(false)
+	end
+end
+
+local function HideFrame()
+	if not frame then return end
+	frame.keyboard = false
+	frame:EnableKeyboard(false)
+	frame.GreedButton:UnlockHighlight()
+	frame:Hide()
+end
+
 local function Present(offer)
+	if ClaudeWoW.AllowPending(offer.chatId, offer.msgId) then
+		parked = offer
+		return
+	end
 	frame = frame or Build()
 	current = offer
 	offer.expiresAt = GetTime() + ROLL_SECONDS
 	frame.Name:SetText(R.ItemName(offer.rules))
 	frame.IconFrame.Icon:SetTexture(R.IconFor(offer.rules))
+	Layout(frame, offer)
+	R.Place(frame)
 	frame.Timer:SetValue(ROLL_SECONDS)
 	frame:Show()
+	FocusGreed(frame)
 	PlayKit(SOUND_ON_OFFER)
 end
 
 local function PresentNext()
+	if current or parked then return end
 	while #waiting > 0 do
 		local offer = table.remove(waiting, 1)
 		if StillOpen(offer) then
@@ -236,7 +355,7 @@ end
 
 local function CloseCurrent()
 	current = nil
-	if frame then frame:Hide() end
+	HideFrame()
 	PresentNext()
 end
 
@@ -244,14 +363,14 @@ function R.Offer(chatId)
 	local rules, msgId, agent = ClaudeWoW.OpenDenial(chatId)
 	if not rules then return end
 	local key = tostring(chatId) .. ":" .. tostring(msgId)
-	if current and current.key == key then return end
+	if (current and current.key == key) or (parked and parked.key == key) then return end
 	for _, queued in ipairs(waiting) do
 		if queued.key == key then return end
 	end
 	local copied = {}
 	for i, rule in ipairs(rules) do copied[i] = rule end
 	local offer = { key = key, chatId = chatId, msgId = msgId, rules = copied, agent = agent }
-	if current then
+	if current or parked then
 		table.insert(waiting, offer)
 	else
 		Present(offer)
@@ -261,20 +380,53 @@ end
 function R.Choose(choice, reason)
 	local offer = current
 	if not offer or not ROLL_BUTTONS[choice] then return end
+	if choice == "need" and IsLive(offer) then choice = "greed" end
+	if choice == "need" then
+		ClaudeWoW.ConfirmAllow(offer.chatId, offer.msgId, offer.rules)
+		return
+	end
 	local open = StillOpen(offer)
 	current = nil
-	if frame then frame:Hide() end
+	HideFrame()
 	if open then
 		PlayKit(SOUND_ON_CHOICE[choice])
-		if choice == "need" then
-			ClaudeWoW.Allow(offer.chatId, offer.rules)
-		elseif choice == "greed" then
+		if choice == "greed" then
 			ClaudeWoW.AllowOnce(offer.chatId, offer.rules)
 		else
 			ClaudeWoW.PassOnDenial(offer.chatId, offer.rules, reason)
 		end
 	end
 	PresentNext()
+end
+
+function R.Park(chatId, msgId)
+	if not SameOffer(current, chatId, msgId) then return false end
+	parked = current
+	current = nil
+	HideFrame()
+	return true
+end
+
+function R.Resume(chatId, msgId)
+	if not SameOffer(parked, chatId, msgId) then return false end
+	local offer = parked
+	parked = nil
+	if current then
+		table.insert(waiting, 1, offer)
+	elseif StillOpen(offer) then
+		Present(offer)
+	else
+		PresentNext()
+	end
+	return true
+end
+
+function R.Settle(chatId, msgId, granted)
+	if not SameOffer(parked, chatId, msgId) then return false end
+	parked = nil
+	if granted then PlayKit(SOUND_ON_CHOICE.need) end
+	PresentNext()
+	return true
 end
 
 function R.Update()
@@ -294,11 +446,16 @@ end
 function R.CloseAll()
 	wipe(waiting)
 	current = nil
-	if frame then frame:Hide() end
+	parked = nil
+	HideFrame()
 end
 
 function R.Current()
 	return current
+end
+
+function R.Parked()
+	return parked
 end
 
 function R.Waiting()

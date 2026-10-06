@@ -3121,10 +3121,11 @@ end
 
 function Whisper.RollLinks(chat, msgId)
 	local id = chat.id .. ":" .. tostring(msgId or 0)
-	if ClaudeWoW.LootRollEnabled() then
-		return Link("roll", id .. ":need", NEED or "Need", "1eff00") .. " " .. Link("roll", id .. ":greed", GREED or "Greed", "ffd100") .. " " .. Link("roll", id .. ":pass", PASS or "Pass", "ff6060")
-	end
-	return Link("roll", id .. ":need", "Allow & retry", "1eff00") .. " " .. Link("roll", id .. ":greed", "Allow once", "ffd100") .. " " .. Link("roll", id .. ":pass", "Pass", "ff6060")
+	local roll = ClaudeWoW.LootRollEnabled()
+	local greed = Link("roll", id .. ":greed", roll and (GREED or "Greed") or "Allow once", "ffd100")
+	local pass = Link("roll", id .. ":pass", roll and (PASS or "Pass") or "Pass", "ff6060")
+	if ClaudeWoW.IsLiveChat(chat) then return greed .. " " .. pass end
+	return greed .. " " .. Link("roll", id .. ":need", roll and (NEED or "Need") or "Allow & retry", "1eff00") .. " " .. pass
 end
 
 function Whisper.MacroLinkLabel(m)
@@ -3767,8 +3768,7 @@ function ClaudeWoW.SendFromInput()
 	ClaudeWoW.Send(text)
 end
 
--- The Allow button: grant the rules a reply asked for, then tell the agent to carry on.
-function ClaudeWoW.Allow(chatId, rules)
+local function AllowAlways(chatId, rules)
 	local c = FindChat(chatId)
 	if not c or c.pendingId or not rules or #rules == 0 then return end
 	if db.activeChat ~= c.id then ClaudeWoW.SwitchChat(c.id) end
@@ -3803,6 +3803,163 @@ function ClaudeWoW.PassOnDenial(chatId, rules, reason)
 	end
 	ClaudeWoW.Render()
 end
+
+Q.ALLOW_POPUP = "CLAUDEWOW_ALLOW_ALWAYS"
+Q.DENIAL_DETAILS_MAX = 6
+Q.DENIAL_DETAIL_CHARS = 160
+Q.STALE_DENIAL_TEXT = "That request was answered already."
+
+function ClaudeWoW.IsLiveChat(chatOrId)
+	local c = type(chatOrId) == "table" and chatOrId or FindChat(chatOrId)
+	return c ~= nil and Cli.ChatPlugin(c) == LIVE_PLUGIN
+end
+
+function Q.DenialAgentName(c, agent)
+	local name = ReplyAgentName(c, agent)
+	if name == AgentName("") then return "this agent" end
+	return name
+end
+
+function Q.AlwaysTarget(c, rules, agent)
+	local commands, dirs = ClaudeWoW.SplitGrants(rules)
+	local name = Q.DenialAgentName(c, agent)
+	if #dirs > 0 and #commands > 0 then return name .. " and this chat" end
+	if #dirs > 0 then return "this chat" end
+	return name
+end
+
+function ClaudeWoW.GrantText(chatId, kind, rules, agent)
+	local c = FindChat(chatId)
+	local live = ClaudeWoW.IsLiveChat(c)
+	local commands, dirs = ClaudeWoW.SplitGrants(rules)
+	local folderOnly = #dirs > 0 and #commands == 0
+	if kind == "pass" then return "Deny it. The agent is not retried." end
+	if kind == "greed" or (kind == "need" and live) then
+		if folderOnly then return "Add the folder for this retry only. The chat's folders stay as they are." end
+		return "Allow it for this retry only. Nothing is saved."
+	end
+	local target = Q.AlwaysTarget(c, rules, agent)
+	if kind == "need" then
+		if folderOnly then return "Add the folder always, for this chat, like /claude --add-dir, and retry." end
+		return "Allow it always, for " .. target .. ". It is saved, so it is not asked again, and the agent retries."
+	end
+	if kind == "scope" then
+		if live then return "Greed: for this retry only. Nothing is saved." end
+		return "Greed: for this retry only. Need: always, for " .. target .. "."
+	end
+	if kind == "confirm" then
+		local lines = { "Always allow this, for " .. target .. "?", "" }
+		for _, rule in ipairs(rules or {}) do table.insert(lines, Display(ClaudeWoW.GrantLabel(rule))) end
+		local details = ClaudeWoW.DenialDetails(chatId)
+		if details[1] then table.insert(lines, "Command: " .. Display(details[1])) end
+		table.insert(lines, "")
+		local wide
+		for _, rule in ipairs(commands) do
+			local prefix = tostring(rule):match("^[%w_]+%((.-):%*%)$")
+			if prefix then wide = wide or prefix end
+		end
+		if wide then table.insert(lines, "This covers every command that starts with " .. Display(wide) .. ".") end
+		table.insert(lines, "It is saved, so it is not asked again. Greed allows it for this retry only.")
+		return table.concat(lines, "\n")
+	end
+	return ""
+end
+
+function ClaudeWoW.DenialDetails(chatId)
+	local c = FindChat(chatId)
+	local m = c and not c.pendingId and c.history[Q.DenialIndex(c) or 0]
+	local out = {}
+	if not m or type(m.text) ~= "string" then return out end
+	local inList = false
+	for line in (m.text .. "\n"):gmatch("(.-)\r?\n") do
+		if #out >= Q.DENIAL_DETAILS_MAX then break end
+		local item = inList and line:match("^  (%S.*)$")
+		if item then
+			table.insert(out, item:sub(1, Q.DENIAL_DETAIL_CHARS))
+		else
+			inList = line:match("not allowed yet:%s*$") ~= nil or line:match("outside this chat's folders:%s*$") ~= nil
+			local single = line:match("was not allowed to: (.+)$")
+			if single then table.insert(out, single:sub(1, Q.DENIAL_DETAIL_CHARS)) end
+		end
+	end
+	return out
+end
+
+function Q.SameRules(a, b)
+	if type(a) ~= "table" or type(b) ~= "table" or #a ~= #b then return false end
+	for i = 1, #a do
+		if a[i] ~= b[i] then return false end
+	end
+	return true
+end
+
+function Q.SayAboutDenial(c, text)
+	if c and Whisper.System(c, text) then return end
+	ClaudeWoW.Print(text)
+end
+
+function ClaudeWoW.AllowPending(chatId, msgId)
+	local p = run.allowConfirm
+	return p ~= nil and p.chatId == chatId and p.msgId == msgId
+end
+
+function ClaudeWoW.CancelAllow(data)
+	if not data or run.allowConfirm ~= data then return false end
+	run.allowConfirm = nil
+	if ClaudeWoWRoll then ClaudeWoWRoll.Resume(data.chatId, data.msgId) end
+	return true
+end
+
+function ClaudeWoW.AcceptAllow(data)
+	if not data or run.allowConfirm ~= data then return false end
+	run.allowConfirm = nil
+	local rules, openId = ClaudeWoW.OpenDenial(data.chatId)
+	local fresh = rules ~= nil and openId == data.msgId and Q.SameRules(rules, data.rules)
+	if fresh then AllowAlways(data.chatId, rules) end
+	if ClaudeWoWRoll then ClaudeWoWRoll.Settle(data.chatId, data.msgId, fresh) end
+	if not fresh then Q.SayAboutDenial(FindChat(data.chatId), Q.STALE_DENIAL_TEXT) end
+	return fresh
+end
+
+function ClaudeWoW.ConfirmAllow(chatId, msgId, rules)
+	local c = FindChat(chatId)
+	local open, openId, agent = ClaudeWoW.OpenDenial(chatId)
+	if not c or not open or openId ~= msgId or not Q.SameRules(open, rules) then
+		Q.SayAboutDenial(c, Q.STALE_DENIAL_TEXT)
+		return false
+	end
+	if ClaudeWoW.IsLiveChat(c) then
+		ClaudeWoW.AllowOnce(chatId, open)
+		return true
+	end
+	if run.allowConfirm then ClaudeWoW.CancelAllow(run.allowConfirm) end
+	local copied = {}
+	for i, rule in ipairs(open) do copied[i] = rule end
+	local data = { chatId = chatId, msgId = msgId, rules = copied }
+	run.allowConfirm = data
+	if ClaudeWoWRoll then ClaudeWoWRoll.Park(chatId, msgId) end
+	local dialog = StaticPopup_Show(Q.ALLOW_POPUP, ClaudeWoW.GrantText(chatId, "confirm", copied, agent), nil, data)
+	if not dialog then
+		ClaudeWoW.CancelAllow(data)
+		Q.SayAboutDenial(c, "The confirm dialog did not open. Close other dialogs and try again.")
+		return false
+	end
+	dialog.data = data
+	return true
+end
+
+StaticPopupDialogs[Q.ALLOW_POPUP] = {
+	text = "%s",
+	button1 = "Always Allow",
+	button2 = CANCEL,
+	timeout = 0,
+	whileDead = true,
+	hideOnEscape = true,
+	showAlert = true,
+	OnAccept = function(dialog, data) ClaudeWoW.AcceptAllow(data or (dialog and dialog.data)) end,
+	OnCancel = function(dialog, data) ClaudeWoW.CancelAllow(data or (dialog and dialog.data)) end,
+	OnHide = function(dialog) ClaudeWoW.CancelAllow(dialog and dialog.data) end,
+}
 
 function ClaudeWoW.ApplyLive(live)
 	if type(live) ~= "table" then return end
@@ -5100,7 +5257,7 @@ local function GetBubble(i)
 	b.allow:SetHeight(22)
 	b.allow:SetPoint("TOPLEFT", b.body, "BOTTOMLEFT", 0, -6)
 	b.allow:SetScript("OnClick", function(self)
-		ClaudeWoW.Allow(self.chatId, self.rules)
+		ClaudeWoW.ConfirmAllow(self.chatId, self.msgId, self.rules)
 	end)
 	b.allow:Hide()
 	-- The New chat button on a context warning: exactly what bare /claude does.
@@ -5247,10 +5404,11 @@ function ClaudeWoW.Render()
 				b.allow:Hide()
 				ClaudeWoWRoll.Offer(c.id)
 			elseif denied then
-				local label = "Allow " .. ClaudeWoW.GrantsLabel(denied) .. " & retry"
+				local label = "Allow " .. ClaudeWoW.GrantsLabel(denied) .. (ClaudeWoW.IsLiveChat(c) and " once & retry" or " & retry")
 				b.allow:SetText(label)
 				b.allow:SetWidth(math.min(width - 24, math.max(160, b.allow:GetFontString():GetStringWidth() + 30)))
 				b.allow.chatId = c.id
+				b.allow.msgId = select(2, ClaudeWoW.OpenDenial(c.id))
 				b.allow.rules = denied
 				b.allow:Show()
 				extra = 28
@@ -5624,7 +5782,7 @@ function Cli.Links.roll(arg)
 	if current and current.chatId == c.id and current.msgId == msgId then
 		ClaudeWoWRoll.Choose(choice)
 	elseif choice == "need" then
-		ClaudeWoW.Allow(c.id, rules)
+		ClaudeWoW.ConfirmAllow(c.id, msgId, rules)
 	elseif choice == "greed" then
 		ClaudeWoW.AllowOnce(c.id, rules)
 	elseif choice == "pass" then

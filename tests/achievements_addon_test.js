@@ -72,6 +72,69 @@ test('toasts queue one after another and fade out on their own', () => {
   assert.equal(vm.evaluate('ClaudeWoWAchievements.Pending()'), '0');
 });
 
+test('the toast is headed Azeroth Companion, sits above the roll frame, and never prints the game wording', () => {
+  const vm = newVM();
+  vm.run(`ClaudeWoWAchievements.Sync(${payload(1, [entry(1, 'a', 'First')])})`);
+  assert.equal(vm.evaluate('ClaudeWoWAchievementToast.header.text'), 'Azeroth Companion');
+  assert.equal(vm.evaluate('ClaudeWoWAchievementToast.native'), null, 'no template here: the drawn frame');
+  assert.equal(vm.evaluate('ClaudeWoWAchievementToast.rel == UIParent'), 'true');
+  assert.equal(vm.evaluate('ClaudeWoWAchievementToast.point'), 'BOTTOM');
+  assert.match(vm.prints(), /New achievement: \|cffffd100\[First\]\|r, 10 points\./);
+  assert.doesNotMatch(vm.prints(), /You have earned the achievement/);
+  vm.run('ClaudeWoWRollFrame = CreateFrame("Frame", "ClaudeWoWRollFrame", UIParent)');
+  vm.run('local f = ClaudeWoWAchievementToast; f.scripts.OnUpdate(f, 10)');
+  vm.run(`ClaudeWoWAchievements.Sync(${payload(2, [entry(2, 'b', 'Second')])})`);
+  assert.equal(vm.evaluate('ClaudeWoWAchievementToast.title.text'), 'Second');
+  assert.equal(vm.evaluate('ClaudeWoWAchievementToast.point'), 'BOTTOM');
+  assert.equal(vm.evaluate('ClaudeWoWAchievementToast.rel == ClaudeWoWRollFrame'), 'true');
+  assert.equal(vm.evaluate('ClaudeWoWAchievementToast.relPoint'), 'TOP');
+  assert.ok(Number(vm.evaluate('ClaudeWoWAchievementToast.y')) > 0, 'with a gap');
+});
+
+const ALERT_TEMPLATE_STUB = `
+C_XMLUtil = { GetTemplateInfo = function(n) if n == "AchievementAlertFrameTemplate" then return {} end end }
+local plainCreateFrame = CreateFrame
+function CreateFrame(kind, name, parent, template)
+  local f = plainCreateFrame(kind, name, parent, template)
+  if template == "AchievementAlertFrameTemplate" then
+    f.Unlocked = f:CreateFontString()
+    f.Unlocked.text = "Achievement Earned"
+    f.Name = f:CreateFontString()
+    f.Icon = plainCreateFrame("Frame", nil, f)
+    f.Icon.Texture = f.Icon:CreateTexture()
+    f.Shield = plainCreateFrame("Frame", nil, f)
+    f.Shield.Points = f.Shield:CreateFontString()
+    f.scripts.OnClick = function() STUB.templateClick = true end
+    f.scripts.OnShow = function() STUB.templateShow = true end
+  end
+  return f
+end
+`;
+
+test('with the game achievement alert template the toast uses its art, our header, and drops its click handler', () => {
+  const vm = newVM({ beforeLogin: ALERT_TEMPLATE_STUB });
+  vm.run(`ClaudeWoWAchievements.Sync(${payload(1, [entry(1, 'a', 'First')])})`);
+  assert.equal(vm.evaluate('ClaudeWoWAchievementToast.native'), 'true');
+  assert.equal(vm.evaluate('ClaudeWoWAchievementToast.template'), 'AchievementAlertFrameTemplate');
+  assert.equal(vm.evaluate('ClaudeWoWAchievementToast.Unlocked.text'), 'Azeroth Companion');
+  assert.equal(vm.evaluate('ClaudeWoWAchievementToast.Name.text'), 'First');
+  assert.equal(vm.evaluate('ClaudeWoWAchievementToast.Shield.Points.text'), '10');
+  vm.run('local f = ClaudeWoWAchievementToast; f.scripts.OnClick(f)');
+  assert.equal(vm.evaluate('STUB.templateClick'), null, "the template's own click handler is gone");
+  assert.equal(vm.evaluate('STUB.templateShow'), null, 'and so is its alert-queue OnShow');
+  assert.equal(vm.evaluate('ClaudeWoWAchievementToast.shown'), 'false', 'a click dismisses');
+});
+
+test('an achievement alert template without the expected parts falls back to the drawn frame', () => {
+  const vm = newVM({
+    beforeLogin: 'C_XMLUtil = { GetTemplateInfo = function(n) if n == "AchievementAlertFrameTemplate" then return {} end end }',
+  });
+  vm.run(`ClaudeWoWAchievements.Sync(${payload(1, [entry(1, 'a', 'First')])})`);
+  assert.equal(vm.evaluate('ClaudeWoWAchievementToast.native'), null);
+  assert.equal(vm.evaluate('ClaudeWoWAchievementToast.header.text'), 'Azeroth Companion');
+  assert.equal(vm.evaluate('ClaudeWoWAchievementToast.title.text'), 'First');
+});
+
 test('/claude config achievements off silences the toasts, the list still works', () => {
   const vm = newVM();
   vm.run('SlashCmdList.CLAUDE("config achievements off")');

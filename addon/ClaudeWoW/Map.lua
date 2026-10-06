@@ -16,6 +16,12 @@ local NODE_SIZE, PIN_SIZE = 9, 16
 local CIRCLE = "Interface\\CHARACTERFRAME\\TempPortraitAlphaMask"
 local ARROW = "Interface\\Minimap\\MinimapArrow"
 local CONTINENT = (Enum and Enum.UIMapType and Enum.UIMapType.Continent) or 2
+local NAV_CLOSE_SIZE = 20
+local NAV_START_WIDTH, NAV_START_HEIGHT = 64, 20
+local NAV_MENU_SKIP = "Skip Stop"
+local NAV_MENU_STOP = "Stop Route"
+local NAV_MENU_START = "Start Route"
+local NAV_MENU_DISMISS = "Dismiss"
 local atan2 = math.atan2 or math.atan -- Lua 5.1 in game; 5.3 in the test VM
 
 local KIND_COLOR = {
@@ -39,6 +45,10 @@ local function Print(msg)
 	else
 		print("|cff66ccff[Claude WoW map]|r " .. msg)
 	end
+end
+
+local function Points(n)
+	return n == 1 and "1 point" or (tostring(n) .. " points")
 end
 
 local function MapLink(l)
@@ -341,6 +351,8 @@ end
 ---------------------------------------------------------------------------
 
 local nav
+local offered
+local routeAllowed = false
 
 local function NavPoint()
 	local n = DB().nav
@@ -366,16 +378,26 @@ local function BuildNavigator()
 		local point, _, _, x, y = self:GetPoint()
 		DB().navPos = { point, x, y }
 	end)
-	nav:SetScript("OnMouseUp", function(_, button)
-		if button == "RightButton" then M.Step(1) end
+	nav:SetScript("OnMouseUp", function(self, button)
+		if button == "RightButton" then M.NavMenu(self) end
 	end)
+	nav.close = CreateFrame("Button", nil, nav, "UIPanelCloseButton")
+	nav.close:SetSize(NAV_CLOSE_SIZE, NAV_CLOSE_SIZE)
+	nav.close:SetPoint("TOPRIGHT", nav, "TOPRIGHT", 0, 0)
+	nav.close:SetScript("OnClick", function() M.Stop() end)
+	nav.start = CreateFrame("Button", nil, nav, "UIPanelButtonTemplate")
+	nav.start:SetSize(NAV_START_WIDTH, NAV_START_HEIGHT)
+	nav.start:SetPoint("BOTTOMRIGHT", nav, "BOTTOMRIGHT", -8, 6)
+	nav.start:SetText("Start")
+	nav.start:SetScript("OnClick", function() M.StartOffered() end)
+	nav.start:Hide()
 	nav.arrow = nav:CreateTexture(nil, "ARTWORK")
 	nav.arrow:SetSize(34, 34)
 	nav.arrow:SetPoint("LEFT", 6, 0)
 	nav.arrow:SetTexture(ARROW)
 	nav.title = nav:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 	nav.title:SetPoint("TOPLEFT", 46, -7)
-	nav.title:SetPoint("RIGHT", -8, 0)
+	nav.title:SetPoint("RIGHT", -NAV_CLOSE_SIZE - 4, 0)
 	nav.title:SetJustifyH("LEFT")
 	nav.title:SetWordWrap(false)
 	nav.text = nav:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -386,7 +408,7 @@ local function BuildNavigator()
 	nav:SetScript("OnEnter", function(self)
 		GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
 		GameTooltip:AddLine("Route")
-		GameTooltip:AddLine("Drag to move, right-click to skip this stop. /claude config map for options.", 1, 1, 1, true)
+		GameTooltip:AddLine("Drag to move. Right-click for options.", 1, 1, 1, true)
 		GameTooltip:Show()
 	end)
 	nav:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -399,10 +421,29 @@ local function BuildNavigator()
 	nav:Hide()
 end
 
+local function ShowOffer(l)
+	if not nav then BuildNavigator() end
+	nav:Show()
+	nav.arrow:Hide()
+	nav.start:Show()
+	nav.title:SetText("New route: " .. tostring(l.title or l.name))
+	nav.text:SetText(Points(#l.points) .. ". Start it?")
+end
+
 function M.UpdateNavigator()
 	local l, p, i = NavPoint()
-	if not l then if nav then nav:Hide() end return end
+	if not l then
+		local offer = offered and FindLayer(offered)
+		if offer then
+			ShowOffer(offer)
+			return
+		end
+		offered = nil
+		if nav then nav:Hide() end
+		return
+	end
 	if not nav then BuildNavigator() end
+	nav.start:Hide()
 	nav:Show()
 	nav.title:SetText(string.format("%d/%d  %s", i, #l.points, p[4] ~= "" and p[4] or l.title))
 	local dist, bearing = Heading(p)
@@ -427,7 +468,8 @@ end
 
 function M.Navigate(layer, index)
 	local l = FindLayer(layer)
-	if not l then Print("no layer " .. tostring(layer)); return end
+	if not l then Print("No layer named " .. tostring(layer) .. "."); return end
+	routeAllowed, offered = true, nil
 	DB().nav = { layer = layer, index = math.max(1, math.min(index or 1, #l.points)) }
 	mdb.hidden[layer] = nil
 	M.UpdateNavigator()
@@ -440,7 +482,7 @@ function M.Step(delta, arrived)
 	local nexti = i + delta
 	if nexti > #l.points then
 		if l.loop then nexti = 1 else
-			Print("route finished: " .. l.title)
+			Print("Route finished: " .. tostring(l.title) .. ".")
 			mdb.nav = nil
 			M.UpdateNavigator()
 			M.Refresh()
@@ -456,7 +498,8 @@ end
 
 function M.ShowLayer(name)
 	local l = FindLayer(name)
-	if not l then Print("no layer " .. tostring(name)); return end
+	if not l then Print("No layer named " .. tostring(name) .. "."); return end
+	routeAllowed, offered = true, nil
 	DB().hidden[name] = nil
 	if l.ordered and #l.points > 0 and (not mdb.nav or mdb.nav.layer ~= name) then mdb.nav = { layer = name, index = 1 } end
 	M.UpdateNavigator()
@@ -477,9 +520,46 @@ function M.ShowLayer(name)
 end
 
 function M.Stop()
+	offered = nil
 	DB().nav = nil
 	M.UpdateNavigator()
 	M.Refresh()
+end
+
+function M.StartOffered()
+	local name = offered
+	if not name then return end
+	M.Navigate(name, 1)
+end
+
+function M.Offered()
+	return offered
+end
+
+function M.NavMenuItems()
+	if offered and not NavPoint() then
+		return { { NAV_MENU_START, M.StartOffered }, { NAV_MENU_DISMISS, M.Stop } }
+	end
+	return { { NAV_MENU_SKIP, function() M.Step(1) end }, { NAV_MENU_STOP, M.Stop } }
+end
+
+function M.NavMenu(anchor)
+	local items = M.NavMenuItems()
+	if type(MenuUtil) == "table" and type(MenuUtil.CreateContextMenu) == "function" then
+		local shown = pcall(MenuUtil.CreateContextMenu, anchor, function(_, root)
+			root:CreateTitle("Route")
+			for _, item in ipairs(items) do root:CreateButton(item[1], item[2]) end
+		end)
+		if shown then return "menu" end
+	end
+	if type(EasyMenu) == "function" then
+		M.dropdown = M.dropdown or CreateFrame("Frame", "ClaudeWoWNavigatorMenu", UIParent, "UIDropDownMenuTemplate")
+		local list = { { text = "Route", isTitle = true, notCheckable = true } }
+		for _, item in ipairs(items) do table.insert(list, { text = item[1], func = item[2], notCheckable = true }) end
+		if pcall(EasyMenu, list, M.dropdown, "cursor", 0, 0, "MENU") then return "dropdown" end
+	end
+	items[1][2]()
+	return "fallback"
 end
 
 ---------------------------------------------------------------------------
@@ -512,13 +592,17 @@ function M.Sync(m)
 	if mdb.nav and not FindLayer(mdb.nav.layer) then mdb.nav = nil end
 	for _, l in ipairs(changed) do
 		mdb.hidden[l.name] = nil
-		Print(string.format("%s: %d point(s)%s. %s", l.title or l.name, #l.points, l.ordered and ", route" or "", MapLink(l)))
+		Print(string.format("%s: %s%s. %s", l.title or l.name, Points(#l.points), l.ordered and ", route" or "", MapLink(l)))
 		-- A new or changed route on the player's continent starts navigation at its first
 		-- stop, unless the player is already following another route.
 		local here = PlayerOnContinent()
 		local free = not mdb.nav or mdb.nav.layer == l.name
 		if l.ordered and #l.points > 0 and free and (not here or ContinentOf(l.points[1][1]) == here) then
-			mdb.nav = { layer = l.name, index = 1 }
+			if routeAllowed then
+				mdb.nav = { layer = l.name, index = 1 }
+			else
+				offered = l.name
+			end
 		end
 	end
 	M.UpdateNavigator()
@@ -531,13 +615,13 @@ end
 
 local function Status()
 	local layers = Layers()
-	if #layers == 0 then Print("no layers yet. Ask the agent for a route, e.g. /claude route me through copper veins in Loch Modan") end
+	if #layers == 0 then Print("No layers yet. Ask the agent for a route, for example: /claude route me through copper veins in Loch Modan") end
 	for _, l in ipairs(layers) do
-		Print(string.format("%s%s|r  %s (%d point(s))%s", mdb.hidden[l.name] and "|cff888888" or "|cffffffff", l.name, l.title or "", #l.points, (mdb.nav and mdb.nav.layer == l.name) and string.format("  navigating %d/%d", mdb.nav.index, #l.points) or ""))
+		Print(string.format("%s%s|r  %s (%s)%s", mdb.hidden[l.name] and "|cff888888" or "|cffffffff", l.name, l.title or "", Points(#l.points), (mdb.nav and mdb.nav.layer == l.name) and string.format("  navigating %d/%d", mdb.nav.index, #l.points) or ""))
 	end
 	local n = mdb.nodes
-	Print(string.format("nodes: ore %s, herb %s, filter %s%s", n.ore and "on" or "off", n.herb and "on" or "off", n.filter, ClaudeWoWNodes and "" or "  (ClaudeWoW_Nodes data addon not installed)"))
-	Print("commands: /claude config map ore|herb [on|off], filter all|skill, show|hide <layer>, nav <layer> [n], next, prev, stop  (/aimap is the same)")
+	Print(string.format("Nodes: ore %s, herb %s, filter %s.%s", n.ore and "on" or "off", n.herb and "on" or "off", n.filter, ClaudeWoWNodes and "" or "  The ClaudeWoW_Nodes data addon is not installed."))
+	Print("Commands: /claude config map ore|herb [on|off], filter all|skill, show|hide <layer>, nav <layer> [n], next, prev, stop  (/aimap is the same)")
 end
 
 function M.Command(msg)
@@ -548,14 +632,14 @@ function M.Command(msg)
 	elseif cmd == "ore" or cmd == "herb" then
 		local v = rest:lower()
 		mdb.nodes[cmd] = (v == "on") or (v ~= "off" and not mdb.nodes[cmd])
-		Print(cmd .. " nodes " .. (mdb.nodes[cmd] and "shown" or "hidden") .. " on the world map")
+		Print((cmd == "ore" and "Ore" or "Herb") .. " nodes are " .. (mdb.nodes[cmd] and "shown" or "hidden") .. " on the world map.")
 		M.Refresh()
 	elseif cmd == "filter" and (rest == "all" or rest == "skill") then
 		mdb.nodes.filter = rest
-		Print(rest == "all" and "showing every node" or "showing nodes your skill can gather")
+		Print(rest == "all" and "Showing every node." or "Showing the nodes your skill can gather.")
 		M.Refresh()
 	elseif (cmd == "show" or cmd == "hide") and rest ~= "" then
-		if not FindLayer(rest) then Print("no layer " .. rest); return end
+		if not FindLayer(rest) then Print("No layer named " .. rest .. "."); return end
 		mdb.hidden[rest] = (cmd == "hide") or nil
 		M.Refresh()
 	elseif cmd == "nav" then

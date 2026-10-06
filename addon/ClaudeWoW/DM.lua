@@ -21,11 +21,17 @@ local LINES_MAX = 8
 local BEAT_ID_MAX = 16
 local MAX_DATA_AGE_SECONDS = 300
 local SIGNATURE_SEPARATOR = "\031"
-local HINT_TEXT = "Type /dm next when you are ready to go on."
+local HINT_TEXT = "Click Continue, or type /dm next, when you are ready to go on."
 local EMPTY_TITLE = "The Dungeon Master has no story for you yet."
 local EMPTY_BODY = "A live Claude session starts a campaign. Its first beat shows here."
 local READY_TITLE = "The story is ready."
-local READY_HINT = "Type /dm next to begin."
+local READY_HINT = "Click Continue, or type /dm next, to begin."
+local CONTINUE_LABEL = "Continue"
+local CONTINUE_WIDTH = 96
+local CONTINUE_HEIGHT = 22
+local CONTINUE_X = -14
+local CONTINUE_Y = 10
+local CONTINUE_HOLD_SECONDS = 5
 local CHAT_PREFIX = "|cff66ccff[Claude WoW]|r "
 local PORTRAIT = "Interface\\AddOns\\ClaudeWoW\\Portrait"
 local PARCHMENT_FALLBACK_COLOR = { 0.80, 0.70, 0.52, 1 }
@@ -44,7 +50,7 @@ T.LAYOUT = {
 	bodyMaxLines = 21,
 	hintSpace = HINT_Y + 18,
 }
-T.TEMPLATES = { frame = "ButtonFrameTemplate", plain = "BackdropTemplate", close = "UIPanelCloseButton" }
+T.TEMPLATES = { frame = "ButtonFrameTemplate", plain = "BackdropTemplate", close = "UIPanelCloseButton", button = "UIPanelButtonTemplate" }
 T.FONTS = {
 	title = { "QuestTitleFont", "GameFontNormalLarge" },
 	body = { "QuestFont", "GameFontHighlight" },
@@ -203,6 +209,42 @@ local function BoundBody(body)
 	T.debug.bodyMaxLines = T.LAYOUT.bodyMaxLines
 end
 
+function T.ContinueReady()
+	return T.continueClickedAt == nil
+end
+
+local function UpdateContinue(manual)
+	local b = frame and frame.continue
+	if not b then return end
+	b:SetShown(manual == true)
+	if T.ContinueReady() then b:Enable() else b:Disable() end
+end
+
+function T.Continue()
+	if not T.ContinueReady() then return end
+	local clickedAt = GetTime()
+	T.continueClickedAt = clickedAt
+	UpdateContinue(true)
+	if type(C_Timer) == "table" and type(C_Timer.After) == "function" then
+		C_Timer.After(CONTINUE_HOLD_SECONDS, function()
+			if T.continueClickedAt ~= clickedAt then return end
+			T.continueClickedAt = nil
+			UpdateContinue(T.view ~= nil and T.view.manual)
+		end)
+	end
+	T.Next()
+end
+
+local function BuildContinue(f)
+	local b = CreateFrame("Button", nil, f, T.TEMPLATES.button)
+	b:SetSize(CONTINUE_WIDTH, CONTINUE_HEIGHT)
+	b:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", CONTINUE_X, CONTINUE_Y)
+	b:SetText(CONTINUE_LABEL)
+	b:SetScript("OnClick", function() T.Continue() end)
+	b:Hide()
+	return b
+end
+
 local function BuildParts(f)
 	f:SetSize(FRAME_WIDTH, FRAME_HEIGHT)
 	f:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 16, -116)
@@ -222,6 +264,8 @@ local function BuildParts(f)
 	BoundBody(f.body)
 	f.hint = TextString(page, T.FONTS.hint, INK_DIM)
 	f.hint:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", HINT_X, HINT_Y)
+	f.hint:SetWidth(FRAME_WIDTH - HINT_X - CONTINUE_WIDTH + CONTINUE_X - LINE_GAP)
+	f.continue = BuildContinue(f)
 	f:SetScript("OnHide", function() PlayQuestSound("IG_QUEST_LIST_CLOSE") end)
 	if type(UISpecialFrames) == "table" then table.insert(UISpecialFrames, FRAME_NAME) end
 	f:Hide()
@@ -247,6 +291,7 @@ end
 
 local function Layout(view)
 	frame.emptyState = view.beat == nil
+	UpdateContinue(view.manual)
 	if view.beat then
 		PlaceText(view.beat.title, table.concat(view.beat.lines, "\n"), HINT_TEXT, view.manual)
 	elseif view.manual then
@@ -303,6 +348,7 @@ function T.Sync(data)
 	local view = Applies(data) and Normalize(data) or Normalize({})
 	local signature = Signature(view)
 	if signature == T.signature then return end
+	T.continueClickedAt = nil
 	local previous = T.view and T.view.beat
 	local isNewBeat = view.beat ~= nil and (previous == nil or previous.id ~= view.beat.id or previous.title ~= view.beat.title)
 	if not view.beat then T.showAfterCombat = nil end
