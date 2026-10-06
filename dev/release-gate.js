@@ -12,6 +12,17 @@ const REPO_PATTERN = /^[\w.-]+\/[\w.-]+$/;
 
 class GateRefused extends Error {}
 
+class GitHubApiError extends Error {
+  constructor(status, path) {
+    super(`GitHub API answered ${status} for ${path}`);
+    this.status = status;
+  }
+}
+
+function isTransient(err) {
+  return err instanceof GitHubApiError && (err.status === 429 || err.status >= 500);
+}
+
 function githubApi({ token, fetchImpl = fetch, base = 'https://api.github.com' }) {
   return async path => {
     const res = await fetchImpl(`${base}/${path}`, {
@@ -23,7 +34,7 @@ function githubApi({ token, fetchImpl = fetch, base = 'https://api.github.com' }
       },
     });
     if (res.status === 404) return null;
-    if (!res.ok) throw new Error(`GitHub API answered ${res.status} for ${path}`);
+    if (!res.ok) throw new GitHubApiError(res.status, path);
     return res.json();
   };
 }
@@ -67,7 +78,10 @@ async function checkRelease({ sha, repo, api, sleep, now = Date.now, log = () =>
   if (!(await isOnMain(api, repo, sha))) throw new GateRefused(`${sha} is not on main; tag only a main commit`);
   const deadline = now() + waitMs;
   for (;;) {
-    const verdict = await readVerdict(api, repo, sha);
+    const verdict = await readVerdict(api, repo, sha).catch(err => {
+      if (isTransient(err)) return { state: 'wait', reason: err.message };
+      throw err;
+    });
     if (verdict.state === 'pass') return verdict.reason;
     if (verdict.state === 'fail') throw new GateRefused(verdict.reason);
     if (now() >= deadline) throw new GateRefused(`gave up after ${Math.round(waitMs / 60_000)} min: ${verdict.reason}`);
@@ -77,9 +91,9 @@ async function checkRelease({ sha, repo, api, sleep, now = Date.now, log = () =>
 }
 
 async function main() {
-  const sha = process.argv[2] || process.env.GITHUB_SHA;
+  const sha = process.argv[2];
   const repo = process.env.GITHUB_REPOSITORY;
-  const token = process.env.GH_TOKEN || process.env.GITHUB_TOKEN;
+  const token = process.env.GH_TOKEN;
   if (!token) throw new GateRefused('GH_TOKEN is not set');
   const api = githubApi({ token });
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -94,4 +108,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { checkRelease, githubApi, GateRefused, WORKFLOW, POLL_MS, WAIT_MS };
+module.exports = { checkRelease, githubApi, GateRefused };

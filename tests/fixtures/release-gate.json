@@ -1,6 +1,7 @@
 {
   "compareBehind": { "status": "behind", "ahead_by": 0, "behind_by": 11 },
   "compareIdentical": { "status": "identical", "ahead_by": 0, "behind_by": 0 },
+  "compareAhead": { "status": "ahead", "ahead_by": 2, "behind_by": 0 },
   "compareDiverged": { "status": "diverged", "ahead_by": 1, "behind_by": 3 },
   "runsPrHead": {
     "total_count": 1,
