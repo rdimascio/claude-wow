@@ -11,7 +11,6 @@ local GOLD_R, GOLD_G, GOLD_B = 1, 0.82, 0
 local FALLBACK_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
 local SHIELD_TEXTURE = "Interface\\CHARACTERFRAME\\TempPortraitAlphaMask"
 local TOAST_NAME = "ClaudeWoWAchievementToast"
-local ALERT_TEMPLATE = "AchievementAlertFrameTemplate"
 local HEADER_TEXT = "Azeroth Companion"
 local ROLL_FRAME_NAME = "ClaudeWoWRollFrame"
 local ROLL_GAP = 8
@@ -76,21 +75,6 @@ local function Dismiss()
 	ShowNext()
 end
 
-function T.TemplateExists(name)
-	if type(C_XMLUtil) ~= "table" or type(C_XMLUtil.GetTemplateInfo) ~= "function" then return false end
-	local ok, info = pcall(C_XMLUtil.GetTemplateInfo, name)
-	return ok and info ~= nil
-end
-
-local function ShowToastTip(self)
-	local entry = self.current
-	if not entry or not entry.text or entry.text == "" then return end
-	GameTooltip:SetOwner(self, "ANCHOR_TOP")
-	GameTooltip:AddLine(tostring(entry.title or ""), GOLD_R, GOLD_G, GOLD_B)
-	GameTooltip:AddLine(tostring(entry.text), 1, 1, 1, true)
-	GameTooltip:Show()
-end
-
 local function FadeScript(self, elapsed)
 	if not self.current then return end
 	self.age = (self.age or 0) + (elapsed or 0)
@@ -98,39 +82,7 @@ local function FadeScript(self, elapsed)
 	if self.age >= FADE_IN_SECONDS + HOLD_SECONDS + FADE_OUT_SECONDS then Dismiss() end
 end
 
-local function AlertParts(f)
-	local icon = type(f.Icon) == "table" and f.Icon.Texture
-	local points = type(f.Shield) == "table" and f.Shield.Points
-	if type(f.Name) ~= "table" or type(f.Unlocked) ~= "table" or type(icon) ~= "table" or type(points) ~= "table" then return nil end
-	return { header = f.Unlocked, title = f.Name, icon = icon, points = points }
-end
-
-local function BuildAlertToast()
-	if not T.TemplateExists(ALERT_TEMPLATE) then return nil end
-	local ok, f = pcall(CreateFrame, "Button", TOAST_NAME, UIParent, ALERT_TEMPLATE)
-	if not ok or type(f) ~= "table" then return nil end
-	local parts = AlertParts(f)
-	if not parts then
-		f:Hide()
-		return nil
-	end
-	for _, script in ipairs({ "OnShow", "OnHide", "OnClick", "OnEnter", "OnLeave", "OnUpdate" }) do pcall(f.SetScript, f, script, nil) end
-	f.native = true
-	f.header, f.title, f.icon, f.points = parts.header, parts.title, parts.icon, parts.points
-	f.header:SetText(HEADER_TEXT)
-	f:SetFrameStrata("DIALOG")
-	f:EnableMouse(true)
-	f:SetScript("OnClick", Dismiss)
-	f:SetScript("OnEnter", ShowToastTip)
-	f:SetScript("OnLeave", function() GameTooltip:Hide() end)
-	f:SetScript("OnUpdate", FadeScript)
-	f:Hide()
-	return f
-end
-
 local function BuildToast()
-	local native = BuildAlertToast()
-	if native then return native end
 	local f = CreateFrame("Frame", TOAST_NAME, UIParent, "BackdropTemplate")
 	f:SetSize(320, 84)
 	f:SetFrameStrata("DIALOG")

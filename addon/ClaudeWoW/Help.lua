@@ -264,6 +264,12 @@ H.OPTIONS = {
 		set = Switch("ui autohide"),
 	},
 	{
+		key = "minimap", label = "Minimap button", default = true,
+		tooltip = "A button on the minimap. Left-click opens or closes the window, right-click opens these options. Drag it around the minimap.",
+		get = function() return Saved().minimap ~= false end,
+		set = Switch("minimap"),
+	},
+	{
 		key = "echo", label = "Replies in the game chat", default = "summary",
 		choices = function() return WithCurrent(H.ECHO_CHOICES, tostring(Saved().echo or "summary"), function(v) return v .. " characters" end) end,
 		tooltip = "How much of each reply the game chat prints. Summary prints the agent's short version.",

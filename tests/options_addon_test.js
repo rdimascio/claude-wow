@@ -126,7 +126,7 @@ const configLine = (vm, key) => {
   return list.split('\n').find(l => l.startsWith(key + ' = ') || l.startsWith(key + '  -  '));
 };
 
-const PLAYER_KEYS = ['whisper', 'dim', 'dodge', 'autohide', 'echo', 'voice', 'roast', 'roll', 'achievements', 'orders', 'telemetry', 'ore', 'herb'];
+const PLAYER_KEYS = ['whisper', 'dim', 'dodge', 'autohide', 'minimap', 'echo', 'voice', 'roast', 'roll', 'achievements', 'orders', 'telemetry', 'ore', 'herb'];
 
 test('options: an Options page of proxy settings and a Widgets page sit under the addon category, registered before it is listed', () => {
   const vm = newVM();
@@ -138,7 +138,7 @@ test('options: an Options page of proxy settings and a Widgets page sit under th
   );
   assert.equal(
     keys,
-    'whisper:checkbox,dim:dropdown,dodge:checkbox,autohide:checkbox,echo:dropdown,voice:dropdown,roast:checkbox,roll:checkbox,achievements:checkbox,orders:checkbox,telemetry:checkbox,ore:checkbox,herb:checkbox',
+    'whisper:checkbox,dim:dropdown,dodge:checkbox,autohide:checkbox,minimap:checkbox,echo:dropdown,voice:dropdown,roast:checkbox,roll:checkbox,achievements:checkbox,orders:checkbox,telemetry:checkbox,ore:checkbox,herb:checkbox',
   );
   assert.equal(vm.evaluate('STUB.settings.controls[1].category == STUB.settings.categories[2]'), 'true');
   assert.equal(vm.evaluate(`${proxy('telemetry')}.name`), 'Share game state with the agent');
