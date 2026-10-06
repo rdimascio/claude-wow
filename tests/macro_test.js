@@ -192,7 +192,7 @@ test('undo removes a macro the button created', () => {
 test('macros that run code ask first even when new', () => {
   const vm = newVM();
   deliver(vm, '{ { name = "Runner", body = "/run print(1)", char = false, risky = true } }');
-  assert.match(buttons(vm)[0], /^Create macro: Runner .*runs code/);
+  assert.match(buttons(vm)[0], /^Create Macro: Runner .*runs code/);
   click(vm);
   assert.equal(vm.evaluate('STUB.popup.which'), 'CLAUDEWOW_MACRO');
   assert.equal(vm.evaluate('(GetNumMacros())'), '0');

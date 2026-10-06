@@ -1161,10 +1161,10 @@ test('whisper tabs: on by default; the active chat is a tab at login, Enter ther
   );
   assert.ok(out.includes('[Allow & retry]') && out.includes('[Allow once]') && out.includes('[Pass]'), 'the roll answers are links');
   assert.ok(
-    out.includes('|Haddon:claudewow:macro:' + secondId + ':' + deniedId + ':1|h|cffffd100[Create macro: Burst]'),
+    out.includes('|Haddon:claudewow:macro:' + secondId + ':' + deniedId + ':1|h|cffffd100[Create Macro: Burst]'),
     'a macro button becomes a link: ' + out,
   );
-  vm.run(`STUB.ClickLink("|Haddon:claudewow:macro:${secondId}:${deniedId}:1|h[Create macro: Burst]|h")`);
+  vm.run(`STUB.ClickLink("|Haddon:claudewow:macro:${secondId}:${deniedId}:1|h[Create Macro: Burst]|h")`);
   assert.equal(vm.evaluate('STUB.popup.which'), 'CLAUDEWOW_MACRO', 'the macro link opens the Create-macro prompt');
   assert.match(vm.evaluate('STUB.popup.text'), /Create the macro "Burst"\?[\s\S]*\/cast Arcane Power/);
   assert.equal(vm.evaluate('STUB.popup.data.name'), 'Burst');
@@ -1425,7 +1425,9 @@ test('/r to an agent is swallowed before the send with whisper tabs off too, and
   const leak = vm.evaluate(
     `(function() local hide, msg = STUB.filters.CHAT_MSG_SYSTEM(nil, "CHAT_MSG_SYSTEM", "No player named '${name}' is currently playing.") return tostring(hide) .. "|" .. tostring(msg) end)()`,
   );
-  assert.match(leak, /^false\|.*WHISPER LEAK: No player named 'Claude \[/, leak);
+  assert.match(leak, /^false\|.*\[Azeroth Companion\] WHISPER LEAK: No player named 'Claude \[/, leak);
+  assert.match(leak, /Type \/claude diag and report what it shows/, 'the leak line points to a command that exists');
+  assert.doesNotMatch(leak, /aiwhisper/);
   const other = vm.evaluate(
     `(function() local hide, msg = STUB.filters.CHAT_MSG_SYSTEM(nil, "CHAT_MSG_SYSTEM", "No player named 'Bob' is currently playing.") return tostring(hide) .. "|" .. tostring(msg) end)()`,
   );
@@ -1532,7 +1534,7 @@ test("plugins: a fresh install follows the bridge's default and sends no flag; c
   assert.equal(old.evaluate('ClaudeWoWDB.chats[2].plugin'), '');
 });
 
-test('plugins: /claude config plugin binds the chat like --agent, the Plugin... menu item opens a prefilled prompt, the footer and diag show the binding', () => {
+test('plugins: /claude config plugin binds the chat like --agent, the plugin prompt opens prefilled but the chat menu has no Plugin... item, the footer and diag show the binding', () => {
   const vm = newVM();
   login(vm);
   vm.run('STUB.RunTimers()');
@@ -1541,7 +1543,9 @@ test('plugins: /claude config plugin binds the chat like --agent, the Plugin... 
   assert.equal(vm.evaluate('ClaudeWoW.IsConnected()'), 'true');
   const last = () => vm.evaluate('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history].text');
   const texts = () => vm.evaluate('table.concat(STUB.texts, "|")');
-  assert.ok(vm.evaluate('ClaudeWoWChatMenu ~= nil') === 'true' && texts().includes('Plugin...'), 'the chat menu has a Plugin... item');
+  vm.run('STUB.texts = {}; ClaudeWoW.ShowChatMenu(ClaudeWoWDB.chats[1].id, UIParent)');
+  assert.ok(texts().includes('Rename...') && !texts().includes('Plugin...'), 'the chat menu has no Plugin... item: ' + texts());
+  vm.run('ClaudeWoWChatMenu:Hide(); STUB.texts = {}; ClaudeWoW.UpdateStatus()');
   // Bound to nothing: the footer names the bridge's default, and so does the command.
   assert.ok(texts().includes('vision: off   plugin: ask (bridge default)'), texts());
   vm.run('SlashCmdList.CLAUDE("config plugin")');
@@ -1571,7 +1575,6 @@ test('plugins: /claude config plugin binds the chat like --agent, the Plugin... 
   assert.equal(vm.num('#ClaudeWoWDB.chats'), 2, 'free text after config plugin is a message for a new chat');
   assert.equal(vm.evaluate('ClaudeWoWDB.chats[2].history[#ClaudeWoWDB.chats[2].history].text'), 'config plugin for my warrior please');
   vm.run('SlashCmdList.CLAUDE("cancel"); ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[1].id)');
-  // The Plugin... menu item opens a prompt prefilled with the chat's binding; OK applies it.
   vm.run('ClaudeWoW.SetPlugin("ask"); ClaudeWoW.PluginPrompt()');
   assert.equal(vm.evaluate('STUB.popup.which'), 'CLAUDEWOW_PLUGIN');
   assert.equal(vm.evaluate('STUB.popup.data.plugin'), 'ask');
@@ -1580,6 +1583,8 @@ test('plugins: /claude config plugin binds the chat like --agent, the Plugin... 
   assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].plugin'), 'claude-code');
   // Help lists the command.
   vm.run('SlashCmdList.CLAUDE("config")');
+  assert.ok(!last().includes('\nplugin = '), 'plugin is a troubleshooting key, not in the plain list');
+  vm.run('SlashCmdList.CLAUDE("config all")');
   assert.ok(last().includes('\nplugin = claude-code  -  <name>|default: advanced'), last());
   vm.run('SlashCmdList.CLAUDE("help")');
   assert.ok(!/\bplugin\b/.test(helpPage(vm)), 'help does not need the word plugin');
@@ -2025,28 +2030,18 @@ test('/claude config lists every setting with its value, gets one, sets one, and
   const last = () => vm.evaluate('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history].text');
   vm.run('SlashCmdList.CLAUDE("config")');
   const list = last();
-  for (const key of [
-    'voice',
-    'roast',
-    'whisper',
-    'echo',
-    'vision',
-    'roll',
-    'achievements',
-    'context',
-    'signal',
-    'mode',
-    'longchat',
-    'auto',
-    'plugin',
-    'ui',
-    'map',
-    'macro',
-    'bind',
-    'diag',
-  ]) {
-    assert.match(list, new RegExp(`\\n${key}( = [^\\n]*)?  -  `), `${key} is listed`);
-  }
+  const player = ['voice', 'roast', 'whisper', 'echo', 'vision', 'roll', 'achievements', 'orders', 'telemetry', 'context', 'ui', 'map', 'macro', 'bind'];
+  const dev = ['signal', 'mode', 'longchat', 'auto', 'plugin', 'probe', 'diag'];
+  for (const key of player) assert.match(list, new RegExp(`\\n${key}( = [^\\n]*)?  -  `), `${key} is listed`);
+  for (const key of dev) assert.doesNotMatch(list, new RegExp(`\\n${key}( = [^\\n]*)?  -  `), `${key} is only in config all`);
+  assert.match(list, /\n\/claude config all also lists the troubleshooting keys\.$/);
+  assert.match(list, /Options window has the same settings: AddOns, Azeroth Companion, Options\./);
+  vm.run('SlashCmdList.CLAUDE("config all")');
+  const all = last();
+  for (const key of [...player, ...dev]) assert.match(all, new RegExp(`\\n${key}( = [^\\n]*)?  -  `), `${key} is in config all`);
+  assert.doesNotMatch(all, /config all also lists/);
+  vm.run('SlashCmdList.CLAUDE("config ALL")');
+  assert.equal(last(), all, 'all is not case sensitive');
   assert.match(list, /\nvision = off  -  /);
   assert.match(list, /\necho = summary  -  /);
   vm.run('SlashCmdList.CLAUDE("config vision on")');
@@ -2237,9 +2232,9 @@ test('context growth: past the threshold the chat is warned once per crossing, w
   // The button on the warning: a shown "New chat" button whose click is bare /claude.
   vm.run('ClaudeWoW.Render()');
   vm.run(
-    'FOUND = nil; for _, f in ipairs(STUB.frames) do if f.kind == "Button" and f.text == "New chat" and f.shown and f.parent and f.parent.shown then FOUND = f end end',
+    'FOUND = nil; for _, f in ipairs(STUB.frames) do if f.kind == "Button" and f.text == "New Chat" and f.shown and f.parent and f.parent.shown then FOUND = f end end',
   );
-  assert.equal(vm.evaluate('FOUND ~= nil'), 'true', 'a New chat button is shown on the warning');
+  assert.equal(vm.evaluate('FOUND ~= nil'), 'true', 'a New Chat button is shown on the warning');
   const before = vm.num('#ClaudeWoWDB.chats');
   vm.run('FOUND.scripts.OnClick(FOUND)');
   assert.equal(vm.num('#ClaudeWoWDB.chats'), before + 1, 'one click, one new chat');
@@ -3170,8 +3165,11 @@ test('help: the addon title from the .toc names the category', () => {
 
 test('help: without the Settings API the page goes through Interface Options', () => {
   const vm = helpVM(LEGACY_OPTIONS_API);
-  assert.equal(vm.num('#STUB.legacy.added'), 1);
+  assert.equal(vm.num('#STUB.legacy.added'), 2, 'the help page, then the Options page under it');
   assert.equal(vm.evaluate('STUB.legacy.added[1] == ClaudeWoWHelpPanel'), 'true');
+  assert.equal(vm.evaluate('STUB.legacy.added[2] == ClaudeWoWOptionsPanel'), 'true');
+  assert.equal(vm.evaluate('ClaudeWoWOptionsPanel.parent'), 'Azeroth Companion', 'Interface Options nests a panel by its parent field');
+  assert.equal(vm.evaluate('ClaudeWoWOptionsPanel.name'), 'Options');
   assert.equal(vm.evaluate('ClaudeWoWHelpPanel.name'), 'Azeroth Companion', 'Interface Options lists a panel by its name field');
   const before = activeHistory(vm);
   vm.run('SlashCmdList.CLAUDE("help")');

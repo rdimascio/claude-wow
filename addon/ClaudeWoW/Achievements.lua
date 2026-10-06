@@ -27,7 +27,7 @@ local queue = {}
 local toast
 
 local function Print(msg)
-	print("|cff66ccff[Claude WoW]|r " .. msg)
+	print("|cff66ccff[Azeroth Companion]|r " .. msg)
 end
 
 local function Settings()
