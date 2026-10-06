@@ -792,6 +792,38 @@ test('an empty chat shows a centered empty state with the project, not a system 
   assert.equal(emptyState(vm).shown, 'false', 'a chat with a message has no empty state');
 });
 
+test('a short system line is a quiet note with no header card, a session change is a ruled divider, and long command output keeps its card', () => {
+  const vm = nativeVM();
+  vm.run('ClaudeWoW.NewChat(); ClaudeWoW.IsConnected = function() return true end');
+  const bubbles = `(function() local t = {} for _, b in ipairs(ClaudeWoW.UI.bubbles) do if b.shown then table.insert(t, b) end end return t end)()`;
+  const field = (i, expr) => vm.evaluate(`(function() local b = ${bubbles}[${i}] return ${expr} end)()`);
+
+  vm.run('SlashCmdList.CLAUDE("--project nope")');
+  assert.match(field(1, 'b.body:GetText()'), /Unknown project "nope"/);
+  assert.equal(field(1, 'b.who.shown'), 'false', 'no "System" header');
+  assert.equal(field(1, 'b.bg.shown'), 'false', 'no card background');
+  assert.equal(field(1, 'b.ruleL.shown'), 'false', 'a note has no divider rules');
+
+  vm.run('SlashCmdList.CLAUDE("reset")');
+  assert.match(field(2, 'b.body:GetText()'), /^New .+ session/);
+  assert.equal(field(2, 'b.who.shown'), 'false');
+  assert.equal(field(2, 'b.ruleL.shown'), 'true', 'a session change is a divider');
+  assert.equal(field(2, 'b.ruleR.shown'), 'true');
+
+  vm.run(
+    'local c = ClaudeWoWDB.chats[#ClaudeWoWDB.chats]; table.insert(c.history, { role = "system", t = 1, text = "a\\nb\\nc" }); table.insert(c.history, { role = "assistant", t = 1, text = "hi" }); ClaudeWoW.Render()',
+  );
+  assert.equal(field(3, 'b.who.shown'), 'true', 'three or more lines keep the card');
+  assert.equal(field(3, 'b.who:GetText()'), 'System');
+
+  vm.run('local c = ClaudeWoWDB.chats[#ClaudeWoWDB.chats]; c.history = { c.history[4], c.history[4] }; ClaudeWoW.Render()');
+  for (const i of [1, 2]) {
+    assert.equal(field(i, 'b.who.shown'), 'true', `bubble ${i} was a note and gets its header back for a reply`);
+    assert.equal(field(i, 'b.bg.shown'), 'true');
+    assert.equal(field(i, 'b.ruleL.shown'), 'false');
+  }
+});
+
 test('general chats sit under Chats, project chats under their project, and the project button in the header switches the project', () => {
   const vm = nativeVM();
   vm.run('ClaudeWoW.NewChat("Best rogue race")');

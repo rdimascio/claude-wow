@@ -587,7 +587,7 @@ function ClaudeWoW.ApplyMirror(list)
 		if seq and seq > (c.mirrorSeq or 0) then
 			local first = (c.mirrorSeq or 0) + 1
 			if c.mirrorSeq and seq > first then
-				AddHistory(c, "system", (seq - first) .. " earlier message(s) are in Discord.")
+				Q.AddEvent(c, (seq - first) .. " earlier message(s) are in Discord.")
 			end
 			local text = tostring(e.text or "")
 			if e.role == "user" then
@@ -887,6 +887,11 @@ local function TellPlayer(msg)
 	if c then AddHistory(c, "system", msg) end
 	if not (c and Whisper.Active() and Whisper.System(c, msg, true)) then print(ClaudeWoW.PREFIX .. msg) end
 	if ui.frame then ClaudeWoW.Render() end
+end
+
+function Q.Notify(msg)
+	local c = ActiveChat()
+	if not (c and Whisper.Active() and Whisper.System(c, msg, true)) then print(ClaudeWoW.PREFIX .. msg) end
 end
 
 ClaudeWoW.ChatLog = { MISSES_BEFORE_PAUSE = 2, RETRY_SECONDS = 8, SLOW_RETRY_SECONDS = 15, ACK_POLL_SECONDS = 4, FIRST_PAUSE_SECONDS = 600, MAX_PAUSE_SECONDS = 3600 }
@@ -2075,7 +2080,7 @@ local function ImportRestore(r)
 				if ch ~= current and ch.name == current.name then current.name = "New chat" end
 			end
 		end
-		AddHistory(current, "system", "Restored " .. added .. " chat(s) from the bridge after the game reset the saved data.")
+		Q.AddEvent(current, "Restored " .. added .. " chat(s) from the bridge after the game reset the saved data.")
 		ClaudeWoW.RenderChatList()
 	end
 end
@@ -2113,8 +2118,16 @@ function ClaudeWoW.Version.ApplyDisk(d, stamp)
 	local text = "New addon files are installed (" .. d.version .. (build ~= "" and (", build " .. build) or "") .. "). Type /reload to load them."
 	if run.reloadTold ~= text then
 		run.reloadTold = text
-		TellPlayer(text)
+		run.updateReady = { version = d.version, build = build }
+		Q.Notify(text)
+		Q.UpdateNoticeBar()
 	end
+end
+
+function ClaudeWoW.Version.Notice()
+	local u = run.updateReady
+	if not u then return nil end
+	return "Addon update ready " .. SEG.DOT .. " " .. u.version
 end
 
 ClaudeWoW.Version.CLIENTS_MAX = 8
@@ -5611,12 +5624,20 @@ local function GetBubble(i)
 	b.who:SetJustifyH("LEFT")
 	b.when = b:CreateFontString(nil, "OVERLAY", onParchment and Q.FontObject("QuestFontNormalSmall", "GameFontDisableSmall") or "GameFontDisableSmall")
 	b.when:SetPoint("TOPRIGHT", b, "TOPRIGHT", -8, -6)
-	b.body = b:CreateFontString(nil, "OVERLAY", onParchment and Q.FontObject("QuestFont", "ChatFontNormal") or "ChatFontNormal")
+	b.bodyFont = onParchment and Q.FontObject("QuestFont", "ChatFontNormal") or "ChatFontNormal"
+	b.noteFont = onParchment and Q.FontObject("QuestFontNormalSmall", "GameFontNormalSmall") or "GameFontDisableSmall"
+	b.body = b:CreateFontString(nil, "OVERLAY", b.bodyFont)
 	b.body:SetPoint("TOPLEFT", b.who, "BOTTOMLEFT", 0, -4)
 	b.body:SetJustifyH("LEFT")
 	b.body:SetJustifyV("TOP")
 	b.body:SetWordWrap(true)
 	b.body:SetNonSpaceWrap(true)
+	b.ruleL = b:CreateTexture(nil, "ARTWORK")
+	b.ruleL:SetHeight(1)
+	b.ruleL:Hide()
+	b.ruleR = b:CreateTexture(nil, "ARTWORK")
+	b.ruleR:SetHeight(1)
+	b.ruleR:Hide()
 	b.allow = CreateFrame("Button", nil, b, "UIPanelButtonTemplate")
 	b.allow:SetHeight(22)
 	b.allow:SetPoint("TOPLEFT", b.body, "BOTTOMLEFT", 0, -6)
@@ -5691,6 +5712,118 @@ function Q.UpdatePlaceholder()
 end
 
 Q.EMPTY_GAP, Q.EMPTY_SIDE, Q.EMPTY_LINE_GAP = 16, 20, 8
+Q.NOTE_GAP, Q.NOTE_PAD, Q.NOTE_SIDE, Q.RULE_GAP, Q.RULE_MIN, Q.NOTE_MAX_LINES = 6, 4, 24, 8, 24, 2
+
+function Q.NoteKind(m)
+	if m.role ~= "system" or m.newChat or type(m.text) ~= "string" then return nil end
+	if m.event then return "event" end
+	local _, breaks = m.text:gsub("\n", "")
+	return breaks < Q.NOTE_MAX_LINES and "note" or nil
+end
+
+function Q.LayoutCard(b)
+	b.who:Show()
+	b.when:Show()
+	b.bg:Show()
+	b.accent:SetShown(ui.parchment == nil)
+	b.ruleL:Hide()
+	b.ruleR:Hide()
+	b.body:SetFontObject(b.bodyFont)
+	b.body:SetJustifyH("LEFT")
+	b.body:ClearAllPoints()
+	b.body:SetPoint("TOPLEFT", b.who, "BOTTOMLEFT", 0, -4)
+end
+
+function Q.LayoutNote(b, text, kind, width)
+	for _, part in ipairs({ b.who, b.when, b.bg, b.accent, b.allow, b.fresh }) do part:Hide() end
+	for _, part in ipairs(b.macroBtns) do part:Hide() end
+	for _, part in ipairs(b.rowBtns) do part:Hide() end
+	local ink = ui.parchment and Q.PARCHMENT_DIM or { 0.62, 0.62, 0.62 }
+	local inner = math.max(80, width - 2 * Q.NOTE_SIDE)
+	b.body:SetFontObject(b.noteFont)
+	b.body:SetTextColor(ink[1], ink[2], ink[3])
+	b.body:SetJustifyH("CENTER")
+	b.body:SetWidth(inner)
+	b.body:SetText(text)
+	b.body:ClearAllPoints()
+	b.body:SetPoint("TOP", b, "TOP", 0, -Q.NOTE_PAD)
+	local h = Try(b.body.GetStringHeight, b.body) or 12
+	if h < 1 then h = 12 end
+	b:SetHeight(h + 2 * Q.NOTE_PAD)
+	local half = math.floor((Try(b.body.GetStringWidth, b.body) or inner) / 2) + Q.RULE_GAP
+	local ruled = kind == "event" and width / 2 - half - Q.NOTE_SIDE >= Q.RULE_MIN
+	for _, rule in ipairs({ b.ruleL, b.ruleR }) do
+		rule:SetColorTexture(ink[1], ink[2], ink[3], 0.45)
+		rule:ClearAllPoints()
+		rule:SetShown(ruled)
+	end
+	if ruled then
+		b.ruleL:SetPoint("LEFT", b, "LEFT", Q.NOTE_SIDE, 0)
+		b.ruleL:SetPoint("RIGHT", b, "CENTER", -half, 0)
+		b.ruleR:SetPoint("LEFT", b, "CENTER", half, 0)
+		b.ruleR:SetPoint("RIGHT", b, "RIGHT", -Q.NOTE_SIDE, 0)
+	end
+end
+
+Q.NOTICE_H, Q.NOTICE_INSET, Q.NOTICE_BUTTON_W = 34, 3, 80
+
+function Q.BuildNoticeBar(native)
+	local bar = CreateFrame("Frame", "ClaudeWoWNoticeBar", ui.scrollBottom[1])
+	bar:SetHeight(Q.NOTICE_H - 2 * Q.NOTICE_INSET)
+	bar:SetPoint("TOPLEFT", ui.scroll, "BOTTOMLEFT", 0, -Q.NOTICE_INSET)
+	bar:SetPoint("TOPRIGHT", ui.scroll, "BOTTOMRIGHT", 0, -Q.NOTICE_INSET)
+	bar.bg = bar:CreateTexture(nil, "BACKGROUND")
+	bar.bg:SetAllPoints()
+	bar.line = bar:CreateTexture(nil, "ARTWORK")
+	bar.line:SetHeight(1)
+	bar.line:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, 0)
+	bar.line:SetPoint("TOPRIGHT", bar, "TOPRIGHT", 0, 0)
+	if native then
+		bar.bg:SetColorTexture(0.45, 0.30, 0.10, 0.12)
+		bar.line:SetColorTexture(Q.PARCHMENT_DIM[1], Q.PARCHMENT_DIM[2], Q.PARCHMENT_DIM[3], 0.45)
+	else
+		bar.bg:SetColorTexture(0.85, 0.70, 0.30, 0.12)
+		bar.line:SetColorTexture(1, 0.82, 0, 0.5)
+	end
+	bar.button = CreateFrame("Button", "ClaudeWoWNoticeReload", bar, "UIPanelButtonTemplate")
+	bar.button:SetSize(Q.NOTICE_BUTTON_W, 22)
+	bar.button:SetPoint("RIGHT", bar, "RIGHT", -6, 0)
+	bar.button:SetText("Reload")
+	bar.button:SetScript("OnClick", function() ReloadUI() end)
+	bar.text = bar:CreateFontString(nil, "OVERLAY", native and Q.FontObject("QuestFont", "GameFontNormal") or "GameFontNormal")
+	bar.text:SetPoint("LEFT", bar, "LEFT", 8, 0)
+	bar.text:SetPoint("RIGHT", bar.button, "LEFT", -8, 0)
+	bar.text:SetJustifyH("LEFT")
+	bar.text:SetWordWrap(false)
+	if native then bar.text:SetTextColor(Q.PARCHMENT_TEXT[1], Q.PARCHMENT_TEXT[2], Q.PARCHMENT_TEXT[3]) end
+	bar:EnableMouse(true)
+	bar:SetScript("OnEnter", function(self)
+		GameTooltip:SetOwner(self, "ANCHOR_TOP")
+		GameTooltip:AddLine("New addon files are installed")
+		local u = run.updateReady
+		if u then GameTooltip:AddLine(u.version .. (u.build ~= "" and (" build " .. u.build) or ""), 1, 1, 1) end
+		GameTooltip:AddLine("Reload the UI to load them.", 1, 1, 1, true)
+		GameTooltip:Show()
+	end)
+	bar:SetScript("OnLeave", function() GameTooltip:Hide() end)
+	bar:Hide()
+	ui.notice = bar
+	Q.UpdateNoticeBar()
+end
+
+function Q.UpdateNoticeBar()
+	local bar, scroll, base = ui.notice, ui.scroll, ui.scrollBottom
+	if not bar or not scroll or not base then return end
+	local text = ClaudeWoW.Version.Notice()
+	bar.text:SetText(text or "")
+	bar:SetShown(text ~= nil)
+	scroll:SetPoint("BOTTOMRIGHT", base[1], "BOTTOMRIGHT", base[2], base[3] + (text and Q.NOTICE_H or 0))
+end
+
+function Q.AddEvent(chat, text)
+	AddHistory(chat, "system", text)
+	chat.history[#chat.history].event = true
+end
 
 function Q.EmptyState(c)
 	for _, m in ipairs(c.history) do
@@ -5770,9 +5903,22 @@ function ClaudeWoW.Render()
 		if not width or width < 80 then width = 400 end
 		ui.content:SetWidth(width)
 		local y, n = 0, 0
+		local function PlaceNote(text, kind)
+			n = n + 1
+			local b = GetBubble(n)
+			b:SetWidth(width)
+			Q.LayoutNote(b, Display(text), kind, width)
+			b:ClearAllPoints()
+			b:SetPoint("TOPLEFT", ui.content, "TOPLEFT", 0, -y)
+			b.text = text
+			b:Show()
+			y = y + b:GetHeight() + Q.NOTE_GAP
+			return b
+		end
 		local function Place(role, text, when, dim, denied, agent, macros, newChat, picker)
 			n = n + 1
 			local b = GetBubble(n)
+			Q.LayoutCard(b)
 			local st = ROLE_STYLE[role] or ROLE_STYLE.system
 			local look = ui.parchment and (Q.PARCHMENT_STYLE[role] or Q.PARCHMENT_STYLE.system) or st
 			b:SetWidth(width)
@@ -5866,8 +6012,13 @@ function ClaudeWoW.Render()
 			local denied = i == openDenial and m.denied or nil
 			local picker = type(m.picker) == "table" and #m.picker > 0 and m.picker or nil
 			local reply = m.role == "assistant" and not picker
-			local b = Place(m.role, picker and m.head or (reply and Q.StripSummary(m.text, m.summary) or m.text), m.t and date("%H:%M", m.t) or "", false, denied, m.agent, m.macros, m.newChat, picker)
-			if reply then b.text = m.text end
+			local kind = not denied and not picker and Q.NoteKind(m)
+			if kind then
+				PlaceNote(m.text, kind)
+			else
+				local b = Place(m.role, picker and m.head or (reply and Q.StripSummary(m.text, m.summary) or m.text), m.t and date("%H:%M", m.t) or "", false, denied, m.agent, m.macros, m.newChat, picker)
+				if reply then b.text = m.text end
+			end
 		end
 		local empty = nil
 		if c.pendingId then
@@ -8143,6 +8294,8 @@ local function BuildUI()
 		scroll:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -32, 110)
 	end
 	ui.scroll = scroll
+	ui.scrollBottom = native and { ui.parchment, -34, 14 } or { f, -32, 110 }
+	Q.BuildNoticeBar(native)
 
 	local content = CreateFrame("Frame", "ClaudeWoWContent", scroll)
 	content:SetSize(500, 1)
@@ -9304,7 +9457,7 @@ function Cli.AttachTo(e)
 		c.liveTarget = e.id ~= "" and e.id or (e.alias or e.name)
 		c.agent = "claude"
 		c.cwd = e.cwd or ""
-		AddHistory(c, "system", "Attached to the running Claude Code session " .. Display(e.name) .. (e.cwd ~= "" and (" in " .. Display(e.cwd)) or "") .. ". Messages here go to that terminal session, and its answers come back here.")
+		Q.AddEvent(c, "Attached to the running Claude Code session " .. Display(e.name) .. (e.cwd ~= "" and (" in " .. Display(e.cwd)) or "") .. ". Messages here go to that terminal session, and its answers come back here.")
 	else
 		c.resumeId = e.id
 		if e.agent and e.agent ~= "" then c.agent = e.agent end
@@ -9314,7 +9467,7 @@ function Cli.AttachTo(e)
 			c.cwd = e.cwd or ""
 			c.adoptCwd = (e.cwd or "") == "" or nil
 		end
-		AddHistory(c, "system", "Attached to session " .. e.id .. ((e.cwd or "") ~= "" and (" in " .. Display(e.cwd)) or "") .. ". Your next message resumes it" .. (e.unverified and " (the bridge looks the id up then)" or "") .. ".")
+		Q.AddEvent(c, "Attached to session " .. e.id .. ((e.cwd or "") ~= "" and (" in " .. Display(e.cwd)) or "") .. ". Your next message resumes it" .. (e.unverified and " (the bridge looks the id up then)" or "") .. ".")
 		if e.recap then AddHistory(c, "system", e.recap) end
 	end
 	ClaudeWoW.SwitchChat(c.id)
@@ -9753,7 +9906,7 @@ RunCommand = function(cmd, rest)
 	elseif cmd == "reset" then
 		c.resetNext = true
 		local where = ChatFolder(c)
-		AddHistory(c, "system", "Next message starts a fresh " .. ChatAgentName(c) .. " session" .. (where ~= "" and (" in " .. where) or ""))
+		Q.AddEvent(c, "New " .. ChatAgentName(c) .. " session" .. (where ~= "" and (" " .. SEG.DOT .. " " .. FolderName(where)) or ""))
 		ClaudeWoW.Render()
 		Cli.Show(c)
 	elseif cmd == "context" or cmd == "ctx" then
