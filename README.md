@@ -404,7 +404,7 @@ The keys you are most likely to touch. Every key, flag and environment variable 
 | `agent` | the agent for chats that haven't picked one with `/claude -c --agent` (`claude`, `codex`, `grok`, `agy`, `hermes` or `local`) |
 | `claudeDir`, `claudeSessions` | where Claude Code keeps its sessions for `/claude -r` (default `$CLAUDE_CONFIG_DIR`, else `~/.claude`), and `false` to list only the bridge's own chats and the running sessions |
 | `agents.<id>.permissionMode`, `.allowedTools`, `.deniedTools`, `.model` | that agent's permissions, allowlist, denylist and model; `.path` where its executable is if the bridge can't find it, `.extraArgs` anything else to pass it |
-| `mcp` | your own MCP servers for Claude chat runs, each with an `allow` list of tools, and `strict` (see [docs/CONFIGURATION.md](docs/CONFIGURATION.md#your-own-mcp-servers)); absent = Claude's own servers as before |
+| `mcp` | your own MCP servers for Claude chat runs, each with an `allow` list of tools, `allow` lists for the servers the bridge discovers, and `strict` (see [docs/CONFIGURATION.md](docs/CONFIGURATION.md#your-own-mcp-servers)); absent = Claude's own servers as before |
 | `agents.codex.networkAccess` | let Codex's sandbox reach the network (default `false`) |
 | `maxParallel` | how many chats may run an agent at once (default 3) |
 | `gameContext` | `false` never tells the agent about your character, whatever the addon sends (default `true`) |

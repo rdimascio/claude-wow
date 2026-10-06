@@ -4,6 +4,7 @@ const os = require('os');
 const path = require('path');
 
 const SERVER_NAME_RE = /^[A-Za-z0-9]+(?:[-_][A-Za-z0-9]+)*$/;
+const SERVER_ID_RE = /^(?!-)(?!.*__)(?!.*_$)[A-Za-z0-9_-]+$/;
 const MAX_SERVER_NAME = 64;
 const TOOL_NAME_RE = /^[A-Za-z0-9_-]+$/;
 const ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -12,7 +13,7 @@ const ALL_TOOLS = '*';
 const AGENT_KEYS = ['claude', 'codex'];
 const STDIO_KEYS = new Set(['type', 'command', 'args', 'envVars', 'allow', 'default', 'alwaysLoad']);
 const HTTP_KEYS = new Set(['type', 'url', 'bearerTokenEnvVar', 'allow', 'default', 'alwaysLoad']);
-const MCP_KEYS = new Set(['servers', 'strict']);
+const MCP_KEYS = new Set(['servers', 'strict', 'allow']);
 
 const isObject = v => !!v && typeof v === 'object' && !Array.isArray(v);
 const envRef = name => '${' + name + '}';
@@ -25,7 +26,7 @@ function toolList(v, where) {
   return { tools: list.includes(ALL_TOOLS) ? [ALL_TOOLS] : [...new Set(list)] };
 }
 
-function parseAllow(v, where) {
+function parseAllow(v, where, { missing = [], named = false } = {}) {
   if (v === undefined) return { allow: Object.fromEntries(AGENT_KEYS.map(a => [a, []])) };
   if (!isObject(v)) {
     const r = toolList(v, where);
@@ -33,13 +34,47 @@ function parseAllow(v, where) {
   }
   const unknown = Object.keys(v).find(k => !AGENT_KEYS.includes(k));
   if (unknown) return { error: `${where} names "${unknown}", which is not one of ${AGENT_KEYS.join(', ')}` };
+  if (named && !AGENT_KEYS.some(a => v[a] !== undefined)) return { error: `${where} must name ${AGENT_KEYS.join(' or ')}` };
   const allow = {};
   for (const a of AGENT_KEYS) {
-    const r = v[a] === undefined ? { tools: [] } : toolList(v[a], `${where}.${a}`);
+    const r = v[a] === undefined ? { tools: missing } : toolList(v[a], `${where}.${a}`);
     if (r.error) return r;
-    allow[a] = r.tools;
+    if (r.tools) allow[a] = r.tools;
   }
   return { allow };
+}
+
+function parseAllowLists(raw, { servers, reserved, log }) {
+  const out = {};
+  if (raw === undefined) return out;
+  if (!isObject(raw)) {
+    log(`mcp.allow in config.json must be an object of server ids; it is ignored`);
+    return out;
+  }
+  for (const [id, v] of Object.entries(raw)) {
+    const where = `mcp.allow.${id}`;
+    if (!ID_RE.test(id) || !SERVER_ID_RE.test(id)) {
+      log(
+        `${where}: the id must be a server's tool prefix (letters, digits, - and _, at most 64 characters, no __, not starting with - or ending with _); it is ignored`,
+      );
+      continue;
+    }
+    if (reserved.includes(id)) {
+      log(`${where}: "${id}" is a bridge server name (${reserved.join(', ')}); it is ignored`);
+      continue;
+    }
+    if (servers.some(s => s.name === id)) {
+      log(`${where}: "${id}" is also in mcp.servers, so mcp.servers.${id}.allow is used and this list is ignored`);
+      continue;
+    }
+    const r = parseAllow(v, where, { missing: null, named: true });
+    if (r.error) {
+      log(`${r.error}; it is ignored`);
+      continue;
+    }
+    out[id] = r.allow;
+  }
+  return out;
 }
 
 function parseServer(name, s, reserved) {
@@ -85,7 +120,7 @@ function parse(raw, { reserved = [], log = () => {}, env = {} } = {}) {
   if (raw === undefined) return null;
   if (!isObject(raw)) {
     log(`mcp in config.json must be an object; it is ignored`);
-    return { servers: [], strict: false };
+    return { servers: [], strict: false, allow: {} };
   }
   for (const k of Object.keys(raw)) if (!MCP_KEYS.has(k)) log(`mcp.${k} in config.json is not a key of mcp (${[...MCP_KEYS].join(', ')}); it is ignored`);
   let strict = false;
@@ -108,7 +143,7 @@ function parse(raw, { reserved = [], log = () => {}, env = {} } = {}) {
         );
     servers.push(r);
   }
-  return { servers, strict };
+  return { servers, strict, allow: parseAllowLists(raw.allow, { servers, reserved, log }) };
 }
 
 function toolRule(server, tool) {
@@ -153,10 +188,17 @@ function parseChoice(value) {
 const explicitOff = (choice, id) => !!choice && (choice.off.includes(id) || (choice.allOff && !choice.on.includes(id)));
 const isOn = (choice, id, dflt) => (choice && choice.on.includes(id) ? true : explicitOff(choice, id) ? false : dflt);
 
+function discoveredAllow(mcp, agent) {
+  return Object.entries((mcp && mcp.allow) || {})
+    .filter(([, lists]) => Array.isArray(lists[agent]))
+    .map(([id, lists]) => [id, lists[agent]]);
+}
+
 function forClaude(mcp, { choice } = {}) {
   if (!mcp) return null;
   const loaded = mcp.servers.filter(s => isOn(choice, s.name, s.default));
-  const allowed = new Map(mcp.servers.map(s => [s.name, s.allow.claude]));
+  const listed = discoveredAllow(mcp, 'claude');
+  const allowed = new Map([...mcp.servers.map(s => [s.name, s.allow.claude]), ...listed]);
   const allowRules = loaded.flatMap(s => s.allow.claude.map(t => toolRule(s.name, t)));
   const off = mcp.servers.filter(s => explicitOff(choice, s.name)).map(s => s.name);
   const blocks = rule => {
@@ -259,10 +301,100 @@ function codexOwnServers({ home = os.homedir(), codexHome = process.env.CODEX_HO
   return [...names];
 }
 
-function forCodex(mcp, { choice, own = [] } = {}) {
+const TOML_NAME = String.raw`(?:"((?:[^"\\]|\\.)*)"|'([^']*)'|([A-Za-z0-9_-]+))`;
+const TOOL_KEYS = { enabled_tools: 'enabled', disabled_tools: 'disabled' };
+
+function tomlArray(text) {
+  if (text[0] !== '[') return { list: null, rest: '' };
+  let i = 1;
+  let quote = '';
+  for (; i < text.length; i++) {
+    const c = text[i];
+    if (quote) {
+      if (c === '\\' && quote === '"') i++;
+      else if (c === quote) quote = '';
+    } else if (c === '"' || c === "'") quote = c;
+    else if (c === '#') i = text.indexOf('\n', i) < 0 ? text.length : text.indexOf('\n', i);
+    else if (c === '[') return { list: null, rest: '' };
+    else if (c === ']') break;
+  }
+  if (i >= text.length) return { list: null, rest: '' };
+  const body = text.slice(1, i).replace(/#[^\n]*/g, m => (/["']/.test(m) ? m : ''));
+  const items = [];
+  const re = /\s*(?:"((?:[^"\\]|\\.)*)"|'([^']*)')\s*(,|$)/y;
+  let at = 0;
+  while (at < body.length && /\S/.test(body.slice(at))) {
+    re.lastIndex = at;
+    const m = re.exec(body);
+    if (!m) return { list: null, rest: text.slice(i + 1) };
+    items.push(m[1] !== undefined ? JSON.parse(`"${m[1]}"`) : m[2]);
+    at = re.lastIndex;
+    if (!m[3]) break;
+  }
+  return { list: /\S/.test(body.slice(at)) ? null : items, rest: text.slice(i + 1) };
+}
+
+function codexOwnToolLists(text) {
+  const out = {};
+  const note = (name, key, value) => {
+    out[name] = out[name] || {};
+    out[name][TOOL_KEYS[key]] = tomlArray(value.trimStart()).list;
+  };
+  const header = new RegExp(String.raw`^\[\s*mcp_servers\s*(?:\.\s*${TOML_NAME}\s*)?\]\s*(?:#.*)?$`);
+  const anyHeader = /^\[/;
+  const inlineTable = new RegExp(String.raw`^(?:mcp_servers\s*\.\s*)?${TOML_NAME}\s*=\s*\{`);
+  const key = new RegExp(String.raw`^(?:mcp_servers\s*\.\s*)?(?:${TOML_NAME}\s*\.\s*)?(enabled_tools|disabled_tools)\s*=(.*)$`, 's');
+  const lines = String(text || '').split('\n');
+  let table = null;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (anyHeader.test(line)) {
+      const h = header.exec(line);
+      table = h ? { server: h[1] !== undefined ? JSON.parse(`"${h[1]}"`) : h[2] || h[3] || '' } : { other: true };
+      continue;
+    }
+    const m = key.exec(line);
+    if (!m) {
+      const inline = /enabled_tools/.test(line) && inlineTable.exec(line);
+      const name = inline && (inline[1] !== undefined ? JSON.parse(`"${inline[1]}"`) : inline[2] || inline[3]);
+      if (name && (/^mcp_servers\s*\./.test(line) ? !table : table && !table.other && !table.server)) note(name, 'enabled_tools', '');
+      continue;
+    }
+    const named = m[1] !== undefined ? JSON.parse(`"${m[1]}"`) : m[2] || m[3];
+    const topLevel = /^mcp_servers\s*\./.test(line);
+    const server =
+      topLevel && !table ? named : table && !table.other && table.server && !named ? table.server : table && !table.other && !table.server ? named : '';
+    if (!server) continue;
+    note(server, m[4], [m[5], ...lines.slice(i + 1)].join('\n'));
+  }
+  return out;
+}
+
+function codexOwnTools({ home = os.homedir(), codexHome = process.env.CODEX_HOME || '', readText = f => fs.readFileSync(f, 'utf8') } = {}) {
+  try {
+    return codexOwnToolLists(readText(path.join(codexHome || path.join(home, '.codex'), 'config.toml')));
+  } catch {
+    return {};
+  }
+}
+
+function narrowed(list, theirs) {
+  if (!theirs) return list;
+  let out = list;
+  if (theirs.enabled !== undefined) out = theirs.enabled === null ? [] : out.filter(t => theirs.enabled.includes(t));
+  if (Array.isArray(theirs.disabled)) out = out.filter(t => !theirs.disabled.includes(t));
+  return out;
+}
+
+function forCodex(mcp, { choice, own = [], ownTools: theirs = {} } = {}) {
   const configured = mcp ? mcp.servers : [];
+  const lists = new Map(discoveredAllow(mcp, 'codex').filter(([, tools]) => !tools.includes(ALL_TOOLS)));
+  const ownTools = name => (lists.has(name) ? { enabledTools: narrowed(lists.get(name), theirs[name]) } : {});
   const turnedOff = own.filter(n => ID_RE.test(n) && explicitOff(choice, n)).map(name => ({ name, off: true }));
-  const turnedOn = own.filter(n => ID_RE.test(n) && choice && choice.on.includes(n)).map(name => ({ name, on: true }));
+  const turnedOn = own.filter(n => ID_RE.test(n) && choice && choice.on.includes(n)).map(name => ({ name, on: true, ...ownTools(name) }));
+  const trimmed = own
+    .filter(n => ID_RE.test(n) && lists.has(n) && !explicitOff(choice, n) && !(choice && choice.on.includes(n)))
+    .map(name => ({ name, own: true, ...ownTools(name) }));
   return configured
     .filter(s => isOn(choice, s.name, s.default) && !own.includes(s.name))
     .map(s => ({
@@ -272,7 +404,7 @@ function forCodex(mcp, { choice, own = [] } = {}) {
       bearerTokenEnvVar: s.bearerTokenEnvVar || '',
       enabledTools: s.allow.codex.includes(ALL_TOOLS) ? null : s.allow.codex,
     }))
-    .concat(turnedOff, turnedOn);
+    .concat(turnedOff, turnedOn, trimmed);
 }
 
 const tomlString = v => JSON.stringify(String(v).replace(/[\ud800-\udfff]/gu, '\ufffd')).replace(/\u007f/g, '\\u007f');
@@ -283,8 +415,9 @@ function codexArgs(entries) {
   for (const e of entries || []) {
     const key = `mcp_servers.${e.name}`;
     const set = (k, v) => out.push('-c', `${key}.${k}=${v}`);
-    if (e.off || e.on) {
-      set('enabled', e.on ? 'true' : 'false');
+    if (e.off || e.on || e.own) {
+      if (e.off || e.on) set('enabled', e.on ? 'true' : 'false');
+      if (!e.off && Array.isArray(e.enabledTools)) set('enabled_tools', tomlList(e.enabledTools));
       continue;
     }
     if (e.server.type === 'http') {
@@ -307,7 +440,8 @@ function codexArgs(entries) {
 function summary(mcp) {
   if (!mcp) return '';
   const names = mcp.servers.map(s => `${s.name} (${s.default ? 'on' : 'off'} by default)`);
-  return `${names.length ? names.join(', ') : 'no servers'}${mcp.strict ? '; strict: Claude runs load only these and the bridge servers' : ''}`;
+  const lists = Object.keys(mcp.allow || {});
+  return `${names.length ? names.join(', ') : 'no servers'}${lists.length ? `; allow lists for ${lists.join(', ')}` : ''}${mcp.strict ? '; strict: Claude runs load only these and the bridge servers' : ''}`;
 }
 
 const SOURCES = ['config', 'claude', 'claude.ai', 'plugin', 'codex'];
@@ -364,8 +498,20 @@ function catalog({ mcp, seen = {}, codexOwn = [], reserved = [] }) {
   return out;
 }
 
-function planRun({ agentId, choice, cwd = '', userMcp = null, seen = {}, codexOwn = [], reserved = [], claudeOwn = () => claudeOwnServers({ cwd }) } = {}) {
-  if (agentId === 'codex') return { userMcp: null, seenOff: null, guard: null, codexMcp: forCodex(userMcp, { choice, own: codexOwn }), seen };
+function planRun({
+  agentId,
+  choice,
+  cwd = '',
+  userMcp = null,
+  seen = {},
+  codexOwn = [],
+  reserved = [],
+  claudeOwn = () => claudeOwnServers({ cwd }),
+  codexOwnNow = () => codexOwnServers(),
+  codexToolsNow = () => codexOwnTools(),
+} = {}) {
+  if (agentId === 'codex')
+    return { userMcp: null, seenOff: null, guard: null, codexMcp: forCodex(userMcp, { choice, own: codexOwnNow(), ownTools: codexToolsNow() }), seen };
   if (agentId !== 'claude') return { userMcp: null, seenOff: null, guard: null, codexMcp: [], seen };
   const plan = forClaude(userMcp, { choice });
   const seenNow = choice ? seedSeen({ ...seen }, claudeOwn(), { cwd }) : seen;
@@ -390,6 +536,7 @@ module.exports = {
   forCodex,
   codexArgs,
   codexOwnServers,
+  codexOwnToolLists,
   scopeAllowed,
   claudeOwnServers,
   summary,
