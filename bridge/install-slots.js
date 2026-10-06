@@ -63,7 +63,7 @@ async function install(client) {
       [
         '## Interface: ' + iface,
         '## Title: Azeroth Companion slot ' + String(i).padStart(3, '0'),
-        '## Notes: Reply slot for Claude WoW. Load-on-demand; leave it enabled.',
+        '## Notes: Reply slot for Azeroth Companion. Load-on-demand; leave it enabled.',
         '## LoadOnDemand: 1',
         '## Dependencies: ClaudeWoW',
         '',
