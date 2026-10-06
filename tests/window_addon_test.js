@@ -314,12 +314,17 @@ const NATIVE_TEMPLATES = `
   function NavBar_AddButton(bar, data) table.insert(STUB.nav.buttons, data) end
   function ScrollingEdit_OnCursorChanged() end
   function ScrollingEdit_OnTextChanged() end
+  local function MenuNode()
+    local node = { items = {} }
+    function node:CreateTitle(t) table.insert(self.items, { text = t }) end
+    function node:CreateButton(t, fn) local sub = MenuNode(); table.insert(self.items, { text = t, fn = fn, sub = sub }); return sub end
+    function node:CreateCheckbox(t, get, fn) table.insert(self.items, { text = t, fn = fn, get = get }) end
+    function node:CreateRadio(t, get, fn) table.insert(self.items, { text = t, fn = fn, get = get, radio = true }) end
+    function node:CreateDivider() table.insert(self.items, { divider = true }) end
+    return node
+  end
   MenuUtil = { CreateContextMenu = function(owner, gen)
-    local root = { items = {} }
-    function root:CreateTitle(t) table.insert(self.items, { text = t }) end
-    function root:CreateButton(t, fn) table.insert(self.items, { text = t, fn = fn }) end
-    function root:CreateCheckbox(t, get, fn) table.insert(self.items, { text = t, fn = fn, get = get }) end
-    function root:CreateDivider() end
+    local root = MenuNode()
     STUB.menu = root
     gen(owner, root)
   end }
@@ -1013,8 +1018,11 @@ test('help lives in the gear menu and opens the Commands and tips page, and Clea
 
   const clearButton = '(function() for _, c in ipairs(ClaudeWoWFrame.children) do if c.kind == "Button" and c.text == "Clear" then return c end end end)()';
   assert.equal(vm.evaluate(`${clearButton}.shown`), 'false', 'no Clear button in the bottom bar');
-  vm.run(`ClaudeWoW.ShowChatMenu(ClaudeWoWDB.activeChat, ClaudeWoWFrame); STUB.Pick("Clear messages")`);
-  assert.equal(vm.num(`#${active}.history`), 0, 'the chat menu clears the chat');
+  vm.run(`ClaudeWoW.ShowChatMenu(ClaudeWoWDB.activeChat, ClaudeWoWFrame); STUB.Pick("Clear Messages")`);
+  assert.equal(vm.evaluate('STUB.popup.which'), 'CLAUDEWOW_CLEAR', 'Clear Messages asks first');
+  assert.ok(vm.num(`#${active}.history`) > 0, 'nothing is cleared before the confirm');
+  vm.run('StaticPopupDialogs.CLAUDEWOW_CLEAR.OnAccept({}, STUB.popup.data)');
+  assert.equal(vm.num(`#${active}.history`), 0, 'the confirm clears the chat');
 });
 
 test('the footer is a short state on the left and context and spend on the right, with the detail on hover', () => {

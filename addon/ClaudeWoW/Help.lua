@@ -2,8 +2,8 @@ local H = {}
 ClaudeWoWHelp = H
 
 H.PAGE_TITLE = "Commands and tips"
-H.ADDON_TITLE = "Azeroth Companion"
-H.SUBTITLE = "Type these in any chat box or in the companion window."
+H.ADDON_TITLE = (ClaudeWoW and ClaudeWoW.PRODUCT) or "Azeroth Companion"
+H.SUBTITLE = "Type these in any chat box or in the " .. H.ADDON_TITLE .. " window."
 H.FALLBACK_WIDTH = 560
 H.WINDOW_W, H.WINDOW_H = 660, 560
 
@@ -538,6 +538,21 @@ function H.BuildCanvas(name, title, withOptions)
 	if withOptions then H.canvas = panel end
 	H.RefreshCanvas(panel)
 	return panel
+end
+
+function H.OpenOptions()
+	if not H.Register() then return H.ShowWindow() end
+	if H.category then
+		local target = H.optionsCategory or H.category
+		if type(Settings.OpenToCategory) == "function" and pcall(Settings.OpenToCategory, CategoryID(target)) then return "settings" end
+		return nil
+	end
+	local panel = H.optionsPanel or H.panel
+	if type(InterfaceOptionsFrame_OpenToCategory) == "function" and pcall(InterfaceOptionsFrame_OpenToCategory, panel) then
+		pcall(InterfaceOptionsFrame_OpenToCategory, panel)
+		return "interface"
+	end
+	return nil
 end
 
 local events = CreateFrame("Frame")

@@ -321,7 +321,7 @@ end
 
 local function Print(msg)
 	if ClaudeWoW and type(ClaudeWoW.Print) == "function" then return ClaudeWoW.Print(msg) end
-	print("|cff66ccff[Claude WoW]|r " .. msg)
+	print("|cff66ccff[Azeroth Companion]|r " .. msg)
 end
 
 function T.IsOn()

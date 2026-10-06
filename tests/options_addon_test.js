@@ -13,7 +13,7 @@ const TOC_FILES = fs
   .filter(l => l.endsWith('.lua'));
 
 const SETTINGS_API = `
-STUB.settings = { order = {}, categories = {}, proxies = {}, controls = {} }
+STUB.settings = { order = {}, categories = {}, proxies = {}, controls = {}, opened = {} }
 Settings = {
   VarType = { Boolean = "boolean", String = "string", Number = "number" },
   RegisterCanvasLayoutCategory = function(frame, name)
@@ -25,18 +25,20 @@ Settings = {
   end,
   RegisterCanvasLayoutSubcategory = function(parent, frame, name)
     local c = { frame = frame, name = name, parent = parent, kind = "canvas" }
+    function c:GetID() return 44 end
     table.insert(STUB.settings.categories, c)
     table.insert(STUB.settings.order, "canvas " .. name)
     return c
   end,
   RegisterVerticalLayoutSubcategory = function(parent, name)
     local c = { name = name, parent = parent, kind = "vertical" }
+    function c:GetID() return 43 end
     table.insert(STUB.settings.categories, c)
     table.insert(STUB.settings.order, "vertical " .. name)
     return c
   end,
   RegisterAddOnCategory = function(c) table.insert(STUB.settings.order, "addon " .. c.name) end,
-  OpenToCategory = function() end,
+  OpenToCategory = function(id) table.insert(STUB.settings.opened, id) end,
   RegisterProxySetting = function(category, variable, varType, name, default, get, set)
     assert(type(default) == varType, variable .. " default type")
     local s = { category = category, variable = variable, varType = varType, name = name, default = default }
@@ -64,7 +66,8 @@ Settings = {
 const LEGACY_API = `
 STUB.legacy = {}
 function InterfaceOptions_AddCategory(panel) table.insert(STUB.legacy, panel) end
-function InterfaceOptionsFrame_OpenToCategory() end
+STUB.legacyOpened = {}
+function InterfaceOptionsFrame_OpenToCategory(panel) table.insert(STUB.legacyOpened, panel) end
 `;
 
 const SERIALIZE = `
@@ -281,4 +284,45 @@ test('options: the Widgets page lists the agent widgets with Remove and Show but
   vm.run(`${row(2)}.button.scripts.OnClick(${row(2)}.button)`);
   assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("clock")'), 'running');
   assert.equal(vm.evaluate('ClaudeWoWWidgetDB.approved.clock'), 'r2');
+});
+
+const NATIVE_TEMPLATES = `
+  local templates = { ButtonFrameTemplate = true, InsetFrameTemplate = true, SearchBoxTemplate = true, ScrollFrameTemplate = true, NavBarTemplate = true }
+  C_XMLUtil = { GetTemplateInfo = function(name) if templates[name] then return { type = "Frame" } end end }
+  function NavBar_Initialize() end
+  function NavBar_Reset() end
+  function NavBar_AddButton() end
+  function ScrollingEdit_OnCursorChanged() end
+  function ScrollingEdit_OnTextChanged() end
+  local plainCreate = CreateFrame
+  CreateFrame = function(kind, name, parent, template)
+    local f = plainCreate(kind, name, parent, template)
+    if template == "ButtonFrameTemplate" then
+      f.CloseButton = plainCreate("Button", nil, f, "UIPanelCloseButton")
+      f.Inset = plainCreate("Frame", nil, f, "InsetFrameTemplate")
+      f.TitleText = f:CreateFontString()
+      function f:GetTitleText() return self.TitleText end
+      function f:SetPortraitToAsset(path) self.portrait = path end
+    end
+    return f
+  end`;
+
+const pickGear = (vm, label) =>
+  vm.run(`ClaudeWoWChatSettings.scripts.OnClick(ClaudeWoWChatSettings)
+    for _, r in ipairs(ClaudeWoWChatMenu.rows) do if r.shown and r.label.text == "${label}" then r.scripts.OnClick(r) end end`);
+
+test('options: the gear menu has an Options item that opens the Options page, in Settings, in Interface Options, or the help window', () => {
+  const vm = newVM(NATIVE_TEMPLATES + SETTINGS_API);
+  pickGear(vm, 'Options');
+  assert.equal(vm.evaluate('table.concat(STUB.settings.opened, ",")'), '43', 'the Options subcategory, not the help page');
+  pickGear(vm, 'Commands and tips');
+  assert.equal(vm.evaluate('table.concat(STUB.settings.opened, ",")'), '43,42');
+
+  const legacy = newVM(NATIVE_TEMPLATES + LEGACY_API);
+  pickGear(legacy, 'Options');
+  assert.equal(legacy.evaluate('STUB.legacyOpened[1] == ClaudeWoWOptionsPanel'), 'true');
+
+  const bare = newVM(NATIVE_TEMPLATES);
+  pickGear(bare, 'Options');
+  assert.equal(bare.evaluate('ClaudeWoWHelpWindow.shown'), 'true', 'no options API: the help window with the /claude config commands');
 });

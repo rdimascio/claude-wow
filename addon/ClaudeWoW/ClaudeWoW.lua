@@ -22,7 +22,9 @@
 local ADDON_NAME = ...
 local ClaudeWoW = {}
 _G.ClaudeWoW = ClaudeWoW
-_G.BINDING_NAME_CLAUDEWOW_WORKSPACE = "Claude WoW: open or close the workspace"
+_G.BINDING_NAME_CLAUDEWOW_WORKSPACE = "Azeroth Companion: open or close the workspace"
+ClaudeWoW.PRODUCT = "Azeroth Companion"
+ClaudeWoW.PREFIX = "|cff66ccff[" .. ClaudeWoW.PRODUCT .. "]|r "
 local Codec = ClaudeWoW_Codec
 
 local DEFAULT_CWD = "" -- empty = the bridge's configured defaultCwd
@@ -837,7 +839,7 @@ local ShotsPaused -- after BridgeState: whether the bridge has been dark too lon
 local function TellPlayer(msg)
 	local c = ActiveChat()
 	if c then AddHistory(c, "system", msg) end
-	if not (c and Whisper.Active() and Whisper.System(c, msg, true)) then print("|cff66ccff[Claude WoW]|r " .. msg) end
+	if not (c and Whisper.Active() and Whisper.System(c, msg, true)) then print(ClaudeWoW.PREFIX .. msg) end
 	if ui.frame then ClaudeWoW.Render() end
 end
 
@@ -1812,7 +1814,7 @@ local function ContextWarning(c)
 	c.history[#c.history].newChat = true
 	-- Where the reply itself went: the whisper tab if the chat has one, else the game chat.
 	if not Whisper.Reply(c, text, nil, "system") then
-		print("|cff66ccff[Claude WoW]|r " .. Display(c.name) .. ": " .. (text:gsub("\n", " ")) .. " Type /claude for a new chat.")
+		print(ClaudeWoW.PREFIX .. Display(c.name) .. ": " .. (text:gsub("\n", " ")) .. " Type /claude for a new chat.")
 	end
 end
 
@@ -3395,7 +3397,7 @@ local function WhisperLeakFilter(_, _, msg, ...)
 	if not ours then return false end
 	run.whisperLeaks = (run.whisperLeaks or 0) + 1
 	run.whisperLastLeak = msg
-	return false, "|cffff4040[Claude WoW] WHISPER LEAK: " .. tostring(msg) .. " - a send reached the server. Run /aiwhisper status and report it.|r", ...
+	return false, "|cffff4040[" .. ClaudeWoW.PRODUCT .. "] WHISPER LEAK: " .. tostring(msg) .. " - a send reached the server. Type /claude diag and report what it shows.|r", ...
 end
 
 local whisperInstalled = false
@@ -4749,13 +4751,14 @@ end
 -- The trash can on a chat row asks first; /claude-wow delete does not.
 StaticPopupDialogs["CLAUDEWOW_DELETE"] = {
 	text = "Delete chat \"%s\"?\n\nIts transcript goes away (the last chat is cleared instead of removed).",
-	button1 = OKAY,
+	button1 = "Delete",
 	button2 = CANCEL,
+	showAlert = true,
 	timeout = 0,
 	whileDead = true,
 	hideOnEscape = true,
 	OnAccept = function(dialog, data)
-		if data then ClaudeWoW.DeleteChat(data.id) end
+		if data and FindChat(data.id) then ClaudeWoW.DeleteChat(data.id) end
 	end,
 }
 
@@ -4763,6 +4766,25 @@ function ClaudeWoW.ConfirmDelete(id)
 	local c = (id and FindChat(id)) or ActiveChat()
 	if not c then return end
 	StaticPopup_Show("CLAUDEWOW_DELETE", Display(c.name), nil, { id = c.id })
+end
+
+StaticPopupDialogs["CLAUDEWOW_CLEAR"] = {
+	text = "Clear the messages in \"%s\"?\n\nThe chat and its session stay; only the transcript shown here goes away.",
+	button1 = "Clear",
+	button2 = CANCEL,
+	showAlert = true,
+	timeout = 0,
+	whileDead = true,
+	hideOnEscape = true,
+	OnAccept = function(dialog, data)
+		if data and FindChat(data.id) then ClaudeWoW.ClearChat(data.id) end
+	end,
+}
+
+function ClaudeWoW.ConfirmClear(id)
+	local c = (id and FindChat(id)) or ActiveChat()
+	if not c then return end
+	StaticPopup_Show("CLAUDEWOW_CLEAR", Display(c.name), nil, { id = c.id })
 end
 
 ---------------------------------------------------------------------------
@@ -4822,12 +4844,12 @@ end
 
 function ClaudeWoW.MacroLabel(m)
 	local verb = FindMacro(m.name, m.char) and "Update" or "Create"
-	return verb .. " macro: " .. Display(m.name) .. (m.char and " (character)" or "") .. (m.risky and "  |cffff6060(runs code)|r" or "")
+	return verb .. " Macro: " .. Display(m.name) .. (m.char and " (character)" or "") .. (m.risky and "  |cffff6060(runs code)|r" or "")
 end
 
 StaticPopupDialogs["CLAUDEWOW_MACRO"] = {
 	text = "%s",
-	button1 = OKAY,
+	button1 = "Create Macro",
 	button2 = CANCEL,
 	timeout = 0,
 	whileDead = true,
@@ -4836,6 +4858,11 @@ StaticPopupDialogs["CLAUDEWOW_MACRO"] = {
 		if data then ClaudeWoW.InstallMacro(data, true) end
 	end,
 }
+
+function Q.ShowMacroPopup(text, m, index)
+	StaticPopupDialogs["CLAUDEWOW_MACRO"].button1 = index and "Update Macro" or "Create Macro"
+	StaticPopup_Show("CLAUDEWOW_MACRO", text, nil, m)
+end
 
 -- Create or update macro `m` ({ name, body, icon, char, risky }). Asks first when it
 -- would replace a different macro of yours, or when it runs code (/run, /click...).
@@ -4851,7 +4878,7 @@ function ClaudeWoW.InstallMacro(m, confirmed)
 		if m.risky then table.insert(why, "This macro runs code or clicks buttons (/run, /script, /click). Only keep it if you trust what it does.") end
 		if index and oldBody ~= m.body then table.insert(why, "It replaces your existing macro \"" .. m.name .. "\" (/claude config macro undo brings the old one back).") end
 		if #why > 0 then
-			StaticPopup_Show("CLAUDEWOW_MACRO", table.concat(why, "\n\n") .. "\n\n" .. Display(m.body), nil, m)
+			Q.ShowMacroPopup(table.concat(why, "\n\n") .. "\n\n" .. Display(m.body), m, index)
 			return
 		end
 	end
@@ -4906,7 +4933,7 @@ function ClaudeWoW.MacroPrompt(m)
 	if m.risky then table.insert(lines, "This macro runs code or clicks buttons (/run, /script, /click). Only keep it if you trust what it does.") end
 	if index and oldBody ~= m.body then table.insert(lines, "It replaces your existing macro \"" .. Display(m.name) .. "\" (/claude config macro undo brings the old one back).") end
 	table.insert(lines, Display(m.body))
-	StaticPopup_Show("CLAUDEWOW_MACRO", table.concat(lines, "\n\n"), nil, m)
+	Q.ShowMacroPopup(table.concat(lines, "\n\n"), m, index)
 end
 
 function ClaudeWoW.UndoMacro()
@@ -5106,7 +5133,7 @@ local function GetBubble(i)
 	-- The New chat button on a context warning: exactly what bare /claude does.
 	b.fresh = CreateFrame("Button", nil, b, "UIPanelButtonTemplate")
 	b.fresh:SetHeight(22)
-	b.fresh:SetText("New chat")
+	b.fresh:SetText("New Chat")
 	b.fresh:SetScript("OnClick", function() ClaudeWoW.NewChat() end)
 	b.fresh:Hide()
 	b.macroBtns = {}
@@ -6717,19 +6744,15 @@ function Q.ListSettingsMenu(anchor)
 		s.chatPreviews = not Q.PreviewsOn()
 		ClaudeWoW.RenderChatList()
 	end
-	if type(MenuUtil) == "table" and type(MenuUtil.CreateContextMenu) == "function" then
-		local shown = pcall(MenuUtil.CreateContextMenu, anchor, function(_, root)
-			root:CreateCheckbox("Show message previews", Q.PreviewsOn, TogglePreviews)
-			if ClaudeWoWOrders then root:CreateCheckbox("Show the Orders card", ClaudeWoWOrders.IsOn, ClaudeWoWOrders.Toggle) end
-			if ClaudeWoWTelemetry then root:CreateCheckbox("Share game state with the agent", ClaudeWoWTelemetry.IsOn, ClaudeWoWTelemetry.Toggle) end
-			root:CreateDivider()
-			root:CreateButton("Commands and tips", function() ClaudeWoW.ShowHelp() end)
-			root:CreateButton("Expand all folders", function() SetAll(false) end)
-			root:CreateButton("Collapse all folders", function() SetAll(true) end)
-		end)
-		if shown then return end
-	end
-	TogglePreviews()
+	local items = { { text = "Show message previews", checked = Q.PreviewsOn, fn = TogglePreviews } }
+	if ClaudeWoWOrders then table.insert(items, { text = "Show the Orders card", checked = ClaudeWoWOrders.IsOn, fn = ClaudeWoWOrders.Toggle }) end
+	if ClaudeWoWTelemetry then table.insert(items, { text = "Share game state with the agent", checked = ClaudeWoWTelemetry.IsOn, fn = ClaudeWoWTelemetry.Toggle }) end
+	table.insert(items, { divider = true })
+	table.insert(items, { text = "Options", fn = function() ClaudeWoW.ShowOptions() end })
+	table.insert(items, { text = "Commands and tips", fn = function() ClaudeWoW.ShowHelp() end })
+	table.insert(items, { text = "Expand all folders", fn = function() SetAll(false) end })
+	table.insert(items, { text = "Collapse all folders", fn = function() SetAll(true) end })
+	Q.ShowMenu(anchor, items, "settings", true)
 end
 
 function Q.ChatDetails(c)
@@ -6817,7 +6840,7 @@ function Q.BuildQuestFrames(f)
 	end)
 	ui.search = search
 
-	local newChat = MakeButton(list, "New chat", Q.LIST_W - 12, function() ClaudeWoW.NewChat() end)
+	local newChat = MakeButton(list, "New Chat", Q.LIST_W - 12, function() ClaudeWoW.NewChat() end)
 	newChat:SetPoint("BOTTOM", list, "BOTTOM", 0, Q.COMPOSER_BOTTOM)
 	ui.newChat = newChat
 
@@ -6909,6 +6932,227 @@ function Q.Panel(parent, native)
 		p:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
 	end
 	return p
+end
+
+Q.MENU_W = 170
+Q.MENU_ROW_H = 18
+Q.MENU_MAX_AGENTS = 12
+Q.RADIO_TEXTURE = "Interface\\Common\\UI-DropDownRadioChecks"
+
+function Q.MenuAgents()
+	local agents = {}
+	for _, id in ipairs(type(run.bridgeAgents) == "table" and run.bridgeAgents or {}) do
+		if type(id) == "string" and id:match("^[%w_%-]+$") and #agents < Q.MENU_MAX_AGENTS then table.insert(agents, id) end
+	end
+	return agents
+end
+
+function Q.AgentMenuItems(chatId)
+	local function Pick(id)
+		return function()
+			local chat = FindChat(chatId)
+			if chat then ClaudeWoW.SetAgent(id == "" and "default" or id, chat) end
+		end
+	end
+	local function Selected(id)
+		return function()
+			local chat = FindChat(chatId)
+			return chat ~= nil and (chat.agent or "") == id
+		end
+	end
+	local defaultLabel = run.bridgeAgent and ("Default (" .. Display(AgentName(run.bridgeAgent)) .. ")") or "Default"
+	local items = { { text = defaultLabel, radio = true, selected = Selected(""), fn = Pick("") } }
+	for _, id in ipairs(Q.MenuAgents()) do
+		table.insert(items, { text = Display(AgentName(id)), radio = true, selected = Selected(id), fn = Pick(id) })
+	end
+	return items
+end
+
+function Q.ChatMenuItems(chatId)
+	local c = FindChat(chatId)
+	if not c then return nil end
+	local items = {
+		{ title = Display(c.name) },
+		{ text = "Rename...", fn = function() ClaudeWoW.RenamePrompt(chatId) end },
+		{ text = "Folder...", fn = function() ClaudeWoW.FolderPrompt(chatId) end },
+	}
+	if #Q.MenuAgents() > 0 then
+		table.insert(items, { text = "Agent", submenu = Q.AgentMenuItems(chatId) })
+	else
+		table.insert(items, { text = "Agent...", fn = function() ClaudeWoW.AgentPrompt(chatId) end })
+	end
+	table.insert(items, { divider = true })
+	table.insert(items, { text = "Clear Messages", fn = function() ClaudeWoW.ConfirmClear(chatId) end })
+	table.insert(items, { text = "Delete", color = "ffff4040", fn = function() ClaudeWoW.ConfirmDelete(chatId) end })
+	return items
+end
+
+function Q.MenuLabel(item)
+	return item.color and ("|c" .. item.color .. item.text .. "|r") or item.text
+end
+
+function Q.FillNativeMenu(root, items)
+	for _, it in ipairs(items) do
+		if it.title then
+			root:CreateTitle(it.title)
+		elseif it.divider then
+			root:CreateDivider()
+		elseif it.submenu then
+			Q.FillNativeMenu(root:CreateButton(it.text), it.submenu)
+		elseif it.radio then
+			root:CreateRadio(it.text, it.selected, it.fn)
+		elseif it.checked then
+			root:CreateCheckbox(it.text, it.checked, it.fn)
+		else
+			root:CreateButton(Q.MenuLabel(it), it.fn)
+		end
+	end
+end
+
+function Q.MenuRows(items, depth, out)
+	out = out or {}
+	depth = depth or 0
+	for _, it in ipairs(items) do
+		if it.submenu then
+			table.insert(out, { item = it, depth = depth, header = true })
+			Q.MenuRows(it.submenu, depth + 1, out)
+		elseif not it.title then
+			table.insert(out, { item = it, depth = depth })
+		end
+	end
+	return out
+end
+
+function Q.MenuFrame()
+	if ui.menu then return ui.menu end
+	local menu = CreateFrame("Frame", "ClaudeWoWChatMenu", ui.frame or UIParent, "BackdropTemplate")
+	menu:SetSize(Q.MENU_W, 40)
+	menu:SetFrameStrata("TOOLTIP")
+	menu:SetBackdrop({
+		bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
+		edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+		tile = true, tileSize = 16, edgeSize = 12,
+		insets = { left = 3, right = 3, top = 3, bottom = 3 },
+	})
+	menu:SetBackdropColor(0.08, 0.08, 0.1, 0.97)
+	menu:SetBackdropBorderColor(0.6, 0.6, 0.6, 1)
+	menu:EnableMouse(true)
+	menu.title = menu:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+	menu.title:SetPoint("TOPLEFT", menu, "TOPLEFT", 10, -8)
+	menu.title:SetPoint("RIGHT", menu, "RIGHT", -8, 0)
+	menu.title:SetJustifyH("LEFT")
+	menu.title:SetWordWrap(false)
+	menu.rows = {}
+	menu:SetScript("OnUpdate", function(self, dt)
+		if not MouseIsOver then return end
+		if MouseIsOver(self) or (self.owner and MouseIsOver(self.owner)) then
+			self.away = 0
+		else
+			self.away = (self.away or 0) + dt
+			if self.away > 0.5 then self:Hide() end
+		end
+	end)
+	menu:Hide()
+	ui.menu = menu
+	ui.chatMenu = menu
+	return menu
+end
+
+function Q.MenuRow(menu, i)
+	local row = menu.rows[i]
+	if row then return row end
+	row = CreateFrame("Button", nil, menu)
+	row:SetSize(Q.MENU_W - 12, Q.MENU_ROW_H)
+	row.hl = row:CreateTexture(nil, "HIGHLIGHT")
+	row.hl:SetAllPoints()
+	row.hl:SetColorTexture(1, 1, 1, 0.12)
+	row.check = row:CreateTexture(nil, "ARTWORK")
+	row.check:SetSize(14, 14)
+	row.check:SetTexture(Q.RADIO_TEXTURE)
+	row.line = row:CreateTexture(nil, "ARTWORK")
+	row.line:SetHeight(1)
+	row.line:SetPoint("LEFT", row, "LEFT", 4, 0)
+	row.line:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+	row.line:SetColorTexture(0.6, 0.6, 0.6, 0.5)
+	row.label = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	row.label:SetJustifyH("LEFT")
+	row.label:SetWordWrap(false)
+	row:SetScript("OnClick", function(self)
+		if not self.fn then return end
+		menu:Hide()
+		self.fn()
+	end)
+	menu.rows[i] = row
+	return row
+end
+
+function Q.MenuMarkCoords(item, on)
+	local left = on and 0 or 0.5
+	local top = item.radio and 0.5 or 0
+	return left, left + 0.5, top, top + 0.5
+end
+
+function Q.FillFallbackMenu(menu, items)
+	local title
+	for _, it in ipairs(items) do
+		if it.title then title = it.title end
+	end
+	menu.title:SetText(title or "")
+	local top = title and 22 or 6
+	local rows = Q.MenuRows(items)
+	for i, r in ipairs(rows) do
+		local it, row = r.item, Q.MenuRow(menu, i)
+		local indent = 6 + r.depth * 12
+		local mark = it.radio and it.selected or it.checked
+		row:ClearAllPoints()
+		row:SetPoint("TOPLEFT", menu, "TOPLEFT", 6, -top - (i - 1) * Q.MENU_ROW_H)
+		row.item = it
+		row.fn = (not it.divider and not r.header) and it.fn or nil
+		row:EnableMouse(row.fn ~= nil)
+		row.check:ClearAllPoints()
+		row.check:SetPoint("LEFT", row, "LEFT", indent, 0)
+		if mark then
+			row.check:SetTexCoord(Q.MenuMarkCoords(it, mark() == true))
+			row.check:Show()
+		else
+			row.check:Hide()
+		end
+		if it.divider then row.line:Show() else row.line:Hide() end
+		row.label:ClearAllPoints()
+		row.label:SetPoint("LEFT", row, "LEFT", indent + (mark and 16 or 0), 0)
+		row.label:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+		row.label:SetText(it.divider and "" or Q.MenuLabel(it))
+		if r.header then row.label:SetTextColor(1, 0.82, 0) else row.label:SetTextColor(1, 1, 1) end
+		row:Show()
+	end
+	for i = #rows + 1, #menu.rows do menu.rows[i]:Hide() end
+	menu:SetHeight(top + #rows * Q.MENU_ROW_H + 8)
+end
+
+function Q.ShowMenu(anchor, items, key, allowNative)
+	if allowNative and type(MenuUtil) == "table" and type(MenuUtil.CreateContextMenu) == "function" then
+		local shown = pcall(MenuUtil.CreateContextMenu, anchor, function(_, root) Q.FillNativeMenu(root, items) end)
+		if shown then return end
+	end
+	local menu = Q.MenuFrame()
+	if menu:IsShown() and menu.key == key then
+		menu:Hide()
+		return
+	end
+	menu.key = key
+	menu.owner = anchor
+	menu.away = 0
+	Q.FillFallbackMenu(menu, items)
+	menu:ClearAllPoints()
+	menu:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 8, 2)
+	menu:Show()
+end
+
+function ClaudeWoW.ShowChatMenu(chatId, anchor)
+	local items = Q.ChatMenuItems(chatId)
+	if not items then return end
+	Q.ShowMenu(anchor, items, "chat:" .. chatId, ui.native)
+	if ui.menu then ui.menu.chatId = ui.menu.key == "chat:" .. chatId and chatId or nil end
 end
 
 local function BuildUI()
@@ -7045,88 +7289,6 @@ local function BuildUI()
 
 	local newBtn = MakeButton(panel, "+ New chat", PANEL_W - 16, function() ClaudeWoW.NewChat() end)
 	newBtn:SetPoint("TOP", panel, "TOP", 0, -8)
-
-	-- Per-chat menu: Rename, Folder, Agent and Plugin, opened by right-clicking
-	-- a chat row. A plain frame of our own rather than a Blizzard dropdown, so it
-	-- looks the same on every client.
-	local menu = CreateFrame("Frame", "ClaudeWoWChatMenu", f, "BackdropTemplate")
-	menu:SetSize(110, 5 * 20 + 12)
-	menu:SetFrameStrata("TOOLTIP")
-	menu:SetBackdrop({
-		bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
-		edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-		tile = true, tileSize = 16, edgeSize = 12,
-		insets = { left = 3, right = 3, top = 3, bottom = 3 },
-	})
-	menu:SetBackdropColor(0.08, 0.08, 0.1, 0.97)
-	menu:SetBackdropBorderColor(0.6, 0.6, 0.6, 1)
-	menu:EnableMouse(true)
-	menu.title = menu:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-	menu.title:SetPoint("TOPLEFT", menu, "TOPLEFT", 10, -8)
-	menu.title:SetPoint("RIGHT", menu, "RIGHT", -8, 0)
-	menu.title:SetJustifyH("LEFT")
-	menu.title:SetWordWrap(false)
-	local function MenuItem(label, order, onClick)
-		local it = CreateFrame("Button", nil, menu)
-		it:SetSize(110 - 12, 20)
-		it:SetPoint("TOPLEFT", menu, "TOPLEFT", 6, -6 - order * 20)
-		local hl = it:CreateTexture(nil, "HIGHLIGHT")
-		hl:SetAllPoints()
-		hl:SetColorTexture(1, 1, 1, 0.12)
-		it.label = it:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-		it.label:SetPoint("LEFT", it, "LEFT", 6, 0)
-		it.label:SetText(label)
-		it:SetScript("OnClick", function()
-			menu:Hide()
-			onClick(menu.chatId)
-		end)
-		return it
-	end
-	MenuItem("Rename...", 1, ClaudeWoW.RenamePrompt)
-	MenuItem("Folder...", 2, ClaudeWoW.FolderPrompt)
-	MenuItem("Agent...", 3, ClaudeWoW.AgentPrompt)
-	MenuItem("Plugin...", 4, ClaudeWoW.PluginPrompt)
-	-- Close once the mouse has wandered away from the menu and the row it came from.
-	menu:SetScript("OnUpdate", function(self, dt)
-		if not MouseIsOver then return end
-		if MouseIsOver(self) or (self.owner and MouseIsOver(self.owner)) then
-			self.away = 0
-		else
-			self.away = (self.away or 0) + dt
-			if self.away > 0.5 then self:Hide() end
-		end
-	end)
-	menu:Hide()
-	ui.chatMenu = menu
-
-	function ClaudeWoW.ShowChatMenu(chatId, anchor)
-		local c = FindChat(chatId)
-		if not c then return end
-		if ui.native and type(MenuUtil) == "table" and type(MenuUtil.CreateContextMenu) == "function" then
-			local shown = pcall(MenuUtil.CreateContextMenu, anchor, function(_, root)
-				root:CreateTitle(Display(c.name))
-				root:CreateButton("Rename...", function() ClaudeWoW.RenamePrompt(chatId) end)
-				root:CreateButton("Folder...", function() ClaudeWoW.FolderPrompt(chatId) end)
-				root:CreateButton("Agent...", function() ClaudeWoW.AgentPrompt(chatId) end)
-				root:CreateButton("Plugin...", function() ClaudeWoW.PluginPrompt(chatId) end)
-				root:CreateDivider()
-				root:CreateButton("Clear messages", function() ClaudeWoW.ClearChat(chatId) end)
-				root:CreateButton("|cffff4040Delete|r", function() ClaudeWoW.ConfirmDelete(chatId) end)
-			end)
-			if shown then return end
-		end
-		if menu:IsShown() and menu.chatId == chatId then
-			menu:Hide()
-			return
-		end
-		menu.chatId = chatId
-		menu.owner = anchor
-		menu.away = 0
-		menu.title:SetText(Display(c.name))
-		menu:ClearAllPoints()
-		menu:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 8, 2)
-		menu:Show()
-	end
 
 	ui.chatButtons = {}
 	for i = 1, Q.CHAT_PAGE do
@@ -7563,7 +7725,13 @@ ClaudeWoW.HELP_MISSING = "The Commands and tips page is in a new addon file. Res
 
 function ClaudeWoW.ShowHelp()
 	if ClaudeWoWHelp and ClaudeWoWHelp.Open then return ClaudeWoWHelp.Open() end
-	print("|cff66ccff[Claude WoW]|r " .. ClaudeWoW.HELP_MISSING)
+	print(ClaudeWoW.PREFIX .. ClaudeWoW.HELP_MISSING)
+	return nil
+end
+
+function ClaudeWoW.ShowOptions()
+	if ClaudeWoWHelp and ClaudeWoWHelp.OpenOptions then return ClaudeWoWHelp.OpenOptions() end
+	print(ClaudeWoW.PREFIX .. ClaudeWoW.HELP_MISSING)
 	return nil
 end
 
@@ -7618,9 +7786,12 @@ ClaudeWoW.HELP = {
 	{
 		title = "Settings and the window",
 		rows = {
-			{ "/claude config [key] [value]", "Settings: voice, roast, whisper, echo, vision, roll, achievements, orders, telemetry, ui, map, macro, context, bind. Alone it lists them with their values; all adds the troubleshooting keys. The Options page in the game's AddOns settings has the same switches." },
+			{ "/claude config [key] [value]", "Settings: voice, roast, whisper, echo, vision, roll, achievements, orders, telemetry, ui, map, macro, context, bind. Alone it lists them with their values; all adds the troubleshooting keys. The Options page under AddOns, " .. ClaudeWoW.PRODUCT .. " in the game's settings has the same switches." },
 			{ "/claude config ui [setting]", "The tabs and the window: whisper on|off, dim <10-100>|off, dodge on|off, autohide on|off, reset." },
 			{ "/claude orders [on|off]", "Show or hide the Orders card under the quest tracker." },
+			{ "/claude dm [next]", "Show or hide the Dungeon Master; next goes on to a beat that waits for you. /dm is the same." },
+			{ "/claude map [command]", "Map layers and node pins: ore, herb, filter, show, hide, nav, next, prev, stop. /aimap is the same." },
+			{ "/claude stream [command]", "Stream scenes, panes and the quest overlay. /stream is the same." },
 			{ "/claude hide | mini", "Hide the window, or collapse it to the small bar." },
 			{ "/claude help", "Open this page." },
 		},
@@ -7702,7 +7873,44 @@ Cli.CLAUDE_VERBS = {
 	cd = true, hide = true, quit = true, mini = true, min = true, reload = true, refresh = true,
 	resend = true, slots = true, look = true, reset = true, probe = true, orders = true,
 	dev = true, wrong = true, bug = true, errors = true, mcp = true, discord = true,
+	dm = true, map = true, stream = true,
 }
+
+function Cli.NoArgument(arg) return arg == "" end
+function Cli.OneWord(arg) return arg ~= "" and not arg:find("%s") end
+function Cli.OnOffOrEmpty(arg) return arg == "" or arg == "on" or arg == "off" end
+
+Cli.MODULE_SUBCOMMANDS = {
+	dm = { [""] = Cli.NoArgument, next = Cli.NoArgument },
+	map = {
+		[""] = Cli.NoArgument, ore = Cli.OnOffOrEmpty, herb = Cli.OnOffOrEmpty,
+		filter = function(arg) return arg == "all" or arg == "skill" end,
+		show = Cli.OneWord, hide = Cli.OneWord,
+		nav = function(arg) return arg:match("^%S+%s*%d*$") ~= nil end,
+		next = Cli.NoArgument, prev = Cli.NoArgument, stop = Cli.NoArgument,
+	},
+	stream = {
+		[""] = Cli.NoArgument, help = Cli.NoArgument,
+		starting = Cli.NoArgument, raid = Cli.NoArgument, game = Cli.NoArgument, code = Cli.NoArgument, brb = Cli.NoArgument,
+		quest = function(arg) return arg ~= "" end,
+		pane = function(arg) return arg == "left" or arg == "right" or arg == "full" end,
+		follow = function(arg) return arg == "on" or arg == "off" end,
+	},
+}
+
+Cli.MODULE_COMMANDS = {
+	dm = function() return ClaudeWoWDM and ClaudeWoWDM.Command end,
+	map = function() return ClaudeWoWMap and ClaudeWoWMap.Command end,
+	stream = function() return ClaudeWoWStream and ClaudeWoWStream.SlashCommand end,
+}
+
+function Cli.IsModuleCommand(verb, rest)
+	local subcommands = Cli.MODULE_SUBCOMMANDS[verb]
+	if not subcommands then return false end
+	local word, arg = tostring(rest or ""):lower():match("^(%S*)%s*(.-)%s*$")
+	local accepts = subcommands[word or ""]
+	return accepts ~= nil and accepts(arg or "") == true
+end
 
 Cli.CONFIG_KEYS = {
 	"voice", "roast", "whisper", "echo", "vision", "roll", "achievements", "orders", "telemetry", "context", "signal",
@@ -7759,7 +7967,7 @@ function Cli.Emit(c, text)
 	if Cli.WindowShown() then return end
 	if cmd and cmd.general then
 		for line in (tostring(text) .. "\n"):gmatch("(.-)\n") do
-			if line:match("%S") then print("|cff66ccff[Claude WoW]|r " .. line) end
+			if line:match("%S") then print(ClaudeWoW.PREFIX .. line) end
 		end
 		return
 	end
@@ -7779,7 +7987,7 @@ end
 
 function Cli.Point(c)
 	if Cli.Show(c) and run.cmd and run.cmd.general then
-		print("|cff66ccff[Claude WoW]|r " .. Display(c.name) .. " is the \"" .. Whisper.Title(c) .. "\" tab in the chat dock; bare /claude opens the workspace window.")
+		print(ClaudeWoW.PREFIX .. Display(c.name) .. " is the \"" .. Whisper.Title(c) .. "\" tab in the chat dock; bare /claude opens the workspace window.")
 	end
 end
 
@@ -7800,7 +8008,7 @@ function Cli.Note(c, text)
 	if Whisper.Active() then
 		Cli.Emit(c, text)
 	else
-		print("|cff66ccff[Claude WoW]|r " .. Display(text))
+		print(ClaudeWoW.PREFIX .. Display(text))
 	end
 end
 
@@ -7844,14 +8052,14 @@ function Cli.Run(editBox, fn, ...)
 	if not ok then error(err, 0) end
 end
 
-function ClaudeWoW.Print(msg, tag)
+function ClaudeWoW.Print(msg)
 	local cmd = run.cmd
 	local c = cmd and cmd.tab
 	if not c and not (cmd and cmd.general) and Whisper.Active() and not Cli.WindowShown() then
 		c = FindChat(run.lastReplyChat) or ActiveChat()
 	end
 	if c and Whisper.System(c, msg, true, true) then return end
-	print("|cff66ccff[" .. (tag or "Claude WoW") .. "]|r " .. msg)
+	print(ClaudeWoW.PREFIX .. msg)
 end
 
 function ClaudeWoW.OpenWorkspace(chatId, focus)
@@ -7924,7 +8132,7 @@ function Cli.ConfigList(all)
 			table.insert(lines, key .. (value ~= "" and (" = " .. value) or "") .. "  -  " .. Cli.CONFIG_HELP[key])
 		end
 	end
-	table.insert(lines, "The game's Options window has the same settings: AddOns, " .. (ClaudeWoWHelp and ClaudeWoWHelp.AddonTitle() or "Azeroth Companion") .. ", Options.")
+	table.insert(lines, "The game's Options window has the same settings: AddOns, " .. (ClaudeWoWHelp and ClaudeWoWHelp.AddonTitle() or ClaudeWoW.PRODUCT) .. ", Options.")
 	if not all then table.insert(lines, "/claude config all also lists the troubleshooting keys.") end
 	return table.concat(lines, "\n")
 end
@@ -7975,7 +8183,7 @@ function Cli.SetWhisper(c, rest)
 		s.whisper, s.whisperChoice = false, "off"
 		Whisper.CloseAll()
 		Cli.Out(c, "Whisper tabs are off; replies go to the game chat and the window as before")
-		print("|cff66ccff[Claude WoW]|r Whisper tabs are off: replies go to the game chat, and /claude opens the window. /claude config ui whisper on brings the tabs back.")
+		print(ClaudeWoW.PREFIX .. "Whisper tabs are off: replies go to the game chat, and /claude opens the window. /claude config ui whisper on brings the tabs back.")
 	else
 		Cli.Out(c, Whisper.Status() .. " (/claude config ui whisper on|off: each chat as a native whisper tab)")
 	end
@@ -8662,7 +8870,13 @@ function Cli.ClaudeCommand(msg)
 		ClaudeWoW.Config(rest)
 		return
 	end
-	if Cli.CLAUDE_VERBS[verb] and IsCommand(verb, rest) then
+	if Cli.MODULE_SUBCOMMANDS[verb] then
+		if Cli.IsModuleCommand(verb, rest) then
+			local handler = Cli.MODULE_COMMANDS[verb]()
+			if handler then handler(rest) else ClaudeWoW.Print("the " .. verb .. " module did not load") end
+			return
+		end
+	elseif Cli.CLAUDE_VERBS[verb] and IsCommand(verb, rest) then
 		RunCommand(verb, rest)
 		return
 	end
@@ -8857,17 +9071,17 @@ RunCommand = function(cmd, rest)
 		ClaudeWoW.SetFolder(rest, c)
 		Cli.Show(c)
 	elseif cmd == "map" then
-		if ClaudeWoWMap then ClaudeWoWMap.Command(rest) else print("|cff66ccff[Claude WoW]|r the map module did not load") end
+		if ClaudeWoWMap then ClaudeWoWMap.Command(rest) else print(ClaudeWoW.PREFIX .. "the map module did not load") end
 	elseif cmd == "roast" then
-		if ClaudeWoWRoast then ClaudeWoWRoast.Command(rest) else print("|cff66ccff[Claude WoW]|r the roast module did not load") end
+		if ClaudeWoWRoast then ClaudeWoWRoast.Command(rest) else print(ClaudeWoW.PREFIX .. "the roast module did not load") end
 	elseif cmd == "voice" then
 		ClaudeWoWVoice.Command(rest)
 	elseif cmd == "achievements" or cmd == "toasts" then
-		if ClaudeWoWAchievements then ClaudeWoWAchievements.Command(rest) else print("|cff66ccff[Claude WoW]|r the achievements module did not load") end
+		if ClaudeWoWAchievements then ClaudeWoWAchievements.Command(rest) else print(ClaudeWoW.PREFIX .. "the achievements module did not load") end
 	elseif cmd == "orders" then
-		if ClaudeWoWOrders then ClaudeWoWOrders.Command(rest) else print("|cff66ccff[Claude WoW]|r the orders module did not load") end
+		if ClaudeWoWOrders then ClaudeWoWOrders.Command(rest) else print(ClaudeWoW.PREFIX .. "the orders module did not load") end
 	elseif cmd == "telemetry" then
-		if ClaudeWoWTelemetry then ClaudeWoWTelemetry.Command(rest) else print("|cff66ccff[Claude WoW]|r the telemetry module did not load") end
+		if ClaudeWoWTelemetry then ClaudeWoWTelemetry.Command(rest) else print(ClaudeWoW.PREFIX .. "the telemetry module did not load") end
 	elseif cmd == "ui" then
 		Cli.Ui(c, rest)
 	elseif cmd == "agent" then
