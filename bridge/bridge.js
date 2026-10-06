@@ -2464,7 +2464,7 @@ function noteMcpHealth(servers, cwd) {
   state.mcpSeen = MC.noteSeen(state.mcpSeen || {}, servers, { cwd });
 }
 function mcpSlotList() {
-  return MC.catalog({ mcp: USER_MCP, seen: state.mcpSeen || {}, codexOwn: CODEX_ALL_MCP, reserved: [DM.SERVER_NAME, GM.SERVER_NAME, FACTORY.SERVER_NAME] });
+  return MC.catalog({ mcp: USER_MCP, seen: state.mcpSeen || {}, codexOwn: CODEX_ALL_MCP, reserved: MCP_RESERVED });
 }
 function loggedMcpBlocks(tag, never, userMcp) {
   if (!userMcp) return never;
@@ -2505,17 +2505,17 @@ function runAgent(job, opts = {}) {
   const runDenied = [...inGameDeniedTools({ claudeRun, plugin, withRunTools: !!runToolSocket }), ...(Array.isArray(opts.deniedTools) ? opts.deniedTools : [])];
   const factoryConf = claudeRun && opts.factory && opts.factory.enabled ? opts.factory : null;
   const factoryToolSocket = factoryConf ? factorySocket(tag) : '';
-  const userMcp = claudeRun ? MC.forClaude(USER_MCP, { choice: chosen.mcp }) : null;
-  if (claudeRun && chosen.mcp) state.mcpSeen = MC.seedSeen(state.mcpSeen || {}, MC.claudeOwnServers({ cwd }), { cwd });
-  const seenOff = claudeRun
-    ? MC.discoveredOff(
-        chosen.mcp,
-        mcpSlotList()
-          .filter(e => e.src !== 'config' && e.src !== 'codex')
-          .map(e => e.id),
-      )
-    : null;
-  const mcpGuard = claudeRun ? { blocks: rule => (userMcp ? userMcp.blocks(rule) : false) || seenOff.blocks(rule) } : null;
+  const mcpPlan = MC.planRun({
+    agentId,
+    choice: chosen.mcp,
+    cwd,
+    userMcp: USER_MCP,
+    seen: state.mcpSeen || {},
+    codexOwn: CODEX_ALL_MCP,
+    reserved: MCP_RESERVED,
+  });
+  state.mcpSeen = mcpPlan.seen;
+  const { userMcp, seenOff, guard: mcpGuard } = mcpPlan;
   const grantForGood = P.splitGrants(inGameGrantable(job.allow, runDenied, mcpGuard));
   const grantOnce = P.splitGrants(inGameGrantable(job.allowOnce, runDenied, mcpGuard));
   if (grantForGood.rules.length) {
@@ -2526,9 +2526,7 @@ function runAgent(job, opts = {}) {
     log(`${tag} allowed for this run only (${agentId}): ${grantOnce.rules.join(', ')}`);
   }
   const dataServer = opts.gameData && (claudeRun || codexRun || agent.mcp) ? gameDataServer(tag, job) : null;
-  const codexMcp = codexRun
-    ? [...(dataServer ? [{ name: DM.SERVER_NAME, server: dataServer.server }] : []), ...MC.forCodex(USER_MCP, { choice: chosen.mcp, own: CODEX_ALL_MCP })]
-    : [];
+  const codexMcp = codexRun ? [...(dataServer ? [{ name: DM.SERVER_NAME, server: dataServer.server }] : []), ...mcpPlan.codexMcp] : [];
   const runOnlyRules = [
     ...grantOnce.rules,
     ...(dataServer ? dataServer.rules : []),
@@ -3747,7 +3745,8 @@ function startSelfUpdate() {
   }
 }
 
-const USER_MCP = MC.parse(cfg.mcp, { reserved: [DM.SERVER_NAME, GM.SERVER_NAME, FACTORY.SERVER_NAME], log, env: process.env });
+const MCP_RESERVED = [DM.SERVER_NAME, GM.SERVER_NAME, FACTORY.SERVER_NAME];
+const USER_MCP = MC.parse(cfg.mcp, { reserved: MCP_RESERVED, log, env: process.env });
 const CODEX_ALL_MCP = MC.codexOwnServers();
 const CODEX_OWN_MCP = USER_MCP ? CODEX_ALL_MCP.filter(n => USER_MCP.servers.some(s => s.name === n)) : [];
 state.mcpSeen = MC.seedSeen(state.mcpSeen || {}, MC.claudeOwnServers({ cwd: DEFAULT_CWD }), { cwd: DEFAULT_CWD });

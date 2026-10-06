@@ -1,0 +1,100 @@
+{
+  "compareBehind": { "status": "behind", "ahead_by": 0, "behind_by": 11 },
+  "compareIdentical": { "status": "identical", "ahead_by": 0, "behind_by": 0 },
+  "compareAhead": { "status": "ahead", "ahead_by": 2, "behind_by": 0 },
+  "compareDiverged": { "status": "diverged", "ahead_by": 1, "behind_by": 3 },
+  "runsPrHead": {
+    "total_count": 1,
+    "workflow_runs": [
+      {
+        "id": 37391245471,
+        "head_sha": "ec3700490a5f2778322885e138454541ae79494c",
+        "head_branch": "fix/private-service-logs",
+        "event": "pull_request",
+        "status": "completed",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "runsMainGreen": {
+    "total_count": 1,
+    "workflow_runs": [
+      {
+        "id": 37387403169,
+        "head_sha": "75ef027754cf9941226fe03d723d4367449bff77",
+        "head_branch": "main",
+        "event": "push",
+        "status": "completed",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "runsMainBeforeGate": {
+    "total_count": 1,
+    "workflow_runs": [
+      {
+        "id": 37277261806,
+        "head_sha": "7d86a1f159ad4dd920441bf28f023c20c406603a",
+        "head_branch": "main",
+        "event": "push",
+        "status": "completed",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "runsMainPending": {
+    "total_count": 1,
+    "workflow_runs": [
+      {
+        "id": 37393705976,
+        "head_sha": "6c64766696c534bd9a01f56a3b2bb1d4c4646da2",
+        "head_branch": "main",
+        "event": "push",
+        "status": "pending",
+        "conclusion": null
+      }
+    ]
+  },
+  "runsMainDone": {
+    "total_count": 1,
+    "workflow_runs": [
+      {
+        "id": 37393705976,
+        "head_sha": "6c64766696c534bd9a01f56a3b2bb1d4c4646da2",
+        "head_branch": "main",
+        "event": "push",
+        "status": "completed",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "runsNone": { "total_count": 0, "workflow_runs": [] },
+  "jobsPending": { "total_count": 0, "jobs": [] },
+  "jobsGreen": {
+    "total_count": 17,
+    "jobs": [
+      { "id": 112025068269, "name": "build", "status": "completed", "conclusion": "success" },
+      { "id": 112025068625, "name": "lint", "status": "completed", "conclusion": "success" },
+      { "id": 112025068958, "name": "unit (ubuntu-latest, node)", "status": "completed", "conclusion": "success" },
+      { "id": 112025068656, "name": "e2e (ubuntu-latest, 1)", "status": "completed", "conclusion": "success" },
+      { "id": 112025069740, "name": "fuzz", "status": "completed", "conclusion": "skipped" },
+      { "id": 112027135635, "name": "gate", "status": "completed", "conclusion": "success" }
+    ]
+  },
+  "jobsGateFailed": {
+    "total_count": 17,
+    "jobs": [
+      { "id": 112025068269, "name": "build", "status": "completed", "conclusion": "success" },
+      { "id": 112025068656, "name": "e2e (ubuntu-latest, 1)", "status": "completed", "conclusion": "failure" },
+      { "id": 112027135635, "name": "gate", "status": "completed", "conclusion": "failure" }
+    ]
+  },
+  "jobsBeforeGate": {
+    "total_count": 9,
+    "jobs": [
+      { "name": "build", "status": "completed", "conclusion": "success" },
+      { "name": "e2e (ubuntu-latest)", "status": "completed", "conclusion": "success" },
+      { "name": "test (ubuntu-latest, node)", "status": "completed", "conclusion": "success" }
+    ]
+  }
+}

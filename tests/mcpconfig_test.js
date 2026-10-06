@@ -492,3 +492,42 @@ test('the seen list follows the latest report: a server gone from Claude is drop
   MC.noteSeen(seen, [{ name: 'wowdata', status: 'connected', source: 'dynamic' }], { cwd: '/b', now: 6 });
   assert.ok(seen.claude_ai_Slack, 'a report with only our own servers (strict mode) drops nothing');
 });
+
+test('planRun: one pure plan per run; Claude gets the config plan, the discovered servers turned off and one guard, Codex its -c entries', () => {
+  const mcp = parsed(SAMPLE).mcp;
+  const choice = MC.parseChoice('-linear,-claude_ai_Slack,-wowdata,-node_repl,-repo-a');
+  const seen = MC.noteSeen({}, [{ name: 'claude.ai Slack', status: 'connected', source: 'claudeai' }], { now: 1 });
+  const frozen = JSON.stringify(seen);
+  const reads = [];
+  const claudeOwn = () => {
+    reads.push('read');
+    return ['project:repo-a', 'user:wowdata'];
+  };
+  const base = { cwd: '/a', userMcp: mcp, seen, codexOwn: ['node_repl'], reserved: RESERVED, claudeOwn };
+
+  const run = MC.planRun({ ...base, agentId: 'claude', choice });
+  assert.equal(JSON.stringify(seen), frozen, 'the caller state is not changed in place');
+  assert.deepEqual(Object.keys(run.seen).sort(), ['claude_ai_Slack', 'repo-a', 'wowdata']);
+  assert.equal(run.seen['repo-a'].cwd, '/a');
+  assert.deepEqual(run.userMcp.offRules, ['mcp__linear']);
+  assert.deepEqual(run.seenOff.rules, ['mcp__repo-a', 'mcp__claude_ai_Slack'], 'reserved, config and Codex names are not discovered servers');
+  assert.equal(run.guard.blocks('mcp__linear__list_issues'), true);
+  assert.equal(run.guard.blocks('mcp__claude_ai_Slack__post'), true);
+  assert.equal(run.guard.blocks('mcp__github__create_issue'), false);
+  assert.deepEqual(run.codexMcp, []);
+
+  const plain = MC.planRun({ ...base, agentId: 'claude', choice: undefined });
+  assert.equal(plain.seen, seen, 'no choice: the seen list is not read again');
+  assert.deepEqual(plain.seenOff.rules, []);
+  assert.equal(MC.planRun({ ...base, agentId: 'claude', userMcp: null, choice }).guard.blocks('mcp__linear__x'), false);
+  assert.deepEqual(reads, ['read', 'read']);
+
+  const codex = MC.planRun({ ...base, agentId: 'codex', choice });
+  assert.deepEqual(codex, { userMcp: null, seenOff: null, guard: null, codexMcp: MC.forCodex(mcp, { choice, own: ['node_repl'] }), seen });
+  assert.deepEqual(
+    codex.codexMcp.map(e => e.name),
+    ['github', 'notion', 'node_repl'],
+  );
+  assert.deepEqual(MC.planRun({ ...base, agentId: 'grok', choice }), { userMcp: null, seenOff: null, guard: null, codexMcp: [], seen });
+  assert.deepEqual(reads, ['read', 'read'], 'only a Claude run with a choice reads Claude settings');
+});

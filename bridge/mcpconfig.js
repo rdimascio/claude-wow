@@ -364,7 +364,21 @@ function catalog({ mcp, seen = {}, codexOwn = [], reserved = [] }) {
   return out;
 }
 
+function planRun({ agentId, choice, cwd = '', userMcp = null, seen = {}, codexOwn = [], reserved = [], claudeOwn = () => claudeOwnServers({ cwd }) } = {}) {
+  if (agentId === 'codex') return { userMcp: null, seenOff: null, guard: null, codexMcp: forCodex(userMcp, { choice, own: codexOwn }), seen };
+  if (agentId !== 'claude') return { userMcp: null, seenOff: null, guard: null, codexMcp: [], seen };
+  const plan = forClaude(userMcp, { choice });
+  const seenNow = choice ? seedSeen({ ...seen }, claudeOwn(), { cwd }) : seen;
+  const discovered = catalog({ mcp: userMcp, seen: seenNow, codexOwn, reserved })
+    .filter(e => e.src !== 'config' && e.src !== 'codex')
+    .map(e => e.id);
+  const seenOff = discoveredOff(choice, discovered);
+  const guard = { blocks: rule => (plan ? plan.blocks(rule) : false) || seenOff.blocks(rule) };
+  return { userMcp: plan, seenOff, guard, codexMcp: [], seen: seenNow };
+}
+
 module.exports = {
+  planRun,
   parseChoice,
   discoveredOff,
   noteSeen,
