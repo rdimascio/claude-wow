@@ -819,7 +819,17 @@ function W.Stop(widget)
 end
 
 local function Approved(item)
-	return DB().approved[item.name] == item.rev
+	local approval = DB().approved[item.name]
+	return type(approval) == "table" and approval.rev == item.rev and approval.source == item.source
+end
+
+local function Approve(item)
+	DB().approved[item.name] = { rev = item.rev, source = item.source }
+	skipped[item.name] = nil
+end
+
+local function SameCode(item, data)
+	return type(data) == "table" and item.rev == data.rev and item.source == data.source
 end
 
 local function Display(s)
@@ -828,7 +838,7 @@ end
 
 function W.Start(item, announce)
 	if not Approved(item) then return false end
-	local widget = { name = item.name, title = item.title or item.name, rev = item.rev, frames = {}, timers = {}, containerScripts = {} }
+	local widget = { name = item.name, title = item.title or item.name, rev = item.rev, source = item.source, frames = {}, timers = {}, containerScripts = {} }
 	widget.frame = Container(item.name)
 	widget.frame:Show()
 	failures[item.name] = nil
@@ -861,7 +871,7 @@ function W.Apply(announce)
 	for _, item in ipairs(Items()) do wanted[item.name] = item end
 	for name, widget in pairs(running) do
 		local item = wanted[name]
-		if not item or item.rev ~= widget.rev or d.removed[name] == item.rev then
+		if not item or item.rev ~= widget.rev or item.source ~= widget.source or d.removed[name] == item.rev then
 			W.Stop(widget)
 			if not item and announce then Report(name .. " was removed by the agent.") end
 		end
@@ -869,8 +879,8 @@ function W.Apply(announce)
 	for name, rev in pairs(d.removed) do
 		if not wanted[name] or wanted[name].rev ~= rev then d.removed[name] = nil end
 	end
-	for name, rev in pairs(d.approved) do
-		if not wanted[name] or wanted[name].rev ~= rev then d.approved[name] = nil end
+	for name in pairs(d.approved) do
+		if not wanted[name] or not Approved(wanted[name]) then d.approved[name] = nil end
 	end
 	for _, item in ipairs(Items()) do
 		local failure = failures[item.name]
@@ -891,15 +901,27 @@ function W.Waiting()
 	return list
 end
 
+W.RETRY_SECONDS = 2
+
+local function RetryLater()
+	if W.retrying or not (C_Timer and C_Timer.After) then return end
+	W.retrying = true
+	C_Timer.After(W.RETRY_SECONDS, function()
+		W.retrying = nil
+		W.PromptNext()
+	end)
+end
+
 function W.PromptNext()
 	if W.asking or type(StaticPopup_Show) ~= "function" then return false end
 	for _, item in ipairs(W.Waiting()) do
 		if skipped[item.name] ~= item.rev then
-			local data = { name = item.name, rev = item.rev }
+			local data = { name = item.name, rev = item.rev, source = item.source }
 			W.asking = data
 			local dialog = StaticPopup_Show(W.POPUP, Display(item.title):sub(1, W.TITLE_MAX), nil, data)
 			if dialog then return true end
 			W.asking = nil
+			RetryLater()
 			return false
 		end
 	end
@@ -909,15 +931,14 @@ end
 local function Current(data)
 	if type(data) ~= "table" then return nil end
 	local item = FindItem(data.name)
-	if not item or item.rev ~= data.rev or DB().removed[item.name] == item.rev then return nil end
+	if not item or not SameCode(item, data) or DB().removed[item.name] == item.rev then return nil end
 	return item
 end
 
 function W.Approve(data)
 	local item = Current(data)
 	if not item then return false end
-	DB().approved[item.name] = item.rev
-	skipped[item.name] = nil
+	Approve(item)
 	failures[item.name] = nil
 	if running[item.name] then W.Stop(running[item.name]) end
 	return W.Start(item, true)
@@ -1007,17 +1028,27 @@ function W.Run(name)
 	local item = FindItem(name)
 	if not item then Print("no widget " .. tostring(name)); return end
 	DB().removed[name] = nil
-	DB().approved[name] = item.rev
-	skipped[name] = nil
+	Approve(item)
 	if running[name] then W.Stop(running[name]) end
 	W.Start(item, true)
+end
+
+function W.Show(data)
+	local item = type(data) == "table" and FindItem(data.name)
+	if not item or not SameCode(item, data) then
+		W.PromptNext()
+		return false
+	end
+	DB().removed[item.name] = nil
+	failures[item.name] = nil
+	return W.Approve(data)
 end
 
 function W.Rows()
 	local rows = {}
 	for _, item in ipairs(Items()) do
 		local status, err = W.Status(item.name)
-		rows[#rows + 1] = { name = item.name, title = item.title, status = status, err = err }
+		rows[#rows + 1] = { name = item.name, title = item.title, rev = item.rev, source = item.source, status = status, err = err }
 	end
 	return rows
 end
