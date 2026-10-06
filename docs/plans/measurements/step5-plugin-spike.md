@@ -52,8 +52,32 @@ Fed the default run's events through `AGENTS.claude.parser()`:
 - **Window:** `claudeWindow` takes the largest `contextWindow` in `modelUsage`. With a Haiku main session (200k) and a Sonnet subagent (1M) it reported 1M. Today's `ask` models (Opus 5.5 and Sonnet 5.5) are both 1M, so it is right for now; a smaller main model with a larger subagent would show the wrong share.
 - **Cost:** the parser priced the run at $0.0386 against the CLI's $0.0336 (+15%). It splits every model's cache writes by the 1h/5m share of the top-level `usage`, which here describes only the main session (1h); the subagent wrote 5m cache.
 
+## wowdata from a plugin agent (2026-10-06)
+
+Measured on Claude Code 2.1.290 with the real plugin (`assets/plugins/claude-wow`), a scratch Classic Era 1.15.9.70003 sync and a scratch `CLAUDE_WOW_HOME`. The argv came from the bridge's own builders (`AGENTS.claude.args`, `DM.launchConfig`, `GM.mcpConfig`, `P.systemPrompt` with the `ask` plugin's tools text, the `ask` deny rules without the live socket), default setting sources, no `--strict-mcp-config`, cwd a scratch folder:
+
+```
+-p --output-format stream-json --verbose --permission-mode acceptEdits
+--allowedTools WebSearch WebFetch Bash(git:*) ... Bash(dir:*) mcp__wowdata
+--disallowedTools mcp__claude-wow__goal_set ... mcp__wowgoals Read(<home>/**) Grep Glob LS NotebookRead
+--mcp-config <scratch>/mcp.json --model haiku --max-budget-usd 0.3
+--append-system-prompt <ask system prompt> --plugin-dir <abs>/assets/plugins/claude-wow
+```
+
+Prompt (with the situation block, Tirisfal Glades at 61.0, 51.0): "Use the claude-wow:wow-planner agent for this. Plan me a short route from here to the nearest flight path and mark it on the map. Then give me its answer."
+
+| Run | `mcp__wowdata` in `--allowedTools` | Planner tool calls | `permission_denials` | `total_cost_usd` |
+|---|---|---|---|---|
+| 1 | yes (the bridge's run-only rule) | `mcp__wowdata__wow_flights {"uiMapID":1420}`: ok, `trust: client-data`, `buildCheck: exact` | `[]` | **$0.180** (haiku $0.093, opus-5-5 $0.087) |
+| 2 (control) | no | `wow_flights`, `wow_where`: both "Permission to use ... has been denied" | 2 in the first result, 1 more in the second (the parent tried `wow_flights` itself) | $0.118 |
+
+- **The subagent gets the parent's run-only allow rule.** With `mcp__wowdata` in `--allowedTools` the planner's call succeeds; without it the same call is denied. No config or bridge change is needed.
+- **The contract held.** The planner called only `mcp__wowdata__wow_flights`, no `Write`, `Edit` or `Bash`. It said what it drew and ended with one `wowmap` block. The parent copied the block verbatim into the final result, and the bridge's `extractMapBlocks` and `validateMapCommand` accept it with no errors.
+- Subagent denials show in the run's `permission_denials` like the main session's, so the bridge's denial handling sees them.
+- The `opus` alias in agent frontmatter resolved to `claude-opus-5-5`. `CLAUDE_CODE_SUBAGENT_MODEL=haiku` in the env did not override it.
+- Background flow as in the spike: two `result` events (`result_index` 0 and 1); the second, `origin.kind: "task-notification"`, holds the answer. Both carried the same `total_cost_usd`.
+- Spend: **$0.298** for the two runs.
+
 ## Not measured
 
-- A plugin agent calling `mcp__wowdata__*` under the bridge's `--allowedTools mcp__wowdata`: whether a subagent gets the parent's run-only allow rule. The run (`wow-planner` with a Haiku model override, a scratch Classic Era sync, `--disallowedTools Grep Glob LS NotebookRead`) stopped at the account's session limit before its first turn. Run it before the plugin is turned on for players.
-- The `opus` alias in agent frontmatter (only `sonnet` and `haiku` were seen resolving).
-- The plugin with the full user setup that live `ask` runs inherit (decision 5) beyond the init lists above.
+- The plugin with the full user setup that live `ask` runs inherit (decision 5) beyond the init lists above. The 2026-10-06 runs used the default setting sources of this PC's user, which load no `wowdata` allow rule.
