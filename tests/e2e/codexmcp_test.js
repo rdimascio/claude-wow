@@ -80,23 +80,29 @@ test('an ask chat on Codex gets wowdata and the default mcp.servers as -c overri
         off: { command: 'npx', args: ['x'], allow: '*' },
         mobbin: { type: 'http', url: 'https://elsewhere.example/mcp', allow: '*', default: true },
       },
+      allow: { node_repl: { codex: ['js'] } },
     },
   };
+  const MOBBIN_TOML = '[mcp_servers.mobbin]\nurl = "https://api.mobbin.com/mcp"\nbearer_token_env_var = "MOBBIN_KEY"\n';
+  let codexToml = '';
   const beforeLaunch = async sb => {
     await D.sync({ dataDir: path.join(sb.home, 'data'), build: BUILD, fetch: fixtureFetch });
     const codexHome = path.join(path.dirname(sb.home), 'user', '.codex');
     fs.mkdirSync(codexHome, { recursive: true });
-    fs.writeFileSync(path.join(codexHome, 'config.toml'), '[mcp_servers.mobbin]\nurl = "https://api.mobbin.com/mcp"\nbearer_token_env_var = "MOBBIN_KEY"\n');
+    codexToml = path.join(codexHome, 'config.toml');
+    fs.writeFileSync(codexToml, MOBBIN_TOML + '[mcp_servers.node_repl]\ncommand = "node"\n');
   };
   await withGame({ plugin: 'ask', config, beforeLaunch, env: { GITHUB_TOKEN: SECRET } }, async h => {
     const r = await h.client.say('what is item 501?');
     assert.equal(r.text, 'pong from codex');
     await h.bridge.waitForLine(/mcp\.servers\.mobbin: ~\/\.codex\/config\.toml has a server of the same name, .*so Codex runs leave this server out/);
-    await h.bridge.waitForLine(/Codex starting in .*wowdata 1\.60\.1\.200.*mcp github/);
+    const started = await h.bridge.waitForLine(/Codex starting in .*wowdata 1\.60\.1\.200.*mcp github.*/);
+    assert.ok(!started[0].includes('node_repl'), started[0]);
     const argv = JSON.parse(fs.readFileSync(record, 'utf8'));
     assert.ok(!JSON.stringify(argv).includes(SECRET));
     const servers = overrides(argv.slice(0, argv.indexOf('exec')));
-    assert.deepEqual(Object.keys(servers), ['wowdata', 'github']);
+    assert.deepEqual(Object.keys(servers), ['wowdata', 'github', 'node_repl']);
+    assert.deepEqual(servers.node_repl, { enabled_tools: ['js'] }, 'mcp.allow reaches a config.toml server as enabled_tools only');
     assert.deepEqual(servers.github, {
       command: 'npx',
       args: ['-y', 'server-github'],
@@ -109,5 +115,15 @@ test('an ask chat on Codex gets wowdata and the default mcp.servers as -c overri
     assert.equal(servers.wowdata.default_tools_approval_mode, 'approve');
     const result = await callTool(servers.wowdata, 'wow_item', { id: 501 });
     assert.match(JSON.stringify(result), /Fixture Blade/);
+
+    fs.writeFileSync(codexToml, MOBBIN_TOML);
+    const again = await h.client.say('and item 502?');
+    assert.equal(again.text, 'pong from codex');
+    const next = JSON.parse(fs.readFileSync(record, 'utf8'));
+    assert.deepEqual(
+      Object.keys(overrides(next.slice(0, next.indexOf('exec')))),
+      ['wowdata', 'github'],
+      'a server removed from config.toml while the bridge runs gets no -c table',
+    );
   });
 });

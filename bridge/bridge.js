@@ -2700,10 +2700,10 @@ function runAgent(job, opts = {}) {
     runGrant && GM.SERVER_NAME + ' for this run',
     factoryGrant && FACTORY.SERVER_NAME + ' for this run',
     userMcp && userMcp.names.length && 'mcp ' + userMcp.names.join(' '),
-    codexMcp.some(e => e.name !== DM.SERVER_NAME && !e.off) &&
+    codexMcp.some(e => e.name !== DM.SERVER_NAME && !e.off && !e.own) &&
       'mcp ' +
         codexMcp
-          .filter(e => e.name !== DM.SERVER_NAME && !e.off)
+          .filter(e => e.name !== DM.SERVER_NAME && !e.off && !e.own)
           .map(e => e.name)
           .join(' '),
     userMcp && userMcp.strict && 'strict mcp',

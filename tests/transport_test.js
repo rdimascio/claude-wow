@@ -335,7 +335,7 @@ test('mcp.servers end to end: servers reach --mcp-config with ${VAR} only, stric
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test('mcp.allow end to end: a discovered server gets its listed tools, other tools leave allowedTools and the roll, and mcp.servers wins a same-name list', () => {
+test('mcp.allow end to end: a discovered server keeps only allowed rules for its listed tools and grants none, other tools leave allowedTools and the roll, and mcp.servers wins a same-name list', () => {
   const dir = scratch('mcp-allow');
   const { home, saved, project, cfg } = fakeInstall(dir);
   const record = path.join(dir, 'run.json');
@@ -353,10 +353,15 @@ test('mcp.allow end to end: a discovered server gets its listed tools, other too
     path.join(home, 'config.json'),
     JSON.stringify({
       ...cfg,
-      agents: { claude: { ...cfg.agents.claude, allowedTools: ['WebSearch', 'mcp__claude_ai_Slack', 'mcp__claude_ai_Slack__slack_send_message'] } },
+      agents: {
+        claude: {
+          ...cfg.agents.claude,
+          allowedTools: ['WebSearch', 'mcp__claude_ai_Slack', 'mcp__claude_ai_Slack__slack_send_message', 'mcp__claude_ai_Slack__slack_search_public'],
+        },
+      },
       mcp: {
         servers: { notion: { type: 'http', url: 'https://mcp.notion.com/mcp', allow: ['notion-search'] } },
-        allow: { claude_ai_Slack: ['slack_search_public'], notion: '*' },
+        allow: { claude_ai_Slack: ['slack_search_public', 'slack_read_thread'], notion: '*' },
       },
     }),
   );
@@ -374,6 +379,7 @@ test('mcp.allow end to end: a discovered server gets its listed tools, other too
   const { argv } = JSON.parse(fs.readFileSync(record, 'utf8'));
   const allowed = argv.slice(argv.indexOf('--allowedTools') + 1, argv.indexOf('--disallowedTools'));
   assert.ok(allowed.includes('mcp__claude_ai_Slack__slack_search_public') && allowed.includes('WebSearch'), allowed.join(' '));
+  assert.ok(!allowed.includes('mcp__claude_ai_Slack__slack_read_thread'), 'a listed tool with no allow rule is not granted');
   assert.ok(!allowed.includes('mcp__claude_ai_Slack') && !allowed.includes('mcp__claude_ai_Slack__slack_send_message'), allowed.join(' '));
   assert.ok(!allowed.includes('mcp__notion'), 'the mcp.allow list for a config server is ignored');
   assert.ok(argv.slice(argv.indexOf('--disallowedTools')).includes('mcp__claude_ai_Slack__slack_send_message'));

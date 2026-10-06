@@ -4,6 +4,7 @@ const os = require('os');
 const path = require('path');
 
 const SERVER_NAME_RE = /^[A-Za-z0-9]+(?:[-_][A-Za-z0-9]+)*$/;
+const SERVER_ID_RE = /^(?!-)(?!.*__)(?!.*_$)[A-Za-z0-9_-]+$/;
 const MAX_SERVER_NAME = 64;
 const TOOL_NAME_RE = /^[A-Za-z0-9_-]+$/;
 const ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -25,7 +26,7 @@ function toolList(v, where) {
   return { tools: list.includes(ALL_TOOLS) ? [ALL_TOOLS] : [...new Set(list)] };
 }
 
-function parseAllow(v, where) {
+function parseAllow(v, where, { missing = [], named = false } = {}) {
   if (v === undefined) return { allow: Object.fromEntries(AGENT_KEYS.map(a => [a, []])) };
   if (!isObject(v)) {
     const r = toolList(v, where);
@@ -33,28 +34,12 @@ function parseAllow(v, where) {
   }
   const unknown = Object.keys(v).find(k => !AGENT_KEYS.includes(k));
   if (unknown) return { error: `${where} names "${unknown}", which is not one of ${AGENT_KEYS.join(', ')}` };
+  if (named && !AGENT_KEYS.some(a => v[a] !== undefined)) return { error: `${where} must name ${AGENT_KEYS.join(' or ')}` };
   const allow = {};
   for (const a of AGENT_KEYS) {
-    const r = v[a] === undefined ? { tools: [] } : toolList(v[a], `${where}.${a}`);
+    const r = v[a] === undefined ? { tools: missing } : toolList(v[a], `${where}.${a}`);
     if (r.error) return r;
-    allow[a] = r.tools;
-  }
-  return { allow };
-}
-
-function parseDiscoveredAllow(v, where) {
-  if (!isObject(v)) {
-    const r = toolList(v, where);
-    return r.error ? r : { allow: Object.fromEntries(AGENT_KEYS.map(a => [a, r.tools])) };
-  }
-  const unknown = Object.keys(v).find(k => !AGENT_KEYS.includes(k));
-  if (unknown) return { error: `${where} names "${unknown}", which is not one of ${AGENT_KEYS.join(', ')}` };
-  const allow = {};
-  for (const a of AGENT_KEYS) {
-    if (v[a] === undefined) continue;
-    const r = toolList(v[a], `${where}.${a}`);
-    if (r.error) return r;
-    allow[a] = r.tools;
+    if (r.tools) allow[a] = r.tools;
   }
   return { allow };
 }
@@ -68,8 +53,10 @@ function parseAllowLists(raw, { servers, reserved, log }) {
   }
   for (const [id, v] of Object.entries(raw)) {
     const where = `mcp.allow.${id}`;
-    if (!ID_RE.test(id)) {
-      log(`${where}: the id must be a server's tool prefix (letters, digits, - and _, at most 64 characters); it is ignored`);
+    if (!ID_RE.test(id) || !SERVER_ID_RE.test(id)) {
+      log(
+        `${where}: the id must be a server's tool prefix (letters, digits, - and _, at most 64 characters, no __, not starting with - or ending with _); it is ignored`,
+      );
       continue;
     }
     if (reserved.includes(id)) {
@@ -80,7 +67,7 @@ function parseAllowLists(raw, { servers, reserved, log }) {
       log(`${where}: "${id}" is also in mcp.servers, so mcp.servers.${id}.allow is used and this list is ignored`);
       continue;
     }
-    const r = parseDiscoveredAllow(v, where);
+    const r = parseAllow(v, where, { missing: null, named: true });
     if (r.error) {
       log(`${r.error}; it is ignored`);
       continue;
@@ -212,10 +199,7 @@ function forClaude(mcp, { choice } = {}) {
   const loaded = mcp.servers.filter(s => isOn(choice, s.name, s.default));
   const listed = discoveredAllow(mcp, 'claude');
   const allowed = new Map([...mcp.servers.map(s => [s.name, s.allow.claude]), ...listed]);
-  const allowRules = [
-    ...loaded.flatMap(s => s.allow.claude.map(t => toolRule(s.name, t))),
-    ...listed.filter(([id]) => !explicitOff(choice, id)).flatMap(([id, tools]) => tools.map(t => toolRule(id, t))),
-  ];
+  const allowRules = loaded.flatMap(s => s.allow.claude.map(t => toolRule(s.name, t)));
   const off = mcp.servers.filter(s => explicitOff(choice, s.name)).map(s => s.name);
   const blocks = rule => {
     const r = serverOf(rule);
@@ -429,8 +413,18 @@ function catalog({ mcp, seen = {}, codexOwn = [], reserved = [] }) {
   return out;
 }
 
-function planRun({ agentId, choice, cwd = '', userMcp = null, seen = {}, codexOwn = [], reserved = [], claudeOwn = () => claudeOwnServers({ cwd }) } = {}) {
-  if (agentId === 'codex') return { userMcp: null, seenOff: null, guard: null, codexMcp: forCodex(userMcp, { choice, own: codexOwn }), seen };
+function planRun({
+  agentId,
+  choice,
+  cwd = '',
+  userMcp = null,
+  seen = {},
+  codexOwn = [],
+  reserved = [],
+  claudeOwn = () => claudeOwnServers({ cwd }),
+  codexOwnNow = () => codexOwnServers(),
+} = {}) {
+  if (agentId === 'codex') return { userMcp: null, seenOff: null, guard: null, codexMcp: forCodex(userMcp, { choice, own: codexOwnNow() }), seen };
   if (agentId !== 'claude') return { userMcp: null, seenOff: null, guard: null, codexMcp: [], seen };
   const plan = forClaude(userMcp, { choice });
   const seenNow = choice ? seedSeen({ ...seen }, claudeOwn(), { cwd }) : seen;
