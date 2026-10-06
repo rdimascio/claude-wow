@@ -349,23 +349,49 @@ test('a confirm that cannot open puts the roll back and grants nothing', () => {
   assert.equal(vm.evaluate('ClaudeWoWRoll.Parked()'), null);
 });
 
-test('Greed is the first button and Enter picks it; other keys and combat pass through', () => {
-  const vm = newVM();
+const KEYBOARD_STUB = `
+do
+  local probe = CreateFrame("Frame")
+  local mt = getmetatable(probe)
+  local base = mt.__index
+  mt.__index = function(t, k)
+    if k == "EnableKeyboard" then return function(self, on) self.keyboardOn = on and true or false end end
+    if k == "LockHighlight" then return function(self) self.highlightLocked = true end end
+    if k == "UnlockHighlight" then return function(self) self.highlightLocked = false end end
+    return base(t, k)
+  end
+end
+`;
+
+test('Greed is the first, highlighted button, and no key press grants anything', () => {
+  const vm = newVM({ prelude: KEYBOARD_STUB });
   deliverDenial(vm, ['Bash(rm:*)']);
   assert.equal(vm.evaluate('ClaudeWoWRollFrame.GreedButton.point'), 'TOPLEFT');
   assert.equal(vm.evaluate('ClaudeWoWRollFrame.PassButton.rel == ClaudeWoWRollFrame.GreedButton'), 'true');
   assert.equal(vm.evaluate('ClaudeWoWRollFrame.NeedButton.rel == ClaudeWoWRollFrame.GreedButton'), 'true');
-  assert.equal(vm.evaluate('ClaudeWoWRollFrame.keyboard'), 'true');
+  assert.equal(vm.evaluate('ClaudeWoWRollFrame.GreedButton.highlightLocked'), 'true');
+  assert.notEqual(vm.evaluate('ClaudeWoWRollFrame.keyboardOn'), 'true', 'the roll frame never takes the keyboard');
   const seq = vm.num('ClaudeWoWDB.lastSeq');
-  vm.run('ClaudeWoWRollFrame.scripts.OnKeyDown(ClaudeWoWRollFrame, "W")');
-  assert.equal(vm.num('ClaudeWoWDB.lastSeq'), seq, 'a movement key does nothing');
-  vm.run('STUB.combat = true; ClaudeWoWRollFrame.scripts.OnKeyDown(ClaudeWoWRollFrame, "ENTER"); STUB.combat = false');
-  assert.equal(vm.num('ClaudeWoWDB.lastSeq'), seq, 'Enter in combat is not taken');
-  vm.run('ClaudeWoWRollFrame.scripts.OnKeyDown(ClaudeWoWRollFrame, "ENTER")');
-  const rec = stripFlags(vm).find(r => r.flags.includes('once='));
-  assert.ok(rec, 'Enter is Greed');
-  assert.ok(!sentAllow(vm));
-  assert.equal(vm.evaluate('ClaudeWoWRollFrame.keyboard'), 'false', 'the keyboard is let go with the frame');
+  for (const key of ['ENTER', 'SPACE', 'ESCAPE', '1', 'W']) {
+    vm.run(`for _, f in ipairs(STUB.frames) do
+      local cur = f
+      while cur and cur ~= ClaudeWoWRollFrame do cur = cur.parent end
+      if cur then
+        for _, name in ipairs({ "OnKeyDown", "OnKeyUp", "OnChar" }) do
+          if f.scripts[name] then f.scripts[name](f, "${key}") end
+        end
+      end
+    end`);
+  }
+  assert.equal(vm.num('ClaudeWoWDB.lastSeq'), seq, 'no key sends anything');
+  assert.equal(vm.evaluate('ClaudeWoWRollFrame.shown'), 'true', 'the roll still waits for a click');
+  assert.ok(!stripFlags(vm).some(r => /(^|;)(once|allow|dirs)=/.test(r.flags)));
+  vm.run('ClaudeWoWRollFrame.GreedButton.scripts.OnClick(ClaudeWoWRollFrame.GreedButton)');
+  assert.ok(
+    stripFlags(vm).some(r => r.flags.includes('once=')),
+    'a click on Greed allows once',
+  );
+  assert.equal(vm.evaluate('ClaudeWoWRollFrame.GreedButton.highlightLocked'), 'false');
 });
 
 test('the roll frame shows the rules, the command the bridge quoted, and the scope in words', () => {

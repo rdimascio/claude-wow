@@ -184,17 +184,6 @@ local function RollButton(parent, choice)
 	return b
 end
 
-local function CanCaptureKeys()
-	return not (type(InCombatLockdown) == "function" and InCombatLockdown())
-end
-
-function R.OnKey(f, key)
-	local capture = CanCaptureKeys()
-	local greed = key == "ENTER" and current ~= nil and f.keyboard == true and capture
-	if capture then pcall(f.SetPropagateKeyboardInput, f, not greed) end
-	if greed then R.Choose("greed") end
-end
-
 local function Build()
 	local f = CreateFrame("Frame", "ClaudeWoWRollFrame", UIParent)
 	f:SetSize(TOAST_WIDTH, TOAST_HEIGHT)
@@ -279,8 +268,6 @@ local function Build()
 	f.Details:SetScript("OnEnter", ShowItemTooltip)
 	f.Details:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
-	f:EnableKeyboard(false)
-	f:SetScript("OnKeyDown", function(self, key) R.OnKey(self, key) end)
 	f:SetScript("OnUpdate", function() R.Update() end)
 	f:Hide()
 	return f
@@ -305,21 +292,12 @@ local function Layout(f, offer)
 	f:SetHeight(TOAST_HEIGHT + height)
 end
 
-local function FocusGreed(f)
+local function HighlightGreed(f)
 	f.GreedButton:LockHighlight()
-	f.keyboard = CanCaptureKeys()
-	if f.keyboard then
-		pcall(f.SetPropagateKeyboardInput, f, true)
-		f:EnableKeyboard(true)
-	else
-		f:EnableKeyboard(false)
-	end
 end
 
 local function HideFrame()
 	if not frame then return end
-	frame.keyboard = false
-	frame:EnableKeyboard(false)
 	frame.GreedButton:UnlockHighlight()
 	frame:Hide()
 end
@@ -338,7 +316,7 @@ local function Present(offer)
 	R.Place(frame)
 	frame.Timer:SetValue(ROLL_SECONDS)
 	frame:Show()
-	FocusGreed(frame)
+	HighlightGreed(frame)
 	PlayKit(SOUND_ON_OFFER)
 end
 
