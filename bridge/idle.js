@@ -50,7 +50,8 @@ function bridgeRunning({ lock, pidInfo }, alive) {
 
 function factoryRunsGoing(runsFile, alive) {
   const data = runsFile ? readState(runsFile) : {};
-  const runs = data && Array.isArray(data.runs) ? data.runs : [];
+  if (!data) return ['runs.json cannot be read'];
+  const runs = Array.isArray(data.runs) ? data.runs : [];
   return runs.filter(r => r && r.status === 'running' && alive(Number(r.pid))).map(r => String(r.id));
 }
 

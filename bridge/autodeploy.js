@@ -4,6 +4,7 @@ const path = require('path');
 const { execFile, spawn: nodeSpawn } = require('child_process');
 const P = require('./protocol');
 const REL = require('./releases');
+const D = require('./deploy');
 
 const DEFAULT_REF = 'origin/main';
 const REF_RE = /^origin\/[A-Za-z0-9][A-Za-z0-9._-]*(?:\/[A-Za-z0-9][A-Za-z0-9._-]*)*$/;
@@ -12,8 +13,10 @@ const FIRST_CHECK_MS = 60 * 1000;
 const GIT_TIMEOUT_MS = 60 * 1000;
 const LOG_FILE = 'autodeploy.log';
 const STATE_FILE = 'autodeploy.json';
-const GIT_ENV = { GIT_TERMINAL_PROMPT: '0', GIT_SSH_COMMAND: 'ssh -o BatchMode=yes' };
-const DEPLOY_SCRIPT = '"$1" dev deploy "$2" --repo "$3"; code=$?; printf \'{"sha":"%s","exit":%d}\\n\' "$5" "$code" > "$4.tmp" && mv "$4.tmp" "$4"';
+const GIT_ENV = { GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: '/usr/bin/false', SSH_ASKPASS: '/usr/bin/false', GCM_INTERACTIVE: 'never' };
+const DEPLOY_TIMEOUT_S = 7200;
+const LAUNCH_FAILED = 127;
+const DEPLOY_SCRIPT = `"$1" dev deploy "$2" --repo "$3" --timeout ${DEPLOY_TIMEOUT_S}; code=$?; printf '{"sha":"%s","exit":%d}\\n' "$2" "$code" > "$4.tmp" && mv "$4.tmp" "$4"`;
 
 function settings(cfg, defaultCwd) {
   const a = cfg && cfg.autoDeploy;
@@ -25,13 +28,15 @@ function settings(cfg, defaultCwd) {
   return { enabled: true, repo: P.resolveCwd(a.repo.trim(), defaultCwd), ref };
 }
 
-function eligible({ home, platform = process.platform, compiled, env = process.env }) {
+function eligible({ home, platform = process.platform, compiled, env = process.env, definitionFile }) {
   if (platform !== 'darwin') return { ok: false, why: 'macOS only: on Linux systemd would stop the deploy with the service before setup runs' };
   if (!compiled || env.CLAUDE_WOW_SERVICE !== '1') return { ok: false, why: 'it runs only in the background service (claude-wow service)' };
   const l = REL.layout(home);
   const name = REL.currentName(l);
   const info = name && REL.hasRelease(l, name) ? REL.releaseInfo(l, name) : null;
   if (!info || info.source !== REL.SOURCE_DEV_DEPLOY) return { ok: false, why: 'the service does not run a release made by claude-wow dev deploy' };
+  if (!D.serviceRunsCurrent(l, { platform, definitionFile }))
+    return { ok: false, why: `the service definition does not run ${REL.currentBinary(l)}, so a deploy would not restart it or run setup` };
   return { ok: true };
 }
 
@@ -52,13 +57,6 @@ function git(repo, args) {
   });
 }
 
-function deployedSha(home) {
-  const l = REL.layout(home);
-  const name = REL.currentName(l);
-  const info = name ? REL.releaseInfo(l, name) : null;
-  return info && typeof info.sha === 'string' ? info.sha : '';
-}
-
 function readJson(file) {
   try {
     const v = JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -73,7 +71,7 @@ function writeJson(file, value) {
   fs.renameSync(`${file}.tmp`, file);
 }
 
-function createAutoDeploy({ conf, home, log, idle, run = git, spawn = nodeSpawn, deployed = () => deployedSha(home), lockHolder = REL.liveLockHolder }) {
+function createAutoDeploy({ conf, home, log, idle, run = git, spawn = nodeSpawn, lockHolder = REL.liveLockHolder }) {
   const l = REL.layout(home);
   const stateFile = path.join(home, STATE_FILE);
   const logFile = path.join(home, LOG_FILE);
@@ -82,21 +80,31 @@ function createAutoDeploy({ conf, home, log, idle, run = git, spawn = nodeSpawn,
   let checking = false;
   let lastError = '';
 
+  function launchFailed(sha, e) {
+    log(`auto-deploy: could not start the deploy of ${sha.slice(0, 12)} (${e && e.message ? e.message : e})`);
+    writeJson(stateFile, { sha, exit: LAUNCH_FAILED });
+  }
+
   function startDeploy(sha) {
     writeJson(stateFile, { sha });
-    const fd = fs.openSync(logFile, 'a', 0o600);
+    let fd;
     try {
-      const child = spawn('/bin/sh', ['-c', DEPLOY_SCRIPT, 'claude-wow-autodeploy', REL.currentBinary(l), conf.ref, conf.repo, stateFile, sha], {
+      fd = fs.openSync(logFile, 'a', 0o600);
+      const child = spawn('/bin/sh', ['-c', DEPLOY_SCRIPT, 'claude-wow-autodeploy', REL.currentBinary(l), sha, conf.repo, stateFile], {
         cwd: home,
         detached: true,
         stdio: ['ignore', fd, fd],
       });
-      child.on('error', e => log(`auto-deploy: could not start the deploy (${e.message})`));
+      child.on('error', e => launchFailed(sha, e));
       child.unref();
+    } catch (e) {
+      launchFailed(sha, e);
+      return 'failed';
     } finally {
-      fs.closeSync(fd);
+      if (fd !== undefined) fs.closeSync(fd);
     }
     log(`auto-deploy: ${conf.ref} is at ${sha.slice(0, 12)}; started claude-wow dev deploy (output in ${logFile})`);
+    return 'started';
   }
 
   async function check() {
@@ -110,13 +118,12 @@ function createAutoDeploy({ conf, home, log, idle, run = git, spawn = nodeSpawn,
       lastError = '';
       const last = readJson(stateFile);
       if (last.sha === sha) return 'seen';
-
-      if (!last.sha && sha === deployed()) {
+      if (!last.sha) {
         writeJson(stateFile, { sha, exit: 0 });
-        return 'current';
+        log(`auto-deploy: recorded ${conf.ref} at ${sha.slice(0, 12)}; the next commit there is deployed`);
+        return 'recorded';
       }
-      startDeploy(sha);
-      return 'started';
+      return startDeploy(sha);
     } catch (e) {
       const why = e && e.message ? e.message : String(e);
       if (why !== lastError) log(`auto-deploy: check failed (${why})`);
@@ -132,7 +139,7 @@ function createAutoDeploy({ conf, home, log, idle, run = git, spawn = nodeSpawn,
     const last = readJson(stateFile);
     if (!last.sha || !Number.isInteger(last.exit) || last.exit === 0 || last.reported) return '';
     writeJson(stateFile, { ...last, reported: true });
-    return `[claude-wow bridge] The automatic deploy of ${conf.ref} at ${String(last.sha).slice(0, 12)} failed (exit ${last.exit}), so that merge is not live in the game. Tell the player in one line. The deploy output is in ${logFile}. The next merge to ${conf.ref} deploys again.`;
+    return `[claude-wow bridge] The automatic deploy of ${conf.ref} at ${String(last.sha).slice(0, 12)} did not complete (exit ${last.exit}), so that merge may be only partly live or not live at all. Tell the player in one line. The deploy output is in ${logFile}. The next merge to ${conf.ref} deploys again.`;
   }
 
   function start(timers = { setTimeout, setInterval }) {
@@ -154,4 +161,4 @@ function realFolder(p) {
   }
 }
 
-module.exports = { DEFAULT_REF, CHECK_MS, FIRST_CHECK_MS, LOG_FILE, STATE_FILE, settings, eligible, deployedSha, createAutoDeploy };
+module.exports = { DEFAULT_REF, CHECK_MS, FIRST_CHECK_MS, LOG_FILE, STATE_FILE, settings, eligible, createAutoDeploy };

@@ -85,6 +85,8 @@ test('probeFor: a factory run going in runs.json keeps a running bridge busy; a 
   assert.deepEqual(probe(), { idle: false, reason: '1 factory run(s) going (aa11bb22)' });
   fs.writeFileSync(runsFile, JSON.stringify({ runs: [{ id: 'aa11bb22', status: 'running', pid: 600 }] }));
   assert.equal(probe().idle, true, 'a run whose process is gone');
+  fs.writeFileSync(runsFile, '{"runs": [{"id": "aa11');
+  assert.deepEqual(probe(), { idle: false, reason: '1 factory run(s) going (runs.json cannot be read)' }, 'a half-written runs.json may hide a run');
   fs.writeFileSync(runsFile, JSON.stringify({ runs: [{ id: 'aa11bb22', status: 'running', pid: 500 }] }));
   fs.writeFileSync(bridgeLockFile, JSON.stringify({ pid: 400 }));
   assert.equal(probe().idle, true, 'no bridge running: its factory runs are gone with it');
