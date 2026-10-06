@@ -102,7 +102,7 @@ local function Print(msg)
 	if ClaudeWoW and ClaudeWoW.Print then
 		ClaudeWoW.Print(msg)
 	else
-		print("|cff66ccff[Claude WoW]|r " .. msg)
+		print("|cff66ccff[Azeroth Companion]|r " .. msg)
 	end
 end
 
@@ -660,7 +660,7 @@ function T.Command(rest)
 	rest = tostring(rest or ""):lower()
 	if rest == "on" or rest == "off" then T.SetShown(rest == "on") end
 	if T.IsOn() then
-		Print("The Orders card is on: it shows Claude's current order under the quest tracker, and hides when there is none. /claude orders off hides it.")
+		Print("The Orders card is on: it shows the agent's current order under the quest tracker, and hides when there is none. /claude orders off hides it.")
 	else
 		Print("The Orders card is off. /claude orders on shows it again.")
 	end
