@@ -75,6 +75,7 @@ AddOns/ClaudeWoW_S###/Inbox.lua ◄── bridge/bridge.js (a real process) ◄�
 | Directive | Effect |
 |---|---|
 | `[[sleep 5]]` | Answers after 5 s. |
+| `[[hold go]]` | Does not answer until the file `go` exists in `<sandbox>/agent` (`h.sb.agentState`), after any sleep. Use it to keep a run going until the test has seen what must happen during it. |
 | `[[map skins]]` | Appends a one-point route named `skins` to the run's `CLAUDE_WOW_MAP_FILE`, after any sleep. |
 | `[[tools 3]]` | Emits 3 tool calls first (heartbeats in game). |
 | `[[hang]]` | Never answers. |

@@ -1,16 +1,19 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { makeRoot, gameRunner, TWO_CLIENTS: TWO, withEra } = require('./helpers');
+const fs = require('fs');
+const path = require('path');
+const { makeRoot, gameRunner, TWO_CLIENTS: TWO, withEra, chatById, sentId } = require('./helpers');
 
 const ROOT = makeRoot('sessionbusy');
 const withGame = gameRunner(ROOT);
+const LONG_RUN_RELEASE = 'long-run-release';
 
-function answerTo(client, id, label) {
+function answerTo(client, chatId, id, text, label) {
   return client.waitFor(
     () => {
-      const c = client.activeChat();
-      return c && !c.pendingId && (c.history || []).find(m => m.id === id && m.role !== 'user');
+      const c = chatById(client, chatId);
+      return c && !c.pendingId && (c.history || []).find(m => m.id === id && m.role === 'assistant' && m.text.includes(text));
     },
     { timeoutMs: 60000, label },
   );
@@ -24,13 +27,20 @@ test('a chat on another client attached to an agent session that is running wait
 
     await withEra(h, async era => {
       await era.connect();
-      h.client.send('[[sleep 4]] keep going');
+      h.client.send(`[[hold ${LONG_RUN_RELEASE}]] keep going`);
       await h.client.waitFor(() => h.agentCalls().find(c => c.prompt.includes('keep going')), { label: 'the long run to start' });
 
-      const id = era.lastSeq() + 1;
       era.slash(`/claude -r ${session.slice(0, 8)} and from here`);
-      await h.bridge.waitForLine(/queued \(its agent session is busy in another chat\)/, { timeoutMs: 20000 });
-      await answerTo(era, id, 'the attached chat answer');
+      const attached = era.activeChat();
+      const id = sentId(era, attached);
+      assert.ok(
+        attached.history.find(m => m.id === id && m.text === 'and from here'),
+        `#${id} carries the attached chat's text`,
+      );
+
+      await h.bridge.waitForLine(new RegExp(`#${id}@\\w+ queued \\(its agent session is busy in another chat\\)`), { timeoutMs: 20000 });
+      fs.writeFileSync(path.join(h.sb.agentState, LONG_RUN_RELEASE), '');
+      await answerTo(era, attached.id, id, 'and from here', 'the attached chat answer');
     });
 
     const calls = h.agentCalls();
