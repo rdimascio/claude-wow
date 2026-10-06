@@ -770,6 +770,8 @@ test('an empty chat shows a centered empty state with starters for its kind of c
   vm.run('ClaudeWoW.UI.empty.rows[2].scripts.OnClick(ClaudeWoW.UI.empty.rows[2])');
   assert.equal(vm.evaluate('ClaudeWoWInput:GetText()'), 'Plan a route for my quests', 'a starter fills the box and sends nothing');
   assert.equal(vm.num('#ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history'), 0);
+  vm.run('ClaudeWoWInput:SetText("my draft"); ClaudeWoW.UI.empty.rows[1].scripts.OnClick(ClaudeWoW.UI.empty.rows[1])');
+  assert.equal(vm.evaluate('ClaudeWoWInput:GetText()'), 'my draft', 'a starter never overwrites a draft');
   vm.run('ClaudeWoWInput:SetText("")');
 
   vm.run('ClaudeWoWProjectButton.scripts.OnClick(ClaudeWoWProjectButton); STUB.Pick("wow-ai")');
@@ -806,7 +808,7 @@ test('an empty chat shows a centered empty state with starters for its kind of c
   assert.equal(emptyState(vm).shown, 'false', 'a chat with a message has no empty state');
 });
 
-test('a short system line is a quiet note with no header card, a session change is a ruled divider, and long command output keeps its card', () => {
+test('a short system line is a quiet note with no header card, a session change is a ruled divider, and long or multi-line output keeps its card', () => {
   const vm = nativeVM();
   vm.run('ClaudeWoW.NewChat(); ClaudeWoW.IsConnected = function() return true end');
   const bubbles = `(function() local t = {} for _, b in ipairs(ClaudeWoW.UI.bubbles) do if b.shown then table.insert(t, b) end end return t end)()`;
@@ -819,7 +821,7 @@ test('a short system line is a quiet note with no header card, a session change 
   assert.equal(field(1, 'b.ruleL.shown'), 'false', 'a note has no divider rules');
 
   vm.run('SlashCmdList.CLAUDE("reset")');
-  assert.match(field(2, 'b.body:GetText()'), /^New .+ session/);
+  assert.match(field(2, 'b.body:GetText()'), /^Next message: new .+ session/, 'the divider says the change waits for the next message');
   assert.equal(field(2, 'b.who.shown'), 'false');
   assert.equal(field(2, 'b.ruleL.shown'), 'true', 'a session change is a divider');
   assert.equal(field(2, 'b.ruleR.shown'), 'true');
@@ -829,6 +831,19 @@ test('a short system line is a quiet note with no header card, a session change 
   );
   assert.equal(field(3, 'b.who.shown'), 'true', 'three or more lines keep the card');
   assert.equal(field(3, 'b.who:GetText()'), 'System');
+
+  vm.run(`
+    local c = ClaudeWoWDB.chats[#ClaudeWoWDB.chats]
+    table.insert(c.history, { role = "system", t = 1, event = true, text = string.rep("long divider label ", 6) })
+    table.insert(c.history, { role = "system", t = 1, text = string.rep("a warning with no line break ", 5) })
+    ClaudeWoW.Render()
+    for _, b in ipairs(ClaudeWoW.UI.bubbles) do b.body.GetStringWidth = function(self) return #(self.text or "") * 6 end end
+    ClaudeWoW.Render()
+  `);
+  assert.equal(field(2, 'b.ruleL.shown'), 'true', 'a short label still fits its rules at real text widths');
+  assert.equal(field(5, 'b.who.shown'), 'false');
+  assert.equal(field(5, 'b.ruleL.shown'), 'false', 'a label too wide for the rules drops them');
+  assert.equal(field(6, 'b.who.shown'), 'true', 'a one-line warning over 120 characters keeps the card');
 
   vm.run('local c = ClaudeWoWDB.chats[#ClaudeWoWDB.chats]; c.history = { c.history[4], c.history[4] }; ClaudeWoW.Render()');
   for (const i of [1, 2]) {

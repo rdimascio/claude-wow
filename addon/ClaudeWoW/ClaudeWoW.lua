@@ -587,7 +587,7 @@ function ClaudeWoW.ApplyMirror(list)
 		if seq and seq > (c.mirrorSeq or 0) then
 			local first = (c.mirrorSeq or 0) + 1
 			if c.mirrorSeq and seq > first then
-				Q.AddEvent(c, (seq - first) .. " earlier message(s) are in Discord.")
+				AddHistory(c, "system", (seq - first) .. " earlier message(s) are in Discord.")
 			end
 			local text = tostring(e.text or "")
 			if e.role == "user" then
@@ -885,7 +885,7 @@ local ShotsPaused -- after BridgeState: whether the bridge has been dark too lon
 local function TellPlayer(msg)
 	local c = ActiveChat()
 	if c then AddHistory(c, "system", msg) end
-	if not (c and Whisper.Active() and Whisper.System(c, msg, true)) then print(ClaudeWoW.PREFIX .. msg) end
+	Q.Notify(msg)
 	if ui.frame then ClaudeWoW.Render() end
 end
 
@@ -2080,7 +2080,8 @@ local function ImportRestore(r)
 				if ch ~= current and ch.name == current.name then current.name = "New chat" end
 			end
 		end
-		Q.AddEvent(current, "Restored " .. added .. " chat(s) from the bridge after the game reset the saved data.")
+		Q.AddEvent(current, "Restored " .. added .. " chat(s)")
+		AddHistory(current, "system", "The game reset its saved data, so these came back from the bridge.")
 		ClaudeWoW.RenderChatList()
 	end
 end
@@ -2114,11 +2115,17 @@ function ClaudeWoW.Version.ApplyDisk(d, stamp)
 	local build = type(d.build) == "string" and #d.build == 12 and d.build:match("^[0-9a-f]+$") and d.build or ""
 	run.addonDisk = { version = d.version, build = build }
 	local L = V.LOADED
-	if L.version == "" or (d.version == L.version and build == L.build) then return end
+	if L.version == "" or (d.version == L.version and build == L.build) then
+		if run.updateReady then
+			run.updateReady, run.reloadTold = nil, nil
+			Q.UpdateNoticeBar()
+		end
+		return
+	end
 	local text = "New addon files are installed (" .. d.version .. (build ~= "" and (", build " .. build) or "") .. "). Type /reload to load them."
 	if run.reloadTold ~= text then
 		run.reloadTold = text
-		run.updateReady = { version = d.version, build = build }
+		run.updateReady = { version = d.version, build = build, sameVersion = d.version == L.version }
 		Q.Notify(text)
 		Q.UpdateNoticeBar()
 	end
@@ -2127,7 +2134,7 @@ end
 function ClaudeWoW.Version.Notice()
 	local u = run.updateReady
 	if not u then return nil end
-	return "Addon update ready " .. SEG.DOT .. " " .. u.version
+	return "Addon update ready " .. SEG.DOT .. " " .. u.version .. ((u.sameVersion and u.build ~= "") and (" build " .. u.build) or "")
 end
 
 ClaudeWoW.Version.CLIENTS_MAX = 8
@@ -5712,13 +5719,13 @@ function Q.UpdatePlaceholder()
 end
 
 Q.EMPTY_GAP, Q.EMPTY_SIDE, Q.EMPTY_LINE_GAP = 16, 20, 8
-Q.NOTE_GAP, Q.NOTE_PAD, Q.NOTE_SIDE, Q.RULE_GAP, Q.RULE_MIN, Q.NOTE_MAX_LINES = 6, 4, 24, 8, 24, 2
+Q.NOTE_GAP, Q.NOTE_PAD, Q.NOTE_SIDE, Q.RULE_GAP, Q.RULE_MIN, Q.NOTE_MAX_LINES, Q.NOTE_MAX_CHARS = 6, 4, 24, 8, 24, 2, 120
 
 function Q.NoteKind(m)
 	if m.role ~= "system" or m.newChat or type(m.text) ~= "string" then return nil end
 	if m.event then return "event" end
 	local _, breaks = m.text:gsub("\n", "")
-	return breaks < Q.NOTE_MAX_LINES and "note" or nil
+	return breaks < Q.NOTE_MAX_LINES and #m.text <= Q.NOTE_MAX_CHARS and "note" or nil
 end
 
 function Q.LayoutCard(b)
@@ -5854,6 +5861,7 @@ end
 function Q.UseStarter(text)
 	local input = ui.input
 	if not input then return end
+	if (input:GetText() or "") ~= "" then return input:SetFocus() end
 	input:SetText(text)
 	input:SetFocus()
 	if input.SetCursorPosition then input:SetCursorPosition(#text) end
@@ -8347,13 +8355,12 @@ local function BuildUI()
 	local scroll = CreateFrame("ScrollFrame", "ClaudeWoWScroll", native and ui.parchment or f, (native and Q.TemplateExists("ScrollFrameTemplate")) and "ScrollFrameTemplate" or "UIPanelScrollFrameTemplate")
 	if native then
 		scroll:SetPoint("TOPLEFT", ui.parchment, "TOPLEFT", 22, -16)
-		scroll:SetPoint("BOTTOMRIGHT", ui.parchment, "BOTTOMRIGHT", -34, 14)
+		ui.scrollBottom = { ui.parchment, -34, 14 }
 	else
 		scroll:SetPoint("TOPLEFT", panel, "TOPRIGHT", 8, 0)
-		scroll:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -32, 110)
+		ui.scrollBottom = { f, -32, 110 }
 	end
 	ui.scroll = scroll
-	ui.scrollBottom = native and { ui.parchment, -34, 14 } or { f, -32, 110 }
 	Q.BuildNoticeBar(native)
 
 	local content = CreateFrame("Frame", "ClaudeWoWContent", scroll)
@@ -9516,7 +9523,8 @@ function Cli.AttachTo(e)
 		c.liveTarget = e.id ~= "" and e.id or (e.alias or e.name)
 		c.agent = "claude"
 		c.cwd = e.cwd or ""
-		Q.AddEvent(c, "Attached to the running Claude Code session " .. Display(e.name) .. (e.cwd ~= "" and (" in " .. Display(e.cwd)) or "") .. ". Messages here go to that terminal session, and its answers come back here.")
+		Q.AddEvent(c, "Attached to " .. Display(e.name))
+		AddHistory(c, "system", "Messages here go to that Claude Code session" .. (e.cwd ~= "" and (" in " .. Display(e.cwd)) or "") .. ", and its answers come back here.")
 	else
 		c.resumeId = e.id
 		if e.agent and e.agent ~= "" then c.agent = e.agent end
@@ -9526,7 +9534,8 @@ function Cli.AttachTo(e)
 			c.cwd = e.cwd or ""
 			c.adoptCwd = (e.cwd or "") == "" or nil
 		end
-		Q.AddEvent(c, "Attached to session " .. e.id .. ((e.cwd or "") ~= "" and (" in " .. Display(e.cwd)) or "") .. ". Your next message resumes it" .. (e.unverified and " (the bridge looks the id up then)" or "") .. ".")
+		Q.AddEvent(c, "Attached to session " .. e.id:sub(1, 8))
+		AddHistory(c, "system", "Your next message resumes session " .. e.id .. ((e.cwd or "") ~= "" and (" in " .. Display(e.cwd)) or "") .. (e.unverified and " (the bridge looks the id up then)" or "") .. ".")
 		if e.recap then AddHistory(c, "system", e.recap) end
 	end
 	ClaudeWoW.SwitchChat(c.id)
@@ -9965,7 +9974,7 @@ RunCommand = function(cmd, rest)
 	elseif cmd == "reset" then
 		c.resetNext = true
 		local where = ChatFolder(c)
-		Q.AddEvent(c, "New " .. ChatAgentName(c) .. " session" .. (where ~= "" and (" " .. SEG.DOT .. " " .. FolderName(where)) or ""))
+		Q.AddEvent(c, "Next message: new " .. ChatAgentName(c) .. " session" .. (where ~= "" and (" " .. SEG.DOT .. " " .. FolderName(where)) or ""))
 		ClaudeWoW.Render()
 		Cli.Show(c)
 	elseif cmd == "context" or cmd == "ctx" then

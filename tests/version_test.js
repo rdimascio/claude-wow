@@ -261,7 +261,7 @@ test('a field written after this load but more than 5 minutes ago (a dark bridge
   slotPoll(vm, null, 'time() - 900', luaDisk('1.2.3', BUILD_B));
   assert.equal(vm.evaluate('ClaudeWoW.Version.Notice()'), null);
   slotPoll(vm, null, 'time()', luaDisk('1.2.3', BUILD_B));
-  assert.equal(vm.evaluate('ClaudeWoW.Version.Notice()'), 'Addon update ready · 1.2.3', 'a fresh one is read');
+  assert.equal(vm.evaluate('ClaudeWoW.Version.Notice()'), 'Addon update ready · 1.2.3 build bbbbbbbbbbbb', 'a fresh one is read');
 });
 
 test('new addon files show as an update bar with a Reload button, not as a message in the chat', () => {
@@ -273,6 +273,16 @@ test('new addon files show as an update bar with a Reload button, not as a messa
   assert.equal(told(vm, 'New addon files'), 0, 'the transcript gets no system message');
   assert.equal(vm.evaluate('ClaudeWoWNoticeBar:IsShown()'), 'true');
   assert.equal(vm.evaluate('ClaudeWoWNoticeBar.text:GetText()'), 'Addon update ready · 1.2.4');
+  slotPoll(vm, null, 'time()', luaDisk('1.2.3', BUILD_B));
+  assert.equal(
+    vm.evaluate('ClaudeWoWNoticeBar.text:GetText()'),
+    'Addon update ready · 1.2.3 build bbbbbbbbbbbb',
+    'a new build of the loaded version names the build',
+  );
+  slotPoll(vm, null, 'time()', luaDisk('1.2.3', BUILD_A));
+  assert.equal(vm.evaluate('ClaudeWoWNoticeBar:IsShown()'), 'false', 'the loaded build back on disk clears the bar');
+  slotPoll(vm, null, 'time()', luaDisk('1.2.4', BUILD_B));
+  assert.equal(vm.evaluate('ClaudeWoWNoticeBar:IsShown()'), 'true', 'and a later update shows it again');
   vm.run('ClaudeWoWNoticeReload.scripts.OnClick(ClaudeWoWNoticeReload)');
   assert.equal(vm.evaluate('STUB.reloaded'), 'true', 'the button reloads the UI from the click');
 });
