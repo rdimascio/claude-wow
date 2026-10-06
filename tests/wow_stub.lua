@@ -149,6 +149,10 @@ function Methods.SetAlpha(self, a) self.alpha = a end
 function Methods.GetAlpha(self) return self.alpha or 1 end
 function Methods.IsMouseOver(self) return STUB.mouseOver == self end
 function Methods.EnableMouse(self, v) self.mouseEnabled = v and true or false end
+function Methods.SetEnabled(self, v) self.disabled = not v end
+function Methods.Enable(self) self.disabled = false end
+function Methods.Disable(self) self.disabled = true end
+function Methods.IsEnabled(self) return not self.disabled end
 function Methods.StartMoving(self) self.moving = true end
 function Methods.StopMovingOrSizing(self) self.moving = nil end
 function Methods.GetVerticalScrollRange(self) return 0 end

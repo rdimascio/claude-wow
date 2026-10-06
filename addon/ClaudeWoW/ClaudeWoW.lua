@@ -1648,8 +1648,10 @@ function ClaudeWoW.UpdateConnect()
 	local connected = ClaudeWoW.IsConnected()
 	local c = ActiveChat()
 	local busy = connected and c ~= nil and c.pendingId ~= nil
-	ui.send:SetShown(connected and not busy)
+	ui.send:SetShown(connected)
+	ui.send:SetEnabled(not busy)
 	if ui.stop then ui.stop:SetShown(busy) end
+	if ui.effort then ui.effort:SetShown(connected) end
 	ui.connect:SetShown(not connected)
 	if connected then return end
 	if run.connectingAt then
@@ -4389,6 +4391,45 @@ function Cli.ProjectMenu(anchor)
 	Cli.Out(c, "project: " .. Cli.ProjectLabel(c) .. " (known: " .. Cli.ProjectNames() .. "). Use /claude --project <name|path|none>.")
 end
 
+Cli.EFFORT_CHOICES = { "low", "medium", "high", "xhigh", "max" }
+
+function Cli.EffortLabel(c)
+	local e = c and c.effort
+	return (e and e ~= "") and e or "default"
+end
+
+function Cli.PickEffort(c, value)
+	c.effort = (value and value ~= "") and value or nil
+	Cli.Out(c, "effort: " .. Cli.EffortLabel(c))
+	Cli.UpdateEffortButton()
+end
+
+function Cli.UpdateEffortButton()
+	local b = ui.effort
+	if not b then return end
+	b:SetText("Effort: " .. Cli.EffortLabel(ActiveChat()))
+end
+
+function Cli.EffortMenu(anchor)
+	local c = ActiveChat()
+	if not c then return end
+	if type(MenuUtil) == "table" and type(MenuUtil.CreateContextMenu) == "function" then
+		local shown = pcall(MenuUtil.CreateContextMenu, anchor, function(_, root)
+			root:CreateTitle("Effort")
+			root:CreateButton("Default", function() Cli.PickEffort(c, nil) end)
+			for _, e in ipairs(Cli.EFFORT_CHOICES) do
+				root:CreateButton(e, function() Cli.PickEffort(c, e) end)
+			end
+		end)
+		if shown then return end
+	end
+	local at = 0
+	for i, e in ipairs(Cli.EFFORT_CHOICES) do
+		if e == c.effort then at = i end
+	end
+	Cli.PickEffort(c, Cli.EFFORT_CHOICES[at + 1])
+end
+
 Cli.PROJECT_W_MIN = 60
 Cli.PROJECT_W_MAX = 240
 Cli.PROJECT_HEADER_SHARE = 0.5
@@ -5425,6 +5466,7 @@ function ClaudeWoW.Render()
 	local c = ActiveChat()
 	Cli.UpdateMcpButton()
 	Cli.UpdateProjectButton()
+	Cli.UpdateEffortButton()
 	ClaudeWoW.UpdateConnect()
 	Q.UpdatePlaceholder()
 	if ui.content and c then
@@ -5925,6 +5967,11 @@ Q.NATIVE_TEMPLATES = { "ButtonFrameTemplate", "InsetFrameTemplate" }
 Q.LIST_W = 300
 Q.COMPOSER_BOTTOM = 2
 Q.COMPOSER_GAP = 6
+Q.EFFORT_H = 18
+Q.EFFORT_GAP = 2
+Q.STOP_W = 48
+Q.STOP_H = 18
+Q.STOP_INSET = 5
 Q.NAV_TOP = -24
 Q.NAV_H = 34
 Q.LIST_ROW_H = 20
@@ -7887,9 +7934,27 @@ local function BuildUI()
 	send:SetScript("OnLeave", function() GameTooltip:Hide() end)
 	ui.send = send
 
-	local stop = MakeButton(f, "Stop", SEND_W, function() ClaudeWoW.Cancel(ActiveChat()) end)
-	stop:SetHeight(30)
-	stop:SetPoint("LEFT", inputBg, "RIGHT", 6, 0)
+	local effort = MakeButton(f, "Effort", SEND_W, function(self) Cli.EffortMenu(self) end)
+	effort:SetHeight(Q.EFFORT_H)
+	if effort.SetNormalFontObject then effort:SetNormalFontObject("GameFontNormalSmall") end
+	effort:SetPoint("BOTTOMLEFT", send, "TOPLEFT", 0, Q.EFFORT_GAP)
+	effort:SetScript("OnEnter", function(self)
+		GameTooltip:SetOwner(self, "ANCHOR_TOP")
+		GameTooltip:SetText("Effort")
+		GameTooltip:AddLine("How hard the agent thinks in this chat. Default uses the bridge's setting. Same as /claude --effort.", 0.8, 0.8, 0.8, true)
+		GameTooltip:Show()
+	end)
+	effort:SetScript("OnLeave", function() GameTooltip:Hide() end)
+	ui.effort = effort
+
+	local stop = MakeButton(inputBg, "Stop", Q.STOP_W, function() ClaudeWoW.Cancel(ActiveChat()) end)
+	stop:SetHeight(Q.STOP_H)
+	if ui.titleBar then
+		stop:SetPoint("BOTTOMRIGHT", inputBg, "BOTTOMRIGHT", -Q.STOP_INSET, Q.STOP_INSET)
+	else
+		stop:SetPoint("TOPRIGHT", inputBg, "TOPRIGHT", -Q.STOP_INSET, -Q.STOP_INSET)
+	end
+	stop:SetFrameLevel((Try(inputBg.GetFrameLevel, inputBg) or 1) + 6)
 	stop:SetScript("OnEnter", function(self)
 		GameTooltip:SetOwner(self, "ANCHOR_TOP")
 		GameTooltip:SetText("Stop this run")
