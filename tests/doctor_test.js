@@ -10,6 +10,7 @@ const C = require('../dev/doctor/checks');
 const Doctor = require('../dev/doctor');
 const Service = require('../bridge/service');
 const GameFs = require('../bridge/gamefs');
+const AC = require('../bridge/agentcontract');
 
 const NOW = Date.parse('2026-09-29T18:40:00Z');
 const MINUTE = 60 * 1000;
@@ -83,7 +84,13 @@ function makeWorld(name, options = {}) {
       path.join(clawHome, 'agent-contract.json'),
       JSON.stringify(
         options.contract || {
-          claude: { path: claudeBin, realpath: claudeBin, version: '2.1.290', at: iso(NOW - 60 * MINUTE), rows: { C1: 'pass', C2: 'pass', C2u: 'unchecked' } },
+          claude: {
+            path: claudeBin,
+            ...AC.readIdentity(claudeBin),
+            version: '2.1.290',
+            at: iso(NOW - 60 * MINUTE),
+            rows: { C1: 'pass', C2: 'pass', C2u: 'unchecked' },
+          },
         },
       ),
     );
@@ -508,7 +515,7 @@ test('clients: each client with its build, a different build in one of them, old
   assert.match(gone.problems[0].what, /^_classic_era_: the client folder .* is gone\.$/);
 });
 
-test('contract: a missing file, a failed row, a CLI that changed after the check and a vanished CLI warn', () => {
+test('contract: a missing file, a failed row, a CLI replaced since the check (even with an older mtime) and a vanished CLI warn', () => {
   const missing = C.checkContract(context(makeWorld('contract-missing', { contract: false })));
   assert.equal(missing.status, 'warn');
   assert.match(missing.problems[0].what, /agent-contract\.json does not exist/);
@@ -517,10 +524,13 @@ test('contract: a missing file, a failed row, a CLI that changed after the check
   const ok = C.checkContract(context(world));
   assert.equal(ok.status, 'ok', JSON.stringify(ok));
   assert.equal(ok.summary, 'claude 2.1.290');
-  fs.utimesSync(world.claudeBin, new Date(NOW), new Date(NOW));
+  const before = fs.statSync(world.claudeBin);
+  fs.writeFileSync(world.claudeBin, 'x');
+  fs.utimesSync(world.claudeBin, before.atime, before.mtime);
+  assert.equal(fs.statSync(world.claudeBin).mtimeMs, before.mtimeMs, 'an update that keeps the old mtime, older than the check');
   const stale = C.checkContract(context(world));
   assert.equal(stale.status, 'warn');
-  assert.match(stale.problems[0].what, /changed after the check/);
+  assert.match(stale.problems[0].what, /is not the file the check at .* measured \(path, size, inode or times differ\)/);
   const failed = C.checkContract(
     context(
       makeWorld('contract-failed', {

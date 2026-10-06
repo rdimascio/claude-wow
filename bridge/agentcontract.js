@@ -29,6 +29,7 @@ const ROWS = {
 };
 const OFF_ROWS = { claude: ['C1', 'C2'], codex: ['X2a'] };
 const SECRET_ROWS = { codex: ['X2b'] };
+const GATING_ROWS = { claude: OFF_ROWS.claude, codex: [...OFF_ROWS.codex, ...SECRET_ROWS.codex] };
 const AGENT_NAMES = { claude: 'Claude Code', codex: 'Codex' };
 
 const CLAUDE_MODEL = 'haiku';
@@ -120,15 +121,53 @@ function readContract(file, readText = f => fs.readFileSync(f, 'utf8')) {
   }
 }
 
-function entryMatches(entry, realpath, mtimeMs, version) {
+const IDENTITY_KEYS = ['mtimeMs', 'ctimeMs', 'ino', 'size'];
+
+function identityOf(realpath, st) {
+  const id = { realpath };
+  for (const k of IDENTITY_KEYS) id[k] = Number(st && st[k]);
+  return id;
+}
+
+function readIdentity(bin, { realpath = p => fs.realpathSync.native(p), stat = p => fs.statSync(p) } = {}) {
+  try {
+    const real = realpath(bin);
+    return identityOf(real, stat(real));
+  } catch {
+    return null;
+  }
+}
+
+function sameIdentity(entry, id) {
   return (
     isObject(entry) &&
-    isObject(entry.rows) &&
-    entry.realpath === realpath &&
-    entry.mtimeMs === mtimeMs &&
-    typeof entry.version === 'string' &&
-    (!version || entry.version === version)
+    isObject(id) &&
+    typeof entry.realpath === 'string' &&
+    entry.realpath === id.realpath &&
+    IDENTITY_KEYS.every(k => Number.isFinite(entry[k]) && entry[k] === id[k])
   );
+}
+
+const measured = (agentId, rows) => (GATING_ROWS[agentId] || []).every(r => rows[r] === PASS || rows[r] === FAIL);
+
+function evaluate(agentId, base, entry, version) {
+  const matched =
+    isObject(entry) &&
+    isObject(entry.rows) &&
+    typeof entry.version === 'string' &&
+    entry.version !== '' &&
+    sameIdentity(entry, base.identity) &&
+    (version === undefined || version === entry.version);
+  const rows = matched ? { ...entry.rows } : {};
+  return {
+    agent: agentId,
+    path: base.path,
+    realpath: base.identity.realpath,
+    version: version || (matched ? entry.version : ''),
+    matched,
+    checked: matched && measured(agentId, rows),
+    rows,
+  };
 }
 
 function createTracker({
@@ -141,62 +180,50 @@ function createTracker({
   which: whichOpts,
 } = {}) {
   const versions = new Map();
+  const bases = {};
   const kids = new Set();
-  const statuses = {};
   const said = new Set();
+  function evaluateAgent(agentId, all) {
+    const base = bases[agentId];
+    const s = evaluate(agentId, base, all[agentId], versions.get(base.key));
+    if (!s.checked && !said.has(base.key)) {
+      said.add(base.key);
+      log(
+        `contract: ${agentName(agentId)} at ${base.identity.realpath} is not checked against the MCP behaviors the bridge relies on; run claude-wow agents check. Only a measured fail turns anything off.`,
+      );
+    }
+    return s;
+  }
   function status(agentId, cmd, env) {
     if (!ROWS[agentId]) return null;
     const bin = binaryOf(cmd, whichOpts);
     if (!bin) return null;
-    let real;
-    let mtimeMs;
-    try {
-      real = realpath(bin);
-      mtimeMs = stat(real).mtimeMs;
-    } catch {
-      return null;
-    }
-    const key = `${agentId}\n${real}\n${mtimeMs}`;
+    const identity = readIdentity(bin, { realpath, stat });
+    if (!identity) return null;
+    const key = [agentId, identity.realpath, ...IDENTITY_KEYS.map(k => identity[k])].join('\n');
+    bases[agentId] = { path: bin, identity, key };
     if (!versions.has(key)) {
-      versions.set(key, '');
+      versions.set(key, undefined);
       const onChild = child => {
         kids.add(child);
         child.once('close', () => kids.delete(child));
       };
       Promise.resolve(version(cmd, { env, onChild })).then(
-        v => {
-          versions.set(key, v || '');
-          if (statuses[agentId] && statuses[agentId].key === key) statuses[agentId].version = v || statuses[agentId].version;
-        },
-        () => {},
+        v => versions.set(key, v || ''),
+        () => versions.set(key, ''),
       );
     }
-    const entry = readContract(file, readText)[agentId];
-    const ver = versions.get(key);
-    const checked = entryMatches(entry, real, mtimeMs, ver);
-    const s = {
-      agent: agentId,
-      key,
-      path: bin,
-      realpath: real,
-      version: ver || (checked ? entry.version : ''),
-      checked,
-      rows: checked ? { ...entry.rows } : {},
-    };
-    statuses[agentId] = s;
-    if (!checked && !said.has(key)) {
-      said.add(key);
-      log(
-        `contract: ${agentName(agentId)} at ${real} is not checked against the MCP behaviors the bridge relies on; run claude-wow agents check. Nothing is turned off until a check fails.`,
-      );
-    }
-    return s;
+    return evaluateAgent(agentId, readContract(file, readText));
   }
-  return { status, current: () => ({ ...statuses }), children: () => [...kids] };
+  function current() {
+    const all = readContract(file, readText);
+    return Object.fromEntries(Object.keys(bases).map(id => [id, evaluateAgent(id, all)]));
+  }
+  return { status, current, children: () => [...kids] };
 }
 
 function failedRows(s, rows) {
-  if (!s || !s.checked) return [];
+  if (!s || !s.matched) return [];
   return (rows || []).filter(r => s.rows[r] === FAIL);
 }
 
@@ -245,7 +272,7 @@ function lineEvents(onEvent) {
   };
 }
 
-function spawnRun(file, args, { input = '', env, cwd, timeoutMs = RUN_TIMEOUT_MS, stopWhen = () => false } = {}) {
+function spawnRun(file, args, { input = '', env, cwd, timeoutMs = RUN_TIMEOUT_MS, stopWhen = () => false, onChild = () => {} } = {}) {
   return new Promise(resolve => {
     const events = [];
     let stdout = '';
@@ -259,6 +286,7 @@ function spawnRun(file, args, { input = '', env, cwd, timeoutMs = RUN_TIMEOUT_MS
       resolve({ events, stdout, code: null, stopped, timedOut, stderr: e.message });
       return;
     }
+    onChild(child);
     const stop = () => PR.killTree(child, { graceMs: 2000 });
     const timer = setTimeout(() => {
       timedOut = true;
@@ -338,8 +366,8 @@ function judgeClaude(first, second, nonces) {
   if (leaked.length) {
     rows.C2 = FAIL;
     notes.push(`with --disallowedTools mcp__${prefix} these tools stayed: ${leaked.join(', ')}`);
-  } else if (entry2 && entry2.status === 'failed') notes.push('the fixture server failed to start in the second run');
-  else rows.C2 = PASS;
+  } else if (entry2 && entry2.status === 'connected') rows.C2 = PASS;
+  else notes.push(`the fixture server was ${entry2 ? entry2.status : 'not listed'} in the second run, so its missing tools prove nothing`);
   return { rows, notes, prefix };
 }
 
@@ -407,15 +435,18 @@ function judgeCodexCall(result, secret) {
     rows.X1 = FAIL;
     notes.push(`the MCP call did not complete: ${JSON.stringify(call.error || call.status || null).slice(0, 300)}`);
   }
-  const shell = items.find(i => i.type === 'command_execution' && String(i.command || '').includes(ECHO_ENV));
-  if (shell && String(shell.aggregated_output || '').includes(secret)) {
+  const shells = items.filter(i => i.type === 'command_execution' && String(i.command || '').includes(ECHO_ENV));
+  const finished = shells.filter(i => typeof i.exit_code === 'number' && i.status !== 'declined');
+  if (shells.some(i => String(i.aggregated_output || '').includes(secret))) {
     rows.X2b = FAIL;
     notes.push(`the shell printed ${ECHO_ENV} although shell_environment_policy.exclude names it`);
   } else if (rows.X1 === PASS && !callText.includes(secret)) {
     rows.X2b = FAIL;
     notes.push(`env_vars did not pass ${ECHO_ENV} to the server`);
-  } else if (rows.X1 === PASS && shell && shell.status === 'completed') rows.X2b = PASS;
-  else notes.push('X2b needs both the MCP call and a shell command that reads the secret');
+  } else if (rows.X1 === PASS && finished.length) rows.X2b = PASS;
+  else notes.push('X2b needs both the MCP call and a finished shell command that reads the secret');
+  if (items.some(i => i.type === 'mcp_tool_call' && i.server === CODEX_OFF_SERVER))
+    notes.push(`Codex called the ${CODEX_OFF_SERVER} server, which enabled=false turned off`);
   return { rows, notes };
 }
 
@@ -481,7 +512,8 @@ async function probeCodex({
   const cost = usage.length
     ? `${sum('input_tokens')} input tokens (${sum('cached_input_tokens')} cached), ${sum('output_tokens')} output tokens on ${model}; Codex reports no price`
     : 'no usage reported';
-  return { rows: { X1: call.rows.X1, X2a: list.X2a, X2b: call.rows.X2b }, notes: [...list.notes, ...call.notes], cost };
+  const offCalled = codexItems(result.events).some(i => i.type === 'mcp_tool_call' && i.server === CODEX_OFF_SERVER);
+  return { rows: { X1: call.rows.X1, X2a: offCalled ? FAIL : list.X2a, X2b: call.rows.X2b }, notes: [...list.notes, ...call.notes], cost };
 }
 
 const PROBES = { claude: probeClaude, codex: probeCodex };
@@ -496,19 +528,41 @@ function writeContract(file, id, entry, readText) {
 }
 
 const USAGE = 'claude-wow agents check [--agent claude|codex]   probe the MCP behaviors the bridge relies on, with one short run per check';
+const EXIT = { ok: 0, failed: 1, usage: 2, unchecked: 3, interrupted: 130 };
+
+function parseCheckArgs(argv) {
+  if (argv[0] !== 'check') return { code: argv[0] === '--help' || argv[0] === '-h' ? EXIT.ok : EXIT.usage };
+  let only = '';
+  for (let k = 1; k < argv.length; k++) {
+    const a = argv[k];
+    if (a === '--help' || a === '-h') return { code: EXIT.ok };
+    if (a !== '--agent') return { code: EXIT.usage, error: `unknown option "${a}"` };
+    const v = argv[++k];
+    if (!ROWS[v]) return { code: EXIT.usage, error: `--agent needs one of ${Object.keys(ROWS).join(', ')}${v === undefined ? '' : `, not "${v}"`}` };
+    only = v;
+  }
+  return { only };
+}
+
+function mergeRows(prior, identity, version, rows) {
+  const merged = { ...rows };
+  const kept = [];
+  if (isObject(prior) && isObject(prior.rows) && prior.version === version && sameIdentity(prior, identity))
+    for (const [row, v] of Object.entries(prior.rows))
+      if (v === FAIL && merged[row] === UNCHECKED) {
+        merged[row] = FAIL;
+        kept.push(row);
+      }
+  return { rows: merged, kept };
+}
 
 async function check(argv = [], deps = {}) {
   const out = deps.out || (line => console.log(line));
-  const sub = argv[0];
-  if (sub !== 'check') {
+  const args = parseCheckArgs(argv);
+  if (args.code !== undefined) {
+    if (args.error) out(args.error);
     out(USAGE);
-    return sub === '--help' || sub === '-h' ? 0 : 2;
-  }
-  const i = argv.indexOf('--agent');
-  const only = i >= 0 ? argv[i + 1] : '';
-  if (only && !ROWS[only]) {
-    out(`unknown agent "${only}"; one of ${Object.keys(ROWS).join(', ')}`);
-    return 2;
+    return args.code;
   }
   const env = deps.env || process.env;
   const home = deps.home || require('./home').resolve(env);
@@ -519,45 +573,75 @@ async function check(argv = [], deps = {}) {
   } catch {}
   const resolve = deps.resolveCommand || A.resolveCommand;
   const version = deps.version || readVersion;
-  const realpath = deps.realpath || (p => fs.realpathSync.native(p));
-  const statOf = deps.stat || (p => fs.statSync(p));
+  const idOpts = { realpath: deps.realpath, stat: deps.stat };
   const probes = deps.probes || PROBES;
   const now = deps.now || (() => Date.now());
+  const signals = deps.signals || process;
+  const kids = new Set();
+  const track = child => {
+    kids.add(child);
+    child.once('close', () => kids.delete(child));
+  };
+  const baseRun = deps.run || spawnRun;
+  const run = (file2, args2, opts = {}) => baseRun(file2, args2, { ...opts, onChild: track });
+  let interrupted = false;
+  const stop = () => {
+    interrupted = true;
+    PR.killAll([...kids], { graceMs: 2000 }, () => {});
+  };
+  signals.on('SIGINT', stop);
+  signals.on('SIGTERM', stop);
   let failed = false;
+  let unchecked = false;
   let wrote = false;
-  for (const id of only ? [only] : Object.keys(ROWS)) {
-    const cmd = resolve(id, A.agentConfig(cfg, id));
-    const bin = cmd.found ? binaryOf(cmd, deps.which) : '';
-    if (!bin) {
-      out(`${id}: not found (${cmd.note || 'no executable'}); skipped`);
-      continue;
+  try {
+    for (const id of args.only ? [args.only] : Object.keys(ROWS)) {
+      if (interrupted) break;
+      const cmd = resolve(id, A.agentConfig(cfg, id));
+      const bin = cmd.found ? binaryOf(cmd, deps.which) : '';
+      const identity = bin ? readIdentity(bin, idOpts) : null;
+      if (!identity) {
+        out(`${id}: not found (${cmd.note || 'no executable'}); skipped`);
+        continue;
+      }
+      const agentEnv = A.AGENTS[id].env({ ...env });
+      const ver = await version(cmd, { env: agentEnv, onChild: track });
+      if (interrupted) break;
+      out(`${id}: ${agentName(id)} ${ver || '(version unknown)'} at ${identity.realpath}`);
+      const dir = fs.mkdtempSync(path.join(deps.tmpDir || os.tmpdir(), `claude-wow-contract-${id}-`));
+      let r;
+      try {
+        r = await probes[id]({ cmd, env: agentEnv, dir, run, fixture: deps.fixture, own: deps.codexOwn });
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+      if (interrupted) break;
+      const { rows, kept } = mergeRows(readContract(file)[id], identity, ver, r.rows);
+      for (const [row, what] of Object.entries(ROWS[id])) out(`  ${row.padEnd(4)} ${rows[row].padEnd(9)} ${what}`);
+      for (const note of r.notes) out(`  note: ${note}`);
+      if (kept.length) out(`  note: kept the earlier fail of ${kept.join(', ')} for this same binary; only a measured pass clears it`);
+      out(`  cost: ${r.cost}`);
+      const checked = !!ver && measured(id, rows);
+      if (Object.values(rows).includes(FAIL)) failed = true;
+      if (!checked) {
+        unchecked = true;
+        const open = GATING_ROWS[id].filter(g => rows[g] === UNCHECKED);
+        out(`  not checked: ${!ver ? 'the version is unknown' : `${open.join(', ')} measured nothing`}; run it again`);
+      }
+      writeContract(file, id, { path: bin, ...identity, version: ver, at: new Date(now()).toISOString(), checked, rows, cost: r.cost });
+      wrote = true;
     }
-    const agentEnv = A.AGENTS[id].env({ ...env });
-    const ver = await version(cmd, { env: agentEnv });
-    let real = bin;
-    let mtimeMs = null;
-    try {
-      real = realpath(bin);
-      mtimeMs = statOf(real).mtimeMs;
-    } catch {}
-    out(`${id}: ${agentName(id)} ${ver || '(version unknown)'} at ${real}`);
-    const dir = fs.mkdtempSync(path.join(deps.tmpDir || os.tmpdir(), `claude-wow-contract-${id}-`));
-    let r;
-    try {
-      r = await probes[id]({ cmd, env: agentEnv, dir, run: deps.run, fixture: deps.fixture, own: deps.codexOwn });
-    } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
-    for (const [row, what] of Object.entries(ROWS[id])) out(`  ${row.padEnd(4)} ${r.rows[row].padEnd(9)} ${what}`);
-    for (const note of r.notes) out(`  note: ${note}`);
-    out(`  cost: ${r.cost}`);
-    if (Object.values(r.rows).includes(FAIL)) failed = true;
-    writeContract(file, id, { path: bin, realpath: real, mtimeMs, version: ver, at: new Date(now()).toISOString(), rows: r.rows, cost: r.cost });
-    wrote = true;
+  } finally {
+    signals.removeListener('SIGINT', stop);
+    signals.removeListener('SIGTERM', stop);
   }
   if (wrote) out(`wrote ${file}`);
+  if (interrupted) {
+    out('interrupted: the probe runs were stopped');
+    return EXIT.interrupted;
+  }
   if (failed) out('a failed row turns that behavior off in the bridge until a later check passes; see docs/AGENTS.md');
-  return failed ? 1 : 0;
+  return failed ? EXIT.failed : unchecked ? EXIT.unchecked : EXIT.ok;
 }
 
 function main(argv) {
@@ -587,6 +671,10 @@ module.exports = {
   binaryOf,
   readVersion,
   readContract,
+  identityOf,
+  readIdentity,
+  sameIdentity,
+  GATING_ROWS,
   createTracker,
   refusal,
   offReason,
@@ -599,6 +687,7 @@ module.exports = {
   judgeCodexList,
   probeClaude,
   probeCodex,
+  parseCheckArgs,
   check,
   main,
 };

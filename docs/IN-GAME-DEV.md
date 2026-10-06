@@ -33,6 +33,7 @@ The list is kept for 24 hours. `claude-wow handoff <folder>` names another repos
 | `/claude dev test [args]` | `plugins.dev.testCommand`, else `npm test`, with the totals, the failing tests and the end of the output when it fails. It sends a heartbeat every 30 s, so a long run does not look stuck. |
 | `/claude dev doctor` | `dev/doctor.js --json` from the chat's folder (a claude-wow checkout), one line per check and the fix for each problem |
 | `/claude dev errors` | Lua errors from the game's `Logs/General.log` (the client writes it when it exits) and the ones the addon caught this UI session |
+| `/claude dev globals [clear]` | runs in the addon, not the bridge: saves (or drops) the global names the UI widget allowlist admits and refuses on this client, for `npm run audit:widgets` ([UI-WIDGETS.md](UI-WIDGETS.md#audit-the-allowlist-against-the-real-client)) |
 | `/claude dev help` | the list |
 
 The agent in the chat sees the output of the last dev command with your next message (once, for 30 minutes). So this works:
@@ -42,7 +43,7 @@ The agent in the chat sees the output of the last dev command with your next mes
 fix the failing test
 ```
 
-Dev commands need a bridge that lists the `dev` plugin. An older bridge would run `@dev status` as a prompt, so the addon refuses and says to update the bridge.
+Dev commands other than `globals` need a bridge that lists the `dev` plugin. An older bridge would run `@dev status` as a prompt, so the addon refuses and says to update the bridge.
 
 ## Feedback
 

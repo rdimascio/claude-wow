@@ -22,13 +22,18 @@ import addonWindow from '../addon/ClaudeWoW/Window.lua' with { type: 'file' };
 import addonTelemetry from '../addon/ClaudeWoW/Telemetry.lua' with { type: 'file' };
 import addonObserved from '../addon/ClaudeWoW/Observed.lua' with { type: 'file' };
 import addonDev from '../addon/ClaudeWoW/Dev.lua' with { type: 'file' };
+import addonHelp from '../addon/ClaudeWoW/Help.lua' with { type: 'file' };
 import addonBindings from '../addon/ClaudeWoW/Bindings.xml' with { type: 'file' };
 import addonPortrait from '../addon/ClaudeWoW/Portrait.tga' with { type: 'file' };
+import addonMinimapIcon from '../addon/ClaudeWoW/MinimapIcon.tga' with { type: 'file' };
 import capturePs1 from '../bridge/capture.ps1' with { type: 'file' };
 import captureMac from '../bridge/capture_mac.py' with { type: 'file' };
 import captureX11 from '../bridge/capture_x11.py' with { type: 'file' };
 import configExample from '../bridge/config.example.json' with { type: 'file' };
 import primer from '../docs/WOW-ADDON-PRIMER.md' with { type: 'file' };
+import pluginManifest from '../assets/plugins/claude-wow/.claude-plugin/plugin.json' with { type: 'file' };
+import pluginWowCode from '../assets/plugins/claude-wow/agents/wow-code.md' with { type: 'file' };
+import pluginWowPlanner from '../assets/plugins/claude-wow/agents/wow-planner.md' with { type: 'file' };
 
 require('../bridge/assets').embed({
   'addon/ClaudeWoW/ClaudeWoW.lua': addonLua,
@@ -48,12 +53,17 @@ require('../bridge/assets').embed({
   'addon/ClaudeWoW/Telemetry.lua': addonTelemetry,
   'addon/ClaudeWoW/Observed.lua': addonObserved,
   'addon/ClaudeWoW/Dev.lua': addonDev,
+  'addon/ClaudeWoW/Help.lua': addonHelp,
   'addon/ClaudeWoW/Bindings.xml': addonBindings,
   'addon/ClaudeWoW/Portrait.tga': addonPortrait,
+  'addon/ClaudeWoW/MinimapIcon.tga': addonMinimapIcon,
   'bridge/capture.ps1': capturePs1,
   'bridge/capture_mac.py': captureMac,
   'bridge/capture_x11.py': captureX11,
   'bridge/config.example.json': configExample,
   'docs/WOW-ADDON-PRIMER.md': primer,
+  'assets/plugins/claude-wow/.claude-plugin/plugin.json': pluginManifest,
+  'assets/plugins/claude-wow/agents/wow-code.md': pluginWowCode,
+  'assets/plugins/claude-wow/agents/wow-planner.md': pluginWowPlanner,
 });
 require('../bridge/supervisor');

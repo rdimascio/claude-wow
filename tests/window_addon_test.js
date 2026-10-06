@@ -32,7 +32,7 @@ function newVM({ before = '', saved = '' } = {}) {
   run(fs.readFileSync(path.join(__dirname, 'wow_stub.lua'), 'utf8'));
   run(BLIZZARD);
   if (before) run(before);
-  for (const f of ['Codec.lua', 'Inbox.lua', 'ClaudeWoW.lua', 'LootRoll.lua', 'Window.lua'])
+  for (const f of ['Codec.lua', 'Inbox.lua', 'ClaudeWoW.lua', 'LootRoll.lua', 'Window.lua', 'Help.lua'])
     run(fs.readFileSync(path.join(ADDON, f), 'utf8'), 'ClaudeWoW', 'addon/' + f);
   if (saved) run(saved);
   run('STUB.FireEvent("ADDON_LOADED", "ClaudeWoW"); STUB.FireEvent("PLAYER_LOGIN")');
@@ -303,6 +303,13 @@ test('the Dragonflight metal border is used where the client has it, and the pla
   assert.equal(metal.evaluate('ClaudeWoWWindow.skinned'), 'true');
   assert.equal(metal.evaluate('STUB.layout'), 'ButtonFrameTemplateNoPortrait');
   assert.equal(metal.evaluate('ClaudeWoWFrame.claudewowBorder.template'), 'NineSlicePanelTemplate');
+  assert.equal(metal.evaluate('ClaudeWoW.UI.close.template'), 'UIPanelCloseButton', 'the plain frame gets a close X of its own');
+  assert.equal(metal.evaluate('ClaudeWoW.UI.close.point .. " " .. ClaudeWoW.UI.close.relPoint'), 'TOPRIGHT TOPRIGHT');
+  assert.equal(metal.evaluate('ClaudeWoW.UI.minimize.rel == ClaudeWoW.UI.close'), 'true', 'the skin keeps minimize beside the X');
+  assert.ok(metal.num('ClaudeWoW.UI.minimize:GetRight()') <= metal.num('ClaudeWoW.UI.close:GetLeft()'), 'without overlap');
+  plain.run('ClaudeWoW.Toggle(true); ClaudeWoW.UI.close.scripts.OnClick(ClaudeWoW.UI.close)');
+  assert.equal(plain.evaluate('ClaudeWoWFrame.shown'), 'false');
+  assert.equal(plain.evaluate('ClaudeWoWMini.shown'), 'false', 'the plain X closes fully too');
 });
 
 const NATIVE_TEMPLATES = `
@@ -314,13 +321,20 @@ const NATIVE_TEMPLATES = `
   function NavBar_AddButton(bar, data) table.insert(STUB.nav.buttons, data) end
   function ScrollingEdit_OnCursorChanged() end
   function ScrollingEdit_OnTextChanged() end
+  local MenuNode
+  local function MenuItem(node, it) it.enabled = true; function it:SetEnabled(v) self.enabled = v end; table.insert(node.items, it); return it end
+  MenuNode = function(base)
+    local node = base or {}
+    node.items = node.items or {}
+    function node:CreateTitle(t) return MenuItem(self, { text = t }) end
+    function node:CreateButton(t, fn) local sub = MenuNode({ text = t, fn = fn }); sub.sub = sub; return MenuItem(self, sub) end
+    function node:CreateCheckbox(t, get, fn) return MenuItem(self, { text = t, fn = fn, get = get }) end
+    function node:CreateRadio(t, get, fn) return MenuItem(self, { text = t, fn = fn, get = get, radio = true }) end
+    function node:CreateDivider() table.insert(self.items, { divider = true }) end
+    return node
+  end
   MenuUtil = { CreateContextMenu = function(owner, gen)
-    local root = { items = {} }
-    local function add(it) it.enabled = true; function it:SetEnabled(v) self.enabled = v end; table.insert(root.items, it); return it end
-    function root:CreateTitle(t) return add({ text = t }) end
-    function root:CreateButton(t, fn) return add({ text = t, fn = fn }) end
-    function root:CreateCheckbox(t, get, fn) return add({ text = t, fn = fn, get = get }) end
-    function root:CreateDivider() end
+    local root = MenuNode()
     STUB.menu = root
     gen(owner, root)
   end }
@@ -678,6 +692,107 @@ test('clicking a link in a reply opens the link, not the copy box; clicking the 
   assert.equal(vm.num('STUB.copies'), 1, 'a click on plain text still opens the copy box');
 });
 
+const shownBodies = vm =>
+  vm
+    .evaluate(
+      '(function() local t = {} for _, b in ipairs(ClaudeWoW.UI.bubbles) do if b.shown then table.insert(t, b.body:GetText()) end end return table.concat(t, "\\n@@\\n") end)()',
+    )
+    .split('\n@@\n');
+
+test('the window leaves out the closing TL;DR block of a reply, but not one in a code fence, one with more text after it, or one that is not the bridge summary', () => {
+  const vm = nativeVM();
+  vm.run(`
+    local c = ClaudeWoWDB.chats[1]
+    ClaudeWoW.SwitchChat(c.id)
+    c.history = {
+      { role = "assistant", t = 1, text = "Renamed the helper.\\nAll green.\\n\\n**TL;DR:** Helper renamed." },
+      { role = "assistant", t = 2, text = "Renamed it.\\n\\nTL;DR: Bridge summary.", summary = "Bridge summary." },
+      { role = "assistant", t = 3, text = "Example:\\n\`\`\`\\nTL;DR: fenced line\\n\`\`\`" },
+      { role = "assistant", t = 4, text = "TL;DR: first\\nline a\\nline b\\nline c\\nline d" },
+      { role = "assistant", t = 5, text = "Body here.\\n\\nTL;DR: Short one.\\n\\nbridge note", summary = "Short one." },
+      { role = "assistant", t = 6, text = "TL;DR: Just the answer." },
+      { role = "user", t = 7, text = "TL;DR: typed by the player" },
+      { role = "assistant", t = 8, text = "Checked the logs.\\n## tldr: heading style" },
+      { role = "assistant", t = 9, text = "Tilde:\\n~~~\\nTL;DR: tilde fenced\\n~~~" },
+      { role = "assistant", t = 10, text = "Nested:\\n\`\`\`\`md\\n\`\`\`\\nTL;DR: long fence\\n\`\`\`\`" },
+    }
+    ClaudeWoW.Render()
+  `);
+  const [plain, bridge, fenced, mid, mismatch, only, user, heading, tilde, nested] = shownBodies(vm);
+  assert.ok(tilde.includes('TL;DR: tilde fenced'), 'a TL;DR inside a ~~~ fence stays: ' + tilde);
+  assert.ok(nested.includes('TL;DR: long fence'), 'a shorter backtick line does not close a longer fence: ' + nested);
+  assert.ok(plain.includes('All green.') && !plain.includes('TL;DR') && !plain.includes('Helper renamed'), 'a bold TL;DR block is left out: ' + plain);
+  assert.ok(bridge.includes('Renamed it.') && !bridge.includes('Bridge summary'), 'the block the bridge split off is left out: ' + bridge);
+  assert.ok(fenced.includes('TL;DR: fenced line'), 'a TL;DR inside a code fence stays: ' + fenced);
+  assert.ok(mid.includes('first') && mid.includes('line d'), 'a TL;DR with more text after it stays: ' + mid);
+  assert.ok(mismatch.includes('Short one.') && mismatch.includes('bridge note'), 'a tail that is not the bridge summary stays: ' + mismatch);
+  assert.ok(only.includes('Just the answer.') && !only.includes('TL;DR'), 'a reply that is only a TL;DR shows its line without the marker: ' + only);
+  assert.ok(user.includes('TL;DR: typed by the player'), 'a player message is never cut: ' + user);
+  assert.ok(heading.includes('Checked the logs.') && !heading.includes('heading style'), 'a heading-style marker is the same block: ' + heading);
+  vm.run(`
+    STUB.copied = {}
+    ClaudeWoW.ShowCopy = function(text) table.insert(STUB.copied, text) end
+    local b = (function() for _, b in ipairs(ClaudeWoW.UI.bubbles) do if b.shown then return b end end end)()
+    b.scripts.OnMouseUp(b, "LeftButton")
+    STUB.RunTimers()
+  `);
+  assert.equal(vm.evaluate('STUB.copied[1]'), 'Renamed the helper.\nAll green.\n\n**TL;DR:** Helper renamed.', 'the copy box gets the whole reply');
+});
+
+const emptyState = vm => ({
+  shown: vm.evaluate('ClaudeWoW.UI.empty and ClaudeWoW.UI.empty.shown'),
+  title: vm.evaluate('ClaudeWoW.UI.empty and ClaudeWoW.UI.empty.title:GetText()'),
+  body: vm.evaluate('ClaudeWoW.UI.empty and ClaudeWoW.UI.empty.body:GetText()'),
+  top: -vm.num('ClaudeWoW.UI.empty.y'),
+});
+
+test('an empty chat shows a centered empty state with the project, not a system bubble, and setting the project adds no message', () => {
+  const vm = nativeVM();
+  vm.run('ClaudeWoW.NewChat(); ClaudeWoW.Render()');
+  let e = emptyState(vm);
+  assert.equal(e.title, 'Restoring your chats', 'fresh saved data waits for the restore in the same style');
+  assert.match(e.body, /restoring your chats\.\.\./);
+  vm.run('STUB.now = STUB.now + 30; STUB.Tick(); ClaudeWoW.IsConnected = function() return true end; ClaudeWoW.Render()');
+  assert.equal(shownBodies(vm).filter(Boolean).length, 0, 'no bubble on an empty chat');
+  e = emptyState(vm);
+  assert.equal(e.shown, 'true');
+  assert.equal(e.title, 'No messages yet');
+  assert.match(e.body, /Type below and press Enter/);
+  assert.match(e.body, /Project: No project/);
+  assert.ok(e.top > 0, 'centered in the parchment, not at the top: ' + e.top);
+
+  vm.run('ClaudeWoWProjectButton.scripts.OnClick(ClaudeWoWProjectButton); STUB.Pick("wow-ai")');
+  assert.equal(vm.num('#ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history'), 0, 'picking a project writes no "project:" message');
+  assert.match(emptyState(vm).body, /Project: wow-ai/, 'the empty state names the new project');
+
+  vm.run('SlashCmdList.CLAUDE("--project nope")');
+  const bodies = shownBodies(vm);
+  assert.equal(bodies.length, 1);
+  assert.match(bodies[0], /Unknown project "nope"/, 'a system answer to a command still shows');
+  e = emptyState(vm);
+  assert.equal(e.shown, 'true', 'a chat with only system lines still gets the hint');
+  assert.equal(vm.evaluate('ClaudeWoW.UI.empty.title.shown'), 'false', 'but no "No messages yet" title under a visible message');
+  assert.match(e.body, /^Type below and press Enter/);
+  assert.ok(!e.body.includes('\n'), 'only the hint line: ' + e.body);
+  assert.ok(e.top > 0, 'below the system line');
+
+  vm.run('ClaudeWoW.IsConnected = function() return false end; ClaudeWoW.Render()');
+  e = emptyState(vm);
+  assert.equal(e.body, "Can't reach the bridge. Start it, then click Connect.", 'under a system line, disconnected shows only its hint');
+  vm.run('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history = {}; ClaudeWoW.Render()');
+  e = emptyState(vm);
+  assert.equal(e.title, 'Not connected');
+  assert.ok(!/npm|claude-wow/.test(e.body), 'no commands or folder names: ' + e.body);
+
+  vm.run('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history = {}; ClaudeWoW.IsConnected = function() return true end; ClaudeWoW.Render()');
+  e = emptyState(vm);
+  assert.equal(vm.evaluate('ClaudeWoW.UI.empty.title.shown'), 'true', 'a truly empty chat gets its title back');
+  assert.equal(e.title, 'No messages yet');
+  assert.match(e.body, /Project: /);
+  vm.run('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history = { { role = "user", t = 1, text = "hi" } }; ClaudeWoW.Render()');
+  assert.equal(emptyState(vm).shown, 'false', 'a chat with a message has no empty state');
+});
+
 test('general chats sit under Chats, project chats under their project, and the project button in the header switches the project', () => {
   const vm = nativeVM();
   vm.run('ClaudeWoW.NewChat("Best rogue race")');
@@ -697,12 +812,17 @@ test('general chats sit under Chats, project chats under their project, and the 
   assert.equal(vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].cwd'), '');
 });
 
-test('the project button sits at the right end of the header band, and the chat title stops before it', () => {
+test('the project button sits at the right end of the header band, the chat title stops before it, and effort sits above Send', () => {
   const vm = nativeVM();
   assert.equal(vm.evaluate('ClaudeWoWProjectButton:GetParent() == ClaudeWoWTitleBar'), 'true');
   assert.equal(vm.evaluate('ClaudeWoWProjectButton.point .. " " .. ClaudeWoWProjectButton.relPoint'), 'RIGHT RIGHT');
   assert.equal(vm.evaluate('ClaudeWoWProjectButton.rel == ClaudeWoWTitleBar'), 'true');
-  assert.equal(vm.evaluate('ClaudeWoW.UI.chatTitle.rel == ClaudeWoWProjectButton'), 'true', 'the title truncates before it reaches the button');
+  assert.equal(vm.evaluate('ClaudeWoWEffortButton:GetParent() == ClaudeWoWTitleBar'), 'false', 'effort is not in the header');
+  assert.equal(vm.evaluate('ClaudeWoWEffortButton:IsShown()'), vm.evaluate('ClaudeWoW.UI.send:IsShown()'), 'shown with Send');
+  assert.equal(vm.evaluate('ClaudeWoWEffortButton.rel == ClaudeWoW.UI.send'), 'true');
+  assert.equal(vm.evaluate('ClaudeWoWEffortButton.point .. " " .. ClaudeWoWEffortButton.relPoint'), 'BOTTOMRIGHT TOPRIGHT', 'right above Send');
+  assert.equal(vm.evaluate('ClaudeWoWEffortButton.text:GetText()'), '|cffffffffdefault|r', 'the value alone, no Effort: prefix');
+  assert.equal(vm.evaluate('ClaudeWoW.UI.chatTitle.rel == ClaudeWoWProjectButton'), 'true', 'the title truncates before it reaches the project button');
   assert.equal(vm.evaluate('ClaudeWoW.UI.chatTitle.point .. " " .. ClaudeWoW.UI.chatTitle.relPoint .. " " .. ClaudeWoW.UI.chatTitle.x'), 'RIGHT LEFT -8');
   vm.run('STUB.renames = 0; local real = ClaudeWoW.RenamePrompt; ClaudeWoW.RenamePrompt = function(...) STUB.renames = STUB.renames + 1 return real(...) end');
   vm.run('ClaudeWoWProjectButton.scripts.OnClick(ClaudeWoWProjectButton, "LeftButton")');
@@ -714,12 +834,22 @@ test('a long project label truncates inside a bounded button, shows in full in t
   const vm = nativeVM();
   vm.run('ClaudeWoW.SetFolder("~/a-very-long-project-folder-name-for-the-header", ClaudeWoWDB.chats[#ClaudeWoWDB.chats])');
   vm.run('ClaudeWoWProjectButton.text.GetStringWidth = function() return 400 end; ClaudeWoWTitleBar.width = 400; ClaudeWoW.Render()');
-  assert.equal(vm.num('ClaudeWoWProjectButton:GetWidth()'), 200, 'half the header band at most');
-  assert.equal(vm.num('ClaudeWoWProjectButton.text:GetWidth()'), 192, 'the label is cut to the button');
-  vm.run('ClaudeWoWTitleBar.width = 188; for _, fn in ipairs(ClaudeWoWTitleBar.hooks.OnSizeChanged) do fn(ClaudeWoWTitleBar) end');
-  assert.equal(vm.num('ClaudeWoWProjectButton:GetWidth()'), 94, 'a narrow window narrows the button');
+  assert.equal(vm.num('ClaudeWoWProjectButton:GetWidth()'), 240, 'capped, and the title gives up its room first');
+  assert.equal(vm.num('ClaudeWoWProjectButton.text:GetWidth()'), 232, 'the label is cut to the button');
+  assert.equal(vm.evaluate('ClaudeWoWProjectButton.truncated'), 'true');
+  assert.match(vm.evaluate('ClaudeWoWProjectButton.text:GetText()'), /^Project: /);
+  vm.run('ClaudeWoWTitleBar.width = 240; for _, fn in ipairs(ClaudeWoWTitleBar.hooks.OnSizeChanged) do fn(ClaudeWoWTitleBar) end');
+  assert.equal(vm.num('ClaudeWoWProjectButton:GetWidth()'), 208, 'the band less the title minimum and the gaps');
+  assert.equal(
+    vm.evaluate('ClaudeWoWProjectButton.text:GetText()'),
+    '|cffffffffa-very-long-project-folder-name-for-the-header|r',
+    'the Project: label goes before the name is cut',
+  );
+  vm.run('ClaudeWoWTitleBar.width = 92; for _, fn in ipairs(ClaudeWoWTitleBar.hooks.OnSizeChanged) do fn(ClaudeWoWTitleBar) end');
+  assert.equal(vm.num('ClaudeWoWProjectButton:GetWidth()'), 60, 'a narrow window narrows the button to its minimum');
   vm.run('ClaudeWoWTitleBar.width = 2000; for _, fn in ipairs(ClaudeWoWTitleBar.hooks.OnSizeChanged) do fn(ClaudeWoWTitleBar) end');
   assert.equal(vm.num('ClaudeWoWProjectButton:GetWidth()'), 240, 'a wide window still caps the button');
+  assert.match(vm.evaluate('ClaudeWoWProjectButton.text:GetText()'), /^Project: /, 'room again: the labels come back');
   vm.run('ClaudeWoWProjectButton.scripts.OnEnter(ClaudeWoWProjectButton)');
   assert.equal(vm.evaluate('GameTooltip:GetText()'), 'Project: a-very-long-project-folder-name-for-the-header');
   vm.run('ClaudeWoWProjectButton.text.GetStringWidth = function() return 40 end; ClaudeWoW.Render()');
@@ -793,7 +923,11 @@ test('the window is built from Blizzard frame templates where the client has the
   assert.equal(vm.evaluate('ClaudeWoWFrame.portrait'), 'Interface\\AddOns\\ClaudeWoW\\Portrait');
   assert.equal(vm.evaluate('ClaudeWoWFrame.Inset.shown'), 'false', 'the template inset is replaced by our own panels');
   assert.equal(vm.evaluate('ClaudeWoW.UI.title == ClaudeWoWFrame.TitleText'), 'true', 'the title goes in the Blizzard title bar');
-  assert.equal(vm.evaluate('ClaudeWoW.UI.minimize == ClaudeWoWFrame.CloseButton'), 'true', 'the red close button collapses to the bar');
+  assert.equal(vm.evaluate('ClaudeWoW.UI.close == ClaudeWoWFrame.CloseButton'), 'true', 'the red X is the template close button');
+  assert.equal(vm.evaluate('ClaudeWoW.UI.minimize ~= ClaudeWoWFrame.CloseButton'), 'true', 'minimize is a button of its own');
+  assert.equal(vm.evaluate('ClaudeWoW.UI.minimize.template'), 'UIPanelHideButtonNoScripts', 'the Blizzard minimize button where its atlas exists');
+  assert.equal(vm.evaluate('ClaudeWoW.UI.minimize.point .. " " .. ClaudeWoW.UI.minimize.relPoint'), 'RIGHT LEFT');
+  assert.equal(vm.evaluate('ClaudeWoW.UI.minimize.rel == ClaudeWoWFrame.CloseButton'), 'true', 'minimize sits left of the X');
   assert.equal(vm.evaluate('ClaudeWoW.UI.art.listBg'), 'QuestLog-main-background');
   assert.equal(vm.evaluate('ClaudeWoW.UI.art.parchment'), 'QuestBG-Parchment', 'the transcript sits on quest parchment');
   assert.equal(vm.evaluate('ClaudeWoWScroll.parent == ClaudeWoW.UI.parchment'), 'true');
@@ -801,7 +935,7 @@ test('the window is built from Blizzard frame templates where the client has the
   assert.equal(vm.evaluate('ClaudeWoWScroll.template'), 'ScrollFrameTemplate', 'the transcript uses the thin Blizzard scroll bar');
   assert.equal(vm.evaluate('ClaudeWoWInputScroll.template'), null, 'the input box has no arrow scroll bar');
   assert.equal(vm.evaluate('ClaudeWoWInput.scripts.OnCursorChanged == ScrollingEdit_OnCursorChanged'), 'true', 'it follows the cursor the Blizzard way');
-  assert.equal(vm.evaluate('ClaudeWoW.UI.cwd.shown'), 'false', 'the breadcrumbs replace the cwd footer');
+  assert.equal(vm.evaluate('ClaudeWoW.UI.cwd'), null, 'the breadcrumbs replace the cwd footer');
   assert.equal(vm.evaluate('ClaudeWoWWindow.skinned'), 'true');
   assert.equal(vm.evaluate('ClaudeWoWFrame.claudewowBorder'), null, 'no extra border on top of the template');
 
@@ -847,7 +981,11 @@ test('the window is built from Blizzard frame templates where the client has the
 
   vm.run('ClaudeWoWFrame.CloseButton.scripts.OnClick(ClaudeWoWFrame.CloseButton)');
   assert.equal(vm.evaluate('ClaudeWoWFrame.shown'), 'false');
-  assert.equal(vm.evaluate('ClaudeWoWMini.shown'), 'true');
+  assert.equal(vm.evaluate('ClaudeWoWMini.shown'), 'false', 'the X closes fully, no bar');
+  assert.equal(vm.evaluate('ClaudeWoWDB.settings.shown'), 'false');
+  vm.run('ClaudeWoW.Toggle(true); ClaudeWoW.UI.minimize.scripts.OnClick(ClaudeWoW.UI.minimize)');
+  assert.equal(vm.evaluate('ClaudeWoWFrame.shown'), 'false');
+  assert.equal(vm.evaluate('ClaudeWoWMini.shown'), 'true', 'minimize collapses to the bar');
 });
 
 test('a chat row shows one preview line, the last message time beside the title, and the count in its tooltip', () => {
@@ -883,7 +1021,11 @@ test('the black bar shows the chat title up to the project button, with folder, 
   const vm = nativeVM();
   vm.run('ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[2].id)');
   assert.equal(vm.evaluate('ClaudeWoW.UI.chatTitle:GetText()'), 'Fix the bridge');
-  assert.equal(vm.evaluate('ClaudeWoWFrame.TitleText:GetText()'), 'Claude', 'the window title is just Claude and does not repeat the chat title');
+  assert.equal(
+    vm.evaluate('ClaudeWoWFrame.TitleText:GetText()'),
+    'Azeroth Companion',
+    'the window title is the product name and does not repeat the chat title',
+  );
   assert.equal(vm.num('#STUB.nav.buttons'), 0, 'no folder, agent or plugin crumbs');
   assert.equal(vm.evaluate('STUB.nav.home'), null);
 
@@ -902,28 +1044,42 @@ test('the black bar shows the chat title up to the project button, with folder, 
   assert.equal(vm.evaluate('table.concat(CALLS, "|")'), `rename:${id}|menu:${id}`);
 });
 
-test('help lives in the gear menu, and Clear moves from the bottom bar into the chat menu', () => {
+test('help lives in the gear menu and opens the Commands and tips page, and Clear moves from the bottom bar into the chat menu', () => {
   const vm = nativeVM();
   const active = '(function() for _, c in ipairs(ClaudeWoWDB.chats) do if c.id == ClaudeWoWDB.activeChat then return c end end end)()';
+  const before = vm.num(`#${active}.history`);
   vm.run('ClaudeWoWChatSettings.scripts.OnClick(ClaudeWoWChatSettings); STUB.Pick("Commands and tips")');
-  assert.ok(vm.evaluate(`${active}.history[#${active}.history].text`).includes('/claude'));
+  assert.equal(vm.num(`#${active}.history`), before, 'the help is not written into the chat');
+  assert.equal(vm.evaluate('ClaudeWoWHelpPanel.shown'), 'true', 'the page opens');
   assert.equal(vm.evaluate('ClaudeWoWHelpButton'), null, 'no help button crowds the breadcrumb bar');
 
   const clearButton = '(function() for _, c in ipairs(ClaudeWoWFrame.children) do if c.kind == "Button" and c.text == "Clear" then return c end end end)()';
   assert.equal(vm.evaluate(`${clearButton}.shown`), 'false', 'no Clear button in the bottom bar');
-  vm.run(`ClaudeWoW.ShowChatMenu(ClaudeWoWDB.activeChat, ClaudeWoWFrame); STUB.Pick("Clear messages")`);
-  assert.equal(vm.num(`#${active}.history`), 0, 'the chat menu clears the chat');
+  vm.run(`ClaudeWoW.ShowChatMenu(ClaudeWoWDB.activeChat, ClaudeWoWFrame); STUB.Pick("Clear Messages")`);
+  assert.equal(vm.evaluate('STUB.popup.which'), 'CLAUDEWOW_CLEAR', 'Clear Messages asks first');
+  assert.ok(vm.num(`#${active}.history`) > 0, 'nothing is cleared before the confirm');
+  vm.run('StaticPopupDialogs.CLAUDEWOW_CLEAR.OnAccept({}, STUB.popup.data)');
+  assert.equal(vm.num(`#${active}.history`), 0, 'the confirm clears the chat');
 });
 
 test('the footer is a short state on the left and context and spend on the right, with the detail on hover', () => {
   const vm = nativeVM();
   vm.run(
-    'ClaudeWoWDB.settings.contextWarn = 0; ClaudeWoWDB.chats[1].window = nil; ClaudeWoWDB.chats[1].cost = 2.414; ClaudeWoWDB.chats[1].ctx = 186700; ClaudeWoWDB.chats[2].cost = 12.39; ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[1].id); ClaudeWoW.Render()',
+    'ClaudeWoWDB.settings.contextWarn = 0; ClaudeWoWDB.chats[1].window = nil; ClaudeWoWDB.chats[1].cost = 2.414; ClaudeWoWDB.chats[1].ctx = 186700; ClaudeWoWDB.chats[2].cost = 12.39; ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[1].id); STUB.texts = {}; ClaudeWoW.Render()',
   );
-  const stats = vm.evaluate('ClaudeWoW.UI.stats:GetText()');
-  assert.ok(stats.includes('UI-GoldIcon'), stats);
-  assert.ok(stats.includes('$2.41'), "this chat's spend: " + stats);
-  assert.ok(stats.includes('all chats $14.80'), 'and the total across chats: ' + stats);
+  const drawn = vm.evaluate('table.concat(STUB.texts, "|")');
+  assert.ok(!drawn.includes('UI-GoldIcon') && !drawn.includes('$'), 'no coin and no dollar figure in the window: ' + drawn);
+  assert.equal(vm.evaluate('ClaudeWoW.UI.stats'), null, 'no empty footer text widget');
+  assert.equal(
+    vm.evaluate('ClaudeWoWContextBar.point .. " " .. ClaudeWoWContextBar.relPoint'),
+    'RIGHT BOTTOMRIGHT',
+    'the context bar anchors to the frame corner itself',
+  );
+  vm.run('LINES = {}; GameTooltip.AddDoubleLine = function(_, a, b) table.insert(LINES, a .. "=" .. b) end');
+  vm.run('ClaudeWoW.UI.dotHolder.scripts.OnEnter(ClaudeWoW.UI.dotHolder)');
+  const tip = vm.evaluate('table.concat(GameTooltip.lines, "|")');
+  assert.ok(tip.includes('Estimated API cost'), 'the cost is labeled in the status tooltip: ' + tip);
+  assert.equal(vm.evaluate('table.concat(LINES, "|")'), 'This chat=$2.41|All chats=$14.80');
   assert.equal(vm.evaluate('ClaudeWoWContextBar.shown'), 'true', 'the context is a bar');
   assert.ok(vm.evaluate('ClaudeWoWContextBar.text:GetText()').startsWith('186.7k / 200'), vm.evaluate('ClaudeWoWContextBar.text:GetText()'));
   const color = () => vm.evaluate('(function() return string.format("%.2f,%.2f", ClaudeWoWContextBar.color[1], ClaudeWoWContextBar.color[2]) end)()');
@@ -959,8 +1115,8 @@ test('the footer is a short state on the left and context and spend on the right
 
   vm.run('ClaudeWoWDB.chats[1].pendingId = 159; ClaudeWoW.UpdateStatus()');
   const status = vm.evaluate('ClaudeWoW.UI.status:GetText()');
-  assert.ok(status.includes('Working') && !status.includes('#159'), 'a short state, not the full line: ' + status);
-  assert.ok(vm.evaluate('ClaudeWoW.UI.cwd.shown') === 'false');
+  assert.ok(status.includes('Working...') && !status.includes('#159'), 'a short state, not the full line: ' + status);
+  assert.equal(vm.evaluate('ClaudeWoW.UI.cwd'), null);
 });
 
 test("an empty, unfocused input shows a hint naming the chat's agent; typing or focus hides it", () => {
@@ -982,7 +1138,7 @@ test("an empty, unfocused input shows a hint naming the chat's agent; typing or 
     'it sits on the input background, not on the scrolling edit box',
   );
   assert.equal(vm.evaluate(`${hint}.shown`), 'true');
-  assert.equal(vm.evaluate(`${hint}:GetText()`), 'Message Claude. Enter sends; /claude help lists commands.');
+  assert.equal(vm.evaluate(`${hint}:GetText()`), 'Message Claude', 'a short hint that fits the box');
   assert.equal(vm.evaluate('type(ClaudeWoWInput.scripts.OnTextChanged)'), 'function', 'the scrolling text handler is kept');
 
   vm.run('ClaudeWoWInput:SetText("hi")');
@@ -1002,7 +1158,120 @@ test("an empty, unfocused input shows a hint naming the chat's agent; typing or 
   vm.run(
     'ClaudeWoW.NewChat(); ClaudeWoWDB.chats[2].agent = "codex"; ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[2].id); ClaudeWoWInput:ClearFocus(); ClaudeWoW.Render()',
   );
-  assert.equal(vm.evaluate(`${hint}:GetText()`), 'Message Codex. Enter sends; /claude help lists commands.', 'the name follows the chat');
+  assert.equal(vm.evaluate(`${hint}:GetText()`), 'Message Codex', 'the name follows the chat');
+});
+
+test('the input box, Send and New chat sit on one footer line, as 22 px Blizzard buttons, and Send names its key and the help command on hover', () => {
+  const vm = nativeVM();
+  const box = 'ClaudeWoWInputScroll.parent';
+  const anchor = f => vm.evaluate(`(function() local f = ${f} return f.point .. "," .. f.relPoint .. "," .. f.x .. "," .. f.y end)()`);
+  for (const b of ['ClaudeWoW.UI.send', 'ClaudeWoW.UI.connect', 'ClaudeWoW.UI.newChat']) {
+    assert.equal(vm.num(`${b}:GetHeight()`), 22, `${b} has the UIPanelButtonTemplate height`);
+    assert.equal(vm.evaluate(`${b}.template`), 'UIPanelButtonTemplate');
+  }
+  for (const b of ['ClaudeWoW.UI.send', 'ClaudeWoW.UI.connect']) {
+    assert.equal(vm.evaluate(`${b}.rel == ${box}`), 'true');
+    assert.equal(anchor(b), 'BOTTOMLEFT,BOTTOMRIGHT,6,0', `${b} sits on the input box's bottom edge, 6 px to its right`);
+  }
+  assert.equal(vm.evaluate(`${box}.rel == ClaudeWoW.UI.listPanel and ClaudeWoW.UI.newChat.rel == ClaudeWoW.UI.listPanel`), 'true');
+  const newChatY = vm.num('ClaudeWoW.UI.newChat.y');
+  assert.equal(
+    anchor(box),
+    `BOTTOMRIGHT,BOTTOMLEFT,${-6 - 84 - 6},${newChatY}`,
+    'the box ends on the same line as New chat, one 6 px gap before Send and one after',
+  );
+  assert.equal(anchor('ClaudeWoW.UI.newChat'), `BOTTOM,BOTTOM,0,${newChatY}`);
+
+  vm.run('ClaudeWoW.UI.send.scripts.OnEnter(ClaudeWoW.UI.send)');
+  assert.equal(vm.evaluate('GameTooltip:GetText()'), 'Send (Enter)');
+  assert.equal(vm.evaluate('table.concat(GameTooltip.lines, "|")'), '/claude help lists commands.');
+  vm.run('ClaudeWoW.UI.send.scripts.OnLeave(ClaudeWoW.UI.send)');
+  assert.equal(vm.evaluate('GameTooltip.shown'), 'false');
+});
+
+test('a chat row with no preview line keeps the same spacing before the next row as one with a preview line', () => {
+  const vm = nativeVM();
+  vm.run(`ClaudeWoW.NewChat(); ClaudeWoWDB.chats[4].name = "Chat 4"; ClaudeWoW.SetFolder("~/every-io/every", ClaudeWoWDB.chats[4])
+    table.insert(ClaudeWoWDB.chats[3].history, { role = "user", text = "route please", t = time() + 60 })
+    ClaudeWoW.Render()`);
+  const rows = JSON.parse(
+    vm.evaluate(`(function()
+      local out = {}
+      for _, r in ipairs(ClaudeWoW.UI.questList.rows) do
+        if r.shown then
+          local lines = 0
+          for _, l in ipairs(r.objectives) do if l.text.shown then lines = lines + 1 end end
+          table.insert(out, string.format('{"top":%d,"height":%d,"lines":%d}', -r.y, r.height, lines))
+        end
+      end
+      return "[" .. table.concat(out, ",") .. "]"
+    end)()`),
+  ).sort((a, b) => a.top - b.top);
+  const titleH = 14;
+  const lineH = 14;
+  const textBottom = r => r.top + 8 + titleH + (r.lines > 0 ? 3 + r.lines * lineH + (r.lines - 1) * 2 : 0);
+  const gaps = { bare: [], preview: [] };
+  for (let i = 0; i + 1 < rows.length; i++) {
+    const a = rows[i];
+    const b = rows[i + 1];
+    if (b.top !== a.top + a.height - 3) continue;
+    gaps[a.lines > 0 ? 'preview' : 'bare'].push(b.top + 8 - textBottom(a));
+    assert.ok(b.top + 4 >= a.top + 4 + 20 + 3, 'the next POI disc never touches this one');
+  }
+  assert.ok(gaps.bare.length > 0 && gaps.preview.length > 0, JSON.stringify(rows));
+  assert.ok(Math.min(...gaps.bare) >= Math.max(...gaps.preview), 'no crowding under an empty row: ' + JSON.stringify(gaps));
+  for (const r of rows) assert.ok(r.height >= 4 + 20 + 6, 'a row is never shorter than its POI disc and the bottom padding');
+});
+
+test("beside the world map the window takes the map's top and height, and goes home at its own size when the map closes", () => {
+  const vm = newVM();
+  open(vm);
+  const home = rect(vm);
+  const top = 1080 - 106;
+  vm.run(`WorldMapFrame.rect = { left = 0, right = 610, top = ${top}, bottom = ${top - 438} }; ShowUIPanel(WorldMapFrame)`);
+  settle(vm);
+  assert.deepEqual(rect(vm), { left: 618, right: 618 + 780, top, bottom: top - 438 }, 'top and bottom edges line up with the map, 8 px to its right');
+  assert.equal(vm.evaluate('ClaudeWoWWindow.state.dodged'), 'true');
+  assert.equal(vm.num('ClaudeWoWWindow.Layout().h'), 500, 'the saved size is not touched');
+
+  vm.run('HideUIPanel(WorldMapFrame)');
+  settle(vm);
+  assert.deepEqual(rect(vm), home, 'home again at its own size');
+
+  vm.run('UIParent:SetSize(1300, 1080); ShowUIPanel(WorldMapFrame)');
+  settle(vm);
+  assert.deepEqual(rect(vm), { left: 618, right: 1300, top, bottom: top - 438 }, 'a narrower screen: it narrows to fit beside the map');
+
+  vm.run('HideUIPanel(WorldMapFrame); UIParent:SetSize(1100, 1080); ShowUIPanel(WorldMapFrame)');
+  settle(vm);
+  const r = rect(vm);
+  assert.ok(r.right - r.left >= 560 && !overlaps(r, panelRect(vm, 'WorldMapFrame')), 'no room beside it: it steps aside as for any panel');
+  assert.notEqual(r.top - r.bottom, 438);
+});
+
+test('a map that leaves home free does not pull the window: another panel blocking home is a normal step-aside', () => {
+  const vm = newVM();
+  open(vm);
+  const home = rect(vm);
+  vm.run('WorldMapFrame.rect = { left = 1100, right = 1710, top = 900, bottom = 462 }; ShowUIPanel(WorldMapFrame)');
+  settle(vm);
+  assert.deepEqual(rect(vm), home, 'the map alone does not block home');
+  vm.run('CharacterFrame.rect = { left = 16, right = 300, top = 1000, bottom = 400 }; ShowUIPanel(CharacterFrame)');
+  settle(vm);
+  const r = rect(vm);
+  assert.equal(r.top - r.bottom, 500, "it keeps its own height, not the map's");
+  assert.equal(r.right - r.left, 780);
+  assert.ok(!overlaps(r, panelRect(vm, 'CharacterFrame')) && !overlaps(r, panelRect(vm, 'WorldMapFrame')), JSON.stringify(r));
+});
+
+test('in the plain theme Send and Connect stay centered on the tall input box', () => {
+  const vm = newVM();
+  open(vm);
+  for (const b of ['ClaudeWoW.UI.send', 'ClaudeWoW.UI.connect']) {
+    assert.equal(vm.evaluate(`${b}.rel == ClaudeWoWInputScroll.parent`), 'true');
+    assert.equal(vm.evaluate(`${b}.point .. "," .. ${b}.relPoint .. "," .. ${b}.x .. "," .. ${b}.y`), 'LEFT,RIGHT,6,0', `${b} is centered beside the box`);
+    assert.equal(vm.num(`${b}:GetHeight()`), 22);
+  }
 });
 
 const MCP_LIST =
@@ -1018,7 +1287,7 @@ test('the MCP button in the header shows the chat servers on, opens a grouped ch
   vm.run(`ClaudeWoW.ApplyMcp(${MCP_LIST}); ClaudeWoW.Render()`);
   assert.equal(vm.evaluate('ClaudeWoWMcpButton:IsShown()'), 'true');
   assert.equal(vm.evaluate('ClaudeWoWMcpButton.text:GetText()'), 'MCP |cffff99332/3|r', 'orange: a server that is on needs a login');
-  assert.equal(vm.evaluate('ClaudeWoWMcpButton.rel == ClaudeWoWProjectButton'), 'true');
+  assert.equal(vm.evaluate('ClaudeWoWMcpButton.rel == ClaudeWoWProjectButton'), 'true', 'right to left: Project, MCP');
   assert.equal(vm.evaluate('ClaudeWoW.UI.chatTitle.rel == ClaudeWoWMcpButton'), 'true', 'the title stops before the MCP button');
 
   vm.run('ClaudeWoWMcpButton.scripts.OnClick(ClaudeWoWMcpButton)');
@@ -1085,4 +1354,265 @@ test('without native frames the MCP button and a long project button both fit in
   assert.equal(vm.evaluate('ClaudeWoWMcpButton:IsShown()'), 'true');
   assert.ok(vm.num('ClaudeWoWMcpButton:GetLeft()') >= vm.num('ClaudeWoWProjectButton:GetParent():GetLeft()'), 'the MCP button stays inside the composer');
   assert.ok(vm.num('ClaudeWoWMcpButton:GetRight()') <= vm.num('ClaudeWoWProjectButton:GetLeft()'));
+});
+
+const HEADER_WIDTHS = `
+  local width = { ["Project: |cffffffffevery|r"] = 76, ["|cffffffffevery|r"] = 28, ["Effort: |cffffffffxhigh|r"] = 64, ["|cffffffffxhigh|r"] = 28, ["MCP |cffff99332/3|r"] = 42 }
+  for _, b in ipairs({ ClaudeWoWProjectButton, ClaudeWoWEffortButton, ClaudeWoWMcpButton }) do
+    b.text.GetStringWidth = function(self) return width[self.text] or 100 end
+  end
+  ClaudeWoWTitleBar.rect = { left = 60, right = 248, top = 500, bottom = 466 }
+  ClaudeWoWTitleBar.width = 188
+`;
+
+test('at the 560 px minimum width, Project and MCP fit in the header band without overlapping, and effort stays above Send', () => {
+  const vm = nativeVM();
+  vm.run(`ClaudeWoW.ApplyMcp(${MCP_LIST}); ClaudeWoWDB.chats[#ClaudeWoWDB.chats].effort = "xhigh"`);
+  vm.run(HEADER_WIDTHS);
+  vm.run('ClaudeWoW.Render()');
+  assert.equal(vm.evaluate('ClaudeWoWEffortButton:IsShown()'), vm.evaluate('ClaudeWoW.UI.send:IsShown()'), 'shown with Send');
+  assert.equal(vm.evaluate('ClaudeWoWMcpButton:IsShown()'), 'true');
+  const edge = (b, side) => vm.num(`${b}:Get${side}()`);
+  assert.ok(edge('ClaudeWoWProjectButton', 'Right') <= 248, 'project stays in the band');
+  assert.ok(edge('ClaudeWoWMcpButton', 'Right') <= edge('ClaudeWoWProjectButton', 'Left'), 'MCP never overlaps project');
+  assert.ok(edge('ClaudeWoWMcpButton', 'Left') >= 60 + 8 + 16, 'the title keeps its minimum room');
+  assert.equal(vm.evaluate('ClaudeWoWEffortButton.text:GetText()'), '|cffffffffxhigh|r', 'effort shows its value');
+  assert.equal(vm.evaluate('ClaudeWoWProjectButton.text:GetText()'), 'Project: |cffffffffevery|r', 'with effort out of the header, the label fits');
+  assert.equal(vm.evaluate('ClaudeWoW.UI.chatTitle.rel == ClaudeWoWMcpButton'), 'true');
+  vm.run('ClaudeWoWEffortButton.scripts.OnEnter(ClaudeWoWEffortButton)');
+  assert.equal(vm.evaluate('GameTooltip:GetText()'), 'Effort: xhigh', 'the tooltip names the value in full');
+});
+
+test('Esc closes the window fully from the window and from the composer, keeps the draft, and the key binding closes it too', () => {
+  const vm = nativeVM();
+  open(vm);
+  vm.run('ClaudeWoWFrame:Hide()');
+  assert.equal(vm.evaluate('ClaudeWoWMini.shown'), 'false', 'Esc on the window shows no bar');
+  assert.equal(vm.evaluate('ClaudeWoWDB.settings.shown'), 'false');
+  assert.equal(vm.evaluate('ClaudeWoWDB.settings.minimized'), 'false');
+
+  open(vm);
+  vm.run('ClaudeWoWInput:SetText("half a thought"); ClaudeWoWInput:SetFocus(); ClaudeWoWInput.scripts.OnEscapePressed(ClaudeWoWInput)');
+  assert.equal(vm.evaluate('ClaudeWoWFrame.shown'), 'false', 'one Esc in the composer closes the window');
+  assert.equal(vm.evaluate('ClaudeWoWInput:HasFocus()'), 'false', 'and gives the keyboard back');
+  assert.equal(vm.evaluate('ClaudeWoWMini.shown'), 'false');
+  assert.equal(vm.evaluate('ClaudeWoWInput:GetText()'), 'half a thought', 'the draft stays in the box');
+
+  vm.run('ClaudeWoW.ToggleWorkspace()');
+  assert.equal(vm.evaluate('ClaudeWoWFrame.shown'), 'true');
+  vm.run('ClaudeWoW.ToggleWorkspace()');
+  assert.equal(vm.evaluate('ClaudeWoWFrame.shown'), 'false', 'the key binding closes an open window');
+  assert.equal(vm.evaluate('ClaudeWoWMini.shown'), 'false', 'with no bar');
+
+  vm.run('ClaudeWoW.Toggle(true); ClaudeWoW.Minimize(true)');
+  assert.equal(vm.evaluate('ClaudeWoWMini.shown'), 'true');
+  vm.run('local x = ClaudeWoWMini.children[#ClaudeWoWMini.children]; x.scripts.OnClick(x)');
+  assert.equal(vm.evaluate('ClaudeWoWMini.shown'), 'false', "the bar's X hides the bar");
+  assert.equal(vm.evaluate('ClaudeWoWDB.settings.shown'), 'false');
+});
+
+test('the window sits below dialogs, the bar uses the Blizzard tooltip look, and both titles name the product', () => {
+  const vm = nativeVM();
+  assert.equal(vm.evaluate('ClaudeWoWFrame.strata'), 'HIGH', 'StaticPopups and the roll frame draw above it');
+  assert.equal(vm.evaluate('ClaudeWoWMini.strata'), 'MEDIUM');
+  const bg = vm.evaluate('(function() local c = ClaudeWoWMini.bg return c and table.concat(c, ",") end)()');
+  assert.equal(bg, '0.09,0.09,0.19,1', 'the tooltip background, not a custom dark one');
+  assert.equal(vm.evaluate('ClaudeWoWMini.backdrop.bgFile'), 'Interface\\Tooltips\\UI-Tooltip-Background');
+  vm.run('ClaudeWoWMini.scripts.OnEnter(ClaudeWoWMini)');
+  assert.equal(vm.evaluate('GameTooltip:GetText()'), 'Azeroth Companion');
+
+  const templated = newVM({
+    before: NATIVE_TEMPLATES.replace('MainHelpPlateButton = true', 'MainHelpPlateButton = true, TooltipBackdropTemplate = true'),
+  });
+  assert.equal(templated.evaluate('ClaudeWoWMini.template'), 'TooltipBackdropTemplate');
+  assert.equal(templated.evaluate('ClaudeWoWMini.backdrop'), null, 'the template draws its own backdrop');
+});
+
+test('a closed window at login stays closed with nothing on screen; a saved minimized state brings the bar back', () => {
+  const closed = newVM({ saved: 'ClaudeWoWDB = { settings = { shown = false, minimized = false } }' });
+  assert.equal(closed.evaluate('ClaudeWoWFrame.shown'), 'false');
+  assert.equal(closed.evaluate('ClaudeWoWMini.shown'), 'false');
+  const fresh = newVM();
+  assert.equal(fresh.evaluate('ClaudeWoWMini.shown'), 'false', 'a fresh install puts no bar on screen');
+  assert.equal(fresh.evaluate('ClaudeWoWDB.settings.shown'), null);
+  const minimized = newVM({ saved: 'ClaudeWoWDB = { settings = { shown = true, minimized = true } }' });
+  assert.equal(minimized.evaluate('ClaudeWoWMini.shown'), 'true');
+  assert.equal(minimized.evaluate('ClaudeWoWFrame.shown'), 'false');
+});
+
+test('first login prints one line; a bridge that is not there after the first check gets one more, and only once', () => {
+  const vm = newVM();
+  const prints = () => vm.evaluate('table.concat(STUB.prints, "\\n")');
+  const count = text => prints().split(text).length - 1;
+  assert.equal(count('Loaded. Type /claude to open it.'), 1);
+  vm.run('STUB.RunTimers()');
+  assert.equal(count("Can't reach the bridge. Start it, then type"), 0, 'not before the first check');
+  vm.run('STUB.RunTimers(); STUB.RunTimers()');
+  assert.equal(count("Can't reach the bridge. Start it, then type"), 1);
+  vm.run('STUB.FireEvent("PLAYER_LOGIN"); STUB.RunTimers(); STUB.RunTimers()');
+  assert.equal(count('Loaded. Type /claude to open it.'), 1, 'the first-run line is not repeated');
+
+  const up = newVM();
+  up.run('STUB.RunTimers(); ClaudeWoW.IsConnected = function() return true end; STUB.RunTimers()');
+  assert.ok(!up.evaluate('table.concat(STUB.prints, "\\n")').includes("Can't reach the bridge. Start it, then type"), 'a bridge that answered gets no line');
+});
+
+test('the status line has four plain states and no file names, ids or commands; the detail moves to diag', () => {
+  const vm = nativeVM();
+  const status = () => vm.evaluate('ClaudeWoW.UI.status:GetText()');
+  const tooltip = () => {
+    vm.run('ClaudeWoW.UI.dotHolder.scripts.OnEnter(ClaudeWoW.UI.dotHolder)');
+    return vm.evaluate('GameTooltip:GetText()') + '|' + vm.evaluate('table.concat(GameTooltip.lines or {}, "|")');
+  };
+  const banned = /#\d|install-slots|npm|\.js|cwd|mode:|plugin|checked \d|polls/;
+  vm.run('ClaudeWoW.IsConnected = function() return false end; ClaudeWoW.Render()');
+  assert.equal(status(), "|cffff5050Can't reach the bridge. Start it, then click Connect.|r");
+  vm.run('ClaudeWoW.IsConnected = function() return true end; STUB.now = STUB.now + 30; STUB.Tick(); ClaudeWoW.Render()');
+  assert.equal(status(), 'Ready');
+  vm.run('ClaudeWoWDB.chats[1].pendingId = 42; ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[1].id); ClaudeWoW.Render()');
+  assert.match(status(), /^\|cffffd100Working\.\.\.\|r \d/);
+  assert.doesNotMatch(status() + tooltip(), banned);
+  vm.run('C_AddOns.LoadAddOn = function() return false, "MISSING" end');
+  vm.run('for i = 1, 3 do STUB.now = STUB.now + 30; STUB.Tick() end; ClaudeWoW.UpdateStatus()');
+  assert.equal(status(), '|cff55ff55Reply waiting|r', 'missing reply slots: the reply is waiting behind a reload');
+  const tip = tooltip();
+  assert.ok(tip.includes('Click Reload to read it.'), tip);
+  assert.doesNotMatch(status() + tip, banned);
+  vm.run('SlashCmdList.CLAUDE("diag")');
+  const diag = vm.evaluate('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history].text');
+  assert.ok(diag.includes('status: reply, pending #42'), diag);
+  assert.ok(diag.includes('reply slots missing (MISSING; run install-slots.js'), diag);
+  assert.ok(diag.includes('folder: ~/every-io/every'), diag);
+  vm.run('ClaudeWoWDB.chats[1].pendingId = nil; ClaudeWoWDB.chats[1].draft = "kept"; ClaudeWoW.UpdateStatus()');
+  assert.equal(status(), '|cff55ff55Reply waiting|r', 'a reply that came back while a draft was typed');
+});
+
+test('autoRefresh is turned off once outside reload mode, an explicit choice after that is kept, and a reload asks first', () => {
+  const pixel = newVM({ saved: 'ClaudeWoWDB = { settings = { mode = "pixel", autoRefresh = true } }' });
+  assert.equal(pixel.evaluate('ClaudeWoWDB.settings.autoRefresh'), 'false');
+  assert.equal(pixel.evaluate('ClaudeWoWDB.settings.autoRefreshV2'), 'true');
+  assert.equal(newVM().evaluate('ClaudeWoWDB.settings.autoRefresh'), 'false', 'a fresh install starts off');
+  const reload = newVM({ saved: 'ClaudeWoWDB = { settings = { mode = "reload", autoRefresh = true } }' });
+  assert.equal(reload.evaluate('ClaudeWoWDB.settings.autoRefresh'), 'true', 'reload mode keeps it');
+  const chosen = newVM({ saved: 'ClaudeWoWDB = { settings = { mode = "pixel", autoRefresh = true, autoRefreshV2 = true } }' });
+  assert.equal(chosen.evaluate('ClaudeWoWDB.settings.autoRefresh'), 'true', 'a choice made after the migration is kept');
+
+  assert.equal(reload.evaluate('ClaudeWoWKeyCatcher'), null, 'no frame listens for keys');
+  reload.run('STUB.timers = {}; STUB.popup = nil; ClaudeWoWDB.chats[1].pendingId = 9; ClaudeWoW.ArmAutoRefresh()');
+  assert.equal(reload.evaluate('STUB.reloaded'), 'false');
+  reload.run('STUB.combat = true; STUB.RunTimers()');
+  assert.equal(reload.evaluate('STUB.popup'), null, 'never in combat');
+  reload.run('STUB.combat = false; STUB.FireEvent("PLAYER_REGEN_ENABLED"); STUB.RunTimers()');
+  assert.equal(reload.evaluate('STUB.popup.which'), 'CLAUDEWOW_RELOAD', 'leaving combat re-arms it');
+  assert.match(reload.evaluate('StaticPopupDialogs.CLAUDEWOW_RELOAD.text'), /^Reload needed/);
+  assert.equal(reload.evaluate('StaticPopupDialogs.CLAUDEWOW_RELOAD.button1 .. "/" .. StaticPopupDialogs.CLAUDEWOW_RELOAD.button2'), 'Reload/Later');
+  assert.equal(reload.evaluate('STUB.reloaded'), 'false', 'nothing reloads until the click');
+  reload.run('StaticPopupDialogs.CLAUDEWOW_RELOAD.OnAccept()');
+  assert.equal(reload.evaluate('STUB.reloaded'), 'true');
+
+  reload.run('STUB.popup = nil; StaticPopupDialogs.CLAUDEWOW_RELOAD.OnCancel(); STUB.RunTimers()');
+  assert.equal(reload.evaluate('STUB.popup.which'), 'CLAUDEWOW_RELOAD', 'auto on: Later asks again after the interval');
+
+  reload.run(
+    'SlashCmdList.CLAUDE("config auto off"); STUB.popup = nil; StaticPopupDialogs.CLAUDEWOW_RELOAD.OnCancel(); ClaudeWoW.ArmAutoRefresh(); STUB.RunTimers()',
+  );
+  assert.equal(reload.evaluate('STUB.popup'), null, 'auto off: Later means once per waiting reply');
+  reload.run('ClaudeWoWDB.chats[1].pendingId = 10; ClaudeWoW.ArmAutoRefresh(); STUB.RunTimers()');
+  assert.equal(reload.evaluate('STUB.popup.which'), 'CLAUDEWOW_RELOAD', 'auto off: a new waiting reply asks once');
+
+  pixel.run('STUB.popup = nil; ClaudeWoWDB.chats[1].pendingId = 9; ClaudeWoW.ArmAutoRefresh(); STUB.RunTimers()');
+  assert.equal(pixel.evaluate('STUB.popup'), null, 'pixel mode with working slots needs no reload');
+  assert.equal(pixel.evaluate('ClaudeWoWDB.settings.autoRefresh'), 'false');
+  pixel.run('C_AddOns.LoadAddOn = function() return false, "MISSING" end; for i = 1, 3 do STUB.now = STUB.now + 30; STUB.Tick() end; STUB.RunTimers()');
+  assert.equal(pixel.evaluate('STUB.popup.which'), 'CLAUDEWOW_RELOAD', 'missing slots ask even with auto off');
+  pixel.run('SlashCmdList.CLAUDE("config auto on")');
+  assert.equal(pixel.evaluate('ClaudeWoWDB.settings.autoRefresh'), 'true', 'the explicit choice is recorded');
+});
+
+test('a reply makes no sound or screen line in combat, and out of combat one line only while the window is closed', () => {
+  const vm = nativeVM();
+  vm.run('STUB.played = 0; PlaySound = function() STUB.played = STUB.played + 1 end; UIErrorsFrame.messages = {}');
+  const notify = () => vm.run('ClaudeWoW.Notify(ClaudeWoWDB.chats[2], "done", "claude", nil, "assistant")');
+  const lines = () => vm.num('#UIErrorsFrame.messages');
+  vm.run('ClaudeWoW.Toggle(false)');
+  vm.run('STUB.combat = true');
+  notify();
+  assert.equal(vm.num('STUB.played'), 0, 'no sound in combat');
+  assert.equal(lines(), 0, 'no screen line in combat');
+  vm.run('STUB.combat = false');
+  notify();
+  assert.equal(vm.num('STUB.played'), 1);
+  assert.equal(lines(), 1, 'closed window: one short line');
+  assert.match(vm.evaluate('UIErrorsFrame.messages[1].text'), /^\S+ replied\.$/, 'the agent name and nothing else');
+  vm.run('ClaudeWoW.Toggle(true); ClaudeWoW.Minimize(true)');
+  notify();
+  assert.equal(lines(), 1, 'minimized: the bar shows it instead');
+  vm.run('ClaudeWoW.Toggle(true); ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[1].id)');
+  notify();
+  assert.equal(lines(), 1, 'open window: no line');
+});
+
+test('without native frames the bottom-bar Clear asks first and the new-chat button is title case', () => {
+  const vm = newVM();
+  open(vm);
+  const button = text => `(function() for _, f in ipairs(STUB.frames) do if f.kind == "Button" and f.text == "${text}" then return f end end end)()`;
+  assert.notEqual(vm.evaluate(button('New Chat')), null);
+  assert.equal(vm.evaluate(button('+ New chat')), null);
+  vm.run('table.insert(ClaudeWoWDB.chats[1].history, { role = "user", text = "keep me", t = time() }); STUB.popup = nil');
+  vm.run(`local b = ${button('Clear')}; b.scripts.OnClick(b)`);
+  assert.equal(vm.evaluate('STUB.popup.which'), 'CLAUDEWOW_CLEAR', 'Clear opens the confirm');
+  assert.equal(vm.num('#ClaudeWoWDB.chats[1].history'), 1, 'nothing is cleared before the click');
+});
+
+test('a Reload needed dialog that could not open is asked again on the next interval, and counts as asked only once it opened', () => {
+  const vm = newVM({ saved: 'ClaudeWoWDB = { settings = { mode = "reload", autoRefresh = false, autoRefreshV2 = true } }' });
+  vm.run('STUB.timers = {}; STUB.popup = nil; STUB.popupBusy = true; ClaudeWoWDB.chats[1].pendingId = 9; ClaudeWoW.ArmAutoRefresh(); STUB.RunTimers()');
+  assert.equal(vm.evaluate('STUB.popup'), null, 'every dialog slot was taken');
+  vm.run('STUB.popupBusy = false; STUB.RunTimers()');
+  assert.equal(vm.evaluate('STUB.popup.which'), 'CLAUDEWOW_RELOAD', 'the next interval tries again');
+  vm.run('STUB.popup = nil; ClaudeWoW.ArmAutoRefresh(); STUB.RunTimers()');
+  assert.equal(vm.evaluate('STUB.popup'), null, 'with auto off, an opened dialog is not asked again');
+});
+
+test('a message the bridge never saw on the strip shows Reply waiting, like the dialog and the tooltip', () => {
+  const vm = nativeVM();
+  const status = () => vm.evaluate('ClaudeWoW.UI.status:GetText()');
+  vm.run('ClaudeWoW.IsConnected = function() return true end; ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[1].id); ClaudeWoW.Send("is anyone there")');
+  assert.notEqual(vm.evaluate('ClaudeWoWDB.chats[1].pendingId'), null, 'the message went out on the strip');
+  vm.run('for i = 1, 40 do STUB.now = STUB.now + 30; STUB.Tick() end; ClaudeWoW.UpdateStatus()');
+  vm.run('SlashCmdList.CLAUDE("diag")');
+  const diag = vm.evaluate('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history].text');
+  assert.ok(diag.includes('the bridge did not see the strip'), diag);
+  assert.ok(!diag.includes('reply slots missing') && !diag.includes('slot pool used up'), diag);
+  assert.equal(status(), '|cff55ff55Reply waiting|r');
+  vm.run('ClaudeWoW.UI.dotHolder.scripts.OnEnter(ClaudeWoW.UI.dotHolder)');
+  assert.ok(vm.evaluate('table.concat(GameTooltip.lines or {}, "|")').includes('Click Reload to read it.'));
+});
+
+test("the window stays put for its own popups (delete, allow, reload) but still moves out of the way of the game's popups", () => {
+  const vm = newVM({ before: 'STUB.Panel("StaticPopup1", 0, 1000, 10, 10)' });
+  open(vm);
+  const home = rect(vm);
+  vm.run(`StaticPopup1.rect = { left = ${home.right - 60}, right = ${home.right + 300}, top = ${home.top - 20}, bottom = ${home.top - 140} }`);
+  vm.run('StaticPopup1.which = "CLAUDEWOW_DELETE"; StaticPopup1:Show(); StaticPopup_Show("CLAUDEWOW_DELETE")');
+  settle(vm);
+  assert.deepEqual(rect(vm), home, 'our delete popup does not shift the window');
+  assert.equal(vm.evaluate('ClaudeWoWWindow.state.dodged'), 'false');
+  vm.run('StaticPopup1:Hide(); StaticPopup1.which = "DELETE_ITEM"; StaticPopup1:Show(); StaticPopup_Show("DELETE_ITEM")');
+  settle(vm);
+  assert.equal(vm.evaluate('ClaudeWoWWindow.state.dodged'), 'true', 'a game popup is still dodged');
+});
+
+test('an empty chat with the default name shows as "New chat" in the title bar and the list, and a named or used chat keeps its name', () => {
+  const vm = nativeVM();
+  vm.run('ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[1].id)');
+  const title = () => vm.evaluate('ClaudeWoW.UI.chatTitle:GetText()');
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].name'), 'Chat 1');
+  assert.equal(title(), 'New chat');
+  vm.run('ClaudeWoWDB.chats[1].name = "Bridge refactor"; ClaudeWoW.Render(); ClaudeWoW.RefreshTitleBar()');
+  assert.equal(title(), 'Bridge refactor', 'a name the player chose shows as it is');
+  vm.run(
+    'ClaudeWoWDB.chats[1].name = "Chat 1"; table.insert(ClaudeWoWDB.chats[1].history, { role = "user", text = "hi", t = 1 }); ClaudeWoW.RefreshTitleBar()',
+  );
+  assert.equal(title(), 'Chat 1', 'once it has a message, the stored name shows');
 });

@@ -24,7 +24,7 @@ Baseline for comparison, not a limit: the resumed turn in [`step1-ask-model.md`]
 - [ ] Factory config, no Phase 1 code: `factory.skills` without `merge-train`, `babysit-prs`, `babysit-pr` or `every-ai-lead`; `factory.permissionMode: "default"`.
 - [ ] Remove every `Bash` and write rule from `agents.claude.allowedTools` and `factory.allowedTools`. Workers inherit the shared list until Phase 1.
 - [ ] All week, answer any roll with Greed or Pass, never Need. A chat Need writes the shared list and reaches the next worker at once.
-- [ ] Open the thread chat (`/claude --project <name>`) and send `/claude n` once, so the week starts on a session made after the deploy. Its first system prompt is frozen for the week.
+- [ ] Open the thread chat with `/claude --project <label>` (the label is the repo name the picker shows, for example `claude-wow` for `~/wow-ai`) and send `/claude reset` once, so the week starts on a session made after the deploy. Its first system prompt is frozen for the week.
 - [ ] Write down whether the game context was on for that first turn, the window `Y` from its `done` line, and the Claude session id: `sessions["chat:<chat id>"]` in `~/.claude-wow/state.json` after the first turn ends (the log shows only its first 8 characters).
 - [ ] Write the week's goal in one line in the log below.
 
