@@ -18,6 +18,7 @@ ignore:
   - package.json
   - package-lock.json
   - CONTRIBUTING.md
+  - CLAUDE.md
   - README.md
 
 manual-changelog:

@@ -70,6 +70,7 @@ const GR = require('./gamerefs');
 const RT = require('./replytokens');
 const UPD = require('./selfupdate');
 const IDLE = require('./idle');
+const AD = require('./autodeploy');
 const CLI = require('./clients');
 const SW = require('./slotwindow');
 
@@ -3760,6 +3761,18 @@ function startSelfUpdate() {
   }
 }
 
+function startAutoDeploy() {
+  if (!holdsLock) return;
+  const conf = AD.settings(cfg, DEFAULT_CWD);
+  if (conf.error) log(`auto-deploy: off (${conf.error})`);
+  if (!conf.enabled) return;
+  if (process.platform !== 'darwin' || !R.compiled || !REL.currentName(REL.layout(HOME.dir)) || process.env.CLAUDE_WOW_SUPERVISED !== '1') {
+    log('auto-deploy: off (it needs the macOS service running a release from claude-wow dev deploy)');
+    return;
+  }
+  AD.createAutoDeploy({ conf, home: HOME.dir, log, idle: bridgeIdleStatus }).start();
+}
+
 const MCP_RESERVED = [DM.SERVER_NAME, GM.SERVER_NAME, FACTORY.SERVER_NAME];
 const USER_MCP = MC.parse(cfg.mcp, { reserved: MCP_RESERVED, log, env: process.env });
 const CODEX_ALL_MCP = MC.codexOwnServers();
@@ -3831,6 +3844,7 @@ if (inject !== null) {
   } else {
     setInterval(pollSavedVariables, cfg.pollMs || 750);
     startSelfUpdate();
+    startAutoDeploy();
     for (const c of CLIENTS) {
       migrateRuntime(c);
       const lastId = Number(clientStateOf(c).lastId);

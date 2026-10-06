@@ -4,6 +4,10 @@ All notable changes to this project are recorded here. The format follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- Build claude-wow from inside the game with `/reload` as your only step. With `autoDeploy` set in `config.json` (`{ "repo": "~/wow-ai" }`), the bridge checks `origin/main` every 5 minutes while it is idle and runs `claude-wow dev deploy` on its own when a new commit lands. The deploy installs the addon, and the game shows its `/reload` notice. The repository's `CLAUDE.md` tells every coding chat and factory run there that the player is talking from inside the game, that a merge to `main` ships by itself, and that `/reload` (or a full restart when addon files are added) is the player's only step. Off without the key, and only for the macOS service running a `dev deploy` release.
+
 ### Changed
 
 - The floating bar is gone; the minimap button carries the status. The window is open or closed: its only title button is the X, and Esc, `/claude hide`, `/claude mini` (kept as another name), the minimap button and the key binding close it. The minimap button shows what the bar showed: a small status light at its lower right (green, yellow or red, grey before the bridge is seen), a pulsing glow while a reply waits with the window closed, a steady glow while an agent works, and the new replies and working agents in its tooltip next to the status and cost. With the button hidden (`/claude config minimap off`), a reply to a closed window prints one chat line that says to type `/claude`, out of combat and with whisper tabs off. An install that was minimized when it last ran comes back closed, once, and the saved bar position is dropped. A `/reload` loads it.
