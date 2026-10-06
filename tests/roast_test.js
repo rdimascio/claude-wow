@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const SB = require('../dev/sandbox');
 const http = require('http');
 const { spawn } = require('child_process');
 const P = require('../bridge/protocol');
@@ -457,7 +458,7 @@ test(
         }),
       );
       const bridge = spawn(process.execPath, [path.join(__dirname, '..', 'bridge', 'bridge.js'), '--inject', FIXTURES.gameRecap.recap, '--plugin', 'roast'], {
-        env: { ...process.env, CLAUDE_WOW_HOME: home },
+        env: SB.isolatedEnv(path.join(path.dirname(home), 'user'), { CLAUDE_WOW_HOME: home }),
         stdio: ['ignore', 'pipe', 'pipe'],
       });
       let out = '';

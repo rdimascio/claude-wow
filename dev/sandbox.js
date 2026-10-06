@@ -191,15 +191,30 @@ function installAddon(L, env) {
   return r.stdout.trim();
 }
 
+const HOME_OVERRIDES = ['CLAUDE_CONFIG_DIR', 'CODEX_HOME', 'GROK_HOME', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_STATE_HOME', 'XDG_CACHE_HOME'];
+
+function homeEnv(user, platform = process.platform) {
+  const env = { HOME: user, USERPROFILE: user };
+  if (platform === 'win32') Object.assign(env, { LOCALAPPDATA: path.join(user, 'AppData', 'Local'), APPDATA: path.join(user, 'AppData', 'Roaming') });
+  return env;
+}
+
+function isolatedEnv(user, extra = {}, base = process.env) {
+  const abs = assertSafe(user);
+  fs.mkdirSync(abs, { recursive: true });
+  const env = { ...base };
+  for (const k of Object.keys(env)) if (HOME_OVERRIDES.includes(k.toUpperCase())) delete env[k];
+  return Object.assign(env, homeEnv(abs), extra);
+}
+
 function envFor(L, extra = {}) {
   const keep = ['PATH', 'LANG', 'TMPDIR', 'SystemRoot', 'TEMP', 'TMP', 'COMSPEC', ...WINDOWS_SYSTEM_ENV];
   const env = {};
   for (const k of keep) if (process.env[k] !== undefined) env[k] = process.env[k];
   return Object.assign(
     env,
+    homeEnv(L.user),
     {
-      HOME: L.user,
-      USERPROFILE: L.user,
       CLAUDE_WOW_HOME: L.home,
       CLAUDE_WOW_FAKE_STATE: L.agentState,
       CLAUDE_WOW_SANDBOX: L.dir,
@@ -279,6 +294,7 @@ module.exports = {
   open,
   writeConfig,
   envFor,
+  isolatedEnv,
   signalFile,
   spendSignals,
 };

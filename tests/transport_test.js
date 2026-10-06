@@ -16,6 +16,7 @@ const { spawnSync } = require('child_process');
 
 const BRIDGE = path.join(__dirname, '..', 'bridge', 'bridge.js');
 const AC = require('../bridge/agentcontract');
+const SB = require('../dev/sandbox');
 
 function scratch(name) {
   const dir = path.join(os.tmpdir(), `claude-wow-transport-${name}-${process.pid}-${Date.now().toString(36)}`);
@@ -71,7 +72,7 @@ function outbox(id, text, shot) {
 function runOnce(home, project, extra = []) {
   const r = spawnSync(process.execPath, [BRIDGE, '--once', '--project', project, ...extra], {
     encoding: 'utf8',
-    env: { ...process.env, CLAUDE_WOW_HOME: home },
+    env: SB.isolatedEnv(path.join(path.dirname(home), 'user'), { CLAUDE_WOW_HOME: home }),
     timeout: 60000,
   });
   return { ...r, out: r.stdout + r.stderr };
@@ -253,6 +254,60 @@ test('an absent mcp key and an empty mcp block give the same argv and the same M
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('a spawned bridge reads Claude and Codex state only from the test home: the canary server, session and codex server are seen, nothing else is', () => {
+  const dir = scratch('home-canary');
+  const { home, saved, project, cfg } = fakeInstall(dir);
+  const user = path.join(dir, 'user');
+  const canary = `canary-${process.pid}`;
+  const session = '0c0ffee0-0000-4000-8000-00000000ca1a';
+  fs.mkdirSync(path.join(user, '.claude'), { recursive: true });
+  fs.mkdirSync(path.join(user, '.codex'), { recursive: true });
+  fs.writeFileSync(path.join(user, '.claude.json'), JSON.stringify({ mcpServers: { [canary]: { type: 'http', url: 'https://c' } } }));
+  fs.writeFileSync(
+    path.join(user, '.claude', 'history.jsonl'),
+    JSON.stringify({ display: 'canary prompt', timestamp: 1000, project, sessionId: session }) + '\n',
+  );
+  fs.writeFileSync(path.join(user, '.codex', 'config.toml'), '[mcp_servers.codexcanary]\ncommand = "x"\n');
+  fs.writeFileSync(
+    path.join(home, 'config.json'),
+    JSON.stringify({ ...cfg, mcp: { strict: true, servers: { codexcanary: { command: 'node', args: ['x.js'] } } } }),
+  );
+  fs.writeFileSync(saved, outbox(19, 'ping', ''));
+  const env = SB.isolatedEnv(user, {}, { HOME: '/real', USERPROFILE: '/real', CLAUDE_CONFIG_DIR: '/real/.claude', CODEX_HOME: '/real/.codex', PATH: '/bin' });
+  assert.deepEqual(
+    Object.keys(env)
+      .filter(k => !['LOCALAPPDATA', 'APPDATA'].includes(k))
+      .sort(),
+    ['HOME', 'PATH', 'USERPROFILE'],
+  );
+  assert.equal(env.HOME, path.resolve(user));
+  assert.equal(env.USERPROFILE, path.resolve(user));
+  assert.throws(() => SB.isolatedEnv(os.homedir()), /refusing/);
+  const r = runOnce(home, project);
+  assert.equal(r.status, 0, r.out);
+  assert.match(
+    r.out,
+    new RegExp(`mcp\\.strict: Claude runs stop loading at least these servers of your own: user:${canary}, and claude\\.ai connectors`),
+    r.out,
+  );
+  assert.match(r.out, /mcp\.servers\.codexcanary: ~\/\.codex\/config\.toml has a server of the same name/, r.out);
+  const inbox = fs.readFileSync(path.join(cfg.addonDir, 'ClaudeWoW_S001', 'Inbox.lua'), 'utf8');
+  const field = name => (new RegExp(`^\\t${name} = (.*)$`, 'm').exec(inbox) || [])[1] || '';
+  assert.equal(field('home'), `"${env.HOME.replace(/\\/g, '\\\\')}",`, inbox);
+  const sessions = inbox.slice(inbox.indexOf('\tsessions = {'), inbox.indexOf('\tprojects = {'));
+  assert.deepEqual(
+    [...sessions.matchAll(/\{ id = "([^"]+)"/g)].map(m => m[1]),
+    ['sess-1', session],
+    inbox,
+  );
+  assert.deepEqual(
+    [...field('mcp').matchAll(/id = "([^"]+)", label = "[^"]*", src = "claude"/g)].map(m => m[1]),
+    [canary],
+    inbox,
+  );
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test('mcp.servers end to end: servers reach --mcp-config with ${VAR} only, strict is logged and passed, a reserved name is refused, and a tool outside allow is never offered nor persisted', () => {
   const dir = scratch('mcp-servers');
   const { home, saved, project, cfg } = fakeInstall(dir);
@@ -284,11 +339,11 @@ test('mcp.servers end to end: servers reach --mcp-config with ${VAR} only, stric
   };
   fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify(withMcp));
   fs.writeFileSync(saved, outbox(21, 'ping', ''));
-  const env = { HOME: userHome, USERPROFILE: userHome, CLAUDE_CONFIG_DIR: '', GITHUB_TOKEN: secret };
+  const env = SB.isolatedEnv(userHome, { CLAUDE_WOW_HOME: home, GITHUB_TOKEN: secret });
   const run = () =>
     spawnSync(process.execPath, [BRIDGE, '--once', '--project', project], {
       encoding: 'utf8',
-      env: { ...process.env, CLAUDE_WOW_HOME: home, ...env },
+      env,
       timeout: 60000,
     });
   const first = run();
@@ -434,7 +489,7 @@ test('per-chat MCP end to end: discovered servers are listed, a chat turns one o
       saved,
       `ClaudeWoWDB = {\n["outbox"] = {\n["id"] = ${id},\n["session"] = "sess1",\n["chat"] = "chat1",\n["text"] = "${hex('ping')}",\n["cwd"] = "${hex(cwd)}",\n["opts"] = "${hex(`mcp=${choice}`)}",\n["t"] = 1,\n},\n}\n`,
     );
-  const env = { ...process.env, CLAUDE_WOW_HOME: home, HOME: userHome, USERPROFILE: userHome, CLAUDE_CONFIG_DIR: '' };
+  const env = SB.isolatedEnv(userHome, { CLAUDE_WOW_HOME: home });
   const run = () => spawnSync(process.execPath, [BRIDGE, '--once', '--project', project], { encoding: 'utf8', env, timeout: 60000 });
 
   send(31, '+linear,-notion,-mobbin');
@@ -508,7 +563,7 @@ test('a C2 fail in agent-contract.json refuses a run whose mcp= choice turns a s
       saved,
       `ClaudeWoWDB = {\n["outbox"] = {\n["id"] = ${id},\n["session"] = "sess1",\n["chat"] = "chat1",\n["text"] = "${hex('ping')}",\n["cwd"] = "",\n${opts ? `["opts"] = "${hex(opts)}",\n` : ''}${allow ? `["allow"] = "${hex(allow)}",\n` : ''}["t"] = 1,\n},\n}\n`,
     );
-  const env = { ...process.env, CLAUDE_WOW_HOME: home, HOME: userHome, USERPROFILE: userHome, CLAUDE_CONFIG_DIR: '' };
+  const env = SB.isolatedEnv(userHome, { CLAUDE_WOW_HOME: home });
   const run = () => spawnSync(process.execPath, [BRIDGE, '--once', '--project', project], { encoding: 'utf8', env, timeout: 60000 });
   const agentRuns = () =>
     fs.existsSync(calls)
@@ -592,7 +647,7 @@ test('Codex: an X2a fail refuses a run that turns its own server off, an X2b fai
       saved,
       `ClaudeWoWDB = {\n["outbox"] = {\n["id"] = ${id},\n["session"] = "sess1",\n["chat"] = "chat1",\n["text"] = "${hex('ping')}",\n["cwd"] = "",\n["agent"] = "codex",\n${opts ? `["opts"] = "${hex(opts)}",\n` : ''}["t"] = 1,\n},\n}\n`,
     );
-  const env = { ...process.env, CLAUDE_WOW_HOME: home, CODEX_HOME: codexHome, MY_TOKEN: 't0ken' };
+  const env = SB.isolatedEnv(path.join(dir, 'user'), { CLAUDE_WOW_HOME: home, CODEX_HOME: codexHome, MY_TOKEN: 't0ken' });
   const runs = () =>
     fs.existsSync(calls)
       ? fs
