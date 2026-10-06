@@ -6721,7 +6721,7 @@ function Q.ListSettingsMenu(anchor)
 		local shown = pcall(MenuUtil.CreateContextMenu, anchor, function(_, root)
 			root:CreateCheckbox("Show message previews", Q.PreviewsOn, TogglePreviews)
 			if ClaudeWoWOrders then root:CreateCheckbox("Show the Orders card", ClaudeWoWOrders.IsOn, ClaudeWoWOrders.Toggle) end
-			if ClaudeWoWTelemetry then root:CreateCheckbox("Send game state, prices and loot to Claude", ClaudeWoWTelemetry.IsOn, ClaudeWoWTelemetry.Toggle) end
+			if ClaudeWoWTelemetry then root:CreateCheckbox("Share game state with the agent", ClaudeWoWTelemetry.IsOn, ClaudeWoWTelemetry.Toggle) end
 			root:CreateDivider()
 			root:CreateButton("Commands and tips", function() ClaudeWoW.ShowHelp() end)
 			root:CreateButton("Expand all folders", function() SetAll(false) end)
@@ -7618,7 +7618,7 @@ ClaudeWoW.HELP = {
 	{
 		title = "Settings and the window",
 		rows = {
-			{ "/claude config [key] [value]", "Settings: voice, roast, whisper, echo, vision, roll, achievements, orders, telemetry, ui, map, macro, context, signal, mode, longchat, auto, bind, diag. Alone it lists them with their values." },
+			{ "/claude config [key] [value]", "Settings: voice, roast, whisper, echo, vision, roll, achievements, orders, telemetry, ui, map, macro, context, bind. Alone it lists them with their values; all adds the troubleshooting keys. The Options page in the game's AddOns settings has the same switches." },
 			{ "/claude config ui [setting]", "The tabs and the window: whisper on|off, dim <10-100>|off, dodge on|off, autohide on|off, reset." },
 			{ "/claude orders [on|off]", "Show or hide the Orders card under the quest tracker." },
 			{ "/claude hide | mini", "Hide the window, or collapse it to the small bar." },
@@ -7706,8 +7706,9 @@ Cli.CLAUDE_VERBS = {
 
 Cli.CONFIG_KEYS = {
 	"voice", "roast", "whisper", "echo", "vision", "roll", "achievements", "orders", "telemetry", "context", "signal",
-	"mode", "longchat", "auto", "plugin", "ui", "map", "macro", "bind", "diag",
+	"mode", "longchat", "auto", "plugin", "ui", "map", "macro", "bind", "probe", "diag",
 }
+Cli.CONFIG_DEV = { signal = true, mode = true, auto = true, longchat = true, plugin = true, probe = true, diag = true }
 Cli.CONFIG_ALIASES = { toasts = "achievements", ctx = "context" }
 
 local function IsCommand(cmd, rest)
@@ -7727,7 +7728,7 @@ function Cli.ConfigKey(word)
 end
 
 function Cli.IsConfig(rest)
-	if rest == "" then return true end
+	if rest == "" or rest:lower() == "all" then return true end
 	local word, args = rest:match("^(%S+)%s*(.-)$")
 	local key = Cli.ConfigKey(word)
 	if not key then return false end
@@ -7900,7 +7901,7 @@ Cli.CONFIG_HELP = {
 	roll = "on|off: a denied command pops a Need/Greed/Pass roll, or an Allow & retry button",
 	achievements = "on|off|test: achievement toasts; alone it lists what you earned",
 	orders = "on|off: the Orders card under the quest tracker (also /claude orders and the chat list's gear menu)",
-	telemetry = "on|off: send game state (money, level, zone, professions, watched items, gear, reputation) to the bridge; also the chat list's gear menu",
+	telemetry = "on|off: share game state with the agent (money, level, zone, professions, watched items, gear, reputation); also the chat list's gear menu",
 	context = "on|off|<tokens>: the game context the agent gets, and the context-size warning (0 = never)",
 	signal = "on|off: the cheap sound-file readiness check",
 	mode = "pixel|reload: the transport",
@@ -7911,15 +7912,20 @@ Cli.CONFIG_HELP = {
 	map = "map layers, the route navigator and herb/ore nodes (/aimap is the same)",
 	macro = "undo: undo the last macro the agent's button created or changed",
 	bind = "<key>: hotkey that checks for a reply while waiting, else toggles the window",
+	probe = "chatlog|asyncfile: write test lines to the client's own logs so the bridge can measure them",
 	diag = "transport diagnostics",
 }
 
-function Cli.ConfigList()
+function Cli.ConfigList(all)
 	local lines = { "Settings. /claude config <key> <value> changes one, /claude config <key> shows it:" }
 	for _, key in ipairs(Cli.CONFIG_KEYS) do
-		local value = Cli.ConfigValue(key)
-		table.insert(lines, key .. (value ~= "" and (" = " .. value) or "") .. "  -  " .. Cli.CONFIG_HELP[key])
+		if all or not Cli.CONFIG_DEV[key] then
+			local value = Cli.ConfigValue(key)
+			table.insert(lines, key .. (value ~= "" and (" = " .. value) or "") .. "  -  " .. Cli.CONFIG_HELP[key])
+		end
 	end
+	table.insert(lines, "The game's Options window has the same settings: AddOns, " .. (ClaudeWoWHelp and ClaudeWoWHelp.AddonTitle() or "Azeroth Companion") .. ", Options.")
+	if not all then table.insert(lines, "/claude config all also lists the troubleshooting keys.") end
 	return table.concat(lines, "\n")
 end
 
@@ -8009,8 +8015,8 @@ local RunCommand
 
 function ClaudeWoW.Config(rest)
 	rest = Trim(rest or "")
-	if rest == "" then
-		Cli.Say(ActiveChat(), Cli.ConfigList())
+	if rest == "" or rest:lower() == "all" then
+		Cli.Say(ActiveChat(), Cli.ConfigList(rest ~= ""))
 		return
 	end
 	local word, args = rest:match("^(%S+)%s*(.-)$")
