@@ -2643,8 +2643,8 @@ function runAgent(job, opts = {}) {
   const ctx = gameContext(job);
   const system = P.systemPrompt(ctx, primer(), { tools: pluginTools, surfaces: plugin.surfaces, voice: plugin.voice });
   const systemShort = P.systemPrompt(ctx, '', { surfaces: plugin.surfaces, voice: plugin.voice });
-  const devNote = takeDevNote(job);
-  const prompt = P.messagePrompt(devNote ? `${devNote}\n\n${job.text}` : job.text, ctx, { image, rules: opts.turnRules });
+  const promptNotes = [takeDevNote(job), autoDeploy ? autoDeploy.failureNote(cwd) : ''].filter(Boolean);
+  const prompt = P.messagePrompt([...promptNotes, job.text].join('\n\n'), ctx, { image, rules: opts.turnRules });
   const promptFile = path.join(TMP_DIR, `prompt-${job.id}-${Date.now().toString(36)}.txt`);
   const input = agent.input({ prompt, system, systemShort, resume, cfg: acfg, images });
   if (input.promptFile !== undefined) {
@@ -3761,16 +3761,20 @@ function startSelfUpdate() {
   }
 }
 
+let autoDeploy = null;
+
 function startAutoDeploy() {
   if (!holdsLock) return;
   const conf = AD.settings(cfg, DEFAULT_CWD);
   if (conf.error) log(`auto-deploy: off (${conf.error})`);
   if (!conf.enabled) return;
-  if (process.platform !== 'darwin' || !R.compiled || !REL.currentName(REL.layout(HOME.dir)) || process.env.CLAUDE_WOW_SUPERVISED !== '1') {
-    log('auto-deploy: off (it needs the macOS service running a release from claude-wow dev deploy)');
+  const ok = AD.eligible({ home: HOME.dir, compiled: R.compiled });
+  if (!ok.ok) {
+    log(`auto-deploy: off (${ok.why})`);
     return;
   }
-  AD.createAutoDeploy({ conf, home: HOME.dir, log, idle: bridgeIdleStatus }).start();
+  autoDeploy = AD.createAutoDeploy({ conf, home: HOME.dir, log, idle: bridgeIdleStatus });
+  autoDeploy.start();
 }
 
 const MCP_RESERVED = [DM.SERVER_NAME, GM.SERVER_NAME, FACTORY.SERVER_NAME];

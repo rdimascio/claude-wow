@@ -6,7 +6,8 @@ All notable changes to this project are recorded here. The format follows [Keep 
 
 ### Added
 
-- Build claude-wow from inside the game with `/reload` as your only step. With `autoDeploy` set in `config.json` (`{ "repo": "~/wow-ai" }`), the bridge checks `origin/main` every 5 minutes while it is idle and runs `claude-wow dev deploy` on its own when a new commit lands. The deploy installs the addon, and the game shows its `/reload` notice. The repository's `CLAUDE.md` tells every coding chat and factory run there that the player is talking from inside the game, that a merge to `main` ships by itself, and that `/reload` (or a full restart when addon files are added) is the player's only step. Off without the key, and only for the macOS service running a `dev deploy` release.
+- Build claude-wow from inside the game with `/reload` as your only step. With `autoDeploy` set in `config.json` (`{ "repo": "~/wow-ai" }`), the bridge checks `origin/main` every 5 minutes while it is idle and runs `claude-wow dev deploy` on its own when main moves to a new commit. The deploy installs the addon, and the game shows its `/reload` notice. Each commit is deployed once, so a `dev rollback` stays until main moves again; a failed deploy is reported in the next message of a coding chat for that repo. The repository's `CLAUDE.md` tells every coding chat, factory run and in-game Claude Code session there that the player is talking from inside the game, that `/reload` (or a full restart when addon files are added) is their only step, and, with `autoDeploy` on, that a merge ships by itself. Off without the key, and only for the macOS service running a `dev deploy` release.
+- `claude-wow dev deploy` also waits for factory runs: a running factory run (`factory/runs.json`) keeps the bridge busy, so a deploy no longer restarts the bridge and kills the run.
 
 ### Changed
 

@@ -104,5 +104,6 @@
   "progressWriteMs": 3000,
   "timeoutMs": 1800000,
   "autoUpdate": true,
-  "autoUpdateIdleSeconds": 600
+  "autoUpdateIdleSeconds": 600,
+  "autoDeploy": null
 }

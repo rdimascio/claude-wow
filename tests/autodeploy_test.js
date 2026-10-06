@@ -4,11 +4,11 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { spawnSync } = require('child_process');
+const { spawnSync, spawn: realSpawn } = require('child_process');
 const AD = require('../bridge/autodeploy');
 const REL = require('../bridge/releases');
 
-const NO_SYMLINKS = process.platform === 'win32';
+const WINDOWS = process.platform === 'win32';
 
 function scratch(name) {
   const dir = path.join(__dirname, 'tmp', 'autodeploy', name);
@@ -44,31 +44,44 @@ function repos(root) {
   return { repo, push, head: () => git(work, 'rev-parse', 'HEAD') };
 }
 
-function rig(name, { deployed = '', busy = false } = {}) {
+function rig(name, { spawn } = {}) {
   const root = scratch(name);
   const home = path.join(root, 'home');
   fs.mkdirSync(home);
   const r = repos(root);
   const spawned = [];
   const logs = [];
-  const state = { deployed, busy };
-  const real = AD.createAutoDeploy({
+  const state = { deployed: '', busy: false };
+  const ad = AD.createAutoDeploy({
     conf: { enabled: true, repo: r.repo, ref: 'origin/main' },
     home,
     log: line => logs.push(line),
-    idle: () => (state.busy ? { idle: false, reason: '1 message(s) running or queued' } : { idle: true }),
+    idle: () => (state.busy ? { idle: false, reason: 'busy' } : { idle: true }),
     deployed: () => state.deployed,
-    spawn: (file, args, opts) => {
-      spawned.push({ file, args, opts });
-      return { unref() {} };
-    },
+    spawn:
+      spawn ||
+      ((file, args, opts) => {
+        spawned.push({ file, args, opts });
+        return { on() {}, unref() {} };
+      }),
   });
-  return { ...r, home, spawned, logs, state, ad: real };
+  const saved = () => JSON.parse(fs.readFileSync(path.join(home, AD.STATE_FILE), 'utf8'));
+  return { ...r, home, spawned, logs, state, ad, saved };
+}
+
+function devRelease(home, name, info) {
+  const l = REL.layout(home);
+  fs.mkdirSync(REL.releaseDir(l, name), { recursive: true });
+  fs.writeFileSync(REL.releaseBinary(l, name), '');
+  fs.writeFileSync(path.join(REL.releaseDir(l, name), 'release.json'), JSON.stringify({ name, complete: true, ...info }));
+  fs.rmSync(l.current, { force: true });
+  fs.symlinkSync(path.join('releases', name), l.current);
 }
 
 test('settings: off unless autoDeploy names a repo, origin/<branch> refs only, folders resolve like chat folders', () => {
   const base = path.join(os.tmpdir(), 'ad-base');
   assert.deepEqual(AD.settings({}, base), { enabled: false });
+  assert.deepEqual(AD.settings({ autoDeploy: null }, base), { enabled: false });
   assert.deepEqual(AD.settings({ autoDeploy: false }, base), { enabled: false });
   assert.deepEqual(AD.settings({ autoDeploy: { repo: 'wow-ai' } }, base), { enabled: true, repo: path.join(base, 'wow-ai'), ref: 'origin/main' });
   assert.equal(AD.settings({ autoDeploy: { repo: '~/wow-ai' } }, base).repo, path.join(os.homedir(), 'wow-ai'));
@@ -85,78 +98,124 @@ test('settings: off unless autoDeploy names a repo, origin/<branch> refs only, f
   }
 });
 
-test('a check fetches origin and starts one detached dev deploy for a commit that is not deployed', async () => {
-  const t = rig('starts');
-  t.state.deployed = t.head();
-  assert.equal(await t.ad.check(), 'current');
-  assert.equal(t.spawned.length, 0, 'the deployed commit starts nothing');
-
-  const sha = t.push('two');
-  assert.notEqual(git(t.repo, 'rev-parse', 'origin/main'), sha, 'the checkout has not fetched it yet');
-  assert.equal(await t.ad.check(), 'started');
-  assert.equal(git(t.repo, 'rev-parse', 'origin/main'), sha, 'the check fetched origin');
-  assert.equal(t.spawned.length, 1);
-  const [call] = t.spawned;
-  assert.equal(call.file, REL.currentBinary(REL.layout(t.home)));
-  assert.deepEqual(call.args, ['dev', 'deploy', 'origin/main', '--repo', t.repo]);
-  assert.equal(call.opts.detached, true, 'the deploy outlives the bridge restart it causes');
-  assert.equal(call.opts.stdio[0], 'ignore');
-  assert.ok(fs.existsSync(path.join(t.home, AD.LOG_FILE)), 'its output goes to autodeploy.log');
-  if (!NO_SYMLINKS) assert.equal(fs.statSync(path.join(t.home, AD.LOG_FILE)).mode & 0o777, 0o600);
-  assert.ok(t.logs.some(l => l.includes(`started claude-wow dev deploy`) && l.includes(sha.slice(0, 12))));
-
-  assert.equal(await t.ad.check(), 'tried', 'a commit is deployed at most once per bridge start');
-  assert.equal(t.spawned.length, 1);
-  const next = t.push('three');
-  assert.equal(await t.ad.check(), 'started', 'a newer commit is deployed');
-  assert.equal(t.spawned.length, 2);
-  assert.ok(t.logs.some(l => l.includes(next.slice(0, 12))));
+test('eligible: only the macOS service running a complete dev-deploy release', { skip: WINDOWS }, () => {
+  const home = scratch('eligible');
+  const service = { CLAUDE_WOW_SERVICE: '1', CLAUDE_WOW_SUPERVISED: '1' };
+  const ok = (over = {}) => AD.eligible({ home, platform: 'darwin', compiled: true, env: service, ...over });
+  assert.match(ok().why, /does not run a release made by claude-wow dev deploy/, 'no current release');
+  devRelease(home, '0.5.0-aaaaaaaaaaaa', { source: 'dev-deploy', sha: 'a'.repeat(40) });
+  assert.deepEqual(ok(), { ok: true });
+  assert.match(ok({ platform: 'linux' }).why, /macOS only/);
+  assert.match(ok({ compiled: false }).why, /background service/);
+  assert.match(ok({ env: { CLAUDE_WOW_SUPERVISED: '1' } }).why, /background service/, 'a terminal supervisor is not the service');
+  devRelease(home, '0.5.0', { source: 'self-update', version: '0.5.0' });
+  assert.match(ok().why, /does not run a release made by claude-wow dev deploy/, 'a published release is never turned into a dev deploy');
+  devRelease(home, '0.5.1-bbbbbbbbbbbb', { source: 'dev-deploy', sha: 'b'.repeat(40) });
+  fs.rmSync(REL.releaseBinary(REL.layout(home), '0.5.1-bbbbbbbbbbbb'));
+  assert.match(ok().why, /does not run a release made by claude-wow dev deploy/, 'a release without its binary');
 });
 
-test('a check waits while the bridge is busy or another deploy holds the lock, and tries again later', async () => {
+test('a check fetches origin and starts one detached deploy per new commit, remembered across restarts', async () => {
+  const t = rig('starts');
+  const sha = t.push('two');
+  assert.equal(await t.ad.check(), 'started');
+  assert.equal(git(t.repo, 'rev-parse', 'origin/main'), sha, 'the check fetched origin');
+  assert.ok(!fs.existsSync(path.join(t.repo, '.git', 'FETCH_HEAD')), 'the check leaves FETCH_HEAD alone');
+  assert.equal(t.spawned.length, 1);
+  const [call] = t.spawned;
+  assert.equal(call.file, '/bin/sh');
+  assert.deepEqual(call.args.slice(3), [REL.currentBinary(REL.layout(t.home)), 'origin/main', t.repo, path.join(t.home, AD.STATE_FILE), sha]);
+  assert.equal(call.opts.detached, true, 'the deploy outlives the service restart it causes');
+  assert.equal(call.opts.stdio[0], 'ignore');
+  assert.deepEqual(t.saved(), { sha });
+  if (!WINDOWS) assert.equal(fs.statSync(path.join(t.home, AD.LOG_FILE)).mode & 0o777, 0o600);
+  assert.ok(t.logs.some(l => l.includes('started claude-wow dev deploy') && l.includes(sha.slice(0, 12))));
+
+  assert.equal(await t.ad.check(), 'seen', 'a commit is deployed at most once');
+  const again = AD.createAutoDeploy({
+    conf: { repo: t.repo, ref: 'origin/main' },
+    home: t.home,
+    log() {},
+    idle: () => ({ idle: true }),
+    deployed: () => '',
+    spawn: () => assert.fail('no second deploy after a restart'),
+  });
+  assert.equal(await again.check(), 'seen', 'and the bridge restart the deploy causes does not start it again');
+
+  t.push('three');
+  assert.equal(await t.ad.check(), 'started', 'a newer commit is deployed');
+  assert.equal(t.spawned.length, 2);
+});
+
+test('a rollback or a branch deploy is not undone: only a move of origin/main deploys', async () => {
+  const t = rig('rollback');
+  t.state.deployed = t.head();
+  assert.equal(await t.ad.check(), 'current', 'the first check of a deployed main records it and starts nothing');
+  assert.equal(t.spawned.length, 0);
+  t.state.deployed = 'c'.repeat(40);
+  assert.equal(await t.ad.check(), 'seen', 'current now differs from origin/main, but origin/main did not move');
+  assert.equal(t.spawned.length, 0);
+});
+
+test('a check waits while the bridge is busy or a live deploy holds the lock; a stale lock does not block', async () => {
   const t = rig('waits');
   t.push('two');
   t.state.busy = true;
   assert.equal(await t.ad.check(), 'busy');
   assert.notEqual(git(t.repo, 'rev-parse', 'origin/main'), t.head(), 'a busy bridge does not even fetch');
   t.state.busy = false;
-  fs.writeFileSync(REL.layout(t.home).lock, '{}');
+  const lock = REL.layout(t.home).lock;
+  fs.writeFileSync(lock, JSON.stringify({ pid: process.pid, host: os.hostname(), started: Date.now(), command: 'dev deploy', token: 'x' }));
   assert.equal(await t.ad.check(), 'locked');
   assert.equal(t.spawned.length, 0);
-  fs.rmSync(REL.layout(t.home).lock);
-  assert.equal(await t.ad.check(), 'started', 'neither wait marks the commit as tried');
-  assert.equal(t.spawned.length, 1);
+  fs.writeFileSync(lock, JSON.stringify({ pid: 2147483646, host: os.hostname(), started: Date.now(), command: 'dev deploy', token: 'x' }));
+  assert.equal(await t.ad.check(), 'started', 'a lock left by a dead deploy does not stop auto-deploy for good');
 });
 
-test('a failed fetch is logged and starts nothing', async () => {
+test('a failed fetch is logged once while it keeps failing, and starts nothing', async () => {
   const t = rig('fails');
   fs.rmSync(t.repo, { recursive: true, force: true });
   assert.equal(await t.ad.check(), 'failed');
+  assert.equal(await t.ad.check(), 'failed');
   assert.equal(t.spawned.length, 0);
-  assert.ok(
-    t.logs.some(l => l.startsWith('auto-deploy: check failed (')),
-    t.logs.join('\n'),
-  );
+  assert.equal(t.logs.filter(l => l.startsWith('auto-deploy: check failed (')).length, 1, t.logs.join('\n'));
 });
 
-test('deployedSha reads the sha the current release was built from', { skip: NO_SYMLINKS }, () => {
+test('the deploy script records its exit code, and a failure is told once in the next coding chat message of that repo', { skip: WINDOWS }, async () => {
+  const t = rig('exit', { spawn: realSpawn });
+  const bin = REL.currentBinary(REL.layout(t.home));
+  fs.mkdirSync(path.dirname(bin), { recursive: true });
+  fs.writeFileSync(bin, '#!/bin/sh\necho "deploy $*"\nexit 3\n', { mode: 0o755 });
+  const sha = t.push('two');
+  assert.equal(await t.ad.check(), 'started');
+  const deadline = Date.now() + 10000;
+  while (t.saved().exit === undefined && Date.now() < deadline) await new Promise(r => setTimeout(r, 50));
+  assert.deepEqual(t.saved(), { sha, exit: 3 });
+  assert.match(fs.readFileSync(path.join(t.home, AD.LOG_FILE), 'utf8'), /deploy dev deploy origin\/main --repo /);
+  assert.equal(t.ad.failureNote(t.home), '', 'another folder gets no note');
+  const note = t.ad.failureNote(t.repo);
+  assert.match(note, new RegExp(`^\\[claude-wow bridge\\] The automatic deploy of origin/main at ${sha.slice(0, 12)} failed \\(exit 3\\)`));
+  assert.equal(t.ad.failureNote(t.repo), '', 'told once');
+});
+
+test('deployedSha reads the sha the current release was built from', { skip: WINDOWS }, () => {
   const home = scratch('sha');
-  const l = REL.layout(home);
-  const name = '0.5.0-abcdef123456';
-  fs.mkdirSync(REL.releaseDir(l, name), { recursive: true });
-  fs.writeFileSync(path.join(REL.releaseDir(l, name), 'release.json'), JSON.stringify({ source: 'dev-deploy', sha: 'f'.repeat(40), name }));
   assert.equal(AD.deployedSha(home), '', 'no current release');
-  fs.symlinkSync(path.join('releases', name), l.current);
+  devRelease(home, '0.5.0-abcdef123456', { source: 'dev-deploy', sha: 'f'.repeat(40) });
   assert.equal(AD.deployedSha(home), 'f'.repeat(40));
 });
 
-test('start schedules the first check soon and then a regular one, and says it is on', () => {
+test('start runs a check soon and then every few minutes', async () => {
   const t = rig('start');
+  t.push('two');
   const timers = [];
-  t.ad.start({ setTimeout: (fn, ms) => timers.push(['once', ms]), setInterval: (fn, ms) => timers.push(['every', ms]) });
-  assert.deepEqual(timers, [
-    ['once', AD.FIRST_CHECK_MS],
-    ['every', AD.CHECK_MS],
-  ]);
+  t.ad.start({ setTimeout: (fn, ms) => timers.push({ fn, ms }), setInterval: (fn, ms) => timers.push({ fn, ms }) });
+  assert.deepEqual(
+    timers.map(x => x.ms),
+    [AD.FIRST_CHECK_MS, AD.CHECK_MS],
+  );
   assert.match(t.logs[0], /^auto-deploy: on, deploys origin\/main from /);
+  assert.equal(await timers[0].fn(), 'started');
+  assert.equal(await timers[1].fn(), 'seen');
+  assert.equal(t.spawned.length, 1);
 });
