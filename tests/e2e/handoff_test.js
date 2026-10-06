@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
-const { makeRoot, gameRunner } = require('./helpers');
+const { makeRoot, gameRunner, sentId } = require('./helpers');
 const SS = require('../../bridge/sessions');
 const HO = require('../../bridge/handoff');
 
@@ -58,8 +58,8 @@ test('/claude -r all turns a handoff list into one chat per session, and the fir
     assert.ok(pins.history.some(m => /Last answer: PR 12 is open, CI pending\./.test(m.text)));
     h.client.slash(`/claude-wow chat ${h.client.db().chats.findIndex(c => c.id === pins.id) + 1}`);
     await h.client.waitFor(() => h.client.activeChat().id === pins.id, { label: 'switch to the pins chat' });
-    const id = h.client.lastSeq() + 1;
     h.client.slash('/claude -c where were we');
+    const id = sentId(h.client);
     await h.client.waitFor(
       () => {
         const c = h.client.activeChat();
