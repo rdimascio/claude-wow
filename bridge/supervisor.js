@@ -113,9 +113,10 @@ function supervise() {
   const UPD = require('./selfupdate');
   const SERVICE = process.env.CLAUDE_WOW_SERVICE === '1';
   const dirs = svc.dirs();
+  const BRIDGE_LOG = require('./home').resolve().log;
+  svc.secureServiceLogs(dirs, { bridgeLog: BRIDGE_LOG });
   const out = SERVICE ? new svc.RotatingLog(svc.serviceLogFile(dirs)) : null;
   const say = line => (out ? out.write(line + '\n') : console.log(line));
-  const BRIDGE_LOG = require('./home').resolve().log;
   const started = Date.now();
   let child = null;
   let stopping = false;

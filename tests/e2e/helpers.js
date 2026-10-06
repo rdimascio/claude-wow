@@ -5,7 +5,7 @@ const os = require('os');
 const path = require('path');
 const H = require('../../dev/harness');
 const P = require('../../bridge/protocol');
-const { WowClient } = require('../../dev/wow/client');
+const { WowClient, luaQuote } = require('../../dev/wow/client');
 
 function makeRoot(label) {
   return path.join(os.tmpdir(), `claude-wow-e2e-${label}-${process.pid}`);
@@ -33,6 +33,20 @@ function replyTo(h, id) {
   const c = h.client.activeChat();
   if (!c || c.pendingId) return null;
   return (c.history || []).find(m => m.id === id && m.role !== 'user') || null;
+}
+
+function chatById(client, chatId) {
+  return client.json(`(function() for _, c in ipairs(ClaudeWoWDB.chats) do if c.id == ${luaQuote(chatId)} then return c end end end)()`);
+}
+
+function sentId(client, chat = client.activeChat()) {
+  const id = chat && chat.pendingId;
+  assert.ok(Number.isInteger(id), `chat ${chat && chat.name} has a message in flight`);
+  assert.ok(
+    (chat.history || []).some(m => m.id === id && m.role === 'user'),
+    `#${id} is the own message of chat ${chat.name}`,
+  );
+  return id;
 }
 
 function isAlive(pid) {
@@ -123,6 +137,8 @@ module.exports = {
   gameRunner,
   isAlive,
   replyTo,
+  chatById,
+  sentId,
   H,
   switchingLock,
   fixtureFetch,

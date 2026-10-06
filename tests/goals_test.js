@@ -988,6 +988,15 @@ test(
       assert.deepEqual(Object.keys(helen.state.maps[BONE_KEY].layers), ['skins'], "Bone's route is kept for Bone");
 
       const stored = JSON.parse(fs.readFileSync(path.join(home, 'transcripts.json'), 'utf8'));
+      stored.chats.streamctl = {
+        id: 'streamctl',
+        name: 'Stream control',
+        cwd: '',
+        plugin: 'stream',
+        char: BONE_KEY,
+        messages: [{ role: 'user', text: 'track', id: 3, t: 3 }],
+        updated: 2,
+      };
       stored.chats.repo1 = { id: 'repo1', name: 'Repo', cwd: dir, char: BONE_KEY, messages: [{ role: 'user', text: 'fix it', id: 2, t: 2 }], updated: 1 };
       fs.writeFileSync(path.join(home, 'transcripts.json'), JSON.stringify(stored));
       writeOutbox(saved, 1, HELEN_CONTEXT, 'wiped', 'helenchat');
@@ -1000,6 +1009,10 @@ test(
       const boneRestore = run();
       const offered = boneRestore.slot.restore.chats.find(c => c.id === 'chat1');
       assert.ok(offered, 'Bone gets his general chat back after a wipe');
+      assert.ok(
+        !boneRestore.slot.restore.chats.some(c => c.id === 'streamctl'),
+        'the hidden Stream control chat is never restored: the addon makes its own, and a restored copy would show in the list',
+      );
       assert.equal(offered.plugin, 'ask', 'as the general chat it was, not bound to Claude Code');
       assert.equal(boneRestore.state.sessions['old:legacy'], undefined, "the old chats' agent sessions are dropped with them");
       assert.equal((boneRestore.state.sessionUsage || {})['chat:legacy'], undefined);

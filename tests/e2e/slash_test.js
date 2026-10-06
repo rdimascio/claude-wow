@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
-const { makeRoot, gameRunner } = require('./helpers');
+const { makeRoot, gameRunner, sentId } = require('./helpers');
 
 const ROOT = makeRoot('slash');
 const withGame = gameRunner(ROOT);
@@ -61,8 +61,8 @@ test('the skills reach the game as slash commands, and /stop ends a running skil
     assert.equal(h.client.luaValue('SLASH_CLAUDEWOW_SKILL_FRESH_EYES1'), '/fresh-eyes');
     assert.equal(h.client.luaValue('SLASH_CLAUDEWOW_SKILL_RUNS1'), '/runs');
 
-    const id = h.client.lastSeq() + 1;
     h.client.runLua('SlashCmdList.CLAUDEWOW_SKILL_BABYSIT_PR("[[hang]]")');
+    const id = sentId(h.client);
     const started = await h.client.waitFor(
       () => {
         const c = h.client.activeChat();

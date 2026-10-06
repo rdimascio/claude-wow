@@ -1221,11 +1221,11 @@ test('in the plain theme Send and Connect stay centered on the tall input box', 
 });
 
 const MCP_LIST =
-  '{ { name = "notion", on = true, health = "connected" }, { name = "github", on = true, health = "needs-auth" }, { name = "linear", on = false, health = "unknown" } }';
+  '{ { id = "notion", label = "notion", src = "config", on = true, health = "connected" }, { id = "claude_ai_Slack", label = "Slack", src = "claude.ai", on = true, health = "needs-auth" }, { id = "plugin_Notion_notion", label = "Notion", src = "plugin", on = false, health = "unknown" } }';
 const menuItems = vm =>
   vm.evaluate('(function() local t = {} for _, it in ipairs(STUB.menu.items) do table.insert(t, it.text) end return table.concat(t, "|") end)()');
 
-test('the MCP button in the header shows the chat servers on, opens a checkbox menu with health, and sits left of the project button', () => {
+test('the MCP button in the header shows the chat servers on, opens a grouped checkbox menu with health, and sits left of the project button', () => {
   const vm = nativeVM();
   vm.run('ClaudeWoW.Render()');
   assert.equal(vm.evaluate('ClaudeWoWMcpButton:IsShown()'), 'false', 'no list from the bridge: no button');
@@ -1239,15 +1239,15 @@ test('the MCP button in the header shows the chat servers on, opens a checkbox m
   vm.run('ClaudeWoWMcpButton.scripts.OnClick(ClaudeWoWMcpButton)');
   assert.equal(
     menuItems(vm),
-    "MCP servers|notion  |cff33cc33ok|r|github  |cffff9933needs login|r|linear  |cff999999not seen yet|r|Turn all off|Use the bridge's defaults",
+    'From config.json|notion  |cff33cc33ok|r|Claude plugins|Notion  |cff999999not seen yet|r|claude.ai connectors|Slack  |cffff9933needs login|r|Turn all off|Use the defaults',
   );
-  vm.run('STUB.Pick("github  |cffff9933needs login|r")');
-  assert.equal(vm.evaluate('table.concat(ClaudeWoWDB.chats[#ClaudeWoWDB.chats].mcp, ",")'), 'notion');
+  vm.run('STUB.Pick("Slack  |cffff9933needs login|r")');
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].mcpSet.claude_ai_Slack'), 'false');
   assert.equal(vm.evaluate('ClaudeWoWMcpButton.text:GetText()'), 'MCP |cffffffff1/3|r');
   vm.run('ClaudeWoWMcpButton.scripts.OnClick(ClaudeWoWMcpButton); STUB.Pick("Turn all off")');
   assert.equal(vm.evaluate('ClaudeWoWMcpButton.text:GetText()'), 'MCP |cffffffff0/3|r');
-  vm.run('ClaudeWoWMcpButton.scripts.OnClick(ClaudeWoWMcpButton); STUB.Pick("Use the bridge\'s defaults")');
-  assert.equal(vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].mcp == nil'), 'true');
+  vm.run('ClaudeWoWMcpButton.scripts.OnClick(ClaudeWoWMcpButton); STUB.Pick("Use the defaults")');
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].mcpAllOff == nil and ClaudeWoWDB.chats[#ClaudeWoWDB.chats].mcpSet == nil'), 'true');
 
   vm.run('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].agent = "grok"; ClaudeWoW.Render()');
   assert.equal(vm.evaluate('ClaudeWoWMcpButton.text:GetText()'), 'MCP |cff9999992/3|r', 'grey on an agent without MCP');

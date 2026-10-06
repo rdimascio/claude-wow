@@ -233,7 +233,7 @@ function claudeParser(opts = {}) {
         if (down.length) out.mcpDown = down.map(s => ({ name: String(s.name || '?').slice(0, 80), status: String(s.status || 'no status').slice(0, 40) }));
         out.mcpStatus = ev.mcp_servers
           .filter(s => s && typeof s === 'object' && typeof s.name === 'string')
-          .map(s => ({ name: s.name.slice(0, 80), status: String(s.status || 'unknown').slice(0, 40) }));
+          .map(s => ({ name: s.name.slice(0, 80), status: String(s.status || 'unknown').slice(0, 40), source: String(s.source || '').slice(0, 40) }));
       }
       if (ev.type === 'system' && ev.subtype === 'permission_denied') {
         noteRefusal(ev.tool_use_id, ev.message || ev.decision_reason, ev.decision_reason_type, true);
@@ -881,7 +881,7 @@ function unsupportedSettings(id, chosen) {
   for (const key of Object.keys(SETTING_FLAGS)) {
     const v = chosen[key];
     const set = Array.isArray(v) ? v.length > 0 : !!v;
-    if (set && !agent.settings.includes(key)) out.push(`${SETTING_FLAGS[key]} ${Array.isArray(v) ? v.join(' ') : v}`);
+    if (set && !agent.settings.includes(key)) out.push(key === 'mcp' ? 'mcp choice' : `${SETTING_FLAGS[key]} ${Array.isArray(v) ? v.join(' ') : v}`);
   }
   return out;
 }

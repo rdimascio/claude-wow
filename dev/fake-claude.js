@@ -97,6 +97,13 @@ function sleep(ms) {
   return new Promise(r => setTimeout(r, ms));
 }
 
+const RELEASE_POLL_MS = 50;
+
+async function holdUntilReleased(name) {
+  const file = path.join(stateDir(), path.basename(name));
+  while (!fs.existsSync(file)) await sleep(RELEASE_POLL_MS);
+}
+
 function readStdin() {
   return new Promise(resolve => {
     let data = '';
@@ -453,6 +460,7 @@ async function main() {
     if (pause) await sleep((pause * 1000) / (tools + 1));
   }
   if (pause) await sleep(tools ? (pause * 1000) / (tools + 1) : pause * 1000);
+  if (typeof d.hold === 'string') await holdUntilReleased(d.hold);
   if (typeof d.map === 'string' && process.env.CLAUDE_WOW_MAP_FILE) {
     fs.appendFileSync(process.env.CLAUDE_WOW_MAP_FILE, JSON.stringify({ op: 'set', layer: d.map, ordered: true, points: [{ m: 1413, x: 50, y: 40 }] }) + '\n');
   }
