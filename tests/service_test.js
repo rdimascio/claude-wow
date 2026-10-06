@@ -555,6 +555,46 @@ test('Windows status: an installed service is verified once, so a pid reused bet
   assert.ok(!lines.some(l => /no pid file yet/.test(l)), lines.join('\n'));
 });
 
+test('Windows install preflight: a terminal bridge blocks install only when its pid is verified as the supervisor', () => {
+  const record = { pid: 4242, bridgePid: 4243, started: STARTED, mode: 'terminal' };
+  const terminalProblems = (name, fake) => {
+    const d = winDirs(name, record);
+    return { d, problems: S.preflight(d, fake.b).filter(p => !/config\.json is missing/.test(p)) };
+  };
+  const reused = fakeWindows({ alivePids: [4242], processes: { 4242: { created: STARTED + 3_600_000, command: '"C:\\Program Files\\Editor\\editor.exe"' } } });
+  assert.deepEqual(terminalProblems('win-pre-reused', reused).problems, [], 'a pid Windows gave to another program does not block install');
+  assert.deepEqual(reused.state.queries, [4242]);
+  const lateNode = fakeWindows({ alivePids: [4242], processes: { 4242: { ...SUPERVISOR, created: STARTED + S.CLOCK_SLACK_MS + 1 } } });
+  assert.deepEqual(terminalProblems('win-pre-late', lateNode).problems, []);
+  const running = fakeWindows({ alivePids: [4242], processes: { 4242: SUPERVISOR } });
+  const match = terminalProblems('win-pre-match', running).problems;
+  assert.equal(match.length, 1);
+  assert.match(match[0], /already running in a terminal \(pid 4242\)/);
+  const unreadable = fakeWindows({ alivePids: [4242], queryFails: true });
+  const { d, problems } = terminalProblems('win-pre-unknown', unreadable);
+  assert.equal(problems.length, 1, 'an unreadable identity still blocks install');
+  assert.match(problems[0], /could not confirm whether pid 4242/);
+  assert.ok(problems[0].includes(S.pidFile(d)), problems[0]);
+  const dead = fakeWindows({ alivePids: [] });
+  assert.deepEqual(terminalProblems('win-pre-dead', dead).problems, []);
+  assert.deepEqual(dead.state.queries, [], 'a dead pid runs no query');
+  const service = fakeWindows({ alivePids: [4242], processes: { 4242: SUPERVISOR } });
+  const sd = winDirs('win-pre-service', { ...record, mode: 'service' });
+  assert.deepEqual(
+    S.preflight(sd, service.b).filter(p => !/config\.json is missing/.test(p)),
+    [],
+  );
+  assert.deepEqual(service.state.queries, [], 'a service record is left to install');
+});
+
+test('install preflight off Windows: a live terminal pid blocks install, a dead one does not', () => {
+  const d = winDirs('posix-pre', { pid: process.pid, started: STARTED, mode: 'terminal' });
+  const terminal = ps => ps.filter(p => !/config\.json is missing/.test(p));
+  assert.match(terminal(S.preflight(d, S.backend('linux')))[0], new RegExp(`terminal \\(pid ${process.pid}\\)`));
+  fs.writeFileSync(S.pidFile(d), JSON.stringify({ pid: 2147483000, started: STARTED, mode: 'terminal' }));
+  assert.deepEqual(terminal(S.preflight(d, S.backend('linux'))), []);
+});
+
 test('Windows orphaned agent run: only a process created before the run started and named by its marker is ended, through the verified kill', () => {
   const run = { pid: 5150, startedAt: STARTED, marker: 'claude.exe' };
   const agent = { created: STARTED - 200, command: '"C:\\Users\\p\\.local\\bin\\claude.exe" -p --output-format stream-json' };
