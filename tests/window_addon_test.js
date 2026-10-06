@@ -1448,6 +1448,10 @@ test('an old bridge cannot say which agents lack effort, so the meter stays enab
   assert.equal(effortOf(vm, 'text:GetText()'), '|cff9d9d9dauto|r');
   vm.run('ClaudeWoW.ApplyEfforts({ agents = { "claude" } })');
   assert.equal(vm.evaluate('ClaudeWoWEffortButton:IsEnabled()'), 'true', 'a slot without efforts changes nothing');
+  vm.run(`ClaudeWoW.ApplyEfforts({ ${EFFORTS} })`);
+  assert.equal(vm.evaluate('ClaudeWoWEffortButton:IsEnabled()'), 'false', 'once the bridge says Grok has none, it is disabled');
+  vm.run('ClaudeWoW.ApplyEfforts({ agents = { "claude" } }); ClaudeWoW.ApplyEfforts({ efforts = "bad" })');
+  assert.equal(vm.evaluate('ClaudeWoWEffortButton:IsEnabled()'), 'false', 'a slot without a usable efforts table keeps what the bridge said');
 });
 
 test('CLAUDE_CODE_EFFORT_LEVEL on the bridge overrides every choice, and the meter shows that', () => {
