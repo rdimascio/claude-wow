@@ -21,6 +21,8 @@ Each row is probed separately and recorded as `pass`, `fail` or `unchecked`. Onl
 | X2a | Codex | `-c mcp_servers.<n>.enabled=false` overrides `config.toml` | fixture tool absent from the run | per-chat off |
 | X2b | Codex | `env_vars` passes values and `shell_environment_policy.exclude` hides them from the shell | fixture sees the value; `printenv` in the shell does not | secrets |
 
+First real run (PR #147, 2026-10-06): Claude Code 2.1.290 passes C1-C4; Codex 0.160.1 passes X2a and **fails X2b** (the shell prints an excluded variable), so Codex runs that pass secrets are refused on that version.
+
 C1, C2, C3 and C4 need no model call: the probe stops `claude` after the `system/init` event. X1, X2a and X2b need one Codex run each.
 
 ## Work, in order
