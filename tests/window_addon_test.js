@@ -809,18 +809,17 @@ test('general chats sit under Chats, project chats under their project, and the 
   assert.equal(vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].cwd'), '');
 });
 
-test('the project button sits at the right end of the header band, effort left of it, and the chat title stops before them', () => {
+test('the project button sits at the right end of the header band, the chat title stops before it, and effort sits above Send', () => {
   const vm = nativeVM();
   assert.equal(vm.evaluate('ClaudeWoWProjectButton:GetParent() == ClaudeWoWTitleBar'), 'true');
   assert.equal(vm.evaluate('ClaudeWoWProjectButton.point .. " " .. ClaudeWoWProjectButton.relPoint'), 'RIGHT RIGHT');
   assert.equal(vm.evaluate('ClaudeWoWProjectButton.rel == ClaudeWoWTitleBar'), 'true');
-  assert.equal(vm.evaluate('ClaudeWoWEffortButton:GetParent() == ClaudeWoWTitleBar'), 'true');
-  assert.equal(vm.evaluate('ClaudeWoWEffortButton:IsShown()'), 'true');
-  assert.equal(vm.evaluate('ClaudeWoWEffortButton.rel == ClaudeWoWProjectButton'), 'true');
-  assert.equal(vm.evaluate('ClaudeWoWEffortButton.point .. " " .. ClaudeWoWEffortButton.relPoint .. " " .. ClaudeWoWEffortButton.x'), 'RIGHT LEFT -8');
-  assert.equal(vm.evaluate('ClaudeWoWEffortButton:GetHeight() == ClaudeWoWProjectButton:GetHeight()'), 'true', 'same height as the project button');
-  assert.equal(vm.evaluate('ClaudeWoWEffortButton.text:GetText()'), 'Effort: |cffffffffdefault|r', 'label then white value, like Project');
-  assert.equal(vm.evaluate('ClaudeWoW.UI.chatTitle.rel == ClaudeWoWEffortButton'), 'true', 'the title truncates before it reaches the leftmost button');
+  assert.equal(vm.evaluate('ClaudeWoWEffortButton:GetParent() == ClaudeWoWTitleBar'), 'false', 'effort is not in the header');
+  assert.equal(vm.evaluate('ClaudeWoWEffortButton:IsShown()'), vm.evaluate('ClaudeWoW.UI.send:IsShown()'), 'shown with Send');
+  assert.equal(vm.evaluate('ClaudeWoWEffortButton.rel == ClaudeWoW.UI.send'), 'true');
+  assert.equal(vm.evaluate('ClaudeWoWEffortButton.point .. " " .. ClaudeWoWEffortButton.relPoint'), 'BOTTOMRIGHT TOPRIGHT', 'right above Send');
+  assert.equal(vm.evaluate('ClaudeWoWEffortButton.text:GetText()'), '|cffffffffdefault|r', 'the value alone, no Effort: prefix');
+  assert.equal(vm.evaluate('ClaudeWoW.UI.chatTitle.rel == ClaudeWoWProjectButton'), 'true', 'the title truncates before it reaches the project button');
   assert.equal(vm.evaluate('ClaudeWoW.UI.chatTitle.point .. " " .. ClaudeWoW.UI.chatTitle.relPoint .. " " .. ClaudeWoW.UI.chatTitle.x'), 'RIGHT LEFT -8');
   vm.run('STUB.renames = 0; local real = ClaudeWoW.RenamePrompt; ClaudeWoW.RenamePrompt = function(...) STUB.renames = STUB.renames + 1 return real(...) end');
   vm.run('ClaudeWoWProjectButton.scripts.OnClick(ClaudeWoWProjectButton, "LeftButton")');
@@ -836,22 +835,18 @@ test('a long project label truncates inside a bounded button, shows in full in t
   assert.equal(vm.num('ClaudeWoWProjectButton.text:GetWidth()'), 232, 'the label is cut to the button');
   assert.equal(vm.evaluate('ClaudeWoWProjectButton.truncated'), 'true');
   assert.match(vm.evaluate('ClaudeWoWProjectButton.text:GetText()'), /^Project: /);
-  assert.equal(vm.evaluate('ClaudeWoWEffortButton.text:GetText()'), 'Effort: |cffffffffdefault|r');
-  vm.run('ClaudeWoWTitleBar.width = 300; for _, fn in ipairs(ClaudeWoWTitleBar.hooks.OnSizeChanged) do fn(ClaudeWoWTitleBar) end');
-  assert.equal(vm.num('ClaudeWoWProjectButton:GetWidth()'), 152, 'the band less the title minimum, the effort button and the gaps');
+  vm.run('ClaudeWoWTitleBar.width = 240; for _, fn in ipairs(ClaudeWoWTitleBar.hooks.OnSizeChanged) do fn(ClaudeWoWTitleBar) end');
+  assert.equal(vm.num('ClaudeWoWProjectButton:GetWidth()'), 208, 'the band less the title minimum and the gaps');
   assert.equal(
     vm.evaluate('ClaudeWoWProjectButton.text:GetText()'),
     '|cffffffffa-very-long-project-folder-name-for-the-header|r',
     'the Project: label goes before the name is cut',
   );
-  assert.equal(vm.evaluate('ClaudeWoWEffortButton.text:GetText()'), '|cffffffffdefault|r', 'the Effort: label goes first');
-  vm.run('ClaudeWoWTitleBar.width = 188; for _, fn in ipairs(ClaudeWoWTitleBar.hooks.OnSizeChanged) do fn(ClaudeWoWTitleBar) end');
+  vm.run('ClaudeWoWTitleBar.width = 92; for _, fn in ipairs(ClaudeWoWTitleBar.hooks.OnSizeChanged) do fn(ClaudeWoWTitleBar) end');
   assert.equal(vm.num('ClaudeWoWProjectButton:GetWidth()'), 60, 'a narrow window narrows the button to its minimum');
-  assert.equal(vm.num('ClaudeWoWEffortButton:GetWidth()'), 88, 'then the effort button gives up the rest');
   vm.run('ClaudeWoWTitleBar.width = 2000; for _, fn in ipairs(ClaudeWoWTitleBar.hooks.OnSizeChanged) do fn(ClaudeWoWTitleBar) end');
   assert.equal(vm.num('ClaudeWoWProjectButton:GetWidth()'), 240, 'a wide window still caps the button');
   assert.match(vm.evaluate('ClaudeWoWProjectButton.text:GetText()'), /^Project: /, 'room again: the labels come back');
-  assert.equal(vm.evaluate('ClaudeWoWEffortButton.text:GetText()'), 'Effort: |cffffffffdefault|r');
   vm.run('ClaudeWoWProjectButton.scripts.OnEnter(ClaudeWoWProjectButton)');
   assert.equal(vm.evaluate('GameTooltip:GetText()'), 'Project: a-very-long-project-folder-name-for-the-header');
   vm.run('ClaudeWoWProjectButton.text.GetStringWidth = function() return 40 end; ClaudeWoW.Render()');
@@ -1285,11 +1280,11 @@ test('the MCP button in the header shows the chat servers on, opens a grouped ch
   const vm = nativeVM();
   vm.run('ClaudeWoW.Render()');
   assert.equal(vm.evaluate('ClaudeWoWMcpButton:IsShown()'), 'false', 'no list from the bridge: no button');
-  assert.equal(vm.evaluate('ClaudeWoW.UI.chatTitle.rel == ClaudeWoWEffortButton'), 'true');
+  assert.equal(vm.evaluate('ClaudeWoW.UI.chatTitle.rel == ClaudeWoWProjectButton'), 'true');
   vm.run(`ClaudeWoW.ApplyMcp(${MCP_LIST}); ClaudeWoW.Render()`);
   assert.equal(vm.evaluate('ClaudeWoWMcpButton:IsShown()'), 'true');
   assert.equal(vm.evaluate('ClaudeWoWMcpButton.text:GetText()'), 'MCP |cffff99332/3|r', 'orange: a server that is on needs a login');
-  assert.equal(vm.evaluate('ClaudeWoWMcpButton.rel == ClaudeWoWEffortButton'), 'true', 'right to left: Project, Effort, MCP');
+  assert.equal(vm.evaluate('ClaudeWoWMcpButton.rel == ClaudeWoWProjectButton'), 'true', 'right to left: Project, MCP');
   assert.equal(vm.evaluate('ClaudeWoW.UI.chatTitle.rel == ClaudeWoWMcpButton'), 'true', 'the title stops before the MCP button');
 
   vm.run('ClaudeWoWMcpButton.scripts.OnClick(ClaudeWoWMcpButton)');
@@ -1309,7 +1304,7 @@ test('the MCP button in the header shows the chat servers on, opens a grouped ch
   assert.equal(vm.evaluate('ClaudeWoWMcpButton.text:GetText()'), 'MCP |cff9999992/3|r', 'grey on an agent without MCP');
   vm.run('ClaudeWoW.ApplyMcp({}); ClaudeWoW.Render()');
   assert.equal(vm.evaluate('ClaudeWoWMcpButton:IsShown()'), 'false', 'an empty list hides it');
-  assert.equal(vm.evaluate('ClaudeWoW.UI.chatTitle.rel == ClaudeWoWEffortButton'), 'true');
+  assert.equal(vm.evaluate('ClaudeWoW.UI.chatTitle.rel == ClaudeWoWProjectButton'), 'true');
 });
 
 test('without native frames the MCP button and a long project button both fit in the composer', () => {
@@ -1320,10 +1315,7 @@ test('without native frames the MCP button and a long project button both fit in
   vm.run('ClaudeWoWProjectButton.text.GetStringWidth = function() return 1000 end; ClaudeWoW.Render()');
   assert.equal(vm.evaluate('ClaudeWoWMcpButton:IsShown()'), 'true');
   assert.ok(vm.num('ClaudeWoWMcpButton:GetLeft()') >= vm.num('ClaudeWoWProjectButton:GetParent():GetLeft()'), 'the MCP button stays inside the composer');
-  assert.ok(vm.num('ClaudeWoWMcpButton:GetRight()') <= vm.num('ClaudeWoWEffortButton:GetLeft()'));
-  assert.ok(vm.num('ClaudeWoWEffortButton:GetRight()') <= vm.num('ClaudeWoWProjectButton:GetLeft()'));
-  assert.equal(vm.evaluate('ClaudeWoWEffortButton:GetParent() == ClaudeWoWProjectButton:GetParent()'), 'true', 'effort sits in the composer box');
-  assert.ok(vm.num('ClaudeWoWEffortButton:GetRight()') <= vm.num('ClaudeWoW.UI.send:GetLeft()'), 'and never on Send');
+  assert.ok(vm.num('ClaudeWoWMcpButton:GetRight()') <= vm.num('ClaudeWoWProjectButton:GetLeft()'));
 });
 
 const HEADER_WIDTHS = `
@@ -1335,20 +1327,19 @@ const HEADER_WIDTHS = `
   ClaudeWoWTitleBar.width = 188
 `;
 
-test('at the 560 px minimum width, Project, Effort and MCP fit in the header band without overlapping', () => {
+test('at the 560 px minimum width, Project and MCP fit in the header band without overlapping, and effort stays above Send', () => {
   const vm = nativeVM();
   vm.run(`ClaudeWoW.ApplyMcp(${MCP_LIST}); ClaudeWoWDB.chats[#ClaudeWoWDB.chats].effort = "xhigh"`);
   vm.run(HEADER_WIDTHS);
   vm.run('ClaudeWoW.Render()');
-  assert.equal(vm.evaluate('ClaudeWoWEffortButton:IsShown()'), 'true');
+  assert.equal(vm.evaluate('ClaudeWoWEffortButton:IsShown()'), vm.evaluate('ClaudeWoW.UI.send:IsShown()'), 'shown with Send');
   assert.equal(vm.evaluate('ClaudeWoWMcpButton:IsShown()'), 'true');
   const edge = (b, side) => vm.num(`${b}:Get${side}()`);
   assert.ok(edge('ClaudeWoWProjectButton', 'Right') <= 248, 'project stays in the band');
-  assert.ok(edge('ClaudeWoWEffortButton', 'Right') <= edge('ClaudeWoWProjectButton', 'Left'), 'effort never overlaps project');
-  assert.ok(edge('ClaudeWoWMcpButton', 'Right') <= edge('ClaudeWoWEffortButton', 'Left'), 'MCP never overlaps effort');
+  assert.ok(edge('ClaudeWoWMcpButton', 'Right') <= edge('ClaudeWoWProjectButton', 'Left'), 'MCP never overlaps project');
   assert.ok(edge('ClaudeWoWMcpButton', 'Left') >= 60 + 8 + 16, 'the title keeps its minimum room');
-  assert.equal(vm.evaluate('ClaudeWoWEffortButton.text:GetText()'), '|cffffffffxhigh|r', 'labels are dropped before anything overlaps');
-  assert.equal(vm.evaluate('ClaudeWoWProjectButton.text:GetText()'), '|cffffffffevery|r');
+  assert.equal(vm.evaluate('ClaudeWoWEffortButton.text:GetText()'), '|cffffffffxhigh|r', 'effort shows its value');
+  assert.equal(vm.evaluate('ClaudeWoWProjectButton.text:GetText()'), 'Project: |cffffffffevery|r', 'with effort out of the header, the label fits');
   assert.equal(vm.evaluate('ClaudeWoW.UI.chatTitle.rel == ClaudeWoWMcpButton'), 'true');
   vm.run('ClaudeWoWEffortButton.scripts.OnEnter(ClaudeWoWEffortButton)');
   assert.equal(vm.evaluate('GameTooltip:GetText()'), 'Effort: xhigh', 'the tooltip names the value in full');
