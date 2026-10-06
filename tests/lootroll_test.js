@@ -330,12 +330,96 @@ test('the confirm grants only the rules it showed, and only while it is the open
   replaced.run('STUB.FIRST = STUB.popup');
   replaced.run('ClaudeWoW.NewChat("second")');
   const second = deliverDenial(replaced, ['WebFetch'], 'claude', 2);
+  replaced.run('STUB.played = {}');
   replaced.run(`ClaudeWoW.ConfirmAllow("${second.chatId}", ${second.id}, { "WebFetch" })`);
+  assert.equal(replaced.evaluate('ClaudeWoWRollFrame.shown'), 'false', 'the replaced roll does not flash back');
+  assert.equal(replaced.evaluate('#STUB.played'), '0', 'and plays no sound');
+  assert.equal(replaced.evaluate('ClaudeWoWRoll.Current()'), null);
   const before = replaced.num('ClaudeWoWDB.lastSeq');
   replaced.run(`${POPUP}.OnAccept(STUB.FIRST, STUB.FIRST.data)`);
   assert.equal(replaced.num('ClaudeWoWDB.lastSeq'), before, 'a confirm another one replaced cannot grant');
   assert.equal(replaced.evaluate('ClaudeWoWDB.chats[1].pendingId'), null);
-  assert.equal(replaced.evaluate('ClaudeWoWRoll.Current().chatId'), replaced.evaluate('ClaudeWoWDB.chats[1].id'), 'its roll came back');
+  cancel(replaced);
+  assert.equal(
+    replaced.evaluate('ClaudeWoWRoll.Current().chatId'),
+    replaced.evaluate('ClaudeWoWDB.chats[1].id'),
+    'its roll comes back when the new confirm closes',
+  );
+});
+
+test('when a newer confirm is accepted, the roll it replaced comes back', () => {
+  const vm = newVM();
+  deliverDenial(vm, ['Bash(git:*)']);
+  clickNeed(vm);
+  vm.run('ClaudeWoW.NewChat("second")');
+  const second = deliverDenial(vm, ['WebFetch'], 'claude', 2);
+  vm.run(`ClaudeWoW.ConfirmAllow("${second.chatId}", ${second.id}, { "WebFetch" })`);
+  assert.equal(vm.evaluate('ClaudeWoWRoll.Current()'), null);
+  accept(vm);
+  assert.ok(stripFlags(vm).some(r => r.flags.includes('allow=WebFetch')));
+  assert.equal(vm.evaluate('ClaudeWoWRoll.Current().chatId'), vm.evaluate('ClaudeWoWDB.chats[1].id'));
+});
+
+test('opening the same confirm again changes nothing', () => {
+  const vm = newVM();
+  const { chatId, id } = deliverDenial(vm, ['Bash(git:*)']);
+  clickNeed(vm);
+  vm.run('STUB.FIRST = STUB.popup; STUB.played = {}');
+  vm.run(`STUB.ClickLink("|Haddon:claudewow:roll:${chatId}:${id}:need|h[Need]|h")`);
+  assert.equal(vm.evaluate('STUB.popup == STUB.FIRST'), 'true', 'no second dialog');
+  assert.equal(vm.evaluate('ClaudeWoWRollFrame.shown'), 'false', 'the roll stays parked');
+  assert.equal(vm.evaluate('#STUB.played'), '0');
+  accept(vm);
+  assert.ok(
+    stripFlags(vm).some(r => r.flags.includes('allow=')),
+    'the first dialog still grants',
+  );
+});
+
+test('the grant goes only to the agent and plugin the confirm named', () => {
+  for (const change of ['ClaudeWoWDB.chats[1].agent = "grok"', 'ClaudeWoWDB.chats[1].plugin = "ask"']) {
+    const vm = newVM();
+    vm.run('ClaudeWoWDB.chats[1].agent = "claude"');
+    deliverDenial(vm, ['Bash(git:*)']);
+    clickNeed(vm);
+    assert.match(vm.evaluate('STUB.popup.text'), /^Always allow this, for Claude\?/);
+    vm.run(change);
+    const seq = vm.num('ClaudeWoWDB.lastSeq');
+    accept(vm);
+    assert.equal(vm.num('ClaudeWoWDB.lastSeq'), seq, `${change}: nothing is granted`);
+    assert.ok(!stripFlags(vm).some(r => /(^|;)allow=/.test(r.flags)), change);
+  }
+});
+
+test('an agent name with a pipe cannot rewrite the confirm or the roll text', () => {
+  const vm = newVM();
+  vm.run('ClaudeWoWDB.chats[1].agent = "x|cffff0000y|Hevil|h"');
+  deliverDenial(vm, ['Bash(git:*)'], 'x|cffff0000y');
+  assert.doesNotMatch(vm.evaluate('ClaudeWoWRollFrame.Details.Text.text'), /\|cffff0000|\|H/);
+  clickNeed(vm);
+  assert.doesNotMatch(vm.evaluate('STUB.popup.text'), /\|/);
+});
+
+test('the details are laid out after the frame is shown, so the first roll has its height', () => {
+  const vm = newVM({
+    prelude: `do
+      local probe = CreateFrame("Frame")
+      local mt = getmetatable(probe)
+      local base = mt.__index
+      mt.__index = function(t, k)
+        if k == "GetStringHeight" then
+          return function(self)
+            local f = self
+            while f do if f.shown == false then return 0 end f = f.parent end
+            return 28
+          end
+        end
+        return base(t, k)
+      end
+    end`,
+  });
+  deliverDenial(vm, ['Bash(git:*)']);
+  assert.equal(vm.num('ClaudeWoWRollFrame.Details.height'), 28 + 12);
 });
 
 test('a confirm that cannot open puts the roll back and grants nothing', () => {
@@ -427,7 +511,10 @@ test('a live chat offers Greed and Pass only, and Need there is a once-only allo
 });
 
 test('the roll frame sits on the group loot frames when the game has them, else at its own spot', () => {
-  const vm = newVM({ prelude: 'GroupLootContainer = CreateFrame("Frame", "GroupLootContainer", UIParent)' });
+  const vm = newVM({
+    prelude:
+      'GroupLootContainer = CreateFrame("Frame", "GroupLootContainer", UIParent); GroupLootContainer:SetSize(200, 40); GroupLootContainer:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, 150)',
+  });
   deliverDenial(vm, ['Bash(git:*)']);
   assert.equal(vm.evaluate('ClaudeWoWRollFrame.point'), 'BOTTOM');
   assert.equal(vm.evaluate('ClaudeWoWRollFrame.rel == GroupLootContainer'), 'true');
@@ -437,6 +524,24 @@ test('the roll frame sits on the group loot frames when the game has them, else 
   assert.equal(plain.evaluate('ClaudeWoWRollFrame.point'), 'BOTTOM');
   assert.equal(plain.evaluate('ClaudeWoWRollFrame.rel == UIParent'), 'true');
   assert.equal(plain.num('ClaudeWoWRollFrame.y'), 240);
+
+  for (const prelude of [
+    'GroupLootContainer = CreateFrame("Frame", "GroupLootContainer", UIParent)',
+    'GroupLootContainer = CreateFrame("Frame", "GroupLootContainer", UIParent); GroupLootContainer:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, 150); GroupLootContainer:Hide()',
+  ]) {
+    const idle = newVM({ prelude });
+    deliverDenial(idle, ['Bash(git:*)']);
+    assert.equal(idle.evaluate('ClaudeWoWRollFrame.rel == UIParent'), 'true', `${prelude}: an unplaced or hidden container is not used`);
+    assert.equal(idle.num('ClaudeWoWRollFrame.y'), 240);
+  }
+
+  const later = newVM({ prelude: 'GroupLootContainer = CreateFrame("Frame", "GroupLootContainer", UIParent)' });
+  deliverDenial(later, ['Bash(git:*)']);
+  assert.equal(later.evaluate('ClaudeWoWRollFrame.rel == UIParent'), 'true');
+  later.run('ClaudeWoWRollFrame.PassButton.scripts.OnClick(ClaudeWoWRollFrame.PassButton)');
+  later.run('GroupLootContainer:SetSize(200, 40); GroupLootContainer:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, 150)');
+  deliverDenial(later, ['Bash(git:*)']);
+  assert.equal(later.evaluate('ClaudeWoWRollFrame.rel == GroupLootContainer'), 'true', 'each roll is placed again');
 });
 
 test('a queued roll whose confirm is already open from a link stays parked, so its timer never runs', () => {

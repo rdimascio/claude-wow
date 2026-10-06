@@ -499,7 +499,7 @@ end
 function M.ShowLayer(name)
 	local l = FindLayer(name)
 	if not l then Print("No layer named " .. tostring(name) .. "."); return end
-	routeAllowed, offered = true, nil
+	if l.ordered and #l.points > 0 then routeAllowed, offered = true, nil end
 	DB().hidden[name] = nil
 	if l.ordered and #l.points > 0 and (not mdb.nav or mdb.nav.layer ~= name) then mdb.nav = { layer = name, index = 1 } end
 	M.UpdateNavigator()

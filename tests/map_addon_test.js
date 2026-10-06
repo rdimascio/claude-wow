@@ -110,6 +110,18 @@ test('pins land where the points are, on the zone map and on the continent', () 
 
 const clickStart = vm => vm.run('local b = ClaudeWoWNavigator.start; b.scripts.OnClick(b)');
 
+test('showing a node layer does not count as starting a route: the next route is still offered with Start', () => {
+  const vm = newVM();
+  const NODES = `{ epoch = "e1", version = 1, char = "Testchar-TestRealm", layers = { { name = "herbs", title = "Herbs", ordered = false, points = {
+    { 1432, 40, 40, "Peacebloom", "herb" } } } } }`;
+  vm.run(`ClaudeWoWMap.Sync(${NODES})`);
+  vm.run('ClaudeWoWMap.ShowLayer("herbs")');
+  vm.run(`ClaudeWoWMap.Sync(${LAYER.replace('version = 1', 'version = 2')})`);
+  assert.equal(vm.evaluate('ClaudeWoWMapDB.nav'), null, 'the route did not start on its own');
+  assert.equal(vm.evaluate('ClaudeWoWMap.Offered()'), 'mining');
+  assert.equal(vm.evaluate('ClaudeWoWNavigator.start.shown'), 'true');
+});
+
 test('the first route of a session asks before it starts; later routes start on their own', () => {
   const vm = newVM();
   vm.run(`ClaudeWoWMap.Sync(${LAYER})`);
