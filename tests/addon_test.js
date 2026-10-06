@@ -3775,7 +3775,7 @@ test('the effort button above Send shows the chat effort, sets it for this chat,
   nextSlot(vm, '{ now = time(), cwd = "/Users/me/every", replies = {} }');
   vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
   vm.run('ClaudeWoW.Toggle()');
-  const label = () => vm.evaluate('ClaudeWoW.UI.effort:GetText()');
+  const label = () => vm.evaluate('ClaudeWoW.UI.effort.text:GetText()').replace(/\|c[0-9a-f]{8}|\|r/g, '');
   assert.equal(label(), 'Effort: default');
   assert.equal(vm.evaluate('ClaudeWoW.UI.effort.shown'), 'true');
   const click = () => vm.run('ClaudeWoW.UI.effort:GetScript("OnClick")(ClaudeWoW.UI.effort)');
