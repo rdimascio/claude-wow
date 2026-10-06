@@ -69,6 +69,10 @@ if (argv[0] === '--version' || argv[0] === '-v') {
   require('./goalsmcp').main(argv.slice(1));
 } else if (argv[0] === 'factory-mcp') {
   require('./factory').main(argv.slice(1));
+} else if (argv[0] === 'contract-mcp') {
+  require('../dev/contract-mcp').main(argv.slice(1));
+} else if (argv[0] === 'agents') {
+  require('./agentcontract').main(argv.slice(1));
 } else if (argv[0] === 'local-agent') {
   require('./localagent').main(argv.slice(1));
 } else if (argv[0] === 'handoff') {
@@ -103,7 +107,7 @@ if (argv[0] === '--version' || argv[0] === '-v') {
 } else {
   if (argv.includes('--help') || argv.includes('-h'))
     console.log(
-      'claude-wow setup [...]   game-side install (setup.js)\nclaude-wow service <cmd> background service (install, uninstall, start, stop, restart, status, logs)\nclaude-wow update [--check]  install the latest release binary now (the bridge also checks once a day)\nclaude-wow dev <cmd>    releases for a developer machine (deploy [ref|worktree], rollback, status; docs/MIGRATE-PROD-INSTALL.md)\nclaude-wow bridge [...]  the bridge alone in this process, without the restarts\nclaude-wow channel      the live-session channel server Claude Code starts (docs/LIVE-SESSION.md)\nclaude-wow data sync    fetch client tables from wago.tools into the home folder (--flavor forever or classic_era)\nclaude-wow data-mcp     the read-only wowdata MCP server the bridge gives ask runs\nclaude-wow goals-mcp    the per-run wowgoals MCP server the bridge gives ask runs\nclaude-wow factory-mcp  the per-run wowfactory MCP server the bridge gives dispatcher coding runs\nclaude-wow local-agent  the local agent: a chat answered by an OpenAI-compatible server such as llama-server\nclaude-wow handoff [folder] [--stop]  hand the Claude Code sessions running in a repository to the game (/claude -r all)\nclaude-wow events [--follow] [--min N]  game events from the telemetry, one JSON line each\nclaude-wow report [--day [YYYY-MM-DD]]  a day of game events, orders and goal progress, from the goals folder\n',
+      'claude-wow setup [...]   game-side install (setup.js)\nclaude-wow service <cmd> background service (install, uninstall, start, stop, restart, status, logs)\nclaude-wow update [--check]  install the latest release binary now (the bridge also checks once a day)\nclaude-wow dev <cmd>    releases for a developer machine (deploy [ref|worktree], rollback, status; docs/MIGRATE-PROD-INSTALL.md)\nclaude-wow bridge [...]  the bridge alone in this process, without the restarts\nclaude-wow channel      the live-session channel server Claude Code starts (docs/LIVE-SESSION.md)\nclaude-wow data sync    fetch client tables from wago.tools into the home folder (--flavor forever or classic_era)\nclaude-wow data-mcp     the read-only wowdata MCP server the bridge gives ask runs\nclaude-wow goals-mcp    the per-run wowgoals MCP server the bridge gives ask runs\nclaude-wow factory-mcp  the per-run wowfactory MCP server the bridge gives dispatcher coding runs\nclaude-wow agents check [--agent claude|codex]  probe the MCP behaviors the bridge relies on in the installed Claude Code and Codex, and write agent-contract.json\nclaude-wow contract-mcp  the stdio MCP fixture server agents check runs\nclaude-wow local-agent  the local agent: a chat answered by an OpenAI-compatible server such as llama-server\nclaude-wow handoff [folder] [--stop]  hand the Claude Code sessions running in a repository to the game (/claude -r all)\nclaude-wow events [--follow] [--min N]  game events from the telemetry, one JSON line each\nclaude-wow report [--day [YYYY-MM-DD]]  a day of game events, orders and goal progress, from the goals folder\n',
     );
   supervise();
 }
@@ -113,9 +117,10 @@ function supervise() {
   const UPD = require('./selfupdate');
   const SERVICE = process.env.CLAUDE_WOW_SERVICE === '1';
   const dirs = svc.dirs();
+  const BRIDGE_LOG = require('./home').resolve().log;
+  svc.secureServiceLogs(dirs, { bridgeLog: BRIDGE_LOG });
   const out = SERVICE ? new svc.RotatingLog(svc.serviceLogFile(dirs)) : null;
   const say = line => (out ? out.write(line + '\n') : console.log(line));
-  const BRIDGE_LOG = require('./home').resolve().log;
   const started = Date.now();
   let child = null;
   let stopping = false;

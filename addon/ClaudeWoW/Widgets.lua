@@ -42,12 +42,16 @@ local wdb
 local running = {}
 local failures = {}
 local containers = {}
+local skipped = {}
+
+W.POPUP = "CLAUDEWOW_WIDGET"
+W.TITLE_MAX = 60
 
 local function Print(msg)
 	if ClaudeWoW and ClaudeWoW.Print then
-		ClaudeWoW.Print(msg, "Claude WoW ui")
+		ClaudeWoW.Print(msg)
 	else
-		print("|cff66ccff[Claude WoW ui]|r " .. msg)
+		print("|cff66ccff[Azeroth Companion]|r " .. msg)
 	end
 end
 
@@ -62,6 +66,7 @@ local function DB()
 		wdb = ClaudeWoWWidgetDB
 		wdb.removed = wdb.removed or {}
 		wdb.data = wdb.data or {}
+		wdb.approved = type(wdb.approved) == "table" and wdb.approved or {}
 	end
 	return wdb
 end
@@ -111,18 +116,10 @@ local GAME_FUNCTIONS = {
 	"IsFalling", "IsStealthed", "IsIndoors", "IsOutdoors", "IsSpellKnown", "IsPlayerSpell", "IsUsableSpell", "IsCurrentSpell",
 	"IsSpellInRange", "IsItemInRange", "IsAutoRepeatSpell", "IsEquippedItem", "IsShiftKeyDown", "IsControlKeyDown",
 	"IsAltKeyDown", "IsModifierKeyDown", "IsMouseButtonDown", "HasFullControl", "CheckInteractDistance", "HasPetUI",
-	"PlaySound", "PlaySoundFile", "GetUnitName", "GetRaidTargetIndex",
+	"GetUnitName", "GetRaidTargetIndex",
 }
 
 local DATA_TABLES = { "RAID_CLASS_COLORS", "CLASS_ICON_TCOORDS", "ITEM_QUALITY_COLORS", "FACTION_BAR_COLORS", "PowerBarColor", "Enum", "SOUNDKIT" }
-
-local FONT_OBJECTS = {
-	"GameTooltipText", "GameTooltipTextSmall", "GameTooltipHeaderText", "Tooltip_Med", "Tooltip_Small", "TextStatusBarText",
-	"ChatFontNormal", "ChatFontSmall",
-}
-W.FONT_OBJECTS = FONT_OBJECTS
-
-local FONT_FAMILY_PATTERNS = { "^GameFont%u", "^NumberFont%u", "^SystemFont_", "^QuestFont" }
 
 local TEMPLATES = {
 	"BackdropTemplate", "TooltipBackdropTemplate", "TooltipBorderedFrameTemplate", "BasicFrameTemplate", "BasicFrameTemplateWithInset",
@@ -149,7 +146,9 @@ local TOOLTIP_METHODS = {
 	"SetInventoryItem", "SetBagItem", "SetMinimumWidth", "SetPoint", "ClearAllPoints",
 }
 
-local UNIT_WRITER_VERBS = { "Set", "Switch", "Clear", "Popup", "Frame", "Select", "Toggle", "Use", "Cast", "Target" }
+local TIMER_CONSTRUCTORS = { "NewTicker", "NewTimer" }
+
+local UNIT_WRITER_VERBS ={ "Set", "Switch", "Clear", "Popup", "Frame", "Select", "Toggle", "Use", "Cast", "Target" }
 
 local READ_ONLY_MEMBER_PATTERNS = { "^Get%u", "^Is%u", "^Has%u", "^Can%u", "^Does%u", "^Find%u", "^Are%u", "^Should%u" }
 
@@ -165,7 +164,6 @@ local GAME_FUNCTION = NameSet(GAME_FUNCTIONS)
 local DATA_TABLE = NameSet(DATA_TABLES)
 local TEMPLATE = NameSet(TEMPLATES)
 local FRAME_KIND = NameSet(FRAME_KINDS)
-local FONT_OBJECT = NameSet(FONT_OBJECTS)
 local UNIT_WRITER_VERB = NameSet(UNIT_WRITER_VERBS)
 
 local function Blocked(name)
@@ -516,6 +514,10 @@ local function NewMembrane(widget)
 	return membrane
 end
 
+local function NamespaceAdmits(field)
+	return not DENIED[field] and IsReadOnlyMember(field)
+end
+
 local function NamespaceProxy(namespaceName, namespace, membrane)
 	local exported = {}
 	return setmetatable({}, {
@@ -525,7 +527,7 @@ local function NamespaceProxy(namespaceName, namespace, membrane)
 			local kind = type(value)
 			if kind == "table" then return nil end
 			if kind ~= "function" then return value end
-			if not IsReadOnlyMember(field) then return Blocked(namespaceName .. "." .. tostring(field)) end
+			if not NamespaceAdmits(field) then return Blocked(namespaceName .. "." .. tostring(field)) end
 			exported[field] = exported[field] or membrane.ExportFunction(value)
 			return exported[field]
 		end,
@@ -568,7 +570,7 @@ local function WidgetTimers(widget)
 	timers.After = function(delay, fn)
 		C_Timer.After(delay, Guarded(widget, function() return fn() end))
 	end
-	for _, constructor in ipairs({ "NewTicker", "NewTimer" }) do
+	for _, constructor in ipairs(TIMER_CONSTRUCTORS) do
 		if C_Timer[constructor] then
 			timers[constructor] = function(delay, fn, iterations)
 				local proxy
@@ -592,12 +594,11 @@ local function IsUnitReader(key)
 	return not UNIT_WRITER_VERB[verb]
 end
 
-local function IsFontName(key)
-	if FONT_OBJECT[key] then return true end
-	for _, pattern in ipairs(FONT_FAMILY_PATTERNS) do
-		if key:find(pattern) then return true end
-	end
-	return false
+local function FunctionAdmission(key)
+	if DENIED[key] then return nil end
+	if LUA_FUNCTION[key] then return "lua" end
+	if GAME_FUNCTION[key] or IsUnitReader(key) then return "game" end
+	return nil
 end
 
 local function Resolve(key, membrane)
@@ -605,15 +606,16 @@ local function Resolve(key, membrane)
 	local kind = type(value)
 	if kind == "string" or kind == "number" or kind == "boolean" then return value end
 	if kind == "function" then
-		if LUA_FUNCTION[key] then return value end
-		if GAME_FUNCTION[key] or IsUnitReader(key) then return membrane.ExportFunction(value) end
+		local admission = FunctionAdmission(key)
+		if admission == "lua" then return value end
+		if admission == "game" then return membrane.ExportFunction(value) end
 		return nil
 	end
 	if kind ~= "table" then return nil end
 	if SHARED_LIBRARY[key] then return ShallowCopy(value) end
 	if DATA_TABLE[key] then return DeepCopy(value) end
 	if key:find("^C_%a") then return NamespaceProxy(key, value, membrane) end
-	if IsFontName(key) and IsFontObject(value) then return membrane.Font(value) end
+	if IsFontObject(value) then return membrane.Font(value) end
 	return nil
 end
 
@@ -640,6 +642,109 @@ local function NewEnvironment(widget, membrane)
 		__metatable = false,
 	})
 	return env
+end
+
+local GLOBALS_MAX = 6000
+W.GLOBALS_MAX = GLOBALS_MAX
+local AUDITED_FUNCTION_PATTERNS = { "^Unit%u", "^Get%u", "^Is%u", "^Has%u", "^Can%u" }
+
+local function MatchesAny(key, patterns)
+	for _, pattern in ipairs(patterns) do
+		if key:find(pattern) then return true end
+	end
+	return false
+end
+
+local TIMER_FUNCTION = NameSet(TIMER_CONSTRUCTORS)
+TIMER_FUNCTION.After = true
+
+local function AuditedFieldAdmits(key, field)
+	if key == "C_Timer" then return TIMER_FUNCTION[field] == true end
+	return NamespaceAdmits(field)
+end
+
+local function AuditNamespace(key, namespace, add)
+	pcall(function()
+		for field, member in pairs(namespace) do
+			if type(field) == "string" and type(member) == "function" then add(key .. "." .. field, AuditedFieldAdmits(key, field)) end
+		end
+	end)
+end
+
+local function AuditedGlobals()
+	local admitted, refused = {}, {}
+	local function Add(name, admits)
+		local list = admits and admitted or refused
+		list[#list + 1] = name
+	end
+	for key, value in pairs(_G) do
+		if type(key) == "string" and not key:find("^ClaudeWoW") then
+			local kind = type(value)
+			if kind == "function" then
+				local admits = FunctionAdmission(key) ~= nil
+				if admits or MatchesAny(key, AUDITED_FUNCTION_PATTERNS) then Add(key, admits) end
+			elseif kind == "table" and key:find("^C_%a") then
+				AuditNamespace(key, value, Add)
+			elseif kind == "table" and IsFontObject(value) then
+				Add(key, true)
+			end
+		end
+	end
+	table.sort(admitted)
+	table.sort(refused)
+	return admitted, refused
+end
+
+local function FirstNames(list, room)
+	local kept = {}
+	for i = 1, math.min(#list, math.max(room, 0)) do kept[i] = list[i] end
+	return kept
+end
+
+local function ClientBuild()
+	if type(GetBuildInfo) ~= "function" then return "?", "?", 0 end
+	local ok, version, build, _, interface = pcall(GetBuildInfo)
+	if not ok then return "?", "?", 0 end
+	return tostring(version or "?"), tostring(build or "?"), tonumber(interface) or 0
+end
+
+function W.DumpGlobals()
+	local admitted, refused = AuditedGlobals()
+	local keptAdmitted = FirstNames(admitted, GLOBALS_MAX)
+	local keptRefused = FirstNames(refused, GLOBALS_MAX - #keptAdmitted)
+	local version, build, interface = ClientBuild()
+	local refusedCount = #refused
+	local total = #admitted + refusedCount
+	local saved = #keptAdmitted + #keptRefused
+	local dump = {
+		version = version,
+		build = build,
+		interface = interface,
+		at = type(time) == "function" and time() or 0,
+		total = total,
+		saved = saved,
+		admittedCount = #admitted,
+		refusedCount = refusedCount,
+		truncated = saved < total,
+		admitted = keptAdmitted,
+		refused = keptRefused,
+	}
+	DB().globals = dump
+	return dump
+end
+
+function W.GlobalsCommand(arg)
+	local verb = (arg or ""):lower():match("^%s*(%S*)") or ""
+	if verb == "clear" then
+		DB().globals = nil
+		return "Dropped the saved global names. /reload writes the change to disk."
+	end
+	if verb ~= "" then return "Usage: /claude dev globals saves the names widgets can and cannot use; /claude dev globals clear drops them." end
+	local dump = W.DumpGlobals()
+	return string.format(
+		"Saved %d of %d global names (%d a widget can use, %d it cannot) for client %s (%s). /reload writes them to disk; then run npm run audit:widgets in the claude-wow checkout. /claude dev globals clear drops them.",
+		dump.saved, dump.total, dump.admittedCount, dump.refusedCount, dump.version, dump.build
+	)
 end
 
 local function Compile(source, name, env)
@@ -689,8 +794,27 @@ function W.Stop(widget)
 	if running[widget.name] == widget then running[widget.name] = nil end
 end
 
+local function Approved(item)
+	local approval = DB().approved[item.name]
+	return type(approval) == "table" and approval.rev == item.rev and approval.source == item.source
+end
+
+local function Approve(item)
+	DB().approved[item.name] = { rev = item.rev, source = item.source }
+	skipped[item.name] = nil
+end
+
+local function SameCode(item, data)
+	return type(data) == "table" and item.rev == data.rev and item.source == data.source
+end
+
+local function Display(s)
+	return (tostring(s or ""):gsub("|", "¦"))
+end
+
 function W.Start(item, announce)
-	local widget = { name = item.name, title = item.title or item.name, rev = item.rev, frames = {}, timers = {}, containerScripts = {} }
+	if not Approved(item) then return false end
+	local widget = { name = item.name, title = item.title or item.name, rev = item.rev, source = item.source, frames = {}, timers = {}, containerScripts = {} }
 	widget.frame = Container(item.name)
 	widget.frame:Show()
 	failures[item.name] = nil
@@ -723,7 +847,7 @@ function W.Apply(announce)
 	for _, item in ipairs(Items()) do wanted[item.name] = item end
 	for name, widget in pairs(running) do
 		local item = wanted[name]
-		if not item or item.rev ~= widget.rev or d.removed[name] == item.rev then
+		if not item or item.rev ~= widget.rev or item.source ~= widget.source or d.removed[name] == item.rev then
 			W.Stop(widget)
 			if not item and announce then Report(name .. " was removed by the agent.") end
 		end
@@ -731,13 +855,102 @@ function W.Apply(announce)
 	for name, rev in pairs(d.removed) do
 		if not wanted[name] or wanted[name].rev ~= rev then d.removed[name] = nil end
 	end
+	for name in pairs(d.approved) do
+		if not wanted[name] or not Approved(wanted[name]) then d.approved[name] = nil end
+	end
 	for _, item in ipairs(Items()) do
 		local failure = failures[item.name]
 		local failedThisRevision = failure and failure.rev == item.rev
-		if not d.removed[item.name] and not running[item.name] and not failedThisRevision then
+		if not d.removed[item.name] and not running[item.name] and not failedThisRevision and Approved(item) then
 			W.Start(item, announce)
 		end
 	end
+	W.PromptNext()
+end
+
+function W.Waiting()
+	local d = DB()
+	local list = {}
+	for _, item in ipairs(Items()) do
+		if not Approved(item) and d.removed[item.name] ~= item.rev then list[#list + 1] = item end
+	end
+	return list
+end
+
+W.RETRY_SECONDS = 2
+
+local function RetryLater()
+	if W.retrying or not (C_Timer and C_Timer.After) then return end
+	W.retrying = true
+	C_Timer.After(W.RETRY_SECONDS, function()
+		W.retrying = nil
+		W.PromptNext()
+	end)
+end
+
+function W.PromptNext()
+	if W.asking or type(StaticPopup_Show) ~= "function" then return false end
+	for _, item in ipairs(W.Waiting()) do
+		if skipped[item.name] ~= item.rev then
+			local data = { name = item.name, rev = item.rev, source = item.source }
+			W.asking = data
+			local dialog = StaticPopup_Show(W.POPUP, Display(item.title):sub(1, W.TITLE_MAX), nil, data)
+			if dialog then return true end
+			W.asking = nil
+			RetryLater()
+			return false
+		end
+	end
+	return false
+end
+
+local function Current(data)
+	if type(data) ~= "table" then return nil end
+	local item = FindItem(data.name)
+	if not item or not SameCode(item, data) or DB().removed[item.name] == item.rev then return nil end
+	return item
+end
+
+function W.Approve(data)
+	local item = Current(data)
+	if not item then return false end
+	Approve(item)
+	failures[item.name] = nil
+	if running[item.name] then W.Stop(running[item.name]) end
+	return W.Start(item, true)
+end
+
+function W.Decline(data)
+	local item = Current(data)
+	if not item then return false end
+	DB().removed[item.name] = item.rev
+	if running[item.name] then W.Stop(running[item.name]) end
+	Print(string.format("%s stays hidden. /claude config ui run %s shows it.", item.name, item.name))
+	return true
+end
+
+function W.PopupHidden(data)
+	local item = Current(data)
+	if item and not Approved(item) then skipped[item.name] = item.rev end
+	W.asking = nil
+	if C_Timer and C_Timer.After then C_Timer.After(0, W.PromptNext) end
+end
+
+if type(StaticPopupDialogs) == "table" then
+	StaticPopupDialogs[W.POPUP] = {
+		text = "Show the agent's '%s' widget?",
+		button1 = "Show",
+		button2 = "Not Now",
+		timeout = 0,
+		whileDead = true,
+		hideOnEscape = true,
+		noCancelOnEscape = true,
+		OnAccept = function(_, data) W.Approve(data) end,
+		OnCancel = function(dialog, data, reason)
+			if dialog and reason == "clicked" then W.Decline(data) end
+		end,
+		OnHide = function(dialog) W.PopupHidden(dialog and dialog.data) end,
+	}
 end
 
 function W.Sync(set)
@@ -762,6 +975,7 @@ function W.Status(name)
 	if DB().removed[name] == item.rev then return "removed" end
 	local failure = failures[name]
 	if failure and failure.rev == item.rev then return "failed", failure.err end
+	if not Approved(item) then return "waiting" end
 	return "stopped"
 end
 
@@ -773,9 +987,9 @@ local function List()
 	end
 	for _, item in ipairs(items) do
 		local status, err = W.Status(item.name)
-		Print(string.format("%s  %s  (%s%s, %d bytes)", item.name, item.title, status, err and (": " .. err) or "", #item.source))
+		Print(string.format("%s  %s  (%s%s, %d bytes)", item.name, item.title, status == "waiting" and "waiting for your OK" or status, err and (": " .. err) or "", #item.source))
 	end
-	Print("commands: /claude config ui list, /claude config ui remove <name>, /claude config ui run <name>")
+	Print("commands: /claude config ui list, /claude config ui remove <name>, /claude config ui run <name> (run also says yes to a waiting widget)")
 end
 
 function W.Remove(name)
@@ -790,8 +1004,29 @@ function W.Run(name)
 	local item = FindItem(name)
 	if not item then Print("no widget " .. tostring(name)); return end
 	DB().removed[name] = nil
+	Approve(item)
 	if running[name] then W.Stop(running[name]) end
 	W.Start(item, true)
+end
+
+function W.Show(data)
+	local item = type(data) == "table" and FindItem(data.name)
+	if not item or not SameCode(item, data) then
+		W.PromptNext()
+		return false
+	end
+	DB().removed[item.name] = nil
+	failures[item.name] = nil
+	return W.Approve(data)
+end
+
+function W.Rows()
+	local rows = {}
+	for _, item in ipairs(Items()) do
+		local status, err = W.Status(item.name)
+		rows[#rows + 1] = { name = item.name, title = item.title, rev = item.rev, source = item.source, status = status, err = err }
+	end
+	return rows
 end
 
 function W.Command(msg)

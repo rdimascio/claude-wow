@@ -42,6 +42,7 @@ function scratch(name) {
 // once the grandchild is up it reports both pids: on stdout, or into `file`.
 function stubborn(file) {
   return `
+    if (process.argv.includes('--version')) process.exit(0);
     process.on('SIGTERM', () => {});
     const { spawn } = require('child_process');
     const g = spawn(process.execPath, ['-e', "process.on('SIGTERM', () => {}); process.stdout.write('up\\\\n'); setInterval(() => {}, 1000)"], { stdio: ['ignore', 'pipe', 'ignore'] });

@@ -100,15 +100,26 @@ function markHandled(state, job, now = Date.now()) {
   (state.seen = state.seen || {})[key] = now;
 }
 
+const LATE_IN_MAX = 3600;
 const RECENT_ACKS_MAX = 24;
 const RECENT_ACK_MS = 10 * 60 * 1000;
 
-function noteAck(acks, job, now = Date.now()) {
+const OPEN_RESULTS = ['ok', 'refused'];
+
+function noteAck(acks, job, now = Date.now(), result = null) {
   const id = Number(job && job.id);
   if (!Number.isInteger(id) || id <= 0) return acks;
   const session = String((job && job.session) || '');
-  const kept = acks.filter(a => now - a.at < RECENT_ACK_MS && !(a.id === id && a.session === session));
-  return [...kept, { session, id, at: now }].slice(-RECENT_ACKS_MAX);
+  const same = a => a.id === id && a.session === session;
+  const prev = acks.find(same);
+  const entry = { session, id, at: now };
+  const open = result && OPEN_RESULTS.includes(result.open) ? result : prev && prev.open ? prev : null;
+  if (open) {
+    entry.open = open.open;
+    if (open.open === 'refused') entry.why = String(open.why || '').slice(0, 80);
+  }
+  const kept = acks.filter(a => now - a.at < RECENT_ACK_MS && !same(a));
+  return [...kept, entry].slice(-RECENT_ACKS_MAX);
 }
 
 function recentAcks(acks, now = Date.now()) {
@@ -502,10 +513,13 @@ function addonDiskInfo(tocText) {
 // `cwd` is left as typed; the bridge resolves it against its default folder.
 // The ctx field is only there when the flags say "c" (older addons never set
 // it), so a separator inside the text can't be mistaken for it.
+const CHAT_ID_RE = /^[0-9a-zA-Z]*$/;
+
 function jobsFromStrip(headerId, payload) {
   const jobs = [];
   for (const rec of String(payload).split('\x1E')) {
     const p = rec.split('\x1F');
+    if (p.length >= 6 && !CHAT_ID_RE.test(p[1])) continue;
     if (p.length >= 7 && /^\d+$/.test(p[2])) {
       const flags = parseFlags(p[4]);
       const withCtx = flags.context && p.length >= 8;
@@ -1125,6 +1139,32 @@ function luaSession(s) {
 
 const ALIVE_MAX = 30;
 
+const EFFORT_KEY_RE = /^[a-z0-9_-]{1,32}$/;
+const EFFORT_VALUE_RE = /^[a-z]{0,16}$/;
+
+function luaEffortRow(row) {
+  if (!row || typeof row !== 'object') return null;
+  const cells = Object.entries(row)
+    .filter(([k, v]) => EFFORT_KEY_RE.test(k) && typeof v === 'string' && EFFORT_VALUE_RE.test(v))
+    .map(([k, v]) => `[${luaStr(k)}] = ${luaStr(v)}`);
+  return `{ ${cells.join(', ')} }`;
+}
+
+function luaEfforts(efforts, lock) {
+  const out = [];
+  if (efforts && typeof efforts === 'object') {
+    const rows = Object.entries(efforts)
+      .filter(([k]) => EFFORT_KEY_RE.test(k))
+      .map(([k, row]) => [k, luaEffortRow(row)])
+      .filter(([, row]) => row)
+      .map(([k, row]) => `[${luaStr(k)}] = ${row}`);
+    out.push(`\tefforts = { ${rows.join(', ')} },`);
+  }
+  const lockRow = luaEffortRow(lock);
+  if (lockRow) out.push(`\teffortLock = ${lockRow},`);
+  return out;
+}
+
 function luaTable(globalName, records, opts = {}) {
   const now = opts.now || Date.now();
   const agents = Array.isArray(opts.agents) ? opts.agents : [];
@@ -1144,6 +1184,7 @@ function luaTable(globalName, records, opts = {}) {
     '\tcancel = true,',
     '\treplies = {',
   ];
+  if (opts.openUrl === true) lines.splice(lines.length - 1, 0, '\topenUrl = true,');
   if (transport === 'screenshot') {
     const lv = screenshotLevels(opts.levels);
     lines.splice(lines.length - 1, 0, `\tstrip = { on = ${lv.on}, off = ${lv.off}, codec = ${stripCodec(opts.codec)} },`);
@@ -1155,6 +1196,8 @@ function luaTable(globalName, records, opts = {}) {
   // Why a bridge is on the pixel transport when nobody asked for it (transportFallback);
   // the addon shows it in /claude-wow diag.
   if (opts.transportNote) lines.splice(lines.length - 1, 0, `\ttransportNote = ${luaStr(opts.transportNote)},`);
+  const efforts = luaEfforts(opts.efforts, opts.effortLock);
+  if (efforts.length) lines.splice(lines.length - 1, 0, ...efforts);
   if (opts.bridge && typeof opts.bridge === 'object') {
     const b = opts.bridge;
     lines.splice(
@@ -1206,6 +1249,15 @@ function luaTable(globalName, records, opts = {}) {
       );
     lines.splice(lines.length - 1, 0, `\tmcp = { ${rows.join(', ')} },`);
   }
+  if (opts.contract && typeof opts.contract === 'object') {
+    const rows = Object.entries(opts.contract)
+      .filter(([id, c]) => /^[a-z]{1,16}$/.test(id) && c && typeof c === 'object')
+      .map(
+        ([id, c]) =>
+          `${id} = { version = ${luaStr(String(c.version || '').slice(0, 40))}, checked = ${c.checked ? 'true' : 'false'}, off = ${c.off === false ? 'false' : 'true'}, reason = ${luaStr(String(c.reason || '').slice(0, 400))} }`,
+      );
+    lines.splice(lines.length - 1, 0, `\tcontract = { ${rows.join(', ')} },`);
+  }
   if (opts.home) lines.splice(lines.length - 1, 0, `\thome = ${luaStr(opts.home)},`);
   if (Array.isArray(opts.skills) && opts.skills.length) {
     lines.splice(lines.length - 1, 0, `\tskills = { ${opts.skills.map(luaStr).join(', ')} },`);
@@ -1222,7 +1274,13 @@ function luaTable(globalName, records, opts = {}) {
   }
   if (Array.isArray(opts.acks)) {
     const acks = opts.acks.filter(a => a && Number.isInteger(a.id) && a.id > 0);
-    lines.splice(lines.length - 1, 0, `\tacks = { ${acks.map(a => `{ session = ${luaStr(a.session || '')}, id = ${a.id} }`).join(', ')} },`);
+    const ackLua = a => {
+      const f = [`session = ${luaStr(a.session || '')}`, `id = ${a.id}`];
+      if (OPEN_RESULTS.includes(a.open)) f.push(`open = ${luaStr(a.open)}`);
+      if (a.open === 'refused' && a.why) f.push(`why = ${luaStr(String(a.why).slice(0, 80))}`);
+      return `{ ${f.join(', ')} }`;
+    };
+    lines.splice(lines.length - 1, 0, `\tacks = { ${acks.map(ackLua).join(', ')} },`);
   }
   if (Number.isInteger(opts.runLimit) && opts.runLimit > 0) lines.splice(lines.length - 1, 0, `\trunLimit = ${opts.runLimit},`);
   if (Array.isArray(opts.alive)) {
@@ -1258,7 +1316,9 @@ function luaTable(globalName, records, opts = {}) {
     if (r.title && Number(r.titleFor) > 0) lines.push(`\t\t\ttitleFor = ${Math.floor(Number(r.titleFor))},`);
     if (r.status === 'working' && Number.isInteger(r.steps) && r.steps > 0) lines.push(`\t\t\tsteps = ${r.steps},`);
     if (r.late) lines.push('\t\t\tlate = true,');
+    if (r.late && Number.isSafeInteger(r.lateSeq) && r.lateSeq > 0) lines.push(`\t\t\tlateSeq = ${r.lateSeq},`);
     if (r.lateOk) lines.push('\t\t\tlateOk = true,');
+    if (r.lateOk && Number.isInteger(r.lateIn) && r.lateIn > 0 && r.lateIn <= LATE_IN_MAX) lines.push(`\t\t\tlateIn = ${r.lateIn},`);
     // Context growth (noteUsage): only on a final record, and only what is known.
     if (Number(r.ctx) > 0) lines.push(`\t\t\tctx = ${Math.round(Number(r.ctx))},`);
     if (Number(r.turns) > 0) lines.push(`\t\t\tturns = ${Math.round(Number(r.turns))},`);
@@ -1739,7 +1799,7 @@ const WIDGET_DENIED_PATTERNS = [
 
 const WIDGET_HINT = [
   'When the player asks for a small UI element (a DPS meter, a timer bar for their buffs, a tracker), hand it over as a live widget: the addon loads it at once, without /reload, and keeps it across logins. End the reply with a fenced block whose language tag is wowui followed by the widget name (letters, digits, _ . -, at most 32) and optionally title="<shown title>"; the block holds the widget\'s Lua 5.1 source. Or append {"op":"set","name":"<name>","title":"<title>","source":"<lua>"} as one JSON line to the file named by the CLAUDE_WOW_UI_FILE environment variable.',
-  `The source runs once as a function body: "local ui = ..." gives ui.name, ui.frame (a container frame: parent your frames to it, or pass no parent), ui.db (a table saved between sessions, e.g. for a position), and ui.print(text). Only display APIs exist in a widget: CreateFrame (frames get no global name; templates only ${WIDGET_TEMPLATES.join(', ')}), events, OnUpdate, C_Timer, Unit* functions, read-only getters such as GetTime and GetSpellCooldown, the Get/Is functions of C_ namespaces such as C_UnitAuras, GameTooltip, font objects such as GameFontNormal, GameTooltipText and Tooltip_Med, copies of RAID_CLASS_COLORS and Enum, and the Lua math, string and table libraries; UNIT_COMBAT gives damage and heals on a unit. UIParent is ui.frame, and Blizzard frames and every other global are nil. A widget never takes the keyboard (no EnableKeyboard, SetFocus or SetPropagateKeyboardInput(false)), and ui.frame covers the screen so it never takes the mouse: call EnableMouse on a child frame. The combat log (COMBAT_LOG_EVENT_UNFILTERED, CombatLogGetCurrentEventInfo) is for the Blizzard UI only in this client: registering it shows the player a blocked-action error, so a widget that names it is refused. Widgets are display-only: no casting, targeting, movement, items, chat or addon messages, macros, bindings, CVars, loadstring/setfenv/debug/securecall, and no ClaudeWoW* globals; a widget that names any of these is refused. At most ${WIDGET_LIMITS.sourceBytes} bytes.`,
+  `The source runs once as a function body: "local ui = ..." gives ui.name, ui.frame (a container frame: parent your frames to it, or pass no parent), ui.db (a table saved between sessions, e.g. for a position), and ui.print(text). Only display APIs exist in a widget: CreateFrame (frames get no global name; templates only ${WIDGET_TEMPLATES.join(', ')}), events, OnUpdate, C_Timer, Unit* functions, read-only getters such as GetTime and GetSpellCooldown, the Get/Is functions of C_ namespaces such as C_UnitAuras, GameTooltip, every font object such as GameFontNormal, GameTooltipText and Tooltip_Med (read-only), copies of RAID_CLASS_COLORS and Enum, and the Lua math, string and table libraries; UNIT_COMBAT gives damage and heals on a unit. UIParent is ui.frame, and Blizzard frames and every other global are nil. A widget never takes the keyboard (no EnableKeyboard, SetFocus or SetPropagateKeyboardInput(false)), and ui.frame covers the screen so it never takes the mouse: call EnableMouse on a child frame. The combat log (COMBAT_LOG_EVENT_UNFILTERED, CombatLogGetCurrentEventInfo) is for the Blizzard UI only in this client: registering it shows the player a blocked-action error, so a widget that names it is refused. Widgets are display-only: no sounds (PlaySound and PlaySoundFile are nil), no casting, targeting, movement, items, chat or addon messages, macros, bindings, CVars, loadstring/setfenv/debug/securecall, and no ClaudeWoW* globals; a widget that names any of these is refused. At most ${WIDGET_LIMITS.sourceBytes} bytes.`,
   'The same name replaces the widget. To remove one, write a wowui block with the name followed by the word remove and an empty body, or append {"op":"remove","name":"<name>"}. Explain outside the block what it shows; the player lists and removes widgets with /claude config ui.',
 ];
 
@@ -1885,6 +1945,7 @@ function luaWidgets(set) {
 }
 
 module.exports = {
+  CHAT_ID_RE,
   ADDON,
   RUNTIME_ADDON,
   SHIPPED_INBOX_PATH,
@@ -1941,6 +2002,7 @@ module.exports = {
   PERMISSION_MODES,
   permissionModeName,
   ADD_DIRS_MAX,
+  LATE_IN_MAX,
   jobsFromStrip,
   parseOutbox,
   withRunOnlyRules,

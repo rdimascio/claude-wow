@@ -1,7 +1,7 @@
 // The screenshot transport's folder side (bridge/screenshots.js): where the
 // game's Screenshots folder is, which files are the client's screenshots, and
-// the watcher's rules: files present before it started are never reported, a
-// new file is reported once, after its size stopped changing.
+// the watcher's rules: a new file is reported once, after its size stopped
+// changing.
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -116,6 +116,37 @@ test('the watcher reports a new file once its size settles, and never the files 
     fs.writeFileSync(path.join(dir, 'WoWScrnShot_010126_000003.png'), Buffer.alloc(500));
     await sleep(250);
     assert.deepEqual(got, [name, 'WoWScrnShot_010126_000003.png']);
+  } finally {
+    w.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a young screenshot left from before the start is reported once, an older one never, and the startup sweep with the same clock takes only the older one', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wowai-shots-'));
+  const now = Date.now();
+  const write = (name, body, ageMs) => {
+    const file = path.join(dir, name);
+    fs.writeFileSync(file, body);
+    const when = new Date(now - ageMs);
+    fs.utimesSync(file, when, when);
+  };
+  write('WoWScrnShot_010126_000010.png', 'strip shot just before the stop', 500);
+  write('WoWScrnShot_010126_000011.png', 'a young sunset', 30000);
+  write('WoWScrnShot_010126_000012.png', 'strip from an hour ago', 3600000);
+  write('WoWScrnShot_010126_000013.png', 'strip at the edge', 60000);
+  write('WoWScrnShot_010126_000014.jpg', 'strip, young, but not a name the addon asks for', 500);
+  const got = [];
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const w = S.watchScreenshots(dir, f => got.push(path.basename(f)), { settleMs: 20, scanMs: 40, adoptMs: 60000, now });
+  const swept = S.sweepOrphans(dir, buf => buf.toString().includes('strip'), { minAgeMs: 60000, now });
+  try {
+    assert.deepEqual(swept.removed.sort(), ['WoWScrnShot_010126_000012.png', 'WoWScrnShot_010126_000013.png']);
+    await sleep(250);
+    w.scan();
+    await sleep(150);
+    assert.deepEqual(got.sort(), ['WoWScrnShot_010126_000010.png', 'WoWScrnShot_010126_000011.png']);
+    assert.ok(fs.existsSync(path.join(dir, 'WoWScrnShot_010126_000011.png')), 'the watcher deletes nothing itself');
   } finally {
     w.close();
     fs.rmSync(dir, { recursive: true, force: true });

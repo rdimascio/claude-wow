@@ -114,6 +114,14 @@ actions are unavailable in combat too, so anything that touches a secure frame m
 defer to `PLAYER_REGEN_ENABLED`. The whisper tab inherits the chat frame's behaviour,
 which is the safe path.
 
+**A reply while the window is closed.** The window is open or closed; there is no
+floating bar. The minimap button carries the status: a small light at its lower right
+(green, yellow, red, grey, like the window's) and a pulse while a reply is unread.
+A player who hid the button with `/claude config minimap off` gets one chat line per
+reply instead (`<agent> replied. Type /claude to open the window.`), out of combat and
+only with whisper tabs off. An install that was minimized when it last ran comes back
+closed, once (`miniBarV2`).
+
 **Character switch and relog.** The game context (level, zone, quests) is per
 character, and the bridge holds the last one it was told. Switching characters
 without a new hello leaves the agent advising the wrong toon. Send context on
@@ -138,9 +146,9 @@ tokens after 8 turns, 312,458 after 213). So the bridge reads each run's usage
 assistant message is what the next turn carries; the result's usage is the turn's
 sum and prices the run at `CLAUDE_RATES` in `bridge/agents.js`), keeps it per chat
 in `state.json` (`sessionUsage`) and ships it on the reply record; the addon's
-footer shows it like Claude Code's status line (`11m 58s · ↓ 106.9k tokens ·
-≈$2.41 API` — the dollar figure is the API-list-price equivalent, a comparison,
-since a subscription is not billed per token), `/claude config context` and `diag`
+footer shows the context as a bar and the status tooltip shows the cost, labeled
+"Estimated API cost" (the API-list-price equivalent, a comparison, since a
+subscription is not billed per token), `/claude config context` and `diag`
 report it, and past `/claude config context <n>` (300k by default: a coding chat
 can start near 90k before its first tool call, so 100k warned on turn 1) the chat says so once, with a **New chat**
 button. Codex, Grok, agy and Hermes report nothing the bridge can trust, so those

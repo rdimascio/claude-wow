@@ -972,6 +972,46 @@ test('a plugin block sets the model and effort for its chats; a chat flag still 
   );
 });
 
+test('effortDefaults reports the effort each plugin passes to each agent that takes one, and nothing it does not pass', () => {
+  assert.deepEqual(A.effortAgents(), ['claude', 'codex'], 'only Claude and Codex take an effort');
+  const cfg = { agents: { claude: { effort: 'MAX ' }, codex: {} } };
+  const options = id => ({ ask: { agents: { claude: { effort: 'medium' } } }, 'claude-code': { agents: { codex: { effort: 'xhigh' } } } })[id] || {};
+  assert.deepEqual(A.effortDefaults(cfg, ['ask', 'claude-code', 'dev'], options), {
+    ask: { claude: 'medium', codex: '' },
+    'claude-code': { claude: 'max', codex: 'xhigh' },
+    dev: { claude: 'max', codex: '' },
+  });
+  assert.deepEqual(
+    A.effortDefaults({ agents: { claude: { effort: 'x y; rm' } } }, ['ask'], () => ({})),
+    { ask: { claude: '', codex: '' } },
+    'a value that is not a plain word is not reported',
+  );
+  assert.deepEqual(
+    A.effortDefaults({}, ['ask'], () => ({ agents: { hermes: { effort: 'high' } } })),
+    { ask: { claude: '', codex: '' } },
+    'no row for an agent without effort',
+  );
+  assert.deepEqual(A.effortDefaults({}, null, null), {});
+});
+
+test('effortLocks reports CLAUDE_CODE_EFFORT_LEVEL, which overrides --effort in every Claude run', () => {
+  assert.deepEqual(A.effortLocks({ CLAUDE_CODE_EFFORT_LEVEL: 'High' }), { claude: 'high' });
+  assert.deepEqual(A.effortLocks({ CLAUDE_CODE_EFFORT_LEVEL: '' }), {});
+  assert.deepEqual(A.effortLocks({ CLAUDE_CODE_EFFORT_LEVEL: 'high; rm' }), {});
+  assert.deepEqual(A.effortLocks({}), {});
+});
+
+test('luaTable carries the effort defaults and the lock as Lua tables, and nothing when not given', () => {
+  assert.ok(!/efforts =|effortLock =/.test(P.luaTable('X', [], {})), 'an old-style call writes neither field');
+  const lua = P.luaTable('X', [], {
+    efforts: { ask: { claude: 'max', codex: '' }, 'claude-code': { claude: 'low', 'bad key"': 'x', codex: 'HIGH' }, 'bad"plugin': { claude: 'max' } },
+    effortLock: { claude: 'high', codex: 'not ok' },
+  });
+  assert.match(lua, /^\tefforts = \{ \["ask"\] = \{ \["claude"\] = "max", \["codex"\] = "" \}, \["claude-code"\] = \{ \["claude"\] = "low" \} \},$/m);
+  assert.match(lua, /^\teffortLock = \{ \["claude"\] = "high" \},$/m);
+  assert.match(P.luaTable('X', [], { efforts: {} }), /^\tefforts = \{  \},$/m);
+});
+
 test('a wowdata call shows a loading line, then a line built from its result rows, never from the arguments', () => {
   const PD = require('../bridge/progressdata');
   const p = A.claudeParser();

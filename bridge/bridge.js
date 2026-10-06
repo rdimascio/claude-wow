@@ -95,8 +95,10 @@ const OB = require('./observed');
 const OT = require('./observedtools');
 const MH = require('./maphold');
 const REL = require('./releases');
+const OU = require('./openurl');
 const SVC = require('./service');
 const MC = require('./mcpconfig');
+const AC = require('./agentcontract');
 
 const HERE = __dirname;
 // Config, state, transcripts, log and scratch live in the home folder (home.js:
@@ -107,6 +109,7 @@ const STATE_FILE = HOME.state;
 const LOG_FILE = HOME.log;
 const DEPLOY_LOCK_FILE = REL.layout(HOME.dir).lock;
 const DEPLOY_HOLD_POLL_MS = 1000;
+const contracts = AC.createTracker({ file: path.join(HOME.dir, AC.FILE_NAME), log });
 const TMP_DIR = HOME.tmp; // prompt files for agents that read the prompt from disk
 const PRIVATE_FILE_MODE = 0o600;
 const PRIVATE_DIR_MODE = 0o700;
@@ -351,6 +354,8 @@ for (const [k, v] of Object.entries(state.handled)) {
 }
 
 const TELEMETRY_ON = TL.telemetryEnabled(cfg.telemetry);
+const OPEN_LINKS_LOG = process.env.CLAUDE_WOW_OPEN_LINKS_LOG || '';
+const linkOpener = OU.createOpener({ enabled: cfg.openLinks !== false, log, ...(OPEN_LINKS_LOG ? { spawnFn: OU.recordingSpawn(OPEN_LINKS_LOG) } : {}) });
 const observed = OB.createObserved({ dir: HOME.goals, log });
 const telemetry = TL.createTelemetry({
   dir: HOME.goals,
@@ -390,19 +395,21 @@ const stampGeneration = job => {
 };
 const chatDeletedSince = job => !!job.chat && job.chatGeneration !== undefined && job.chatGeneration !== generationOf(job.chat);
 
-function noteMessage(job, role, text) {
-  if (!job.chat) return;
+function noteMessage(job, role, text, agentTexts = []) {
+  if (!job.chat || !P.CHAT_ID_RE.test(job.chat)) return;
   if (role === 'user') forgotten.delete(job.chat);
   else if (forgotten.has(job.chat)) return;
-  const c = (transcripts.chats[job.chat] = transcripts.chats[job.chat] || { id: job.chat, name: '', cwd: job.cwd, messages: [] });
+  if (!Object.hasOwn(transcripts.chats, job.chat)) transcripts.chats[job.chat] = { id: job.chat, name: '', cwd: job.cwd, messages: [] };
+  const c = transcripts.chats[job.chat];
   if (job.name) c.name = job.name;
   if (job.cwd) c.cwd = job.cwd;
   if (job.plugin) c.plugin = job.plugin;
-  if (job.client) c.client = job.client;
+  OU.claimChat(c, job.client);
   if (job.char && !c.cwd && job.plugin !== 'claude-code' && !c.char) c.char = job.char;
   const m = { role, text: String(text ?? '').slice(0, 4000), id: job.id, t: Math.floor(Date.now() / 1000) };
   if (role === 'assistant' && job.agent) m.agent = job.agent;
   if (job.plugin) m.plugin = job.plugin;
+  if (role === 'assistant' && agentTexts.length) OU.noteLinks(c, agentTexts);
   if (job.via === 'discord') {
     c.seq = (c.seq || 0) + 1;
     m.via = 'discord';
@@ -645,7 +652,7 @@ function shutdown(sig, exitCode) {
   } catch {}
   const kids = [...running.values()]
     .map(r => r.child)
-    .concat(T.titleChildren(), factory.children())
+    .concat(T.titleChildren(), factory.children(), contracts.children())
     .filter(Boolean);
   if (captureChild) kids.push(captureChild);
   const n = kids.filter(PR.alive).length;
@@ -662,7 +669,7 @@ function crash(kind, err) {
   } catch {}
   const kids = [...running.values()]
     .map(r => r.child)
-    .concat(T.titleChildren(), factory.children(), captureChild ? [captureChild] : [])
+    .concat(T.titleChildren(), factory.children(), contracts.children(), captureChild ? [captureChild] : [])
     .filter(Boolean);
   for (const child of kids) {
     try {
@@ -839,6 +846,7 @@ function sharedSlotFields(urgent) {
     sessions: sessionList(),
     projects: projectList(),
     mcp: mcpSlotList(),
+    contract: AC.slotField(contracts.current()),
     home: os.homedir(),
     skills: FACTORY.slotSkills(FACTORY.settings(pluginsCfg['claude-code'])),
     discord: !!discordHub,
@@ -846,6 +854,8 @@ function sharedSlotFields(urgent) {
     cwd: DEFAULT_CWD,
     agent: DEFAULT_AGENT,
     agents: A.agentIds(),
+    efforts: A.effortDefaults(cfg, registry.ids(), core.options),
+    effortLock: A.effortLocks(process.env),
     plugin: DEFAULT_PLUGIN,
     plugins: registry.ids(),
     widgets,
@@ -857,6 +867,7 @@ function sharedSlotFields(urgent) {
     goalsLua,
     dmLua,
     gsLua,
+    openUrl: linkOpener.available,
     bridge: BRIDGE_INFO,
   };
 }
@@ -1070,7 +1081,7 @@ function publishClient(r, records, shared) {
   } catch (e) {
     if (!r.warnedNoAddon) {
       r.warnedNoAddon = true;
-      log(`publish: cannot write ${c.inboxFile} (${e.code || e.message}); addon not installed in ${c.label}? run: node setup.js, then restart WoW`);
+      log(G.publishFailureNote(c.inboxFile, c.label, e));
     }
     return false;
   }
@@ -1217,9 +1228,21 @@ function signal(client, kind, id, on) {
   setSignalFile(SIG.signalFile(client.addonDir, kind, slotNumber(id)), on);
 }
 
-function ackJob(job) {
+function openLink(job) {
+  const chat = P.CHAT_ID_RE.test(String(job.chat)) ? OU.chatFor(transcripts.chats, job.chat) : null;
+  const answer = result => {
+    log(`${tagOf(job)} ${result.text}`);
+    ackJob(job, result.opened ? { open: 'ok' } : { open: 'refused', why: result.why });
+    publishNow();
+  };
+  Promise.resolve()
+    .then(() => linkOpener.request(job, chat))
+    .then(answer, e => answer({ opened: false, why: 'the bridge failed', text: `open link failed (${e && e.message ? e.message : e})` }));
+}
+
+function ackJob(job, result) {
   const r = rtOf(job.client);
-  if (r) r.acks = P.noteAck(r.acks, job);
+  if (r) r.acks = P.noteAck(r.acks, job, Date.now(), result);
   signal(clientFor(job), 'ack', job.id, true);
 }
 
@@ -1536,6 +1559,12 @@ function submit(job) {
         .replace(/[\x00-\x1f\x7f]/g, '?')}: ${result.text}`,
     );
     if (!result.fired) publishNow();
+    return;
+  }
+  if (OU.isOpenRecord(job)) {
+    markHandled(job);
+    saveState();
+    openLink(job);
     return;
   }
   if (job.ctx !== undefined) setContext(job);
@@ -2269,6 +2298,8 @@ function startDiscord() {
     .catch(e => log(`discord: could not start (${e && e.message ? e.message : e})`));
 }
 
+let lastLateSeq = 0;
+
 function lateReply(job, raw) {
   lastActivityAt = Date.now();
   if (chatDeletedSince(job)) {
@@ -2278,13 +2309,17 @@ function lateReply(job, raw) {
   const { text, summary } = checkedReply(job, P.splitSummary(String(raw || '')));
   noteMessage(job, 'assistant', text);
   if (discordHub) discordHub.postTo(job.chat, text);
+  lastLateSeq = SW.nextLateSeq(lastLateSeq, Date.now());
+  const base = chatKey(job);
+  SW.trimLate(live, base, SW.LATE_KEPT_PER_CHAT - 1, state.replies && typeof state.replies === 'object' ? state.replies : null);
   publish(
-    `${chatKey(job)}#late`,
+    SW.lateKey(base, lastLateSeq),
     {
       chat: job.chat,
       id: job.id,
       status: 'done',
       late: true,
+      lateSeq: lastLateSeq,
       text,
       summary,
       cwd: job.cwd,
@@ -2432,7 +2467,7 @@ function noteMcpHealth(servers, cwd) {
   state.mcpSeen = MC.noteSeen(state.mcpSeen || {}, servers, { cwd });
 }
 function mcpSlotList() {
-  return MC.catalog({ mcp: USER_MCP, seen: state.mcpSeen || {}, codexOwn: CODEX_ALL_MCP, reserved: [DM.SERVER_NAME, GM.SERVER_NAME, FACTORY.SERVER_NAME] });
+  return MC.catalog({ mcp: USER_MCP, seen: state.mcpSeen || {}, codexOwn: CODEX_ALL_MCP, reserved: MCP_RESERVED });
 }
 function loggedMcpBlocks(tag, never, userMcp) {
   if (!userMcp) return never;
@@ -2473,17 +2508,29 @@ function runAgent(job, opts = {}) {
   const runDenied = [...inGameDeniedTools({ claudeRun, plugin, withRunTools: !!runToolSocket }), ...(Array.isArray(opts.deniedTools) ? opts.deniedTools : [])];
   const factoryConf = claudeRun && opts.factory && opts.factory.enabled ? opts.factory : null;
   const factoryToolSocket = factoryConf ? factorySocket(tag) : '';
-  const userMcp = claudeRun ? MC.forClaude(USER_MCP, { choice: chosen.mcp }) : null;
-  if (claudeRun && chosen.mcp) state.mcpSeen = MC.seedSeen(state.mcpSeen || {}, MC.claudeOwnServers({ cwd }), { cwd });
-  const seenOff = claudeRun
-    ? MC.discoveredOff(
-        chosen.mcp,
-        mcpSlotList()
-          .filter(e => e.src !== 'config' && e.src !== 'codex')
-          .map(e => e.id),
-      )
-    : null;
-  const mcpGuard = claudeRun ? { blocks: rule => (userMcp ? userMcp.blocks(rule) : false) || seenOff.blocks(rule) } : null;
+  const mcpPlan = MC.planRun({
+    agentId,
+    choice: chosen.mcp,
+    cwd,
+    userMcp: USER_MCP,
+    seen: state.mcpSeen || {},
+    codexOwn: CODEX_ALL_MCP,
+    reserved: MCP_RESERVED,
+  });
+  state.mcpSeen = mcpPlan.seen;
+  const { userMcp, seenOff, guard: mcpGuard } = mcpPlan;
+  const contractCmd = A.resolveCommand(agentId, A.agentConfig(cfg, agentId));
+  const contractRefusal = contractCmd.found
+    ? AC.refusal(contracts.status(agentId, contractCmd, agent.env({ ...process.env })), {
+        off: claudeRun ? !!((userMcp && userMcp.offRules.length) || (seenOff && seenOff.rules.length)) : mcpPlan.codexMcp.some(e => e.off),
+        secrets: mcpPlan.codexMcp.some(e => (e.envVars && e.envVars.length) || e.bearerTokenEnvVar),
+      })
+    : '';
+  if (contractRefusal) {
+    log(`${tag} contract: ${contractRefusal}`);
+    finish(job, 'error', contractRefusal);
+    return;
+  }
   const grantForGood = P.splitGrants(inGameGrantable(job.allow, runDenied, mcpGuard));
   const grantOnce = P.splitGrants(inGameGrantable(job.allowOnce, runDenied, mcpGuard));
   if (grantForGood.rules.length) {
@@ -2494,9 +2541,7 @@ function runAgent(job, opts = {}) {
     log(`${tag} allowed for this run only (${agentId}): ${grantOnce.rules.join(', ')}`);
   }
   const dataServer = opts.gameData && (claudeRun || codexRun || agent.mcp) ? gameDataServer(tag, job) : null;
-  const codexMcp = codexRun
-    ? [...(dataServer ? [{ name: DM.SERVER_NAME, server: dataServer.server }] : []), ...MC.forCodex(USER_MCP, { choice: chosen.mcp, own: CODEX_ALL_MCP })]
-    : [];
+  const codexMcp = codexRun ? [...(dataServer ? [{ name: DM.SERVER_NAME, server: dataServer.server }] : []), ...mcpPlan.codexMcp] : [];
   const runOnlyRules = [
     ...grantOnce.rules,
     ...(dataServer ? dataServer.rules : []),
@@ -2507,7 +2552,7 @@ function runAgent(job, opts = {}) {
   const scoped = MC.scopeAllowed(A.withPluginSettings(A.agentConfig(cfg, agentId), agentId, core.options(plugin.id)), userMcp);
   if (scoped.dropped && !loggedMcpDropped.has(scoped.dropped.join(' '))) {
     loggedMcpDropped.add(scoped.dropped.join(' '));
-    log(`${tag} mcp: allowed tool rules that mcp.servers does not allow are left out of Claude runs: ${scoped.dropped.join(', ')}`);
+    log(`${tag} mcp: allowed tool rules that mcp.servers or mcp.allow does not allow are left out of Claude runs: ${scoped.dropped.join(', ')}`);
   }
   const acfg = A.withChatSettings(
     P.withRunDeniedRules(P.withRunOnlyRules(scoped.agentCfg, runOnlyRules), [
@@ -2690,10 +2735,10 @@ function runAgent(job, opts = {}) {
     runGrant && GM.SERVER_NAME + ' for this run',
     factoryGrant && FACTORY.SERVER_NAME + ' for this run',
     userMcp && userMcp.names.length && 'mcp ' + userMcp.names.join(' '),
-    codexMcp.some(e => e.name !== DM.SERVER_NAME && !e.off) &&
+    codexMcp.some(e => e.name !== DM.SERVER_NAME && !e.off && !e.own) &&
       'mcp ' +
         codexMcp
-          .filter(e => e.name !== DM.SERVER_NAME && !e.off)
+          .filter(e => e.name !== DM.SERVER_NAME && !e.off && !e.own)
           .map(e => e.name)
           .join(' '),
     userMcp && userMcp.strict && 'strict mcp',
@@ -2966,6 +3011,7 @@ function runAgent(job, opts = {}) {
     });
     if (result && !result.error) {
       const body = String(result.text || '').trim() || (notes.length ? '' : `(${agent.name} finished without a reply)`);
+      job.agentText = body;
       finish(job, 'done', (body + extra).trim(), sessionId, [...denied]);
     } else if (result) {
       const said =
@@ -3183,9 +3229,17 @@ function finish(job, status, text, session, denied) {
   }
   const shown = status === 'done' ? checkedReply(job, { text, summary }) : { text, summary };
   if (job.via === 'discord') job.mirrorDenied = denied;
-  if (!chatDeletedSince(job)) noteMessage(job, status === 'done' ? 'assistant' : 'system', status === 'done' ? shown.text : 'Bridge error: ' + text);
+  if (!chatDeletedSince(job)) {
+    noteMessage(
+      job,
+      status === 'done' ? 'assistant' : 'system',
+      status === 'done' ? shown.text : 'Bridge error: ' + text,
+      status === 'done' && typeof job.agentText === 'string' ? [job.agentText] : [],
+    );
+  }
   awardAchievements(job, status);
   const usage = P.usageFields(job.usage);
+  const lateOk = !!job.lateOk && FINAL_STATUSES.has(status);
   publish(
     chatKey(job),
     {
@@ -3200,7 +3254,8 @@ function finish(job, status, text, session, denied) {
       macros,
       agent: job.agent || '',
       plugin: job.plugin || '',
-      lateOk: status === 'error' && !!job.lateOk,
+      lateOk,
+      lateIn: lateOk && Number.isInteger(job.lateIn) && job.lateIn > 0 ? job.lateIn : undefined,
       ...usage,
       client: job.client,
     },
@@ -3350,8 +3405,7 @@ function startCapture() {
 // Screenshots folder is decoded once its size settles. A file holding a strip is
 // deleted after it was read (whatever the strip's verdict once the magic is
 // there, so a retried shot doesn't pile up); one without a strip is the
-// player's own screenshot and stays. Files from before the bridge started are
-// the sweep's business (sweepScreenshots below): strip-bearing ones go, the rest stay.
+// player's own screenshot and stays.
 const stripOptions = () => ({ cell: cap.cellPx, cells: cap.cellsPerRow, maxRows: cap.maxRows, threshold: LEVELS.threshold });
 // The strip the addon is asked to draw, for the banner and the log.
 const stripGeometry = () =>
@@ -3480,9 +3534,10 @@ pruneVisionFiles(0); // leftovers from a bridge that died mid-run
 // leaves every other file, i.e. the player's own screenshots, alone. A file
 // younger than a minute is the watcher's business, not the sweep's.
 const SWEEP_MS = 5 * 60 * 1000;
-function sweepScreenshots(r, why) {
+const WATCHER_AGE_MS = 60 * 1000;
+function sweepScreenshots(r, why, now = Date.now()) {
   const holdsStrip = buf => !!D.findStrip(D.readImage(buf), stripOptions(), r.shotHint).msg;
-  const out = S.sweepOrphans(r.client.screenshotDir, holdsStrip, { memo: r.sweepMemo, log, minAgeMs: why === 'startup' ? 2000 : 60000 });
+  const out = S.sweepOrphans(r.client.screenshotDir, holdsStrip, { memo: r.sweepMemo, log, minAgeMs: WATCHER_AGE_MS, now });
   if (out.removed.length || out.more) {
     log(
       `screenshot sweep (${why}${fromLabel(r.client)}): removed ${out.removed.length} leftover strip screenshot(s), ${(out.bytes / 1048576).toFixed(1)} MB` +
@@ -3502,9 +3557,10 @@ function startScreenshotWatch(r) {
     setTimeout(() => startScreenshotWatch(r), 10000);
     return;
   }
-  r.shotWatch = S.watchScreenshots(dir, file => handleScreenshot(file, r), { log });
+  const startedAt = Date.now();
+  r.shotWatch = S.watchScreenshots(dir, file => handleScreenshot(file, r), { log, adoptMs: WATCHER_AGE_MS, now: startedAt });
   log(`screenshot transport: watching ${dir} (strip codec ${STRIP_CODEC}: ${stripGeometry()})`);
-  sweepScreenshots(r, 'startup');
+  sweepScreenshots(r, 'startup', startedAt);
   const sweeper = setInterval(() => sweepScreenshots(r, 'periodic'), SWEEP_MS);
   if (sweeper.unref) sweeper.unref();
 }
@@ -3704,7 +3760,8 @@ function startSelfUpdate() {
   }
 }
 
-const USER_MCP = MC.parse(cfg.mcp, { reserved: [DM.SERVER_NAME, GM.SERVER_NAME, FACTORY.SERVER_NAME], log, env: process.env });
+const MCP_RESERVED = [DM.SERVER_NAME, GM.SERVER_NAME, FACTORY.SERVER_NAME];
+const USER_MCP = MC.parse(cfg.mcp, { reserved: MCP_RESERVED, log, env: process.env });
 const CODEX_ALL_MCP = MC.codexOwnServers();
 const CODEX_OWN_MCP = USER_MCP ? CODEX_ALL_MCP.filter(n => USER_MCP.servers.some(s => s.name === n)) : [];
 state.mcpSeen = MC.seedSeen(state.mcpSeen || {}, MC.claudeOwnServers({ cwd: DEFAULT_CWD }), { cwd: DEFAULT_CWD });
@@ -3713,7 +3770,7 @@ for (const n of CODEX_OWN_MCP)
   log(
     `mcp.servers.${n}: ~/.codex/config.toml has a server of the same name, and Codex would merge the two (its url, auth and env with this one), so Codex runs leave this server out; rename one of them`,
   );
-if (USER_MCP && (USER_MCP.servers.length || USER_MCP.strict)) {
+if (USER_MCP && (USER_MCP.servers.length || USER_MCP.strict || Object.keys(USER_MCP.allow).length)) {
   log(`mcp: ${MC.summary(USER_MCP)}`);
   if (USER_MCP.strict) {
     const own = MC.claudeOwnServers({ cwd: DEFAULT_CWD });
@@ -3726,6 +3783,10 @@ if (USER_MCP && (USER_MCP.servers.length || USER_MCP.strict)) {
 for (const id of A.agentIds()) {
   const note = A.costCapNote(id, A.agentConfig(cfg, id));
   if (note) log(note);
+}
+for (const id of Object.keys(AC.ROWS)) {
+  const cmd = A.resolveCommand(id, A.agentConfig(cfg, id));
+  if (cmd.found) contracts.status(id, cmd, A.AGENTS[id].env({ ...process.env }));
 }
 if (!once) startPlugins();
 startDiscord();

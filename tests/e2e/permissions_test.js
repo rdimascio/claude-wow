@@ -27,7 +27,15 @@ function answerTo(h, id, label) {
 async function roll(h, choice) {
   await h.client.waitFor(() => h.client.luaValue('ClaudeWoWRoll.Current() and "open"') === 'open', { label: 'the roll frame' });
   const id = h.client.lastSeq() + 1;
+  h.client.runLua(
+    'function StaticPopup_Show(which, a, b, data) local d = { which = which, text = a, data = data, shown = true }; STUB.popup = d; return d end; STUB.popup = nil',
+  );
   h.client.runLua(`ClaudeWoWRoll.Choose(${JSON.stringify(choice)})`);
+  if (choice === 'need') {
+    assert.equal(h.client.lastSeq() + 1, id, 'Need sends nothing before the confirm');
+    assert.equal(h.client.luaValue('STUB.popup and STUB.popup.which'), 'CLAUDEWOW_ALLOW_ALWAYS');
+    h.client.runLua('StaticPopupDialogs.CLAUDEWOW_ALLOW_ALWAYS.OnAccept(STUB.popup, STUB.popup.data)');
+  }
   return answerTo(h, id, `the reply after ${choice}`);
 }
 

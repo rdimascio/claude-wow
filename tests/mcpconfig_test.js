@@ -166,7 +166,7 @@ test('a bad entry is skipped with one log line each and never stops the others',
   assert.match(lines[8], /^mcp\.servers\.typo\.alow is not a key of a stdio server/);
   assert.equal(MC.forClaude(mcp).allowRules.join(), 'mcp__good__a');
   const junk = parsed('npx');
-  assert.deepEqual(junk.mcp, { servers: [], strict: false });
+  assert.deepEqual(junk.mcp, { servers: [], strict: false, allow: {} });
   assert.equal(junk.lines.length, 1);
 });
 
@@ -491,4 +491,185 @@ test('the seen list follows the latest report: a server gone from Claude is drop
   );
   MC.noteSeen(seen, [{ name: 'wowdata', status: 'connected', source: 'dynamic' }], { cwd: '/b', now: 6 });
   assert.ok(seen.claude_ai_Slack, 'a report with only our own servers (strict mode) drops nothing');
+});
+
+test('planRun: one pure plan per run; Claude gets the config plan, the discovered servers turned off and one guard, Codex its -c entries', () => {
+  const mcp = parsed(SAMPLE).mcp;
+  const choice = MC.parseChoice('-linear,-claude_ai_Slack,-wowdata,-node_repl,-repo-a');
+  const seen = MC.noteSeen({}, [{ name: 'claude.ai Slack', status: 'connected', source: 'claudeai' }], { now: 1 });
+  const frozen = JSON.stringify(seen);
+  const reads = [];
+  const claudeOwn = () => {
+    reads.push('read');
+    return ['project:repo-a', 'user:wowdata'];
+  };
+  const base = {
+    cwd: '/a',
+    userMcp: mcp,
+    seen,
+    codexOwn: ['node_repl'],
+    reserved: RESERVED,
+    claudeOwn,
+    codexOwnNow: () => ['node_repl'],
+    codexToolsNow: () => ({}),
+  };
+
+  const run = MC.planRun({ ...base, agentId: 'claude', choice });
+  assert.equal(JSON.stringify(seen), frozen, 'the caller state is not changed in place');
+  assert.deepEqual(Object.keys(run.seen).sort(), ['claude_ai_Slack', 'repo-a', 'wowdata']);
+  assert.equal(run.seen['repo-a'].cwd, '/a');
+  assert.deepEqual(run.userMcp.offRules, ['mcp__linear']);
+  assert.deepEqual(run.seenOff.rules, ['mcp__repo-a', 'mcp__claude_ai_Slack'], 'reserved, config and Codex names are not discovered servers');
+  assert.equal(run.guard.blocks('mcp__linear__list_issues'), true);
+  assert.equal(run.guard.blocks('mcp__claude_ai_Slack__post'), true);
+  assert.equal(run.guard.blocks('mcp__github__create_issue'), false);
+  assert.deepEqual(run.codexMcp, []);
+
+  const plain = MC.planRun({ ...base, agentId: 'claude', choice: undefined });
+  assert.equal(plain.seen, seen, 'no choice: the seen list is not read again');
+  assert.deepEqual(plain.seenOff.rules, []);
+  assert.equal(MC.planRun({ ...base, agentId: 'claude', userMcp: null, choice }).guard.blocks('mcp__linear__x'), false);
+  assert.deepEqual(reads, ['read', 'read']);
+
+  const codex = MC.planRun({ ...base, agentId: 'codex', choice });
+  assert.deepEqual(codex, { userMcp: null, seenOff: null, guard: null, codexMcp: MC.forCodex(mcp, { choice, own: ['node_repl'] }), seen });
+  assert.deepEqual(
+    codex.codexMcp.map(e => e.name),
+    ['github', 'notion', 'node_repl'],
+  );
+  assert.deepEqual(MC.planRun({ ...base, agentId: 'grok', choice }), { userMcp: null, seenOff: null, guard: null, codexMcp: [], seen });
+  assert.deepEqual(reads, ['read', 'read'], 'only a Claude run with a choice reads Claude settings');
+});
+
+test('mcp.allow: a discovered server keeps only its listed tools for Claude and Codex; bad, reserved and config ids are logged and ignored', () => {
+  const { mcp, lines } = parsed({
+    servers: { notion: SAMPLE.servers.notion },
+    allow: {
+      claude_ai_Slack: ['slack_search_public'],
+      plugin_Notion_notion: { codex: ['search'] },
+      mobbin: '*',
+      node_repl: { codex: ['js'] },
+      claude_only: { claude: ['a'] },
+      notion: ['x'],
+      wowdata: ['x'],
+      'bad id': ['x'],
+      broken: [3],
+      odd: { grok: ['x'] },
+      docs__archive: ['x'],
+      trail_: ['x'],
+      '-lead': ['x'],
+      neither: {},
+    },
+  });
+  assert.deepEqual(lines, [
+    'mcp.allow.notion: "notion" is also in mcp.servers, so mcp.servers.notion.allow is used and this list is ignored',
+    'mcp.allow.wowdata: "wowdata" is a bridge server name (wowdata, wowgoals, wowfactory); it is ignored',
+    "mcp.allow.bad id: the id must be a server's tool prefix (letters, digits, - and _, at most 64 characters, no __, not starting with - or ending with _); it is ignored",
+    'mcp.allow.broken has 3, which is not "*" or a tool name (letters, digits, - and _); it is ignored',
+    'mcp.allow.odd names "grok", which is not one of claude, codex; it is ignored',
+    ...['docs__archive', 'trail_', '-lead'].map(
+      id =>
+        `mcp.allow.${id}: the id must be a server's tool prefix (letters, digits, - and _, at most 64 characters, no __, not starting with - or ending with _); it is ignored`,
+    ),
+    'mcp.allow.neither must name claude or codex; it is ignored',
+  ]);
+  assert.deepEqual(Object.keys(mcp.allow), ['claude_ai_Slack', 'plugin_Notion_notion', 'mobbin', 'node_repl', 'claude_only']);
+  assert.match(MC.summary(mcp), /; allow lists for claude_ai_Slack, plugin_Notion_notion, mobbin, node_repl, claude_only$/);
+  assert.deepEqual(parsed({ allow: 'x' }).lines, ['mcp.allow in config.json must be an object of server ids; it is ignored']);
+
+  const plan = MC.forClaude(mcp);
+  assert.deepEqual(plan.allowRules, ['mcp__notion__notion-search', 'mcp__notion__notion-fetch'], 'a discovered list grants nothing, "*" included');
+  assert.equal(plan.blocks('mcp__claude_ai_Slack__slack_search_public'), false);
+  assert.equal(plan.blocks('mcp__claude_ai_Slack__slack_send_message'), true, 'a tool outside the list is never offered');
+  assert.equal(plan.blocks('mcp__claude_ai_Slack'), true, 'nor the whole server');
+  assert.equal(plan.blocks('mcp__claude_ai_Slack__*'), true);
+  assert.equal(plan.blocks('mcp__mobbin__anything'), false);
+  assert.equal(plan.blocks('mcp__plugin_Notion_notion__post'), false, 'a list for Codex only leaves Claude untouched');
+  assert.equal(plan.blocks('mcp__elsewhere__x'), false);
+  assert.deepEqual(plan.offRules, [], 'an allow list turns nothing off');
+  const scoped = MC.scopeAllowed({ allowedTools: ['WebSearch', 'mcp__claude_ai_Slack', 'mcp__claude_ai_Slack__slack_send_message', 'mcp__mobbin'] }, plan);
+  assert.deepEqual(scoped.agentCfg.allowedTools, ['WebSearch', 'mcp__mobbin']);
+  assert.deepEqual(scoped.denied, ['mcp__claude_ai_Slack__slack_send_message']);
+  const off = MC.forClaude(mcp, { choice: MC.parseChoice('-claude_ai_Slack') });
+  assert.deepEqual(off.offRules, [], 'turning a discovered server off stays with discoveredOff');
+
+  const own = ['plugin_Notion_notion', 'node_repl', 'mobbin', 'other', 'claude_only'];
+  const entries = MC.forCodex(mcp, { own });
+  assert.deepEqual(
+    entries.map(e => e.name),
+    ['notion', 'plugin_Notion_notion', 'node_repl'],
+    'a "*" list, a Claude-only list and a server with no list add no -c table',
+  );
+  assert.deepEqual(MC.codexArgs(entries.slice(1)), [
+    '-c',
+    'mcp_servers.plugin_Notion_notion.enabled_tools=["search"]',
+    '-c',
+    'mcp_servers.node_repl.enabled_tools=["js"]',
+  ]);
+  const chosen = MC.forCodex(mcp, { own, choice: MC.parseChoice('-node_repl,+plugin_Notion_notion') });
+  assert.deepEqual(MC.codexArgs(chosen.slice(1)), [
+    '-c',
+    'mcp_servers.node_repl.enabled=false',
+    '-c',
+    'mcp_servers.plugin_Notion_notion.enabled=true',
+    '-c',
+    'mcp_servers.plugin_Notion_notion.enabled_tools=["search"]',
+  ]);
+  assert.deepEqual(
+    MC.forCodex(mcp, { own: [] }).map(e => e.name),
+    ['notion'],
+    'a list for a server Codex does not have in config.toml adds nothing',
+  );
+  const reads = [['node_repl'], []];
+  const codexRun = () =>
+    MC.planRun({ agentId: 'codex', userMcp: mcp, codexOwn: ['node_repl'], codexOwnNow: () => reads.shift(), codexToolsNow: () => ({}) }).codexMcp;
+  assert.deepEqual(MC.codexArgs(codexRun().slice(1)), ['-c', 'mcp_servers.node_repl.enabled_tools=["js"]']);
+  assert.deepEqual(
+    codexRun().map(e => e.name),
+    ['notion'],
+    'each Codex run reads config.toml again, so a server removed from it gets no -c table',
+  );
+});
+
+test('mcp.allow never widens Codex: the -c enabled_tools is the allow list cut to config.toml enabled_tools and without its disabled_tools', () => {
+  const toml = [
+    '[mcp_servers.a]',
+    'command = "x"',
+    'enabled_tools = ["js", "fs"] # mine',
+    'disabled_tools = [',
+    '  "eval", # no',
+    "  'net',",
+    ']',
+    '[mcp_servers."q.r"]',
+    'enabled_tools = []',
+    '[mcp_servers.b.env]',
+    'enabled_tools = ["sub-table"]',
+    '[mcp_servers]',
+    'c.enabled_tools = ["k"]',
+    'd = { command = "x", enabled_tools = ["q"] }',
+    '[other]',
+    'enabled_tools = ["elsewhere"]',
+    'mcp_servers.e.enabled_tools = ["elsewhere"]',
+  ].join('\n');
+  assert.deepEqual(MC.codexOwnToolLists(toml), {
+    a: { enabled: ['js', 'fs'], disabled: ['eval', 'net'] },
+    'q.r': { enabled: [] },
+    c: { enabled: ['k'] },
+    d: { enabled: null },
+  });
+  assert.deepEqual(MC.codexOwnToolLists('mcp_servers.f.disabled_tools = ["m"]\nmcp_servers.g.enabled_tools = [1]\n[mcp_servers.h]\nenabled_tools = "x"'), {
+    f: { disabled: ['m'] },
+    g: { enabled: null },
+    h: { enabled: null },
+  });
+
+  const { mcp } = parsed({
+    allow: { a: { codex: ['js', 'eval', 'web'] }, c: { codex: ['x'] }, d: { codex: ['q'] }, n: { codex: ['js'] }, f: { codex: ['m', 'o'] } },
+  });
+  const ownTools = { a: { enabled: ['js', 'fs'], disabled: ['eval', 'net'] }, c: { enabled: [] }, d: { enabled: null }, f: { disabled: ['m'] } };
+  const out = Object.fromEntries(MC.forCodex(mcp, { own: ['a', 'c', 'd', 'n', 'f'], ownTools }).map(e => [e.name, e.enabledTools]));
+  assert.deepEqual(out, { a: ['js'], c: [], d: [], n: ['js'], f: ['o'] }, 'intersection, empty, unreadable, no list of theirs, disabled removed');
+  assert.deepEqual(MC.codexArgs(MC.forCodex(mcp, { own: ['c'], ownTools })), ['-c', 'mcp_servers.c.enabled_tools=[]']);
+  const viaPlan = MC.planRun({ agentId: 'codex', userMcp: mcp, codexOwnNow: () => ['a'], codexToolsNow: () => ownTools }).codexMcp;
+  assert.deepEqual(viaPlan, [{ name: 'a', own: true, enabledTools: ['js'] }], 'each Codex run reads the lists of config.toml');
 });
