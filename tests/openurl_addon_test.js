@@ -487,6 +487,26 @@ test('screenshot transport: a url record rides in one shot only; a later message
   assert.equal(frames.filter(f => carriesUrl(f, id)).length, 1, 'the url record is in exactly one frame');
 });
 
+test('screenshot transport: a strip redrawn before its shot fires still shoots the url record', () => {
+  const vm = screenshotVM();
+  vm.run('ClaudeWoW.Send("hello there")');
+  const message = vm.num('ClaudeWoWDB.lastSeq');
+  drive(vm);
+  vm.run('STUB.FireEvent("SCREENSHOT_SUCCEEDED")');
+  const shotsBefore = vm.num('STUB.screenshots');
+  click(vm, PR);
+  ack(vm, message);
+  tick(vm, 0.1);
+  drive(vm);
+  assert.equal(vm.num('STUB.screenshots'), shotsBefore + 1, 'the url record was shot after the redraw');
+  vm.run('STUB.FireEvent("SCREENSHOT_SUCCEEDED")');
+  for (let t = 0; t < 30; t++) {
+    tick(vm, 1);
+    drive(vm);
+  }
+  assert.equal(vm.num('STUB.screenshots'), shotsBefore + 1, 'and once only');
+});
+
 test('screenshot transport: only a shot the game reported failed is taken again with the url record', () => {
   const vm = screenshotVM();
   const from = vm.num('#STUB.codecFrames');

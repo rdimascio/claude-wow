@@ -8,7 +8,10 @@ const { makeRoot, gameRunner } = require('./helpers');
 const ROOT = makeRoot('openurl');
 const withGame = gameRunner(ROOT);
 const PR = 'https://github.com/o/r/pull/7';
-const ADDON_GAP_MS = 5200;
+const PLANTED = 'https://planted.example/x';
+const WAITING_TOASTS = ['Still opening the last link', 'Wait a moment before the next link'];
+const SEND_TIMEOUT_MS = 30000;
+const RETRY_MS = 500;
 
 function launches(file) {
   if (!fs.existsSync(file)) return [];
@@ -31,6 +34,36 @@ end
 `;
 
 const wait = ms => new Promise(r => setTimeout(r, ms));
+const escape = s => s.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+
+function lastSeq(h) {
+  return Number(h.client.luaValue('ClaudeWoWDB.lastSeq'));
+}
+
+function lastToast(h) {
+  return h.client.luaValue('E2E_TOASTS[#E2E_TOASTS]');
+}
+
+async function clickUntilSent(h, url) {
+  const until = Date.now() + SEND_TIMEOUT_MS;
+  for (;;) {
+    const before = lastSeq(h);
+    h.client.clickLink(`|Haddon:claudewow:url:${url}|h[link]|h`);
+    const id = lastSeq(h);
+    if (id > before) return id;
+    const toast = lastToast(h);
+    if (!WAITING_TOASTS.includes(toast) || Date.now() > until) {
+      throw new Error(`the click on ${url} sent no record (toast ${JSON.stringify(toast)}, copy box ${h.client.luaValue('E2E_COPIED[#E2E_COPIED]')})`);
+    }
+    await wait(RETRY_MS);
+  }
+}
+
+function openLine(h, id, rest) {
+  return new RegExp(`#${id}@${escape(h.client.luaValue('ClaudeWoWDB.session'))}\\b.* ${rest}`);
+}
+
+const refused = (h, id, url) => openLine(h, id, escape(`open link refused (not a link from a reply in this chat): ${JSON.stringify(url)}`));
 
 test('a click on a reply link reaches the bridge, which opens exactly that link with no shell and runs no agent; a refusal comes back to the copy box; a record for chat B carrying chat A link opens nothing', async () => {
   fs.mkdirSync(ROOT, { recursive: true });
@@ -41,8 +74,8 @@ test('a click on a reply link reaches the bridge, which opens exactly that link 
     h.client.runLua(SPY);
     const calls = h.agentCalls().length;
     const mark = h.bridge.output.length;
-    h.client.clickLink(`|Haddon:claudewow:url:${PR}|h[PR #7]|h`);
-    await h.bridge.waitForLine(/open link: "https:\/\/github\.com\/o\/r\/pull\/7"/, { from: mark, timeoutMs: 45000 });
+    const first = await clickUntilSent(h, PR);
+    await h.bridge.waitForLine(openLine(h, first, escape(`open link: ${JSON.stringify(PR)}`)), { from: mark, timeoutMs: 45000 });
     const [launch, ...more] = launches(opened);
     assert.deepEqual(more, []);
     assert.deepEqual(launch.args.slice(-1), [PR]);
@@ -51,40 +84,31 @@ test('a click on a reply link reaches the bridge, which opens exactly that link 
     assert.doesNotMatch(h.bridge.output.slice(mark), /runs claude/);
     assert.equal(h.client.luaValue('#E2E_COPIED'), '0', 'an opened link shows no copy box');
 
-    await wait(ADDON_GAP_MS);
-    const planted = 'https://planted.example/x';
-    h.client.runLua(`local c = ClaudeWoWDB.chats[1]; table.insert(c.history, { role = "assistant", t = time(), text = "see ${planted}" })`);
+    h.client.runLua(`local c = ClaudeWoWDB.chats[1]; table.insert(c.history, { role = "assistant", t = time(), text = "see ${PLANTED}" })`);
     const refusedMark = h.bridge.output.length;
-    h.client.clickLink(`|Haddon:claudewow:url:${planted}|h[planted]|h`);
-    await h.bridge.waitForLine(/open link refused \(not a link from a reply in this chat\): "https:\/\/planted\.example\/x"/, {
-      from: refusedMark,
-      timeoutMs: 45000,
-    });
-    await h.client.waitFor(() => h.client.luaValue('E2E_COPIED[1]') === planted, { timeoutMs: 45000, label: 'the refused link in the copy box' });
-    assert.equal(h.client.luaValue('E2E_TOASTS[#E2E_TOASTS]'), 'Link not opened: not a link from a reply in this chat. Copy it from the box.');
+    const planted = await clickUntilSent(h, PLANTED);
+    await h.bridge.waitForLine(refused(h, planted, PLANTED), { from: refusedMark, timeoutMs: 45000 });
+    await h.client.waitFor(() => h.client.luaValue('E2E_COPIED[1]') === PLANTED, { timeoutMs: 45000, label: 'the refused link in the copy box' });
+    assert.equal(lastToast(h), 'Link not opened: not a link from a reply in this chat. Copy it from the box.');
     assert.equal(launches(opened).length, 1, 'the bridge opened nothing for a link only the game holds');
 
     const echoed = await h.client.say('@dev log planted');
-    assert.ok(echoed.text.includes(planted), 'a plugin reply that echoes the link: ' + echoed.text.slice(0, 300));
-    await wait(ADDON_GAP_MS);
+    assert.ok(echoed.text.includes(PLANTED), 'a plugin reply that echoes the link: ' + echoed.text.slice(0, 300));
     const echoMark = h.bridge.output.length;
-    h.client.clickLink(`|Haddon:claudewow:url:${planted}|h[planted]|h`);
-    await h.bridge.waitForLine(/open link refused \(not a link from a reply in this chat\): "https:\/\/planted\.example\/x"/, {
-      from: echoMark,
-      timeoutMs: 45000,
-    });
+    const again = await clickUntilSent(h, PLANTED);
+    await h.bridge.waitForLine(refused(h, again, PLANTED), { from: echoMark, timeoutMs: 45000 });
     assert.equal(launches(opened).length, 1, 'a link a plugin reply echoed is not an agent link');
 
     h.client.runLua('ClaudeWoW.NewChat()');
     await h.client.say('[[reply nothing to link here]]');
     const chatB = h.client.luaValue('ClaudeWoWDB.activeChat');
     assert.notEqual(chatB, h.client.luaValue('ClaudeWoWDB.chats[1].id'));
-    const forged = h.bridge.output.length;
+    const forgedMark = h.bridge.output.length;
+    const beforeForge = lastSeq(h);
     h.client.runLua(`ClaudeWoW.Send(${JSON.stringify(PR)}, nil, { kind = "url", verbatim = true })`);
-    await h.bridge.waitForLine(/open link refused \(not a link from a reply in this chat\): "https:\/\/github\.com\/o\/r\/pull\/7"/, {
-      from: forged,
-      timeoutMs: 45000,
-    });
+    const forged = lastSeq(h);
+    assert.ok(forged > beforeForge, 'the forged record went out');
+    await h.bridge.waitForLine(refused(h, forged, PR), { from: forgedMark, timeoutMs: 45000 });
     assert.equal(launches(opened).length, 1, "chat A's link on a record for chat B opened nothing");
   });
 });

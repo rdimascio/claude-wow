@@ -1084,6 +1084,9 @@ local function TakeScreenshot()
 		run.staleShotUntil, run.staleShotGen = nil, nil
 		self:SetScript("OnUpdate", nil)
 		shot.fired = true
+		for _, rec in pairs(run.outbound) do
+			if rec.openUrl and rec.shot == gen then rec.sentOnce = true end
+		end
 		ShotStats().taken = ShotStats().taken + 1
 		pcall(ShotStatus.Quiet, gen)
 		local ok, err = pcall(Screenshot)
@@ -1236,10 +1239,7 @@ RefreshStrip = function()
 	ShowStrip(latest, table.concat(parts, RS))
 	local gen = TakeScreenshot()
 	run.shot.telemetry = rider
-	for _, rec in ipairs(included) do
-		rec.shot = gen
-		rec.sentOnce = rec.openUrl or nil
-	end
+	for _, rec in ipairs(included) do rec.shot = gen end
 end
 
 -- The two levels the bridge wants the strip drawn at on the screenshot transport
