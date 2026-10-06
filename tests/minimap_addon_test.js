@@ -139,7 +139,11 @@ test('minimap button: a client that has not restarted since MinimapIcon.tga was 
   const vm = newVM(`STUB.missingTextures = { [ [[${SPARK}]] ] = true }`);
   assert.equal(vm.evaluate(`${B}.icon:GetTexture()`), PORTRAIT);
   assert.equal(vm.evaluate(`${B}.icon.stubMask`), 'Interface\\CharacterFrame\\TempPortraitAlphaMask');
-  assert.equal(texCoord(vm), '0.05,0.95,0.05,0.95');
+  assert.equal(texCoord(vm), '0.2,0.8,0.2,0.8', 'the portrait is cropped to its spark so it fills the circle');
+  vm.run(`${B}.scripts.OnMouseDown(${B}, "LeftButton")`);
+  assert.equal(texCoord(vm), '0.18,0.82,0.18,0.82');
+  vm.run(`${B}.scripts.OnMouseUp(${B}, "LeftButton")`);
+  assert.equal(texCoord(vm), '0.2,0.8,0.2,0.8');
   const noMask = newVM(`STUB.noMask = true; STUB.missingTextures = { [ [[${SPARK}]] ] = true }`);
   assert.equal(noMask.evaluate(`${B}.icon:GetTexture()`), PORTRAIT, 'no SetMask: still the portrait, cropped, and no error');
   assert.equal(noMask.evaluate(`${B}.icon.stubMask`), null);

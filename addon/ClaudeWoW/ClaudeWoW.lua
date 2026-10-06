@@ -6265,6 +6265,8 @@ Q.MINIMAP_ICON = "Interface\\AddOns\\ClaudeWoW\\MinimapIcon"
 Q.MINIMAP_ICON_MASK = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
 Q.MINIMAP_ICON_INSET = { 0.05, 0.95, 0.05, 0.95 }
 Q.MINIMAP_ICON_PRESSED = { 0, 1, 0, 1 }
+Q.MINIMAP_PORTRAIT_INSET = { 0.2, 0.8, 0.2, 0.8 }
+Q.MINIMAP_PORTRAIT_PRESSED = { 0.18, 0.82, 0.18, 0.82 }
 Q.MINIMAP_BORDER = "Interface\\Minimap\\MiniMap-TrackingBorder"
 Q.MINIMAP_BACKGROUND = "Interface\\Minimap\\UI-Minimap-Background"
 Q.MINIMAP_HIGHLIGHT = "Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight"
@@ -6397,7 +6399,10 @@ function Q.SetMinimapIcon(icon)
 end
 
 function Q.UpdateMinimapIconCoord(button)
-	local coords = button.isMouseDown and Q.MINIMAP_ICON_PRESSED or Q.MINIMAP_ICON_INSET
+	local portrait = button.iconFile == Q.PORTRAIT
+	local rest = portrait and Q.MINIMAP_PORTRAIT_INSET or Q.MINIMAP_ICON_INSET
+	local pressed = portrait and Q.MINIMAP_PORTRAIT_PRESSED or Q.MINIMAP_ICON_PRESSED
+	local coords = button.isMouseDown and pressed or rest
 	button.icon:SetTexCoord(coords[1], coords[2], coords[3], coords[4])
 end
 
