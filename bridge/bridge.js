@@ -2487,6 +2487,18 @@ function runAgent(job, opts = {}) {
   });
   state.mcpSeen = mcpPlan.seen;
   const { userMcp, seenOff, guard: mcpGuard } = mcpPlan;
+  const contractCmd = A.resolveCommand(agentId, A.agentConfig(cfg, agentId));
+  const contractRefusal = contractCmd.found
+    ? AC.refusal(contracts.status(agentId, contractCmd, agent.env({ ...process.env })), {
+        off: claudeRun ? !!((userMcp && userMcp.offRules.length) || (seenOff && seenOff.rules.length)) : mcpPlan.codexMcp.some(e => e.off),
+        secrets: mcpPlan.codexMcp.some(e => (e.envVars && e.envVars.length) || e.bearerTokenEnvVar),
+      })
+    : '';
+  if (contractRefusal) {
+    log(`${tag} contract: ${contractRefusal}`);
+    finish(job, 'error', contractRefusal);
+    return;
+  }
   const grantForGood = P.splitGrants(inGameGrantable(job.allow, runDenied, mcpGuard));
   const grantOnce = P.splitGrants(inGameGrantable(job.allowOnce, runDenied, mcpGuard));
   if (grantForGood.rules.length) {
@@ -2530,15 +2542,6 @@ function runAgent(job, opts = {}) {
   if (!cmd.found) {
     log(`${tag} ${agentId} not found: ${cmd.note}`);
     finish(job, 'error', `${agent.name} is not installed on the bridge PC: ${cmd.note}.`);
-    return;
-  }
-  const contractRefusal = AC.refusal(contracts.status(agentId, cmd, agent.env({ ...process.env })), {
-    off: claudeRun ? !!((userMcp && userMcp.offRules.length) || (seenOff && seenOff.rules.length)) : codexMcp.some(e => e.off),
-    secrets: codexMcp.some(e => (e.envVars && e.envVars.length) || e.bearerTokenEnvVar),
-  });
-  if (contractRefusal) {
-    log(`${tag} contract: ${contractRefusal}`);
-    finish(job, 'error', contractRefusal);
     return;
   }
   const skey = sessKey(job);

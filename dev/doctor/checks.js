@@ -19,7 +19,8 @@ const UPD = require('../../bridge/selfupdate');
 const CLI = require('../../bridge/clients');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const CONTRACT_FILE = 'agent-contract.json';
+const AC = require('../../bridge/agentcontract');
+const CONTRACT_FILE = AC.FILE_NAME;
 const QUIET_LIMIT_MS = 10 * 60 * 1000;
 const LOG_TAIL_BYTES = 2 * 1024 * 1024;
 const LAUNCH_SLACK_MS = 2000;
@@ -1070,15 +1071,15 @@ function checkContract(ctx) {
           `Update ${id}, then run "claude-wow agents check" again.`,
         ),
       );
-    const at = Date.parse(e.at);
-    const st = typeof e.path === 'string' && e.path ? ctx.sys.stat(e.path) : null;
+    const real = typeof e.path === 'string' && e.path ? ctx.sys.realpath(e.path) : null;
+    const st = real ? ctx.sys.stat(real) : null;
     if (!st)
       issues.push(warn(`${id}: the checked CLI ${e.path || '(no path)'} is gone.`, 'The check describes a CLI that is no longer installed there.', rerun));
-    else if (Number.isFinite(at) && st.mtimeMs > at)
+    else if (!AC.sameIdentity(e, AC.identityOf(real, st)))
       issues.push(
         warn(
-          `${id}: ${e.path} changed after the check at ${e.at}.`,
-          'The CLI updated itself, so the bridge treats it as not checked until the check runs again.',
+          `${id}: ${e.path} is not the file the check at ${e.at} measured (path, size, inode or times differ).`,
+          'The CLI was updated or replaced, so the bridge treats it as not checked until the check runs again.',
           rerun,
         ),
       );

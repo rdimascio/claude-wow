@@ -70,11 +70,13 @@ test('readVersion runs the command with --version, and kills one that hangs', as
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-function trackerWorld(contract) {
+const ID = { mtimeMs: 1000, ctimeMs: 1001, ino: 77, size: 5000 };
+
+function trackerWorld(contract, versionOf = () => Promise.resolve('2.1.290')) {
   const dir = scratch('tracker');
   const file = path.join(dir, AC.FILE_NAME);
   if (contract) fs.writeFileSync(file, JSON.stringify(contract));
-  const stats = { '/real/claude': 1000 };
+  const stats = { '/real/claude': { ...ID } };
   const calls = [];
   const logs = [];
   const tracker = AC.createTracker({
@@ -83,11 +85,11 @@ function trackerWorld(contract) {
     realpath: p => (p === '/bin/claude' ? '/real/claude' : p),
     stat: p => {
       if (!(p in stats)) throw new Error('ENOENT');
-      return { mtimeMs: stats[p] };
+      return stats[p];
     },
     version: cmd => {
       calls.push(cmd.file);
-      return Promise.resolve('2.1.290');
+      return versionOf(calls.length);
     },
     which: { exists: p => p === '/bin/claude' },
   });
@@ -95,56 +97,97 @@ function trackerWorld(contract) {
 }
 
 const cmdClaude = { file: '/bin/claude', args: [], found: true };
+const entryFor = (rows, extra = {}) => ({ realpath: '/real/claude', ...ID, version: '2.1.290', rows, ...extra });
 
-test('the tracker matches a contract entry on realpath and mtime, and a CLI replaced between two turns is not checked until the check runs again', async () => {
-  const w = trackerWorld({ claude: { realpath: '/real/claude', mtimeMs: 1000, version: '2.1.290', rows: { ...CLAUDE_ROWS, C2: 'fail' } } });
+test('the tracker matches an entry on realpath, mtime, ctime, inode and size; an npm update that keeps the path and mtime is not checked', async () => {
+  const w = trackerWorld({ claude: entryFor({ ...CLAUDE_ROWS, C2: 'fail' }) });
   const first = w.tracker.status('claude', cmdClaude);
+  assert.equal(first.matched, true);
   assert.equal(first.checked, true);
-  assert.equal(first.version, '2.1.290', 'the entry names the version until --version answers');
+  assert.equal(first.version, '2.1.290', 'the entry names the version while --version runs');
   assert.equal(first.rows.C2, 'fail');
   await new Promise(setImmediate);
   w.tracker.status('claude', cmdClaude);
-  assert.deepEqual(w.calls, ['/bin/claude'], '--version runs once per realpath and mtime');
+  assert.deepEqual(w.calls, ['/bin/claude'], '--version runs once per binary identity');
   assert.deepEqual(w.logs, []);
-  w.stats['/real/claude'] = 2000;
-  const replaced = w.tracker.status('claude', cmdClaude);
-  assert.equal(replaced.checked, false);
-  assert.deepEqual(replaced.rows, {});
-  assert.equal(w.calls.length, 2, 'the replaced binary is asked for its version again');
-  assert.equal(w.logs.length, 1);
-  assert.match(
-    w.logs[0],
-    /^contract: Claude Code at \/real\/claude is not checked .*run claude-wow agents check\. Nothing is turned off until a check fails\.$/,
-  );
+  for (const [k, v] of [
+    ['ctimeMs', 2002],
+    ['ino', 78],
+    ['size', 5001],
+    ['mtimeMs', 999],
+  ]) {
+    w.stats['/real/claude'] = { ...ID, [k]: v };
+    const replaced = w.tracker.status('claude', cmdClaude);
+    assert.equal(replaced.matched, false, `${k} changed`);
+    assert.deepEqual(replaced.rows, {});
+    assert.equal(AC.refusal(replaced, { off: true }), '');
+  }
+  assert.equal(w.calls.length, 5, 'each replaced binary is asked for its version again');
+  assert.equal(w.logs.length, 4);
+  assert.match(w.logs[0], /^contract: Claude Code at \/real\/claude is not checked .*run claude-wow agents check\. Only a measured fail turns anything off\.$/);
   w.tracker.status('claude', cmdClaude);
-  assert.equal(w.logs.length, 1, 'said once per binary');
-  await new Promise(setImmediate);
-  assert.equal(w.tracker.current().claude.version, '2.1.290');
+  assert.equal(w.logs.length, 4, 'said once per binary');
   assert.deepEqual(w.tracker.children(), []);
   fs.rmSync(w.dir, { recursive: true, force: true });
 });
 
-test('the tracker ignores other agents, a command it cannot find or stat, a version that differs and a broken contract file', async () => {
-  const w = trackerWorld({ claude: { realpath: '/real/claude', mtimeMs: 1000, version: '2.1.289', rows: CLAUDE_ROWS } });
+test('the tracker recomputes when --version answers: another version, or no version at all, is not a match', async () => {
+  const other = trackerWorld({ claude: entryFor({ ...CLAUDE_ROWS, C2: 'fail' }) }, () => Promise.resolve('2.1.291'));
+  assert.equal(other.tracker.status('claude', cmdClaude).matched, true, 'pending: the full identity decides');
+  await new Promise(setImmediate);
+  const now = other.tracker.current().claude;
+  assert.equal(now.matched, false);
+  assert.equal(now.version, '2.1.291');
+  assert.deepEqual(AC.slotField({ claude: now }).claude, { version: '2.1.291', checked: false, off: true, reason: '' });
+  const unknown = trackerWorld({ claude: entryFor({ ...CLAUDE_ROWS, C2: 'fail' }) }, () => Promise.resolve(''));
+  unknown.tracker.status('claude', cmdClaude);
+  await new Promise(setImmediate);
+  assert.equal(unknown.tracker.status('claude', cmdClaude).matched, false);
+  const rejected = trackerWorld({ claude: entryFor(CLAUDE_ROWS) }, () => Promise.reject(new Error('x')));
+  rejected.tracker.status('claude', cmdClaude);
+  await new Promise(setImmediate);
+  assert.equal(rejected.tracker.status('claude', cmdClaude).matched, false);
+  const blank = trackerWorld({ claude: entryFor(CLAUDE_ROWS, { version: '' }) });
+  assert.equal(blank.tracker.status('claude', cmdClaude).matched, false, 'an entry with no version never matches');
+  for (const w of [other, unknown, rejected, blank]) fs.rmSync(w.dir, { recursive: true, force: true });
+});
+
+test('current() reads agent-contract.json again, so a check written while the bridge runs reaches the slot field', async () => {
+  const w = trackerWorld(null);
+  assert.equal(w.tracker.status('claude', cmdClaude).checked, false);
+  await new Promise(setImmediate);
+  fs.writeFileSync(w.file, JSON.stringify({ claude: entryFor({ ...CLAUDE_ROWS, C1: 'fail' }) }));
+  const field = AC.slotField(w.tracker.current());
+  assert.equal(field.claude.checked, true);
+  assert.equal(field.claude.off, false);
+  assert.match(field.claude.reason, /failed C1/);
+  fs.writeFileSync(w.file, JSON.stringify({ claude: entryFor({ C1: 'pass', C2: 'unchecked' }) }));
+  const partial = w.tracker.current().claude;
+  assert.equal(partial.matched, true);
+  assert.equal(partial.checked, false, 'a gating row that measured nothing leaves the CLI not checked');
+  fs.rmSync(w.dir, { recursive: true, force: true });
+});
+
+test('the tracker ignores other agents, a command it cannot find or stat, and a broken contract file', async () => {
+  const w = trackerWorld({ claude: entryFor(CLAUDE_ROWS) });
   assert.equal(w.tracker.status('grok', cmdClaude), null);
   assert.equal(w.tracker.status('claude', { file: '/bin/other', args: [], found: true }), null);
   assert.equal(w.tracker.status('claude', { ...cmdClaude, found: false }), null);
   delete w.stats['/real/claude'];
   assert.equal(w.tracker.status('claude', cmdClaude), null);
-  w.stats['/real/claude'] = 1000;
-  w.tracker.status('claude', cmdClaude);
-  await new Promise(setImmediate);
-  assert.equal(w.tracker.status('claude', cmdClaude).checked, false, 'the same file with another version is not the checked one');
+  w.stats['/real/claude'] = { ...ID };
   fs.writeFileSync(w.file, '[1, 2]');
-  assert.equal(w.tracker.status('claude', cmdClaude).checked, false);
+  assert.equal(w.tracker.status('claude', cmdClaude).matched, false);
   fs.writeFileSync(w.file, '{ nope');
-  assert.equal(w.tracker.status('claude', cmdClaude).checked, false);
+  assert.equal(w.tracker.status('claude', cmdClaude).matched, false);
+  assert.equal(AC.sameIdentity({ realpath: '/real/claude', ...ID, ino: '77' }, AC.identityOf('/real/claude', ID)), false);
+  assert.equal(AC.sameIdentity(null, AC.identityOf('/real/claude', ID)), false);
   fs.rmSync(w.dir, { recursive: true, force: true });
 });
 
-const status = (agent, rows, extra = {}) => ({ agent, version: '1.0.0', checked: true, rows, ...extra });
+const status = (agent, rows, extra = {}) => ({ agent, version: '1.0.0', matched: true, checked: true, rows, ...extra });
 
-test('a C2 fail gives the slot field { claude: { off: false, reason } } and refuses a run that turns a server off; nothing is refused when unchecked', () => {
+test('a C2 fail gives the slot field { claude: { off: false, reason } } and refuses a run that turns a server off; nothing is refused unmatched', () => {
   const failed = status('claude', { ...CLAUDE_ROWS, C2: 'fail' });
   const field = AC.slotField({ claude: failed, grok: failed, codex: null });
   assert.deepEqual(Object.keys(field), ['claude']);
@@ -158,9 +201,11 @@ test('a C2 fail gives the slot field { claude: { off: false, reason } } and refu
   assert.equal(AC.refusal(failed, { off: true }), field.claude.reason);
   assert.equal(AC.refusal(failed, { off: false, secrets: true }), '', 'a run that turns nothing off is not refused');
   assert.match(AC.offReason(status('claude', { ...CLAUDE_ROWS, C1: 'fail', C2: 'fail' })), /failed C1 and C2/);
-  const unchecked = { agent: 'claude', version: '1.0.0', checked: false, rows: { C2: 'fail' } };
-  assert.equal(AC.refusal(unchecked, { off: true }), '', 'fail closed only on a measured fail');
-  assert.deepEqual(AC.slotField({ claude: unchecked }), { claude: { version: '1.0.0', checked: false, off: true, reason: '' } });
+  const partial = status('claude', { C1: 'unchecked', C2: 'fail' }, { checked: false });
+  assert.match(AC.refusal(partial, { off: true }), /failed C2/, 'a measured fail counts even when another gating row measured nothing');
+  const unmatched = { agent: 'claude', version: '1.0.0', matched: false, checked: false, rows: { C2: 'fail' } };
+  assert.equal(AC.refusal(unmatched, { off: true }), '', 'fail closed only on a measured fail of this binary');
+  assert.deepEqual(AC.slotField({ claude: unmatched }), { claude: { version: '1.0.0', checked: false, off: true, reason: '' } });
   assert.equal(AC.refusal(status('claude', CLAUDE_ROWS), { off: true }), '');
   assert.equal(AC.refusal(null, { off: true }), '');
 });
@@ -279,10 +324,24 @@ test('probeClaude: two runs stopped at init, the second with the deny rule, agai
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-function codexEvents({ call, shell, usage = { input_tokens: 10, cached_input_tokens: 4, output_tokens: 2 } }) {
+test('judgeClaude: C2 passes only when the fixture server connected in the deny run and no tool leaked', () => {
+  const nonces = { arg: 'arg_1', env: 'env_1' };
+  const good = ['mcp__a_b_c__alpha', 'mcp__a_b_c__beta', 'mcp__a_b_c__arg_1', 'mcp__a_b_c__env_1'];
+  const run = (...events) => ({ events, stderr: '' });
+  for (const servers of [[{ name: 'a.b c', status: 'pending', source: 'dynamic' }], [{ name: 'a.b c', status: 'needs-auth', source: 'dynamic' }], []]) {
+    const r = AC.judgeClaude(run(claudeInit(good)), run(claudeInit([], servers)), nonces);
+    assert.equal(r.rows.C2, 'unchecked', JSON.stringify(servers));
+    assert.match(r.notes.at(-1), /in the second run, so its missing tools prove nothing/);
+  }
+  assert.equal(AC.judgeClaude(run(claudeInit(good)), run(claudeInit([])), nonces).rows.C2, 'pass');
+});
+
+function codexEvents({ call, shell, shells, extra = [], usage = { input_tokens: 10, cached_input_tokens: 4, output_tokens: 2 } }) {
   const items = [];
   if (call) items.push({ id: 'i0', type: 'mcp_tool_call', server: 'contract', tool: 'ping', ...call });
-  if (shell) items.push({ id: 'i1', type: 'command_execution', command: "/bin/zsh -lc 'printenv CONTRACT_MCP_ECHO'", ...shell });
+  for (const [k, sh] of (shells || (shell ? [shell] : [])).entries())
+    items.push({ id: `s${k}`, type: 'command_execution', command: "/bin/zsh -lc 'printenv CONTRACT_MCP_ECHO'", ...sh });
+  items.push(...extra);
   return [
     { type: 'thread.started', thread_id: 't' },
     ...items.map(item => ({ type: 'item.completed', item })),
@@ -290,23 +349,35 @@ function codexEvents({ call, shell, usage = { input_tokens: 10, cached_input_tok
   ];
 }
 
-test('judgeCodexCall: X1 from the MCP call, X2b from what the server and the shell saw', () => {
+const UNSET_EXIT = { status: 'failed', exit_code: 1, aggregated_output: '' };
+
+test('judgeCodexCall: X1 from the MCP call, X2b from what the server and every shell command saw', () => {
   const secret = 'secret_1';
   const result = { content: [{ type: 'text', text: `ping echo=${secret}` }] };
-  const ok = AC.judgeCodexCall(
-    { events: codexEvents({ call: { status: 'completed', result }, shell: { status: 'failed', exit_code: 1, aggregated_output: '' } }) },
+  const pass = AC.judgeCodexCall({ events: codexEvents({ call: { status: 'completed', result }, shell: UNSET_EXIT }) }, secret);
+  assert.deepEqual(pass.rows, { X1: 'pass', X2b: 'pass' }, 'printenv of a hidden variable exits 1 with no output: that is the pass');
+  const declined = AC.judgeCodexCall(
+    { events: codexEvents({ call: { status: 'completed', result }, shell: { status: 'declined', exit_code: null, aggregated_output: '' } }) },
     secret,
   );
-  assert.deepEqual(ok.rows, { X1: 'pass', X2b: 'unchecked' }, 'a shell command that did not complete proves nothing');
-  const pass = AC.judgeCodexCall(
-    { events: codexEvents({ call: { status: 'completed', result }, shell: { status: 'completed', aggregated_output: '' } }) },
+  assert.deepEqual(declined.rows, { X1: 'pass', X2b: 'unchecked' }, 'a shell command that never ran proves nothing');
+  const retry = AC.judgeCodexCall(
+    {
+      events: codexEvents({
+        call: { status: 'completed', result },
+        shells: [UNSET_EXIT, { status: 'completed', exit_code: 0, aggregated_output: `${secret}\n` }],
+      }),
+    },
     secret,
   );
-  assert.deepEqual(pass.rows, { X1: 'pass', X2b: 'pass' });
-  const leak = AC.judgeCodexCall({ events: codexEvents({ shell: { status: 'completed', aggregated_output: `${secret}\n` } }) }, secret);
+  assert.deepEqual(retry.rows, { X1: 'pass', X2b: 'fail' }, 'a later attempt that prints the secret wins');
+  const leak = AC.judgeCodexCall({ events: codexEvents({ shell: { status: 'completed', exit_code: 0, aggregated_output: `${secret}\n` } }) }, secret);
   assert.deepEqual(leak.rows, { X1: 'unchecked', X2b: 'fail' }, 'measured on Codex 0.160.1: the shell printed the excluded name');
   assert.match(leak.notes.join(' '), /the shell printed CONTRACT_MCP_ECHO although shell_environment_policy\.exclude names it/);
-  const noEnv = AC.judgeCodexCall({ events: codexEvents({ call: { status: 'completed', result: { content: [{ text: 'ping echo=' }] } } }) }, secret);
+  const noEnv = AC.judgeCodexCall(
+    { events: codexEvents({ call: { status: 'completed', result: { content: [{ text: 'ping echo=' }] } }, shell: UNSET_EXIT }) },
+    secret,
+  );
   assert.deepEqual(noEnv.rows, { X1: 'pass', X2b: 'fail' });
   const refused = AC.judgeCodexCall(
     {
@@ -350,8 +421,7 @@ test('judgeCodexList: X2a from codex mcp list --json, with the -c server as the 
   assert.match(junk.notes[0], /printed no list: error: unknown command/);
 });
 
-test('probeCodex: the -c slice the bridge emits, one free mcp list and one exec run, with the secret only in the env', async () => {
-  const dir = scratch('probe-codex');
+function codexRun(execEvents) {
   const runs = [];
   const run = async (file, args, opts) => {
     runs.push({ file, args, opts });
@@ -364,14 +434,16 @@ test('probeCodex: the -c slice the bridge emits, one free mcp list and one exec 
           { name: 'mine', enabled: false },
         ]),
       };
-    const secret = opts.env.CONTRACT_MCP_ECHO;
-    return {
-      events: codexEvents({
-        call: { status: 'completed', result: { content: [{ type: 'text', text: `ping echo=${secret}` }] } },
-        shell: { status: 'completed', aggregated_output: '' },
-      }),
-    };
+    return { events: execEvents(opts.env.CONTRACT_MCP_ECHO) };
   };
+  return { runs, run };
+}
+
+test('probeCodex: the -c slice the bridge emits, one free mcp list and one exec run, with the secret only in the env', async () => {
+  const dir = scratch('probe-codex');
+  const { runs, run } = codexRun(secret =>
+    codexEvents({ call: { status: 'completed', result: { content: [{ type: 'text', text: `ping echo=${secret}` }] } }, shell: UNSET_EXIT }),
+  );
   const r = await AC.probeCodex({
     cmd: { file: 'codex', args: [] },
     run,
@@ -398,6 +470,17 @@ test('probeCodex: the -c slice the bridge emits, one free mcp list and one exec 
   assert.match(exec.opts.env.CONTRACT_MCP_ECHO, /^secret_[0-9a-f]{10}$/);
   assert.ok(!exec.args.join(' ').includes(exec.opts.env.CONTRACT_MCP_ECHO), 'the secret is never on argv');
   assert.match(exec.opts.input, /mcp__contract__ping/);
+
+  const offCall = codexRun(secret =>
+    codexEvents({
+      call: { status: 'completed', result: { content: [{ type: 'text', text: `ping echo=${secret}` }] } },
+      shell: UNSET_EXIT,
+      extra: [{ id: 'o', type: 'mcp_tool_call', server: 'contract_off', tool: 'ping', status: 'completed' }],
+    }),
+  );
+  const called = await AC.probeCodex({ cmd: { file: 'codex' }, run: offCall.run, fixture: { command: 'f', args: [] }, dir, own: ['mine'] });
+  assert.equal(called.rows.X2a, 'fail', 'mcp list says off, but the run called it');
+  assert.match(called.notes.join(' '), /Codex called the contract_off server/);
 
   const quiet = await AC.probeCodex({
     cmd: { file: 'codex' },
@@ -432,7 +515,7 @@ test('spawnRun reads JSON lines, stops the child on the first matching event, an
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test('agents check: probes each found agent, prints every row and the cost, writes the contract file, and exits 1 on a fail', async () => {
+function checkWorld(probes) {
   const dir = scratch('check');
   const home = { dir: path.join(dir, 'home'), config: path.join(dir, 'home', 'config.json') };
   fs.mkdirSync(home.dir, { recursive: true });
@@ -445,6 +528,7 @@ test('agents check: probes each found agent, prints every row and the cost, writ
     tmpDir: dir,
     out: l => lines.push(l),
     env: { CLAUDECODE: '1' },
+    signals: new (require('events').EventEmitter)(),
     resolveCommand: (id, cfg) => {
       seenCfg.push([id, cfg.path]);
       return id === 'claude' ? { file: '/x/claude', args: [], found: true } : { file: 'codex', args: [], found: false, note: 'install it' };
@@ -452,52 +536,137 @@ test('agents check: probes each found agent, prints every row and the cost, writ
     which: { exists: p => p === '/x/claude' },
     version: async () => '2.1.290',
     realpath: p => `/real${p}`,
-    stat: () => ({ mtimeMs: 42 }),
+    stat: () => ({ ...ID }),
     now: () => Date.parse('2026-10-05T12:00:00Z'),
-    probes: {
-      claude: async ({ cmd, env, dir: tmp }) => {
-        assert.equal(cmd.file, '/x/claude');
-        assert.equal(env.CLAUDECODE, undefined);
-        assert.ok(fs.existsSync(tmp));
-        return { rows: { ...CLAUDE_ROWS, C2: 'fail' }, notes: ['n1'], cost: 'none reported' };
-      },
-    },
+    probes,
   };
-  assert.equal(await AC.check(['check'], deps), 1);
-  assert.deepEqual(seenCfg, [
+  const written = () => JSON.parse(fs.readFileSync(path.join(home.dir, AC.FILE_NAME), 'utf8'));
+  return { dir, home, lines, seenCfg, deps, written };
+}
+
+test('agents check: probes each found agent, prints every row and the cost, writes the identity and rows, and exits 1 on a fail', async () => {
+  const w = checkWorld({
+    claude: async ({ cmd, env, dir: tmp }) => {
+      assert.equal(cmd.file, '/x/claude');
+      assert.equal(env.CLAUDECODE, undefined);
+      assert.ok(fs.existsSync(tmp));
+      return { rows: { ...CLAUDE_ROWS, C2: 'fail' }, notes: ['n1'], cost: 'none reported' };
+    },
+  });
+  assert.equal(await AC.check(['check'], w.deps), 1);
+  assert.deepEqual(w.seenCfg, [
     ['claude', '/x/claude'],
     ['codex', undefined],
   ]);
-  assert.equal(lines[0], 'claude: Claude Code 2.1.290 at /real/x/claude');
-  assert.match(lines[2], /^ {2}C2 {3}fail {6}--disallowedTools/);
-  assert.ok(lines.includes('  note: n1'));
-  assert.ok(lines.includes('  cost: none reported'));
-  assert.ok(lines.includes('codex: not found (install it); skipped'));
-  assert.ok(lines.includes(`wrote ${path.join(home.dir, AC.FILE_NAME)}`));
-  assert.match(lines.at(-1), /a failed row turns that behavior off/);
-  const written = JSON.parse(fs.readFileSync(path.join(home.dir, AC.FILE_NAME), 'utf8'));
-  assert.deepEqual(written.grok, { keep: true }, 'other entries are kept');
-  assert.deepEqual(written.claude, {
+  assert.equal(w.lines[0], 'claude: Claude Code 2.1.290 at /real/x/claude');
+  assert.match(w.lines[2], /^ {2}C2 {3}fail {6}--disallowedTools/);
+  assert.ok(w.lines.includes('  note: n1'));
+  assert.ok(w.lines.includes('  cost: none reported'));
+  assert.ok(w.lines.includes('codex: not found (install it); skipped'));
+  assert.ok(w.lines.includes(`wrote ${path.join(w.home.dir, AC.FILE_NAME)}`));
+  assert.match(w.lines.at(-1), /a failed row turns that behavior off/);
+  assert.deepEqual(w.written().grok, { keep: true }, 'other entries are kept');
+  assert.deepEqual(w.written().claude, {
     path: '/x/claude',
     realpath: '/real/x/claude',
-    mtimeMs: 42,
+    ...ID,
     version: '2.1.290',
     at: '2026-10-05T12:00:00.000Z',
+    checked: true,
     rows: { ...CLAUDE_ROWS, C2: 'fail' },
     cost: 'none reported',
   });
-  assert.deepEqual(fs.readdirSync(dir).sort(), ['home'], 'the scratch folder is removed');
+  assert.deepEqual(fs.readdirSync(w.dir).sort(), ['home'], 'the scratch folder is removed');
+  assert.equal(w.deps.signals.listenerCount('SIGINT'), 0);
 
-  lines.length = 0;
-  deps.probes.claude = async () => ({ rows: CLAUDE_ROWS, notes: [], cost: 'c' });
-  assert.equal(await AC.check(['check', '--agent', 'claude'], deps), 0);
-  assert.ok(!lines.some(l => l.startsWith('codex')));
-  assert.equal(await AC.check(['check', '--agent', 'grok'], deps), 2);
-  assert.match(lines.at(-1), /unknown agent "grok"/);
-  assert.equal(await AC.check([], deps), 2);
-  assert.equal(await AC.check(['--help'], deps), 0);
-  assert.match(lines.at(-1), /^claude-wow agents check/);
-  fs.rmSync(dir, { recursive: true, force: true });
+  w.lines.length = 0;
+  w.deps.probes.claude = async () => ({ rows: { ...CLAUDE_ROWS, C2: 'unchecked' }, notes: [], cost: 'c' });
+  assert.equal(await AC.check(['check', '--agent', 'claude'], w.deps), 1, 'an inconclusive recheck keeps the measured fail');
+  assert.equal(w.written().claude.rows.C2, 'fail');
+  assert.ok(w.lines.includes('  note: kept the earlier fail of C2 for this same binary; only a measured pass clears it'));
+  assert.ok(!w.lines.some(l => l.startsWith('codex')));
+
+  w.deps.stat = () => ({ ...ID, ctimeMs: 5 });
+  w.lines.length = 0;
+  assert.equal(await AC.check(['check', '--agent', 'claude'], w.deps), 3, 'another binary: the old fail is not carried over');
+  assert.equal(w.written().claude.rows.C2, 'unchecked');
+  assert.equal(w.written().claude.checked, false);
+  assert.ok(w.lines.includes('  not checked: C2 measured nothing; run it again'));
+
+  w.deps.probes.claude = async () => ({ rows: CLAUDE_ROWS, notes: [], cost: 'c' });
+  w.deps.version = async () => '';
+  w.lines.length = 0;
+  assert.equal(await AC.check(['check', '--agent', 'claude'], w.deps), 3);
+  assert.ok(w.lines.includes('  not checked: the version is unknown; run it again'));
+  w.deps.version = async () => '2.1.290';
+  assert.equal(await AC.check(['check', '--agent', 'claude'], w.deps), 0);
+  assert.equal(w.written().claude.checked, true);
+  fs.rmSync(w.dir, { recursive: true, force: true });
+});
+
+test('agents check: help, a missing or unknown --agent and an unknown option never resolve or probe an agent', async () => {
+  const w = checkWorld({
+    claude: async () => {
+      throw new Error('must not probe');
+    },
+  });
+  w.deps.resolveCommand = () => {
+    throw new Error('must not resolve');
+  };
+  for (const [argv, code, said] of [
+    [['check', '--help'], 0, null],
+    [['check', '-h'], 0, null],
+    [['--help'], 0, null],
+    [[], 2, null],
+    [['check', '--agent'], 2, '--agent needs one of claude, codex'],
+    [['check', '--agent', 'grok'], 2, '--agent needs one of claude, codex, not "grok"'],
+    [['check', '--fast'], 2, 'unknown option "--fast"'],
+  ]) {
+    w.lines.length = 0;
+    assert.equal(await AC.check(argv, w.deps), code, argv.join(' '));
+    if (said) assert.equal(w.lines[0], said);
+    assert.match(w.lines.at(-1), /^claude-wow agents check/);
+  }
+  fs.rmSync(w.dir, { recursive: true, force: true });
+});
+
+test('agents check: SIGINT kills the running probe child, skips the rest and exits 130 without writing', async () => {
+  const w = checkWorld({});
+  w.deps.resolveCommand = id => ({ file: '/x/claude', args: [], found: true, id });
+  w.deps.run = AC.spawnRun;
+  let pid = 0;
+  const probed = [];
+  w.deps.probes = {
+    claude: async ({ run }) => {
+      probed.push('claude');
+      const p = run(process.execPath, ['-e', "console.log(JSON.stringify({ type: 'up', pid: process.pid })); setInterval(() => {}, 1000)"], {
+        env: process.env,
+        stopWhen: ev => {
+          if (ev.type === 'up') {
+            pid = ev.pid;
+            setImmediate(() => w.deps.signals.emit('SIGINT'));
+          }
+          return false;
+        },
+      });
+      const r = await p;
+      return { rows: { ...CLAUDE_ROWS }, notes: [], cost: String(r.code) };
+    },
+    codex: async () => {
+      probed.push('codex');
+      return { rows: {}, notes: [], cost: '' };
+    },
+  };
+  const t0 = Date.now();
+  assert.equal(await AC.check(['check'], w.deps), 130);
+  assert.ok(Date.now() - t0 < 10000);
+  assert.deepEqual(probed, ['claude'], 'the next agent is not probed');
+  assert.ok(pid > 0);
+  assert.throws(() => process.kill(pid, 0), /ESRCH/, 'the probe child is gone');
+  assert.equal(w.lines.at(-1), 'interrupted: the probe runs were stopped');
+  assert.deepEqual(Object.keys(w.written()), ['grok'], 'nothing is written for an interrupted probe');
+  assert.equal(w.deps.signals.listenerCount('SIGTERM'), 0);
+  fs.rmSync(w.dir, { recursive: true, force: true });
 });
 
 test('the contract-mcp fixture answers initialize, lists the tools it was told plus the env one, echoes one env value and writes its mark', async () => {
