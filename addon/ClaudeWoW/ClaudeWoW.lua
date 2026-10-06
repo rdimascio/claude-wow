@@ -1613,7 +1613,10 @@ end
 function ClaudeWoW.UpdateConnect()
 	if not ui.connect or not ui.send then return end
 	local connected = ClaudeWoW.IsConnected()
-	ui.send:SetShown(connected)
+	local c = ActiveChat()
+	local busy = connected and c ~= nil and c.pendingId ~= nil
+	ui.send:SetShown(connected and not busy)
+	if ui.stop then ui.stop:SetShown(busy) end
 	ui.connect:SetShown(not connected)
 	if connected then return end
 	if run.connectingAt then
@@ -5020,6 +5023,7 @@ function ClaudeWoW.Render()
 	local c = ActiveChat()
 	Cli.UpdateMcpButton()
 	Cli.UpdateProjectButton()
+	ClaudeWoW.UpdateConnect()
 	Q.UpdatePlaceholder()
 	if ui.content and c then
 		local width = ui.scroll:GetWidth()
@@ -7062,6 +7066,19 @@ local function BuildUI()
 	send:SetHeight(30)
 	send:SetPoint("LEFT", inputBg, "RIGHT", 6, 0)
 	ui.send = send
+
+	local stop = MakeButton(f, "Stop", SEND_W, function() ClaudeWoW.Cancel(ActiveChat()) end)
+	stop:SetHeight(30)
+	stop:SetPoint("LEFT", inputBg, "RIGHT", 6, 0)
+	stop:SetScript("OnEnter", function(self)
+		GameTooltip:SetOwner(self, "ANCHOR_TOP")
+		GameTooltip:SetText("Stop this run")
+		GameTooltip:AddLine("Tells the bridge to end the run this chat is waiting on, and frees the chat for a new message. Same as /claude cancel.", 0.8, 0.8, 0.8, true)
+		GameTooltip:Show()
+	end)
+	stop:SetScript("OnLeave", function() GameTooltip:Hide() end)
+	stop:Hide()
+	ui.stop = stop
 
 	-- Connect stands in for Send until the bridge has been seen (see UpdateConnect).
 	local connect = MakeButton(f, "Connect", SEND_W, function() ClaudeWoW.Connect(true) end)

@@ -3421,3 +3421,34 @@ test('mcp: an off choice is kept even when the server is off by default, ids mat
   vm.run('SlashCmdList.CLAUDE("mcp off mobbin")');
   assert.match(vm.evaluate(`${chat}.history[#${chat}.history].text`), /already changes 16 servers/, 'choices for servers not listed right now still count');
 });
+
+test('the panel shows Stop instead of Send while the open chat waits; Stop cancels the run and brings Send back', () => {
+  const vm = newVM();
+  login(vm);
+  vm.run('STUB.RunTimers()');
+  nextSlot(vm, '{ now = time(), cwd = "/Users/me/every", cancel = true, replies = {} }');
+  vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
+  assert.equal(vm.evaluate('ClaudeWoW.IsConnected()'), 'true');
+  vm.run('ClaudeWoW.Toggle()');
+  const shown = name => vm.evaluate(`ClaudeWoW.UI.${name}.shown`);
+  assert.equal(shown('send'), 'true');
+  assert.equal(shown('stop'), 'false');
+
+  vm.run('ClaudeWoW.Send("long job")');
+  const pending = vm.num('ClaudeWoWDB.chats[1].pendingId');
+  assert.ok(pending > 0);
+  assert.equal(shown('stop'), 'true', 'Stop while the chat waits');
+  assert.equal(shown('send'), 'false');
+
+  vm.run('ClaudeWoW.UI.stop:GetScript("OnClick")(ClaudeWoW.UI.stop)');
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].pendingId'), null, 'the chat is free again');
+  assert.ok(
+    stripRecords(vm).some(r => r.flags === `cancel=${pending}`),
+    'the bridge is told to stop that run',
+  );
+  assert.equal(shown('stop'), 'false');
+  assert.equal(shown('send'), 'true');
+
+  vm.run('ClaudeWoW.NewChat("other")');
+  assert.equal(shown('stop'), 'false', 'another chat that is not waiting shows Send');
+});
