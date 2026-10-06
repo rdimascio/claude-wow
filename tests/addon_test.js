@@ -3768,7 +3768,7 @@ test('while the open chat waits, Send stays in place but is disabled and a Stop 
   assert.equal(enabled('send'), 'true');
 });
 
-test('the effort button in the header shows the chat effort, sets it for this chat, and the next message carries it', () => {
+test('the effort button above Send shows the chat effort, sets it for this chat, and the next message carries it', () => {
   const vm = newVM();
   login(vm);
   vm.run('STUB.RunTimers()');
@@ -3776,27 +3776,26 @@ test('the effort button in the header shows the chat effort, sets it for this ch
   vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
   vm.run('ClaudeWoW.Toggle()');
   const label = () => vm.evaluate('ClaudeWoW.UI.effort.text:GetText()');
-  assert.equal(label(), 'Effort: |cffffffffdefault|r');
+  assert.equal(label(), '|cffffffffdefault|r');
   assert.equal(vm.evaluate('ClaudeWoW.UI.effort.shown'), 'true');
-  assert.equal(vm.evaluate('ClaudeWoW.UI.effort:GetParent() == ClaudeWoW.UI.projectButton:GetParent()'), 'true', 'it sits with the project button');
-  assert.equal(vm.evaluate('ClaudeWoW.UI.effort.rel == ClaudeWoW.UI.projectButton'), 'true');
+  assert.equal(vm.evaluate('ClaudeWoW.UI.effort.rel == ClaudeWoW.UI.send'), 'true', 'it sits above Send');
   const click = () => vm.run('ClaudeWoW.UI.effort:GetScript("OnClick")(ClaudeWoW.UI.effort)');
   click();
-  assert.equal(label(), 'Effort: |cfffffffflow|r', 'without a menu, a click steps to the next effort');
+  assert.equal(label(), '|cfffffffflow|r', 'without a menu, a click steps to the next effort');
   click();
   click();
-  assert.equal(label(), 'Effort: |cffffffffhigh|r');
+  assert.equal(label(), '|cffffffffhigh|r');
   assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].effort'), 'high');
   vm.run('ClaudeWoW.Send("think hard")');
   const rec = stripRecords(vm).find(r => r.text === 'think hard');
   assert.ok(rec.flags.split(';').includes('effort=high'), rec.flags);
   vm.run('ClaudeWoW.NewChat("fresh")');
-  assert.equal(label(), 'Effort: |cffffffffdefault|r', 'each chat has its own effort');
+  assert.equal(label(), '|cffffffffdefault|r', 'each chat has its own effort');
   click();
   click();
   click();
   click();
   click();
   click();
-  assert.equal(label(), 'Effort: |cffffffffdefault|r', 'after max it goes back to default');
+  assert.equal(label(), '|cffffffffdefault|r', 'after max it goes back to default');
 });

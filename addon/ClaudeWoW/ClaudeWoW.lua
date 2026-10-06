@@ -1659,6 +1659,7 @@ function ClaudeWoW.UpdateConnect()
 	local busy = connected and c ~= nil and c.pendingId ~= nil
 	ui.send:SetShown(connected)
 	ui.send:SetEnabled(not busy)
+	if ui.effort then ui.effort:SetShown(connected) end
 	if ui.stop then ui.stop:SetShown(busy) end
 	ui.connect:SetShown(not connected)
 	if connected then return end
@@ -4416,8 +4417,7 @@ function Cli.UpdateEffortButton()
 	local b = ui.effort
 	if not b then return end
 	b.fullName = Cli.EffortLabel(ActiveChat())
-	b.wanted = ActiveChat() ~= nil
-	Cli.LayoutHeaderButtons()
+	b.text:SetText("|cffffffff" .. b.fullName .. "|r")
 end
 
 function Cli.EffortButtonTooltip(b)
@@ -4450,8 +4450,6 @@ end
 Cli.PROJECT_W_MIN = 60
 Cli.PROJECT_W_MAX = 240
 Cli.PROJECT_PAD = 8
-Cli.EFFORT_W_MIN = 40
-Cli.EFFORT_W_MAX = 120
 Cli.HEADER_TITLE_MIN = 16
 
 function Cli.HeaderLabelWidth(b, text)
@@ -4470,7 +4468,6 @@ function Cli.HeaderSlots()
 	local slots = {}
 	for _, spec in ipairs({
 		{ b = ui.projectButton, label = "Project: ", min = Cli.PROJECT_W_MIN, max = Cli.PROJECT_W_MAX },
-		{ b = ui.effort, label = "Effort: ", min = Cli.EFFORT_W_MIN, max = Cli.EFFORT_W_MAX },
 		{ b = ui.mcpButton, fixed = true },
 	}) do
 		if spec.b and spec.b.wanted then table.insert(slots, spec) end
@@ -4532,7 +4529,7 @@ function Cli.LayoutHeaderButtons()
 	for _, slot in ipairs(slots) do Cli.MeasureHeaderSlot(slot) end
 	Cli.FitHeaderSlots(slots, Cli.HeaderRoom(project:GetParent()))
 	local leftmost = project
-	for _, b in ipairs({ ui.effort, ui.mcpButton }) do
+	for _, b in ipairs({ ui.mcpButton }) do
 		if b then b:Hide() end
 	end
 	for _, slot in ipairs(slots) do
@@ -6091,6 +6088,8 @@ Q.NATIVE_TEMPLATES = { "ButtonFrameTemplate", "InsetFrameTemplate" }
 Q.LIST_W = 300
 Q.COMPOSER_BOTTOM = 2
 Q.COMPOSER_GAP = 6
+Q.EFFORT_H = 16
+Q.EFFORT_GAP = 2
 Q.STOP_W = 48
 Q.STOP_H = 18
 Q.STOP_INSET = 5
@@ -8057,14 +8056,19 @@ local function BuildUI()
 	projectHost:HookScript("OnSizeChanged", function() Cli.LayoutHeaderButtons() end)
 	ui.projectButton = projectButton
 
-	ui.effort = Q.HeaderButton(projectHost, "ClaudeWoWEffortButton", projectButton, Cli.EffortMenu, Cli.EffortButtonTooltip)
-	ui.mcpButton = Q.HeaderButton(projectHost, "ClaudeWoWMcpButton", ui.effort, Cli.McpMenu, Cli.McpButtonTooltip)
+	ui.mcpButton = Q.HeaderButton(projectHost, "ClaudeWoWMcpButton", projectButton, Cli.McpMenu, Cli.McpButtonTooltip)
 
 	local send = MakeButton(f, "Send", SEND_W, ClaudeWoW.SendFromInput)
 	Q.BesideInput(send, inputBg, native)
 	send:SetScript("OnEnter", Q.SendTooltip)
 	send:SetScript("OnLeave", function() GameTooltip:Hide() end)
 	ui.send = send
+
+	local effort = Q.HeaderButton(f, "ClaudeWoWEffortButton", send, Cli.EffortMenu, Cli.EffortButtonTooltip)
+	effort:ClearAllPoints()
+	effort:SetSize(SEND_W, Q.EFFORT_H)
+	effort:SetPoint("BOTTOMRIGHT", send, "TOPRIGHT", 0, Q.EFFORT_GAP)
+	ui.effort = effort
 
 	local stop = MakeButton(inputBg, "Stop", Q.STOP_W, function() ClaudeWoW.Cancel(ActiveChat()) end)
 	stop:SetHeight(Q.STOP_H)
