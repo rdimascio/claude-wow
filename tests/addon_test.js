@@ -2995,7 +2995,7 @@ test('Dev.lua keeps only Claude WoW errors, counts repeats, keeps 20, and still 
   assert.equal(vm.num('#ClaudeWoWDev.errors'), 20);
   assert.match(vm.evaluate('ClaudeWoWDev.errors[20].message'), /DM.lua:25/);
   vm.run('SlashCmdList.CLAUDE("errors")');
-  assert.match(lastLine(vm), /^20 Lua errors from Claude WoW this UI session \(27 in all\)/);
+  assert.match(lastLine(vm), /^20 Lua errors from Azeroth Companion this UI session \(27 in all\)/);
 });
 
 test('Dev.lua without seterrorhandler installs nothing and says so', () => {
@@ -3019,7 +3019,7 @@ test('Dev.lua says so when another addon keeps the error handler, and reads BugG
     'BugGrabber = { GetDB = function() return { { message = "Interface/AddOns/ClaudeWoW/Orders.lua:7: bad", counter = 3 }, { message = "Interface/AddOns/Other/x.lua:1: no" } } end }',
   );
   vm.run('SlashCmdList.CLAUDE("errors")');
-  assert.match(lastLine(vm), /^1 Lua error from Claude WoW this UI session, from BugGrabber, newest last:\nx3 ClaudeWoW\/Orders.lua:7: bad/);
+  assert.match(lastLine(vm), /^1 Lua error from Azeroth Companion this UI session, from BugGrabber, newest last:\nx3 ClaudeWoW\/Orders.lua:7: bad/);
 });
 
 test('a dev command waits while the chat has a reply pending, keeps the resume id, the reset and the title', () => {
