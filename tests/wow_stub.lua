@@ -144,6 +144,7 @@ function Methods.SetScale(self, k) self.scale = k end
 function Methods.GetScale(self) return self.scale or 1 end
 function Methods.GetEffectiveScale(self) return self.scale or 1 end
 function Methods.SetFrameStrata(self, strata) self.strata = strata end
+function Methods.SetFrameLevel(self, level) self.frameLevel = level end
 function Methods.SetBackdropColor(self, r, g, b, a) self.bg = { r, g, b, a } end
 function Methods.SetAlpha(self, a) self.alpha = a end
 function Methods.GetAlpha(self) return self.alpha or 1 end
@@ -160,6 +161,7 @@ function Methods.GetVerticalScroll(self) return self.vscroll or 0 end
 function Methods.SetVerticalScroll(self, v) self.vscroll = v end
 function Methods.CreateTexture(self, name, layer)
 	local t = NewObject("Texture", name, self)
+	t.layer = layer
 	table.insert(self.textures, t)
 	return t
 end
@@ -185,7 +187,11 @@ function Methods.GetCenter(self)
 	if not r then return nil end
 	return (r.left + r.right) / 2, (r.bottom + r.top) / 2
 end
-function Methods.SetTexture(self, path) self.texture = path; return true end
+function Methods.SetTexture(self, path)
+	if STUB.missingTextures and STUB.missingTextures[path] then return false end
+	self.texture = path
+	return true
+end
 function Methods.SetStatusBarColor(self, r, g, b) self.color = { r, g, b } end
 function Methods.GetTexture(self) return self.texture end
 function Methods.SetBackdrop(self, t)

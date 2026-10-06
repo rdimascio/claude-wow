@@ -3,6 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
+const ICON = require('../dev/make-minimap-icon');
 const { lua, lauxlib, lualib, to_luastring, to_jsstring } = require('fengari');
 
 const ADDON = path.join(__dirname, '..', 'addon', 'ClaudeWoW');
@@ -70,17 +71,32 @@ const offset = vm => [Math.round(Number(vm.evaluate(`${B}.x`))), Math.round(Numb
 const dragTo = (vm, x, y) =>
   vm.run(`local b = ${B}; b.scripts.OnDragStart(b); STUB.cursor = { ${x}, ${y} }; b.scripts.OnUpdate(b, 0.02); b.scripts.OnDragStop(b)`);
 
-test('minimap button: a 31 px button on the Minimap with the Claude portrait, round, with the tracking border and zoom highlight', () => {
+const MAINLINE = 'WOW_PROJECT_MAINLINE = 1; WOW_PROJECT_ID = 1';
+const CLASSIC = 'WOW_PROJECT_MAINLINE = 1; WOW_PROJECT_ID = 2';
+const SPARK = 'Interface\\AddOns\\ClaudeWoW\\MinimapIcon';
+const PORTRAIT = 'Interface\\AddOns\\ClaudeWoW\\Portrait';
+const texCoord = vm => vm.evaluate(`table.concat(${B}.icon.stubTexCoord, ",")`);
+const anchor = (vm, t) => vm.evaluate(`${B}.${t}.point .. " " .. ${B}.${t}.x .. "," .. ${B}.${t}.y`);
+const size = (vm, t) => vm.evaluate(`${B}.${t}.width .. "x" .. ${B}.${t}.height`);
+
+test('minimap button: a 31 px LibDBIcon button on the Minimap with the Claude spark, the tracking border on top and the zoom highlight', () => {
   const vm = newVM();
   assert.equal(vm.evaluate(`${B}.kind`), 'Button');
   assert.equal(vm.evaluate(`${B}.parent == Minimap`), 'true');
   assert.equal(vm.evaluate(`${B}.width .. "x" .. ${B}.height`), '31x31');
+  assert.equal(vm.evaluate(`${B}.strata .. " " .. ${B}.frameLevel`), 'MEDIUM 8');
   assert.equal(vm.evaluate(`${B}.shown`), 'true', 'on by default');
   assert.equal(vm.evaluate('ClaudeWoWDB.settings.minimap'), 'true');
-  assert.equal(vm.evaluate(`${B}.icon:GetTexture()`), 'Interface\\AddOns\\ClaudeWoW\\Portrait');
-  assert.equal(vm.evaluate(`${B}.icon.stubMask`), 'Interface\\CharacterFrame\\TempPortraitAlphaMask');
+  assert.equal(vm.evaluate(`${B}.icon:GetTexture()`), SPARK);
+  assert.equal(vm.evaluate(`${B}.icon.stubMask`), null, 'the spark has its own transparent edge: no mask');
+  assert.equal(texCoord(vm), '0.05,0.95,0.05,0.95', 'the LibDBIcon 5% inset at rest');
   assert.equal(vm.evaluate(`${B}.border:GetTexture()`), 'Interface\\Minimap\\MiniMap-TrackingBorder');
   assert.equal(vm.evaluate(`${B}.background:GetTexture()`), 'Interface\\Minimap\\UI-Minimap-Background');
+  assert.equal(
+    vm.evaluate(`${B}.background.layer .. " " .. ${B}.icon.layer .. " " .. ${B}.border.layer`),
+    'BACKGROUND ARTWORK OVERLAY',
+    'the gold ring draws above the icon',
+  );
   assert.equal(vm.evaluate(`${B}.stubHighlight`), 'Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight');
   assert.equal(vm.evaluate(`table.concat(${B}.stubDragButtons, ",")`), 'LeftButton');
   assert.equal(vm.evaluate(`table.concat(${B}.stubClickButtons, ",")`), 'AnyUp');
@@ -88,12 +104,94 @@ test('minimap button: a 31 px button on the Minimap with the Claude portrait, ro
   assert.deepEqual(offset(vm), [-53, -53], 'the default angle, 225 degrees, at the lower left');
 });
 
-test('minimap button: the icon is cropped to the spark so it fills the circle, with the round mask or without it', () => {
-  const masked = newVM();
-  assert.equal(masked.evaluate(`table.concat(${B}.icon.stubTexCoord, ",")`), '0.2,0.8,0.2,0.8');
-  const vm = newVM('STUB.noMask = true');
-  assert.equal(vm.evaluate(`${B}.icon.stubMask`), null);
-  assert.equal(vm.evaluate(`table.concat(${B}.icon.stubTexCoord, ",")`), '0.2,0.8,0.2,0.8');
+test('minimap button: sizes and anchors follow LibDBIcon-1.0 for the client layout', () => {
+  const classic = newVM(CLASSIC);
+  assert.equal(size(classic, 'border'), '53x53');
+  assert.equal(anchor(classic, 'border'), 'TOPLEFT 0,0');
+  assert.equal(size(classic, 'background'), '20x20');
+  assert.equal(anchor(classic, 'background'), 'TOPLEFT 7,-5');
+  assert.equal(size(classic, 'icon'), '17x17');
+  assert.equal(anchor(classic, 'icon'), 'TOPLEFT 7,-6');
+  const era = newVM();
+  assert.equal(size(era, 'border') + ' ' + size(era, 'icon'), '53x53 17x17', 'no WOW_PROJECT_ID: the classic layout');
+  const mainline = newVM(MAINLINE);
+  assert.equal(size(mainline, 'border'), '50x50');
+  assert.equal(anchor(mainline, 'border'), 'TOPLEFT 0,0');
+  assert.equal(size(mainline, 'background'), '24x24');
+  assert.equal(anchor(mainline, 'background'), 'CENTER 0,0');
+  assert.equal(size(mainline, 'icon'), '18x18');
+  assert.equal(anchor(mainline, 'icon'), 'CENTER 0,0');
+});
+
+test('minimap button: a press shows the full icon like LibDBIcon, and a release or drag end restores the inset', () => {
+  const vm = newVM();
+  vm.run(`${B}.scripts.OnMouseDown(${B}, "LeftButton")`);
+  assert.equal(texCoord(vm), '0,1,0,1');
+  vm.run(`${B}.scripts.OnMouseUp(${B}, "LeftButton")`);
+  assert.equal(texCoord(vm), '0.05,0.95,0.05,0.95');
+  vm.run(`local b = ${B}; b.scripts.OnDragStart(b)`);
+  assert.equal(texCoord(vm), '0,1,0,1', 'held while dragged');
+  vm.run(`local b = ${B}; b.scripts.OnDragStop(b)`);
+  assert.equal(texCoord(vm), '0.05,0.95,0.05,0.95');
+});
+
+test('minimap button: a client that has not restarted since MinimapIcon.tga was added falls back to the round portrait', () => {
+  const vm = newVM(`STUB.missingTextures = { [ [[${SPARK}]] ] = true }`);
+  assert.equal(vm.evaluate(`${B}.icon:GetTexture()`), PORTRAIT);
+  assert.equal(vm.evaluate(`${B}.icon.stubMask`), 'Interface\\CharacterFrame\\TempPortraitAlphaMask');
+  assert.equal(texCoord(vm), '0.2,0.8,0.2,0.8', 'the portrait is cropped to its spark so it fills the circle');
+  vm.run(`${B}.scripts.OnMouseDown(${B}, "LeftButton")`);
+  assert.equal(texCoord(vm), '0.18,0.82,0.18,0.82');
+  vm.run(`${B}.scripts.OnMouseUp(${B}, "LeftButton")`);
+  assert.equal(texCoord(vm), '0.2,0.8,0.2,0.8');
+  const noMask = newVM(`STUB.noMask = true; STUB.missingTextures = { [ [[${SPARK}]] ] = true }`);
+  assert.equal(noMask.evaluate(`${B}.icon:GetTexture()`), PORTRAIT, 'no SetMask: still the portrait, cropped, and no error');
+  assert.equal(noMask.evaluate(`${B}.icon.stubMask`), null);
+});
+
+test('minimap icon: MinimapIcon.tga is the 64x64 32-bit spark that dev/make-minimap-icon.js draws', () => {
+  const file = fs.readFileSync(path.join(ADDON, 'MinimapIcon.tga'));
+  assert.equal(file[2], 2, 'uncompressed true color');
+  assert.equal(file.readUInt16LE(12), 64);
+  assert.equal(file.readUInt16LE(14), 64);
+  assert.equal(file[16], 32);
+  assert.equal(file[17] & 0x0f, 8, '8 alpha bits');
+  assert.equal(file.length, 18 + 64 * 64 * 4);
+  const fresh = ICON.makeIcon();
+  assert.equal(fresh.length, file.length);
+  let drift = 0;
+  for (let i = 18; i < file.length; i++) drift = Math.max(drift, Math.abs(file[i] - fresh[i]));
+  assert.ok(drift <= 2, `the committed file matches the script (max channel drift ${drift})`);
+  const { rgba } = ICON.decodeTga(file);
+  const px = (x, y) => Array.from(rgba.subarray((y * 64 + x) * 4, (y * 64 + x) * 4 + 4));
+  for (const [x, y] of [
+    [0, 0],
+    [63, 0],
+    [0, 63],
+    [63, 63],
+  ])
+    assert.equal(px(x, y)[3], 0, 'transparent corners');
+  const center = px(32, 32);
+  assert.equal(center[3], 255);
+  assert.ok(center[0] > ICON.ORANGE[0] && center[1] > ICON.ORANGE[1], 'a lighter center');
+  let top = 64;
+  let bottom = -1;
+  let covered = 0;
+  for (let y = 0; y < 64; y++) {
+    for (let x = 0; x < 64; x++) {
+      if (px(x, y)[3] === 0) continue;
+      covered++;
+      top = Math.min(top, y);
+      bottom = Math.max(bottom, y);
+    }
+  }
+  const span = (bottom - top + 1) / 64;
+  assert.ok(span > 0.75 && span < 0.92, `the spark fills about 85% of the canvas (${span})`);
+  assert.ok(covered < 64 * 64 * 0.5, 'rays with gaps, not a disc');
+  const solid = [];
+  for (let i = 0; i < 64 * 64; i++) if (rgba[i * 4 + 3] === 255) solid.push(rgba.subarray(i * 4, i * 4 + 3));
+  const rim = solid.filter(c => c[0] === ICON.ORANGE[0] && c[1] === ICON.ORANGE[1] && c[2] === ICON.ORANGE[2]);
+  assert.ok(rim.length > 0, 'the rays are Claude orange #D97757');
 });
 
 test('minimap button: left-click opens and closes the window, right-click opens the Options page', () => {
