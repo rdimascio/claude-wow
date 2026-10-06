@@ -128,10 +128,21 @@ function W.FullscreenOpen()
 	return false
 end
 
+local OWN_POPUP = "^CLAUDEWOW_"
+
+local function OwnPopup(name)
+	local f = _G[name]
+	return type(f) == "table" and type(f.which) == "string" and f.which:find(OWN_POPUP) ~= nil
+end
+
+local function Blocking(name)
+	return Shown(name) and not OwnPopup(name)
+end
+
 function W.OpenPanels()
 	local out = {}
 	for _, name in ipairs(PANELS) do
-		if Shown(name) and not (name == "WorldMapFrame" and MapMaximized()) then
+		if Blocking(name) and not (name == "WorldMapFrame" and MapMaximized()) then
 			local r = RectOf(_G[name])
 			if r and r.right > r.left and r.top > r.bottom then
 				r.name = name
@@ -145,7 +156,7 @@ end
 local function Signature()
 	local parts = {}
 	for _, name in ipairs(PANELS) do
-		if Shown(name) then table.insert(parts, name) end
+		if Blocking(name) then table.insert(parts, name) end
 	end
 	for _, name in ipairs(FULLSCREEN) do
 		if Shown(name) then table.insert(parts, name) end

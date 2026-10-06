@@ -311,6 +311,15 @@ local function HasUserMessage(c)
 	return false
 end
 
+Q.NEW_CHAT_TITLE = "New chat"
+
+function Q.ShownName(c)
+	if not c then return "" end
+	local name = tostring(c.name or "")
+	if name:match("^Chat %d+$") and not HasUserMessage(c) then return Q.NEW_CHAT_TITLE end
+	return name
+end
+
 -- First few words of a message, as a chat title.
 local function AutoTitle(text)
 	local words = {}
@@ -5270,7 +5279,7 @@ function ClaudeWoW.UpdateStatus()
 	ClaudeWoW.UpdateDot()
 	ClaudeWoW.UpdateConnect()
 	if ui.title then
-		local t = c and Display(c.name) or Q.PANEL_TITLE
+		local t = c and Display(Q.ShownName(c)) or Q.PANEL_TITLE
 		if ui.chatTitle then
 			t = Q.PANEL_TITLE
 		else
@@ -5668,7 +5677,7 @@ function ClaudeWoW.RenderChatList()
 	for i, btn in ipairs(ui.chatButtons) do
 		local c = listed[offset + i]
 		if c then
-			local label = Display(c.name)
+			local label = Display(Q.ShownName(c))
 			local folder = FolderName(ChatFolder(c))
 			if folder ~= "" and folder:lower() ~= c.name:lower() then
 				label = label .. " |cff888888" .. Display(folder) .. "|r"
@@ -6955,7 +6964,7 @@ function Q.FillRow(r, c, index, width)
 	r.active = active
 	r:SetWidth(width)
 	r.glow:SetShown(active)
-	local title = Display(c.name)
+	local title = Display(Q.ShownName(c))
 	r.fullTitle = title
 	r.summary = Q.MessageSummary(last, count)
 	if c.agent and c.agent ~= "" then title = title .. " |cff9d9d9d" .. AgentName(c.agent) .. "|r" end
@@ -7200,7 +7209,7 @@ function ClaudeWoW.RefreshTitleBar()
 	local label = ui.chatTitle
 	if not label then return end
 	local c = ActiveChat()
-	label:SetText(c and Display(c.name) or Q.PANEL_TITLE)
+	label:SetText(c and Display(Q.ShownName(c)) or Q.PANEL_TITLE)
 end
 
 function Q.TitleBarTooltip(bar)

@@ -1508,3 +1508,31 @@ test('a message the bridge never saw on the strip shows Reply waiting, like the 
   vm.run('ClaudeWoW.UI.dotHolder.scripts.OnEnter(ClaudeWoW.UI.dotHolder)');
   assert.ok(vm.evaluate('table.concat(GameTooltip.lines or {}, "|")').includes('Click Reload to read it.'));
 });
+
+test("the window stays put for its own popups (delete, allow, reload) but still moves out of the way of the game's popups", () => {
+  const vm = newVM({ before: 'STUB.Panel("StaticPopup1", 0, 1000, 10, 10)' });
+  open(vm);
+  const home = rect(vm);
+  vm.run(`StaticPopup1.rect = { left = ${home.right - 60}, right = ${home.right + 300}, top = ${home.top - 20}, bottom = ${home.top - 140} }`);
+  vm.run('StaticPopup1.which = "CLAUDEWOW_DELETE"; StaticPopup1:Show(); StaticPopup_Show("CLAUDEWOW_DELETE")');
+  settle(vm);
+  assert.deepEqual(rect(vm), home, 'our delete popup does not shift the window');
+  assert.equal(vm.evaluate('ClaudeWoWWindow.state.dodged'), 'false');
+  vm.run('StaticPopup1:Hide(); StaticPopup1.which = "DELETE_ITEM"; StaticPopup1:Show(); StaticPopup_Show("DELETE_ITEM")');
+  settle(vm);
+  assert.equal(vm.evaluate('ClaudeWoWWindow.state.dodged'), 'true', 'a game popup is still dodged');
+});
+
+test('an empty chat with the default name shows as "New chat" in the title bar and the list, and a named or used chat keeps its name', () => {
+  const vm = nativeVM();
+  vm.run('ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[1].id)');
+  const title = () => vm.evaluate('ClaudeWoW.UI.chatTitle:GetText()');
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].name'), 'Chat 1');
+  assert.equal(title(), 'New chat');
+  vm.run('ClaudeWoWDB.chats[1].name = "Bridge refactor"; ClaudeWoW.Render(); ClaudeWoW.RefreshTitleBar()');
+  assert.equal(title(), 'Bridge refactor', 'a name the player chose shows as it is');
+  vm.run(
+    'ClaudeWoWDB.chats[1].name = "Chat 1"; table.insert(ClaudeWoWDB.chats[1].history, { role = "user", text = "hi", t = 1 }); ClaudeWoW.RefreshTitleBar()',
+  );
+  assert.equal(title(), 'Chat 1', 'once it has a message, the stored name shows');
+});
