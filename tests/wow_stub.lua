@@ -262,7 +262,11 @@ ChatFontNormal = {}
 OKAY, CANCEL = "Okay", "Cancel"
 NUM_CHAT_WINDOWS = 1
 StaticPopupDialogs = {}
-function StaticPopup_Show(which, a, b, data) STUB.popup = { which = which, text = a, data = data } end
+function StaticPopup_Show(which, a, b, data)
+	if STUB.popupBusy then return nil end
+	STUB.popup = { which = which, text = a, data = data }
+	return STUB.popup
+end
 SlashCmdList = {}
 UISpecialFrames = {}
 tinsert = table.insert
