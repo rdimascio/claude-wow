@@ -143,10 +143,10 @@ Turn it on for `ask` chats:
 
 - Claude runs of the `ask` plugin then get `--plugin-dir` with the absolute path of the bridge's own copy: `<checkout>/assets/plugins/claude-wow` from a checkout, `<CLAUDE_WOW_HOME>/assets/assets/plugins/claude-wow` (`~/.claude-wow/assets/assets/plugins/claude-wow` by default) from the binary, which writes them there, when they are missing or differ, at the latest when the first such run after a bridge start asks for the path. So the plugin always matches the bridge version.
 - Coding chats, factory runs and title runs never get it. Codex and the other agents ignore the key.
-- Do not pass `--plugin-dir` in `agents.claude.extraArgs` any more: that reaches every Claude run, coding chats too.
+- Do not pass `--plugin-dir` in `agents.claude.extraArgs` any more: that reaches every chat and factory Claude run, coding chats too (title runs do not read `extraArgs`). The bridge names it in one log line at start, and an `ask` run then gets only that `--plugin-dir`, not a second one.
 - The agents get no `Write`, `Edit` or `Bash`, so they cannot write the map file; `wow-planner` also gets no `WebFetch`. The subagents do not get the chat's system prompt, so each agent file carries its own block format, and the agent's description tells the chat to copy the blocks verbatim.
 - `wow-planner` calls `wowdata` only in `ask` chats with data synced, where the bridge wires the server.
-- Claude runs of the `ask` plugin get `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`, with or without the plugin, so a subagent runs in the foreground and the run ends with one result. Other runs keep background tasks: a subagent there runs in the background and the run ends with two results, a launch notice and then the answer; the bridge shows the last one. The subagent's model and cost are in the run's cost.
+- Claude runs of the `ask` plugin get `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`, with or without the plugin, so a subagent runs in the foreground and the run ends with one result. Other runs keep background tasks, unless the variable is already set in the bridge's own environment, which every run inherits: a subagent there runs in the background and the run ends with two results, a launch notice and then the answer; the bridge shows the last one. The subagent's model and cost are in the run's cost.
 - Measurements: [`docs/plans/measurements/step5-plugin-spike.md`](plans/measurements/step5-plugin-spike.md).
 
 ## Plugins

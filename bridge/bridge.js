@@ -2698,7 +2698,7 @@ function runAgent(job, opts = {}) {
   }
   if (runGrant) job.runGrantId = runGrant.id;
   if (factoryGrant) job.factoryGrantId = factoryGrant.id;
-  const claudePluginDir = claudeRun && opts.claudePlugin === true ? claudePluginFolder(tag) : '';
+  const claudePluginDir = claudeRun && opts.claudePlugin === true && !A.extraArgsHavePluginDir(acfg) ? claudePluginFolder(tag) : '';
   const args = [
     ...cmd.args,
     ...agent.args({
@@ -3803,6 +3803,8 @@ for (const id of Object.keys(AC.ROWS)) {
   const cmd = A.resolveCommand(id, A.agentConfig(cfg, id));
   if (cmd.found) contracts.status(id, cmd, A.AGENTS[id].env({ ...process.env }));
 }
+const extraPluginDirNote = A.extraArgsPluginDirNote(A.agentConfig(cfg, 'claude'));
+if (extraPluginDirNote) log(extraPluginDirNote);
 for (const p of registry.all()) {
   const note = typeof p.configNote === 'function' ? p.configNote(core.options(p.id)) : '';
   if (note) log(note);

@@ -24,7 +24,7 @@ Every agent's block in `config.json` has the same keys, and the bridge maps them
 | `deniedTools` | Rules the agent may never use, same syntax. Claude gets them as `--disallowedTools`, Grok as `--deny` (which wins over everything, `bypassPermissions` included). Ignored by Codex. |
 | `model` | Passed through to the CLI when non-empty. |
 | `path` | The executable, when the bridge can't find it on its own. A `.js` path is run with the bridge's own Node; a Windows `.cmd` npm shim is unwrapped. |
-| `extraArgs` | Anything else to put on the command line, verbatim. It reaches every run of that agent, coding chats too. To load the `claude-wow` Claude Code plugin, use `plugins.ask.claudePlugin` instead ([CONFIGURATION.md](CONFIGURATION.md#the-claude-wow-claude-code-plugin)): it reaches only `ask` runs. |
+| `extraArgs` | Anything else to put on the command line, verbatim. It reaches every chat and factory run of that agent, coding chats too; title runs do not read it. To load the `claude-wow` Claude Code plugin, use `plugins.ask.claudePlugin` instead ([CONFIGURATION.md](CONFIGURATION.md#the-claude-wow-claude-code-plugin)): it reaches only `ask` runs. A Claude `--plugin-dir` here is named in one log line at start, and an `ask` run then gets only this one. |
 | `maxCostUsd` | Claude only: a cost cap in US dollars for each chat message, as `--max-budget-usd`. The other agents have none and log one line when it is set. |
 
 The top-level `mcp` block (your own MCP servers, [CONFIGURATION.md](CONFIGURATION.md#your-own-mcp-servers)) reaches Claude and Codex runs; the other agents ignore it.

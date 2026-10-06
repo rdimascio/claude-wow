@@ -939,6 +939,17 @@ test('agents.claude.maxCostUsd: a positive number becomes --max-budget-usd; anyt
   assert.equal(A.costCapNote('codex', {}), '');
 });
 
+test('agents.claude.extraArgs with --plugin-dir, in either form, is found and named in a note; other args are not', () => {
+  assert.equal(A.extraArgsHavePluginDir({ extraArgs: ['--plugin-dir', '/p'] }), true);
+  assert.equal(A.extraArgsHavePluginDir({ extraArgs: ['--plugin-dir=/p'] }), true);
+  assert.equal(A.extraArgsHavePluginDir({ extraArgs: ['--plugin-dirs', '--verbose'] }), false);
+  assert.equal(A.extraArgsHavePluginDir({ extraArgs: '--plugin-dir' }), false, 'a string is not an argument list');
+  assert.equal(A.extraArgsHavePluginDir({}), false);
+  assert.equal(A.extraArgsHavePluginDir(undefined), false);
+  assert.equal(A.extraArgsPluginDirNote({}), '');
+  assert.match(A.extraArgsPluginDirNote({ extraArgs: ['--plugin-dir=/p'] }), /^agents\.claude\.extraArgs has --plugin-dir, .*plugins\.ask\.claudePlugin: true/);
+});
+
 test('Claude budget stop from a real stream: the reply says the message hit the cost cap, in one plain sentence', () => {
   const out = replayClaude('claude-budget-stop.jsonl');
   assert.deepEqual(out.done, { text: 'Stopped: this message hit the $0.01 cost cap.', error: false }, 'a cap the player set is a reply, not a bridge error');
