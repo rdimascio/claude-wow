@@ -293,6 +293,69 @@ test('minimap button: the tooltip names the addon, says the status in words, the
   assert.equal(vm.evaluate('#TIP'), '0', 'no tooltip while dragging');
 });
 
+const STATE_ICONS = {
+  ok: 'Interface\\FriendsFrame\\StatusIcon-Online',
+  stale: 'Interface\\FriendsFrame\\StatusIcon-Away',
+  down: 'Interface\\FriendsFrame\\StatusIcon-DnD',
+  unknown: 'Interface\\FriendsFrame\\StatusIcon-Offline',
+};
+
+test('minimap button: an 8 px status light at the lower right, above the gold ring, follows the bridge state like the window light', () => {
+  const vm = newVM();
+  assert.equal(vm.evaluate(`${B}.dot.parent == ${B}`), 'true', 'a texture of the button, so it hides with it');
+  assert.equal(vm.evaluate(`${B}.dot.width .. "x" .. ${B}.dot.height`), '8x8');
+  assert.equal(vm.evaluate(`${B}.dot.point .. " " .. ${B}.dot.relPoint`), 'BOTTOMRIGHT BOTTOMRIGHT');
+  assert.equal(vm.evaluate(`${B}.dot.layer`), 'OVERLAY', 'the same layer as the ring, on a higher sublevel');
+  assert.equal(vm.evaluate(`${B}.dot:GetTexture()`), STATE_ICONS.unknown, 'not seen yet: grey');
+  for (const state of ['ok', 'stale', 'down', 'unknown']) {
+    vm.run(`ClaudeWoW.BridgeState = function() return "${state}", 0, 0, 0, "tip ${state}" end; ClaudeWoW.UpdateDot()`);
+    assert.equal(vm.evaluate(`${B}.dot:GetTexture()`), STATE_ICONS[state], state);
+    assert.equal(vm.evaluate(`${B}.dot:GetTexture() == ClaudeWoW.UI.dot:GetTexture()`), 'true', 'the same light as the window');
+  }
+  vm.run('SlashCmdList.CLAUDE("config minimap off")');
+  assert.equal(vm.evaluate(`${B}.shown`), 'false', 'the light goes with the hidden button');
+});
+
+test('minimap button: it pulses while a reply is unread and the window is closed, glows while an agent works, and stops when the window opens', () => {
+  const vm = newVM(TIP_SPY);
+  const signal = () => vm.evaluate(`${B}.signal`);
+  const pulsing = () => vm.evaluate(`${B}.pulse:IsPlaying()`);
+  const glow = () => vm.evaluate(`${B}.glow.shown`);
+  assert.equal(vm.evaluate(`${B}.glow:GetTexture()`), 'Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight', 'the Blizzard minimap highlight');
+  assert.equal(signal(), 'idle');
+  assert.equal(pulsing(), 'false');
+  assert.equal(glow(), 'false');
+
+  vm.run('ClaudeWoWDB.chats[1].unread = 1; ClaudeWoW.Notify(ClaudeWoWDB.chats[1], "done", "claude", nil, "assistant")');
+  assert.equal(signal(), 'reply');
+  assert.equal(pulsing(), 'true', 'an unread reply with the window closed pulses');
+  assert.equal(glow(), 'true');
+  vm.run(`${B}.scripts.OnEnter(${B})`);
+  assert.ok(vm.evaluate('table.concat(TIP, "|")').includes('1 new reply @1.0,0.8,0.0'), 'the tooltip counts it');
+
+  vm.run(`${B}.scripts.OnClick(${B}, "LeftButton")`);
+  assert.equal(vm.evaluate('ClaudeWoWFrame.shown'), 'true');
+  assert.equal(signal(), 'idle');
+  assert.equal(pulsing(), 'false', 'opening the window stops it');
+  assert.equal(glow(), 'false');
+
+  vm.run('ClaudeWoWDB.chats[1].pendingId = 7; ClaudeWoW.Render()');
+  assert.equal(signal(), 'idle', 'nothing while the window is open');
+  vm.run('ClaudeWoW.Toggle(false)');
+  assert.equal(signal(), 'working', 'an agent at work with the window closed');
+  assert.equal(pulsing(), 'false', 'a steady glow, not a pulse');
+  assert.equal(glow(), 'true');
+  assert.equal(vm.evaluate(`${B}.glow:GetAlpha()`), '0.4');
+  vm.run(`${B}.scripts.OnEnter(${B})`);
+  assert.ok(vm.evaluate('table.concat(TIP, "|")').includes('1 working @1.0,0.8,0.0'));
+
+  vm.run('ClaudeWoWDB.chats[1].unread = 2; ClaudeWoW.Render()');
+  assert.equal(signal(), 'reply', 'a reply wins over work');
+  assert.equal(pulsing(), 'true');
+  vm.run('SlashCmdList.CLAUDE("")');
+  assert.equal(pulsing(), 'false', '/claude opens the window and stops it too');
+});
+
 test('minimap button: no Minimap frame, no button and no error', () => {
   const vm = newVM('Minimap = nil');
   assert.equal(vm.evaluate(B), null);

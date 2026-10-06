@@ -451,6 +451,7 @@ local function InitDB()
 	end
 	if s.signal == nil then s.signal = true end
 	if s.minimap == nil then s.minimap = true end
+	Q.MigrateMiniBar(s)
 	if s.context == nil then s.context = true end -- tell the agent about the character, zone, etc.
 	if not s.contextWarnV2 then
 		s.contextWarnV2 = true
@@ -559,6 +560,14 @@ function ClaudeWoW.MigrateWhisper(s, fresh)
 	end
 	s.whisper = true
 	if not fresh then s.whisperNews = true end
+end
+
+function Q.MigrateMiniBar(s)
+	if s.miniBarV2 then return end
+	s.miniBarV2 = true
+	if s.minimized then s.shown = false end
+	s.minimized = nil
+	s.miniPoint, s.miniRelPoint, s.miniX, s.miniY = nil, nil, nil, nil
 end
 
 local function AddHistory(chat, role, text, id, denied, agent, macros, summary)
@@ -1578,11 +1587,9 @@ local STATE_ICON = {
 function ClaudeWoW.UpdateDot()
 	local state, _, _, _, tip = ClaudeWoW.BridgeState()
 	if run.pixelFailed then state = "down" end
-	for _, dot in ipairs({ ui.dot, ui.miniDot }) do
-		if dot then
-			dot:SetTexture(STATE_ICON[state] or STATE_ICON.unknown)
-			dot.tip = tip
-		end
+	for _, dot in pairs({ ui.dot, ui.minimapDot }) do
+		dot:SetTexture(STATE_ICON[state] or STATE_ICON.unknown)
+		dot.tip = tip
 	end
 end
 
@@ -5559,7 +5566,7 @@ function ClaudeWoW.UpdateStatus()
 			ui.ctxBar:SetPoint("RIGHT", ui.frame, "BOTTOMRIGHT", Q.CTX_BAR_RIGHT_X, Q.CTX_BAR_Y)
 		end
 	end
-	ClaudeWoW.UpdateMini()
+	Q.UpdateMinimapSignal()
 end
 
 local PICKER_ROW_HEIGHT = 20
@@ -5980,32 +5987,20 @@ function ClaudeWoW.RenderChatList()
 	end
 end
 
-function ClaudeWoW.UpdateMini()
-	if not ui.miniBadge then return end
+function Q.ChatActivity()
 	local unread, working = 0, 0
 	for _, c in ipairs(Q.ListedChats()) do
 		unread = unread + (c.unread or 0)
 		if c.pendingId then working = working + 1 end
 	end
-	local t
-	if working > 0 and unread > 0 then
-		t = "|cff55ff55" .. unread .. " new|r |cffffd100" .. working .. " working|r"
-	elseif working > 0 then
-		t = "|cffffd100" .. (working == 1 and "working..." or (working .. " working...")) .. "|r"
-	elseif unread > 0 then
-		t = "|cff55ff55" .. unread .. (unread == 1 and " new reply" or " new replies") .. "|r"
-	else
-		t = "|cffccccccReady|r"
-	end
-	ui.miniBadge:SetText(t)
-	if ui.miniPulse then
-		if unread > 0 then
-			if not ui.miniPulse:IsPlaying() then ui.miniPulse:Play() end
-		else
-			ui.miniPulse:Stop()
-			ui.miniBadge:SetAlpha(1)
-		end
-	end
+	return unread, working
+end
+
+function Q.ActivityText(unread, working)
+	local parts = {}
+	if unread > 0 then table.insert(parts, unread .. (unread == 1 and " new reply" or " new replies")) end
+	if working > 0 then table.insert(parts, working .. " working") end
+	return table.concat(parts, ", ")
 end
 
 local ECHO = { DEFAULT = 4000, SUMMARY_LINES = 3, SUMMARY_FALLBACK_LINES = 2 }
@@ -6070,16 +6065,17 @@ function ClaudeWoW.Notify(chat, text, agent, summary, role, denied, msgId, macro
 	local inCombat = InCombatLockdown() and true or false
 	if not inCombat then pcall(PlaySound, 3081) end
 	if ClaudeWoWVoice and not inCombat then ClaudeWoWVoice.Reply(role, denied) end
-	ClaudeWoW.UpdateMini()
+	Q.UpdateMinimapSignal()
 	run.lastReplyChat = chat.id
 	Whisper.OfferReply(chat)
 	if not Whisper.Reply(chat, text, agent, role, denied, summary, msgId, macros) then
 		EchoToChat(chat, text, agent, summary)
 	end
-	if inCombat or Whisper.Active() or not UIErrorsFrame then return end
+	if inCombat or Whisper.Active() then return end
 	if ui.frame and ui.frame:IsShown() then return end
-	if db.settings.shown and db.settings.minimized then return end
-	UIErrorsFrame:AddMessage(ReplyAgentName(chat, agent) .. " replied.", 0.5, 0.8, 1, 1)
+	local who = ReplyAgentName(chat, agent)
+	if UIErrorsFrame then UIErrorsFrame:AddMessage(who .. " replied.", 0.5, 0.8, 1, 1) end
+	if not Q.MinimapButtonOn() then print(ClaudeWoW.PREFIX .. who .. Q.REPLY_WAITING_NOTICE) end
 end
 
 function ClaudeWoW.SystemNote(text)
@@ -6467,6 +6463,11 @@ Q.MINIMAP_ROUND_QUADRANTS = {
 }
 Q.MINIMAP_LAYOUT_MAINLINE = { border = 50, background = 24, icon = 18, centered = true }
 Q.MINIMAP_LAYOUT_CLASSIC = { border = 53, background = 20, backgroundX = 7, backgroundY = -5, icon = 17, iconX = 7, iconY = -6 }
+Q.MINIMAP_DOT_SIZE = 8
+Q.MINIMAP_DOT_X, Q.MINIMAP_DOT_Y = -2, 2
+Q.MINIMAP_DOT_SUBLEVEL = 7
+Q.MINIMAP_PULSE_LOW, Q.MINIMAP_PULSE_SECONDS = 0.15, 0.8
+Q.MINIMAP_WORKING_GLOW = 0.4
 
 function Q.MinimapButtonOn()
 	return db.settings.minimap ~= false
@@ -6530,6 +6531,8 @@ function Q.MinimapTooltip(button)
 	GameTooltip:SetOwner(button, "ANCHOR_LEFT")
 	GameTooltip:SetText(ClaudeWoW.PRODUCT)
 	GameTooltip:AddLine(Q.PlainStatus(ActiveChat()), 1, 1, 1, true)
+	local activity = Q.ActivityText(Q.ChatActivity())
+	if activity ~= "" then GameTooltip:AddLine(activity, 1, 0.82, 0, true) end
 	Q.StatusTooltip()
 	GameTooltip:AddLine(" ")
 	GameTooltip:AddLine(Q.MINIMAP_HINT_LEFT, green[1], green[2], green[3])
@@ -6626,6 +6629,7 @@ function Q.BuildMinimapButton()
 	button.background, button.icon = background, icon
 	button.isMouseDown = false
 	Q.UpdateMinimapIconCoord(button)
+	Q.BuildMinimapSignal(button)
 
 	button:SetScript("OnClick", Q.MinimapClick)
 	button:SetScript("OnDragStart", Q.MinimapDragStart)
@@ -6640,9 +6644,66 @@ function Q.BuildMinimapButton()
 	return button
 end
 
+function Q.BuildMinimapSignal(button)
+	local glow = button:CreateTexture(nil, "OVERLAY")
+	glow:SetAllPoints(button)
+	glow:SetTexture(Q.MINIMAP_HIGHLIGHT)
+	glow:SetBlendMode("ADD")
+	glow:Hide()
+	button.glow = glow
+	local ok, pulse = pcall(function()
+		local g = glow:CreateAnimationGroup()
+		local fade = g:CreateAnimation("Alpha")
+		fade:SetFromAlpha(1)
+		fade:SetToAlpha(Q.MINIMAP_PULSE_LOW)
+		fade:SetDuration(Q.MINIMAP_PULSE_SECONDS)
+		fade:SetOrder(1)
+		local back = g:CreateAnimation("Alpha")
+		back:SetFromAlpha(Q.MINIMAP_PULSE_LOW)
+		back:SetToAlpha(1)
+		back:SetDuration(Q.MINIMAP_PULSE_SECONDS)
+		back:SetOrder(2)
+		g:SetLooping("REPEAT")
+		return g
+	end)
+	if ok then button.pulse = pulse end
+	local dot = button:CreateTexture(nil, "OVERLAY", nil, Q.MINIMAP_DOT_SUBLEVEL)
+	dot:SetSize(Q.MINIMAP_DOT_SIZE, Q.MINIMAP_DOT_SIZE)
+	dot:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", Q.MINIMAP_DOT_X, Q.MINIMAP_DOT_Y)
+	dot:SetTexture(STATE_ICON.unknown)
+	button.dot = dot
+	ui.minimapDot = dot
+end
+
+function Q.MinimapSignal()
+	if ui.frame and ui.frame:IsShown() then return "idle" end
+	local unread, working = Q.ChatActivity()
+	if unread > 0 then return "reply" end
+	if working > 0 then return "working" end
+	return "idle"
+end
+
+function Q.UpdateMinimapSignal()
+	local button = ui.minimap
+	if not (button and button.glow and db) then return end
+	local signal = Q.MinimapSignal()
+	button.signal = signal
+	if signal == "reply" then
+		button.glow:SetAlpha(1)
+		button.glow:Show()
+		if button.pulse and not button.pulse:IsPlaying() then button.pulse:Play() end
+		return
+	end
+	if button.pulse then button.pulse:Stop() end
+	button.glow:SetAlpha(Q.MINIMAP_WORKING_GLOW)
+	button.glow:SetShown(signal == "working")
+end
+
 function Q.ApplyMinimapButton()
 	if not ui.minimap then return end
 	ui.minimap:SetShown(Q.MinimapButtonOn())
+	ClaudeWoW.UpdateDot()
+	Q.UpdateMinimapSignal()
 end
 
 Q.PARCHMENT_STYLE = {
@@ -6669,12 +6730,10 @@ end
 
 Q.PANEL_TITLE = ClaudeWoW.PRODUCT
 Q.WINDOW_STRATA = "HIGH"
-Q.MINI_STRATA = "MEDIUM"
-Q.MINI_W, Q.MINI_H = 240, 26
-Q.MINIMIZE_X = -2
 
 Q.BRIDGE_CHECK_SECONDS = 20
 Q.LOGIN_NOTICE = ClaudeWoW.PREFIX .. "Loaded. Type /claude to open it."
+Q.REPLY_WAITING_NOTICE = " replied. Type /claude to open the window."
 Q.UNREACHABLE_NOTICE = ClaudeWoW.PREFIX .. "Can't reach the bridge. Start it, then type /claude and click Connect."
 
 function Q.LoginNotice()
@@ -6689,18 +6748,6 @@ function Q.UnreachableNotice()
 	print(Q.UNREACHABLE_NOTICE)
 end
 
-function Q.AnchorMinimize(mini, close)
-	mini:ClearAllPoints()
-	mini:SetPoint("RIGHT", close, "LEFT", Q.MINIMIZE_X, 0)
-end
-
-function Q.MiniBackdrop(m)
-	if m.claudewowTemplate then return end
-	m:SetBackdrop(BACKDROP)
-	local bg, edge = TOOLTIP_DEFAULT_BACKGROUND_COLOR, TOOLTIP_DEFAULT_COLOR
-	if type(bg) == "table" and bg.r then m:SetBackdropColor(bg.r, bg.g, bg.b, 1) else m:SetBackdropColor(0.09, 0.09, 0.19, 1) end
-	if type(edge) == "table" and edge.r then m:SetBackdropBorderColor(edge.r, edge.g, edge.b, 1) else m:SetBackdropBorderColor(1, 1, 1, 1) end
-end
 Q.LINK_RETRY_SECONDS, Q.LINK_RETRIES = 0.5, 3
 Q.linkTries = {}
 Q.linkMissing = false
@@ -7990,46 +8037,13 @@ local function BuildUI()
 	end)
 	close:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
-	local mini
-	if Q.AtlasExists("RedButton-MiniCondense") then
-		local ok, b = pcall(CreateFrame, "Button", nil, f, "UIPanelHideButtonNoScripts")
-		if ok and b then mini = b end
-	end
-	if not mini then
-		mini = CreateFrame("Button", nil, f)
-		mini:SetSize(24, 24)
-		local dash = mini:CreateTexture(nil, "ARTWORK")
-		dash:SetSize(10, 2)
-		dash:SetPoint("CENTER", mini, "CENTER", 0, -3)
-		dash:SetColorTexture(0.9, 0.9, 0.9, 1)
-		local hl = mini:CreateTexture(nil, "HIGHLIGHT")
-		hl:SetAllPoints()
-		hl:SetColorTexture(1, 1, 1, 0.15)
-	end
-	Q.AnchorMinimize(mini, close)
-	ui.minimize = mini
-	mini:SetScript("OnClick", function() ClaudeWoW.Minimize(true) end)
-	mini:SetScript("OnEnter", function(self)
-		GameTooltip:SetOwner(self, "ANCHOR_LEFT")
-		GameTooltip:SetText("Minimize")
-		GameTooltip:AddLine("The agent keeps working. The small bar shows when a reply lands.", 0.8, 0.8, 0.8, true)
-		GameTooltip:Show()
-	end)
-	mini:SetScript("OnLeave", function() GameTooltip:Hide() end)
-
 	f:SetScript("OnHide", function()
 		if ui.quitting then
 			ui.quitting = nil
-			return
+		elseif db and UIParent:IsShown() then
+			db.settings.shown = false
 		end
-		if not db or not UIParent:IsShown() then return end
-		if db.settings.shown and db.settings.minimized then
-			if ui.mini then ui.mini:Show() end
-		else
-			db.settings.shown, db.settings.minimized = false, false
-			if ui.mini then ui.mini:Hide() end
-		end
-		ClaudeWoW.UpdateMini()
+		Q.UpdateMinimapSignal()
 	end)
 
 	-- Left panel: chat list
@@ -8320,103 +8334,16 @@ local function BuildUI()
 		s.width, s.height = f:GetSize()
 	end)
 
-	-- Mini bar: what the window collapses into. Click it to expand, drag to move.
-	local miniTemplate = Q.TemplateExists("TooltipBackdropTemplate") and "TooltipBackdropTemplate" or nil
-	local m = CreateFrame("Frame", "ClaudeWoWMini", UIParent, miniTemplate or "BackdropTemplate")
-	m.claudewowTemplate = miniTemplate
-	ui.mini = m
-	m:SetSize(Q.MINI_W, Q.MINI_H)
-	if s.miniPoint then
-		m:SetPoint(s.miniPoint, UIParent, s.miniRelPoint or s.miniPoint, s.miniX or 0, s.miniY or 0)
-	else
-		m:SetPoint("TOP", UIParent, "TOP", 0, -40)
-	end
-	m:SetFrameStrata(Q.MINI_STRATA)
-	m:SetMovable(true)
-	m:SetClampedToScreen(true)
-	m:EnableMouse(true)
-	m:RegisterForDrag("LeftButton")
-	m:SetScript("OnDragStart", function(self)
-		self.dragging = true
-		self:StartMoving()
-	end)
-	m:SetScript("OnDragStop", function(self)
-		self:StopMovingOrSizing()
-		local point, _, relPoint, x, y = self:GetPoint()
-		s.miniPoint, s.miniRelPoint, s.miniX, s.miniY = point, relPoint, x, y
-		C_Timer.After(0, function() self.dragging = nil end)
-	end)
-	m:SetScript("OnMouseUp", function(self, button)
-		if button == "LeftButton" and not self.dragging then
-			ClaudeWoW.Minimize(false)
-		end
-	end)
-	Q.MiniBackdrop(m)
-	m:Hide()
-
-	local miniDotHolder, miniDot = MakeDot(m)
-	miniDotHolder:SetPoint("LEFT", m, "LEFT", 9, 0)
-	ui.miniDot = miniDot
-
-	local mlabel = m:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-	mlabel:SetPoint("LEFT", miniDotHolder, "RIGHT", 6, 0)
-	mlabel:SetText(Q.PANEL_TITLE)
-
-	local badge = m:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	badge:SetPoint("LEFT", mlabel, "RIGHT", 8, 0)
-	badge:SetPoint("RIGHT", m, "RIGHT", -26, 0)
-	badge:SetJustifyH("LEFT")
-	badge:SetWordWrap(false)
-	ui.miniBadge = badge
-
-	local ok, pulse = pcall(function()
-		local g = badge:CreateAnimationGroup()
-		local a1 = g:CreateAnimation("Alpha")
-		a1:SetFromAlpha(1)
-		a1:SetToAlpha(0.25)
-		a1:SetDuration(0.6)
-		a1:SetOrder(1)
-		local a2 = g:CreateAnimation("Alpha")
-		a2:SetFromAlpha(0.25)
-		a2:SetToAlpha(1)
-		a2:SetDuration(0.6)
-		a2:SetOrder(2)
-		g:SetLooping("REPEAT")
-		return g
-	end)
-	if ok then ui.miniPulse = pulse end
-
-	local mclose = CreateFrame("Button", nil, m, "UIPanelCloseButton")
-	mclose:SetSize(24, 24)
-	mclose:SetPoint("RIGHT", m, "RIGHT", -2, 0)
-	mclose:SetScript("OnClick", function() ClaudeWoW.Toggle(false) end)
-	mclose:SetScript("OnEnter", function(self)
-		GameTooltip:SetOwner(self, "ANCHOR_LEFT")
-		GameTooltip:SetText("Hide the bar")
-		GameTooltip:AddLine("Type /claude to open the window again.", 0.8, 0.8, 0.8, true)
-		GameTooltip:Show()
-	end)
-	mclose:SetScript("OnLeave", function() GameTooltip:Hide() end)
-	m:SetScript("OnEnter", function(self)
-		GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
-		GameTooltip:SetText(Q.PANEL_TITLE)
-		GameTooltip:AddLine("Click to open the window. Drag to move the bar.", 0.8, 0.8, 0.8, true)
-		GameTooltip:AddLine((ui.dot and ui.dot.tip) or "Bridge status unknown", 0.6, 0.6, 0.6, true)
-		GameTooltip:Show()
-	end)
-	m:SetScript("OnLeave", function() GameTooltip:Hide() end)
-	if ClaudeWoWWindow then ClaudeWoWWindow.Attach(f, m, grip) end
+	if ClaudeWoWWindow then ClaudeWoWWindow.Attach(f, grip) end
 end
 
 function ClaudeWoW.Toggle(show)
 	if not ui.frame then return end
 	if show == nil then show = not ui.frame:IsShown() end
 	if show then
-		db.settings.minimized = false
 		local c = ActiveChat()
 		if c then c.unread = 0 end
 	end
-	if ui.mini then ui.mini:Hide() end
 	if not show then ui.quitting = true end
 	ui.frame:SetShown(show)
 	ui.quitting = nil
@@ -8426,21 +8353,6 @@ function ClaudeWoW.Toggle(show)
 		-- No auto-focus: the game keeps the keyboard until you click the box.
 		-- No automatic hello either: if the bridge hasn't been seen, the panel
 		-- shows Connect in place of Send and waits for a click.
-	end
-	ClaudeWoW.UpdateMini()
-end
-
-function ClaudeWoW.Minimize(mini)
-	if not ui.frame then return end
-	if mini == nil then mini = not db.settings.minimized end
-	if mini then
-		db.settings.minimized = true
-		db.settings.shown = true
-		ui.frame:Hide() -- OnHide shows the mini bar
-		if ui.mini and not ui.mini:IsShown() then ui.mini:Show() end
-		ClaudeWoW.UpdateMini()
-	else
-		ClaudeWoW.Toggle(true)
 	end
 end
 
@@ -8453,7 +8365,7 @@ function ClaudeWoW.Suspend(hidden)
 		ui.quitting = nil
 		return true
 	end
-	if not db.settings.shown or db.settings.minimized or ui.frame:IsShown() then return false end
+	if not db.settings.shown or ui.frame:IsShown() then return false end
 	ui.frame:Show()
 	ClaudeWoW.Render()
 	return true
@@ -8534,7 +8446,7 @@ ClaudeWoW.HELP = {
 			{ "/claude dm [next]", "Show or hide the Dungeon Master; next goes on to a beat that waits for you. /dm is the same." },
 			{ "/claude map [command]", "Map layers and node pins: ore, herb, filter, show, hide, nav, next, prev, stop. /aimap is the same." },
 			{ "/claude stream [command]", "Stream scenes, panes and the quest overlay. /stream is the same." },
-			{ "/claude hide | mini", "Hide the window, or collapse it to the small bar." },
+			{ "/claude hide | mini", "Close the window, like its X or Esc. The minimap button shows the status and pulses when a reply waits." },
 			{ "/claude config minimap [on|off]", "The minimap button: left-click opens or closes the window, right-click opens Options, drag it around the minimap." },
 			{ "/claude help", "Open this page." },
 		},
@@ -9778,8 +9690,8 @@ RunCommand = function(cmd, rest)
 	local c = ActiveChat()
 	if cmd == "" then
 		ClaudeWoW.Toggle()
-	elseif cmd == "mini" or cmd == "min" then
-		ClaudeWoW.Minimize(true)
+	elseif cmd == "hide" or cmd == "quit" or cmd == "mini" or cmd == "min" then
+		ClaudeWoW.Toggle(false)
 	elseif cmd == "new" then
 		ClaudeWoW.NewChat(rest)
 	elseif cmd == "chat" or cmd == "chats" then
@@ -9899,8 +9811,6 @@ RunCommand = function(cmd, rest)
 		end
 		ClaudeWoW.UpdateStatus()
 		ClaudeWoW.ArmAutoRefresh()
-	elseif cmd == "hide" or cmd == "quit" then
-		ClaudeWoW.Toggle(false)
 	elseif cmd == "macro" and rest == "undo" then
 		ClaudeWoW.UndoMacro()
 	elseif cmd == "copy" then
@@ -10119,12 +10029,10 @@ ev:SetScript("OnEvent", function(self, event, arg1)
 		ClaudeWoW.Render()
 		InstallChatHooks()
 		Whisper.Install()
-		if db.settings.shown then
-			if db.settings.minimized or Whisper.Active() then
-				ClaudeWoW.Minimize(true)
-			else
-				ClaudeWoW.Toggle(true)
-			end
+		if db.settings.shown and Whisper.Active() then
+			db.settings.shown = false
+		elseif db.settings.shown then
+			ClaudeWoW.Toggle(true)
 		end
 		ClaudeWoW.ArmAutoRefresh()
 		ClaudeWoW.UpdateDot()

@@ -140,7 +140,7 @@ test('addon loads, builds its UI and creates a first chat', () => {
   assert.equal(vm.num('#ClaudeWoWDB.chats'), 1);
   assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].name'), 'Chat 1');
   assert.equal(vm.evaluate('ClaudeWoWFrame ~= nil'), 'true');
-  assert.equal(vm.evaluate('ClaudeWoWMini ~= nil'), 'true');
+  assert.equal(vm.evaluate('ClaudeWoWMini'), null, 'no floating bar is ever built');
   assert.equal(vm.num('#STUB.tickers'), 2, 'the transport tick and the whisper-tab pulse');
   assert.equal(vm.evaluate('SlashCmdList.CLAUDEWOW ~= nil'), 'true');
   // Two commands, not two spellings of one: /claude-wow shows the window, /claude
@@ -609,22 +609,20 @@ test('chat rows: right-click opens a menu that renames or sets the folder of tha
   assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].name'), 'Chat 1');
 });
 
-test('minimize collapses to the mini bar and back; the mini bar X hides everything', () => {
+test('/claude mini, min, hide and quit all close the window; nothing else is left on screen', () => {
   const vm = newVM();
   login(vm);
-  vm.run('ClaudeWoW.Toggle(true)');
-  assert.equal(vm.evaluate('ClaudeWoWFrame.shown'), 'true');
-  vm.run('ClaudeWoW.Minimize(true)');
-  assert.equal(vm.evaluate('ClaudeWoWFrame.shown'), 'false');
-  assert.equal(vm.evaluate('ClaudeWoWMini.shown'), 'true');
-  assert.equal(vm.evaluate('ClaudeWoWDB.settings.minimized'), 'true');
-  vm.run('ClaudeWoW.Minimize(false)');
-  assert.equal(vm.evaluate('ClaudeWoWFrame.shown'), 'true');
-  assert.equal(vm.evaluate('ClaudeWoWMini.shown'), 'false');
-  vm.run('ClaudeWoW.Toggle(false)');
-  assert.equal(vm.evaluate('ClaudeWoWFrame.shown'), 'false');
-  assert.equal(vm.evaluate('ClaudeWoWMini.shown'), 'false');
-  assert.equal(vm.evaluate('ClaudeWoWDB.settings.shown'), 'false');
+  assert.equal(vm.evaluate('ClaudeWoW.Minimize'), null, 'there is no minimized state');
+  for (const verb of ['mini', 'min', 'hide', 'quit']) {
+    vm.run('ClaudeWoW.Toggle(true)');
+    assert.equal(vm.evaluate('ClaudeWoWFrame.shown'), 'true');
+    vm.run(`SlashCmdList.CLAUDE("${verb}")`);
+    assert.equal(vm.evaluate('ClaudeWoWFrame.shown'), 'false', `/claude ${verb} closes`);
+    assert.equal(vm.evaluate('ClaudeWoWDB.settings.shown'), 'false');
+    assert.equal(vm.evaluate('ClaudeWoWDB.settings.minimized'), null);
+    assert.equal(vm.num('#ClaudeWoWDB.chats'), 1, `/claude ${verb} is a command, not a message`);
+  }
+  assert.equal(vm.evaluate('ClaudeWoWMini'), null);
 });
 
 test('reload mode writes the outbox for the bridge instead of drawing the strip', () => {
@@ -1066,7 +1064,7 @@ test('whisper tabs: on by default; the active chat is a tab at login, Enter ther
   assert.ok(tabLines(vm, 11).includes('Type to talk'), 'a welcome line: ' + tabLines(vm, 11));
   assert.ok(tabLinks(vm, 11).includes(`addon:claudewow:open:${chatId}`), 'with a workspace link');
   assert.equal(vm.evaluate('ClaudeWoWFrame.shown'), 'false', 'the workspace window stays closed');
-  assert.equal(vm.evaluate('ClaudeWoWMini.shown'), 'false', 'a fresh install puts nothing on screen');
+  assert.equal(vm.evaluate('ClaudeWoWMini'), null, 'a fresh install puts nothing on screen');
   assert.ok(
     vm.evaluate('table.concat(STUB.prints, "\\n")').includes('[Azeroth Companion]|r Loaded. Type /claude to open it.'),
     'one line in the game chat says how to open it',
@@ -1117,7 +1115,7 @@ test('whisper tabs: on by default; the active chat is a tab at login, Enter ther
   vm.run(`STUB.ClickLink("|Haddon:claudewow:open:${chatId}|h[full reply]|h")`);
   assert.equal(vm.evaluate('ClaudeWoWFrame.shown'), 'true', 'the full reply link opens the workspace');
   assert.equal(vm.evaluate('ClaudeWoWDB.activeChat'), chatId);
-  vm.run('ClaudeWoW.Minimize(true)');
+  vm.run('SlashCmdList.CLAUDE("mini")');
 
   enter('ChatFrame11EditBox', 'first');
   const before = stripRecords(vm).length;

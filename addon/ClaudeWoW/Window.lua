@@ -9,7 +9,6 @@ local MIN_W, MIN_H = 560, 300
 local DIM_FLOOR = 0.1
 local PANEL_TOP_OFFSET = 116
 local PANEL_LEFT_OFFSET = 16
-local MINIMIZE_X = -2
 
 local PANELS = {
 	"CharacterFrame", "SpellBookFrame", "PlayerSpellsFrame", "PlayerTalentFrame", "TalentFrame", "ClassTalentFrame",
@@ -28,7 +27,7 @@ W.FULLSCREEN = FULLSCREEN
 
 local PANEL_HOOKS = { "ShowUIPanel", "HideUIPanel", "UpdateUIPanelPositions", "ToggleAllBags", "OpenAllBags", "CloseAllBags", "ToggleBag", "StaticPopup_Show", "StaticPopup_Hide" }
 
-local win, mini, grip, driver
+local win, grip, driver
 local state = { moving = false, combat = false, stashed = false, fullOpen = false, dodged = false, alpha = 1, pending = false, signature = "", pollIn = 0 }
 W.state = state
 local hooked = {}
@@ -303,7 +302,6 @@ end
 
 local function Hovered()
 	if win and win:IsShown() and Try(win.IsMouseOver, win) then return true end
-	if mini and mini:IsShown() and Try(mini.IsMouseOver, mini) then return true end
 	local ui = ClaudeWoW.UI
 	return ui and ui.input and Try(ui.input.HasFocus, ui.input) and true or false
 end
@@ -323,7 +321,6 @@ end
 local function SetAlpha(a)
 	state.alpha = a
 	if win then win:SetAlpha(a) end
-	if mini then mini:SetAlpha(a) end
 end
 
 function W.Fade(dt)
@@ -408,14 +405,6 @@ local function Skin(f)
 		ui.close:ClearAllPoints()
 		ui.close:SetPoint("TOPRIGHT", f, "TOPRIGHT", 2, 1)
 	end
-	if ui.minimize then
-		ui.minimize:ClearAllPoints()
-		if ui.close then
-			ui.minimize:SetPoint("RIGHT", ui.close, "LEFT", MINIMIZE_X, 0)
-		else
-			ui.minimize:SetPoint("TOPRIGHT", f, "TOPRIGHT", 2, 1)
-		end
-	end
 	f.claudewowBorder = border
 	return true
 end
@@ -439,8 +428,8 @@ local function HookPanels()
 end
 W.HookPanels = HookPanels
 
-function W.Attach(frame, miniBar, sizeGrip)
-	win, mini, grip = frame, miniBar, sizeGrip
+function W.Attach(frame, sizeGrip)
+	win, grip = frame, sizeGrip
 	W.skinned = Skin(win)
 	W.Layout()
 	Put(HomeRect())
@@ -463,7 +452,6 @@ function W.Attach(frame, miniBar, sizeGrip)
 		W.Schedule()
 		W.Drive()
 	end)
-	if mini then mini:HookScript("OnShow", W.Drive) end
 	driver = driver or CreateFrame("Frame", "ClaudeWoWWindowDriver", UIParent)
 	driver:SetScript("OnUpdate", function(_, dt) W.Update(dt) end)
 	HookPanels()
