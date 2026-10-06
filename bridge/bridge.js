@@ -851,6 +851,8 @@ function sharedSlotFields(urgent) {
     cwd: DEFAULT_CWD,
     agent: DEFAULT_AGENT,
     agents: A.agentIds(),
+    efforts: A.effortDefaults(cfg, registry.ids(), core.options),
+    effortLock: A.effortLocks(process.env),
     plugin: DEFAULT_PLUGIN,
     plugins: registry.ids(),
     widgets,

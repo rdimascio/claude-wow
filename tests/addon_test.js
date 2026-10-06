@@ -1702,7 +1702,7 @@ test('/claude flags set per-chat settings: with text on a new chat, with -c on t
   assert.equal(vm.evaluate(`${chat}.model`), 'sonnet');
   assert.equal(vm.evaluate(`${chat}.effort`), null, 'a value of - clears it');
   const last = () => vm.evaluate(`${chat}.history[#${chat}.history].text`);
-  assert.ok(last().includes('model: sonnet') && last().includes("effort: the agent's default"), last());
+  assert.ok(last().includes('model: sonnet') && last().includes('effort: auto') && !last().includes('default'), last());
   vm.run('SlashCmdList.CLAUDE("--permission-mode")');
   assert.equal(vm.num('#ClaudeWoWDB.chats'), 2, 'a bare flag only shows the setting');
   assert.equal(last(), 'permission mode: plan');
@@ -3776,7 +3776,7 @@ test('the effort button above Send shows the chat effort, sets it for this chat,
   vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
   vm.run('ClaudeWoW.Toggle()');
   const label = () => vm.evaluate('ClaudeWoW.UI.effort.text:GetText()');
-  assert.equal(label(), '|cffffffffdefault|r');
+  assert.equal(label(), '|cff9d9d9dauto|r', 'an old bridge reports no effort: the word is auto, never default');
   assert.equal(vm.evaluate('ClaudeWoW.UI.effort.shown'), 'true');
   assert.equal(vm.evaluate('ClaudeWoW.UI.effort.rel == ClaudeWoW.UI.send'), 'true', 'it sits above Send');
   const click = () => vm.run('ClaudeWoW.UI.effort:GetScript("OnClick")(ClaudeWoW.UI.effort)');
@@ -3790,12 +3790,54 @@ test('the effort button above Send shows the chat effort, sets it for this chat,
   const rec = stripRecords(vm).find(r => r.text === 'think hard');
   assert.ok(rec.flags.split(';').includes('effort=high'), rec.flags);
   vm.run('ClaudeWoW.NewChat("fresh")');
-  assert.equal(label(), '|cffffffffdefault|r', 'each chat has its own effort');
+  assert.equal(label(), '|cff9d9d9dauto|r', 'each chat has its own effort');
   click();
   click();
   click();
   click();
   click();
   click();
-  assert.equal(label(), '|cffffffffdefault|r', 'after max it goes back to default');
+  assert.equal(label(), '|cff9d9d9dauto|r', 'after max it goes back to auto');
+});
+
+function bridgeEffortFile(globalName) {
+  const P = require('../bridge/protocol');
+  const A = require('../bridge/agents');
+  const cfg = { agents: { claude: { effort: 'max' } } };
+  const options = id => (id === 'claude-code' ? { agents: { claude: { effort: 'low' } } } : {});
+  return P.luaTable(globalName, [], {
+    agent: 'claude',
+    agents: A.agentIds(),
+    plugin: 'ask',
+    plugins: ['ask', 'claude-code'],
+    efforts: A.effortDefaults(cfg, ['ask', 'claude-code'], options),
+    effortLock: A.effortLocks({}),
+  });
+}
+
+test('the effort defaults the bridge writes into the slot file reach the meter: per plugin, per agent, disabled where the agent has none', () => {
+  const vm = newVM();
+  login(vm);
+  vm.run('STUB.RunTimers()');
+  vm.run(`STUB.onLoadAddOn = function(name) ${bridgeEffortFile('ClaudeWoW_SlotData')}\nClaudeWoW_SlotData.now = time() end`);
+  vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
+  vm.run('ClaudeWoW.Toggle()');
+  const label = () => vm.evaluate('ClaudeWoW.UI.effort.text:GetText()');
+  assert.equal(label(), '|cffffffffmax|r', 'a chat without a folder runs the default plugin, where the bridge passes max');
+  vm.run('ClaudeWoW.SetFolder("~/wow-ai", ClaudeWoWDB.chats[1]); ClaudeWoW.Render()');
+  assert.equal(label(), '|cfffffffflow|r', 'a coding chat runs claude-code, where it passes low');
+  vm.run('ClaudeWoWDB.chats[1].agent = "codex"; ClaudeWoW.Render()');
+  assert.equal(label(), '|cff9d9d9dauto|r', 'nothing set for Codex: auto');
+  vm.run('ClaudeWoWDB.chats[1].agent = "hermes"; ClaudeWoW.Render()');
+  assert.equal(vm.evaluate('ClaudeWoW.UI.effort:IsEnabled()'), 'false', 'Hermes has no effort option');
+  assert.equal(label(), '');
+});
+
+test('the reload inbox carries the effort defaults too', () => {
+  const vm = newVM();
+  vm.run(bridgeEffortFile('ClaudeWoW_Inbox'));
+  vm.run('ClaudeWoW_Inbox.now = time()');
+  login(vm);
+  vm.run('ClaudeWoW.Toggle()');
+  assert.equal(vm.evaluate('ClaudeWoW.UI.effort.text:GetText()'), '|cffffffffmax|r');
 });

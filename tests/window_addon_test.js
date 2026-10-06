@@ -818,7 +818,7 @@ test('the project button sits at the right end of the header band, the chat titl
   assert.equal(vm.evaluate('ClaudeWoWEffortButton:IsShown()'), vm.evaluate('ClaudeWoW.UI.send:IsShown()'), 'shown with Send');
   assert.equal(vm.evaluate('ClaudeWoWEffortButton.rel == ClaudeWoW.UI.send'), 'true');
   assert.equal(vm.evaluate('ClaudeWoWEffortButton.point .. " " .. ClaudeWoWEffortButton.relPoint'), 'BOTTOMRIGHT TOPRIGHT', 'right above Send');
-  assert.equal(vm.evaluate('ClaudeWoWEffortButton.text:GetText()'), '|cffffffffdefault|r', 'the value alone, no Effort: prefix');
+  assert.equal(vm.evaluate('ClaudeWoWEffortButton.text:GetText()'), '|cff9d9d9dauto|r', 'the value alone, no Effort: prefix, and never default');
   assert.equal(vm.evaluate('ClaudeWoW.UI.chatTitle.rel == ClaudeWoWProjectButton'), 'true', 'the title truncates before it reaches the project button');
   assert.equal(vm.evaluate('ClaudeWoW.UI.chatTitle.point .. " " .. ClaudeWoW.UI.chatTitle.relPoint .. " " .. ClaudeWoW.UI.chatTitle.x'), 'RIGHT LEFT -8');
   vm.run('STUB.renames = 0; local real = ClaudeWoW.RenamePrompt; ClaudeWoW.RenamePrompt = function(...) STUB.renames = STUB.renames + 1 return real(...) end');
@@ -1343,6 +1343,133 @@ test('at the 560 px minimum width, Project and MCP fit in the header band withou
   assert.equal(vm.evaluate('ClaudeWoW.UI.chatTitle.rel == ClaudeWoWMcpButton'), 'true');
   vm.run('ClaudeWoWEffortButton.scripts.OnEnter(ClaudeWoWEffortButton)');
   assert.equal(vm.evaluate('GameTooltip:GetText()'), 'Effort: xhigh', 'the tooltip names the value in full');
+});
+
+const EFFORTS = 'efforts = { ["ask"] = { claude = "max", codex = "" }, ["claude-code"] = { claude = "low", codex = "" } }';
+const effortOf = (vm, expr) => vm.evaluate(`ClaudeWoWEffortButton.${expr}`);
+const filledBars = vm =>
+  vm.num('(function() local n = 0 for _, bar in ipairs(ClaudeWoWEffortButton.bars) do if bar.filled then n = n + 1 end end return n end)()');
+const barColors = vm =>
+  vm.evaluate(
+    '(function() local t = {} for _, bar in ipairs(ClaudeWoWEffortButton.bars) do t[#t + 1] = table.concat(bar.color, ",") end return table.concat(t, " ") end)()',
+  );
+const effortTooltip = vm => {
+  vm.run('ClaudeWoWEffortButton.scripts.OnEnter(ClaudeWoWEffortButton)');
+  const lines = vm.evaluate('table.concat(GameTooltip.lines or {}, "\\n")');
+  return [vm.evaluate('GameTooltip:GetText()'), ...(lines ? lines.split('\n') : [])];
+};
+const effortMenu = vm =>
+  vm.evaluate('(function() local t = {} for _, it in ipairs(STUB.menu.items) do table.insert(t, it.text) end return table.concat(t, "|") end)()');
+
+test('effort is a five-bar meter above Send: rising gold bars up to the level, dim ones after, and the value word beside it', () => {
+  const vm = nativeVM();
+  vm.run('ClaudeWoWEffortButton.text.GetStringWidth = function() return 30 end');
+  assert.equal(vm.num('#ClaudeWoWEffortButton.bars'), 5, 'one bar per level: low, medium, high, xhigh, max');
+  const heights = vm
+    .evaluate('(function() local t = {} for _, bar in ipairs(ClaudeWoWEffortButton.bars) do t[#t + 1] = bar.height end return table.concat(t, ",") end)()')
+    .split(',')
+    .map(Number);
+  for (let i = 1; i < heights.length; i++) assert.ok(heights[i] > heights[i - 1], `bars rise: ${heights}`);
+  assert.ok(heights[4] >= 14 && heights[4] <= 16, `the tallest bar is 14 to 16 px: ${heights}`);
+  assert.equal(vm.evaluate('ClaudeWoWEffortButton.bars[1].layer'), 'ARTWORK');
+  const levels = ['low', 'medium', 'high', 'xhigh', 'max'];
+  levels.forEach((level, i) => {
+    vm.run(`ClaudeWoWDB.chats[#ClaudeWoWDB.chats].effort = "${level}"; ClaudeWoW.Render()`);
+    assert.equal(filledBars(vm), i + 1, `${level} fills ${i + 1} bars`);
+    barColors(vm)
+      .split(' ')
+      .forEach((c, j) => assert.equal(c, j <= i ? '1,0.82,0,1' : '0.4,0.4,0.4,0.55', `${level}: bar ${j + 1}`));
+    assert.equal(effortOf(vm, 'text:GetText()'), `|cffffffff${level}|r`);
+    assert.equal(effortOf(vm, 'text:IsShown()'), 'true', 'the word shows beside the bars');
+    assert.equal(effortOf(vm, 'text.point .. " " .. ClaudeWoWEffortButton.text.relPoint'), 'RIGHT RIGHT');
+    assert.ok(vm.num('ClaudeWoWEffortButton.text.x') <= -(5 * 3 + 4 * 2), 'the word sits left of the bars');
+    assert.deepEqual(effortTooltip(vm).slice(0, 2), [`Effort: ${level}`, 'Set for this chat.']);
+  });
+  assert.equal(effortOf(vm, 'rel == ClaudeWoW.UI.send'), 'true', 'it stays right above Send');
+});
+
+test('with no chat effort the meter shows what the bridge passes for the chat agent and plugin, else auto, and never says default', () => {
+  const vm = nativeVM();
+  vm.run('ClaudeWoWEffortButton.text.GetStringWidth = function() return 30 end');
+  vm.run('for _, c in ipairs(ClaudeWoWDB.chats) do c.agent = "claude" end; ClaudeWoW.Render()');
+  assert.equal(effortOf(vm, 'text:GetText()'), '|cff9d9d9dauto|r', 'an old bridge: auto');
+  assert.equal(filledBars(vm), 0);
+  assert.match(effortTooltip(vm)[1], /does not report/);
+  vm.run(`ClaudeWoW.ApplyEfforts({ ${EFFORTS} })`);
+  assert.equal(effortOf(vm, 'text:GetText()'), '|cfffffffflow|r', 'a chat with a folder runs the claude-code plugin: its effort');
+  assert.equal(filledBars(vm), 1);
+  assert.deepEqual(effortTooltip(vm).slice(0, 2), ['Effort: low', "The bridge's setting for this agent; it passes it on every run."]);
+  vm.run('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].plugin = "ask"; ClaudeWoW.Render()');
+  assert.equal(effortOf(vm, 'text:GetText()'), '|cffffffffmax|r', 'another plugin, its own effort');
+  assert.equal(filledBars(vm), 5);
+  vm.run('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].agent = "codex"; ClaudeWoW.Render()');
+  assert.equal(effortOf(vm, 'text:GetText()'), '|cff9d9d9dauto|r', 'the bridge sets none for Codex: the agent picks');
+  assert.equal(vm.evaluate('ClaudeWoWEffortButton:IsEnabled()'), 'true');
+  assert.match(effortTooltip(vm)[1], /the agent picks/);
+  vm.run('ClaudeWoWEffortButton.scripts.OnClick(ClaudeWoWEffortButton)');
+  assert.equal(effortMenu(vm), 'Effort|Auto|low|medium|high|xhigh|max');
+  vm.run('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].agent = "claude"; ClaudeWoW.Render(); ClaudeWoWEffortButton.scripts.OnClick(ClaudeWoWEffortButton)');
+  assert.equal(effortMenu(vm), 'Effort|Auto (max)|low|medium|high|xhigh|max', 'the Auto item names the value it stands for');
+  vm.run('STUB.Pick("high")');
+  assert.equal(effortOf(vm, 'text:GetText()'), '|cffffffffhigh|r', 'the chat choice wins over the bridge');
+  vm.run('ClaudeWoWEffortButton.scripts.OnClick(ClaudeWoWEffortButton); STUB.Pick("Auto (max)")');
+  assert.equal(effortOf(vm, 'text:GetText()'), '|cffffffffmax|r');
+  const effortTexts = vm
+    .evaluate('table.concat(STUB.texts, "\\n")')
+    .split('\n')
+    .filter(t => /effort|auto|max|low|high/i.test(t));
+  for (const t of [...effortTexts, ...effortTooltip(vm)]) assert.ok(!/default/i.test(t), t);
+});
+
+test('an agent without an effort setting, or a running session, gets a disabled meter whose tooltip says so', () => {
+  const vm = nativeVM();
+  vm.run(`ClaudeWoW.ApplyEfforts({ ${EFFORTS} })`);
+  vm.run('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].agent = "grok"; ClaudeWoWDB.chats[#ClaudeWoWDB.chats].effort = "high"; ClaudeWoW.Render()');
+  assert.equal(vm.evaluate('ClaudeWoWEffortButton:IsEnabled()'), 'false');
+  assert.equal(effortOf(vm, 'text:GetText()'), '', 'no word');
+  assert.equal(effortOf(vm, 'text:IsShown()'), 'false');
+  assert.equal(filledBars(vm), 0);
+  assert.equal(barColors(vm), Array(5).fill('0.25,0.25,0.25,0.45').join(' '), 'all bars greyed out');
+  assert.deepEqual(effortTooltip(vm), ['Effort', 'Grok has no effort setting.']);
+  vm.run('STUB.menu = nil; ClaudeWoWEffortButton.scripts.OnClick(ClaudeWoWEffortButton)');
+  assert.equal(vm.evaluate('STUB.menu == nil'), 'true', 'a click opens no menu');
+  vm.run('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].agent = "claude"; ClaudeWoWDB.chats[#ClaudeWoWDB.chats].liveTarget = "wow-ai"; ClaudeWoW.Render()');
+  assert.equal(vm.evaluate('ClaudeWoWEffortButton:IsEnabled()'), 'false', 'a live session chat');
+  assert.deepEqual(effortTooltip(vm), ['Effort', 'A running session keeps its own effort.']);
+  vm.run('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].liveTarget = nil; ClaudeWoW.Render()');
+  assert.equal(vm.evaluate('ClaudeWoWEffortButton:IsEnabled()'), 'true');
+  assert.equal(effortOf(vm, 'text:GetText()'), '|cffffffffhigh|r');
+});
+
+test('an old bridge cannot say which agents lack effort, so the meter stays enabled for them', () => {
+  const vm = nativeVM();
+  vm.run('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].agent = "grok"; ClaudeWoW.Render()');
+  assert.equal(vm.evaluate('ClaudeWoWEffortButton:IsEnabled()'), 'true');
+  assert.equal(effortOf(vm, 'text:GetText()'), '|cff9d9d9dauto|r');
+  vm.run('ClaudeWoW.ApplyEfforts({ agents = { "claude" } })');
+  assert.equal(vm.evaluate('ClaudeWoWEffortButton:IsEnabled()'), 'true', 'a slot without efforts changes nothing');
+});
+
+test('CLAUDE_CODE_EFFORT_LEVEL on the bridge overrides every choice, and the meter shows that', () => {
+  const vm = nativeVM();
+  vm.run(`ClaudeWoW.ApplyEfforts({ ${EFFORTS}, effortLock = { claude = "medium" } })`);
+  vm.run('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].agent = "claude"; ClaudeWoWDB.chats[#ClaudeWoWDB.chats].effort = "max"; ClaudeWoW.Render()');
+  assert.equal(effortOf(vm, 'text:GetText()'), '|cffffffffmedium|r');
+  assert.equal(filledBars(vm), 2);
+  assert.match(effortTooltip(vm)[1], /CLAUDE_CODE_EFFORT_LEVEL/);
+  vm.run('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].agent = "codex"; ClaudeWoW.Render()');
+  assert.equal(effortOf(vm, 'text:GetText()'), '|cffffffffmax|r', 'the lock is only for its agent');
+});
+
+test('when the word does not fit, the bars stay and the word goes', () => {
+  const vm = nativeVM();
+  vm.run('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].effort = "medium"; ClaudeWoWEffortButton.text.GetStringWidth = function() return 70 end; ClaudeWoW.Render()');
+  assert.equal(effortOf(vm, 'text:IsShown()'), 'false', 'a word wider than the room is dropped');
+  assert.equal(filledBars(vm), 2, 'the bars still show the level');
+  assert.equal(vm.evaluate('ClaudeWoWEffortButton:IsShown()'), vm.evaluate('ClaudeWoW.UI.send:IsShown()'));
+  vm.run('ClaudeWoWEffortButton.text.GetStringWidth = function() return 50 end; ClaudeWoW.Render()');
+  assert.equal(effortOf(vm, 'text:IsShown()'), 'true', 'a word that fits shows');
+  assert.equal(effortTooltip(vm)[0], 'Effort: medium', 'the tooltip still names it');
 });
 
 test('Esc closes the window fully from the window and from the composer, keeps the draft, and the key binding closes it too', () => {

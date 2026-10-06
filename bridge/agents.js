@@ -911,6 +911,39 @@ function withPluginSettings(agentCfg, id, pluginOpts) {
   return withChatSettings(agentCfg, id, picked);
 }
 
+const EFFORT_WORD_RE = /^[a-z]{1,16}$/;
+const EFFORT_ENV = { claude: 'CLAUDE_CODE_EFFORT_LEVEL' };
+
+function effortWord(v) {
+  const s = typeof v === 'string' ? v.trim().toLowerCase() : '';
+  return EFFORT_WORD_RE.test(s) ? s : '';
+}
+
+function effortAgents() {
+  return Object.keys(AGENTS).filter(id => AGENTS[id].settings.includes('effort'));
+}
+
+function effortDefaults(cfg, pluginIds, optionsOf) {
+  const out = {};
+  for (const pluginId of Array.isArray(pluginIds) ? pluginIds : []) {
+    const row = {};
+    for (const id of effortAgents()) {
+      row[id] = effortWord(withPluginSettings(agentConfig(cfg, id), id, typeof optionsOf === 'function' ? optionsOf(pluginId) : null).effort);
+    }
+    out[pluginId] = row;
+  }
+  return out;
+}
+
+function effortLocks(env) {
+  const out = {};
+  for (const [id, name] of Object.entries(EFFORT_ENV)) {
+    const v = effortWord(env && env[name]);
+    if (v) out[id] = v;
+  }
+  return out;
+}
+
 function agentIds() {
   return Object.keys(AGENTS);
 }
@@ -1072,6 +1105,9 @@ module.exports = {
   withChatSettings,
   withPluginSettings,
   PLUGIN_SETTINGS,
+  effortAgents,
+  effortDefaults,
+  effortLocks,
   addDirs,
   agentIds,
   normalizeAgent,
