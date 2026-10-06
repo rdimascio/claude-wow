@@ -95,6 +95,7 @@ const OB = require('./observed');
 const OT = require('./observedtools');
 const MH = require('./maphold');
 const REL = require('./releases');
+const OU = require('./openurl');
 const SVC = require('./service');
 const MC = require('./mcpconfig');
 
@@ -351,6 +352,8 @@ for (const [k, v] of Object.entries(state.handled)) {
 }
 
 const TELEMETRY_ON = TL.telemetryEnabled(cfg.telemetry);
+const OPEN_LINKS_LOG = process.env.CLAUDE_WOW_OPEN_LINKS_LOG || '';
+const linkOpener = OU.createOpener({ enabled: cfg.openLinks !== false, log, ...(OPEN_LINKS_LOG ? { spawnFn: OU.recordingSpawn(OPEN_LINKS_LOG) } : {}) });
 const observed = OB.createObserved({ dir: HOME.goals, log });
 const telemetry = TL.createTelemetry({
   dir: HOME.goals,
@@ -390,19 +393,21 @@ const stampGeneration = job => {
 };
 const chatDeletedSince = job => !!job.chat && job.chatGeneration !== undefined && job.chatGeneration !== generationOf(job.chat);
 
-function noteMessage(job, role, text) {
-  if (!job.chat) return;
+function noteMessage(job, role, text, agentTexts = []) {
+  if (!job.chat || !P.CHAT_ID_RE.test(job.chat)) return;
   if (role === 'user') forgotten.delete(job.chat);
   else if (forgotten.has(job.chat)) return;
-  const c = (transcripts.chats[job.chat] = transcripts.chats[job.chat] || { id: job.chat, name: '', cwd: job.cwd, messages: [] });
+  if (!Object.hasOwn(transcripts.chats, job.chat)) transcripts.chats[job.chat] = { id: job.chat, name: '', cwd: job.cwd, messages: [] };
+  const c = transcripts.chats[job.chat];
   if (job.name) c.name = job.name;
   if (job.cwd) c.cwd = job.cwd;
   if (job.plugin) c.plugin = job.plugin;
-  if (job.client) c.client = job.client;
+  OU.claimChat(c, job.client);
   if (job.char && !c.cwd && job.plugin !== 'claude-code' && !c.char) c.char = job.char;
   const m = { role, text: String(text ?? '').slice(0, 4000), id: job.id, t: Math.floor(Date.now() / 1000) };
   if (role === 'assistant' && job.agent) m.agent = job.agent;
   if (job.plugin) m.plugin = job.plugin;
+  if (role === 'assistant' && agentTexts.length) OU.noteLinks(c, agentTexts);
   if (job.via === 'discord') {
     c.seq = (c.seq || 0) + 1;
     m.via = 'discord';
@@ -857,6 +862,7 @@ function sharedSlotFields(urgent) {
     goalsLua,
     dmLua,
     gsLua,
+    openUrl: linkOpener.available,
     bridge: BRIDGE_INFO,
   };
 }
@@ -1070,7 +1076,7 @@ function publishClient(r, records, shared) {
   } catch (e) {
     if (!r.warnedNoAddon) {
       r.warnedNoAddon = true;
-      log(`publish: cannot write ${c.inboxFile} (${e.code || e.message}); addon not installed in ${c.label}? run: node setup.js, then restart WoW`);
+      log(G.publishFailureNote(c.inboxFile, c.label, e));
     }
     return false;
   }
@@ -1217,9 +1223,21 @@ function signal(client, kind, id, on) {
   setSignalFile(SIG.signalFile(client.addonDir, kind, slotNumber(id)), on);
 }
 
-function ackJob(job) {
+function openLink(job) {
+  const chat = P.CHAT_ID_RE.test(String(job.chat)) ? OU.chatFor(transcripts.chats, job.chat) : null;
+  const answer = result => {
+    log(`${tagOf(job)} ${result.text}`);
+    ackJob(job, result.opened ? { open: 'ok' } : { open: 'refused', why: result.why });
+    publishNow();
+  };
+  Promise.resolve()
+    .then(() => linkOpener.request(job, chat))
+    .then(answer, e => answer({ opened: false, why: 'the bridge failed', text: `open link failed (${e && e.message ? e.message : e})` }));
+}
+
+function ackJob(job, result) {
   const r = rtOf(job.client);
-  if (r) r.acks = P.noteAck(r.acks, job);
+  if (r) r.acks = P.noteAck(r.acks, job, Date.now(), result);
   signal(clientFor(job), 'ack', job.id, true);
 }
 
@@ -1536,6 +1554,12 @@ function submit(job) {
         .replace(/[\x00-\x1f\x7f]/g, '?')}: ${result.text}`,
     );
     if (!result.fired) publishNow();
+    return;
+  }
+  if (OU.isOpenRecord(job)) {
+    markHandled(job);
+    saveState();
+    openLink(job);
     return;
   }
   if (job.ctx !== undefined) setContext(job);
@@ -2966,6 +2990,7 @@ function runAgent(job, opts = {}) {
     });
     if (result && !result.error) {
       const body = String(result.text || '').trim() || (notes.length ? '' : `(${agent.name} finished without a reply)`);
+      job.agentText = body;
       finish(job, 'done', (body + extra).trim(), sessionId, [...denied]);
     } else if (result) {
       const said =
@@ -3183,7 +3208,14 @@ function finish(job, status, text, session, denied) {
   }
   const shown = status === 'done' ? checkedReply(job, { text, summary }) : { text, summary };
   if (job.via === 'discord') job.mirrorDenied = denied;
-  if (!chatDeletedSince(job)) noteMessage(job, status === 'done' ? 'assistant' : 'system', status === 'done' ? shown.text : 'Bridge error: ' + text);
+  if (!chatDeletedSince(job)) {
+    noteMessage(
+      job,
+      status === 'done' ? 'assistant' : 'system',
+      status === 'done' ? shown.text : 'Bridge error: ' + text,
+      status === 'done' && typeof job.agentText === 'string' ? [job.agentText] : [],
+    );
+  }
   awardAchievements(job, status);
   const usage = P.usageFields(job.usage);
   publish(
