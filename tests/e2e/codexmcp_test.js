@@ -80,7 +80,7 @@ test('an ask chat on Codex gets wowdata and the default mcp.servers as -c overri
         off: { command: 'npx', args: ['x'], allow: '*' },
         mobbin: { type: 'http', url: 'https://elsewhere.example/mcp', allow: '*', default: true },
       },
-      allow: { node_repl: { codex: ['js'] } },
+      allow: { node_repl: { codex: ['js', 'eval'] } },
     },
   };
   const MOBBIN_TOML = '[mcp_servers.mobbin]\nurl = "https://api.mobbin.com/mcp"\nbearer_token_env_var = "MOBBIN_KEY"\n';
@@ -90,7 +90,7 @@ test('an ask chat on Codex gets wowdata and the default mcp.servers as -c overri
     const codexHome = path.join(path.dirname(sb.home), 'user', '.codex');
     fs.mkdirSync(codexHome, { recursive: true });
     codexToml = path.join(codexHome, 'config.toml');
-    fs.writeFileSync(codexToml, MOBBIN_TOML + '[mcp_servers.node_repl]\ncommand = "node"\n');
+    fs.writeFileSync(codexToml, MOBBIN_TOML + '[mcp_servers.node_repl]\ncommand = "node"\nenabled_tools = ["js", "fs"]\n');
   };
   await withGame({ plugin: 'ask', config, beforeLaunch, env: { GITHUB_TOKEN: SECRET } }, async h => {
     const r = await h.client.say('what is item 501?');
@@ -102,7 +102,7 @@ test('an ask chat on Codex gets wowdata and the default mcp.servers as -c overri
     assert.ok(!JSON.stringify(argv).includes(SECRET));
     const servers = overrides(argv.slice(0, argv.indexOf('exec')));
     assert.deepEqual(Object.keys(servers), ['wowdata', 'github', 'node_repl']);
-    assert.deepEqual(servers.node_repl, { enabled_tools: ['js'] }, 'mcp.allow reaches a config.toml server as enabled_tools only');
+    assert.deepEqual(servers.node_repl, { enabled_tools: ['js'] }, 'mcp.allow reaches a config.toml server as enabled_tools only, cut to its own list');
     assert.deepEqual(servers.github, {
       command: 'npx',
       args: ['-y', 'server-github'],

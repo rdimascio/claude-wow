@@ -503,7 +503,16 @@ test('planRun: one pure plan per run; Claude gets the config plan, the discovere
     reads.push('read');
     return ['project:repo-a', 'user:wowdata'];
   };
-  const base = { cwd: '/a', userMcp: mcp, seen, codexOwn: ['node_repl'], reserved: RESERVED, claudeOwn, codexOwnNow: () => ['node_repl'] };
+  const base = {
+    cwd: '/a',
+    userMcp: mcp,
+    seen,
+    codexOwn: ['node_repl'],
+    reserved: RESERVED,
+    claudeOwn,
+    codexOwnNow: () => ['node_repl'],
+    codexToolsNow: () => ({}),
+  };
 
   const run = MC.planRun({ ...base, agentId: 'claude', choice });
   assert.equal(JSON.stringify(seen), frozen, 'the caller state is not changed in place');
@@ -612,11 +621,55 @@ test('mcp.allow: a discovered server keeps only its listed tools for Claude and 
     'a list for a server Codex does not have in config.toml adds nothing',
   );
   const reads = [['node_repl'], []];
-  const codexRun = () => MC.planRun({ agentId: 'codex', userMcp: mcp, codexOwn: ['node_repl'], codexOwnNow: () => reads.shift() }).codexMcp;
+  const codexRun = () =>
+    MC.planRun({ agentId: 'codex', userMcp: mcp, codexOwn: ['node_repl'], codexOwnNow: () => reads.shift(), codexToolsNow: () => ({}) }).codexMcp;
   assert.deepEqual(MC.codexArgs(codexRun().slice(1)), ['-c', 'mcp_servers.node_repl.enabled_tools=["js"]']);
   assert.deepEqual(
     codexRun().map(e => e.name),
     ['notion'],
     'each Codex run reads config.toml again, so a server removed from it gets no -c table',
   );
+});
+
+test('mcp.allow never widens Codex: the -c enabled_tools is the allow list cut to config.toml enabled_tools and without its disabled_tools', () => {
+  const toml = [
+    '[mcp_servers.a]',
+    'command = "x"',
+    'enabled_tools = ["js", "fs"] # mine',
+    'disabled_tools = [',
+    '  "eval", # no',
+    "  'net',",
+    ']',
+    '[mcp_servers."q.r"]',
+    'enabled_tools = []',
+    '[mcp_servers.b.env]',
+    'enabled_tools = ["sub-table"]',
+    '[mcp_servers]',
+    'c.enabled_tools = ["k"]',
+    'd = { command = "x", enabled_tools = ["q"] }',
+    '[other]',
+    'enabled_tools = ["elsewhere"]',
+    'mcp_servers.e.enabled_tools = ["elsewhere"]',
+  ].join('\n');
+  assert.deepEqual(MC.codexOwnToolLists(toml), {
+    a: { enabled: ['js', 'fs'], disabled: ['eval', 'net'] },
+    'q.r': { enabled: [] },
+    c: { enabled: ['k'] },
+    d: { enabled: null },
+  });
+  assert.deepEqual(MC.codexOwnToolLists('mcp_servers.f.disabled_tools = ["m"]\nmcp_servers.g.enabled_tools = [1]\n[mcp_servers.h]\nenabled_tools = "x"'), {
+    f: { disabled: ['m'] },
+    g: { enabled: null },
+    h: { enabled: null },
+  });
+
+  const { mcp } = parsed({
+    allow: { a: { codex: ['js', 'eval', 'web'] }, c: { codex: ['x'] }, d: { codex: ['q'] }, n: { codex: ['js'] }, f: { codex: ['m', 'o'] } },
+  });
+  const ownTools = { a: { enabled: ['js', 'fs'], disabled: ['eval', 'net'] }, c: { enabled: [] }, d: { enabled: null }, f: { disabled: ['m'] } };
+  const out = Object.fromEntries(MC.forCodex(mcp, { own: ['a', 'c', 'd', 'n', 'f'], ownTools }).map(e => [e.name, e.enabledTools]));
+  assert.deepEqual(out, { a: ['js'], c: [], d: [], n: ['js'], f: ['o'] }, 'intersection, empty, unreadable, no list of theirs, disabled removed');
+  assert.deepEqual(MC.codexArgs(MC.forCodex(mcp, { own: ['c'], ownTools })), ['-c', 'mcp_servers.c.enabled_tools=[]']);
+  const viaPlan = MC.planRun({ agentId: 'codex', userMcp: mcp, codexOwnNow: () => ['a'], codexToolsNow: () => ownTools }).codexMcp;
+  assert.deepEqual(viaPlan, [{ name: 'a', own: true, enabledTools: ['js'] }], 'each Codex run reads the lists of config.toml');
 });

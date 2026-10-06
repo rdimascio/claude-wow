@@ -301,10 +301,95 @@ function codexOwnServers({ home = os.homedir(), codexHome = process.env.CODEX_HO
   return [...names];
 }
 
-function forCodex(mcp, { choice, own = [] } = {}) {
+const TOML_NAME = String.raw`(?:"((?:[^"\\]|\\.)*)"|'([^']*)'|([A-Za-z0-9_-]+))`;
+const TOOL_KEYS = { enabled_tools: 'enabled', disabled_tools: 'disabled' };
+
+function tomlArray(text) {
+  if (text[0] !== '[') return { list: null, rest: '' };
+  let i = 1;
+  let quote = '';
+  for (; i < text.length; i++) {
+    const c = text[i];
+    if (quote) {
+      if (c === '\\' && quote === '"') i++;
+      else if (c === quote) quote = '';
+    } else if (c === '"' || c === "'") quote = c;
+    else if (c === '#') i = text.indexOf('\n', i) < 0 ? text.length : text.indexOf('\n', i);
+    else if (c === '[') return { list: null, rest: '' };
+    else if (c === ']') break;
+  }
+  if (i >= text.length) return { list: null, rest: '' };
+  const body = text.slice(1, i).replace(/#[^\n]*/g, m => (/["']/.test(m) ? m : ''));
+  const items = [];
+  const re = /\s*(?:"((?:[^"\\]|\\.)*)"|'([^']*)')\s*(,|$)/y;
+  let at = 0;
+  while (at < body.length && /\S/.test(body.slice(at))) {
+    re.lastIndex = at;
+    const m = re.exec(body);
+    if (!m) return { list: null, rest: text.slice(i + 1) };
+    items.push(m[1] !== undefined ? JSON.parse(`"${m[1]}"`) : m[2]);
+    at = re.lastIndex;
+    if (!m[3]) break;
+  }
+  return { list: /\S/.test(body.slice(at)) ? null : items, rest: text.slice(i + 1) };
+}
+
+function codexOwnToolLists(text) {
+  const out = {};
+  const note = (name, key, value) => {
+    out[name] = out[name] || {};
+    out[name][TOOL_KEYS[key]] = tomlArray(value.trimStart()).list;
+  };
+  const header = new RegExp(String.raw`^\[\s*mcp_servers\s*(?:\.\s*${TOML_NAME}\s*)?\]\s*(?:#.*)?$`);
+  const anyHeader = /^\[/;
+  const inlineTable = new RegExp(String.raw`^(?:mcp_servers\s*\.\s*)?${TOML_NAME}\s*=\s*\{`);
+  const key = new RegExp(String.raw`^(?:mcp_servers\s*\.\s*)?(?:${TOML_NAME}\s*\.\s*)?(enabled_tools|disabled_tools)\s*=(.*)$`, 's');
+  const lines = String(text || '').split('\n');
+  let table = null;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (anyHeader.test(line)) {
+      const h = header.exec(line);
+      table = h ? { server: h[1] !== undefined ? JSON.parse(`"${h[1]}"`) : h[2] || h[3] || '' } : { other: true };
+      continue;
+    }
+    const m = key.exec(line);
+    if (!m) {
+      const inline = /enabled_tools/.test(line) && inlineTable.exec(line);
+      const name = inline && (inline[1] !== undefined ? JSON.parse(`"${inline[1]}"`) : inline[2] || inline[3]);
+      if (name && (/^mcp_servers\s*\./.test(line) ? !table : table && !table.other && !table.server)) note(name, 'enabled_tools', '');
+      continue;
+    }
+    const named = m[1] !== undefined ? JSON.parse(`"${m[1]}"`) : m[2] || m[3];
+    const topLevel = /^mcp_servers\s*\./.test(line);
+    const server =
+      topLevel && !table ? named : table && !table.other && table.server && !named ? table.server : table && !table.other && !table.server ? named : '';
+    if (!server) continue;
+    note(server, m[4], [m[5], ...lines.slice(i + 1)].join('\n'));
+  }
+  return out;
+}
+
+function codexOwnTools({ home = os.homedir(), codexHome = process.env.CODEX_HOME || '', readText = f => fs.readFileSync(f, 'utf8') } = {}) {
+  try {
+    return codexOwnToolLists(readText(path.join(codexHome || path.join(home, '.codex'), 'config.toml')));
+  } catch {
+    return {};
+  }
+}
+
+function narrowed(list, theirs) {
+  if (!theirs) return list;
+  let out = list;
+  if (theirs.enabled !== undefined) out = theirs.enabled === null ? [] : out.filter(t => theirs.enabled.includes(t));
+  if (Array.isArray(theirs.disabled)) out = out.filter(t => !theirs.disabled.includes(t));
+  return out;
+}
+
+function forCodex(mcp, { choice, own = [], ownTools: theirs = {} } = {}) {
   const configured = mcp ? mcp.servers : [];
   const lists = new Map(discoveredAllow(mcp, 'codex').filter(([, tools]) => !tools.includes(ALL_TOOLS)));
-  const ownTools = name => (lists.has(name) ? { enabledTools: lists.get(name) } : {});
+  const ownTools = name => (lists.has(name) ? { enabledTools: narrowed(lists.get(name), theirs[name]) } : {});
   const turnedOff = own.filter(n => ID_RE.test(n) && explicitOff(choice, n)).map(name => ({ name, off: true }));
   const turnedOn = own.filter(n => ID_RE.test(n) && choice && choice.on.includes(n)).map(name => ({ name, on: true, ...ownTools(name) }));
   const trimmed = own
@@ -423,8 +508,10 @@ function planRun({
   reserved = [],
   claudeOwn = () => claudeOwnServers({ cwd }),
   codexOwnNow = () => codexOwnServers(),
+  codexToolsNow = () => codexOwnTools(),
 } = {}) {
-  if (agentId === 'codex') return { userMcp: null, seenOff: null, guard: null, codexMcp: forCodex(userMcp, { choice, own: codexOwnNow() }), seen };
+  if (agentId === 'codex')
+    return { userMcp: null, seenOff: null, guard: null, codexMcp: forCodex(userMcp, { choice, own: codexOwnNow(), ownTools: codexToolsNow() }), seen };
   if (agentId !== 'claude') return { userMcp: null, seenOff: null, guard: null, codexMcp: [], seen };
   const plan = forClaude(userMcp, { choice });
   const seenNow = choice ? seedSeen({ ...seen }, claudeOwn(), { cwd }) : seen;
@@ -449,6 +536,7 @@ module.exports = {
   forCodex,
   codexArgs,
   codexOwnServers,
+  codexOwnToolLists,
   scopeAllowed,
   claudeOwnServers,
   summary,
