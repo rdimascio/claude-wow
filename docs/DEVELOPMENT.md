@@ -83,6 +83,7 @@ AddOns/ClaudeWoW_S###/Inbox.lua ◄── bridge/bridge.js (a real process) ◄�
 | `[[error]]` / `[[error text]]` | An error result, with or without text. |
 | `[[rate-limit]]` / `[[auth]]` | The usage-limit and login errors. |
 | `[[reply text]]` / `[[long 200]]` | A fixed reply, or a long one. |
+| `[[background-agent text]]` | Starts a background subagent as real Claude Code does in `-p` mode: a launch-notice result first, then the subagent's message (`text`), then the reply as a second result, with the subagent's model in `modelUsage`. |
 
 Every call is logged to `<sandbox>/agent/calls.jsonl`.
 

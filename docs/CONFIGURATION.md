@@ -117,6 +117,32 @@ What it does:
 
 A `config.json` from before agents existed kept Claude's settings at the top level (`claudePath`, `model`, `permissionMode`, `allowedTools`). The bridge still reads them, under anything in `agents.claude`; `setup.js` moves them down.
 
+### The claude-wow Claude Code plugin
+
+`assets/plugins/claude-wow` is a Claude Code plugin (not a bridge plugin like `ask`) with two subagents. It is off by default and experimental.
+
+> **Not measured yet. Keep it off for players.** No real run has measured `wow-planner` calling the `wowdata` tools under the bridge's `--allowedTools` (the spike hit the session limit). Until that run is measured, the planner may get no game data. Turn the plugin on only to test it.
+
+ Nothing in the prompt tells the chat to use them yet; Claude picks one when its description fits.
+
+| Agent | Model | Tools | Hands back |
+|---|---|---|---|
+| `claude-wow:wow-code` | `sonnet` | `WebSearch`, `WebFetch` | Macros as `wowmacro` blocks, addon Lua |
+| `claude-wow:wow-planner` | `opus` | the nine `mcp__wowdata__*` tools | Routes and plans, map marks as a `wowmap` block |
+
+Turn it on with an absolute path (a relative one resolves against the run folder, and the run goes on without the plugin):
+
+```json
+"agents": { "claude": { "extraArgs": ["--plugin-dir", "/absolute/path/to/claude-wow/assets/plugins/claude-wow"] } }
+```
+
+- From a checkout, the path is `<checkout>/assets/plugins/claude-wow`. The binary writes the same files to `<CLAUDE_WOW_HOME>/assets/assets/plugins/claude-wow` (`~/.claude-wow/assets/assets/plugins/claude-wow` by default) on its first run, so the plugin always matches the bridge version.
+- `extraArgs` reaches every Claude run, coding chats too.
+- The agents get no `Write`, `Edit` or `Bash`, so they cannot write the map file; `wow-planner` also gets no `WebFetch`. The subagents do not get the chat's system prompt, so each agent file carries its own block format, and the agent's description tells the chat to copy the blocks verbatim.
+- `wow-planner` calls `wowdata` only in `ask` chats with data synced, where the bridge wires the server.
+- Subagents run in the background in headless Claude Code. The run then ends with two results, a launch notice and then the answer; the bridge shows the last one. The subagent's model and cost are in the run's cost.
+- Measurements: [`docs/plans/measurements/step5-plugin-spike.md`](plans/measurements/step5-plugin-spike.md).
+
 ## Plugins
 
 | Key | Default | Meaning |
