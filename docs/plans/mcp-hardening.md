@@ -1,51 +1,71 @@
 # MCP hardening and release discipline
 
-Status: draft, 2026-10-05. Follows `mcp-and-agent-controls.md` steps 1-4 (PRs #101, #120, #124, #129, #133).
+Status: draft, 2026-10-05, revised after a two-seat review. Follows `mcp-and-agent-controls.md` steps 1-4 (PRs #101, #120, #124, #129, #133).
 
 ## Why
 
-The per-chat MCP control is only correct while Claude Code and Codex keep six behaviors that were measured once, by hand, on Claude Code 2.1.289 and Codex 0.159. CI has neither CLI. A CLI update can turn "off" into "on" with no test failing. The `mcp.servers` block also became a second server registry next to Claude's and Codex's own. Separately, 4 MCP PRs merged on 2026-10-05 without a green `gate`, 1 with an admin bypass, and nothing stops a release tag on such a commit.
+The per-chat MCP control is only correct while Claude Code and Codex keep the behaviors below, measured once, by hand, on Claude Code 2.1.289 and Codex 0.159. CI has neither CLI, and Claude Code updates itself in the background. A CLI update can turn "off" into "on" with no test failing. Separately, 4 MCP PRs merged on 2026-10-05 without a green `gate`, 1 with an admin bypass, and nothing stops a release tag on such a commit. Some `main` merge commits (61ebb8b, 7d86a1f) have no `gate` run at all, because `ci` keeps one pending push run per concurrency group.
 
 ## The contract
 
-| # | Agent | Behavior the bridge relies on | Used by |
-|---|---|---|---|
-| C1 | Claude | Tool prefix = init server name with every char outside `[A-Za-z0-9_-]` replaced by `_` | catalog ids, deny rules |
-| C2 | Claude | `--disallowedTools mcp__<prefix>` removes every tool of a user, plugin, claude.ai and `--mcp-config` server, even one in `--allowedTools` | per-chat off |
-| C3 | Claude | `${VAR}` in `--mcp-config` `env`/`args`/`headers` is expanded; an OAuth login is reused by server name | `mcp.servers` |
-| C4 | Claude | `system/init` `mcp_servers[]` has `name`, `status`, `source` | discovery, health |
-| X1 | Codex | `exec` refuses MCP calls unless `default_tools_approval_mode="approve"` | Codex servers |
-| X2 | Codex | `-c mcp_servers.<n>.enabled=false|true` overrides `config.toml`; `env_vars` passes values; `shell_environment_policy.exclude` hides them from the shell | per-chat off, secrets |
+Each row is probed separately and recorded as `pass`, `fail` or `unchecked`. Only rows the committed fixture can exercise are probed; the rest stay `unchecked` and are listed by `claude-wow agents check`.
+
+| # | Agent | Behavior the bridge relies on | Probed how | Used by |
+|---|---|---|---|---|
+| C1 | Claude | Tool prefix = server name with every char outside `[A-Za-z0-9_-]` replaced by `_` | init `tools` of a fixture server named `a.b c` | catalog ids, deny rules |
+| C2 | Claude | `--disallowedTools mcp__<prefix>` removes every tool of a `--mcp-config` server, even one in `--allowedTools` | init `tools` with and without the deny rule | per-chat off |
+| C2u | Claude | same for user, plugin and claude.ai servers | not probed (needs the user's own servers); `unchecked` | per-chat off |
+| C3 | Claude | `${VAR}` in `--mcp-config` `env`/`args` is expanded | fixture echoes an env value as a tool name | `mcp.servers` |
+| C4 | Claude | `system/init` `mcp_servers[]` has `name`, `status`, `source` | init event shape | discovery, health |
+| X1 | Codex | `exec` refuses MCP calls unless `default_tools_approval_mode="approve"` | one call to the fixture, small pinned model, timeout | Codex servers |
+| X2a | Codex | `-c mcp_servers.<n>.enabled=false` overrides `config.toml` | fixture tool absent from the run | per-chat off |
+| X2b | Codex | `env_vars` passes values and `shell_environment_policy.exclude` hides them from the shell | fixture sees the value; `printenv` in the shell does not | secrets |
+
+C1, C2, C3 and C4 need no model call: the probe stops `claude` after the `system/init` event. X1, X2a and X2b need one Codex run each.
 
 ## Work, in order
 
+PR A is independent. PR D, then PR B, then PR C run one after another: B and C change the code D moves.
+
 ### PR A: release gate (small)
-- `release.yml`: first job checks that the tagged commit has a successful `gate` check run on `main` (`gh api repos/:o/:r/commits/<sha>/check-runs`), else fails before building.
-- Branch protection: turn on `enforce_admins` so `--admin` cannot skip `gate`. **Owner's call** (it also blocks the owner's own emergency merges).
-- CONTRIBUTING: "merge on green only; when Actions is down, wait or cut no release".
+- `dev/release-gate.js <sha>`: passes only when the `ci` workflow (`test.yml`) has a run with `head_sha=<sha>`, `branch=main`, `event=push` whose `gate` job concluded `success`, and `<sha>` is an ancestor of `origin/main`. Query `repos/{owner}/{repo}/actions/workflows/test.yml/runs` and that run's jobs. A run still in progress is polled every 30 s for up to 20 min; no run at all fails with "no ci push run on main for <sha>; tag a later main commit".
+- `release.yml`: new job `gate`, `if: github.ref_type == 'tag'`, `permissions: { contents: read, actions: read }`, `GH_TOKEN: ${{ github.token }}`, runs the script for `$GITHUB_SHA`. `version` gets `needs: gate` with `if: always() && (needs.gate.result == 'success' || needs.gate.result == 'skipped')` so pull request and dispatch runs still work.
+- Unit tests with recorded API fixtures: a PR-head SHA with a green PR `gate` is refused; a main SHA with a failed or missing `gate` is refused; a main SHA with a green push `gate` passes; an in-progress run that turns green passes. Never test with a real version tag.
+- CONTRIBUTING: "merge on green only; tag only a main commit whose push run has a green `gate`; when Actions is down, wait or cut no release".
+- Branch protection `enforce_admins` is **owner's call** (decision 1); not part of the PR.
+
+### PR D: bridge MCP planning moves out of `runAgent` (small, no behavior change)
+- Move the off-choice, seen-off and guard composition out of `runAgent` into `bridge/mcpconfig.js` as one pure `planRun({ agentId, choice, cwd, userMcp, seen, codexOwn, reserved })` returning `{ userMcp, seenOff, guard, codexMcp }`. The caller passes every bridge global it needs.
+- `noteMcpHealth` (stream callback) and `mcpSlotList` (slot writer) stay in `bridge.js`.
+- Existing tests pass unchanged; add unit tests for `planRun`.
+- The addon `Cli.Mcp*` block stays in `ClaudeWoW.lua`. A new Lua file would need shared locals (`Cli`, `run`, `db`), entries in `bridge/assets.js`, `build/entry.js` and both Lua test loaders, and a full restart on Forever before `ApplyMcp` exists. Not worth it for a file split.
 
 ### PR B: contract probe (medium)
-- `claude-wow doctor --agents` (new section in `dev/doctor.js`, also `bridge/agentcontract.js`): runs C1-C4 and X1-X2 against the installed CLIs with a scratch stdio server (the one from the step 2 measurement) and `--model haiku` / the Codex default. One run each, about $0.05.
-- Writes `~/.claude-wow/agent-contract.json`: `{ claude: { version, at, pass: { C1: true, ... } }, codex: {...} }`.
-- The bridge reads each CLI's `--version` at start (cached per binary mtime). Version newer than the last passing contract: one log line, a `contract` slot field, and the addon's MCP menu shows "Not checked on Claude Code <v>: run claude-wow doctor --agents".
-- **Fail closed** when C2 (or X2 for Codex) failed on this version: per-chat off is not offered (menu items disabled, `/claude mcp off` refuses with the reason), and a chat with off choices gets `--strict-mcp-config` plus only its on servers, which does not depend on C2.
-- Not in CI (no CLI there). A local weekly `/schedule` routine may run it; out of scope here.
+- `dev/contract-mcp.js`: committed stdio MCP fixture server (one tool per name it is told to expose; echoes one env value). Added to `bridge/assets.js` and `build/entry.js` so the release binary has it.
+- `bridge/agentcontract.js` plus a new supervisor subcommand `claude-wow agents check` (dispatch and help in `bridge/supervisor.js`; works from source and from the compiled binary). It runs the rows above against the binary `A.resolveCommand` returns for each agent and prints each row and the cost from the run.
+- Writes `~/.claude-wow/agent-contract.json`: `{ claude: { path, realpath, version, at, rows: { C1: "pass", C2u: "unchecked", ... } }, codex: {...} }`.
+- `dev/doctor.js` stays read-only: it only reads the file and warns when it is missing or older than the installed CLI.
+- Per run, `runAgent` resolves the command, `realpath`s it and `stat`s it; `--version` is re-read only when realpath or mtime changed. The contract entry matches only on the same realpath and version.
+- **Fail closed only on a measured `fail`.** An `unchecked` version logs one line and sets the slot field `contract: { claude: { checked: false } }`; the addon MCP menu shows "Not checked on Claude Code <v>: run claude-wow agents check". Nothing is disabled.
+- When C2 (Claude) or X2a (Codex) is `fail` for the running version, the **bridge** refuses any run whose `mcp=` choice turns a server off, with the reason, before spawning. This covers saved choices and older addons; the addon menu (greyed "off" items) is only a mirror. When X2b is `fail`, the bridge refuses Codex runs that pass a secret through `env_vars`. No `--strict-mcp-config` fallback: it would drop claude.ai and plugin servers the chat left on.
+- Not in CI (no CLI there).
+- Tests: a contract file with C2 `fail` gives the slot field `{ claude: { off: false, reason } }` (unit); that slot field greys the menu checkboxes and "Turn all off" (addon); a run with an off choice and C2 `fail` is refused before spawn (transport); a CLI binary replaced between two turns is re-checked (unit, fake `stat`).
 
-### PR C: shrink `mcp.servers` (medium)
-- New `mcp.allow.<id>`: an allow list for any discovered server by catalog id (`claude_ai_Slack: ["slack_search_public"]`), enforced like today's `allow` (run-only rules plus never offered). Codex own servers get it as `enabled_tools`.
-- `mcp.servers` entries with `command`/`url` keep working one release, with a start log: "add it with `claude mcp add` / `codex mcp add`; mcp.servers will stop adding servers in 0.6". Docs lead with the native commands.
-- Removes the OAuth workarounds from the docs (Slack client id, Datadog headers): the native CLIs handle them.
+### PR C: allow lists for discovered servers (medium)
+- New `mcp.allow.<id>`: an allow list for any discovered server by catalog id (`claude_ai_Slack: ["slack_search_public"]`). Add `allow` to `MCP_KEYS` in `bridge/mcpconfig.js`. For a config server, `mcp.servers.<id>.allow` wins and a start log names the conflict. Codex own servers get it as `enabled_tools`.
+- It trims the bridge's `allowedTools` and keeps other tools out of the roll. It is **not** a security boundary: the user's own `permissions.allow` and `bypassPermissions` still allow the rest. docs/CONFIGURATION.md says so.
+- `mcp.servers` with `command`/`url` stays fully supported. Deprecating it (decision 3) waits for a later plan, because native config loses `default: false`, bridge-only servers, the Codex `default_tools_approval_mode` and the secret exclusion.
 
-### PR D: file split (small)
-- Move the `Cli.Mcp*` block (about 260 lines) into `addon/ClaudeWoW/Mcp.lua`, loaded after `ClaudeWoW.lua` in the toc. New file: Forever needs one full restart; Era picks it up on `/reload` (measured 2026-10-02).
-- Move `noteMcpHealth`, `mcpSlotList`, the seen-off and guard composition out of `runAgent` into `bridge/mcpconfig.js` as one `planRun({ agent, choice, cwd })`.
+## Every PR
+- CHANGELOG `[Unreleased]` entry, and docs/CONFIGURATION.md / docs/AGENTS.md updated where behavior or keys change.
+- `npm test` green; fresh-eyes on the PR.
 
 ## Decisions for the owner
-1. `enforce_admins` on `main` (PR A).
-2. Fail closed (disable "off") versus warn only, on an unchecked CLI version (PR B).
-3. Deprecate adding servers through `mcp.servers` in 0.6 (PR C).
+1. `enforce_admins` on `main` (blocks the owner's own emergency merges too).
+2. Settled here: fail closed only on a measured failure; warn when unchecked.
+3. Deprecate adding servers through `mcp.servers`: deferred until a `mcp.default.<id>` override and a migration that keeps approval and secret exclusion exist.
 
 ## Done when
-- A tag on a commit without a green `gate` fails the release job (tested with a throwaway tag on a branch commit).
-- Changing C2's expectation in the probe's fixture makes the menu disable "off" in an addon test and the run use `--strict-mcp-config` in a transport test.
-- `npm test` green; fresh-eyes on each PR.
+- `dev/release-gate.js` tests above pass, and the `release.yml` `gate` job runs only on tags.
+- `claude-wow agents check` writes the contract file from both the source checkout and the compiled binary.
+- A C2 `fail` in the contract file refuses an off-choice run in a transport test and greys the menu in an addon test.
