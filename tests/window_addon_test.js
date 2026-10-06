@@ -303,6 +303,13 @@ test('the Dragonflight metal border is used where the client has it, and the pla
   assert.equal(metal.evaluate('ClaudeWoWWindow.skinned'), 'true');
   assert.equal(metal.evaluate('STUB.layout'), 'ButtonFrameTemplateNoPortrait');
   assert.equal(metal.evaluate('ClaudeWoWFrame.claudewowBorder.template'), 'NineSlicePanelTemplate');
+  assert.equal(metal.evaluate('ClaudeWoW.UI.close.template'), 'UIPanelCloseButton', 'the plain frame gets a close X of its own');
+  assert.equal(metal.evaluate('ClaudeWoW.UI.close.point .. " " .. ClaudeWoW.UI.close.relPoint'), 'TOPRIGHT TOPRIGHT');
+  assert.equal(metal.evaluate('ClaudeWoW.UI.minimize.rel == ClaudeWoW.UI.close'), 'true', 'the skin keeps minimize beside the X');
+  assert.ok(metal.num('ClaudeWoW.UI.minimize:GetRight()') <= metal.num('ClaudeWoW.UI.close:GetLeft()'), 'without overlap');
+  plain.run('ClaudeWoW.Toggle(true); ClaudeWoW.UI.close.scripts.OnClick(ClaudeWoW.UI.close)');
+  assert.equal(plain.evaluate('ClaudeWoWFrame.shown'), 'false');
+  assert.equal(plain.evaluate('ClaudeWoWMini.shown'), 'false', 'the plain X closes fully too');
 });
 
 const NATIVE_TEMPLATES = `
@@ -893,7 +900,11 @@ test('the window is built from Blizzard frame templates where the client has the
   assert.equal(vm.evaluate('ClaudeWoWFrame.portrait'), 'Interface\\AddOns\\ClaudeWoW\\Portrait');
   assert.equal(vm.evaluate('ClaudeWoWFrame.Inset.shown'), 'false', 'the template inset is replaced by our own panels');
   assert.equal(vm.evaluate('ClaudeWoW.UI.title == ClaudeWoWFrame.TitleText'), 'true', 'the title goes in the Blizzard title bar');
-  assert.equal(vm.evaluate('ClaudeWoW.UI.minimize == ClaudeWoWFrame.CloseButton'), 'true', 'the red close button collapses to the bar');
+  assert.equal(vm.evaluate('ClaudeWoW.UI.close == ClaudeWoWFrame.CloseButton'), 'true', 'the red X is the template close button');
+  assert.equal(vm.evaluate('ClaudeWoW.UI.minimize ~= ClaudeWoWFrame.CloseButton'), 'true', 'minimize is a button of its own');
+  assert.equal(vm.evaluate('ClaudeWoW.UI.minimize.template'), 'UIPanelHideButtonNoScripts', 'the Blizzard minimize button where its atlas exists');
+  assert.equal(vm.evaluate('ClaudeWoW.UI.minimize.point .. " " .. ClaudeWoW.UI.minimize.relPoint'), 'RIGHT LEFT');
+  assert.equal(vm.evaluate('ClaudeWoW.UI.minimize.rel == ClaudeWoWFrame.CloseButton'), 'true', 'minimize sits left of the X');
   assert.equal(vm.evaluate('ClaudeWoW.UI.art.listBg'), 'QuestLog-main-background');
   assert.equal(vm.evaluate('ClaudeWoW.UI.art.parchment'), 'QuestBG-Parchment', 'the transcript sits on quest parchment');
   assert.equal(vm.evaluate('ClaudeWoWScroll.parent == ClaudeWoW.UI.parchment'), 'true');
@@ -947,7 +958,11 @@ test('the window is built from Blizzard frame templates where the client has the
 
   vm.run('ClaudeWoWFrame.CloseButton.scripts.OnClick(ClaudeWoWFrame.CloseButton)');
   assert.equal(vm.evaluate('ClaudeWoWFrame.shown'), 'false');
-  assert.equal(vm.evaluate('ClaudeWoWMini.shown'), 'true');
+  assert.equal(vm.evaluate('ClaudeWoWMini.shown'), 'false', 'the X closes fully, no bar');
+  assert.equal(vm.evaluate('ClaudeWoWDB.settings.shown'), 'false');
+  vm.run('ClaudeWoW.Toggle(true); ClaudeWoW.UI.minimize.scripts.OnClick(ClaudeWoW.UI.minimize)');
+  assert.equal(vm.evaluate('ClaudeWoWFrame.shown'), 'false');
+  assert.equal(vm.evaluate('ClaudeWoWMini.shown'), 'true', 'minimize collapses to the bar');
 });
 
 test('a chat row shows one preview line, the last message time beside the title, and the count in its tooltip', () => {
@@ -983,7 +998,11 @@ test('the black bar shows the chat title up to the project button, with folder, 
   const vm = nativeVM();
   vm.run('ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[2].id)');
   assert.equal(vm.evaluate('ClaudeWoW.UI.chatTitle:GetText()'), 'Fix the bridge');
-  assert.equal(vm.evaluate('ClaudeWoWFrame.TitleText:GetText()'), 'Claude', 'the window title is just Claude and does not repeat the chat title');
+  assert.equal(
+    vm.evaluate('ClaudeWoWFrame.TitleText:GetText()'),
+    'Azeroth Companion',
+    'the window title is the product name and does not repeat the chat title',
+  );
   assert.equal(vm.num('#STUB.nav.buttons'), 0, 'no folder, agent or plugin crumbs');
   assert.equal(vm.evaluate('STUB.nav.home'), null);
 
@@ -1023,9 +1042,12 @@ test('the footer is a short state on the left and context and spend on the right
     'ClaudeWoWDB.settings.contextWarn = 0; ClaudeWoWDB.chats[1].window = nil; ClaudeWoWDB.chats[1].cost = 2.414; ClaudeWoWDB.chats[1].ctx = 186700; ClaudeWoWDB.chats[2].cost = 12.39; ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[1].id); ClaudeWoW.Render()',
   );
   const stats = vm.evaluate('ClaudeWoW.UI.stats:GetText()');
-  assert.ok(stats.includes('UI-GoldIcon'), stats);
-  assert.ok(stats.includes('$2.41'), "this chat's spend: " + stats);
-  assert.ok(stats.includes('all chats $14.80'), 'and the total across chats: ' + stats);
+  assert.ok(!stats.includes('UI-GoldIcon') && !stats.includes('$'), 'no coin and no dollar figure in the footer: ' + stats);
+  vm.run('LINES = {}; GameTooltip.AddDoubleLine = function(_, a, b) table.insert(LINES, a .. "=" .. b) end');
+  vm.run('ClaudeWoW.UI.dotHolder.scripts.OnEnter(ClaudeWoW.UI.dotHolder)');
+  const tip = vm.evaluate('table.concat(GameTooltip.lines, "|")');
+  assert.ok(tip.includes('Estimated API cost'), 'the cost is labeled in the status tooltip: ' + tip);
+  assert.equal(vm.evaluate('table.concat(LINES, "|")'), 'This chat=$2.41|All chats=$14.80');
   assert.equal(vm.evaluate('ClaudeWoWContextBar.shown'), 'true', 'the context is a bar');
   assert.ok(vm.evaluate('ClaudeWoWContextBar.text:GetText()').startsWith('186.7k / 200'), vm.evaluate('ClaudeWoWContextBar.text:GetText()'));
   const color = () => vm.evaluate('(function() return string.format("%.2f,%.2f", ClaudeWoWContextBar.color[1], ClaudeWoWContextBar.color[2]) end)()');
@@ -1061,7 +1083,7 @@ test('the footer is a short state on the left and context and spend on the right
 
   vm.run('ClaudeWoWDB.chats[1].pendingId = 159; ClaudeWoW.UpdateStatus()');
   const status = vm.evaluate('ClaudeWoW.UI.status:GetText()');
-  assert.ok(status.includes('Working') && !status.includes('#159'), 'a short state, not the full line: ' + status);
+  assert.ok(status.includes('Working...') && !status.includes('#159'), 'a short state, not the full line: ' + status);
   assert.ok(vm.evaluate('ClaudeWoW.UI.cwd.shown') === 'false');
 });
 
@@ -1265,4 +1287,162 @@ test('without native frames the MCP button and a long project button both fit in
   assert.equal(vm.evaluate('ClaudeWoWMcpButton:IsShown()'), 'true');
   assert.ok(vm.num('ClaudeWoWMcpButton:GetLeft()') >= vm.num('ClaudeWoWProjectButton:GetParent():GetLeft()'), 'the MCP button stays inside the composer');
   assert.ok(vm.num('ClaudeWoWMcpButton:GetRight()') <= vm.num('ClaudeWoWProjectButton:GetLeft()'));
+});
+
+test('Esc closes the window fully from the window and from the composer, keeps the draft, and the key binding closes it too', () => {
+  const vm = nativeVM();
+  open(vm);
+  vm.run('ClaudeWoWFrame:Hide()');
+  assert.equal(vm.evaluate('ClaudeWoWMini.shown'), 'false', 'Esc on the window shows no bar');
+  assert.equal(vm.evaluate('ClaudeWoWDB.settings.shown'), 'false');
+  assert.equal(vm.evaluate('ClaudeWoWDB.settings.minimized'), 'false');
+
+  open(vm);
+  vm.run('ClaudeWoWInput:SetText("half a thought"); ClaudeWoWInput:SetFocus(); ClaudeWoWInput.scripts.OnEscapePressed(ClaudeWoWInput)');
+  assert.equal(vm.evaluate('ClaudeWoWFrame.shown'), 'false', 'one Esc in the composer closes the window');
+  assert.equal(vm.evaluate('ClaudeWoWInput:HasFocus()'), 'false', 'and gives the keyboard back');
+  assert.equal(vm.evaluate('ClaudeWoWMini.shown'), 'false');
+  assert.equal(vm.evaluate('ClaudeWoWInput:GetText()'), 'half a thought', 'the draft stays in the box');
+
+  vm.run('ClaudeWoW.ToggleWorkspace()');
+  assert.equal(vm.evaluate('ClaudeWoWFrame.shown'), 'true');
+  vm.run('ClaudeWoW.ToggleWorkspace()');
+  assert.equal(vm.evaluate('ClaudeWoWFrame.shown'), 'false', 'the key binding closes an open window');
+  assert.equal(vm.evaluate('ClaudeWoWMini.shown'), 'false', 'with no bar');
+
+  vm.run('ClaudeWoW.Toggle(true); ClaudeWoW.Minimize(true)');
+  assert.equal(vm.evaluate('ClaudeWoWMini.shown'), 'true');
+  vm.run('local x = ClaudeWoWMini.children[#ClaudeWoWMini.children]; x.scripts.OnClick(x)');
+  assert.equal(vm.evaluate('ClaudeWoWMini.shown'), 'false', "the bar's X hides the bar");
+  assert.equal(vm.evaluate('ClaudeWoWDB.settings.shown'), 'false');
+});
+
+test('the window sits below dialogs, the bar uses the Blizzard tooltip look, and both titles name the product', () => {
+  const vm = nativeVM();
+  assert.equal(vm.evaluate('ClaudeWoWFrame.strata'), 'HIGH', 'StaticPopups and the roll frame draw above it');
+  assert.equal(vm.evaluate('ClaudeWoWMini.strata'), 'MEDIUM');
+  const bg = vm.evaluate('(function() local c = ClaudeWoWMini.bg return c and table.concat(c, ",") end)()');
+  assert.equal(bg, '0.09,0.09,0.19,1', 'the tooltip background, not a custom dark one');
+  assert.equal(vm.evaluate('ClaudeWoWMini.backdrop.bgFile'), 'Interface\\Tooltips\\UI-Tooltip-Background');
+  vm.run('ClaudeWoWMini.scripts.OnEnter(ClaudeWoWMini)');
+  assert.equal(vm.evaluate('GameTooltip:GetText()'), 'Azeroth Companion');
+
+  const templated = newVM({
+    before: NATIVE_TEMPLATES.replace('MainHelpPlateButton = true', 'MainHelpPlateButton = true, TooltipBackdropTemplate = true'),
+  });
+  assert.equal(templated.evaluate('ClaudeWoWMini.template'), 'TooltipBackdropTemplate');
+  assert.equal(templated.evaluate('ClaudeWoWMini.backdrop'), null, 'the template draws its own backdrop');
+});
+
+test('a closed window at login stays closed with nothing on screen; a saved minimized state brings the bar back', () => {
+  const closed = newVM({ saved: 'ClaudeWoWDB = { settings = { shown = false, minimized = false } }' });
+  assert.equal(closed.evaluate('ClaudeWoWFrame.shown'), 'false');
+  assert.equal(closed.evaluate('ClaudeWoWMini.shown'), 'false');
+  const fresh = newVM();
+  assert.equal(fresh.evaluate('ClaudeWoWMini.shown'), 'false', 'a fresh install puts no bar on screen');
+  assert.equal(fresh.evaluate('ClaudeWoWDB.settings.shown'), null);
+  const minimized = newVM({ saved: 'ClaudeWoWDB = { settings = { shown = true, minimized = true } }' });
+  assert.equal(minimized.evaluate('ClaudeWoWMini.shown'), 'true');
+  assert.equal(minimized.evaluate('ClaudeWoWFrame.shown'), 'false');
+});
+
+test('first login prints one line; a bridge that is not there after the first check gets one more, and only once', () => {
+  const vm = newVM();
+  const prints = () => vm.evaluate('table.concat(STUB.prints, "\\n")');
+  const count = text => prints().split(text).length - 1;
+  assert.equal(count('loaded. Type /claude to open it.'), 1);
+  vm.run('STUB.RunTimers()');
+  assert.equal(count("can't reach the bridge"), 0, 'not before the first check');
+  vm.run('STUB.RunTimers(); STUB.RunTimers()');
+  assert.equal(count("can't reach the bridge"), 1);
+  vm.run('STUB.FireEvent("PLAYER_LOGIN"); STUB.RunTimers(); STUB.RunTimers()');
+  assert.equal(count('loaded. Type /claude to open it.'), 1, 'the first-run line is not repeated');
+
+  const up = newVM();
+  up.run('STUB.RunTimers(); ClaudeWoW.IsConnected = function() return true end; STUB.RunTimers()');
+  assert.ok(!up.evaluate('table.concat(STUB.prints, "\\n")').includes("can't reach the bridge"), 'a bridge that answered gets no line');
+});
+
+test('the status line has four plain states and no file names, ids or commands; the detail moves to diag', () => {
+  const vm = nativeVM();
+  const status = () => vm.evaluate('ClaudeWoW.UI.status:GetText()');
+  const tooltip = () => {
+    vm.run('ClaudeWoW.UI.dotHolder.scripts.OnEnter(ClaudeWoW.UI.dotHolder)');
+    return vm.evaluate('GameTooltip:GetText()') + '|' + vm.evaluate('table.concat(GameTooltip.lines or {}, "|")');
+  };
+  const banned = /#\d|install-slots|npm|\.js|cwd|mode:|plugin|checked \d|polls/;
+  vm.run('ClaudeWoW.IsConnected = function() return false end; ClaudeWoW.Render()');
+  assert.equal(status(), "|cffff5050Can't reach the bridge. Start it, then click Connect.|r");
+  vm.run('ClaudeWoW.IsConnected = function() return true end; STUB.now = STUB.now + 30; STUB.Tick(); ClaudeWoW.Render()');
+  assert.equal(status(), 'Ready');
+  vm.run('ClaudeWoWDB.chats[1].pendingId = 42; ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[1].id); ClaudeWoW.Render()');
+  assert.match(status(), /^\|cffffd100Working\.\.\.\|r \d/);
+  assert.doesNotMatch(status() + tooltip(), banned);
+  vm.run('C_AddOns.LoadAddOn = function() return false, "MISSING" end');
+  vm.run('for i = 1, 3 do STUB.now = STUB.now + 30; STUB.Tick() end; ClaudeWoW.UpdateStatus()');
+  assert.equal(status(), '|cff55ff55Reply waiting|r', 'missing reply slots: the reply is waiting behind a reload');
+  const tip = tooltip();
+  assert.ok(tip.includes('Click Reload to read it.'), tip);
+  assert.doesNotMatch(status() + tip, banned);
+  vm.run('SlashCmdList.CLAUDE("diag")');
+  const diag = vm.evaluate('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history].text');
+  assert.ok(diag.includes('status: reply, pending #42'), diag);
+  assert.ok(diag.includes('reply slots missing (MISSING; run install-slots.js'), diag);
+  assert.ok(diag.includes('folder: ~/every-io/every'), diag);
+  vm.run('ClaudeWoWDB.chats[1].pendingId = nil; ClaudeWoWDB.chats[1].draft = "kept"; ClaudeWoW.UpdateStatus()');
+  assert.equal(status(), '|cff55ff55Reply waiting|r', 'a reply that came back while a draft was typed');
+});
+
+test('autoRefresh is turned off once outside reload mode, an explicit choice after that is kept, and a reload asks first', () => {
+  const pixel = newVM({ saved: 'ClaudeWoWDB = { settings = { mode = "pixel", autoRefresh = true } }' });
+  assert.equal(pixel.evaluate('ClaudeWoWDB.settings.autoRefresh'), 'false');
+  assert.equal(pixel.evaluate('ClaudeWoWDB.settings.autoRefreshV2'), 'true');
+  assert.equal(newVM().evaluate('ClaudeWoWDB.settings.autoRefresh'), 'false', 'a fresh install starts off');
+  const reload = newVM({ saved: 'ClaudeWoWDB = { settings = { mode = "reload", autoRefresh = true } }' });
+  assert.equal(reload.evaluate('ClaudeWoWDB.settings.autoRefresh'), 'true', 'reload mode keeps it');
+  const chosen = newVM({ saved: 'ClaudeWoWDB = { settings = { mode = "pixel", autoRefresh = true, autoRefreshV2 = true } }' });
+  assert.equal(chosen.evaluate('ClaudeWoWDB.settings.autoRefresh'), 'true', 'a choice made after the migration is kept');
+
+  assert.equal(reload.evaluate('ClaudeWoWKeyCatcher'), null, 'no frame listens for keys');
+  reload.run('STUB.timers = {}; STUB.popup = nil; ClaudeWoWDB.chats[1].pendingId = 9; ClaudeWoW.ArmAutoRefresh()');
+  assert.equal(reload.evaluate('STUB.reloaded'), 'false');
+  reload.run('STUB.combat = true; STUB.RunTimers()');
+  assert.equal(reload.evaluate('STUB.popup'), null, 'never in combat');
+  reload.run('STUB.combat = false; STUB.FireEvent("PLAYER_REGEN_ENABLED"); STUB.RunTimers()');
+  assert.equal(reload.evaluate('STUB.popup.which'), 'CLAUDEWOW_RELOAD', 'leaving combat re-arms it');
+  assert.match(reload.evaluate('StaticPopupDialogs.CLAUDEWOW_RELOAD.text'), /^Reload needed/);
+  assert.equal(reload.evaluate('StaticPopupDialogs.CLAUDEWOW_RELOAD.button1 .. "/" .. StaticPopupDialogs.CLAUDEWOW_RELOAD.button2'), 'Reload/Later');
+  assert.equal(reload.evaluate('STUB.reloaded'), 'false', 'nothing reloads until the click');
+  reload.run('StaticPopupDialogs.CLAUDEWOW_RELOAD.OnAccept()');
+  assert.equal(reload.evaluate('STUB.reloaded'), 'true');
+
+  reload.run('STUB.popup = nil; STUB.reloaded = false; SlashCmdList.CLAUDE("config auto off"); STUB.RunTimers()');
+  assert.equal(reload.evaluate('STUB.popup'), null, 'auto off asks nothing');
+  pixel.run('STUB.popup = nil; ClaudeWoWDB.chats[1].pendingId = 9; SlashCmdList.CLAUDE("config auto on")');
+  assert.equal(pixel.evaluate('ClaudeWoWDB.settings.autoRefresh'), 'true', 'the explicit choice is recorded');
+  pixel.run('STUB.RunTimers()');
+  assert.equal(pixel.evaluate('STUB.popup'), null, 'pixel mode with working slots needs no reload');
+});
+
+test('a reply makes no sound or screen line in combat, and out of combat one line only while the window is closed', () => {
+  const vm = nativeVM();
+  vm.run('STUB.played = 0; PlaySound = function() STUB.played = STUB.played + 1 end; UIErrorsFrame.messages = {}');
+  const notify = () => vm.run('ClaudeWoW.Notify(ClaudeWoWDB.chats[2], "done", "claude", nil, "assistant")');
+  const lines = () => vm.num('#UIErrorsFrame.messages');
+  vm.run('ClaudeWoW.Toggle(false)');
+  vm.run('STUB.combat = true');
+  notify();
+  assert.equal(vm.num('STUB.played'), 0, 'no sound in combat');
+  assert.equal(lines(), 0, 'no screen line in combat');
+  vm.run('STUB.combat = false');
+  notify();
+  assert.equal(vm.num('STUB.played'), 1);
+  assert.equal(lines(), 1, 'closed window: one short line');
+  assert.match(vm.evaluate('UIErrorsFrame.messages[1].text'), /^\S+ replied\.$/, 'the agent name and nothing else');
+  vm.run('ClaudeWoW.Toggle(true); ClaudeWoW.Minimize(true)');
+  notify();
+  assert.equal(lines(), 1, 'minimized: the bar shows it instead');
+  vm.run('ClaudeWoW.Toggle(true); ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[1].id)');
+  notify();
+  assert.equal(lines(), 1, 'open window: no line');
 });
