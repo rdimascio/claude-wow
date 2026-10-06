@@ -211,3 +211,30 @@ test('the shipped ask plugin: no folder semantics, a scratch folder of its own, 
   assert.match(calls[1].fail, /could not create/);
   fs.rmSync(base, { recursive: true, force: true });
 });
+
+test('plugins.ask.claudePlugin: only a boolean true asks for the claude-wow plugin, and any other value gets an ignored note', () => {
+  const ask = require('../bridge/plugins/ask');
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'wowai-askplugin-'));
+  const runFor = options => {
+    const calls = [];
+    ask.handle(
+      { id: 1, text: 'x' },
+      { log: noop, tag: j => '#' + j.id, options: () => ({ cwd: base, ...options }), fail: noop, runAgent: (job, opts) => calls.push(opts) },
+    );
+    assert.equal(calls.length, 1);
+    return calls[0].claudePlugin;
+  };
+  assert.equal(runFor({ claudePlugin: true }), true);
+  assert.equal(runFor({}), false, 'off by default');
+  assert.equal(runFor({ claudePlugin: false }), false);
+  for (const v of ['true', 'yes', 1, {}, ['x']]) assert.equal(runFor({ claudePlugin: v }), false, JSON.stringify(v));
+  assert.equal(ask.configNote({}), '');
+  assert.equal(ask.configNote({ claudePlugin: true }), '');
+  assert.equal(ask.configNote({ claudePlugin: false }), '');
+  assert.equal(
+    ask.configNote({ claudePlugin: 'yes' }),
+    'plugins.ask.claudePlugin must be true or false; "yes" is ignored, so ask runs do not load the claude-wow Claude Code plugin.',
+  );
+  assert.match(ask.configNote({ claudePlugin: 1 }), /; 1 is ignored/);
+  fs.rmSync(base, { recursive: true, force: true });
+});

@@ -2481,6 +2481,17 @@ function loggedMcpBlocks(tag, never, userMcp) {
     return blocked;
   };
 }
+const CLAUDE_PLUGIN_REL = 'assets/plugins/claude-wow';
+
+function claudePluginFolder(tag) {
+  try {
+    return AS.dir(CLAUDE_PLUGIN_REL);
+  } catch (e) {
+    log(`${tag} claude-wow plugin unavailable, the run goes on without it: ${e.message}`);
+    return '';
+  }
+}
+
 function runAgent(job, opts = {}) {
   const key = chatKey(job);
   const cwd = opts.cwd || DEFAULT_CWD;
@@ -2687,6 +2698,7 @@ function runAgent(job, opts = {}) {
   }
   if (runGrant) job.runGrantId = runGrant.id;
   if (factoryGrant) job.factoryGrantId = factoryGrant.id;
+  const claudePluginDir = claudeRun && opts.claudePlugin === true ? claudePluginFolder(tag) : '';
   const args = [
     ...cmd.args,
     ...agent.args({
@@ -2703,8 +2715,10 @@ function runAgent(job, opts = {}) {
       strictMcpConfig: !!(userMcp && userMcp.strict),
       codexMcpArgs: MC.codexArgs(codexMcp),
     }),
+    ...(claudePluginDir ? ['--plugin-dir', claudePluginDir] : []),
   ];
   const env = agent.env({ ...process.env });
+  if (claudeRun && plugin.id === 'ask') env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS = '1';
   // Where this run's tools append map commands (docs/MAP.md); any agent can use
   // it, on a plugin whose replies may reach the map.
   if (surfaces.has('map')) {
@@ -2742,6 +2756,7 @@ function runAgent(job, opts = {}) {
           .map(e => e.name)
           .join(' '),
     userMcp && userMcp.strict && 'strict mcp',
+    claudePluginDir && 'claude-wow plugin',
   ]
     .filter(Boolean)
     .join(', ');
@@ -3787,6 +3802,10 @@ for (const id of A.agentIds()) {
 for (const id of Object.keys(AC.ROWS)) {
   const cmd = A.resolveCommand(id, A.agentConfig(cfg, id));
   if (cmd.found) contracts.status(id, cmd, A.AGENTS[id].env({ ...process.env }));
+}
+for (const p of registry.all()) {
+  const note = typeof p.configNote === 'function' ? p.configNote(core.options(p.id)) : '';
+  if (note) log(note);
 }
 if (!once) startPlugins();
 startDiscord();

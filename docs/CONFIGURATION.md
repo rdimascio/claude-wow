@@ -126,7 +126,7 @@ A `config.json` from before agents existed kept Claude's settings at the top lev
 
 `assets/plugins/claude-wow` is a Claude Code plugin (not a bridge plugin like `ask`) with two subagents. It is off by default and experimental.
 
-> **Experimental, opt-in.** Measured on Claude Code 2.1.290: `wow-planner` gets the `ask` run's `mcp__wowdata` allow rule, so its `wowdata` calls work with no extra config, and it hands back a `wowmap` block the bridge accepts. It stays off by default while the open follow-ups in the [plan](plans/router-and-game-data.md#711-step-5-status-plugin-built-opt-in-router-not-started) are open: the bridge does not log a bad `--plugin-dir`, and a run with a subagent shows a less exact cost.
+> **Experimental, opt-in.** Measured on Claude Code 2.1.290: `wow-planner` gets the `ask` run's `mcp__wowdata` allow rule, so its `wowdata` calls work with no extra config, and it hands back a `wowmap` block the bridge accepts. It stays off by default while the open follow-ups in the [plan](plans/router-and-game-data.md#711-step-5-status-plugin-built-opt-in-router-not-started) are open: the bridge does not log a bad `--plugin-dir`, and a run with a subagent shows a less exact cost. Foreground subagents were measured with the spike's scratch plugin, not yet with this plugin.
 
  Nothing in the prompt tells the chat to use them yet; Claude picks one when its description fits.
 
@@ -135,17 +135,18 @@ A `config.json` from before agents existed kept Claude's settings at the top lev
 | `claude-wow:wow-code` | `sonnet` | `WebSearch`, `WebFetch` | Macros as `wowmacro` blocks, addon Lua |
 | `claude-wow:wow-planner` | `opus` | the nine `mcp__wowdata__*` tools | Routes and plans, map marks as a `wowmap` block |
 
-Turn it on with an absolute path (a relative one resolves against the run folder, and the run goes on without the plugin):
+Turn it on for `ask` chats:
 
 ```json
-"agents": { "claude": { "extraArgs": ["--plugin-dir", "/absolute/path/to/claude-wow/assets/plugins/claude-wow"] } }
+"plugins": { "ask": { "claudePlugin": true } }
 ```
 
-- From a checkout, the path is `<checkout>/assets/plugins/claude-wow`. The binary writes the same files to `<CLAUDE_WOW_HOME>/assets/assets/plugins/claude-wow` (`~/.claude-wow/assets/assets/plugins/claude-wow` by default) on its first run, so the plugin always matches the bridge version.
-- `extraArgs` reaches every Claude run, coding chats too.
+- Claude runs of the `ask` plugin then get `--plugin-dir` with the absolute path of the bridge's own copy: `<checkout>/assets/plugins/claude-wow` from a checkout, `<CLAUDE_WOW_HOME>/assets/assets/plugins/claude-wow` (`~/.claude-wow/assets/assets/plugins/claude-wow` by default) from the binary, which writes them there, when they are missing or differ, at the latest when the first such run after a bridge start asks for the path. So the plugin always matches the bridge version.
+- Coding chats, factory runs and title runs never get it. Codex and the other agents ignore the key.
+- Do not pass `--plugin-dir` in `agents.claude.extraArgs` any more: that reaches every Claude run, coding chats too.
 - The agents get no `Write`, `Edit` or `Bash`, so they cannot write the map file; `wow-planner` also gets no `WebFetch`. The subagents do not get the chat's system prompt, so each agent file carries its own block format, and the agent's description tells the chat to copy the blocks verbatim.
 - `wow-planner` calls `wowdata` only in `ask` chats with data synced, where the bridge wires the server.
-- Subagents run in the background in headless Claude Code. The run then ends with two results, a launch notice and then the answer; the bridge shows the last one. The subagent's model and cost are in the run's cost.
+- Claude runs of the `ask` plugin get `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`, with or without the plugin, so a subagent runs in the foreground and the run ends with one result. Other runs keep background tasks: a subagent there runs in the background and the run ends with two results, a launch notice and then the answer; the bridge shows the last one. The subagent's model and cost are in the run's cost.
 - Measurements: [`docs/plans/measurements/step5-plugin-spike.md`](plans/measurements/step5-plugin-spike.md).
 
 ## Plugins
@@ -155,6 +156,7 @@ Turn it on with an absolute path (a relative one resolves against the run folder
 | `plugins.default` | `"ask"` | The plugin for chats that are not bound to one (`plugin=` flag): `ask` (general in-game chat) or `claude-code` (an agent session in a folder). The bridge refuses to start on a name it does not have; `--help` lists them. |
 | `plugins.<id>.agents.<agent>.model`, `.effort` | unset | The model and effort that plugin's chats run with, over `agents.<agent>`. A chat's own `--model` / `--effort` still wins. Example: `"ask": { "agents": { "claude": { "model": "claude-sonnet-5-5", "effort": "medium" } } }` keeps quick in-game questions off a max-effort Opus default. Only `model` and `effort` are read; other keys are ignored. |
 | `plugins.ask.cwd` | `""` | The scratch folder the `ask` plugin runs the agent in (it has no project). Empty = the per-user application data folder (`~/Library/Application Support/claude-wow/ask` on macOS, `%LOCALAPPDATA%\claude-wow\ask` on Windows, `~/.local/share/claude-wow/ask` on Linux), created on demand. |
+| `plugins.ask.claudePlugin` | `false` | `true` loads the `claude-wow` Claude Code plugin into Claude runs of the `ask` plugin only ([The claude-wow Claude Code plugin](#the-claude-wow-claude-code-plugin)). Experimental. A value that is not `true` or `false` is ignored with one log line at start. |
 | `plugins.claude-code.factory.enabled` | `false` | `true` turns coding chats into a dispatcher into the software factory (below). Off: a coding chat is the full Claude Code session it always was. |
 | `plugins.claude-code.factory.skills` | the 9 factory skills | The only skills a dispatcher may start: `every-ai-lead`, `babysit-prs`, `babysit-pr`, `merge-train`, `implementation-engineer`, `adversarial-review`, `factory-intake`, `fresh-eyes`, `review-prs`. Names are lowercase letters, digits, `-`, `_` and `:`; others are dropped. |
 | `plugins.claude-code.factory.model`, `.effort` | `"opus"`, unset | The model and effort of a skill run. They do not inherit `agents.claude.model` or `.effort`. |

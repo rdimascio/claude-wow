@@ -28,7 +28,7 @@ Plan: [`router-and-game-data.md` §7.1](../router-and-game-data.md#71-plugin-con
 
 - The plugin shows in `plugins` as `{ name: "claude-wow", source: "claude-wow@inline", version }`. Agents are namespaced `claude-wow:<name>`; skills too, and they are also slash commands.
 - `--setting-sources ""` drops the user's installed plugins and skills but not the claude.ai connector MCP servers (241 tools). Only `--strict-mcp-config` drops those.
-- **A relative `--plugin-dir` resolves against the run's working folder**, not the caller's. With the wrong folder the run goes on with no plugin; the only sign is `plugin_errors: [{ type: "path-not-found" }]` in the init event. The bridge runs `ask` in its own scratch folder, so the path in `extraArgs` must be absolute.
+- **A relative `--plugin-dir` resolves against the run's working folder**, not the caller's. With the wrong folder the run goes on with no plugin; the only sign is `plugin_errors: [{ type: "path-not-found" }]` in the init event. The bridge runs `ask` in its own scratch folder, so the path must be absolute. Since feat/ask-plugin-scope the bridge passes the absolute `AS.dir` path itself (`plugins.ask.claudePlugin`).
 - The `haiku` alias resolved to `claude-haiku-4-5-20251001`; the `sonnet` alias in agent frontmatter resolved to `claude-sonnet-5-5`.
 
 ## Subagent runs
@@ -40,8 +40,8 @@ Plan: [`router-and-game-data.md` §7.1](../router-and-game-data.md#71-plugin-con
 | default, agent frontmatter `background: false` | background | 2 | same as default | haiku $0.0105, sonnet-5-5 $0.0008 | $0.0113 |
 
 - **Subagents run in the background by default in `-p` mode.** The main turn ends with a launch notice and a first `result` event (`result_index: 0`). When the subagent finishes, a `task_notification` starts another turn and a second `result` follows (`result_index: 1`, `origin.kind: "task-notification"`) with the real answer. The process exits after the second one.
-- The bridge keeps the last `done` its parser returns before the process closes (`bridge.js`, `handleLine`), so the player gets the second result. Pinned in `tests/e2e/plugin_dir_test.js`; with the bridge changed to keep the first `done`, the test fails with the launch notice as the answer.
-- `background: false` in the agent file does not make it foreground. `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1` does (one result, one turn fewer). It is an env var, so it cannot go through `extraArgs`.
+- The bridge keeps the last `done` its parser returns before the process closes (`bridge.js`, `handleLine`), so the player gets the second result. Pinned for coding runs in `tests/e2e/plugin_dir_test.js`; with the bridge changed to keep the first `done`, the test fails with the launch notice as the answer.
+- `background: false` in the agent file does not make it foreground. `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1` does (one result, one turn fewer). It is an env var, so it cannot go through `extraArgs`. Since feat/ask-plugin-scope the bridge sets it for Claude runs of the `ask` plugin only.
 - `result.subagent_stats` counts spawned, background and completed subagents by type.
 - Subagent `assistant` events carry `parent_tool_use_id`; the main session's do not.
 
