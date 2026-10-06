@@ -2136,7 +2136,7 @@ test('late replies: a late answer to an older message keeps the wait for the new
 
 test('permission prompt: answering the roll ends the wait for the late answer', () => {
   const { vm, chatId } = promptVM(', lateOk = true, lateIn = 120');
-  vm.run(`ClaudeWoW.Allow("${chatId}", { "Bash(touch:*)" })`);
+  vm.run(`ClaudeWoW.AllowOnce("${chatId}", { "Bash(touch:*)" })`);
   const id = vm.num('ClaudeWoWDB.chats[1].pendingId');
   assert.ok(id >= 1);
   nextSlot(vm, `{ now = time(), cwd = "", replies = { { chat = "${chatId}", id = ${id}, status = "done", text = "done", agent = "claude" } } }`);
