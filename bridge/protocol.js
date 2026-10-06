@@ -1206,6 +1206,15 @@ function luaTable(globalName, records, opts = {}) {
       );
     lines.splice(lines.length - 1, 0, `\tmcp = { ${rows.join(', ')} },`);
   }
+  if (opts.contract && typeof opts.contract === 'object') {
+    const rows = Object.entries(opts.contract)
+      .filter(([id, c]) => /^[a-z]{1,16}$/.test(id) && c && typeof c === 'object')
+      .map(
+        ([id, c]) =>
+          `${id} = { version = ${luaStr(String(c.version || '').slice(0, 40))}, checked = ${c.checked ? 'true' : 'false'}, off = ${c.off === false ? 'false' : 'true'}, reason = ${luaStr(String(c.reason || '').slice(0, 400))} }`,
+      );
+    lines.splice(lines.length - 1, 0, `\tcontract = { ${rows.join(', ')} },`);
+  }
   if (opts.home) lines.splice(lines.length - 1, 0, `\thome = ${luaStr(opts.home)},`);
   if (Array.isArray(opts.skills) && opts.skills.length) {
     lines.splice(lines.length - 1, 0, `\tskills = { ${opts.skills.map(luaStr).join(', ')} },`);

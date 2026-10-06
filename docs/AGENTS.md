@@ -87,6 +87,27 @@ Codex also checks `CODEX_BIN` before searching `PATH`, so a newer launcher can o
 - **Session:** the script keeps the chat's messages in `~/.claude-wow/local-sessions/<id>.json` and resumes from it with `--resume`. The system prompt is sent fresh on every run, so a prompt change applies at once.
 - **Permissions and images:** there are none to set. It cannot see screenshots; a message with one gets a note saying so.
 
+## MCP contract check
+
+The per-chat MCP control works only while Claude Code and Codex keep the behaviors below. Both CLIs update themselves, and CI has neither, so `claude-wow agents check` measures them on your machine against the binary the bridge would start.
+
+| Row | Agent | Behavior | How it is probed |
+|---|---|---|---|
+| C1 | Claude | The tool prefix is the server name with every character outside `[A-Za-z0-9_-]` replaced by `_` | init `tools` of a fixture server named `a.b c` |
+| C2 | Claude | `--disallowedTools mcp__<prefix>` removes every tool of a `--mcp-config` server, even one in `--allowedTools` | init `tools` with and without the deny rule |
+| C2u | Claude | The same for user, plugin and claude.ai servers | not probed: it needs your own servers; always `unchecked` |
+| C3 | Claude | `${VAR}` in `--mcp-config` `env` and `args` is expanded | the fixture exposes a tool named by the expanded values |
+| C4 | Claude | init `mcp_servers[]` entries have `name`, `status` and `source` | the init event |
+| X1 | Codex | `exec` runs an MCP call when the server sets `default_tools_approval_mode="approve"` | one `codex exec` run asks for the fixture tool |
+| X2a | Codex | `-c mcp_servers.<n>.enabled=false` turns off a server from `config.toml` or an earlier `-c` | `codex mcp list --json` with the overrides; no model call |
+| X2b | Codex | `env_vars` reaches the server and `shell_environment_policy.exclude` hides it from the shell | the same exec run: the fixture echoes the value, then `printenv` in the shell |
+
+- **Cost:** the two Claude runs use `haiku`, `--max-budget-usd 0.05` and `--strict-mcp-config`, and are stopped at the `system/init` event, before the model answers; Claude reports no cost for them. The Codex exec run uses `gpt-6-luna` at low effort with `--ephemeral` and a read-only sandbox; Codex reports tokens, not a price. The command prints what each run reported.
+- **The file:** `~/.claude-wow/agent-contract.json` holds `{ claude: { path, realpath, mtimeMs, version, at, rows, cost }, codex: {...} }`. Per run, the bridge resolves the agent command, takes its real path and modified time, and uses an entry only when both match; `--version` is read once per binary in the background, never on the run's path. A CLI that updated itself is therefore not checked until the command runs again.
+- **What a result does:** only a measured `fail` changes anything. With C1 or C2 failed for the running Claude Code, or X2a for Codex, the bridge refuses a run whose `mcp=` choice turns a server off, with the reason, before it starts the agent; this covers saved choices and older addons. With X2b failed, it refuses a Codex run that passes a secret (`envVars` or `bearerTokenEnvVar`) to a server. There is no `--strict-mcp-config` fallback: it would also drop the claude.ai and plugin servers the chat left on. A CLI that is not checked logs one line and runs as before.
+- **In game:** the slot field `contract` carries `{ version, checked, off, reason }` per agent. On a failed off row the MCP menu greys the checkboxes of servers that are on and "Turn all off", and `/claude mcp off` and `/claude mcp none` say why. An unchecked CLI shows "Not checked on Claude Code <version>: run claude-wow agents check" in the menu, the button tooltip and `/claude mcp`.
+- **Measured 2026-10-05:** Claude Code 2.1.290 passed C1 to C4. On Codex 0.160.1, X2a passed and X2b failed: `printenv` in the shell printed a variable that `shell_environment_policy.exclude` named. In that run the model did not call the fixture tool, so X1 stayed `unchecked`.
+
 ## Known limits
 
 - One agent CLI can only be as headless as it is. If an agent hangs waiting for something interactive (a first-run login, an update prompt), the run ends when `timeoutMs` (30 minutes) expires; run the CLI by hand once on the bridge PC to get past it.

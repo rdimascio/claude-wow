@@ -19,6 +19,7 @@ const UPD = require('../../bridge/selfupdate');
 const CLI = require('../../bridge/clients');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const CONTRACT_FILE = 'agent-contract.json';
 const QUIET_LIMIT_MS = 10 * 60 * 1000;
 const LOG_TAIL_BYTES = 2 * 1024 * 1024;
 const LAUNCH_SLACK_MS = 2000;
@@ -1035,6 +1036,56 @@ function checkCi(ctx) {
   return finish('ci', 'CI', `${repo.branch} latest run ${state} on ${String(latest.headSha).slice(0, 7)} (HEAD ${shortHead})`, issues);
 }
 
+function checkContract(ctx) {
+  const file = path.join(ctx.homePaths.dir, CONTRACT_FILE);
+  const text = ctx.sys.readText(file);
+  const rerun = 'Run "claude-wow agents check".';
+  if (text === null) {
+    return finish('contract', 'Agent contract', 'not checked', [
+      warn(
+        `${file} does not exist.`,
+        'The bridge cannot tell whether the installed Claude Code and Codex still honor the MCP rules it relies on, so it turns nothing off on a failure.',
+        rerun,
+      ),
+    ]);
+  }
+  let json = null;
+  try {
+    json = JSON.parse(text);
+  } catch {}
+  if (!json || typeof json !== 'object' || Array.isArray(json)) {
+    return finish('contract', 'Agent contract', 'unreadable', [warn(`${file} is not a JSON object.`, 'The bridge treats every agent as not checked.', rerun)]);
+  }
+  const issues = [];
+  const parts = [];
+  for (const [id, e] of Object.entries(json)) {
+    if (!e || typeof e !== 'object' || !e.rows || typeof e.rows !== 'object') continue;
+    const failed = Object.keys(e.rows).filter(r => e.rows[r] === 'fail');
+    parts.push(`${id} ${e.version || '?'}${failed.length ? ` (failed ${failed.join(', ')})` : ''}`);
+    if (failed.length)
+      issues.push(
+        warn(
+          `${id} ${e.version || ''} failed ${failed.join(', ')} in the last agents check.`,
+          'The bridge refuses the runs that rely on those behaviors (see docs/AGENTS.md).',
+          `Update ${id}, then run "claude-wow agents check" again.`,
+        ),
+      );
+    const at = Date.parse(e.at);
+    const st = typeof e.path === 'string' && e.path ? ctx.sys.stat(e.path) : null;
+    if (!st)
+      issues.push(warn(`${id}: the checked CLI ${e.path || '(no path)'} is gone.`, 'The check describes a CLI that is no longer installed there.', rerun));
+    else if (Number.isFinite(at) && st.mtimeMs > at)
+      issues.push(
+        warn(
+          `${id}: ${e.path} changed after the check at ${e.at}.`,
+          'The CLI updated itself, so the bridge treats it as not checked until the check runs again.',
+          rerun,
+        ),
+      );
+  }
+  return finish('contract', 'Agent contract', parts.length ? parts.join('; ') : 'no agents in the file', issues);
+}
+
 const CHECKS = [
   checkService,
   checkDrift,
@@ -1050,6 +1101,7 @@ const CHECKS = [
   checkCost,
   checkConfig,
   checkCi,
+  checkContract,
 ];
 
 function runChecks(ctx, checks = CHECKS) {
@@ -1087,6 +1139,7 @@ module.exports = {
   checkCost,
   checkConfig,
   checkCi,
+  checkContract,
   parseEtime,
   formatBytes,
   summarizeLog,

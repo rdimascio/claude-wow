@@ -316,14 +316,15 @@ const NATIVE_TEMPLATES = `
   function ScrollingEdit_OnTextChanged() end
   MenuUtil = { CreateContextMenu = function(owner, gen)
     local root = { items = {} }
-    function root:CreateTitle(t) table.insert(self.items, { text = t }) end
-    function root:CreateButton(t, fn) table.insert(self.items, { text = t, fn = fn }) end
-    function root:CreateCheckbox(t, get, fn) table.insert(self.items, { text = t, fn = fn, get = get }) end
+    local function add(it) it.enabled = true; function it:SetEnabled(v) self.enabled = v end; table.insert(root.items, it); return it end
+    function root:CreateTitle(t) return add({ text = t }) end
+    function root:CreateButton(t, fn) return add({ text = t, fn = fn }) end
+    function root:CreateCheckbox(t, get, fn) return add({ text = t, fn = fn, get = get }) end
     function root:CreateDivider() end
     STUB.menu = root
     gen(owner, root)
   end }
-  function STUB.Pick(text) for _, it in ipairs(STUB.menu.items) do if it.text == text then it.fn() return end end error("no menu item " .. text) end
+  function STUB.Pick(text) for _, it in ipairs(STUB.menu.items) do if it.text == text then if not it.enabled then error("disabled menu item " .. text) end it.fn() return end end error("no menu item " .. text) end
   local plainCreate = CreateFrame
   CreateFrame = function(kind, name, parent, template)
     local f = plainCreate(kind, name, parent, template)
@@ -1038,6 +1039,41 @@ test('the MCP button in the header shows the chat servers on, opens a grouped ch
   vm.run('ClaudeWoW.ApplyMcp({}); ClaudeWoW.Render()');
   assert.equal(vm.evaluate('ClaudeWoWMcpButton:IsShown()'), 'false', 'an empty list hides it');
   assert.equal(vm.evaluate('ClaudeWoW.UI.chatTitle.rel == ClaudeWoWProjectButton'), 'true');
+});
+
+test('a C2 fail in the bridge contract greys the off items and Turn all off in the MCP menu, and an unchecked Claude Code shows the check note', () => {
+  const vm = nativeVM();
+  vm.run(`ClaudeWoWDB.chats[#ClaudeWoWDB.chats].agent = "claude"; ClaudeWoW.ApplyMcp(${MCP_LIST}); ClaudeWoW.Render()`);
+  const enabled = text =>
+    vm.evaluate(`(function() for _, it in ipairs(STUB.menu.items) do if it.text == ${JSON.stringify(text)} then return it.enabled end end end)()`);
+  const reason = 'Claude Code 2.1.290 failed C2 in claude-wow agents check.';
+  vm.run(`ClaudeWoW.ApplyContract({ claude = { version = "2.1.290", checked = true, off = false, reason = "${reason}" } })`);
+  vm.run('ClaudeWoWMcpButton.scripts.OnClick(ClaudeWoWMcpButton)');
+  assert.equal(
+    menuItems(vm),
+    '|cffff9933Turning a server off is disabled: Claude failed the MCP check|r|From config.json|notion  |cff33cc33ok|r|Claude plugins|Notion  |cff999999not seen yet|r|claude.ai connectors|Slack  |cffff9933needs login|r|Turn all off|Use the defaults',
+  );
+  assert.equal(enabled('notion  |cff33cc33ok|r'), 'false', 'a server that is on cannot be turned off');
+  assert.equal(enabled('Notion  |cff999999not seen yet|r'), 'true', 'a server that is off can still be turned on');
+  assert.equal(enabled('Turn all off'), 'false');
+  assert.equal(enabled('Use the defaults'), 'true');
+  vm.run('SlashCmdList.CLAUDE("mcp off notion")');
+  const last = () => vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history[#ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history].text');
+  assert.equal(last(), 'MCP: ' + reason);
+  vm.run('SlashCmdList.CLAUDE("mcp none")');
+  assert.equal(last(), 'MCP: ' + reason);
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].mcpAllOff == nil and ClaudeWoWDB.chats[#ClaudeWoWDB.chats].mcpSet == nil'), 'true');
+
+  vm.run('ClaudeWoW.ApplyContract({ claude = { version = "2.1.290", checked = false, off = true, reason = "" } })');
+  vm.run('ClaudeWoWMcpButton.scripts.OnClick(ClaudeWoWMcpButton)');
+  assert.equal(menuItems(vm).split('|From config.json')[0], '|cff999999Not checked on Claude Code 2.1.290: run claude-wow agents check|r');
+  assert.equal(enabled('Turn all off'), 'true', 'not checked turns nothing off');
+  vm.run('STUB.Pick("Turn all off")');
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].mcpAllOff'), 'true');
+
+  vm.run('ClaudeWoW.ApplyContract({ claude = { version = "2.1.290", checked = true, off = false, reason = "" } }); ClaudeWoW.ApplyContract(nil)');
+  vm.run('ClaudeWoWMcpButton.scripts.OnClick(ClaudeWoWMcpButton)');
+  assert.equal(enabled('Turn all off'), 'true', 'a slot without the field withdraws the contract');
 });
 
 test('without native frames the MCP button and a long project button both fit in the composer', () => {
