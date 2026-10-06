@@ -347,3 +347,17 @@ test('options: a Show button with stale row data does not approve the newer code
   vm.run(`${row}.button.scripts.OnClick(${row}.button)`);
   assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.clock and ClaudeWoWWidgetDB.data.clock.swapped'), 'true', 'a click on the fresh row approves that code');
 });
+
+test('options: a stale Show click does not unhide a widget the player hid', () => {
+  const vm = newVM(
+    SETTINGS_API,
+    'ClaudeWoWWidgetDB = { removed = { clock = "r2" }, set = { epoch = "e1", version = 1, items = { { name = "clock", title = "Clock", rev = "r2", source = "local ui = ..." } } } }',
+  );
+  vm.run(
+    'ClaudeWoWWidgets.Sync({ epoch = "e1", version = 2, items = { { name = "clock", title = "Clock", rev = "r2", source = "local ui = ...\\nui.db.swapped = true" } } })',
+  );
+  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("clock")'), 'removed');
+  vm.run('ClaudeWoWWidgets.Show({ name = "clock", rev = "r2", source = "local ui = ..." })');
+  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("clock")'), 'removed');
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.removed.clock'), 'r2');
+});
