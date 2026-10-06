@@ -108,7 +108,7 @@ jobs:
           unzip -Z1 "$zip" | tee files.txt
           test -z "$(grep -v '^ClaudeWoW/' files.txt)"
           grep -qx 'ClaudeWoW/ClaudeWoW.toc' files.txt
-          test -z "$(grep -E '^ClaudeWoW/(bridge|tests|dev|docs|build)/' files.txt)"
+          test -z "$(grep -E '^ClaudeWoW/(assets|bridge|build|dev|docs|homebrew|tests)/' files.txt)"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: addon-zip

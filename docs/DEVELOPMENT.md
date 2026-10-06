@@ -47,7 +47,11 @@ AddOns/ClaudeWoW_S###/Inbox.lua ◄── bridge/bridge.js (a real process) ◄�
     client's file name, then fires `SCREENSHOT_SUCCEEDED`.
   - `LoadAddOn` reads the slot's `.toc` and files from disk, once per UI
     session. It reports `MISSING`, `DISABLED` (client option `disabled`) and
-    `INTERFACE_VERSION` like the client. Addon folders are indexed at launch,
+    `INTERFACE_VERSION` like the client. It loads each addon listed in
+    `## Dependencies`, `## RequiredDeps` or another `## Dep...` line first; a
+    dependency that is missing, disabled or fails to load stops the addon
+    with `DEP_` and that reason (`DEP_DISABLED` for `ClaudeWoW_Runtime` and the
+    slots when `ClaudeWoW` is disabled). Addon folders are indexed at launch,
     not at `/reload`.
   - Alt+Z (`:hide`) hides `UIParent`, so the strip and its `OnUpdate` stop.
   - `PlaySoundFile` is true only when the `.wav` file exists now and existed
@@ -71,6 +75,7 @@ AddOns/ClaudeWoW_S###/Inbox.lua ◄── bridge/bridge.js (a real process) ◄�
 | Directive | Effect |
 |---|---|
 | `[[sleep 5]]` | Answers after 5 s. |
+| `[[hold go]]` | Does not answer until the file `go` exists in `<sandbox>/agent` (`h.sb.agentState`), after any sleep. Use it to keep a run going until the test has seen what must happen during it. |
 | `[[map skins]]` | Appends a one-point route named `skins` to the run's `CLAUDE_WOW_MAP_FILE`, after any sleep. |
 | `[[tools 3]]` | Emits 3 tool calls first (heartbeats in game). |
 | `[[hang]]` | Never answers. |
@@ -78,6 +83,7 @@ AddOns/ClaudeWoW_S###/Inbox.lua ◄── bridge/bridge.js (a real process) ◄�
 | `[[error]]` / `[[error text]]` | An error result, with or without text. |
 | `[[rate-limit]]` / `[[auth]]` | The usage-limit and login errors. |
 | `[[reply text]]` / `[[long 200]]` | A fixed reply, or a long one. |
+| `[[background-agent text]]` | Starts a background subagent as real Claude Code does in `-p` mode: a launch-notice result first, then the subagent's message (`text`), then the reply as a second result, with the subagent's model in `modelUsage`. |
 
 Every call is logged to `<sandbox>/agent/calls.jsonl`.
 

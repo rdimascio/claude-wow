@@ -295,16 +295,16 @@ test('/dm with a campaign waiting for /dm next: the frame shows the begin hint, 
   tick(vm);
   assert.equal(shown(vm), true, 'the open empty state stays open');
   assert.equal(vm.evaluate('ClaudeWoWDMFrame.beatTitle.text'), 'The story is ready.');
-  assert.equal(vm.evaluate('ClaudeWoWDMFrame.hint.text'), 'Type /dm next to begin.');
+  assert.equal(vm.evaluate('ClaudeWoWDMFrame.hint.text'), 'Click Continue, or type /dm next, to begin.');
   assert.equal(vm.evaluate('ClaudeWoWDMFrame.hint.shown'), 'true');
   vm.run('SlashCmdList.CLAUDEWOWDM("")');
   assert.equal(shown(vm), false);
   vm.run('SlashCmdList.CLAUDEWOWDM("")');
   assert.equal(shown(vm), true);
-  assert.equal(vm.evaluate('ClaudeWoWDMFrame.hint.text'), 'Type /dm next to begin.');
+  assert.equal(vm.evaluate('ClaudeWoWDMFrame.hint.text'), 'Click Continue, or type /dm next, to begin.');
   sendAndRead(vm, dmLua({ rev: 2, beat: BEAT1, manual: true }), 'go');
   assert.equal(vm.evaluate('ClaudeWoWDMFrame.beatTitle.text'), 'A story begins');
-  assert.equal(vm.evaluate('ClaudeWoWDMFrame.hint.text'), 'Type /dm next when you are ready to go on.');
+  assert.equal(vm.evaluate('ClaudeWoWDMFrame.hint.text'), 'Click Continue, or type /dm next, when you are ready to go on.');
 });
 
 test('dm frame: a drawing error never stops the slot read, is said once, and the same data draws once it can', () => {
@@ -393,6 +393,59 @@ test('/dm next: a record the bridge never acks is dropped after its tries, witho
   assert.equal(vm.evaluate('ClaudeWoW.IsConnected()'), 'true', 'no pixelFailed for a control record');
   vm.run('SlashCmdList.CLAUDEWOWDM("next")');
   assert.equal(dmRecords(vm).length, 1, 'the player can try again');
+});
+
+const ENABLE_STUB = `
+do
+  local probe = CreateFrame("Frame")
+  local mt = getmetatable(probe)
+  local base = mt.__index
+  mt.__index = function(t, k)
+    if k == "Enable" then return function(self) self.disabled = false end end
+    if k == "Disable" then return function(self) self.disabled = true end end
+    return base(t, k)
+  end
+end
+`;
+
+test('dm frame: a Continue button waits with a manual beat, sends /dm next, and holds until the ack or 5 seconds', () => {
+  const vm = newVM({ prelude: ARMED_SIGNALS + '\n' + ENABLE_STUB });
+  nextSlot(vm, dmLua({ manual: true }));
+  tick(vm);
+  vm.run('SlashCmdList.CLAUDEWOWDM("")');
+  assert.equal(vm.evaluate('ClaudeWoWDMFrame.continue.template'), 'UIPanelButtonTemplate');
+  assert.equal(vm.evaluate('ClaudeWoWDMFrame.continue.text'), 'Continue');
+  assert.equal(vm.evaluate('ClaudeWoWDMFrame.continue.point'), 'BOTTOMRIGHT');
+  assert.equal(vm.evaluate('ClaudeWoWDMFrame.continue.shown'), 'true');
+  assert.equal(vm.evaluate('ClaudeWoWDMFrame.continue.disabled'), 'false');
+  vm.run('local b = ClaudeWoWDMFrame.continue; b.scripts.OnClick(b)');
+  const recs = dmRecords(vm);
+  assert.equal(recs.length, 1, 'Continue is /dm next');
+  assert.equal(recs[0].name, CHAR);
+  assert.equal(printedCount(vm, 'Asked the bridge for the next beat'), 1);
+  assert.equal(vm.evaluate('ClaudeWoWDMFrame.continue.disabled'), 'true');
+  vm.run('local b = ClaudeWoWDMFrame.continue; b.scripts.OnClick(b)');
+  assert.equal(printedCount(vm, 'still on its way'), 0, 'a held button sends nothing and says nothing');
+  nextSlot(vm, dmLua({ rev: 2, beat: BEAT1, manual: true }));
+  ack(vm, recs[0].id);
+  tick(vm, 0.5);
+  tick(vm, 1);
+  assert.equal(vm.evaluate('ClaudeWoWDMFrame.beatTitle.text'), 'A story begins');
+  assert.equal(vm.evaluate('ClaudeWoWDMFrame.continue.disabled'), 'false', 'the ack frees it');
+  assert.equal(vm.evaluate('ClaudeWoWDMFrame.continue.shown'), 'true', 'the next beat waits too');
+
+  const held = newVM({ prelude: ENABLE_STUB });
+  nextSlot(held, dmLua({ manual: true }));
+  tick(held);
+  held.run('SlashCmdList.CLAUDEWOWDM(""); local b = ClaudeWoWDMFrame.continue; b.scripts.OnClick(b)');
+  assert.equal(held.evaluate('ClaudeWoWDMFrame.continue.disabled'), 'true');
+  held.run('STUB.now = STUB.now + 5; STUB.RunTimers()');
+  assert.equal(held.evaluate('ClaudeWoWDMFrame.continue.disabled'), 'false', '5 seconds free it without an ack');
+
+  const auto = newVM();
+  nextSlot(auto, dmLua({ beat: BEAT1 }));
+  tick(auto);
+  assert.equal(auto.evaluate('ClaudeWoWDMFrame.continue.shown'), 'false', 'a beat that fires on its own has no Continue');
 });
 
 test('dm frame: the module sends nothing to chat and no addon file calls SendChatMessage', () => {

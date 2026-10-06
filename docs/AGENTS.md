@@ -6,7 +6,7 @@ The bridge can drive three coding agents: Claude Code, OpenAI Codex and xAI's Gr
 
 - `agent` in `~/.claude-wow/config.json` is the default for every chat (`claude` unless you change it). The bridge refuses to start on a name it doesn't know.
 - Per-chat settings from the `/claude` flags override the agent's block in `config.json` for that chat: `--model` (every agent), `--effort` (Claude `--effort`, Codex `-c model_reasoning_effort=`), `--permission-mode` (mapped per agent as below) and `--add-dir` (Claude and Codex `--add-dir`, Antigravity an extra `--add-dir`). Grok has no effort or extra-folder option, Antigravity no effort, Hermes only the model: a setting an agent does not have is left out of its command line and the reply ends with a `[bridge]` note naming it.
-- A chat can pick its own with `/claude -c --agent codex`, or right-click the chat in the left panel and choose **Agent...**. `/claude -c --agent default` goes back to the bridge's. A new chat inherits the agent of the chat you were in, like the folder.
+- A chat can pick its own with `/claude -c --agent codex`, or right-click the chat in the left panel and choose one under **Agent** (a text prompt, **Agent...**, until the bridge has listed its agents). `/claude -c --agent default` goes back to the bridge's. A new chat inherits the agent of the chat you were in, like the folder.
 - The choice travels with each message as an `agent=` flag in the strip record, so the bridge needs no restart, and the reply comes back tagged with the agent that wrote it: the bubble label, the `[Codex · chat]` prefix in the game chat, the whisper tab's name and the `To Grok [chat]:` header of `/r` all follow it.
 - A session belongs to the agent (and the folder) that made it. A chat that changes agent starts a fresh session with the new one; the transcript in the window stays.
 - The bridge's banner lists every agent with the executable it found, or what to install. A chat whose agent is missing gets a reply saying so instead of a hang.
@@ -20,7 +20,7 @@ Every agent's block in `config.json` has the same keys, and the bridge maps them
 | Key | Meaning |
 |---|---|
 | `permissionMode` | `acceptEdits` (default): edits inside the project are fine, commands need a rule. `default`: nothing is pre-approved beyond reading. `bypassPermissions`: everything is allowed. |
-| `allowedTools` | Rules in Claude Code's syntax: `WebSearch` allows a tool, `Bash(git:*)` any command starting with `git`, `Bash(npm test)` that exact command. The **Allow & retry** button appends to this list. Ignored by Codex. |
+| `allowedTools` | Rules in Claude Code's syntax: `WebSearch` allows a tool, `Bash(git:*)` any command starting with `git`, `Bash(npm test)` that exact command. **Need** on the roll (or the **Allow & retry** button) appends to this list after a confirm dialog; **Greed** allows a rule for one retry and saves nothing. Ignored by Codex. |
 | `deniedTools` | Rules the agent may never use, same syntax. Claude gets them as `--disallowedTools`, Grok as `--deny` (which wins over everything, `bypassPermissions` included). Ignored by Codex. |
 | `model` | Passed through to the CLI when non-empty. |
 | `path` | The executable, when the bridge can't find it on its own. A `.js` path is run with the bridge's own Node; a Windows `.cmd` npm shim is unwrapped. |

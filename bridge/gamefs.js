@@ -255,6 +255,11 @@ function repair(addonDir) {
   return result;
 }
 
+function publishFailureNote(file, label, e) {
+  if (e.code === 'EUNSAFE') return `publish: refused to write ${file} in ${label}: ${e.message}`;
+  return `publish: cannot write ${file} (${e.code || e.message}); addon not installed in ${label}? run: node setup.js, then restart WoW`;
+}
+
 module.exports = {
   GAME_MODE,
   PERMISSION_BITS,
@@ -269,4 +274,5 @@ module.exports = {
   copyFile,
   addonFolders,
   repair,
+  publishFailureNote,
 };

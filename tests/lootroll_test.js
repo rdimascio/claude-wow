@@ -17,7 +17,16 @@ function PlaySound(id) if SOUND_NAMES[id] then table.insert(STUB.played, SOUND_N
 function PlaySoundFile(path) if STUB.sounds[path] then return true, 1 end return false end
 `;
 
-function newVM({ withRollModule = true } = {}) {
+const POPUP_STUB = `
+function StaticPopup_Show(which, a, b, data)
+  if STUB.popupFails then return nil end
+  local d = { which = which, text = a, data = data, shown = true }
+  STUB.popup = d
+  return d
+end
+`;
+
+function newVM({ withRollModule = true, prelude = '' } = {}) {
   const L = lauxlib.luaL_newstate();
   lualib.luaL_openlibs(L);
   const run = (code, arg) => {
@@ -39,6 +48,8 @@ function newVM({ withRollModule = true } = {}) {
   const num = expr => Number(evaluate(expr));
   run(fs.readFileSync(path.join(__dirname, 'wow_stub.lua'), 'utf8'));
   run(SOUND_STUB);
+  run(POPUP_STUB);
+  if (prelude) run(prelude);
   const files = ['Codec.lua', 'Inbox.lua', 'ClaudeWoW.lua'].concat(withRollModule ? ['LootRoll.lua'] : []);
   for (const f of files) run(fs.readFileSync(path.join(ADDON, f), 'utf8'), 'ClaudeWoW');
   run('STUB.FireEvent("ADDON_LOADED", "ClaudeWoW"); STUB.FireEvent("PLAYER_LOGIN")');
@@ -171,22 +182,38 @@ const chatDirs = vm => {
 
 test('a folder outside the chat is a scroll named after the folder, with folder hints on the buttons', () => {
   const vm = newVM();
-  deliverDenial(vm, ['AddDir(/tmp)']);
+  const { chatId } = deliverDenial(vm, ['AddDir(/tmp)']);
   assert.equal(vm.evaluate('ClaudeWoWRollFrame.shown'), 'true');
   assert.equal(vm.evaluate('ClaudeWoWRollFrame.Name.text'), 'Scroll of /tmp');
   assert.equal(vm.evaluate('ClaudeWoWRollFrame.IconFrame.Icon.texture'), 'Interface\\Icons\\INV_Scroll_03');
   assert.equal(vm.evaluate('ClaudeWoWRoll.CommandOf("AddDir(/Users/me/My Stuff (old))")'), '/Users/me/My Stuff (old)');
   assert.equal(vm.evaluate('ClaudeWoWRoll.ItemName({ "AddDir(/tmp)", "Bash(curl:*)" })'), 'Scroll of /tmp +1');
-  assert.match(vm.evaluate('ClaudeWoWRoll.Hint("need", { "AddDir(/tmp)" })'), /--add-dir/);
-  assert.match(vm.evaluate('ClaudeWoWRoll.Hint("greed", { "AddDir(/tmp)" })'), /this one retry only/);
-  assert.match(vm.evaluate('ClaudeWoWRoll.Hint("need", { "Bash(curl:*)" })'), /allowlist/);
+  assert.match(vm.evaluate(`ClaudeWoWRoll.Hint("need", { "AddDir(/tmp)" }, "${chatId}")`), /always, for this chat, like \/claude --add-dir/);
+  assert.match(vm.evaluate(`ClaudeWoWRoll.Hint("greed", { "AddDir(/tmp)" }, "${chatId}")`), /this retry only/);
+  assert.match(vm.evaluate(`ClaudeWoWRoll.Hint("need", { "Bash(curl:*)" }, "${chatId}", "claude")`), /^Allow it always, for Claude\. It is saved/);
+  assert.match(vm.evaluate(`ClaudeWoWRoll.Hint("greed", { "Bash(curl:*)" }, "${chatId}")`), /^Allow it for this retry only\. Nothing is saved\.$/);
+  assert.doesNotMatch(vm.evaluate(`ClaudeWoWRoll.Hint("need", { "Bash(curl:*)" }, "${chatId}")`), /config\.json/);
   assert.equal(vm.evaluate('ClaudeWoW.GrantsLabel({ "AddDir(/tmp)", "WebSearch" })'), 'folder /tmp, WebSearch');
 });
 
-test('Need on a folder adds it to the chat for good, like /claude --add-dir, and nothing goes to the allowlist', () => {
+const POPUP = 'StaticPopupDialogs.CLAUDEWOW_ALLOW_ALWAYS';
+const accept = vm => vm.run(`local d = STUB.popup; ${POPUP}.OnAccept(d, d.data); d.shown = false; ${POPUP}.OnHide(d)`);
+const cancel = vm => vm.run(`local d = STUB.popup; ${POPUP}.OnCancel(d, d.data, "clicked"); d.shown = false; ${POPUP}.OnHide(d)`);
+const clickNeed = vm => vm.run('ClaudeWoWRollFrame.NeedButton.scripts.OnClick(ClaudeWoWRollFrame.NeedButton)');
+const sentAllow = vm => stripFlags(vm).some(r => /(^|;)(allow|dirs)=/.test(r.flags)) || vm.evaluate('ClaudeWoWDB.outbox and ClaudeWoWDB.outbox.allow') !== null;
+
+test('Need on a folder asks first; after Always Allow it joins the chat for good, like /claude --add-dir, and nothing goes to the allowlist', () => {
   const vm = newVM();
   const { id } = deliverDenial(vm, ['AddDir(/tmp)']);
-  vm.run('STUB.played = {}; ClaudeWoWRollFrame.NeedButton.scripts.OnClick(ClaudeWoWRollFrame.NeedButton)');
+  const seq = vm.num('ClaudeWoWDB.lastSeq');
+  vm.run('STUB.played = {}');
+  clickNeed(vm);
+  assert.equal(vm.evaluate('STUB.popup.which'), 'CLAUDEWOW_ALLOW_ALWAYS', 'Need opens the confirm');
+  assert.equal(vm.num('ClaudeWoWDB.lastSeq'), seq, 'nothing is sent before the confirm');
+  assert.equal(chatDirs(vm), '', 'and nothing is added');
+  assert.equal(vm.evaluate('ClaudeWoWRollFrame.shown'), 'false', 'the roll is parked while the confirm is open');
+  assert.equal(vm.evaluate('ClaudeWoWRoll.Parked().msgId'), String(id));
+  accept(vm);
   assert.equal(vm.evaluate('table.concat(STUB.played, ",")'), 'UI_NEED_ROLL_POSITIVE');
   assert.equal(chatDirs(vm), '/tmp');
   assert.equal(vm.num('ClaudeWoWDB.chats[1].pendingId'), id + 1);
@@ -195,6 +222,7 @@ test('Need on a folder adds it to the chat for good, like /claude --add-dir, and
   assert.equal(rec.flags, `dirs=${hexDirs('/tmp')}`);
   assert.equal(vm.evaluate('ClaudeWoWDB.outbox.allow'), null);
   assert.equal(vm.evaluate('ClaudeWoWDB.outbox.allowOnce'), null);
+  assert.equal(vm.evaluate('ClaudeWoWRoll.Parked()'), null);
   assert.match(
     vm.evaluate('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history - 1].text'),
     /^Allowed: folder \/tmp\. Extra folders for this chat: \/tmp$/,
@@ -213,4 +241,324 @@ test('Pass on a folder denies it; the Allow & retry button names the folder', ()
   assert.equal(vm.num('ClaudeWoWDB.lastSeq'), seqBefore);
   assert.equal(vm.evaluate(`${lastHistory}.text`), 'Passed on: folder /tmp');
   assert.equal(chatDirs(vm), '');
+});
+
+test('the always-allow action has one entry point: ClaudeWoW.Allow is gone and every caller opens the confirm', () => {
+  const vm = newVM();
+  assert.equal(vm.evaluate('ClaudeWoW.Allow'), null);
+  assert.equal(vm.evaluate('type(ClaudeWoW.ConfirmAllow)'), 'function');
+  const { chatId, id } = deliverDenial(vm, ['Bash(git:*)']);
+  const seq = vm.num('ClaudeWoWDB.lastSeq');
+  vm.run('ClaudeWoWRoll.CloseAll(); ClaudeWoWDB.settings.lootRoll = false; ClaudeWoW.Render()');
+  vm.run('BTN = nil; for _, f in ipairs(STUB.frames) do if f.template == "UIPanelButtonTemplate" and f.rules and f.shown then BTN = f end end');
+  assert.equal(vm.evaluate('BTN.msgId'), String(id), 'the transcript button knows which reply it answers');
+  vm.run('STUB.popup = nil; BTN.scripts.OnClick(BTN)');
+  assert.equal(vm.evaluate('STUB.popup.which'), 'CLAUDEWOW_ALLOW_ALWAYS', 'the transcript Allow & retry button asks first');
+  assert.equal(vm.num('ClaudeWoWDB.lastSeq'), seq);
+  cancel(vm);
+  vm.run(`STUB.popup = nil; ClaudeWoW.ConfirmAllow("${chatId}", ${id - 1}, { "Bash(git:*)" })`);
+  assert.equal(vm.evaluate('STUB.popup'), null, 'a confirm for an older reply never opens');
+  vm.run(`ClaudeWoW.ConfirmAllow("${chatId}", ${id}, { "Bash(rm:*)" })`);
+  assert.equal(vm.evaluate('STUB.popup'), null, 'nor one for rules the reply did not ask for');
+  vm.run(`STUB.popup = nil; STUB.ClickLink("|Haddon:claudewow:roll:${chatId}:${id}:need|h[Allow & retry]|h")`);
+  assert.equal(vm.evaluate('STUB.popup.which'), 'CLAUDEWOW_ALLOW_ALWAYS', 'the whisper link asks first');
+  assert.equal(vm.num('ClaudeWoWDB.lastSeq'), seq);
+  assert.match(vm.evaluate('STUB.popup.text'), /^Always allow this, for Claude\?\n\nBash\(git:\*\)\n/);
+  assert.match(vm.evaluate('STUB.popup.text'), /This covers every command that starts with git\./);
+  accept(vm);
+  const rec = stripFlags(vm).find(r => r.flags.includes('allow='));
+  assert.ok(rec, 'the accepted confirm grants it');
+  assert.equal(vm.evaluate(`${POPUP}.button1`), 'Always Allow');
+  assert.equal(vm.evaluate(`${POPUP}.timeout`), '0', 'the confirm never answers itself');
+  assert.equal(vm.evaluate(`${POPUP}.enterClicksFirstButton`), null, 'Enter does not grant');
+});
+
+test('the roll timer does not run while the confirm is open, and its expiry never allows', () => {
+  const vm = newVM();
+  deliverDenial(vm, ['Bash(git:*)']);
+  const seq = vm.num('ClaudeWoWDB.lastSeq');
+  clickNeed(vm);
+  vm.run('STUB.now = STUB.now + 120; ClaudeWoWRoll.Update(); STUB.RunFrames(120)');
+  assert.equal(vm.num('ClaudeWoWDB.lastSeq'), seq, 'nothing sent after the timer would have run out');
+  assert.equal(vm.evaluate(`${lastHistory}.text`), 'I need permission', 'and the roll was not passed');
+  assert.equal(vm.evaluate(`${lastHistory}.denied[1]`), 'Bash(git:*)');
+  cancel(vm);
+  assert.equal(vm.evaluate('ClaudeWoWRollFrame.shown'), 'true', 'Cancel puts the roll back');
+  assert.ok(vm.num('ClaudeWoWRoll.Current().expiresAt - GetTime()') >= 59, 'with a full timer');
+  vm.run('STUB.now = STUB.now + 61; ClaudeWoWRoll.Update()');
+  assert.equal(vm.evaluate(`${lastHistory}.text`), 'Passed on: Bash(git:*) (the roll timed out)');
+  assert.ok(!sentAllow(vm), 'the timeout passed; it did not allow');
+});
+
+test('a confirm left open while the chat moved on does nothing: queue advance, clear, delete', () => {
+  const advance = newVM();
+  deliverDenial(advance, ['Bash(git:*)']);
+  clickNeed(advance);
+  advance.run('STUB.SAVED = STUB.popup');
+  deliverDenial(advance, ['Bash(git:*)']);
+  assert.equal(advance.evaluate('select(2, ClaudeWoW.OpenDenial(ClaudeWoWDB.chats[1].id)) ~= STUB.SAVED.data.msgId'), 'true', 'a newer denial is open');
+  const seq = advance.num('ClaudeWoWDB.lastSeq');
+  advance.run('STUB.popup = STUB.SAVED');
+  accept(advance);
+  assert.equal(advance.num('ClaudeWoWDB.lastSeq'), seq, 'the old confirm does not grant the new denial');
+  assert.equal(advance.evaluate('ClaudeWoWDB.outbox and ClaudeWoWDB.outbox.allow'), null);
+
+  for (const step of ['ClaudeWoW.ClearChat(ClaudeWoWDB.chats[1].id)', 'ClaudeWoW.NewChat("other"); ClaudeWoW.DeleteChat(ClaudeWoWDB.chats[1].id)']) {
+    const vm = newVM();
+    deliverDenial(vm, ['Bash(git:*)']);
+    clickNeed(vm);
+    vm.run(step);
+    const before = vm.num('ClaudeWoWDB.lastSeq');
+    accept(vm);
+    assert.equal(vm.num('ClaudeWoWDB.lastSeq'), before, `${step}: nothing sent`);
+    assert.equal(vm.evaluate('ClaudeWoWDB.outbox and ClaudeWoWDB.outbox.allow'), null, step);
+  }
+});
+
+test('the confirm grants only the rules it showed, and only while it is the open one', () => {
+  const swapped = newVM();
+  deliverDenial(swapped, ['Bash(git:*)']);
+  clickNeed(swapped);
+  swapped.run(`${lastHistory}.denied = { "Bash(rm:*)" }`);
+  const seq = swapped.num('ClaudeWoWDB.lastSeq');
+  accept(swapped);
+  assert.equal(swapped.num('ClaudeWoWDB.lastSeq'), seq, 'changed rules under the same reply are not granted');
+
+  const replaced = newVM();
+  deliverDenial(replaced, ['Bash(git:*)']);
+  clickNeed(replaced);
+  replaced.run('STUB.FIRST = STUB.popup');
+  replaced.run('ClaudeWoW.NewChat("second")');
+  const second = deliverDenial(replaced, ['WebFetch'], 'claude', 2);
+  replaced.run('STUB.played = {}');
+  replaced.run(`ClaudeWoW.ConfirmAllow("${second.chatId}", ${second.id}, { "WebFetch" })`);
+  assert.equal(replaced.evaluate('ClaudeWoWRollFrame.shown'), 'false', 'the replaced roll does not flash back');
+  assert.equal(replaced.evaluate('#STUB.played'), '0', 'and plays no sound');
+  assert.equal(replaced.evaluate('ClaudeWoWRoll.Current()'), null);
+  const before = replaced.num('ClaudeWoWDB.lastSeq');
+  replaced.run(`${POPUP}.OnAccept(STUB.FIRST, STUB.FIRST.data)`);
+  assert.equal(replaced.num('ClaudeWoWDB.lastSeq'), before, 'a confirm another one replaced cannot grant');
+  assert.equal(replaced.evaluate('ClaudeWoWDB.chats[1].pendingId'), null);
+  cancel(replaced);
+  assert.equal(
+    replaced.evaluate('ClaudeWoWRoll.Current().chatId'),
+    replaced.evaluate('ClaudeWoWDB.chats[1].id'),
+    'its roll comes back when the new confirm closes',
+  );
+});
+
+test('when a newer confirm is accepted, the roll it replaced comes back', () => {
+  const vm = newVM();
+  deliverDenial(vm, ['Bash(git:*)']);
+  clickNeed(vm);
+  vm.run('ClaudeWoW.NewChat("second")');
+  const second = deliverDenial(vm, ['WebFetch'], 'claude', 2);
+  vm.run(`ClaudeWoW.ConfirmAllow("${second.chatId}", ${second.id}, { "WebFetch" })`);
+  assert.equal(vm.evaluate('ClaudeWoWRoll.Current()'), null);
+  accept(vm);
+  assert.ok(stripFlags(vm).some(r => r.flags.includes('allow=WebFetch')));
+  assert.equal(vm.evaluate('ClaudeWoWRoll.Current().chatId'), vm.evaluate('ClaudeWoWDB.chats[1].id'));
+});
+
+test('opening the same confirm again changes nothing', () => {
+  const vm = newVM();
+  const { chatId, id } = deliverDenial(vm, ['Bash(git:*)']);
+  clickNeed(vm);
+  vm.run('STUB.FIRST = STUB.popup; STUB.played = {}');
+  vm.run(`STUB.ClickLink("|Haddon:claudewow:roll:${chatId}:${id}:need|h[Need]|h")`);
+  assert.equal(vm.evaluate('STUB.popup == STUB.FIRST'), 'true', 'no second dialog');
+  assert.equal(vm.evaluate('ClaudeWoWRollFrame.shown'), 'false', 'the roll stays parked');
+  assert.equal(vm.evaluate('#STUB.played'), '0');
+  accept(vm);
+  assert.ok(
+    stripFlags(vm).some(r => r.flags.includes('allow=')),
+    'the first dialog still grants',
+  );
+});
+
+test('the grant goes only to the agent and plugin the confirm named', () => {
+  for (const change of ['ClaudeWoWDB.chats[1].agent = "grok"', 'ClaudeWoWDB.chats[1].plugin = "ask"']) {
+    const vm = newVM();
+    vm.run('ClaudeWoWDB.chats[1].agent = "claude"');
+    deliverDenial(vm, ['Bash(git:*)']);
+    clickNeed(vm);
+    assert.match(vm.evaluate('STUB.popup.text'), /^Always allow this, for Claude\?/);
+    vm.run(change);
+    const seq = vm.num('ClaudeWoWDB.lastSeq');
+    accept(vm);
+    assert.equal(vm.num('ClaudeWoWDB.lastSeq'), seq, `${change}: nothing is granted`);
+    assert.ok(!stripFlags(vm).some(r => /(^|;)allow=/.test(r.flags)), change);
+  }
+});
+
+test('an agent name with a pipe cannot rewrite the confirm or the roll text', () => {
+  const vm = newVM();
+  vm.run('ClaudeWoWDB.chats[1].agent = "x|cffff0000y|Hevil|h"');
+  deliverDenial(vm, ['Bash(git:*)'], 'x|cffff0000y');
+  assert.doesNotMatch(vm.evaluate('ClaudeWoWRollFrame.Details.Text.text'), /\|cffff0000|\|H/);
+  clickNeed(vm);
+  assert.doesNotMatch(vm.evaluate('STUB.popup.text'), /\|/);
+});
+
+test('the details are laid out after the frame is shown, so the first roll has its height', () => {
+  const vm = newVM({
+    prelude: `do
+      local probe = CreateFrame("Frame")
+      local mt = getmetatable(probe)
+      local base = mt.__index
+      mt.__index = function(t, k)
+        if k == "GetStringHeight" then
+          return function(self)
+            local f = self
+            while f do if f.shown == false then return 0 end f = f.parent end
+            return 28
+          end
+        end
+        return base(t, k)
+      end
+    end`,
+  });
+  deliverDenial(vm, ['Bash(git:*)']);
+  assert.equal(vm.num('ClaudeWoWRollFrame.Details.height'), 28 + 12);
+});
+
+test('a confirm that cannot open puts the roll back and grants nothing', () => {
+  const vm = newVM();
+  deliverDenial(vm, ['Bash(git:*)']);
+  const seq = vm.num('ClaudeWoWDB.lastSeq');
+  vm.run('STUB.popupFails = true');
+  clickNeed(vm);
+  assert.equal(vm.num('ClaudeWoWDB.lastSeq'), seq);
+  assert.equal(vm.evaluate('ClaudeWoWRollFrame.shown'), 'true');
+  assert.equal(vm.evaluate('ClaudeWoWRoll.Parked()'), null);
+});
+
+const KEYBOARD_STUB = `
+do
+  local probe = CreateFrame("Frame")
+  local mt = getmetatable(probe)
+  local base = mt.__index
+  mt.__index = function(t, k)
+    if k == "EnableKeyboard" then return function(self, on) self.keyboardOn = on and true or false end end
+    if k == "LockHighlight" then return function(self) self.highlightLocked = true end end
+    if k == "UnlockHighlight" then return function(self) self.highlightLocked = false end end
+    return base(t, k)
+  end
+end
+`;
+
+test('Greed is the first, highlighted button, and no key press grants anything', () => {
+  const vm = newVM({ prelude: KEYBOARD_STUB });
+  deliverDenial(vm, ['Bash(rm:*)']);
+  assert.equal(vm.evaluate('ClaudeWoWRollFrame.GreedButton.point'), 'TOPLEFT');
+  assert.equal(vm.evaluate('ClaudeWoWRollFrame.PassButton.rel == ClaudeWoWRollFrame.GreedButton'), 'true');
+  assert.equal(vm.evaluate('ClaudeWoWRollFrame.NeedButton.rel == ClaudeWoWRollFrame.GreedButton'), 'true');
+  assert.equal(vm.evaluate('ClaudeWoWRollFrame.GreedButton.highlightLocked'), 'true');
+  assert.notEqual(vm.evaluate('ClaudeWoWRollFrame.keyboardOn'), 'true', 'the roll frame never takes the keyboard');
+  const seq = vm.num('ClaudeWoWDB.lastSeq');
+  for (const key of ['ENTER', 'SPACE', 'ESCAPE', '1', 'W']) {
+    vm.run(`for _, f in ipairs(STUB.frames) do
+      local cur = f
+      while cur and cur ~= ClaudeWoWRollFrame do cur = cur.parent end
+      if cur then
+        for _, name in ipairs({ "OnKeyDown", "OnKeyUp", "OnChar" }) do
+          if f.scripts[name] then f.scripts[name](f, "${key}") end
+        end
+      end
+    end`);
+  }
+  assert.equal(vm.num('ClaudeWoWDB.lastSeq'), seq, 'no key sends anything');
+  assert.equal(vm.evaluate('ClaudeWoWRollFrame.shown'), 'true', 'the roll still waits for a click');
+  assert.ok(!stripFlags(vm).some(r => /(^|;)(once|allow|dirs)=/.test(r.flags)));
+  vm.run('ClaudeWoWRollFrame.GreedButton.scripts.OnClick(ClaudeWoWRollFrame.GreedButton)');
+  assert.ok(
+    stripFlags(vm).some(r => r.flags.includes('once=')),
+    'a click on Greed allows once',
+  );
+  assert.equal(vm.evaluate('ClaudeWoWRollFrame.GreedButton.highlightLocked'), 'false');
+});
+
+test('the roll frame shows the rules, the command the bridge quoted, and the scope in words', () => {
+  const vm = newVM();
+  const note = '[bridge] Claude needed 1 action that is not allowed yet:\\n  Bash: git push origin main\\nAllow it from this chat to let it continue.';
+  deliverDenial(vm, ['Bash(git:*)'], 'claude', 1, `text = "ok\\n\\n${note}"`);
+  const details = vm.evaluate('ClaudeWoWRollFrame.Details.Text.text');
+  assert.match(details, /Bash\(git:\*\)/);
+  assert.match(details, /Bash: git push origin main/);
+  assert.match(details, /Greed: for this retry only\. Need: always, for Claude\./);
+  assert.doesNotMatch(details, /config\.json/);
+  vm.run('ClaudeWoWRollFrame.IconFrame.scripts.OnEnter(ClaudeWoWRollFrame.IconFrame)');
+  assert.ok(vm.evaluate('table.concat(GameTooltip.lines, "\\n")').includes('Bash: git push origin main'));
+  assert.equal(vm.evaluate('ClaudeWoW.DenialDetails(ClaudeWoWDB.chats[1].id)[1]'), 'Bash: git push origin main');
+  const long = 'x'.repeat(200);
+  vm.run(`${lastHistory}.text = "Grok was not allowed to: ${long}"`);
+  assert.equal(vm.evaluate('ClaudeWoW.DenialDetails(ClaudeWoWDB.chats[1].id)[1]'), long.slice(0, 160));
+});
+
+test('a live chat offers Greed and Pass only, and Need there is a once-only allow with no confirm', () => {
+  const vm = newVM();
+  vm.run('ClaudeWoWDB.chats[1].liveTarget = "abc123"');
+  const { chatId, id } = deliverDenial(vm, ['Bash(git:*)']);
+  assert.equal(vm.evaluate('ClaudeWoWRollFrame.NeedButton.shown'), 'false');
+  assert.match(vm.evaluate('ClaudeWoWRollFrame.Details.Text.text'), /Greed: for this retry only\. Nothing is saved\./);
+  assert.doesNotMatch(vm.evaluate('ClaudeWoWRollFrame.Details.Text.text'), /always/);
+  vm.run('ClaudeWoWRoll.CloseAll(); STUB.popup = nil');
+  vm.run(`STUB.ClickLink("|Haddon:claudewow:roll:${chatId}:${id}:need|h[Need]|h")`);
+  assert.equal(vm.evaluate('STUB.popup'), null, 'no confirm');
+  const rec = stripFlags(vm).find(r => r.flags.includes('once='));
+  assert.ok(rec, 'a once-only allow');
+  assert.ok(!stripFlags(vm).some(r => /(^|;)allow=/.test(r.flags)));
+});
+
+test('the roll frame sits on the group loot frames when the game has them, else at its own spot', () => {
+  const vm = newVM({
+    prelude:
+      'GroupLootContainer = CreateFrame("Frame", "GroupLootContainer", UIParent); GroupLootContainer:SetSize(200, 40); GroupLootContainer:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, 150)',
+  });
+  deliverDenial(vm, ['Bash(git:*)']);
+  assert.equal(vm.evaluate('ClaudeWoWRollFrame.point'), 'BOTTOM');
+  assert.equal(vm.evaluate('ClaudeWoWRollFrame.rel == GroupLootContainer'), 'true');
+  assert.equal(vm.evaluate('ClaudeWoWRollFrame.relPoint'), 'TOP');
+  const plain = newVM();
+  deliverDenial(plain, ['Bash(git:*)']);
+  assert.equal(plain.evaluate('ClaudeWoWRollFrame.point'), 'BOTTOM');
+  assert.equal(plain.evaluate('ClaudeWoWRollFrame.rel == UIParent'), 'true');
+  assert.equal(plain.num('ClaudeWoWRollFrame.y'), 240);
+
+  for (const prelude of [
+    'GroupLootContainer = CreateFrame("Frame", "GroupLootContainer", UIParent)',
+    'GroupLootContainer = CreateFrame("Frame", "GroupLootContainer", UIParent); GroupLootContainer:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, 150); GroupLootContainer:Hide()',
+  ]) {
+    const idle = newVM({ prelude });
+    deliverDenial(idle, ['Bash(git:*)']);
+    assert.equal(idle.evaluate('ClaudeWoWRollFrame.rel == UIParent'), 'true', `${prelude}: an unplaced or hidden container is not used`);
+    assert.equal(idle.num('ClaudeWoWRollFrame.y'), 240);
+  }
+
+  const later = newVM({ prelude: 'GroupLootContainer = CreateFrame("Frame", "GroupLootContainer", UIParent)' });
+  deliverDenial(later, ['Bash(git:*)']);
+  assert.equal(later.evaluate('ClaudeWoWRollFrame.rel == UIParent'), 'true');
+  later.run('ClaudeWoWRollFrame.PassButton.scripts.OnClick(ClaudeWoWRollFrame.PassButton)');
+  later.run('GroupLootContainer:SetSize(200, 40); GroupLootContainer:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, 150)');
+  deliverDenial(later, ['Bash(git:*)']);
+  assert.equal(later.evaluate('ClaudeWoWRollFrame.rel == GroupLootContainer'), 'true', 'each roll is placed again');
+});
+
+test('a queued roll whose confirm is already open from a link stays parked, so its timer never runs', () => {
+  const vm = newVM();
+  deliverDenial(vm, ['Bash(rm:*)']);
+  vm.run('ClaudeWoW.NewChat("second")');
+  const second = deliverDenial(vm, ['WebFetch'], 'grok', 2);
+  assert.equal(vm.num('ClaudeWoWRoll.Waiting()'), 1);
+  vm.run(`STUB.ClickLink("|Haddon:claudewow:roll:${second.chatId}:${second.id}:need|h[Need]|h")`);
+  assert.equal(vm.evaluate('STUB.popup.data.chatId'), second.chatId);
+  vm.run('ClaudeWoWRollFrame.PassButton.scripts.OnClick(ClaudeWoWRollFrame.PassButton)');
+  assert.equal(vm.evaluate('ClaudeWoWRollFrame.shown'), 'false', 'the second roll does not show under its own confirm');
+  assert.equal(vm.evaluate('ClaudeWoWRoll.Parked().chatId'), second.chatId);
+  const seq = vm.num('ClaudeWoWDB.lastSeq');
+  vm.run('STUB.now = STUB.now + 120; ClaudeWoWRoll.Update()');
+  assert.equal(vm.num('ClaudeWoWDB.lastSeq'), seq, 'no timeout Pass');
+  accept(vm);
+  assert.ok(stripFlags(vm).some(r => r.flags.includes('allow=WebFetch')));
+  assert.equal(vm.evaluate('ClaudeWoWRoll.Parked()'), null);
 });

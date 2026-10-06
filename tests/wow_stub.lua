@@ -143,6 +143,8 @@ function Methods.GetBottom(self) local r = STUB.Rect(self) return r and r.bottom
 function Methods.SetScale(self, k) self.scale = k end
 function Methods.GetScale(self) return self.scale or 1 end
 function Methods.GetEffectiveScale(self) return self.scale or 1 end
+function Methods.SetFrameStrata(self, strata) self.strata = strata end
+function Methods.SetBackdropColor(self, r, g, b, a) self.bg = { r, g, b, a } end
 function Methods.SetAlpha(self, a) self.alpha = a end
 function Methods.GetAlpha(self) return self.alpha or 1 end
 function Methods.IsMouseOver(self) return STUB.mouseOver == self end
@@ -260,7 +262,11 @@ ChatFontNormal = {}
 OKAY, CANCEL = "Okay", "Cancel"
 NUM_CHAT_WINDOWS = 1
 StaticPopupDialogs = {}
-function StaticPopup_Show(which, a, b, data) STUB.popup = { which = which, text = a, data = data } end
+function StaticPopup_Show(which, a, b, data)
+	if STUB.popupBusy then return nil end
+	STUB.popup = { which = which, text = a, data = data }
+	return STUB.popup
+end
 SlashCmdList = {}
 UISpecialFrames = {}
 tinsert = table.insert

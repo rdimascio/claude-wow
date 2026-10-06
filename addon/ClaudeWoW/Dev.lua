@@ -88,11 +88,11 @@ end
 function D.Report()
 	local list = D.All()
 	if #list == 0 then
-		if D.installed then return "No Lua error from Claude WoW this UI session." end
-		if D.blocked then return "No Lua error caught: another addon keeps the error handler to itself, and it lists no Claude WoW error. /claude dev errors reads the game's own log." end
+		if D.installed then return "No Lua error from Azeroth Companion this UI session." end
+		if D.blocked then return "No Lua error caught: another addon keeps the error handler to itself, and it lists no Azeroth Companion error. /claude dev errors reads the game's own log." end
 		return "No Lua error caught: this client has no seterrorhandler, so the addon cannot catch them. /claude dev errors reads the game's own log."
 	end
-	local lines = { #list .. " Lua error" .. (#list == 1 and "" or "s") .. " from Claude WoW this UI session" .. (list == D.errors and (" (" .. D.caught .. " in all)") or ", from BugGrabber") .. ", newest last:" }
+	local lines = { #list .. " Lua error" .. (#list == 1 and "" or "s") .. " from Azeroth Companion this UI session" .. (list == D.errors and (" (" .. D.caught .. " in all)") or ", from BugGrabber") .. ", newest last:" }
 	for i = math.max(1, #list - ERRORS_SHOWN + 1), #list do
 		local e = list[i]
 		lines[#lines + 1] = (e.count > 1 and ("x" .. e.count .. " ") or "") .. Short(e.message)
