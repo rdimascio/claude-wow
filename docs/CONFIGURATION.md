@@ -121,7 +121,7 @@ A `config.json` from before agents existed kept Claude's settings at the top lev
 
 `assets/plugins/claude-wow` is a Claude Code plugin (not a bridge plugin like `ask`) with two subagents. It is off by default and experimental.
 
-> **Not measured yet. Keep it off for players.** No real run has measured `wow-planner` calling the `wowdata` tools under the bridge's `--allowedTools` (the spike hit the session limit). Until that run is measured, the planner may get no game data. Turn the plugin on only to test it.
+> **Experimental, opt-in.** Measured on Claude Code 2.1.290: `wow-planner` gets the `ask` run's `mcp__wowdata` allow rule, so its `wowdata` calls work with no extra config, and it hands back a `wowmap` block the bridge accepts. It stays off by default while the open follow-ups in the [plan](plans/router-and-game-data.md#711-step-5-status-plugin-built-opt-in-router-not-started) are open: the bridge does not log a bad `--plugin-dir`, and a run with a subagent shows a less exact cost.
 
  Nothing in the prompt tells the chat to use them yet; Claude picks one when its description fits.
 
