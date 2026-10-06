@@ -199,7 +199,7 @@ test('agents.claude.maxCostUsd end to end: the run gets --max-budget-usd, a key 
   };
   fs.writeFileSync(
     cfg.agents.claude.path,
-    `require('fs').writeFileSync(${JSON.stringify(argvFile)}, JSON.stringify(process.argv.slice(2)));\nprocess.stdout.write(${JSON.stringify(JSON.stringify(stop) + '\n')});\nprocess.exitCode = 1;\n`,
+    `if (process.argv.includes('--version')) process.exit(0);\nrequire('fs').writeFileSync(${JSON.stringify(argvFile)}, JSON.stringify(process.argv.slice(2)));\nprocess.stdout.write(${JSON.stringify(JSON.stringify(stop) + '\n')});\nprocess.exitCode = 1;\n`,
   );
   fs.writeFileSync(
     path.join(home, 'config.json'),
@@ -411,7 +411,7 @@ test('per-chat MCP end to end: discovered servers are listed, a chat turns one o
   const done = { type: 'result', result: 'pong', session_id: 'sess-1' };
   fs.writeFileSync(
     cfg.agents.claude.path,
-    `require('fs').writeFileSync(${JSON.stringify(argvFile)}, JSON.stringify(process.argv.slice(2)));\nprocess.stdout.write(${JSON.stringify(JSON.stringify(init) + '\n' + JSON.stringify(done) + '\n')});\n`,
+    `if (process.argv.includes('--version')) process.exit(0);\nrequire('fs').writeFileSync(${JSON.stringify(argvFile)}, JSON.stringify(process.argv.slice(2)));\nprocess.stdout.write(${JSON.stringify(JSON.stringify(init) + '\n' + JSON.stringify(done) + '\n')});\n`,
   );
   fs.writeFileSync(
     path.join(home, 'config.json'),
