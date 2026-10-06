@@ -498,18 +498,7 @@ function catalog({ mcp, seen = {}, codexOwn = [], reserved = [] }) {
   return out;
 }
 
-function planRun({
-  agentId,
-  choice,
-  cwd = '',
-  userMcp = null,
-  seen = {},
-  codexOwn = [],
-  reserved = [],
-  claudeOwn = () => claudeOwnServers({ cwd }),
-  codexOwnNow = () => codexOwnServers(),
-  codexToolsNow = () => codexOwnTools(),
-} = {}) {
+function planRun({ agentId, choice, cwd = '', userMcp = null, seen = {}, codexOwn = [], reserved = [], claudeOwn, codexOwnNow, codexToolsNow }) {
   if (agentId === 'codex')
     return { userMcp: null, seenOff: null, guard: null, codexMcp: forCodex(userMcp, { choice, own: codexOwnNow(), ownTools: codexToolsNow() }), seen };
   if (agentId !== 'claude') return { userMcp: null, seenOff: null, guard: null, codexMcp: [], seen };
@@ -537,6 +526,7 @@ module.exports = {
   codexArgs,
   codexOwnServers,
   codexOwnToolLists,
+  codexOwnTools,
   scopeAllowed,
   claudeOwnServers,
   summary,

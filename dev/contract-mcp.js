@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 'use strict';
-const fs = require('fs');
 
 const PROTOCOL_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 const TOOL_ENV = 'CONTRACT_MCP_TOOL';
@@ -12,17 +11,8 @@ const toolName = name =>
     .replace(/[^A-Za-z0-9_-]/g, '_')
     .slice(0, 64);
 
-function parseArgs(argv) {
-  const opts = { mark: '', tools: [] };
-  for (let k = 0; k < argv.length; k++) {
-    if (argv[k] === '--mark') opts.mark = argv[++k] || '';
-    else opts.tools.push(argv[k]);
-  }
-  return opts;
-}
-
-function toolNames(opts, env) {
-  const names = [...opts.tools];
+function toolNames(argv, env) {
+  const names = [...argv];
   if (env[TOOL_ENV]) names.push(env[TOOL_ENV]);
   return [...new Set(names.map(toolName).filter(Boolean))];
 }
@@ -80,13 +70,7 @@ function main(argv = process.argv.slice(2), deps = {}) {
   const env = deps.env || process.env;
   const stdin = deps.stdin || process.stdin;
   const stdout = deps.stdout || process.stdout;
-  const opts = parseArgs(argv);
-  if (opts.mark) {
-    try {
-      fs.writeFileSync(opts.mark, String(process.pid));
-    } catch {}
-  }
-  const server = createServer({ tools: toolNames(opts, env), env, stdout });
+  const server = createServer({ tools: toolNames(argv, env), env, stdout });
   stdin.setEncoding('utf8');
   stdin.on('data', server.feed);
   stdin.on('end', () => {
@@ -95,6 +79,6 @@ function main(argv = process.argv.slice(2), deps = {}) {
   return server;
 }
 
-module.exports = { main, parseArgs, toolNames, toolName, createServer, TOOL_ENV, ECHO_ENV };
+module.exports = { main, TOOL_ENV, ECHO_ENV };
 
 if (require.main === module) main();

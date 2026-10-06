@@ -1400,6 +1400,31 @@ test('a C2 fail in the bridge contract greys the off items and Turn all off in t
   assert.equal(enabled('Turn all off'), 'true', 'a slot without the field withdraws the contract');
 });
 
+test('a Codex X2a fail greys only the sources the contract names: Codex servers stay on, config.json servers can still be turned off', () => {
+  const vm = nativeVM();
+  const list = MCP_LIST.replace(/ \}$/, ', { id = "mine", label = "mine", src = "codex", on = true, health = "unknown" } }');
+  vm.run(`ClaudeWoWDB.chats[#ClaudeWoWDB.chats].agent = "codex"; ClaudeWoW.ApplyMcp(${list}); ClaudeWoW.Render()`);
+  const enabled = text =>
+    vm.evaluate(`(function() for _, it in ipairs(STUB.menu.items) do if it.text == ${JSON.stringify(text)} then return it.enabled end end end)()`);
+  const last = () => vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history[#ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history].text');
+  const reason = 'Codex 0.160.1 failed X2a in claude-wow agents check.';
+  vm.run(`ClaudeWoW.ApplyContract({ codex = { version = "0.160.1", checked = true, off = false, reason = "${reason}", sources = { "codex", "bogus" } } })`);
+  vm.run('ClaudeWoWMcpButton.scripts.OnClick(ClaudeWoWMcpButton)');
+  assert.equal(enabled('mine  |cff999999not seen yet|r'), 'false', 'a server from config.toml cannot be turned off');
+  assert.equal(enabled('notion  |cff33cc33ok|r'), 'true', 'a config.json server is left out of a Codex run, so it can be turned off');
+  assert.equal(enabled('Slack  |cffff9933needs login|r'), 'true');
+  assert.equal(enabled('Turn all off'), 'false', 'Turn all off would turn a config.toml server off');
+  vm.run('SlashCmdList.CLAUDE("mcp off mine")');
+  assert.equal(last(), 'MCP: ' + reason);
+  vm.run('SlashCmdList.CLAUDE("mcp off notion")');
+  assert.equal(last(), 'MCP: notion is off for this chat.');
+
+  vm.run(`ClaudeWoW.ApplyMcp(${MCP_LIST}); ClaudeWoW.Render()`);
+  vm.run('ClaudeWoWMcpButton.scripts.OnClick(ClaudeWoWMcpButton)');
+  assert.equal(enabled('Turn all off'), 'true', 'with no config.toml server, X2a refuses nothing');
+  assert.ok(!menuItems(vm).includes('Turning a server off is disabled'));
+});
+
 test('without native frames the MCP button and a long project button both fit in the composer', () => {
   const vm = newVM();
   open(vm);

@@ -848,7 +848,7 @@ function sharedSlotFields(urgent) {
     sessions: sessionList(),
     projects: projectList(),
     mcp: mcpSlotList(),
-    contract: AC.slotField(contracts.current()),
+    contract: AC.slotField(contracts.current(), { codexConfig: CODEX_OWN_MCP.length > 0 }),
     home: os.homedir(),
     skills: FACTORY.slotSkills(FACTORY.settings(pluginsCfg['claude-code'])),
     discord: !!discordHub,
@@ -2529,6 +2529,9 @@ function runAgent(job, opts = {}) {
     seen: state.mcpSeen || {},
     codexOwn: CODEX_ALL_MCP,
     reserved: MCP_RESERVED,
+    claudeOwn: () => MC.claudeOwnServers({ cwd }),
+    codexOwnNow: () => MC.codexOwnServers(),
+    codexToolsNow: () => MC.codexOwnTools(),
   });
   state.mcpSeen = mcpPlan.seen;
   const { userMcp, seenOff, guard: mcpGuard } = mcpPlan;
@@ -2554,7 +2557,7 @@ function runAgent(job, opts = {}) {
     log(`${tag} allowed for this run only (${agentId}): ${grantOnce.rules.join(', ')}`);
   }
   const dataServer = opts.gameData && (claudeRun || codexRun || agent.mcp) ? gameDataServer(tag, job) : null;
-  const codexMcp = codexRun ? [...(dataServer ? [{ name: DM.SERVER_NAME, server: dataServer.server }] : []), ...mcpPlan.codexMcp] : [];
+  const codexMcp = [...(codexRun && dataServer ? [{ name: DM.SERVER_NAME, server: dataServer.server }] : []), ...mcpPlan.codexMcp];
   const runOnlyRules = [
     ...grantOnce.rules,
     ...(dataServer ? dataServer.rules : []),

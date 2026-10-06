@@ -526,19 +526,36 @@ test('planRun: one pure plan per run; Claude gets the config plan, the discovere
   assert.deepEqual(run.codexMcp, []);
 
   const plain = MC.planRun({ ...base, agentId: 'claude', choice: undefined });
-  assert.equal(plain.seen, seen, 'no choice: the seen list is not read again');
+  assert.equal(plain.seen, seen, 'no choice: Claude settings are not read and the seen list is returned as it was');
   assert.deepEqual(plain.seenOff.rules, []);
   assert.equal(MC.planRun({ ...base, agentId: 'claude', userMcp: null, choice }).guard.blocks('mcp__linear__x'), false);
   assert.deepEqual(reads, ['read', 'read']);
 
   const codex = MC.planRun({ ...base, agentId: 'codex', choice });
-  assert.deepEqual(codex, { userMcp: null, seenOff: null, guard: null, codexMcp: MC.forCodex(mcp, { choice, own: ['node_repl'] }), seen });
-  assert.deepEqual(
-    codex.codexMcp.map(e => e.name),
-    ['github', 'notion', 'node_repl'],
-  );
+  assert.deepEqual(codex, {
+    userMcp: null,
+    seenOff: null,
+    guard: null,
+    codexMcp: [
+      {
+        name: 'github',
+        server: { type: 'stdio', command: 'npx', args: ['-y', '@modelcontextprotocol/server-github'], env: { GITHUB_TOKEN: '${GITHUB_TOKEN}' } },
+        envVars: ['GITHUB_TOKEN'],
+        bearerTokenEnvVar: '',
+        enabledTools: null,
+      },
+      { name: 'notion', server: { type: 'http', url: 'https://mcp.notion.com/mcp' }, envVars: [], bearerTokenEnvVar: '', enabledTools: ['search'] },
+      { name: 'node_repl', off: true },
+    ],
+    seen,
+  });
   assert.deepEqual(MC.planRun({ ...base, agentId: 'grok', choice }), { userMcp: null, seenOff: null, guard: null, codexMcp: [], seen });
   assert.deepEqual(reads, ['read', 'read'], 'only a Claude run with a choice reads Claude settings');
+  assert.throws(
+    () => MC.planRun({ ...base, claudeOwn: undefined, agentId: 'claude', choice }),
+    TypeError,
+    'planRun has no disk-reading default for Claude settings',
+  );
 });
 
 test('mcp.allow: a discovered server keeps only its listed tools for Claude and Codex; bad, reserved and config ids are logged and ignored', () => {
