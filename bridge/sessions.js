@@ -291,16 +291,25 @@ function noteSessionPlugin(state, id, plugin, max = SESSION_PLUGIN_MAX) {
   const byId = (state.sessionPluginById = state.sessionPluginById || {});
   delete byId[id];
   byId[id] = plugin;
-  const ids = Object.keys(byId);
-  for (const old of ids.slice(0, Math.max(0, ids.length - max))) delete byId[old];
+  const live = new Set(Object.values(state.sessions || {}));
+  let over = Object.keys(byId).length - max;
+  for (const old of Object.keys(byId)) {
+    if (over <= 0) break;
+    if (live.has(old)) continue;
+    delete byId[old];
+    over--;
+  }
 }
 
 function adoptSlotPlugins(state) {
-  const sessions = (state && state.sessions) || {};
-  const plugins = (state && state.sessionPlugin) || {};
+  if (!state || state.slotPluginsAdopted) return false;
+  const sessions = state.sessions || {};
+  const plugins = state.sessionPlugin || {};
   for (const [key, id] of Object.entries(sessions)) {
     if (typeof plugins[key] === 'string' && plugins[key] && !sessionPluginOf(state, id)) noteSessionPlugin(state, id, plugins[key]);
   }
+  state.slotPluginsAdopted = true;
+  return true;
 }
 
 function mergeSessions({ live = [], own = [], claude = [], limit = 12 } = {}) {

@@ -2972,7 +2972,6 @@ function runAgent(job, opts = {}) {
       state.sessions[skey] = sessionId;
       (state.sessionCwd = state.sessionCwd || {})[skey] = cwd;
       (state.sessionAgent = state.sessionAgent || {})[skey] = agentId;
-      (state.sessionPlugin = state.sessionPlugin || {})[skey] = plugin.id;
       SS.noteSessionPlugin(state, sessionId, plugin.id);
       if (sessionId !== resume) P.noteRules(state, skey, rulesHash);
       // Context growth: one more turn on this session, and what the next one will carry.

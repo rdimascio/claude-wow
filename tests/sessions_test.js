@@ -279,13 +279,34 @@ test('the per-id record keeps the newest sessions, a rewrite counts as new', () 
   assert.deepEqual(state.sessionPluginById, { c: 'ask', a: 'roast', d: 'ask' });
 });
 
+test('the per-id record never evicts a session a slot still holds, so an idle ask chat keeps its plugin', () => {
+  const state = { sessions: { 'chat:idle': 'live-ask' } };
+  SS.noteSessionPlugin(state, 'live-ask', 'ask', 2);
+  for (const id of ['b', 'c', 'd']) SS.noteSessionPlugin(state, id, 'claude-code', 2);
+  assert.equal(SS.madeByPlugin(state, 'live-ask'), 'ask');
+  assert.deepEqual(Object.keys(state.sessionPluginById), ['live-ask', 'd'], 'the oldest unused ids go instead');
+});
+
 test('slot records from an older bridge seed the per-id record once, and never overwrite it', () => {
   const state = {
     sessions: { ':default': 'inject-id', 'chat:a': 'chat-id', 'chat:b': 'legacy-id', 'chat:c': 'known-id' },
     sessionPlugin: { ':default': 'ask', 'chat:a': 'claude-code', 'chat:c': 'claude-code' },
     sessionPluginById: { 'known-id': 'ask' },
   };
-  SS.adoptSlotPlugins(state);
+  assert.equal(SS.adoptSlotPlugins(state), true);
   assert.deepEqual(state.sessionPluginById, { 'known-id': 'ask', 'inject-id': 'ask', 'chat-id': 'claude-code' });
-  SS.adoptSlotPlugins({});
+  assert.equal(SS.adoptSlotPlugins(null), false);
+});
+
+test('the slot record migration runs once across restarts, so evicted ids never come back as newest', () => {
+  const state = { sessions: { 'chat:a': 'old-id' }, sessionPlugin: { 'chat:a': 'ask' } };
+  assert.equal(SS.adoptSlotPlugins(state), true);
+  const restarted = JSON.parse(JSON.stringify(state));
+  delete restarted.sessions['chat:a'];
+  for (const id of ['n1', 'n2']) SS.noteSessionPlugin(restarted, id, 'claude-code', 2);
+  assert.deepEqual(Object.keys(restarted.sessionPluginById), ['n1', 'n2']);
+  restarted.sessions['chat:a'] = 'old-id';
+  const again = JSON.parse(JSON.stringify(restarted));
+  assert.equal(SS.adoptSlotPlugins(again), false);
+  assert.deepEqual(again.sessionPluginById, { n1: 'claude-code', n2: 'claude-code' });
 });

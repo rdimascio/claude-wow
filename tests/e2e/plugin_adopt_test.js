@@ -30,7 +30,7 @@ function injectSession(sb, plugin, folder) {
   const state = JSON.parse(fs.readFileSync(sb.state, 'utf8'));
   const id = state.sessions[INJECT_KEY];
   assert.ok(id, 'the --inject run left a session');
-  assert.equal(state.sessionPlugin[INJECT_KEY], plugin, 'the --inject run recorded its plugin');
+  assert.equal(SS.sessionPluginOf(state, id), plugin, 'the --inject run recorded its plugin');
   seedProjectSession(sb, id, folder);
   return id;
 }
@@ -167,7 +167,29 @@ test('/claude -r on a coding session from --inject, addressed to ask, starts a n
     assert.equal(fs.realpathSync(call.cwd), fs.realpathSync(askFolder('switch')), 'an ask run');
     assert.equal(call.resume, null, 'an ask run never resumes the coding session');
     assert.match(fs.readFileSync(h.sb.bridgeLog, 'utf8'), /plugin changed \(claude-code -> ask\): new session/);
-    assert.equal(h.state().sessionPlugin[`chat:${h.client.activeChat().id}`], 'ask');
+    const state = h.state();
+    assert.equal(SS.sessionPluginOf(state, state.sessions[`chat:${h.client.activeChat().id}`]), 'ask');
+  });
+});
+
+test('slot plugin records from an older bridge are migrated once, so a later restart never re-reads a stale slot record', async () => {
+  const LEGACY = 'feedc0de-0000-4000-8000-00000000000b';
+  let fresh = '';
+  const beforeLaunch = sb => {
+    fs.writeFileSync(sb.state, JSON.stringify({ lastId: 0, handled: {}, sessions: { [INJECT_KEY]: LEGACY }, sessionPlugin: { [INJECT_KEY]: 'ask' } }));
+    fresh = injectSession(sb, 'claude-code', sb.project);
+    const state = JSON.parse(fs.readFileSync(sb.state, 'utf8'));
+    assert.equal(SS.sessionPluginOf(state, LEGACY), 'ask', 'the first start migrated the slot record');
+    assert.equal(state.slotPluginsAdopted, true);
+    state.sessionPlugin = { [INJECT_KEY]: 'ask' };
+    delete state.sessionPluginById[fresh];
+    fs.writeFileSync(sb.state, JSON.stringify(state));
+  };
+  await withGame({ config: config('migrate'), beforeLaunch }, async h => {
+    await h.client.connect();
+    const state = h.state();
+    assert.equal(state.sessions[INJECT_KEY], fresh);
+    assert.equal(SS.sessionPluginOf(state, fresh), '', 'the restart did not migrate the stale slot record again');
   });
 });
 

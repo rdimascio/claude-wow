@@ -1843,7 +1843,7 @@ test('/claude -r: bare lists running and recent sessions; a number, a name or an
   assert.equal(vm.num('#ClaudeWoWDB.chats'), 5);
 });
 
-function adoptedReplyVM(plugin, { resume = true, bound = '' } = {}) {
+function adoptedReplyVM(plugin, { resume = true, bound = '', between = '' } = {}) {
   const vm = newVM();
   login(vm);
   vm.run('STUB.RunTimers()');
@@ -1859,6 +1859,10 @@ function adoptedReplyVM(plugin, { resume = true, bound = '' } = {}) {
   const field = f => vm.evaluate(`(function() for _, c in ipairs(ClaudeWoWDB.chats) do if c.id == ClaudeWoWDB.activeChat then return c.${f} end end end)()`);
   assert.equal(field('cwd'), '/Users/me/proj', 'the chat starts as a coding chat');
   if (bound) vm.run(`(function() for _, c in ipairs(ClaudeWoWDB.chats) do if c.id == ClaudeWoWDB.activeChat then c.plugin = "${bound}" end end end)()`);
+  if (between) {
+    assert.ok(field('pendingId'), 'the adopted reply is still pending');
+    vm.run(`SlashCmdList.CLAUDE(${JSON.stringify(between)})`);
+  }
   const value = typeof plugin === 'string' ? JSON.stringify(plugin) : String(plugin);
   replyTo(
     vm,
@@ -1895,6 +1899,25 @@ test('an adopted chat is not bound to a coding, live, dev, malformed or second p
     const { field } = adoptedReplyVM(plugin, opts);
     assert.equal(field('plugin') || '', want, label);
     assert.equal(field('cwd'), '/Users/me/proj', label);
+  }
+});
+
+test('a project, folder or plugin the player picks while the adopted reply is pending is kept, and the reply binds nothing', () => {
+  const cases = [
+    ['-c --project /Users/me/other', '', '/Users/me/other'],
+    ['cd /Users/me/third', '', '/Users/me/third'],
+    ['config plugin default', '', '/Users/me/proj'],
+  ];
+  for (const [between, plugin, cwd] of cases) {
+    const { vm, field } = adoptedReplyVM('ask', { between });
+    assert.equal(field('plugin') || '', plugin, between);
+    assert.equal(field('cwd'), cwd, between);
+    assert.equal(field('resumeId'), null, between);
+    vm.run('ClaudeWoW.Send("next turn")');
+    const flags = stripRecords(vm)
+      .find(r => r.text === 'next turn')
+      .flags.split(';');
+    assert.ok(!flags.includes('plugin=ask'), `${between}: ${flags.join(';')}`);
   }
 });
 
