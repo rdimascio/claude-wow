@@ -1,6 +1,6 @@
 # WoW as an agent-room surface: run and answer the factory from inside the game
 
-Status: draft, revision 2, 2026-10-06. Owner decisions: agent-room is the agent runtime and moves to the Mac mini; the game answers every card; every review card needs a presence signature (no Touch ID reader, so `.userPresence`).
+Status: draft, revision 3, 2026-10-06. Owner decisions: agent-room is the agent runtime and moves to the Mac mini; the game answers every card; every review card needs a presence signature (no Touch ID reader, so `.userPresence`). Revision 3 adds the push channel (1a) the mirror needs; agent-room was installed on the Mac mini on 2026-10-06.
 
 ## Thesis
 
@@ -37,10 +37,19 @@ Factory v3 (§3, §5) counts Ryan's merge "yes" (`ryan_yes`) only as a Slack cli
 2. **Decided 2026-10-06:** every card that asks for Ryan's review needs a presence signature (merges, money, auth, discoveries); no Touch ID reader, so the key uses `.userPresence`. Only machine acknowledgements without a decision (`alert_ack`) resolve on the click alone.
 3. Open: whether the async-agents plan (`docs/plans/async-agents.md`, revision 4) stops here. agent-room threads and workflows cover its wake-ups and worker approvals; this plan proposes to supersede its Phases 1 to 3 and keep only Phase 0 (`threads`, merged) and `autoDeploy`.
 
-### 1. Read-only mirror
+### 1a. A push channel from the bridge to the game
 
-- The bridge connects to agent-room's WebSocket on loopback with the room token (read from agent-room's config, never written into claude-wow's config or argv).
-- One agent-room channel per mapped game chat: `plugins.room.channels` maps a channel slug to a game chat. Server `message` and `chunk` events become late replies and progress lines in that chat; `approval` events become a card line ("Factory asks: merge PR #18765 at 1a2b3c?"), answerable from Phase 3.
+The bridge can only answer today. Three facts (memories `addon-slot-reads-stop-when-idle`, `claudewow-transport-budgets`): the addon reads slot data only on a send, at login, or at the 600 s idle read when the presence channel does not work; it shows one late reply per message id (`lateSeen`); and each slot read spends one of the 200 slot loads a `/reload` gives. A factory event that arrives while you play would wait for your next message, and a second one would be dropped.
+
+- **News ring.** A third presence-style ring of launch-time files (`ClaudeWoW_Runtime/news/NNNN.wav`, armed by setup and at bridge start like the presence rings). The bridge deletes the next file when it has pushes; the addon checks the next file every tick (no slot cost) and loads one slot when it reads missing. Several pushes between two reads share one slot load. The ring re-arms at each launch, like presence.
+- **Push records.** A new slot and `Inbox.lua` field `pushes`: `{ seq, chat, title, text, kind }` with a bridge-wide increasing `seq` kept in `state.json`, separate from message ids, so `lateSeen` and `alreadyHandled` never see it. The addon shows each push whose `seq` is above its saved `pushSeen` and ignores the rest.
+- **Push chats.** `chat` is a stable bridge-chosen id (`room:<channel slug>`). The addon makes that chat the first time a push names it, bound to the `room` plugin, the way it keeps the hidden "Stream control" chat.
+- **Gates.** The bridge advertises `push` in the slot data (memory `addon-bridge-roundtrip-rules`); an older addon ignores the field, an older bridge sends none. Reload mode reads pushes from `Inbox.lua` at each reload; it has no ring.
+
+### 1b. Read-only mirror
+
+- The bridge connects to `ws://127.0.0.1:4319/ws` with the room token in the query string (the room server allows a client with no `Origin`). The token is read at connect time from `meta.web_token` in `~/.agent-room/bot.sqlite` with `/usr/bin/sqlite3 -readonly`, held in memory only, never written into claude-wow's config, env, argv or logs.
+- One game chat per followed agent-room channel (`plugins.room.channels`, slugs; default: every channel of the `wow-ai` workspace). Server `message` events (final messages only, not `chunk` deltas) become pushes in that channel's chat; `approval` events become a card line ("Factory asks: merge PR #18765 at 1a2b3c?"), answerable from Phase 3.
 - Reconnect with backoff; the slot data says when the room is unreachable, so the game never shows a stale state as live.
 - No game action reaches agent-room yet.
 
