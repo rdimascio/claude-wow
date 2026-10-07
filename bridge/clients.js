@@ -6,7 +6,7 @@ const SIG = require('./signals');
 
 const LEGACY_KEYS = Object.freeze(['addonDir', 'savedVariablesFile', 'inboxFile']);
 const ENTRY_KEYS = Object.freeze(['dir', 'account', 'processName', 'tocInterface', 'addonDir', 'savedVariablesFile', 'inboxFile', 'screenshotDir', 'enabled']);
-const STATE_KEYS = Object.freeze(['presence', 'presenceTest', 'chatLogWrites']);
+const STATE_KEYS = Object.freeze(['presence', 'presenceTest', 'chatLogWrites', 'news']);
 const LABEL_RE = /^[\w .-]{1,40}$/;
 const CLIENTS_MAX = 8;
 

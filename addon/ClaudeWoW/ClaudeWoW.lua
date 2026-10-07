@@ -583,15 +583,19 @@ function ClaudeWoW.ApplyMirror(list)
 	local changed = false
 	for _, e in ipairs(list) do
 		local c = type(e) == "table" and type(e.chat) == "string" and FindChat(e.chat) or nil
+		if not c and type(e) == "table" and e.room == true and type(e.chat) == "string" and e.chat:match("^r%x+$") and not db.forget[e.chat] then
+			local title = type(e.title) == "string" and e.title ~= "" and e.title:sub(1, 40) or "agent-room"
+			c = ClaudeWoW.AddChat(title, { id = e.chat, cwd = "", plugin = "room" })
+		end
 		local seq = c and tonumber(e.seq)
 		if seq and seq > (c.mirrorSeq or 0) then
 			local first = (c.mirrorSeq or 0) + 1
-			if c.mirrorSeq and seq > first then
-				AddHistory(c, "system", (seq - first) .. " earlier message(s) are in Discord.")
+			if (c.mirrorSeq or e.room == true) and seq > first then
+				AddHistory(c, "system", (seq - first) .. " earlier message(s) are in " .. (e.room == true and "agent-room" or "Discord") .. ".")
 			end
 			local text = tostring(e.text or "")
 			if e.role == "user" then
-				AddHistory(c, "user", "(Discord) " .. text)
+				AddHistory(c, "user", "(" .. (type(e.from) == "string" and e.from ~= "" and e.from or "Discord") .. ") " .. text)
 			elseif e.role == "assistant" then
 				local denied = type(e.denied) == "table" and #e.denied > 0 and e.denied or nil
 				AddHistory(c, "assistant", text, nil, denied, e.agent ~= "" and e.agent or nil)
@@ -1428,11 +1432,11 @@ local function PresencePath(ring, k)
 	return string.format("%spresence\\%s\\%04d.wav", Presence.root, ring, k)
 end
 
-local function FindPresenceHead(ring)
-	local lo, hi = 1, PRESENCE_MAX + 1
+local function FindPresenceHead(ring, pathOf, max)
+	local lo, hi = 1, (max or PRESENCE_MAX) + 1
 	while lo < hi do
 		local mid = math.floor((lo + hi) / 2)
-		if SoundValid(PresencePath(ring, mid)) then hi = mid else lo = mid + 1 end
+		if SoundValid((pathOf or PresencePath)(ring, mid)) then hi = mid else lo = mid + 1 end
 	end
 	return lo
 end
@@ -1473,6 +1477,46 @@ local function PollPresence(limit)
 			NotedBridge()
 		end
 	end
+end
+
+Presence.NEWS_MAX = 500
+Presence.NEWS_GAP_SECONDS = 30
+Presence.NEWS_SLOT_RESERVE = 50
+
+function Presence.NewsPath(ring, k)
+	return string.format("%snews\\%s\\%04d.wav", Presence.root, ring, k)
+end
+
+function Presence.News()
+	if run.news then return run.news end
+	local n = { heads = {}, fired = 0 }
+	for _, ring in ipairs(Presence.RINGS) do n.heads[ring] = FindPresenceHead(ring, Presence.NewsPath, Presence.NEWS_MAX) end
+	run.news = n
+	return n
+end
+
+function Presence.PollNews(limit)
+	if not Presence.Channel() then return false end
+	local n = Presence.News()
+	local fired = false
+	for _, ring in ipairs(Presence.RINGS) do
+		for _ = 1, limit or 3 do
+			local k = n.heads[ring]
+			if k > Presence.NEWS_MAX or not Presence.Fired(Presence.NewsPath(ring, k)) then break end
+			n.heads[ring] = k + 1
+			n.fired = n.fired + 1
+			fired = true
+		end
+	end
+	return fired
+end
+
+function Presence.FreeSlots()
+	local free = 0
+	for i = 1, SLOT_COUNT do
+		if not C_AddOns.IsAddOnLoaded(SlotName(i)) then free = free + 1 end
+	end
+	return free
 end
 
 function Presence.Check(info, bridgeNow)
@@ -2429,6 +2473,16 @@ local function Tick()
 	end
 	if db.settings.mode ~= "pixel" then return end
 	local changed = false
+	if Presence.PollNews(Presence.NEWS_MAX) and not run.newsPollAt then
+		run.newsPollAt = math.max(now + 1, (run.lastNewsLoad or -1e9) + Presence.NEWS_GAP_SECONDS)
+	end
+	if run.newsPollAt and now >= run.newsPollAt then
+		run.newsPollAt = nil
+		if Presence.FreeSlots() > Presence.NEWS_SLOT_RESERVE then
+			run.lastNewsLoad = now
+			TryLoadSlot("news")
+		end
+	end
 	if run.helloPollAt and now >= run.helloPollAt then
 		run.helloPollAt = nil
 		TryLoadSlot("hello")

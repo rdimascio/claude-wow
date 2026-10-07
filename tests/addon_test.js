@@ -2602,6 +2602,97 @@ test('signals: when a deleted launch-time file still reads present the self-test
   assert.ok(rec.flags.split(';').includes('pt=failed'), rec.flags);
 });
 
+const ROOM_SLOT =
+  '{ now = time(), cwd = "", replies = {}, signals = "armed", mirror = { { chat = "r0a1b2c3d4e", seq = 1, role = "assistant", text = "Deploy notes: merged #172", agent = "Ari", denied = {}, room = true, title = "#ship", from = "" } } }';
+
+function settleArmed(vm) {
+  launchArmed(vm);
+  vm.run('for i = 1, 4 do STUB.now = STUB.now + 10; STUB.Tick() end');
+  vm.run(`STUB.slotLoads = 0; STUB.onLoadAddOn = function(name) STUB.slotLoads = STUB.slotLoads + 1; ClaudeWoW_SlotData = ${ROOM_SLOT} end`);
+}
+
+const roomChat = vm =>
+  vm.evaluate(
+    '(function() for _, c in ipairs(ClaudeWoWDB.chats) do if c.id == "r0a1b2c3d4e" then return c.name .. "|" .. c.plugin .. "|" .. c.history[#c.history].text end end return "none" end)()',
+  );
+
+test('news ring: a fired news file loads one slot soon after, and a room mirror row makes its chat', () => {
+  const vm = newVM();
+  settleArmed(vm);
+  vm.run('for i = 1, 3 do STUB.now = STUB.now + 30; STUB.Tick() end');
+  assert.equal(vm.num('STUB.slotLoads'), 0, 'no news, no slot load');
+  assert.equal(roomChat(vm), 'none');
+  vm.run(`STUB.sounds["${gamePath('news/a/0001.wav')}"] = false; STUB.sounds["${gamePath('news/a/0002.wav')}"] = false`);
+  vm.run('STUB.now = STUB.now + 0.5; STUB.Tick()');
+  assert.equal(vm.num('STUB.slotLoads'), 0, 'the load waits a moment so several pushes share it');
+  vm.run('STUB.now = STUB.now + 1; STUB.Tick()');
+  assert.equal(vm.num('STUB.slotLoads'), 1, 'two fired files, one slot load');
+  assert.equal(roomChat(vm), '#ship|room|Deploy notes: merged #172');
+  vm.run('STUB.now = STUB.now + 5; STUB.Tick()');
+  assert.equal(vm.num('STUB.slotLoads'), 1, 'nothing new fired, nothing loaded');
+  assert.equal(vm.num('ClaudeWoW.Presence.News().fired'), 2);
+});
+
+test('news ring: news loads are at least 30 s apart, drain every fired file at once, and leave the last 50 slots for replies', () => {
+  const vm = newVM();
+  settleArmed(vm);
+  const fire = (from, to) => vm.run(`for k = ${from}, ${to} do STUB.sounds["${gamePath('news/a/')}" .. string.format("%04d", k) .. ".wav"] = false end`);
+  fire(1, 12);
+  vm.run('STUB.now = STUB.now + 2; STUB.Tick(); STUB.now = STUB.now + 2; STUB.Tick()');
+  assert.equal(vm.num('STUB.slotLoads'), 1);
+  assert.equal(vm.num('ClaudeWoW.Presence.News().fired'), 12, 'twelve fired files drained in one tick');
+  fire(13, 13);
+  vm.run('STUB.now = STUB.now + 2; STUB.Tick(); STUB.now = STUB.now + 10; STUB.Tick()');
+  assert.equal(vm.num('STUB.slotLoads'), 1, 'a second news inside 30 s waits');
+  vm.run('STUB.now = STUB.now + 20; STUB.Tick()');
+  assert.equal(vm.num('STUB.slotLoads'), 2, 'and loads once 30 s have passed');
+  vm.run(`for i = 1, ${200 - 50} do STUB.loaded[string.format("ClaudeWoW_S%03d", i)] = true end`);
+  fire(14, 14);
+  vm.run('for i = 1, 3 do STUB.now = STUB.now + 31; STUB.Tick() end');
+  assert.equal(vm.num('STUB.slotLoads'), 2, 'with 50 slots or fewer left, news waits for an ordinary read');
+});
+
+test('news ring: a game launched before the ring existed never reads its files as fired', () => {
+  const vm = newVM();
+  vm.run(
+    `for _, ring in ipairs({ "a", "b" }) do for k = 1, 500 do STUB.sounds["${gamePath('news/')}" .. ring .. "\\\\" .. string.format("%04d", k) .. ".wav"] = false end end`,
+  );
+  settleArmed(vm);
+  assert.equal(vm.num('ClaudeWoW.Presence.News().heads.a'), 501, 'no file of the ring was there at launch');
+  vm.run('for i = 1, 5 do STUB.now = STUB.now + 30; STUB.Tick() end');
+  assert.equal(vm.num('STUB.slotLoads'), 0);
+  assert.equal(vm.num('ClaudeWoW.Presence.News().fired'), 0);
+});
+
+test('mirror: only a room row with an r-hex id makes a chat; other unknown chats stay unknown', () => {
+  const vm = newVM();
+  login(vm);
+  const before = vm.num('#ClaudeWoWDB.chats');
+  vm.run('ClaudeWoW.ApplyMirror({ { chat = "r0a1b2c3d4e", seq = 1, role = "assistant", text = "x", title = "#ship" } })');
+  vm.run('ClaudeWoW.ApplyMirror({ { chat = "dabc", seq = 1, role = "assistant", text = "x", room = true, title = "#ship" } })');
+  vm.run('ClaudeWoW.ApplyMirror({ { chat = "r0a1b2c3d4e", seq = 1, role = "user", text = "ship it", room = true, title = "#ship", from = "room" } })');
+  assert.equal(vm.num('#ClaudeWoWDB.chats'), before + 1, 'only the room row with a room id');
+  assert.equal(roomChat(vm), '#ship|room|(room) ship it');
+  vm.run('ClaudeWoW.ApplyMirror({ { chat = "r0a1b2c3d4e", seq = 3, role = "assistant", text = "later", room = true } })');
+  const history = vm.evaluate(
+    '(function() local c = ClaudeWoWDB.chats[#ClaudeWoWDB.chats]; local out = {}; for _, m in ipairs(c.history) do out[#out + 1] = m.text end return table.concat(out, "|") end)()',
+  );
+  assert.equal(history, '(room) ship it|1 earlier message(s) are in agent-room.|later');
+});
+
+test('mirror: a deleted room chat is not brought back by a stale row, and a first row past seq 1 says what came before', () => {
+  const vm = newVM();
+  login(vm);
+  vm.run('ClaudeWoWDB.forget["r0a1b2c3d4e"] = { name = "#ship", cwd = "" }');
+  vm.run('ClaudeWoW.ApplyMirror({ { chat = "r0a1b2c3d4e", seq = 9, role = "assistant", text = "stale", room = true, title = "#ship" } })');
+  assert.equal(roomChat(vm), 'none', 'a chat the player deleted stays deleted until the bridge confirms');
+  vm.run('ClaudeWoW.ApplyMirror({ { chat = "r0b1b2c3d4e", seq = 5, role = "assistant", text = "fifth", room = true, title = "#ops" } })');
+  const history = vm.evaluate(
+    '(function() local c = ClaudeWoWDB.chats[#ClaudeWoWDB.chats]; local out = {}; for _, m in ipairs(c.history) do out[#out + 1] = m.text end return c.name .. ":" .. table.concat(out, "|") end)()',
+  );
+  assert.equal(history, '#ops:4 earlier message(s) are in agent-room.|fifth');
+});
+
 test('a new chat asks the bridge for a title with its first message and takes the one that comes back', () => {
   const vm = newVM();
   login(vm);

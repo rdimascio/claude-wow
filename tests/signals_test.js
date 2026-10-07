@@ -55,6 +55,41 @@ test('a beat deletes the next file of the current ring; a spent ring is armed ag
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('the news ring has its own folder and rings: armed like presence, fired one file per news, never touching presence', () => {
+  const { dir, addons } = scratch('news');
+  const newsAt = (ring, from, to) => {
+    const out = [];
+    for (let k = from; k <= to; k++) out.push(fs.existsSync(SIG.newsFile(addons, ring, k)));
+    return out;
+  };
+  SIG.preparePresence(addons, null, 3);
+  const st = SIG.prepareNews(addons, null, 3).state;
+  assert.ok(SIG.newsFile(addons, 'a', 1).startsWith(SIG.newsDir(addons) + path.sep));
+  assert.deepEqual(newsAt('a', 1, 3), [true, true, true]);
+  assert.deepEqual(newsAt('b', 1, 3), [true, true, true]);
+  assert.deepEqual(SIG.news(addons, st, 3), { ring: 'a', k: 1, switched: '' });
+  assert.deepEqual(newsAt('a', 1, 3), [false, true, true]);
+  assert.deepEqual(presentRange(addons, 'a', 1, 3), [true, true, true], 'news does not beat presence');
+  SIG.news(addons, st, 3);
+  SIG.news(addons, st, 3);
+  assert.deepEqual(SIG.news(addons, st, 3), { ring: 'b', k: 1, switched: 'a' });
+  assert.deepEqual(newsAt('a', 1, 3), [true, true, true], 'a spent news ring is armed again for the next launch');
+  const again = SIG.prepareNews(addons, st, 3);
+  assert.deepEqual(again.state.ring, 'b');
+  assert.deepEqual(newsAt('b', 1, 3), [false, true, true], 'a bridge restart keeps the fired prefix missing');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('prepareRuntime arms the news ring and carries its saved state', () => {
+  const { dir, addons } = scratch('runtime-news');
+  const r = SIG.prepareRuntime(addons, { slots: 1, actMax: 1, presenceMax: 2, newsMax: 2, news: { ring: 'b', at: 1 } });
+  assert.deepEqual(r.news.state, { ring: 'b', at: 1, switches: 0, probe: '' });
+  assert.ok(!fs.existsSync(SIG.newsFile(addons, 'b', 1)));
+  assert.ok(fs.existsSync(SIG.newsFile(addons, 'b', 2)));
+  assert.ok(fs.existsSync(SIG.newsFile(addons, 'a', 2)));
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test('placeProbe keeps exactly one late-created probe file and refuses odd tokens', () => {
   const { dir, addons } = scratch('probe');
   assert.equal(SIG.placeProbe(addons, 'abc123'), true);

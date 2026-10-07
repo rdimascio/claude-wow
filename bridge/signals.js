@@ -7,6 +7,7 @@ const { SILENT_WAV, pad3, ADDON, RUNTIME_ADDON, TOC_INTERFACE } = require('./pro
 const SCHEME = 'armed';
 const RINGS = ['a', 'b'];
 const DEFAULT_PRESENCE_MAX = 2000;
+const DEFAULT_NEWS_MAX = 500;
 const DEFAULT_ACT_MAX = 60;
 const DEFAULT_SLOTS = 200;
 const PROBE_TOKEN = /^[0-9a-z]{4,16}$/;
@@ -25,6 +26,8 @@ const actFile = (addonDir, slot, k) => path.join(runtimeRoot(addonDir), 'act', p
 const presenceDir = addonDir => path.join(runtimeRoot(addonDir), 'presence');
 const ringDir = (addonDir, ring) => path.join(presenceDir(addonDir), ring);
 const ringFile = (addonDir, ring, k) => path.join(ringDir(addonDir, ring), String(k).padStart(4, '0') + '.wav');
+const newsDir = addonDir => path.join(runtimeRoot(addonDir), 'news');
+const newsFile = (addonDir, ring, k) => path.join(newsDir(addonDir), ring, String(k).padStart(4, '0') + '.wav');
 const ctlDir = addonDir => path.join(runtimeRoot(addonDir), 'ctl');
 const validFile = addonDir => path.join(ctlDir(addonDir), 'valid.wav');
 const probeFile = (addonDir, token) => path.join(ctlDir(addonDir), 'probe-' + token + '.wav');
@@ -61,10 +64,45 @@ function presenceState(raw) {
   return { ring: 'a', at: 0, switches: 0, probe: '' };
 }
 
-function armRing(addonDir, ring, max) {
+function armRingFiles(fileOf, ring, max) {
   let made = 0;
-  for (let k = 1; k <= max; k++) if (arm(ringFile(addonDir, ring, k))) made++;
+  for (let k = 1; k <= max; k++) if (arm(fileOf(ring, k))) made++;
   return made;
+}
+
+function armRing(addonDir, ring, max) {
+  return armRingFiles((r, k) => ringFile(addonDir, r, k), ring, max);
+}
+
+function prepareRings(fileOf, raw, max) {
+  const state = presenceState(raw);
+  if (state.at > max) state.at = max;
+  let made = 0;
+  let removed = 0;
+  for (let k = 1; k <= max; k++) {
+    const file = fileOf(state.ring, k);
+    if (k > state.at) {
+      if (arm(file)) made++;
+    } else if (fs.existsSync(file) && G.remove(file)) {
+      removed++;
+    }
+  }
+  made += armRingFiles(fileOf, otherRing(state.ring), max);
+  return { state, made, removed };
+}
+
+function beatRings(fileOf, state, max) {
+  let switched = '';
+  if (state.at >= max) {
+    switched = state.ring;
+    state.ring = otherRing(state.ring);
+    state.at = 0;
+    state.switches = (state.switches || 0) + 1;
+    armRingFiles(fileOf, switched, max);
+  }
+  state.at += 1;
+  fire(fileOf(state.ring, state.at));
+  return { ring: state.ring, k: state.at, switched };
 }
 
 function legacyPresenceFiles(addonDir) {
@@ -84,34 +122,22 @@ function removeLegacyPresence(addonDir) {
 }
 
 function preparePresence(addonDir, raw, max = DEFAULT_PRESENCE_MAX) {
-  const state = presenceState(raw);
-  if (state.at > max) state.at = max;
-  let made = 0;
-  let removed = removeLegacyPresence(addonDir);
-  for (let k = 1; k <= max; k++) {
-    const file = ringFile(addonDir, state.ring, k);
-    if (k > state.at) {
-      if (arm(file)) made++;
-    } else if (fs.existsSync(file) && G.remove(file)) {
-      removed++;
-    }
-  }
-  made += armRing(addonDir, otherRing(state.ring), max);
-  return { state, made, removed };
+  const legacy = removeLegacyPresence(addonDir);
+  const result = prepareRings((r, k) => ringFile(addonDir, r, k), raw, max);
+  return { ...result, removed: result.removed + legacy };
 }
 
 function beat(addonDir, state, max = DEFAULT_PRESENCE_MAX) {
-  let switched = '';
-  if (state.at >= max) {
-    switched = state.ring;
-    state.ring = otherRing(state.ring);
-    state.at = 0;
-    state.switches = (state.switches || 0) + 1;
-    armRing(addonDir, switched, max);
-  }
-  state.at += 1;
-  fire(ringFile(addonDir, state.ring, state.at));
-  return { ring: state.ring, k: state.at, switched };
+  return beatRings((r, k) => ringFile(addonDir, r, k), state, max);
+}
+
+function prepareNews(addonDir, raw, max = DEFAULT_NEWS_MAX) {
+  G.mkdir(newsDir(addonDir));
+  return prepareRings((r, k) => newsFile(addonDir, r, k), raw, max);
+}
+
+function news(addonDir, state, max = DEFAULT_NEWS_MAX) {
+  return beatRings((r, k) => newsFile(addonDir, r, k), state, max);
 }
 
 function placeProbe(addonDir, token) {
@@ -183,11 +209,13 @@ function prepareRuntime(
     actMax = DEFAULT_ACT_MAX,
     presence = null,
     presenceMax = DEFAULT_PRESENCE_MAX,
+    news: newsRaw = null,
+    newsMax = DEFAULT_NEWS_MAX,
     tocInterface = TOC_INTERFACE,
     removeLegacy = false,
   } = {},
 ) {
-  const result = { made: 0, updated: 0, armed: 0, cleaned: 0, legacy: legacySignalFolders(addonDir).length, legacyRemoved: 0, presence: null };
+  const result = { made: 0, updated: 0, armed: 0, cleaned: 0, legacy: legacySignalFolders(addonDir).length, legacyRemoved: 0, presence: null, news: null };
   const tocExisted = fs.existsSync(runtimeToc(addonDir));
   if (writeWhenDifferent(runtimeToc(addonDir), runtimeTocText(tocInterface))) {
     if (tocExisted) result.updated++;
@@ -199,6 +227,9 @@ function prepareRuntime(
   result.presence = preparePresence(addonDir, presence, presenceMax);
   result.armed += result.presence.made;
   result.cleaned += result.presence.removed;
+  result.news = prepareNews(addonDir, newsRaw, newsMax);
+  result.armed += result.news.made;
+  result.cleaned += result.news.removed;
   G.mkdir(ctlDir(addonDir));
   for (const name of RETIRED_CTL_FILES) {
     const file = path.join(ctlDir(addonDir), name);
@@ -214,6 +245,7 @@ module.exports = {
   SCHEME,
   RINGS,
   DEFAULT_PRESENCE_MAX,
+  DEFAULT_NEWS_MAX,
   DEFAULT_ACT_MAX,
   DEFAULT_SLOTS,
   PROBE_TOKEN,
@@ -242,6 +274,10 @@ module.exports = {
   removeLegacyPresence,
   preparePresence,
   beat,
+  newsDir,
+  newsFile,
+  prepareNews,
+  news,
   placeProbe,
   clearProbes,
   legacySignalFolders,

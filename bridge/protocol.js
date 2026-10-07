@@ -1268,7 +1268,7 @@ function luaTable(globalName, records, opts = {}) {
       .filter(m => m && m.chat && Number.isInteger(m.seq))
       .map(
         m =>
-          `\t\t{ chat = ${luaStr(m.chat)}, seq = ${m.seq}, role = ${luaStr(m.role)}, text = ${luaStr(m.text)}, agent = ${luaStr(m.agent || '')}, denied = { ${(m.denied || []).map(luaStr).join(', ')} } },`,
+          `\t\t{ chat = ${luaStr(m.chat)}, seq = ${m.seq}, role = ${luaStr(m.role)}, text = ${luaStr(m.text)}, agent = ${luaStr(m.agent || '')}, denied = { ${(m.denied || []).map(luaStr).join(', ')} }${m.room === true ? `, room = true, title = ${luaStr(m.title || '')}, from = ${luaStr(m.from || '')}` : ''} },`,
       );
     lines.splice(lines.length - 1, 0, '\tmirror = {', ...rows, '\t},');
   }

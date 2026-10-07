@@ -71,6 +71,9 @@ const RT = require('./replytokens');
 const UPD = require('./selfupdate');
 const IDLE = require('./idle');
 const AD = require('./autodeploy');
+const ROOM = require('./room');
+let roomClient = null;
+let roomDownTimer = null;
 const CLI = require('./clients');
 const SW = require('./slotwindow');
 const PUBR = require('./publishretry');
@@ -426,7 +429,7 @@ function noteMessage(job, role, text, agentTexts = []) {
 }
 
 const RESTORE_CHATS = 16;
-const HIDDEN_CHAT_PLUGINS = new Set(['stream']);
+const HIDDEN_CHAT_PLUGINS = new Set(['stream', 'room']);
 const RESTORE_MESSAGES = 40;
 const RESTORE_TEXT_MAX = 2000;
 
@@ -649,6 +652,8 @@ function shutdown(sig, exitCode) {
   factory.stop();
   forgetUnstartedWork();
   stopPlugins();
+  if (roomClient) roomClient.stop();
+  if (roomDownTimer) clearTimeout(roomDownTimer);
   if (discordHub) discordHub.stop().catch(() => {});
   let voteClosing = Promise.resolve();
   try {
@@ -854,7 +859,7 @@ function sharedSlotFields(urgent) {
     home: os.homedir(),
     skills: FACTORY.slotSkills(FACTORY.settings(pluginsCfg['claude-code'])),
     discord: !!discordHub,
-    mirror: discordMirror(),
+    mirror: discordMirror().concat(roomMirror()),
     cwd: DEFAULT_CWD,
     agent: DEFAULT_AGENT,
     agents: A.agentIds(),
@@ -1321,6 +1326,7 @@ function migrateRuntime(client) {
     return;
   }
   cs.presence = r.presence.state;
+  cs.news = r.news.state;
   saveState();
   log(
     `migrate: created ${SIG.runtimeRoot(client.addonDir)} (${r.armed} signal file(s) armed); ${SIG.RESTART_NOTE}. The ${r.legacy} old folder(s) in ${path.join(client.addonDir, P.ADDON)} stay until setup or "npm run slots" removes them, because deleting them under a running game reads as every signal firing at once.`,
@@ -1335,6 +1341,23 @@ function preparePresence(client) {
   log(
     `presence${inLabel(client)}: ring ${r.state.ring} at ${r.state.at} of ${PRESENCE_MAX}${r.made ? `, armed ${r.made} file(s)` : ''}${r.removed ? `, removed ${r.removed} stale file(s)` : ''}`,
   );
+}
+function prepareNews(client) {
+  if (!presenceReady(client)) return;
+  const cs = clientStateOf(client);
+  const r = SIG.prepareNews(client.addonDir, cs.news);
+  cs.news = r.state;
+  saveState();
+}
+function fireNews() {
+  for (const client of CLIENTS) {
+    if (!presenceReady(client)) continue;
+    const cs = clientStateOf(client);
+    cs.news = SIG.presenceState(cs.news);
+    const r = SIG.news(client.addonDir, cs.news);
+    if (r.switched) log(`news${inLabel(client)}: ring ${r.switched} spent and armed again for the next game launch`);
+  }
+  saveState();
 }
 function presenceBeatClient(client) {
   if (!presenceReady(client)) return false;
@@ -2186,6 +2209,109 @@ function discordMirror() {
     }
   }
   return out;
+}
+
+const ROOM_CONF = ROOM.settings(cfg.plugins && cfg.plugins.room);
+if (ROOM_CONF.enabled) registry.register(require('./plugins/room'));
+
+const ROOM_NEWS_GAP_MS = 30000;
+const ROOM_MIRROR_MAX = 20;
+let roomNewsAt = 0;
+let roomNewsTimer = null;
+
+function roomNews() {
+  if (roomNewsTimer) return;
+  const go = () => {
+    roomNewsTimer = null;
+    roomNewsAt = Date.now();
+    state.roomNewsPending = false;
+    publishNow(true, { refresh: true });
+    fireNews();
+  };
+  const wait = roomNewsAt + ROOM_NEWS_GAP_MS - Date.now();
+  if (wait <= 0) return go();
+  roomNewsTimer = setTimeout(go, wait);
+  if (roomNewsTimer.unref) roomNewsTimer.unref();
+}
+
+function noteRoomMessage(entry) {
+  if (!Object.hasOwn(transcripts.chats, entry.chat))
+    transcripts.chats[entry.chat] = { id: entry.chat, name: entry.title, cwd: '', plugin: 'room', messages: [] };
+  const c = transcripts.chats[entry.chat];
+  if (entry.id && c.messages.some(m => m.roomId === entry.id)) return;
+  const seqs = (state.roomSeq = state.roomSeq || {});
+  seqs[entry.chat] = (seqs[entry.chat] || 0) + 1;
+  c.messages.push({
+    role: entry.role,
+    text: entry.thread ? `${entry.thread}: ${entry.text}` : entry.text,
+    t: Math.floor(Date.now() / 1000),
+    via: 'room',
+    seq: seqs[entry.chat],
+    roomId: entry.id,
+    title: entry.title,
+    from: entry.from,
+  });
+  while (c.messages.length > 200) c.messages.shift();
+  c.updated = Date.now();
+  saveTranscripts();
+  state.roomNewsPending = true;
+  saveState();
+  roomNews();
+}
+
+const ROOM_DOWN_AFTER_MS = cfg.roomDownAfterMs || 60000;
+
+function roomStatusLine(text) {
+  for (const c of Object.values(transcripts.chats))
+    if (c.plugin === 'room') noteRoomMessage({ chat: c.id, title: c.name, thread: '', id: '', role: 'system', from: '', text });
+}
+
+function noteRoomStatus(up) {
+  if (up) {
+    if (roomDownTimer) clearTimeout(roomDownTimer);
+    roomDownTimer = null;
+    if (!state.roomDown) return;
+    state.roomDown = false;
+    saveState();
+    roomStatusLine('agent-room is back. Messages sent while it was unreachable are only in the room.');
+    return;
+  }
+  if (roomDownTimer || state.roomDown) return;
+  roomDownTimer = setTimeout(() => {
+    roomDownTimer = null;
+    if (shuttingDown) return;
+    state.roomDown = true;
+    saveState();
+    roomStatusLine('agent-room is unreachable, so this chat is paused. The bridge keeps trying.');
+  }, ROOM_DOWN_AFTER_MS);
+  if (roomDownTimer.unref) roomDownTimer.unref();
+}
+
+function roomMirror() {
+  const rows = [];
+  for (const c of Object.values(transcripts.chats)) {
+    if (c.plugin !== 'room') continue;
+    for (const m of c.messages.filter(x => x.via === 'room').slice(-MIRROR_PER_CHAT)) rows.push({ c, m });
+  }
+  rows.sort((a, b) => a.m.t - b.m.t);
+  return rows.slice(-ROOM_MIRROR_MAX).map(({ c, m }) => ({
+    chat: c.id,
+    seq: m.seq,
+    role: m.role,
+    text: String(m.text).slice(0, MIRROR_TEXT_MAX),
+    agent: m.role === 'assistant' ? m.from || '' : '',
+    room: true,
+    title: m.title || c.name || '',
+    from: m.role === 'user' ? m.from || 'room' : '',
+  }));
+}
+
+function startRoom() {
+  if (!holdsLock) return;
+  if (ROOM_CONF.error) log(`room: off (${ROOM_CONF.error})`);
+  if (!ROOM_CONF.enabled) return;
+  roomClient = ROOM.createRoom({ conf: ROOM_CONF, log, onMessage: noteRoomMessage, onStatus: noteRoomStatus });
+  roomClient.connect();
 }
 
 function discordReplyText(status, text, denied) {
@@ -3878,13 +4004,16 @@ if (inject !== null) {
     setInterval(pollSavedVariables, cfg.pollMs || 750);
     startSelfUpdate();
     startAutoDeploy();
+    startRoom();
     for (const c of CLIENTS) {
       migrateRuntime(c);
       const lastId = Number(clientStateOf(c).lastId);
       clearSignalsAhead(c, Number.isFinite(lastId) && lastId > 0 ? lastId : c.key === (CLI.allClients(cfg)[0] || {}).key ? state.lastId : NaN);
       preparePresence(c);
+      prepareNews(c);
     }
     presenceBeat();
+    if (roomClient && state.roomNewsPending) roomNews();
     setInterval(() => presenceBeat(), PRESENCE_INTERVAL_MS);
     // Fresh slot files right away, so the addon's first slot read tells it which
     // transport this bridge listens on (its hello can't reach a screenshot-mode

@@ -175,6 +175,11 @@ Turn it on for `ask` chats:
 | `plugins.live.permissionTimeoutMs` | `120000` | How long a permission prompt relayed as a roll waits before it is denied. See [LIVE-SESSION.md](LIVE-SESSION.md). |
 | `plugins.dev.testCommand` | unset | What `/claude dev test` runs in the chat's folder: an argument list (`["node", "--test"]`, no shell) or one string run by `/bin/sh -c` (`cmd.exe` on Windows). Unset: `npm test` when the folder's `package.json` has a test script. Arguments typed in game are passed as separate arguments and may hold only letters, digits and `. / : = @ + , - _`. See [IN-GAME-DEV.md](IN-GAME-DEV.md). |
 | `plugins.dev.node` | `node` | The Node.js that runs `dev/doctor.js` for `/claude dev doctor` when the bridge itself is the compiled binary. |
+| `plugins.room.enabled` | `false` | `true` makes the bridge a client of a local agent-room (Phase 1 of [docs/plans/agent-room-surface.md](plans/agent-room-surface.md)): each message in a followed agent-room channel shows up in game in a chat of its own, named `#<channel>`, made the first time a message arrives. Read-only for now: a message typed in that chat gets a reply saying so. The game reads new messages through the news ring, at most once every 30 s and never when 50 or fewer of the 200 slot loads are left; the ring needs a full game restart after the setup that installs it, and until then new messages show when you send a message or log in. When agent-room becomes unreachable, and when it is back, each room chat says so; messages sent while it was down stay in the room. |
+| `plugins.room.workspace` | unset (required) | The agent-room workspace to follow: the repo folder name, for example `"wow-ai"`. |
+| `plugins.room.channels` | `[]` | Channel slugs to follow; empty follows every channel of the workspace that is not archived. |
+| `plugins.room.url` | `ws://127.0.0.1:4319/ws` | The room server. Loopback hosts only; anything else falls back to the default. |
+| `plugins.room.db` | `~/.agent-room/bot.sqlite` | Where the bridge reads agent-room's token (`meta.web_token`, with `/usr/bin/sqlite3 -readonly`) at each connect. The token stays in memory and is never logged. |
 
 A `config.json` without a `plugins` block keeps working: the default applies. Chats made before plugins existed are bound to `claude-code` by the addon, so they behave as before whatever the default is.
 
@@ -281,6 +286,7 @@ These sizes are baked into the files `install-slots.js` creates, and the addon h
 | `actMax` | `60` | Heartbeat files per message (`act/NNN/01..60.wav`). The bridge deletes one per agent action. |
 | `presenceMax` | `2000` | Presence files per ring (`presence/a/0001..2000.wav` and `presence/b/...`). The bridge deletes one per `presenceIntervalMs`. |
 | `presenceIntervalMs` | `30000` | How often the bridge deletes a presence file so the in-game light stays green. |
+| `roomDownAfterMs` | `60000` | How long the agent-room connection must stay down before each room chat says it is unreachable; shorter drops say nothing. |
 | `tocInterface` | `"11509, 16001"` | `## Interface:` versions written into every slot addon's `.toc`: Classic Era and Forever, like the addon's own `.toc`. Bump it when a client's TOC version changes. Setup replaces the old default `"16001"`. |
 
 ## Command line
