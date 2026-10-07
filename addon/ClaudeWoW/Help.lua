@@ -243,7 +243,7 @@ end
 
 H.OPTIONS = {
 	{
-		key = "whisper", label = "Whisper tabs", default = true,
+		key = "whisper", label = "Whisper tabs", default = false,
 		tooltip = "Each chat is a whisper tab in the chat dock. Off: replies go to the game chat and the window.",
 		get = function() return Saved().whisper == true end,
 		set = Switch("ui whisper"),

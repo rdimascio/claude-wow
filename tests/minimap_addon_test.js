@@ -281,7 +281,7 @@ test('minimap button: the tooltip names the addon, says the status in words, the
   assert.equal(vm.evaluate('GameTooltip.owner == ClaudeWoWMinimapButton'), 'true');
   assert.deepEqual(vm.evaluate('table.concat(TIP, "|")').split('|'), [
     'title=Azeroth Companion',
-    "Can't reach the bridge. Start it, then click Connect. @1.0,1.0,1.0",
+    'Connecting... @1.0,1.0,1.0',
     ' ',
     'Left-click: open or close @0.1,1.0,0.1',
     'Right-click: options @0.1,1.0,0.1',
