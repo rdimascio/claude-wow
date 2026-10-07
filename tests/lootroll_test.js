@@ -104,6 +104,7 @@ function deliverDenial(vm, rules, agent = 'claude', chatIndex = 1, extra = '') {
   );
   vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
   assert.equal(vm.evaluate(`ClaudeWoWDB.chats[${chatIndex}].pendingId`), null);
+  vm.run('STUB.now = STUB.now + 0.5; if ClaudeWoWRoll then ClaudeWoWRoll.Update() end');
   return { chatId, id };
 }
 
@@ -152,7 +153,7 @@ test('a roll whose denial went stale closes without acting, and the next queued 
   assert.equal(vm.evaluate('ClaudeWoWRoll.Current().chatId'), second.chatId);
   assert.equal(vm.evaluate('ClaudeWoWRollFrame.Name.text'), 'WebFetch');
   assert.equal(vm.evaluate('ClaudeWoWRollFrame.IconFrame.Icon.texture'), 'Interface\\Icons\\Trade_Engineering');
-  vm.run('ClaudeWoWRollFrame.PassButton.scripts.OnClick(ClaudeWoWRollFrame.PassButton)');
+  vm.run('STUB.now = STUB.now + 0.5; ClaudeWoWRollFrame.PassButton.scripts.OnClick(ClaudeWoWRollFrame.PassButton)');
   assert.equal(vm.evaluate('ClaudeWoWRollFrame.shown'), 'false');
   assert.equal(vm.evaluate('ClaudeWoWRoll.Current()'), null);
   assert.equal(vm.num('ClaudeWoWRoll.Waiting()'), 0);
@@ -237,7 +238,7 @@ test('Pass on a folder denies it; the Allow & retry button names the folder', ()
   assert.equal(vm.evaluate('RESULT'), 'Allow folder /tmp & retry');
   vm.run('SlashCmdList.CLAUDE("config roll on")');
   const seqBefore = vm.num('ClaudeWoWDB.lastSeq');
-  vm.run('ClaudeWoWRollFrame.PassButton.scripts.OnClick(ClaudeWoWRollFrame.PassButton)');
+  vm.run('STUB.now = STUB.now + 0.5; ClaudeWoWRollFrame.PassButton.scripts.OnClick(ClaudeWoWRollFrame.PassButton)');
   assert.equal(vm.num('ClaudeWoWDB.lastSeq'), seqBefore);
   assert.equal(vm.evaluate(`${lastHistory}.text`), 'Passed on: folder /tmp');
   assert.equal(chatDirs(vm), '');
@@ -510,38 +511,17 @@ test('a live chat offers Greed and Pass only, and Need there is a once-only allo
   assert.ok(!stripFlags(vm).some(r => /(^|;)allow=/.test(r.flags)));
 });
 
-test('the roll frame sits on the group loot frames when the game has them, else at its own spot', () => {
+test('the roll frame sits at its own spot and never anchors to the group loot container', () => {
   const vm = newVM({
     prelude:
       'GroupLootContainer = CreateFrame("Frame", "GroupLootContainer", UIParent); GroupLootContainer:SetSize(200, 40); GroupLootContainer:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, 150)',
   });
   deliverDenial(vm, ['Bash(git:*)']);
+  assert.equal(vm.evaluate('ClaudeWoWRollFrame.shown'), 'true', 'a shown container with no roll in it does not hold the roll');
   assert.equal(vm.evaluate('ClaudeWoWRollFrame.point'), 'BOTTOM');
-  assert.equal(vm.evaluate('ClaudeWoWRollFrame.rel == GroupLootContainer'), 'true');
-  assert.equal(vm.evaluate('ClaudeWoWRollFrame.relPoint'), 'TOP');
-  const plain = newVM();
-  deliverDenial(plain, ['Bash(git:*)']);
-  assert.equal(plain.evaluate('ClaudeWoWRollFrame.point'), 'BOTTOM');
-  assert.equal(plain.evaluate('ClaudeWoWRollFrame.rel == UIParent'), 'true');
-  assert.equal(plain.num('ClaudeWoWRollFrame.y'), 240);
-
-  for (const prelude of [
-    'GroupLootContainer = CreateFrame("Frame", "GroupLootContainer", UIParent)',
-    'GroupLootContainer = CreateFrame("Frame", "GroupLootContainer", UIParent); GroupLootContainer:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, 150); GroupLootContainer:Hide()',
-  ]) {
-    const idle = newVM({ prelude });
-    deliverDenial(idle, ['Bash(git:*)']);
-    assert.equal(idle.evaluate('ClaudeWoWRollFrame.rel == UIParent'), 'true', `${prelude}: an unplaced or hidden container is not used`);
-    assert.equal(idle.num('ClaudeWoWRollFrame.y'), 240);
-  }
-
-  const later = newVM({ prelude: 'GroupLootContainer = CreateFrame("Frame", "GroupLootContainer", UIParent)' });
-  deliverDenial(later, ['Bash(git:*)']);
-  assert.equal(later.evaluate('ClaudeWoWRollFrame.rel == UIParent'), 'true');
-  later.run('ClaudeWoWRollFrame.PassButton.scripts.OnClick(ClaudeWoWRollFrame.PassButton)');
-  later.run('GroupLootContainer:SetSize(200, 40); GroupLootContainer:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, 150)');
-  deliverDenial(later, ['Bash(git:*)']);
-  assert.equal(later.evaluate('ClaudeWoWRollFrame.rel == GroupLootContainer'), 'true', 'each roll is placed again');
+  assert.equal(vm.evaluate('ClaudeWoWRollFrame.rel == UIParent'), 'true');
+  assert.equal(vm.num('ClaudeWoWRollFrame.y'), 240);
+  assert.equal(vm.evaluate('ClaudeWoWRoll.ContainerPlaced'), null);
 });
 
 test('a queued roll whose confirm is already open from a link stays parked, so its timer never runs', () => {

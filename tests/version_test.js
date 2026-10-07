@@ -86,7 +86,7 @@ test('a reload-mode message carries ver= and proto= in its outbox, so the bridge
   const state = {};
   assert.equal(P.addonRefusal(state, job), '', 'no record yet');
   P.noteAddonVersion(state, job);
-  assert.match(P.addonRefusal(state, job), /The bridge \(.*\) is too old for this addon/);
+  assert.match(P.addonRefusal(state, job), /The companion app \(.*\) is too old for this addon/);
 });
 
 test('verdicts: equal, the older side by semver, different builds, either side out of the protocol range, and an old addon', () => {
@@ -145,8 +145,14 @@ test('the bridge refuses a session whose hello is outside its protocol range and
   P.noteAddonVersion(state, { session: 'new', addonVersion: '2.0.0', addonProto: 4 }, b, 2);
   P.noteAddonVersion(state, { session: 'ok', addonVersion: '1.3.0', addonProto: 3 }, b, 3);
   P.noteAddonVersion(state, { session: 'legacy' }, b, 4);
-  assert.match(P.addonRefusal(state, { session: 'old' }, b), /This addon \(1\.0\.0, protocol 1\) is too old for the bridge \(1\.4\.0, protocol 2 to 3\)/);
-  assert.match(P.addonRefusal(state, { session: 'new' }, b), /The bridge \(1\.4\.0, protocol 2 to 3\) is too old for this addon \(2\.0\.0, protocol 4\)/);
+  assert.match(
+    P.addonRefusal(state, { session: 'old' }, b),
+    /This addon \(1\.0\.0, protocol 1\) is too old for the companion app \(1\.4\.0, protocol 2 to 3\)/,
+  );
+  assert.match(
+    P.addonRefusal(state, { session: 'new' }, b),
+    /The companion app \(1\.4\.0, protocol 2 to 3\) is too old for this addon \(2\.0\.0, protocol 4\)/,
+  );
   assert.equal(P.addonRefusal(state, { session: 'ok' }, b), '', 'only semver differs: no refusal');
   assert.match(P.addonRefusal(state, { session: 'legacy' }, b), /version unknown, protocol 1/, 'an addon without the token is protocol 1');
   assert.equal(P.addonRefusal(state, { session: 'never-said-hello' }, b), '', 'no hello on record: no refusal');
@@ -187,7 +193,7 @@ test('service status and the doctor show both versions and the verdict of the la
     const r = Checks.checkVersions({ state });
     assert.equal(r.status, 'fail');
     assert.match(r.summary, /update-bridge/);
-    assert.match(r.problems[0].what, /The bridge \(0\.4\.0, protocol 1\) is too old for this addon/);
+    assert.match(r.problems[0].what, /The companion app \(0\.4\.0, protocol 1\) is too old for this addon/);
     const fine = {};
     P.noteAddonVersion(fine, { session: 's', addonVersion: '0.4.0', addonProto: 1 }, bridgeAt('0.4.0', 1, 1), 5);
     assert.equal(Checks.checkVersions({ state: fine }).status, 'ok');
@@ -204,7 +210,7 @@ test('a bridge whose protocol range is above the addon: the addon is told to upd
   const vm = newVM();
   helloPoll(vm, bridgeAt(TOC_VERSION, P.PROTO + 1, P.PROTO + 1));
   slotPoll(vm, bridgeAt(TOC_VERSION, P.PROTO + 1, P.PROTO + 1));
-  assert.equal(told(vm, 'is too old for the bridge'), 1);
+  assert.equal(told(vm, 'is too old for the companion app'), 1);
   assert.equal(told(vm, 'CurseForge app or run claude-wow setup'), 1);
 });
 
