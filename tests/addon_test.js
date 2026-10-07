@@ -1843,7 +1843,7 @@ test('/claude -r: bare lists running and recent sessions; a number, a name or an
   assert.equal(vm.num('#ClaudeWoWDB.chats'), 5);
 });
 
-function adoptedReplyVM(plugin, { resume = true, bound = '', between = '' } = {}) {
+function adoptedReplyVM(plugin, { resume = true, resumeLine = '-r f024 hi', startCwd = '/Users/me/proj', bound = '', between = '', betweenLua = '' } = {}) {
   const vm = newVM();
   login(vm);
   vm.run('STUB.RunTimers()');
@@ -1854,14 +1854,18 @@ function adoptedReplyVM(plugin, { resume = true, bound = '', between = '' } = {}
   }, replies = {} }`,
   );
   vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
-  if (resume) vm.run('SlashCmdList.CLAUDE("-r f024 hi")');
+  if (resume) vm.run(`SlashCmdList.CLAUDE(${JSON.stringify(resumeLine)})`);
   else vm.run('local c = ClaudeWoWDB.chats[1]; c.cwd = "/Users/me/proj"; ClaudeWoW.Send("hi")');
   const field = f => vm.evaluate(`(function() for _, c in ipairs(ClaudeWoWDB.chats) do if c.id == ClaudeWoWDB.activeChat then return c.${f} end end end)()`);
-  assert.equal(field('cwd'), '/Users/me/proj', 'the chat starts as a coding chat');
+  assert.equal(field('cwd'), startCwd, 'the chat starts as a coding chat');
   if (bound) vm.run(`(function() for _, c in ipairs(ClaudeWoWDB.chats) do if c.id == ClaudeWoWDB.activeChat then c.plugin = "${bound}" end end end)()`);
   if (between) {
     assert.ok(field('pendingId'), 'the adopted reply is still pending');
     vm.run(`SlashCmdList.CLAUDE(${JSON.stringify(between)})`);
+  }
+  if (betweenLua) {
+    assert.ok(field('pendingId'), 'the adopted reply is still pending');
+    vm.run(betweenLua);
   }
   const value = typeof plugin === 'string' ? JSON.stringify(plugin) : String(plugin);
   replyTo(
@@ -1907,6 +1911,7 @@ test('a project, folder or plugin the player picks while the adopted reply is pe
     ['-c --project /Users/me/other', '', '/Users/me/other'],
     ['cd /Users/me/third', '', '/Users/me/third'],
     ['config plugin default', '', '/Users/me/proj'],
+    ['cd', '', ''],
   ];
   for (const [between, plugin, cwd] of cases) {
     const { vm, field } = adoptedReplyVM('ask', { between });
@@ -1919,6 +1924,58 @@ test('a project, folder or plugin the player picks while the adopted reply is pe
       .flags.split(';');
     assert.ok(!flags.includes('plugin=ask'), `${between}: ${flags.join(';')}`);
   }
+});
+
+const ACCEPT_EMPTY_FOLDER = `
+  ClaudeWoW.FolderPrompt()
+  local dialog = { editBox = { GetText = function() return "  " end } }
+  StaticPopupDialogs.CLAUDEWOW_FOLDER.OnAccept(dialog, STUB.popup.data)`;
+
+test('an empty Folder dialog is a player choice too, so the adopted reply binds no plugin and no folder', () => {
+  const cases = [
+    [{}, 'a chat with a folder'],
+    [{ resumeLine: '-r 0123456789abcdef hi', startCwd: '' }, 'a looked-up session with no folder yet'],
+  ];
+  for (const [opts, label] of cases) {
+    const { vm, field } = adoptedReplyVM('ask', { ...opts, betweenLua: ACCEPT_EMPTY_FOLDER });
+    assert.equal(field('plugin') || '', '', label);
+    assert.equal(field('cwd'), '', `${label}: the default folder the player picked is kept`);
+    vm.run('ClaudeWoW.Send("next turn")');
+    const flags = stripRecords(vm)
+      .find(r => r.text === 'next turn')
+      .flags.split(';');
+    assert.ok(!flags.includes('plugin=ask'), `${label}: ${flags.join(';')}`);
+  }
+});
+
+test('deleting the last chat after an attach drops the resume and the adopt binding with the history', () => {
+  const vm = newVM();
+  login(vm);
+  vm.run('STUB.RunTimers()');
+  nextSlot(vm, `{ now = time(), cwd = "/home/me", plugins = { "ask", "claude-code", "live" }, sessions = {}, replies = {} }`);
+  vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
+  const firstId = vm.evaluate('ClaudeWoWDB.chats[1].id');
+  vm.run('SlashCmdList.CLAUDE("-r 0123456789abcdef")');
+  assert.equal(vm.num('#ClaudeWoWDB.chats'), 2);
+  vm.run(`ClaudeWoW.DeleteChat("${firstId}")`);
+  assert.equal(vm.num('#ClaudeWoWDB.chats'), 1, 'only the attached chat is left');
+  const field = f => vm.evaluate(`ClaudeWoWDB.chats[1].${f}`);
+  assert.equal(field('resumeId'), '0123456789abcdef', 'the precondition: the chat is attached');
+  assert.equal(field('adoptBind'), 'true');
+  assert.equal(field('adoptCwd'), 'true');
+  vm.run('ClaudeWoW.DeleteChat()');
+  assert.equal(vm.num('#ClaudeWoWDB.chats'), 1, 'the last chat is cleared in place');
+  assert.equal(field('resumeId'), null);
+  assert.equal(field('adoptBind'), null);
+  assert.equal(field('adoptCwd'), null);
+  vm.run('ClaudeWoW.Send("start over")');
+  const flags = stripRecords(vm)
+    .find(r => r.text === 'start over')
+    .flags.split(';');
+  assert.ok(!flags.some(f => f.startsWith('resume=')), flags.join(';'));
+  replyTo(vm, field('id'), 'status = "done", text = "ok", agent = "claude", session = "fresh-session", cwd = "/srv/ask", plugin = "ask"');
+  assert.equal(field('plugin') || '', '', 'the reply binds no plugin');
+  assert.equal(field('cwd'), '', 'and no folder');
 });
 
 const PICK_LIVE = '6624f327-7126-423e-a653-d7cf7a4e492b';

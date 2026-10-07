@@ -5028,7 +5028,7 @@ function ClaudeWoW.SetFolder(rest, c)
 	c = c or ActiveChat()
 	if not c then return end
 	rest = Trim(rest or "")
-	if rest ~= "" then Cli.KeepPlayerRoute(c) end
+	if rest ~= "" or (c.cwd or "") ~= "" then Cli.KeepPlayerRoute(c) end
 	if rest == "-" or rest == "default" then rest = "" end
 	local base = run.bridgeCwd or "the bridge's default folder"
 	if rest ~= "" then
@@ -5067,7 +5067,9 @@ StaticPopupDialogs["CLAUDEWOW_FOLDER"] = {
 	OnAccept = function(dialog, data)
 		local box = dialog.GetEditBox and dialog:GetEditBox() or dialog.editBox
 		local chat = data and FindChat(data.id)
-		if chat and box then ClaudeWoW.SetFolder(box:GetText(), chat) end
+		if not (chat and box) then return end
+		Cli.KeepPlayerRoute(chat)
+		ClaudeWoW.SetFolder(box:GetText(), chat)
 	end,
 	EditBoxOnEnterPressed = function(box)
 		local dialog = box:GetParent()
@@ -5304,6 +5306,8 @@ function ClaudeWoW.DeleteChat(id)
 		wipe(c.history)
 		c.pendingId, c.progress, c.unread, c.draft = nil, nil, 0, nil
 		c.gaveUp, c.lifeAt = nil, nil
+		c.resumeId = nil
+		Cli.KeepPlayerRoute(c)
 		c.name = "Chat 1"
 		ClaudeWoW.Render()
 		ClaudeWoW.RenderChatList()

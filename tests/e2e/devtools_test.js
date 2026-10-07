@@ -125,7 +125,6 @@ test('a dev command in a chat attached with /claude -r leaves the session to res
     assert.match(typed.text, /No agent run in this chat/);
     const chatId = h.client.activeChat().id;
     assert.equal(h.state().sessions[`chat:${chatId}`], undefined, 'a typed @dev with resume= adopts nothing for the dev plugin');
-    assert.equal(SS.sessionPluginOf(h.state(), OLD), '', 'and records no plugin for the session');
     const reply = await say(h, 'carry on');
     assert.match(reply.text, /carry on/);
     const call = h.agentCalls().at(-1);

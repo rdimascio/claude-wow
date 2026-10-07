@@ -302,13 +302,15 @@ function noteSessionPlugin(state, id, plugin, max = SESSION_PLUGIN_MAX) {
 }
 
 function adoptSlotPlugins(state) {
-  if (!state || state.slotPluginsAdopted) return false;
+  if (!state) return false;
+  delete state.slotPluginsAdopted;
+  if (!state.sessionPlugin) return false;
   const sessions = state.sessions || {};
-  const plugins = state.sessionPlugin || {};
+  const plugins = state.sessionPlugin;
   for (const [key, id] of Object.entries(sessions)) {
     if (typeof plugins[key] === 'string' && plugins[key] && !sessionPluginOf(state, id)) noteSessionPlugin(state, id, plugins[key]);
   }
-  state.slotPluginsAdopted = true;
+  delete state.sessionPlugin;
   return true;
 }
 

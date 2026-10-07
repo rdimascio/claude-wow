@@ -287,7 +287,7 @@ test('the per-id record never evicts a session a slot still holds, so an idle as
   assert.deepEqual(Object.keys(state.sessionPluginById), ['live-ask', 'd'], 'the oldest unused ids go instead');
 });
 
-test('slot records from an older bridge seed the per-id record once, and never overwrite it', () => {
+test('slot records from an older bridge seed the per-id record, never overwrite it, and are consumed', () => {
   const state = {
     sessions: { ':default': 'inject-id', 'chat:a': 'chat-id', 'chat:b': 'legacy-id', 'chat:c': 'known-id' },
     sessionPlugin: { ':default': 'ask', 'chat:a': 'claude-code', 'chat:c': 'claude-code' },
@@ -295,10 +295,12 @@ test('slot records from an older bridge seed the per-id record once, and never o
   };
   assert.equal(SS.adoptSlotPlugins(state), true);
   assert.deepEqual(state.sessionPluginById, { 'known-id': 'ask', 'inject-id': 'ask', 'chat-id': 'claude-code' });
+  assert.equal('sessionPlugin' in state, false, 'the slot map is gone once read');
+  assert.equal(SS.adoptSlotPlugins(state), false, 'a second start has nothing to read');
   assert.equal(SS.adoptSlotPlugins(null), false);
 });
 
-test('the slot record migration runs once across restarts, so evicted ids never come back as newest', () => {
+test('the slot records migrate once, so evicted ids never come back as newest on a later restart', () => {
   const state = { sessions: { 'chat:a': 'old-id' }, sessionPlugin: { 'chat:a': 'ask' } };
   assert.equal(SS.adoptSlotPlugins(state), true);
   const restarted = JSON.parse(JSON.stringify(state));
@@ -309,4 +311,22 @@ test('the slot record migration runs once across restarts, so evicted ids never 
   const again = JSON.parse(JSON.stringify(restarted));
   assert.equal(SS.adoptSlotPlugins(again), false);
   assert.deepEqual(again.sessionPluginById, { n1: 'claude-code', n2: 'claude-code' });
+});
+
+test('after a rollback, the slot records an older bridge wrote again are adopted on the next upgrade', () => {
+  const upgraded = { sessions: { 'chat:a': 'first-ask', 'chat:b': 'kept-code' }, sessionPlugin: { 'chat:a': 'ask', 'chat:b': 'claude-code' } };
+  SS.adoptSlotPlugins(upgraded);
+  const rolledBack = JSON.parse(JSON.stringify(upgraded));
+  rolledBack.sessions['chat:a'] = 'rollback-ask';
+  rolledBack.sessions['chat:c'] = 'rollback-roast';
+  rolledBack.sessionPlugin = { 'chat:a': 'ask', 'chat:b': 'ask', 'chat:c': 'roast' };
+  rolledBack.slotPluginsAdopted = true;
+  const again = JSON.parse(JSON.stringify(rolledBack));
+  assert.equal(SS.adoptSlotPlugins(again), true);
+  assert.equal(SS.madeByPlugin(again, 'rollback-ask'), 'ask', 'the session the older bridge ran keeps its plugin');
+  assert.equal(SS.madeByPlugin(again, 'rollback-roast'), 'roast');
+  assert.equal(SS.madeByPlugin(again, 'first-ask'), 'ask');
+  assert.equal(SS.madeByPlugin(again, 'kept-code'), 'claude-code', 'an existing per-id record is never overwritten');
+  assert.equal('sessionPlugin' in again, false);
+  assert.equal('slotPluginsAdopted' in again, false, 'the old done-marker is dropped');
 });

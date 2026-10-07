@@ -172,24 +172,29 @@ test('/claude -r on a coding session from --inject, addressed to ask, starts a n
   });
 });
 
-test('slot plugin records from an older bridge are migrated once, so a later restart never re-reads a stale slot record', async () => {
+test('slot plugin records from an older bridge are consumed on start, and records written again after a rollback are adopted', async () => {
   const LEGACY = 'feedc0de-0000-4000-8000-00000000000b';
+  const ROLLBACK = 'feedc0de-0000-4000-8000-00000000000c';
   let fresh = '';
   const beforeLaunch = sb => {
     fs.writeFileSync(sb.state, JSON.stringify({ lastId: 0, handled: {}, sessions: { [INJECT_KEY]: LEGACY }, sessionPlugin: { [INJECT_KEY]: 'ask' } }));
     fresh = injectSession(sb, 'claude-code', sb.project);
     const state = JSON.parse(fs.readFileSync(sb.state, 'utf8'));
     assert.equal(SS.sessionPluginOf(state, LEGACY), 'ask', 'the first start migrated the slot record');
-    assert.equal(state.slotPluginsAdopted, true);
+    assert.equal('sessionPlugin' in state, false, 'and consumed the slot map');
+    state.sessions[INJECT_KEY] = ROLLBACK;
     state.sessionPlugin = { [INJECT_KEY]: 'ask' };
-    delete state.sessionPluginById[fresh];
+    state.slotPluginsAdopted = true;
     fs.writeFileSync(sb.state, JSON.stringify(state));
   };
   await withGame({ config: config('migrate'), beforeLaunch }, async h => {
     await h.client.connect();
     const state = h.state();
-    assert.equal(state.sessions[INJECT_KEY], fresh);
-    assert.equal(SS.sessionPluginOf(state, fresh), '', 'the restart did not migrate the stale slot record again');
+    assert.equal(state.sessions[INJECT_KEY], ROLLBACK);
+    assert.equal(SS.sessionPluginOf(state, ROLLBACK), 'ask', 'the upgrade after a rollback adopted the rewritten slot record');
+    assert.equal(SS.sessionPluginOf(state, fresh), 'claude-code', 'an existing per-id record is kept');
+    assert.equal('sessionPlugin' in state, false);
+    assert.equal('slotPluginsAdopted' in state, false);
   });
 });
 
