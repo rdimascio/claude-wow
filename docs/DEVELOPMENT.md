@@ -83,7 +83,9 @@ AddOns/ClaudeWoW_S###/Inbox.lua ◄── bridge/bridge.js (a real process) ◄�
 | `[[error]]` / `[[error text]]` | An error result, with or without text. |
 | `[[rate-limit]]` / `[[auth]]` | The usage-limit and login errors. |
 | `[[reply text]]` / `[[long 200]]` | A fixed reply, or a long one. |
-| `[[background-agent text]]` | Starts a background subagent as real Claude Code does in `-p` mode: a launch-notice result first, then the subagent's message (`text`), then the reply as a second result, with the subagent's model in `modelUsage`. With `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1` in its env it runs the subagent in the foreground instead: the subagent's message, its answer as the tool result, then one result. Each call records the variable's value as `disableBackgroundTasks`. |
+| `[[background-agent text]]` | Starts a background subagent as real Claude Code does in `-p` mode: a launch-notice result first, then the subagent's message (`text`), then the reply as a second result, with a second `system/init` event after the first result (measured on Claude Code 2.1.285). The subagent's model is in `modelUsage` at its own rates and window (`claude-sonnet-5-5`, 1M, five-minute cache writes) next to the main model's (200k, one-hour cache writes), and `total_cost_usd` is their sum, so a bridge that prices the subagent at the main session's cache share or reports the larger window fails a test. With `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1` in its env it runs the subagent in the foreground instead: the subagent's message, its answer as the tool result, then one result. Each call records the variable's value as `disableBackgroundTasks`. |
+
+A `--plugin-dir` whose folder does not exist (a relative one is read against the run's folder) puts a `plugin_errors` entry in the init event, in the real CLI's shape. Each session file keeps the last result's `total_cost_usd` as `lastTotalCostUSD`.
 
 Every call is logged to `<sandbox>/agent/calls.jsonl`.
 

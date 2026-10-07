@@ -123,7 +123,8 @@ test('a dev command in a chat attached with /claude -r leaves the session to res
     assert.equal(h.client.activeChat().resumeId, OLD, 'the dev reply keeps the resume id');
     const typed = await say(h, '@dev run');
     assert.match(typed.text, /No agent run in this chat/);
-    assert.ok(!Object.values(h.state().sessionPlugin || {}).includes('dev'), 'a typed @dev with resume= adopts nothing for the dev plugin');
+    const chatId = h.client.activeChat().id;
+    assert.equal(h.state().sessions[`chat:${chatId}`], undefined, 'a typed @dev with resume= adopts nothing for the dev plugin');
     const reply = await say(h, 'carry on');
     assert.match(reply.text, /carry on/);
     const call = h.agentCalls().at(-1);

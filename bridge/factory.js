@@ -161,6 +161,18 @@ function resultEvent(text) {
   return null;
 }
 
+function pluginErrorsIn(text) {
+  for (const raw of String(text || '').split('\n')) {
+    const line = raw.trim();
+    if (!line.startsWith('{') || !line.includes('"plugin_errors"')) continue;
+    try {
+      const errors = A.pluginErrorsOf(JSON.parse(line));
+      if (errors.length) return errors;
+    } catch {}
+  }
+  return [];
+}
+
 function plainLine(line) {
   return line
     .replace(/^#{1,6}\s+/, '')
@@ -387,6 +399,8 @@ function createFactory({
         text = fs.readFileSync(logFile, 'utf8');
       } catch {}
       const ev = resultEvent(text);
+      const pluginErrors = pluginErrorsIn(text);
+      if (pluginErrors.length) log(`factory: run ${id} ${A.pluginErrorsLine(pluginErrors)}`);
       const said = ev && typeof ev.result === 'string' ? ev.result : '';
       run.endedAt = now();
       run.costUsd = ev && Number.isFinite(ev.total_cost_usd) ? ev.total_cost_usd : null;

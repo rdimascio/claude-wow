@@ -285,6 +285,46 @@ test('shutdown: stop() then killAll ends the run and everything under it, marks 
   }
 });
 
+test('a factory run that gets --plugin-dir from agents.claude.extraArgs logs the plugins Claude Code could not load, once', async () => {
+  const baseConfig = () => ({ permissionMode: 'acceptEdits', allowedTools: [], deniedTools: [], extraArgs: ['--plugin-dir', 'relative/missing-plugin'] });
+  const r = rig({ factory: { baseConfig } });
+  try {
+    const res = r.factory.dispatch({ skill: 'babysit-pr', args: '1' }, r.ctx());
+    assert.equal(res.ok, true, res.text);
+    const id = /Started factory run ([0-9a-f]{8})/.exec(res.text)[1];
+    await until(() => r.factory.runs().find(x => x.id === id && x.status !== 'running'));
+    const call = r.calls().at(-1);
+    assert.equal(argAfter(call.argv, '--plugin-dir'), 'relative/missing-plugin', 'the factory run got the extraArgs plugin');
+    const missing = path.join(fs.realpathSync(call.cwd), 'relative', 'missing-plugin');
+    const line = `factory: run ${id} Claude Code could not load plugin(s): inline[0] (path-not-found: Path not found: ${missing} (commands))`;
+    assert.deepEqual(
+      r.logs.filter(l => l.includes('could not load plugin')),
+      [line],
+    );
+  } finally {
+    r.cleanup();
+  }
+});
+
+test('a factory run with every plugin loaded logs no plugin line', async () => {
+  const r = rig();
+  try {
+    const res = r.factory.dispatch({ skill: 'babysit-pr', args: '1' }, r.ctx());
+    const id = /Started factory run ([0-9a-f]{8})/.exec(res.text)[1];
+    await until(() => r.factory.runs().find(x => x.id === id && x.status !== 'running'));
+    assert.ok(
+      r.logs.some(l => l.startsWith(`factory: run ${id} /babysit-pr done`)),
+      r.logs.join('\n'),
+    );
+    assert.deepEqual(
+      r.logs.filter(l => l.includes('could not load plugin')),
+      [],
+    );
+  } finally {
+    r.cleanup();
+  }
+});
+
 test('a run past timeoutMs is ended and reported failed with the reason', { skip: !POSIX }, async () => {
   const r = rig();
   try {

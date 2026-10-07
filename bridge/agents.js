@@ -72,11 +72,41 @@ function claudeUsage(u) {
   return context > 0 ? { context, output: n('output_tokens') } : null;
 }
 
-// The model's context window, when a result names it (modelUsage.<model>.contextWindow).
-function claudeWindow(ev) {
-  const mu = ev && ev.modelUsage && typeof ev.modelUsage === 'object' ? Object.values(ev.modelUsage) : [];
-  const w = mu.map(m => m && Number(m.contextWindow)).filter(x => Number.isFinite(x) && x > 0);
+function claudeWindow(ev, model) {
+  const mu = ev && ev.modelUsage && typeof ev.modelUsage === 'object' ? ev.modelUsage : {};
+  const windowOf = entry => {
+    const w = entry && Number(entry.contextWindow);
+    return Number.isFinite(w) && w > 0 ? w : 0;
+  };
+  const keys = Object.keys(mu);
+  const main = model ? keys.find(k => k === model) || keys.find(k => k.replace(/\[[^\]]*\]$/, '') === String(model).replace(/\[[^\]]*\]$/, '')) : '';
+  if (main) return windowOf(mu[main]);
+  const w = keys.map(k => windowOf(mu[k])).filter(x => x > 0);
   return w.length ? Math.max(...w) : 0;
+}
+
+function pluginErrorsOf(ev) {
+  if (!ev || ev.type !== 'system' || ev.subtype !== 'init' || !Array.isArray(ev.plugin_errors)) return [];
+  return ev.plugin_errors
+    .filter(e => e && typeof e === 'object')
+    .map(e => ({
+      plugin: String(e.plugin || '?').slice(0, 80),
+      type: String(e.type || 'error').slice(0, 40),
+      message: String(e.message || '')
+        .replace(/\s+/g, ' ')
+        .slice(0, 300),
+    }));
+}
+
+function pluginErrorsLine(errors) {
+  return `Claude Code could not load plugin(s): ${errors.map(e => `${e.plugin} (${e.type}${e.message ? ': ' + e.message : ''})`).join('; ')}`;
+}
+
+function claudeRunCost(ev, model) {
+  const priced = claudeCost(ev, model);
+  const total = ev && ev.total_cost_usd;
+  if (priced && priced.sessionTotal && Number.isFinite(total) && total >= 0) return { ...priced, usd: total };
+  return priced;
 }
 
 const CLAUDE_RATES = [
@@ -245,6 +275,8 @@ function claudeParser(opts = {}) {
           .filter(s => s && typeof s === 'object' && typeof s.name === 'string')
           .map(s => ({ name: s.name.slice(0, 80), status: String(s.status || 'unknown').slice(0, 40), source: String(s.source || '').slice(0, 40) }));
       }
+      const pluginErrors = pluginErrorsOf(ev);
+      if (pluginErrors.length) out.pluginErrors = pluginErrors;
       if (ev.type === 'system' && ev.subtype === 'permission_denied') {
         noteRefusal(ev.tool_use_id, ev.message || ev.decision_reason, ev.decision_reason_type, true);
       } else if (ev.type === 'user' && ev.message && Array.isArray(ev.message.content)) {
@@ -267,19 +299,19 @@ function claudeParser(opts = {}) {
             out.steps = (out.steps || 0) + 1;
           } else if (block.type === 'text' && block.text && block.text.trim()) out.progress.push(snippet(block.text));
         }
-        const u = claudeUsage(ev.message.usage);
+        const fromSubagent = typeof ev.parent_tool_use_id === 'string' && ev.parent_tool_use_id !== '';
+        const u = fromSubagent ? null : claudeUsage(ev.message.usage);
         if (u) {
           usage = u;
           out.usage = { ...u };
         }
-        if (typeof ev.message.model === 'string' && ev.message.model) model = ev.message.model;
+        if (!fromSubagent && typeof ev.message.model === 'string' && ev.message.model) model = ev.message.model;
       } else if (ev.type === 'result') {
         const u = usage || claudeUsage(ev.usage);
-        const window = claudeWindow(ev);
+        const window = claudeWindow(ev, model);
         if (u) {
           out.usage = window ? { ...u, window } : { ...u };
-          // The run's API-equivalent price: the result's usage is the sum over its calls.
-          const cost = claudeCost(ev, model);
+          const cost = claudeRunCost(ev, model);
           if (cost && !cost.unknown.length) {
             out.usage.cost = cost.usd;
             if (cost.sessionTotal) out.usage.costIsSessionTotal = true;
@@ -1144,6 +1176,9 @@ module.exports = {
   claudeUsage,
   claudeWindow,
   claudeCost,
+  claudeRunCost,
+  pluginErrorsOf,
+  pluginErrorsLine,
   claudeRate,
   CLAUDE_RATES,
   resolveCommand,

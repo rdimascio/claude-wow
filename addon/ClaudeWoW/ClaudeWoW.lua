@@ -1985,6 +1985,20 @@ function Q.EndPromptWait(c)
 	if w and w.prompt then run.lateWait[c.id] = nil end
 end
 
+function Cli.KeepPlayerRoute(c)
+	c.adoptBind, c.adoptCwd = nil, nil
+end
+
+function Cli.BindAdoptedPlugin(c, plugin)
+	if not c.adoptBind then return false end
+	if type(plugin) ~= "string" or #plugin > 32 or not plugin:match("^[%w_-]+$") then return false end
+	if plugin == "claude-code" or plugin == LIVE_PLUGIN then return false end
+	if (c.plugin or "") ~= "" then return false end
+	c.plugin = plugin
+	c.cwd = ""
+	return true
+end
+
 -- Dispatch a list of reply records to the chats waiting for them.
 local function ApplyReplies(replies)
 	local matched = false
@@ -2007,9 +2021,11 @@ local function ApplyReplies(replies)
 			local denied = type(r.denied) == "table" and #r.denied > 0 and r.denied or nil
 			if (r.status == "done" or r.status == "error") and r.plugin ~= Cli.DEV_PLUGIN then
 				NoteUsage(c, r)
-				if c.adoptCwd and type(r.cwd) == "string" and r.cwd ~= "" then c.cwd = r.cwd end
+				local bound = Cli.BindAdoptedPlugin(c, r.plugin)
+				if not bound and c.adoptCwd and type(r.cwd) == "string" and r.cwd ~= "" then c.cwd = r.cwd end
 				if type(r.session) == "string" and r.session ~= "" then c.session = r.session end
-				c.adoptCwd, c.resumeId = nil, nil
+				Cli.KeepPlayerRoute(c)
+				c.resumeId = nil
 			end
 			if r.status == "done" then
 				if r.lateOk == true then Q.ArmLateWait(c, r.id, Q.LateIn(r.lateIn), true) end
@@ -4384,6 +4400,7 @@ function Cli.SetProject(c, value)
 	local path = Cli.ResolveProject(value)
 	if not path then return nil, "Unknown project \"" .. tostring(value) .. "\". Known: " .. Cli.ProjectNames() .. ". Or give a folder path." end
 	c.cwd = path
+	Cli.KeepPlayerRoute(c)
 	if c.plugin ~= "" and c.plugin ~= LIVE_PLUGIN then c.plugin = "" end
 	if path ~= "" then Cli.RememberProject(path) end
 	return path == "" and Cli.NO_PROJECT or FolderName(path)
@@ -5048,6 +5065,7 @@ function ClaudeWoW.SetFolder(rest, c)
 	c = c or ActiveChat()
 	if not c then return end
 	rest = Trim(rest or "")
+	if rest ~= "" or (c.cwd or "") ~= "" then Cli.KeepPlayerRoute(c) end
 	if rest == "-" or rest == "default" then rest = "" end
 	local base = run.bridgeCwd or "the bridge's default folder"
 	if rest ~= "" then
@@ -5086,7 +5104,9 @@ StaticPopupDialogs["CLAUDEWOW_FOLDER"] = {
 	OnAccept = function(dialog, data)
 		local box = dialog.GetEditBox and dialog:GetEditBox() or dialog.editBox
 		local chat = data and FindChat(data.id)
-		if chat and box then ClaudeWoW.SetFolder(box:GetText(), chat) end
+		if not (chat and box) then return end
+		Cli.KeepPlayerRoute(chat)
+		ClaudeWoW.SetFolder(box:GetText(), chat)
 	end,
 	EditBoxOnEnterPressed = function(box)
 		local dialog = box:GetParent()
@@ -5208,6 +5228,7 @@ function ClaudeWoW.SetPlugin(rest, c)
 	end
 	local changed = rest ~= (c.plugin or "")
 	c.plugin = rest
+	Cli.KeepPlayerRoute(c)
 	if rest ~= "" then
 		Cli.Out(c, "plugin set to " .. rest .. (changed and #c.history > 1 and "; the next message starts a fresh session with it" or ""))
 	elseif changed then
@@ -5322,6 +5343,8 @@ function ClaudeWoW.DeleteChat(id)
 		wipe(c.history)
 		c.pendingId, c.progress, c.unread, c.draft = nil, nil, 0, nil
 		c.gaveUp, c.lifeAt = nil, nil
+		c.resumeId = nil
+		Cli.KeepPlayerRoute(c)
 		c.name = "Chat 1"
 		ClaudeWoW.Render()
 		ClaudeWoW.RenderChatList()
@@ -9550,6 +9573,7 @@ function Cli.AttachTo(e)
 		else
 			c.cwd = e.cwd or ""
 			c.adoptCwd = (e.cwd or "") == "" or nil
+			c.adoptBind = true
 		end
 		Q.AddEvent(c, "Attached to session " .. e.id:sub(1, 8))
 		AddHistory(c, "system", "Your next message resumes session " .. e.id .. ((e.cwd or "") ~= "" and (" in " .. Display(e.cwd)) or "") .. (e.unverified and " (the bridge looks the id up then)" or "") .. ".")

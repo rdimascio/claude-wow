@@ -45,12 +45,28 @@ Plan: [`router-and-game-data.md` §7.1](../router-and-game-data.md#71-plugin-con
 - `result.subagent_stats` counts spawned, background and completed subagents by type.
 - Subagent `assistant` events carry `parent_tool_use_id`; the main session's do not.
 
-## Bridge accounting with a subagent (not changed in this step)
+## Bridge accounting with a subagent (spike, before fix/plugin-followups)
 
 Fed the default run's events through `AGENTS.claude.parser()`:
 
 - **Window:** `claudeWindow` takes the largest `contextWindow` in `modelUsage`. With a Haiku main session (200k) and a Sonnet subagent (1M) it reported 1M. Today's `ask` models (Opus 5.5 and Sonnet 5.5) are both 1M, so it is right for now; a smaller main model with a larger subagent would show the wrong share.
 - **Cost:** the parser priced the run at $0.0386 against the CLI's $0.0336 (+15%). It splits every model's cache writes by the 1h/5m share of the top-level `usage`, which here describes only the main session (1h); the subagent wrote 5m cache.
+
+## Accounting and plugin errors after the fix (2026-10-06)
+
+Measured on Claude Code 2.1.285 for fix/plugin-followups, one paid run, **$0.029**. Same scratch plugin and argv as the spike (`--model haiku --setting-sources "" --strict-mcp-config`, background subagents), `--max-budget-usd 0.4`, plus a second `--plugin-dir relative/missing-plugin`. The events went through the fixed `AGENTS.claude.parser()`.
+
+| | Value |
+|---|---|
+| `modelUsage` | haiku-4-5 $0.0246 (window 200k), sonnet-5-5 $0.0046 (window 1M) |
+| `total_cost_usd` | $0.0292 |
+| Parser cost, window | **$0.0292, 200k** (the CLI's total and the main model's window) |
+| Old list-rate split, old window | $0.0318 (+9%), 1M |
+| init events, results | 2, 2 (`result_index` 0 and 1); the second init comes right after the first result |
+| `plugin_errors` | in both init events: `{ plugin: "inline[1]", type: "path-not-found", message: "Path not found: <cwd>/relative/missing-plugin (commands)", path }`; `inline[n]` is the n-th `--plugin-dir` |
+
+- The subagent's one `assistant` event came before the first result, and the main session wrote the last `assistant` event, so in this run the old usage overwrite did not change the context. It does when a run stops (budget, timeout) right after a subagent message.
+- Init probes (killed at init, $0): an existing empty folder as `--plugin-dir` loads nothing and reports no `plugin_errors`; with no error the key is absent.
 
 ## wowdata from a plugin agent (2026-10-06)
 

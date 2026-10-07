@@ -768,8 +768,113 @@ test('Claude stream: usage on the assistant messages is the context the next tur
   assert.equal(A.claudeParser().feed({ type: 'assistant', message: { content: [] } }).usage, undefined);
   assert.equal(A.claudeUsage({ input_tokens: 'x' }), null);
   assert.equal(A.claudeUsage(null), null);
-  assert.equal(A.claudeWindow({ modelUsage: { a: { contextWindow: 200000 }, b: { contextWindow: 1000000 } } }), 1000000);
+  assert.equal(A.claudeWindow({ modelUsage: { a: { contextWindow: 200000 }, b: { contextWindow: 1000000 } } }, 'a'), 200000, "the main model's window");
+  assert.equal(
+    A.claudeWindow({ modelUsage: { b: { contextWindow: 2000000 }, 'claude-opus-5-5[1m]': { contextWindow: 1000000 } } }, 'claude-opus-5-5'),
+    1000000,
+    'the main model with a [1m] suffix, not the largest window',
+  );
+  assert.equal(
+    A.claudeWindow({ modelUsage: { b: { contextWindow: 2000000 }, 'claude-opus-5-5': { contextWindow: 1000000 } } }, 'claude-opus-5-5[1m]'),
+    1000000,
+    'a [1m] model named against a plain modelUsage key',
+  );
+  assert.equal(A.claudeWindow({ modelUsage: { a: { contextWindow: 200000 } } }, 'other'), 200000, 'one model: its window');
+  assert.equal(
+    A.claudeWindow({ modelUsage: { a: { contextWindow: 200000 }, b: { contextWindow: 1000000 } } }, ''),
+    1000000,
+    'no main model named: the largest',
+  );
   assert.equal(A.claudeWindow({}), 0);
+});
+
+test("a subagent's events leave the run's own usage, model and window alone, and the cost is Claude Code's total_cost_usd", () => {
+  const p = A.claudeParser();
+  const main = p.feed({
+    type: 'assistant',
+    session_id: 's1',
+    parent_tool_use_id: null,
+    message: {
+      model: 'claude-haiku-4-5-20251001',
+      content: [{ type: 'tool_use', id: 'toolu_agent', name: 'Agent', input: { subagent_type: 'claude-wow:wow-planner' } }],
+      usage: { input_tokens: 10, cache_read_input_tokens: 20000, cache_creation_input_tokens: 8000, output_tokens: 50 },
+    },
+  });
+  assert.deepEqual(main.usage, { context: 28010, output: 50 });
+  const sub = p.feed({
+    type: 'assistant',
+    session_id: 's1',
+    parent_tool_use_id: 'toolu_agent',
+    message: {
+      model: 'claude-sonnet-5-5',
+      content: [{ type: 'text', text: 'route drawn' }],
+      usage: { input_tokens: 2, cache_read_input_tokens: 0, cache_creation_input_tokens: 3309, output_tokens: 16 },
+    },
+  });
+  assert.equal(sub.usage, undefined, 'a subagent message is not the context the next turn carries');
+  assert.deepEqual(sub.progress, ['route drawn']);
+  const haiku = (20 * 1 + 300 * 5 + 40000 * 0.1 + 8000 * 2) / 1e6;
+  const sonnet = (2 * 2 + 16 * 10 + 3309 * 2 * 1.25) / 1e6;
+  const result = {
+    type: 'result',
+    subtype: 'error_max_budget_usd',
+    is_error: true,
+    errors: ['Reached maximum budget ($0.02)'],
+    session_id: 's1',
+    usage: {
+      input_tokens: 20,
+      cache_read_input_tokens: 40000,
+      cache_creation_input_tokens: 8000,
+      output_tokens: 300,
+      cache_creation: { ephemeral_1h_input_tokens: 8000, ephemeral_5m_input_tokens: 0 },
+    },
+    modelUsage: {
+      'claude-haiku-4-5-20251001': {
+        inputTokens: 20,
+        outputTokens: 300,
+        cacheReadInputTokens: 40000,
+        cacheCreationInputTokens: 8000,
+        costUSD: haiku,
+        contextWindow: 200000,
+      },
+      'claude-sonnet-5-5': {
+        inputTokens: 2,
+        outputTokens: 16,
+        cacheReadInputTokens: 0,
+        cacheCreationInputTokens: 3309,
+        costUSD: sonnet,
+        contextWindow: 1000000,
+      },
+    },
+    total_cost_usd: haiku + sonnet,
+  };
+  const end = p.feed(result);
+  assert.deepEqual(end.usage, { context: 28010, output: 50, window: 200000, cost: haiku + sonnet, costIsSessionTotal: true });
+  const listPrice = A.claudeCost(result, 'claude-haiku-4-5-20251001').usd;
+  assert.ok(listPrice > (haiku + sonnet) * 1.1, `the 1h share of the main session overprices the subagent's 5m writes: ${listPrice}`);
+
+  const unknown = A.claudeParser().feed({ ...result, modelUsage: { ...result.modelUsage, 'claude-new-9': { outputTokens: 5 } } });
+  assert.deepEqual(unknown.usage.costUnknown, ['claude-new-9'], 'a model with no listed rate still shows tokens only');
+  const noTotal = A.claudeParser().feed({ ...result, total_cost_usd: undefined });
+  assert.equal(noTotal.usage.cost, listPrice, 'no total_cost_usd: the list-rate price');
+  const turnOnly = A.claudeParser();
+  turnOnly.feed({ type: 'assistant', message: { model: 'claude-haiku-4-5', content: [], usage: { input_tokens: 1000 } } });
+  const noModelUsage = turnOnly.feed({ type: 'result', result: 'x', usage: { input_tokens: 1000 }, total_cost_usd: 5 });
+  assert.equal(noModelUsage.usage.cost, 0.001, 'no modelUsage: the turn priced at the model, never a total of unknown scope');
+});
+
+test('init plugin_errors (a --plugin-dir that did not load) come out of the parser', () => {
+  const p = A.claudeParser();
+  const bad = p.feed({
+    type: 'system',
+    subtype: 'init',
+    session_id: 's1',
+    mcp_servers: [],
+    plugin_errors: [{ plugin: 'inline[0]', type: 'path-not-found', message: 'Path not found: /work/rel/plugin (commands)', path: '/work/rel/plugin' }],
+  });
+  assert.deepEqual(bad.pluginErrors, [{ plugin: 'inline[0]', type: 'path-not-found', message: 'Path not found: /work/rel/plugin (commands)' }]);
+  assert.equal(p.feed({ type: 'system', subtype: 'init', session_id: 's1', mcp_servers: [] }).pluginErrors, undefined);
+  assert.equal(p.feed({ type: 'system', subtype: 'init', session_id: 's1', plugin_errors: [] }).pluginErrors, undefined);
 });
 
 test('API-equivalent cost: per-model list rates, cache reads and writes priced apart, unknown models omitted rather than guessed', () => {
