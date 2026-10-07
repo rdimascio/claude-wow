@@ -1,6 +1,6 @@
 # WoW as an agent-room surface: run and answer the factory from inside the game
 
-Status: draft, revision 1, 2026-10-06. Owner decision so far: agent-room is the agent runtime (memory `agent-room-decided`); the goal is to trigger and interact with the factory from inside WoW.
+Status: draft, revision 2, 2026-10-06. Owner decisions: agent-room is the agent runtime and moves to the Mac mini; the game answers every card; every review card needs a presence signature (no Touch ID reader, so `.userPresence`).
 
 ## Thesis
 
@@ -27,15 +27,15 @@ Factory v3 (§3, §5) counts Ryan's merge "yes" (`ryan_yes`) only as a Slack cli
 - **The flow.** Need on a factory Loot roll → the bridge sends `approve` for that approval id and choice → agent-room's settle builds the canonical payload from its own row (`{kind, approvalId, choice, pr, head_sha}`, never from the game) → the signer asks for Touch ID with the reason "Merge PR #18765 at 1a2b3c (T2)" → the system dialog shows over the game → the signature is stored on the approval row as its proof.
 - **The rule, per kind.** A card that needs Ryan (`ryan_yes`, money or auth writes) resolves only with a valid presence signature over its exact payload, verified against the public key agent-room stores at setup. Where the click came from (Slack, room, game) is recorded but no longer decides anything. A Slack click by Ryan's `user_id` stays a second valid proof, so his phone still works away from the desk. Low-risk kinds (`alert_ack`, a claude-wow worker roll) resolve on the click alone.
 - **What this changes elsewhere.** Factory v3's merge station reads "an approved row with a presence signature or a Slack `user_id` proof for this head", not "a Slack click". That is a change to the every-io/every factory plan, owned with that plan, and to agent-room's settle path (`settleFactoryApproval`). Both are ours.
-- **Prerequisite on the mini.** A Touch ID reader on the Mac mini (a Magic Keyboard with Touch ID) and a key created there, because the key is bound to the enclave and the fingerprints of the Mac that created it. Without a reader, the fallback is the same key with `.userPresence` (Apple Watch or the login password), which proves a human at the Mac but not which one.
+- **On the mini (decided 2026-10-06: no Touch ID reader).** The key is created on the Mac mini with `.userPresence` instead of `.biometryCurrentSet`: each signature asks for the Mac login password or an Apple Watch double-click, in a system dialog that shows over the game. The secure input dialog keeps the password out of reach of other processes. It proves a person who knows the password (or wears the paired watch) was at the Mac, not a fingerprint; a Touch ID keyboard later only changes the key's access flag.
 
 ## Work
 
-### 0. Decisions before code
+### 0. Decisions
 
-1. Where agent-room runs. Factory v3 moves it to the Mac mini, where the game and the bridge run. This plan assumes that. A MacBook agent-room works too, but its server then listens on the Tailscale interface instead of loopback, with Tailscale identity in place of the static token; the presence signature still has to come from the Mac Ryan sits at.
-2. The presence policy per card kind (which need a signature), and whether the Mac mini gets a Touch ID keyboard or uses the `.userPresence` fallback.
-3. Whether the async-agents plan (`docs/plans/async-agents.md`, revision 4) stops here. agent-room threads and workflows cover its wake-ups and worker approvals; this plan proposes to supersede its Phases 1 to 3 and keep only Phase 0 (`threads`, merged) and `autoDeploy`.
+1. **Decided 2026-10-06:** agent-room is installed on the Mac mini, where the game and the bridge run, so the bridge reaches its room server on loopback.
+2. **Decided 2026-10-06:** every card that asks for Ryan's review needs a presence signature (merges, money, auth, discoveries); no Touch ID reader, so the key uses `.userPresence`. Only machine acknowledgements without a decision (`alert_ack`) resolve on the click alone.
+3. Open: whether the async-agents plan (`docs/plans/async-agents.md`, revision 4) stops here. agent-room threads and workflows cover its wake-ups and worker approvals; this plan proposes to supersede its Phases 1 to 3 and keep only Phase 0 (`threads`, merged) and `autoDeploy`.
 
 ### 1. Read-only mirror
 
