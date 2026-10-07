@@ -371,7 +371,7 @@ function STUB.SignalFile(path)
 	if type(path) ~= "string" then return false end
 	local rel = path:match("^Interface\\AddOns\\" .. STUB.signalRoot .. "\\(.+)$")
 	if not rel then return false end
-	return (rel:match("^ack\\%d%d%d%.wav$") or rel:match("^sig\\%d%d%d%.wav$") or rel:match("^act\\%d%d%d\\%d%d%.wav$") or rel:match("^presence\\[ab]\\%d%d%d%d%.wav$")) and true or false
+	return (rel:match("^ack\\%d%d%d%.wav$") or rel:match("^sig\\%d%d%d%.wav$") or rel:match("^act\\%d%d%d\\%d%d%.wav$") or rel:match("^presence\\[ab]\\%d%d%d%d%.wav$") or rel:match("^news\\[ab]\\%d%d%d%d%.wav$")) and true or false
 end
 function STUB.FileExists(path)
 	local v = STUB.sounds[path]

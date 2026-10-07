@@ -82,6 +82,7 @@ async function install(client) {
     actMax: ACT,
     presence: saved.presence || null,
     presenceMax: PRESENCE,
+    news: saved.news || null,
     tocInterface: iface,
     removeLegacy: true,
   });

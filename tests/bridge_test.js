@@ -659,4 +659,15 @@ test('luaTable carries the Discord capability and mirrored messages with their p
     /^\t\t\{ chat = "c1", seq = 3, role = "assistant", text = "needs \\"Bash\\"", agent = "claude", denied = \{ "Bash\(npm test:\*\)" \} \},$/m,
   );
   assert.equal((lua.match(/chat = /g) || []).length, 1, 'an entry with no chat is left out');
+  assert.ok(!/room = true/.test(lua), 'a Discord row carries no room fields');
+});
+
+test('luaTable marks an agent-room mirror row with room, its chat title and who wrote it', () => {
+  const lua = P.luaTable('X', [], {
+    mirror: [{ chat: 'r0a1b2c3d4e', seq: 2, role: 'user', text: 'ship it', agent: '', room: true, title: '#ship', from: 'room' }],
+  });
+  assert.match(
+    lua,
+    /^\t\t\{ chat = "r0a1b2c3d4e", seq = 2, role = "user", text = "ship it", agent = "", denied = \{  \}, room = true, title = "#ship", from = "room" \},$/m,
+  );
 });

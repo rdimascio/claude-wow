@@ -71,6 +71,8 @@ const RT = require('./replytokens');
 const UPD = require('./selfupdate');
 const IDLE = require('./idle');
 const AD = require('./autodeploy');
+const ROOM = require('./room');
+let roomClient = null;
 const CLI = require('./clients');
 const SW = require('./slotwindow');
 const PUBR = require('./publishretry');
@@ -87,6 +89,7 @@ registry.register(require('./plugins/roast'));
 registry.register(require('./plugins/stream'));
 registry.register(require('./plugins/live'));
 registry.register(require('./plugins/dev'));
+registry.register(require('./plugins/room'));
 const LP = require('./liveproto');
 const T = require('./titles');
 const GOALS = require('./goals');
@@ -649,6 +652,7 @@ function shutdown(sig, exitCode) {
   factory.stop();
   forgetUnstartedWork();
   stopPlugins();
+  if (roomClient) roomClient.stop();
   if (discordHub) discordHub.stop().catch(() => {});
   let voteClosing = Promise.resolve();
   try {
@@ -854,7 +858,7 @@ function sharedSlotFields(urgent) {
     home: os.homedir(),
     skills: FACTORY.slotSkills(FACTORY.settings(pluginsCfg['claude-code'])),
     discord: !!discordHub,
-    mirror: discordMirror(),
+    mirror: discordMirror().concat(roomMirror()),
     cwd: DEFAULT_CWD,
     agent: DEFAULT_AGENT,
     agents: A.agentIds(),
@@ -1321,6 +1325,7 @@ function migrateRuntime(client) {
     return;
   }
   cs.presence = r.presence.state;
+  cs.news = r.news.state;
   saveState();
   log(
     `migrate: created ${SIG.runtimeRoot(client.addonDir)} (${r.armed} signal file(s) armed); ${SIG.RESTART_NOTE}. The ${r.legacy} old folder(s) in ${path.join(client.addonDir, P.ADDON)} stay until setup or "npm run slots" removes them, because deleting them under a running game reads as every signal firing at once.`,
@@ -1335,6 +1340,23 @@ function preparePresence(client) {
   log(
     `presence${inLabel(client)}: ring ${r.state.ring} at ${r.state.at} of ${PRESENCE_MAX}${r.made ? `, armed ${r.made} file(s)` : ''}${r.removed ? `, removed ${r.removed} stale file(s)` : ''}`,
   );
+}
+function prepareNews(client) {
+  if (!presenceReady(client)) return;
+  const cs = clientStateOf(client);
+  const r = SIG.prepareNews(client.addonDir, cs.news);
+  cs.news = r.state;
+  saveState();
+}
+function fireNews() {
+  for (const client of CLIENTS) {
+    if (!presenceReady(client)) continue;
+    const cs = clientStateOf(client);
+    cs.news = SIG.presenceState(cs.news);
+    const r = SIG.news(client.addonDir, cs.news);
+    if (r.switched) log(`news${inLabel(client)}: ring ${r.switched} spent and armed again for the next game launch`);
+  }
+  saveState();
 }
 function presenceBeatClient(client) {
   if (!presenceReady(client)) return false;
@@ -2186,6 +2208,60 @@ function discordMirror() {
     }
   }
   return out;
+}
+
+const ROOM_CONF = ROOM.settings(cfg.plugins && cfg.plugins.room);
+
+function noteRoomMessage(entry) {
+  if (!Object.hasOwn(transcripts.chats, entry.chat))
+    transcripts.chats[entry.chat] = { id: entry.chat, name: entry.title, cwd: '', plugin: 'room', messages: [] };
+  const c = transcripts.chats[entry.chat];
+  if (entry.id && c.messages.some(m => m.roomId === entry.id)) return;
+  c.seq = (c.seq || 0) + 1;
+  const text = entry.thread && entry.role !== 'user' ? `${entry.thread}: ${entry.text}` : entry.text;
+  c.messages.push({
+    role: entry.role,
+    text,
+    t: Math.floor(Date.now() / 1000),
+    via: 'room',
+    seq: c.seq,
+    roomId: entry.id,
+    title: entry.title,
+    from: entry.from,
+  });
+  while (c.messages.length > 200) c.messages.shift();
+  c.updated = Date.now();
+  saveTranscripts();
+  publishNow(true, { refresh: true });
+  fireNews();
+}
+
+function roomMirror() {
+  const out = [];
+  for (const c of Object.values(transcripts.chats)) {
+    if (c.plugin !== 'room') continue;
+    for (const m of c.messages.filter(x => x.via === 'room').slice(-MIRROR_PER_CHAT)) {
+      out.push({
+        chat: c.id,
+        seq: m.seq,
+        role: m.role,
+        text: String(m.text).slice(0, MIRROR_TEXT_MAX),
+        agent: m.from || '',
+        room: true,
+        title: m.title || c.name || '',
+        from: m.role === 'user' ? 'room' : '',
+      });
+    }
+  }
+  return out;
+}
+
+function startRoom() {
+  if (!holdsLock) return;
+  if (ROOM_CONF.error) log(`room: off (${ROOM_CONF.error})`);
+  if (!ROOM_CONF.enabled) return;
+  roomClient = ROOM.createRoom({ conf: ROOM_CONF, log, onMessage: noteRoomMessage });
+  roomClient.connect();
 }
 
 function discordReplyText(status, text, denied) {
@@ -3878,11 +3954,13 @@ if (inject !== null) {
     setInterval(pollSavedVariables, cfg.pollMs || 750);
     startSelfUpdate();
     startAutoDeploy();
+    startRoom();
     for (const c of CLIENTS) {
       migrateRuntime(c);
       const lastId = Number(clientStateOf(c).lastId);
       clearSignalsAhead(c, Number.isFinite(lastId) && lastId > 0 ? lastId : c.key === (CLI.allClients(cfg)[0] || {}).key ? state.lastId : NaN);
       preparePresence(c);
+      prepareNews(c);
     }
     presenceBeat();
     setInterval(() => presenceBeat(), PRESENCE_INTERVAL_MS);
