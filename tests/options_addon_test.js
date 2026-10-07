@@ -155,7 +155,8 @@ test('options: each control calls the /claude config handler, takes effect at on
   const set = (key, value) => vm.run(`${proxy(key)}:SetValue(${JSON.stringify(value)})`);
   const get = key => vm.evaluate(`${proxy(key)}:GetValue()`);
 
-  assert.equal(get('whisper'), 'true');
+  assert.equal(get('whisper'), 'false');
+  set('whisper', true);
   set('whisper', false);
   assert.equal(vm.evaluate('ClaudeWoWDB.settings.whisperChoice'), 'off', 'went through Cli.SetWhisper');
   assert.match(configLine(vm, 'whisper'), /^whisper = off/);
@@ -216,10 +217,10 @@ test('options: each control calls the /claude config handler, takes effect at on
 test('options: a value that does not change calls no handler', () => {
   const vm = newVM();
   vm.run('CALLS = 0; local config = ClaudeWoW.Config; ClaudeWoW.Config = function(...) CALLS = CALLS + 1; return config(...) end');
-  vm.run(`${proxy('whisper')}:SetValue(true)`);
-  vm.run('ClaudeWoWHelp.SetOption(ClaudeWoWHelp.OPTIONS[1], true)');
-  assert.equal(vm.evaluate('CALLS'), '0');
+  vm.run(`${proxy('whisper')}:SetValue(false)`);
   vm.run('ClaudeWoWHelp.SetOption(ClaudeWoWHelp.OPTIONS[1], false)');
+  assert.equal(vm.evaluate('CALLS'), '0');
+  vm.run('ClaudeWoWHelp.SetOption(ClaudeWoWHelp.OPTIONS[1], true)');
   assert.equal(vm.evaluate('CALLS'), '1');
 });
 

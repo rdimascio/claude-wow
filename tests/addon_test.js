@@ -1016,11 +1016,22 @@ function connectAs(vm, agent) {
   assert.equal(vm.evaluate('ClaudeWoW.IsConnected()'), 'true', 'connected after the hello slot');
 }
 
+const WHISPER_ON =
+  'ClaudeWoWDB.settings.whisper = true; ClaudeWoWDB.settings.whisperChoice = "on"; table.insert(ClaudeWoWDB.chats[1].history, { role = "user", text = "earlier", t = time() })';
+
+function loginWhisperOn(vm) {
+  vm.run('STUB.FireEvent("ADDON_LOADED", "ClaudeWoW")');
+  vm.run(WHISPER_ON);
+  vm.run('STUB.FireEvent("PLAYER_LOGIN")');
+}
+
 function dockVM(saved) {
   const vm = newVM();
   vm.run(WHISPER_DOCK);
-  if (saved) vm.run(saved);
-  login(vm);
+  if (saved) {
+    vm.run(saved);
+    login(vm);
+  } else loginWhisperOn(vm);
   return vm;
 }
 
@@ -1049,14 +1060,14 @@ test('with whisper tabs on a reply to a closed window flashes the tab and puts n
   assert.equal(vm.num('#UIErrorsFrame.messages'), 0);
 });
 
-test('whisper tabs: on by default; the active chat is a tab at login, Enter there goes to the agent and never to the server, replies flash it', () => {
+test('whisper tabs turned on: the active chat is a tab at login, Enter there goes to the agent and never to the server, replies flash it', () => {
   const vm = dockVM();
   connectAs(vm, 'claude');
   const chatId = vm.evaluate('ClaudeWoWDB.chats[1].id');
   const enter = (box, text) => vm.run(`${box}:SetText("${text}"); ${box}.scripts.OnEnterPressed(${box})`);
 
-  assert.equal(vm.evaluate('ClaudeWoWDB.settings.whisper'), 'true', 'on by default');
-  assert.equal(vm.evaluate('ClaudeWoWDB.settings.whisperNews'), null, 'a fresh install gets no "new" notice');
+  assert.equal(vm.evaluate('ClaudeWoWDB.settings.whisper'), 'true', 'turned on');
+  assert.equal(vm.evaluate('ClaudeWoWDB.settings.whisperNews'), null, 'no "new" notice');
   assert.equal(vm.num('STUB.tempWindows'), 1, 'the tab opens once the bridge names its agent');
   assert.equal(vm.evaluate('ChatFrame11Tab.text'), 'Claude', "a chat with its default name is the agent's tab");
   assert.equal(vm.evaluate('ChatFrame11EditBox.attrs.tellTarget'), 'Claude', 'the box whispers the agent');
@@ -1066,7 +1077,7 @@ test('whisper tabs: on by default; the active chat is a tab at login, Enter ther
   assert.equal(vm.evaluate('ClaudeWoWFrame.shown'), 'false', 'the workspace window stays closed');
   assert.equal(vm.evaluate('ClaudeWoWMini'), null, 'a fresh install puts nothing on screen');
   assert.ok(
-    vm.evaluate('table.concat(STUB.prints, "\\n")').includes('[Azeroth Companion]|r Loaded. Type /claude to open it.'),
+    vm.evaluate('table.concat(STUB.prints, "\\n")').includes('[Azeroth Companion]|r Loaded. Click the minimap button or type /claude to open it.'),
     'one line in the game chat says how to open it',
   );
 
@@ -1121,7 +1132,7 @@ test('whisper tabs: on by default; the active chat is a tab at login, Enter ther
   const before = stripRecords(vm).length;
   enter('ChatFrame11EditBox', 'too soon');
   assert.equal(stripRecords(vm).length, before, 'no second record while one is pending');
-  assert.ok(tabLines(vm, 11).includes('is still working on #'), 'told in the tab');
+  assert.ok(tabLines(vm, 11).includes('is still working. What you type now waits'), 'told in the tab');
   assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].draft'), 'too soon');
   slotReply(vm, chatId, 'status = "done", text = "done", agent = "claude"');
   out = tabLines(vm, 11);
@@ -1148,10 +1159,12 @@ test('whisper tabs: on by default; the active chat is a tab at login, Enter ther
 
   vm.run('SlashCmdList.CLAUDE("-n Second")');
   const secondId = vm.evaluate('ClaudeWoWDB.chats[2].id');
-  assert.equal(vm.num('STUB.tempWindows'), 2, 'a new chat is a new tab');
-  assert.equal(vm.evaluate('ChatFrame12Tab.text'), 'Second');
-  assert.equal(vm.evaluate('ClaudeWoWFrame.shown'), 'false', 'and no window');
+  assert.equal(vm.num('STUB.tempWindows'), 1, 'a new chat gets no tab before its first message');
+  assert.equal(vm.evaluate('ClaudeWoWFrame.shown'), 'true', 'so the window shows it');
+  vm.run('ClaudeWoWFrame:Hide()');
   vm.run('ClaudeWoW.Send("second hello")');
+  assert.equal(vm.num('STUB.tempWindows'), 2, 'its first message makes it a tab');
+  assert.equal(vm.evaluate('ChatFrame12Tab.text'), 'Second');
   assert.ok(tabLines(vm, 12).includes('To Claude: second hello'));
   slotReply(vm, secondId, 'status = "done", text = "for two", agent = "claude"');
   assert.ok(tabLines(vm, 12).includes('whispers: for two') && !tabLines(vm, 11).includes('for two'));
@@ -1211,37 +1224,6 @@ test('whisper tabs: on by default; the active chat is a tab at login, Enter ther
   assert.equal(vm.num('STUB.serverSends'), 3, "off: a whisper is the game's again");
 });
 
-test('whisper default for existing installs: an explicit "off" stays off, an old default flips on once and says so, "on" stays on', () => {
-  const offMsg = '{ role = "system", text = "Whisper tabs are off; replies go to the game chat as before", t = 1700000100 }';
-  const onMsg = '{ role = "system", text = "Whisper tabs are ON: this chat is the \\"x\\" tab", t = 1700000000 }';
-  const saved = (whisper, history) =>
-    `ClaudeWoWDB = { settings = { whisper = ${whisper}, echoV2 = true, pluginsV1 = true, chatsPerCharacterV1 = true }, lastSeq = 3, session = "s1", forget = {}, activeChat = "c1", chats = { { id = "c1", name = "Chat 1", cwd = "", agent = "", plugin = "", unread = 0, history = { ${history} } } } }`;
-
-  let vm = dockVM(saved('false', `${onMsg}, ${offMsg}`));
-  assert.equal(vm.evaluate('ClaudeWoWDB.settings.whisper'), 'false', 'turned off by hand before: kept off');
-  assert.equal(vm.evaluate('ClaudeWoWDB.settings.whisperChoice'), 'off');
-  connectAs(vm, 'claude');
-  assert.equal(vm.num('STUB.tempWindows'), 0, 'no tab opens');
-
-  vm = dockVM(saved('false', `${offMsg}, ${onMsg.replace('1700000000', '1700000200')}`));
-  assert.equal(vm.evaluate('ClaudeWoWDB.settings.whisper'), 'true', 'the last choice was on: on');
-
-  vm = dockVM(saved('false', '{ role = "user", text = "hello", t = 1700000000, id = 1 }'));
-  assert.equal(vm.evaluate('ClaudeWoWDB.settings.whisper'), 'true', 'the old default (never touched) moves to the new default');
-  assert.equal(vm.evaluate('ClaudeWoWDB.settings.whisperV2'), 'true');
-  connectAs(vm, 'claude');
-  assert.match(tabLines(vm, 11), /New: chats live in whisper tabs like this one by default\. \/claude config ui whisper off goes back/, 'said once in the tab');
-  assert.equal(vm.evaluate('ClaudeWoWDB.settings.whisperNews'), null, 'only once');
-
-  vm.run('SlashCmdList.CLAUDE("config ui whisper off")');
-  vm.run('ClaudeWoW.MigrateWhisper(ClaudeWoWDB.settings, false)');
-  assert.equal(vm.evaluate('ClaudeWoWDB.settings.whisper'), 'false', 'after the migration an explicit off is never flipped again');
-
-  vm = dockVM(saved('true', ''));
-  assert.equal(vm.evaluate('ClaudeWoWDB.settings.whisper'), 'true');
-  assert.equal(vm.evaluate('ClaudeWoWDB.settings.whisperNews'), null, 'already on: nothing to announce');
-});
-
 test('/claude config ui: whisper, dim, dodge and autohide are settings that persist; bad values are refused', () => {
   const vm = dockVM();
   connectAs(vm, 'claude');
@@ -1281,17 +1263,17 @@ test('the bridge status line: a silent bridge is said once in the tab with a con
   connectAs(vm, 'claude');
   vm.run('STUB.onLoadAddOn = nil; STUB.now = STUB.now + 800; STUB.Tick()');
   let out = tabLines(vm, 11);
-  assert.match(out, /Bridge quiet for a while\. \|Haddon:claudewow:connect\|h/, out);
+  assert.match(out, /The companion app has been quiet for a while\. \|Haddon:claudewow:connect\|h/, out);
   vm.run('STUB.now = STUB.now + 600; STUB.Tick()');
   out = tabLines(vm, 11);
-  assert.match(out, /Bridge: not seen for .* - is the bridge running\? \|Haddon:claudewow:connect\|h/, out);
-  assert.ok(!out.includes('Bridge quiet'), 'the status line is replaced, not stacked');
+  assert.match(out, /Companion app: not seen for .*\. Is it running\? \|Haddon:claudewow:connect\|h/, out);
+  assert.ok(!out.includes('has been quiet'), 'the status line is replaced, not stacked');
   vm.run('STUB.RunTimers()');
   nextSlot(vm, '{ now = time(), cwd = "", agent = "claude", replies = {} }');
   vm.run('STUB.ClickLink("|Haddon:claudewow:connect|h[connect]|h")');
   vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
   assert.equal(vm.evaluate('ClaudeWoW.IsConnected()'), 'true');
-  assert.ok(tabLines(vm, 11).includes('Bridge is back.'));
+  assert.ok(tabLines(vm, 11).includes('The companion app is back.'));
 });
 
 function whisperVM() {
@@ -1300,8 +1282,8 @@ function whisperVM() {
   vm.run(`SNAP = { g = {}, util = {}, enter = ChatFrame1EditBox:GetScript("OnEnterPressed") }
     for k, v in pairs(_G) do if type(v) == "function" then SNAP.g[k] = v end end
     for k, v in pairs(ChatFrameUtil) do SNAP.util[k] = v end`);
-  login(vm);
-  connect(vm);
+  loginWhisperOn(vm);
+  connectAs(vm, 'claude');
   return vm;
 }
 
@@ -2985,6 +2967,7 @@ test("/claude cancel typed in the shared chat box while a chat's whisper tab is 
   vm.run(`ClaudeWoW.Send("track", nil, { chat = "${quiet}" })`);
   assert.ok(pendingOf(vm, quiet) > 0);
   vm.run('ClaudeWoW.NewChat("Two")');
+  vm.run('table.insert(ClaudeWoWDB.chats[3].history, { role = "user", text = "earlier", t = time() }); SlashCmdList.CLAUDE("config ui whisper on")');
   assert.equal(vm.num('#ClaudeWoWDB.chats'), 3);
   assert.notEqual(vm.evaluate('ClaudeWoWDB.activeChat'), lead);
   const leadTab = tabOf(vm, lead);
@@ -2996,7 +2979,7 @@ test("/claude cancel typed in the shared chat box while a chat's whisper tab is 
   assert.equal(pendingOf(vm, lead), leadId, "the window's chat is not the waiting one");
   assert.equal(
     lastOf(vm, 3, 'system'),
-    `Nothing to cancel: Two is not waiting for a reply. Waiting: 1. ${leadName} (#${leadId}). Pick one with /claude chat <number>, then /claude cancel.`,
+    `Nothing to cancel: Two is not waiting for a reply. Waiting: 1. ${leadName}. Pick one with /claude chat <number>, then /claude cancel.`,
   );
 
   const shared = (chatType, tell, selected = leadTab) =>
@@ -3030,7 +3013,7 @@ test("/claude cancel typed in the shared chat box while a chat's whisper tab is 
     null,
     "the selected tab's chat is cancelled",
   );
-  assert.match(lastOf(vm, 1, 'system'), new RegExp(`^Gave up waiting on #${leadId}`));
+  assert.match(lastOf(vm, 1, 'system'), /^Stopped\./);
   shared('WHISPER', target);
   typeIn(vm, 'ChatFrame1EditBox', '/claude cancel');
   assert.equal(lastOf(vm, 1, 'system'), `Nothing to cancel: ${leadName} is not waiting for a reply. No chat is waiting.`);

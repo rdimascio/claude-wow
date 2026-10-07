@@ -763,7 +763,10 @@ test('an empty chat shows a centered empty state with starters for its kind of c
   e = emptyState(vm);
   assert.equal(e.shown, 'true');
   assert.equal(e.title, 'What do you need?', 'a chat with no project is a game chat');
-  assert.equal(e.body, 'Shift-click an item, spell or quest to link it.');
+  assert.equal(
+    e.body,
+    'Shift-click an item, spell or quest to link it.\nNew here? Type below and press Enter. Replies show here, and /claude brings this window back.',
+  );
   assert.equal(vm.evaluate('ClaudeWoW.UI.empty.icon.shown'), 'true', 'the spark sits above the title');
   assert.deepEqual(starters(vm), ['What should I do next?', 'Plan a route for my quests', 'Which gear upgrades should I look for?']);
   assert.ok(e.top > 0, 'centered in the parchment, not at the top: ' + e.top);
@@ -793,7 +796,7 @@ test('an empty chat shows a centered empty state with starters for its kind of c
 
   vm.run('ClaudeWoW.IsConnected = function() return false end; ClaudeWoW.Render()');
   e = emptyState(vm);
-  assert.equal(e.body, "Can't reach the bridge. Start it, then click Connect.", 'under a system line, disconnected shows only its hint');
+  assert.equal(e.body, 'No answer from the companion app. Is it running?', 'under a system line, disconnected shows only its hint');
   vm.run('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history = {}; ClaudeWoW.Render()');
   e = emptyState(vm);
   assert.equal(e.title, 'Not connected');
@@ -1655,17 +1658,20 @@ test('first login prints one line; a bridge that is not there after the first ch
   const vm = newVM();
   const prints = () => vm.evaluate('table.concat(STUB.prints, "\\n")');
   const count = text => prints().split(text).length - 1;
-  assert.equal(count('Loaded. Type /claude to open it.'), 1);
+  assert.equal(count('Loaded. Click the minimap button or type /claude to open it.'), 1);
   vm.run('STUB.RunTimers()');
-  assert.equal(count("Can't reach the bridge. Start it, then type"), 0, 'not before the first check');
+  assert.equal(count("Can't reach the companion app. Start it, then type"), 0, 'not before the first check');
   vm.run('STUB.RunTimers(); STUB.RunTimers()');
-  assert.equal(count("Can't reach the bridge. Start it, then type"), 1);
+  assert.equal(count("Can't reach the companion app. Start it, then type"), 1);
   vm.run('STUB.FireEvent("PLAYER_LOGIN"); STUB.RunTimers(); STUB.RunTimers()');
-  assert.equal(count('Loaded. Type /claude to open it.'), 1, 'the first-run line is not repeated');
+  assert.equal(count('Loaded. Click the minimap button or type /claude to open it.'), 1, 'the first-run line is not repeated');
 
   const up = newVM();
   up.run('STUB.RunTimers(); ClaudeWoW.IsConnected = function() return true end; STUB.RunTimers()');
-  assert.ok(!up.evaluate('table.concat(STUB.prints, "\\n")').includes("Can't reach the bridge. Start it, then type"), 'a bridge that answered gets no line');
+  assert.ok(
+    !up.evaluate('table.concat(STUB.prints, "\\n")').includes("Can't reach the companion app. Start it, then type"),
+    'a bridge that answered gets no line',
+  );
 });
 
 test('the status line has four plain states and no file names, ids or commands; the detail moves to diag', () => {
@@ -1677,7 +1683,7 @@ test('the status line has four plain states and no file names, ids or commands; 
   };
   const banned = /#\d|install-slots|npm|\.js|cwd|mode:|plugin|checked \d|polls/;
   vm.run('ClaudeWoW.IsConnected = function() return false end; ClaudeWoW.Render()');
-  assert.equal(status(), "|cffff5050Can't reach the bridge. Start it, then click Connect.|r");
+  assert.equal(status(), '|cffff5050No answer from the companion app. Is it running?|r');
   vm.run('ClaudeWoW.IsConnected = function() return true end; STUB.now = STUB.now + 30; STUB.Tick(); ClaudeWoW.Render()');
   assert.equal(status(), 'Ready');
   vm.run('ClaudeWoWDB.chats[1].pendingId = 42; ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[1].id); ClaudeWoW.Render()');

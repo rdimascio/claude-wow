@@ -530,36 +530,13 @@ local function InitDB()
 	if s.autohide == nil then s.autohide = true end
 end
 
-function ClaudeWoW.LastWhisperChoice(chats)
-	local latest, choice = -1, nil
-	for _, c in ipairs(chats or {}) do
-		for i, m in ipairs(c.history or {}) do
-			if m.role == "system" and type(m.text) == "string" then
-				local said = (m.text:match("^Whisper tabs are ON") and "on") or (m.text:match("^Whisper tabs are off") and "off") or nil
-				local at = (tonumber(m.t) or 0) + i / 1000
-				if said and at >= latest then latest, choice = at, said end
-			end
-		end
-	end
-	return choice
-end
-
 function ClaudeWoW.MigrateWhisper(s, fresh)
-	if s.whisperV2 then
-		if s.whisper == nil then s.whisper = true end
-		return
+	s.whisperNews = nil
+	if not s.whisperV3 then
+		s.whisperV3 = true
+		if not s.whisperChoice and not fresh and not s.whisperV2 and s.whisper == true then s.whisperChoice = "on" end
 	end
-	s.whisperV2 = true
-	if s.whisper == true then
-		s.whisperChoice = "on"
-		return
-	end
-	if s.whisper == false and not fresh and ClaudeWoW.LastWhisperChoice(db.chats) == "off" then
-		s.whisperChoice = "off"
-		return
-	end
-	s.whisper = true
-	if not fresh then s.whisperNews = true end
+	s.whisper = s.whisperChoice == "on"
 end
 
 function Q.MigrateMiniBar(s)
@@ -622,12 +599,14 @@ end
 -- Reload plumbing (fallback path)
 ---------------------------------------------------------------------------
 
+Q.RELOAD_COMBAT_STATUS = "In combat. You can reload when combat ends."
+Q.RELOAD_TEXT_REPLY = "Reload needed\n\nA reply is waiting. The game must reload its interface to read it."
+Q.RELOAD_TEXT_AFTER_COMBAT = "Reload needed\n\nCombat is over. Reload the interface now to finish what you started."
+
 local function SafeReload()
 	if InCombatLockdown() then
-		ClaudeWoW.reloadAfterCombat = true
-		if ui.status then
-			ui.status:SetText("In combat - will reload as soon as it ends")
-		end
+		run.reloadAfterCombat = true
+		if ui.status then ui.status:SetText(Q.RELOAD_COMBAT_STATUS) end
 		return
 	end
 	ReloadUI()
@@ -635,8 +614,24 @@ end
 
 Q.RELOAD_POPUP = "CLAUDEWOW_RELOAD"
 
+function Q.AskReload()
+	StaticPopupDialogs[Q.RELOAD_POPUP].text = Q.ReloadNeeded() and Q.RELOAD_TEXT_REPLY or Q.RELOAD_TEXT_AFTER_COMBAT
+	if not StaticPopup_Show(Q.RELOAD_POPUP) then return false end
+	run.reloadAsked = Q.PendingKey()
+	return true
+end
+
+function Q.AfterCombat()
+	if not db then return end
+	if run.reloadAfterCombat then
+		run.reloadAfterCombat = nil
+		if Q.AskReload() then return end
+	end
+	ClaudeWoW.ArmAutoRefresh()
+end
+
 StaticPopupDialogs[Q.RELOAD_POPUP] = {
-	text = "Reload needed\n\nA reply is waiting. The game must reload its interface to read it.",
+	text = Q.RELOAD_TEXT_REPLY,
 	button1 = "Reload",
 	button2 = "Later",
 	OnAccept = function() SafeReload() end,
@@ -675,11 +670,7 @@ function ClaudeWoW.ArmAutoRefresh()
 		if run.reloadArmed ~= key then return end
 		run.reloadArmed = nil
 		if not Q.ReloadNeeded() or InCombatLockdown() then return end
-		if StaticPopup_Show(Q.RELOAD_POPUP) then
-			run.reloadAsked = Q.PendingKey()
-		else
-			ClaudeWoW.ArmAutoRefresh()
-		end
+		if not Q.AskReload() then ClaudeWoW.ArmAutoRefresh() end
 	end)
 end
 
@@ -1597,16 +1588,16 @@ end
 function ClaudeWoW.BridgeState()
 	local seen = run.bridgeSeen
 	if not seen then
-		return "unknown", 0.6, 0.6, 0.6, "Bridge: not seen yet this session"
+		return "unknown", 0.6, 0.6, 0.6, "Companion app: not seen yet this session"
 	end
 	local age = GetTime() - seen
 	local okFor, staleFor = PresenceWindows()
 	if age < okFor then
-		return "ok", 0.2, 0.9, 0.3, "Bridge: connected (seen " .. FmtDur(age) .. " ago)"
+		return "ok", 0.2, 0.9, 0.3, "Companion app: connected (seen " .. FmtDur(age) .. " ago)"
 	elseif age < staleFor then
-		return "stale", 0.95, 0.8, 0.2, "Bridge: last seen " .. FmtDur(age) .. " ago"
+		return "stale", 0.95, 0.8, 0.2, "Companion app: last seen " .. FmtDur(age) .. " ago"
 	end
-	return "down", 0.9, 0.25, 0.25, "Bridge: not seen for " .. FmtDur(age) .. " - is the bridge running?"
+	return "down", 0.9, 0.25, 0.25, "Companion app: not seen for " .. FmtDur(age) .. ". Is it running?"
 end
 
 -- Screenshot transport: no more shots once the bridge would count as down (the
@@ -1672,9 +1663,17 @@ end
 -- One word for the connection state, so Tick can tell when it changed.
 local function ConnectionKey()
 	if ClaudeWoW.IsConnected() then return "ok" end
-	if run.connectingAt then return "connecting" end
-	if run.connectFailed then return "failed" end
+	if run.connectingAt or Q.LoginConnecting() then return "connecting" end
+	if run.connectFailed or (run.loginChecked and not run.bridgeSeen) then return "failed" end
 	return ClaudeWoW.BridgeState()
+end
+
+function Q.LoginConnecting()
+	return run.startedAt ~= nil and not run.loginChecked and not run.bridgeSeen and not run.pixelFailed
+end
+
+function Q.ConnectionKey()
+	return ConnectionKey()
 end
 
 -- Called every tick: time out a Connect attempt, and redraw when the state flips
@@ -2407,8 +2406,8 @@ function Q.GiveUp(c)
 	if not AnyPending() then ClaudeWoW.DisarmReload() end
 	if c.quiet then return ClaudeWoW.Render() end
 	c.gaveUp = id
-	Cli.Out(c, "No reply to #" .. id .. " arrived and nothing was heard about it for " .. math.floor(Q.QuietLimit() / 60)
-		.. " minutes, so this chat is free again. If the reply comes later it still shows here. The bridge keeps the chat's session: send the message again, or ask for the last answer.")
+	Cli.Out(c, "No reply arrived and nothing was heard about it for " .. math.floor(Q.QuietLimit() / 60)
+		.. " minutes, so this chat is free again. If the reply comes later it still shows here. Send the message again, or ask for the last answer.")
 	Q.OfferDraft(c)
 end
 
@@ -3022,7 +3021,7 @@ end
 -- Whisper tabs
 ---------------------------------------------------------------------------
 
-local WL = { TEXT_MAX = 4000, PROBE_NAME = "Cwowprobe", PRE_SEND_EVENT = "ChatFrame.OnEditBoxPreSendText", SHORT_LINES = 8, SHORT_CHARS = 700, TLDR_LINES = 3, PREVIEW_LINES = 2, PROGRESS_MAX = 120, LINE_MAX = 300, BOOT_WAIT = 15, THROTTLE_SECONDS = 20, ELAPSED_STEP = 5, PULSE_SECONDS = 1 }
+local WL = { TEXT_MAX = 4000, PROBE_NAME = "Cwowprobe", PRE_SEND_EVENT = "ChatFrame.OnEditBoxPreSendText", SHORT_LINES = 8, SHORT_CHARS = 700, TLDR_LINES = 3, PREVIEW_LINES = 2, PROGRESS_MAX = 120, LINE_MAX = 300, THROTTLE_SECONDS = 20, ELAPSED_STEP = 5, PULSE_SECONDS = 1 }
 local preSendHooked = false
 local whisperLive = setmetatable({}, { __mode = "k" })
 
@@ -3169,10 +3168,14 @@ function Whisper.Welcome(chat, frame)
 	local where = folder ~= "" and (" in " .. Display(folder)) or ", general chat"
 	local r, g, b = Whisper.SystemColor()
 	WhisperWrite(frame, ChatAgentName(chat) .. where .. ". Type to talk; " .. Link("open", chat.id, "workspace") .. " opens the full window.", r, g, b)
-	if db.settings.whisperNews then
-		db.settings.whisperNews = nil
-		WhisperWrite(frame, "New: chats live in whisper tabs like this one by default. /claude config ui whisper off goes back to the window and the game chat.", r, g, b)
-	end
+end
+
+function Whisper.CompanionAlive()
+	return ClaudeWoW.BridgeState() == "ok" and not run.pixelFailed
+end
+
+function Whisper.MayOpen(chat)
+	return chat ~= nil and Whisper.CompanionAlive() and HasUserMessage(chat) and ChatAgent(chat) ~= ""
 end
 
 function Whisper.FrameFor(chat, create, select)
@@ -3199,12 +3202,12 @@ function Whisper.FrameFor(chat, create, select)
 			local tab = WhisperTab(f)
 			local name = tab and tab.GetText and tab:GetText()
 			local unclaimed = f.claudewowChatId == nil or not FindChat(f.claudewowChatId)
-			if WhisperOwns(chat, f) or (unclaimed and type(name) == "string" and name:lower() == title) then
+			if WhisperOwns(chat, f) or (unclaimed and ChatAgent(chat) ~= "" and type(name) == "string" and name:lower() == title) then
 				return WhisperAdopt(chat, f)
 			end
 		end
 	end
-	if not create or type(FCF_OpenTemporaryWindow) ~= "function" then return nil end
+	if not create or type(FCF_OpenTemporaryWindow) ~= "function" or not Whisper.MayOpen(chat) then return nil end
 	local ok, f = pcall(FCF_OpenTemporaryWindow, "WHISPER", ChatAgentName(chat), DEFAULT_CHAT_FRAME, select and true or false)
 	if not ok or type(f) ~= "table" then
 		run.whisperError = tostring(f)
@@ -3312,12 +3315,12 @@ function Whisper.MacroLinkLabel(m)
 end
 
 function Whisper.Reply(chat, text, agent, role, denied, summary, msgId, macros)
+	local frame = Whisper.FrameFor(chat, true, false)
+	if not frame then return false end
 	if role ~= "system" and Q.WaitForLinks(Display(tostring(summary or "") .. "\n" .. tostring(text or "")), tostring(chat.id) .. ":" .. tostring(msgId)) then
 		C_Timer.After(Q.LINK_RETRY_SECONDS, function() Whisper.Reply(chat, text, agent, role, denied, summary, msgId, macros) end)
 		return true
 	end
-	local frame = Whisper.FrameFor(chat, true, false)
-	if not frame then return false end
 	Whisper.EndLive(frame, "progress")
 	local who = ReplyAgentName(chat, agent)
 	local sr, sg, sb = Whisper.SystemColor()
@@ -3358,7 +3361,7 @@ function Whisper.ProgressText(chat)
 		if #p > WL.PROGRESS_MAX then p = p:sub(1, WL.PROGRESS_MAX) .. "..." end
 		text = text .. " - " .. p
 	end
-	return text .. "  " .. Link("cancel", chat.id, "cancel", "888888")
+	return text .. "  " .. Link("cancel", chat.id, "stop", "888888")
 end
 
 function Whisper.RefreshProgress(chat, force)
@@ -3399,18 +3402,18 @@ function Whisper.BridgeLine(chat)
 	local r, g, b = Whisper.SystemColor()
 	local text
 	if key == "ok" then
-		if run.whisperBridgeBad then text = "|cff33ff66Bridge is back.|r" end
+		if run.whisperBridgeBad then text = "|cff33ff66The companion app is back.|r" end
 		run.whisperBridgeBad = nil
 	elseif key == "stale" then
-		text = "Bridge quiet for a while. " .. Link("connect", nil, "reconnect")
+		text = "The companion app has been quiet for a while. " .. Link("connect", nil, "reconnect")
 	elseif key == "down" then
 		text = select(5, ClaudeWoW.BridgeState()) .. " " .. Link("connect", nil, "connect")
 	elseif key == "failed" then
-		text = "No answer from the bridge. Is it running (claude-wow in a terminal, or the service)? " .. Link("connect", nil, "try again")
+		text = Q.STATUS_NO_ANSWER .. " " .. Link("connect", nil, "try again")
 	elseif key == "connecting" then
-		text = "Connecting to the bridge..."
+		text = Q.STATUS_CONNECTING
 	elseif key == "unknown" then
-		text = "Not connected to the bridge yet. Start it (claude-wow in a terminal, or the service), then " .. Link("connect", nil, "connect")
+		text = "Not connected to the companion app yet. Start it, then " .. Link("connect", nil, "connect")
 	end
 	if key == "stale" or key == "down" or key == "failed" then run.whisperBridgeBad = true end
 	if text then
@@ -3423,12 +3426,9 @@ end
 function Whisper.Pulse()
 	if not db or not Whisper.Active() then return end
 	local c = ActiveChat()
-	if not run.whisperBooted then
-		local waited = GetTime() - (run.startedAt or GetTime())
-		local ready = ClaudeWoW.IsConnected() and c ~= nil and ChatAgent(c) ~= ""
-		if not ready and waited < WL.BOOT_WAIT then return end
+	if not run.whisperBooted and Whisper.MayOpen(c) then
 		run.whisperBooted = true
-		if c then Whisper.FrameFor(c, true, false) end
+		Whisper.FrameFor(c, true, false)
 	end
 	for _, ch in ipairs(db.chats) do
 		if ch.pendingId then Whisper.RefreshProgress(ch) end
@@ -3605,7 +3605,7 @@ function Q.SayStillWaiting(c)
 	run.waitSaid = run.waitSaid or {}
 	if c.quiet or run.waitSaid[c.id] == c.pendingId then return end
 	run.waitSaid[c.id] = c.pendingId
-	Cli.Out(c, ChatAgentName(c) .. " is still working on #" .. c.pendingId .. ". What you type now waits as a draft and is offered again when the reply lands. /claude cancel frees this chat.")
+	Cli.Out(c, ChatAgentName(c) .. " is still working. What you type now waits as a draft and is offered again when the reply lands. Click Stop to cancel.")
 end
 
 -- opts.vision asks for a picture of the screen with this one message, whatever
@@ -3633,7 +3633,7 @@ function ClaudeWoW.Send(text, allow, opts)
 		if ui.input then ui.input:SetText(text) end
 		run.sendOnConnect = { chat = c.id, text = text, allow = allow, opts = opts }
 		if not run.connectingAt then ClaudeWoW.Connect(ShotsPaused(true)) end
-		if not (Whisper.Active() and Whisper.System(c, "Not connected to the bridge yet; connecting now. Your message goes out as soon as it answers.", true)) then
+		if not (Whisper.Active() and Whisper.System(c, "Not connected to the companion app yet; connecting now. Your message goes out as soon as it answers.", true)) then
 			ClaudeWoW.Toggle(true)
 		end
 		return
@@ -5628,8 +5628,12 @@ end
 Q.STATUS_READY = "Ready"
 Q.STATUS_WORKING = "Working..."
 Q.STATUS_REPLY = "Reply waiting"
-Q.STATUS_UNREACHABLE = "Can't reach the bridge. Start it, then click Connect."
+Q.STATUS_UNREACHABLE = "Can't reach the companion app. Start it, then click Connect."
+Q.STATUS_CONNECTING = "Connecting..."
+Q.STATUS_NO_ANSWER = "No answer from the companion app. Is it running?"
 Q.STATUS_RELOAD_HINT = "Click Reload to read it."
+Q.RESEND_AFTER_SECONDS = STRIP_SECONDS
+Q.RESEND_TIP = "The companion app has not picked up this message yet. Resend shows it to the app again."
 
 function Q.StatusState(c)
 	if c and c.pendingId then
@@ -5638,12 +5642,25 @@ function Q.StatusState(c)
 		return "working", Q.ReloadNeeded() and Q.STATUS_RELOAD_HINT or nil, (a and a.startedAt) or run.sentAt
 	end
 	if not ClaudeWoW.IsConnected() then
-		if run.connectingAt then return "working", nil, run.connectingAt end
+		local key = Q.ConnectionKey()
+		if key == "connecting" then return "connecting", nil, run.connectingAt or run.startedAt end
+		if key == "failed" then return "failed" end
 		return "down"
 	end
 	if c and c.draft and c.draft ~= "" then return "reply" end
 	if run.restoring then return "working", nil, run.restoring end
 	return "ready"
+end
+
+function Q.ShouldShowResend(c)
+	if not c or not c.pendingId or c.quiet or db.settings.mode ~= "pixel" then return false end
+	if c.progress or (run.steps and run.steps[c.id]) then return false end
+	local a = run.act and run.act[c.id]
+	if a and (a.count or 0) > 0 then return false end
+	local rec = run.outbound and run.outbound[c.pendingId]
+	if rec and rec.acked then return false end
+	local since = (rec and rec.sentAt) or run.sentAt
+	return since ~= nil and GetTime() - since >= Q.RESEND_AFTER_SECONDS
 end
 
 function ClaudeWoW.UpdateStatus()
@@ -5939,17 +5956,30 @@ function Q.EmptyState(c)
 		if m.role ~= "system" or (type(m.picker) == "table" and #m.picker > 0) then return nil end
 	end
 	if run.restoring then
-		return { title = "Restoring your chats", lines = { "Connecting to the bridge and restoring your chats..." } }
+		return { title = "Restoring your chats", lines = { "Connecting to the companion app and restoring your chats..." } }
 	end
 	if not ClaudeWoW.IsConnected() then
-		return { title = "Not connected", lines = { Q.STATUS_UNREACHABLE } }
+		local state = Q.StatusState(c)
+		if state == "connecting" then return { title = Q.STATUS_CONNECTING, lines = { "Looking for the companion app on this computer." } } end
+		return { title = "Not connected", lines = { state == "failed" and Q.STATUS_NO_ANSWER or Q.STATUS_UNREACHABLE } }
 	end
 	local project = Cli.ProjectOf(c) ~= ""
+	local lines = { Q.EMPTY_HINT }
+	if Q.FirstRun() then table.insert(lines, Q.FIRST_RUN_TEXT) end
 	return {
 		title = project and "What are we working on?" or "What do you need?",
-		lines = { Q.EMPTY_HINT },
+		lines = lines,
 		starters = project and Q.STARTERS.project or Q.STARTERS.game,
 	}
+end
+
+Q.FIRST_RUN_TEXT = "New here? Type below and press Enter. Replies show here, and /claude brings this window back."
+
+function Q.FirstRun()
+	for _, ch in ipairs(db.chats) do
+		if HasUserMessage(ch) then return false end
+	end
+	return true
 end
 
 function Q.UseStarter(text)
@@ -6380,10 +6410,9 @@ function ClaudeWoW.Notify(chat, text, agent, summary, role, denied, msgId, macro
 	Q.UpdateMinimapSignal()
 	run.lastReplyChat = chat.id
 	Whisper.OfferReply(chat)
-	if not Whisper.Reply(chat, text, agent, role, denied, summary, msgId, macros) then
-		EchoToChat(chat, text, agent, summary)
-	end
-	if inCombat or Whisper.Active() then return end
+	local tabbed = Whisper.Reply(chat, text, agent, role, denied, summary, msgId, macros)
+	if not tabbed then EchoToChat(chat, text, agent, summary) end
+	if inCombat or tabbed then return end
 	if ui.frame and ui.frame:IsShown() then return end
 	local who = ReplyAgentName(chat, agent)
 	if UIErrorsFrame then UIErrorsFrame:AddMessage(who .. " replied.", 0.5, 0.8, 1, 1) end
@@ -6711,6 +6740,8 @@ function Q.ShortStatus(c)
 	if state == "working" then
 		return "|cffffd100" .. Q.STATUS_WORKING .. "|r " .. FmtDur(GetTime() - (started or GetTime()))
 	end
+	if state == "connecting" then return "|cffffd100" .. Q.STATUS_CONNECTING .. "|r" end
+	if state == "failed" then return "|cffff5050" .. Q.STATUS_NO_ANSWER .. "|r" end
 	if state == "down" then return "|cffff5050" .. Q.STATUS_UNREACHABLE .. "|r" end
 	if state == "reply" then return "|cff55ff55" .. Q.STATUS_REPLY .. "|r" end
 	return Q.STATUS_READY
@@ -6832,6 +6863,8 @@ end
 function Q.PlainStatus(c)
 	local state = Q.StatusState(c)
 	if state == "working" then return Q.STATUS_WORKING end
+	if state == "connecting" then return Q.STATUS_CONNECTING end
+	if state == "failed" then return Q.STATUS_NO_ANSWER end
 	if state == "down" then return Q.STATUS_UNREACHABLE end
 	if state == "reply" then return Q.STATUS_REPLY end
 	return Q.STATUS_READY
@@ -7045,16 +7078,18 @@ Q.WINDOW_STRATA = "HIGH"
 
 Q.BRIDGE_CHECK_SECONDS = 20
 Q.LOGIN_NOTICE = ClaudeWoW.PREFIX .. "Loaded. Type /claude to open it."
+Q.LOGIN_NOTICE_MINIMAP = ClaudeWoW.PREFIX .. "Loaded. Click the minimap button or type /claude to open it."
 Q.REPLY_WAITING_NOTICE = " replied. Type /claude to open the window."
-Q.UNREACHABLE_NOTICE = ClaudeWoW.PREFIX .. "Can't reach the bridge. Start it, then type /claude and click Connect."
+Q.UNREACHABLE_NOTICE = ClaudeWoW.PREFIX .. "Can't reach the companion app. Start it, then type /claude and click Connect."
 
 function Q.LoginNotice()
 	if db.settings.loginNoticeV1 then return end
 	db.settings.loginNoticeV1 = true
-	print(Q.LOGIN_NOTICE)
+	print(Q.MinimapButtonOn() and Q.LOGIN_NOTICE_MINIMAP or Q.LOGIN_NOTICE)
 end
 
 function Q.UnreachableNotice()
+	run.loginChecked = true
 	if run.unreachableTold or ClaudeWoW.IsConnected() or run.connectingAt then return end
 	run.unreachableTold = true
 	print(Q.UNREACHABLE_NOTICE)
@@ -8948,7 +8983,7 @@ function Cli.Show(c)
 		if not c or Cli.WindowShown() then return end
 		local had = run.whisperTabs and run.whisperTabs[c.id]
 		local frame = Whisper.FrameFor(c, true, true)
-		return frame ~= nil and frame == had
+		if frame then return frame == had end
 	end
 	ClaudeWoW.Toggle(true)
 	return false
@@ -9147,9 +9182,15 @@ function Cli.SetWhisper(c, rest)
 		s.whisper, s.whisperChoice = true, "on"
 		Whisper.Install()
 		local frame = Whisper.FrameFor(c, true, true)
-		Cli.Out(c, frame
-			and ("Whisper tabs are ON: this chat is the \"" .. Whisper.Title(c) .. "\" tab in the chat dock. Type there and press Enter to talk to " .. ChatAgentName(c) .. "; replies flash the tab, and /claude commands work there too. Other chats get a tab of their own. /claude config ui whisper off closes them.")
-			or ("Whisper tabs are ON, but this client could not open a chat tab" .. (run.whisperError and (": " .. run.whisperError) or " (no FCF_OpenTemporaryWindow)") .. ". Replies keep going to the game chat and the window."))
+		local text
+		if frame then
+			text = "Whisper tabs are ON: this chat is the \"" .. Whisper.Title(c) .. "\" tab in the chat dock. Type there and press Enter to talk to " .. ChatAgentName(c) .. "; replies flash the tab, and /claude commands work there too. Other chats get a tab of their own. /claude config ui whisper off closes them."
+		elseif Whisper.Active() and not Whisper.MayOpen(c) then
+			text = "Whisper tabs are ON. A chat gets its tab in the chat dock once the companion app answers and you send that chat a message. /claude config ui whisper off turns them off."
+		else
+			text = "Whisper tabs are ON, but this client could not open a chat tab" .. (run.whisperError and (": " .. run.whisperError) or " (no FCF_OpenTemporaryWindow)") .. ". Replies keep going to the game chat and the window."
+		end
+		Cli.Out(c, text)
 	elseif rest == "off" then
 		s.whisper, s.whisperChoice = false, "off"
 		Whisper.CloseAll()
@@ -9880,7 +9921,7 @@ function ClaudeWoW.Cancel(c)
 	if c and c.pendingId then
 		local cancelled = c.pendingId
 		Whisper.StopProgress(c)
-		AddHistory(c, "system", "Gave up waiting on #" .. c.pendingId .. (run.bridgeCancel and "; the bridge is told to stop it" or "; this bridge cannot stop it, so it may still finish in the background"))
+		AddHistory(c, "system", "Stopped." .. (run.bridgeCancel and "" or " It may still finish in the background."))
 		run.outbound[c.pendingId] = nil
 		if run.act then run.act[c.id] = nil end
 		c.pendingId = nil
@@ -9891,7 +9932,7 @@ function ClaudeWoW.Cancel(c)
 	elseif c then
 		local waiting = {}
 		for i, ch in ipairs(Q.ListedChats()) do
-			if ch.pendingId then table.insert(waiting, i .. ". " .. ch.name .. " (#" .. ch.pendingId .. ")") end
+			if ch.pendingId then table.insert(waiting, i .. ". " .. ch.name) end
 		end
 		Cli.Out(c, "Nothing to cancel: " .. c.name .. " is not waiting for a reply. "
 			.. (#waiting > 0 and ("Waiting: " .. table.concat(waiting, ", ") .. ". Pick one with /claude chat <number>, then /claude cancel.") or "No chat is waiting."))
@@ -10364,11 +10405,6 @@ ev:SetScript("OnEvent", function(self, event, arg1)
 		-- "Create" / "Update" on the macro buttons follows what exists now.
 		if ui.frame and ui.frame:IsShown() then ClaudeWoW.Render() end
 	elseif event == "PLAYER_REGEN_ENABLED" then
-		if ClaudeWoW.reloadAfterCombat then
-			ClaudeWoW.reloadAfterCombat = nil
-			ReloadUI()
-		elseif db then
-			ClaudeWoW.ArmAutoRefresh()
-		end
+		Q.AfterCombat()
 	end
 end)
