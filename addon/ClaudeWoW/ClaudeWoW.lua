@@ -4486,20 +4486,23 @@ function Cli.PickProject(c, value)
 	ClaudeWoW.Render()
 end
 
+function Cli.ProjectMenuItems(c)
+	local function Current() return Cli.ProjectLabel(c) end
+	local items = {
+		{ title = "Project" },
+		{ text = Cli.NO_PROJECT, radio = true, selected = function() return Current() == Cli.NO_PROJECT end, fn = function() Cli.PickProject(c, "none") end },
+	}
+	for _, p in ipairs(Cli.KnownProjects()) do
+		local name = FolderName(p)
+		table.insert(items, { text = name, radio = true, selected = function() return Current() == name end, fn = function() Cli.PickProject(c, p) end })
+	end
+	return items
+end
+
 function Cli.ProjectMenu(anchor)
 	local c = ActiveChat()
 	if not c then return end
-	if type(MenuUtil) == "table" and type(MenuUtil.CreateContextMenu) == "function" then
-		local shown = pcall(MenuUtil.CreateContextMenu, anchor, function(_, root)
-			root:CreateTitle("Project")
-			root:CreateButton(Cli.NO_PROJECT, function() Cli.PickProject(c, "none") end)
-			for _, p in ipairs(Cli.KnownProjects()) do
-				root:CreateButton(FolderName(p), function() Cli.PickProject(c, p) end)
-			end
-		end)
-		if shown then return end
-	end
-	Cli.Out(c, "project: " .. Cli.ProjectLabel(c) .. " (known: " .. Cli.ProjectNames() .. "). Use /claude --project <name|path|none>.")
+	Q.ShowMenu(anchor, Cli.ProjectMenuItems(c), "project", true)
 end
 
 Cli.EFFORT_CHOICES = { "low", "medium", "high", "xhigh", "max" }
@@ -4614,10 +4617,10 @@ end
 
 Cli.EFFORT_SOURCE_NOTE = {
 	chat = "Set for this chat.",
-	bridge = "The bridge's setting for this agent; it passes it on every run.",
-	lock = "Fixed by CLAUDE_CODE_EFFORT_LEVEL on the bridge's computer, which overrides any other choice.",
-	agent = "The bridge sets no effort, so the agent picks: its own settings, else the model's built-in level.",
-	unknown = "This bridge does not report its effort setting; update it to see the real value.",
+	bridge = "The companion app's setting for this agent.",
+	lock = "Fixed by a setting on your computer, so you cannot change it here.",
+	agent = "The agent picks its own level.",
+	unknown = "Update the companion app to see the real value.",
 }
 
 function Cli.EffortButtonTooltip(b)
@@ -4632,7 +4635,7 @@ function Cli.EffortButtonTooltip(b)
 	end
 	GameTooltip:SetText("Effort: " .. s.value)
 	GameTooltip:AddLine(Cli.EFFORT_SOURCE_NOTE[s.source] or "", 0.8, 0.8, 0.8, true)
-	GameTooltip:AddLine("How hard the agent thinks in this chat. Click to change it, or use /claude --effort <level>.", 0.8, 0.8, 0.8, true)
+	if s.source ~= "lock" then GameTooltip:AddLine("How hard the agent thinks in this chat. Click to change it, or use /claude --effort <level>.", 0.8, 0.8, 0.8, true) end
 	GameTooltip:Show()
 end
 
@@ -4644,30 +4647,28 @@ function Cli.EffortAutoLabel(c)
 	return s.value == Cli.EFFORT_AUTO and "Auto" or ("Auto (" .. s.value .. ")")
 end
 
+function Cli.EffortMenuItems(c)
+	local function Changeable() return Cli.EffortState(c).source ~= "lock" end
+	local items = {
+		{ title = "Effort" },
+		{ text = Cli.EffortAutoLabel(c), radio = true, enabled = Changeable, selected = function() return (c.effort or "") == "" end, fn = function() Cli.PickEffort(c, nil) end },
+	}
+	for _, e in ipairs(Cli.EFFORT_CHOICES) do
+		table.insert(items, { text = e, radio = true, enabled = Changeable, selected = function() return c.effort == e end, fn = function() Cli.PickEffort(c, e) end })
+	end
+	return items
+end
+
 function Cli.EffortMenu(anchor)
 	local c = ActiveChat()
 	if not c or not Cli.EffortState(c).supported then return end
-	if type(MenuUtil) == "table" and type(MenuUtil.CreateContextMenu) == "function" then
-		local shown = pcall(MenuUtil.CreateContextMenu, anchor, function(_, root)
-			root:CreateTitle("Effort")
-			root:CreateButton(Cli.EffortAutoLabel(c), function() Cli.PickEffort(c, nil) end)
-			for _, e in ipairs(Cli.EFFORT_CHOICES) do
-				root:CreateButton(e, function() Cli.PickEffort(c, e) end)
-			end
-		end)
-		if shown then return end
-	end
-	local at = 0
-	for i, e in ipairs(Cli.EFFORT_CHOICES) do
-		if e == c.effort then at = i end
-	end
-	Cli.PickEffort(c, Cli.EFFORT_CHOICES[at + 1])
+	Q.ShowMenu(anchor, Cli.EffortMenuItems(c), "effort", true)
 end
 
 Cli.PROJECT_W_MIN = 60
 Cli.PROJECT_W_MAX = 240
 Cli.PROJECT_PAD = 8
-Cli.HEADER_TITLE_MIN = 16
+Cli.HEADER_TITLE_MIN = 80
 
 function Cli.HeaderLabelWidth(b, text)
 	b.text:SetWidth(0)
@@ -5138,7 +5139,7 @@ function ClaudeWoW.SetFolder(rest, c)
 end
 
 StaticPopupDialogs["CLAUDEWOW_FOLDER"] = {
-	text = "Folder for this chat\n\nRelative to the bridge's folder (%s), ~, or a full path.\nEmpty = the bridge's default. Changing it starts a fresh agent session.",
+	text = "Project for this chat\n\nType a full path, a path that starts with ~, or a folder name inside %s.\nLeave it empty for no project. A change starts a new session with the agent.",
 	button1 = OKAY,
 	button2 = CANCEL,
 	hasEditBox = 1,
@@ -5172,11 +5173,12 @@ StaticPopupDialogs["CLAUDEWOW_FOLDER"] = {
 	end,
 }
 
--- Folder dialog for a chat (the active one when no id is given).
+Q.PROJECT_BASE_UNKNOWN = "the companion app's folder"
+
 function ClaudeWoW.FolderPrompt(id)
 	local c = (id and FindChat(id)) or ActiveChat()
 	if not c then return end
-	StaticPopup_Show("CLAUDEWOW_FOLDER", run.bridgeCwd or "unknown until connected", nil, { id = c.id, cwd = c.cwd })
+	StaticPopup_Show("CLAUDEWOW_FOLDER", run.bridgeCwd or Q.PROJECT_BASE_UNKNOWN, nil, { id = c.id, cwd = c.cwd })
 end
 
 -- The agent this chat talks to, by id. Empty (or
@@ -5646,6 +5648,20 @@ function Q.StatusState(c)
 	return "ready"
 end
 
+function Q.ResendVisible(c, mode)
+	if not (c and c.pendingId ~= nil and mode == "pixel") then return false end
+	if type(Q.ShouldShowResend) == "function" then return Q.ShouldShowResend(c) and true or false end
+	return true
+end
+
+function Q.ResendTooltip(button)
+	if type(Q.RESEND_TIP) ~= "string" then return end
+	GameTooltip:SetOwner(button, "ANCHOR_TOP")
+	GameTooltip:SetText("Resend")
+	GameTooltip:AddLine(Q.RESEND_TIP, 0.8, 0.8, 0.8, true)
+	GameTooltip:Show()
+end
+
 function ClaudeWoW.UpdateStatus()
 	if not ui.status then return end
 	local c = ActiveChat()
@@ -5668,7 +5684,7 @@ function ClaudeWoW.UpdateStatus()
 		ui.title:SetText(t)
 	end
 	if ui.chatTitle then ClaudeWoW.RefreshTitleBar() end
-	if ui.resend then ui.resend:SetShown(c and c.pendingId ~= nil and mode == "pixel") end
+	if ui.resend then ui.resend:SetShown(Q.ResendVisible(c, mode)) end
 	if ui.refresh then ui.refresh:SetShown(mode ~= "pixel" or run.slotsExhausted or run.slotsMissing or run.pixelFailed or false) end
 	if ui.ctxBar then
 		Q.UpdateContextBar(c)
@@ -5788,6 +5804,20 @@ function Q.HeaderButton(host, name, rightOf, onClick, onEnter)
 	b:SetScript("OnLeave", function() GameTooltip:Hide() end)
 	b:Hide()
 	return b
+end
+
+Q.INPUT_INSET_PLAIN = 8
+Q.INPUT_INSET_SCROLL = 24
+
+function Q.InputRightInset(busy)
+	local base = ui.inputRightInset or Q.INPUT_INSET_PLAIN
+	return busy and (base + Q.STOP_W + Q.STOP_INSET) or base
+end
+
+function Q.InsetComposer(busy)
+	local scroll, box = ui.inputScroll, ui.inputBg
+	if not scroll or not box then return end
+	scroll:SetPoint("BOTTOMRIGHT", box, "BOTTOMRIGHT", -Q.InputRightInset(busy), 6)
 end
 
 function Q.BesideInput(button, inputBg, native)
@@ -6562,6 +6592,8 @@ local PANEL_W = 150
 Q.PORTRAIT = "Interface\\AddOns\\ClaudeWoW\\Portrait"
 Q.NATIVE_TEMPLATES = { "ButtonFrameTemplate", "InsetFrameTemplate" }
 Q.LIST_W = 300
+Q.LIST_MIN_W = 200
+Q.LIST_SHARE = 0.38
 Q.COMPOSER_BOTTOM = 2
 Q.COMPOSER_GAP = 6
 Q.EFFORT_H = 16
@@ -7745,8 +7777,9 @@ function ClaudeWoW.RenderQuestList()
 		end
 		table.insert(groups[key], c)
 	end
-	local width = Try(q.scroll.GetWidth, q.scroll) or (Q.LIST_W - 32)
-	if width < 80 then width = Q.LIST_W - 32 end
+	local fallback = (ui.listWidth or Q.LIST_W) - 32
+	local width = Try(q.scroll.GetWidth, q.scroll) or fallback
+	if width < 80 then width = fallback end
 	q.content:SetWidth(width)
 	local y, nh, nr, matched, index = 0, 0, 0, 0, 0
 	local last, activeTop, activeBottom
@@ -7865,11 +7898,9 @@ end
 function Q.ChatDetails(c)
 	local folder = FolderName(ChatFolder(c))
 	local agent = AgentName((c and c.agent ~= "" and c.agent) or run.bridgeAgent)
-	local plugin = (c and (c.plugin or "") ~= "" and c.plugin) or run.bridgePlugin or "default"
 	return {
-		{ "Folder", folder ~= "" and Display(folder) or "none" },
+		{ "Project", folder ~= "" and Display(folder) or Cli.NO_PROJECT },
 		{ "Agent", agent },
-		{ "Plugin", Display(plugin) },
 	}
 end
 
@@ -7888,6 +7919,22 @@ function Q.TitleBarTooltip(bar)
 	for _, row in ipairs(Q.ChatDetails(c)) do GameTooltip:AddDoubleLine(row[1], row[2], 1, 0.82, 0, 1, 1, 1) end
 	GameTooltip:AddLine("Click to rename. Right-click for chat options.", 0.6, 0.6, 0.6, true)
 	GameTooltip:Show()
+end
+
+function Q.ListWidth(frameWidth)
+	local share = math.floor((tonumber(frameWidth) or 0) * Q.LIST_SHARE)
+	return math.max(Q.LIST_MIN_W, math.min(Q.LIST_W, share))
+end
+
+function Q.LayoutListWidth()
+	local list, f = ui.questList and ui.listPanel, ui.frame
+	if not list or not f then return end
+	local width = Q.ListWidth(Try(f.GetWidth, f))
+	ui.listWidth = width
+	list:SetWidth(width)
+	ui.newChat:SetWidth(width - 12)
+	ui.questList.content:SetWidth(width - 32)
+	ui.questList.empty:SetWidth(width - 60)
 end
 
 function Q.BuildQuestFrames(f)
@@ -8081,7 +8128,7 @@ function Q.ChatMenuItems(chatId)
 	local items = {
 		{ title = Display(c.name) },
 		{ text = "Rename...", fn = function() ClaudeWoW.RenamePrompt(chatId) end },
-		{ text = "Folder...", fn = function() ClaudeWoW.FolderPrompt(chatId) end },
+		{ text = "Project...", fn = function() ClaudeWoW.FolderPrompt(chatId) end },
 	}
 	if #Q.MenuAgents() > 0 then
 		table.insert(items, { text = "Agent", submenu = Q.AgentMenuItems(chatId) })
@@ -8098,21 +8145,36 @@ function Q.MenuLabel(item)
 	return item.color and ("|c" .. item.color .. item.text .. "|r") or item.text
 end
 
+function Q.MenuEnabled(item)
+	local enabled = item.enabled
+	if enabled == nil then return true end
+	if type(enabled) == "function" then return enabled() and true or false end
+	return enabled and true or false
+end
+
+function Q.ApplyNativeEnabled(element, item)
+	if item.enabled == nil or type(element) ~= "table" or type(element.SetEnabled) ~= "function" then return end
+	element:SetEnabled(item.enabled)
+end
+
 function Q.FillNativeMenu(root, items)
 	for _, it in ipairs(items) do
+		local element
 		if it.title then
 			root:CreateTitle(it.title)
 		elseif it.divider then
 			root:CreateDivider()
 		elseif it.submenu then
-			Q.FillNativeMenu(root:CreateButton(it.text), it.submenu)
+			element = root:CreateButton(it.text)
+			Q.FillNativeMenu(element, it.submenu)
 		elseif it.radio then
-			root:CreateRadio(it.text, it.selected, it.fn)
+			element = root:CreateRadio(it.text, it.selected, it.fn)
 		elseif it.checked then
-			root:CreateCheckbox(it.text, it.checked, it.fn)
+			element = root:CreateCheckbox(it.text, it.checked, it.fn)
 		else
-			root:CreateButton(Q.MenuLabel(it), it.fn)
+			element = root:CreateButton(Q.MenuLabel(it), it.fn)
 		end
+		if element then Q.ApplyNativeEnabled(element, it) end
 	end
 end
 
@@ -8214,7 +8276,9 @@ function Q.FillFallbackMenu(menu, items)
 		row:ClearAllPoints()
 		row:SetPoint("TOPLEFT", menu, "TOPLEFT", 6, -top - (i - 1) * Q.MENU_ROW_H)
 		row.item = it
-		row.fn = (not it.divider and not r.header) and it.fn or nil
+		local enabled = Q.MenuEnabled(it)
+		row.fn = (enabled and not it.divider and not r.header) and it.fn or nil
+		row.disabled = not enabled
 		row:EnableMouse(row.fn ~= nil)
 		row.check:ClearAllPoints()
 		row.check:SetPoint("LEFT", row, "LEFT", indent, 0)
@@ -8229,7 +8293,14 @@ function Q.FillFallbackMenu(menu, items)
 		row.label:SetPoint("LEFT", row, "LEFT", indent + (mark and 16 or 0), 0)
 		row.label:SetPoint("RIGHT", row, "RIGHT", -4, 0)
 		row.label:SetText(it.divider and "" or Q.MenuLabel(it))
-		if r.header then row.label:SetTextColor(1, 0.82, 0) else row.label:SetTextColor(1, 1, 1) end
+		if not enabled then
+			row.label:SetTextColor(0.5, 0.5, 0.5)
+		elseif r.header then
+			row.label:SetTextColor(1, 0.82, 0)
+		else
+			row.label:SetTextColor(1, 1, 1)
+		end
+		row.check:SetAlpha(enabled and 1 or 0.5)
 		row:Show()
 	end
 	for i = #rows + 1, #menu.rows do menu.rows[i]:Hide() end
@@ -8260,6 +8331,119 @@ function ClaudeWoW.ShowChatMenu(chatId, anchor)
 	if not items then return end
 	Q.ShowMenu(anchor, items, "chat:" .. chatId, ui.native)
 	if ui.menu then ui.menu.chatId = ui.menu.key == "chat:" .. chatId and chatId or nil end
+end
+
+function Q.BuildLegacyList(f)
+	local panel = Q.Panel(f, false)
+	panel:SetPoint("TOPLEFT", f, "TOPLEFT", 14, -52)
+	panel:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 14, 50)
+	panel:SetWidth(PANEL_W)
+	ui.listPanel = panel
+
+	local newBtn = MakeButton(panel, "New Chat", PANEL_W - 16, function() ClaudeWoW.NewChat() end)
+	newBtn:SetPoint("TOP", panel, "TOP", 0, -8)
+
+	ui.chatButtons = {}
+	for i = 1, Q.CHAT_PAGE do
+		local b = CreateFrame("Button", nil, panel)
+		b:SetSize(PANEL_W - 16, 20)
+		b:SetPoint("TOP", newBtn, "BOTTOM", 0, -6 - (i - 1) * 21)
+		b.selected = b:CreateTexture(nil, "BACKGROUND")
+		b.selected:SetAllPoints()
+		b.selected:SetColorTexture(1, 1, 1, 0.12)
+		b.selected:Hide()
+		local hl = b:CreateTexture(nil, "HIGHLIGHT")
+		hl:SetAllPoints()
+		hl:SetColorTexture(1, 1, 1, 0.08)
+
+		b.del = CreateFrame("Button", nil, b)
+		b.del:SetSize(16, 16)
+		b.del:SetPoint("RIGHT", b, "RIGHT", -2, 0)
+		if C_Texture and C_Texture.GetAtlasExists and C_Texture.GetAtlasExists("128-RedButton-Delete") then
+			b.del:SetNormalAtlas("128-RedButton-Delete")
+			b.del:SetPushedAtlas("128-RedButton-Delete-Pressed")
+			b.del:SetHighlightAtlas("128-RedButton-Delete-Highlight")
+		else
+			b.del:SetNormalTexture("Interface\\Buttons\\UI-GroupLoot-Pass-Up")
+			b.del:SetHighlightTexture("Interface\\Buttons\\UI-GroupLoot-Pass-Highlight")
+		end
+		b.del:SetAlpha(0.6)
+		b.del:SetScript("OnClick", function() ClaudeWoW.ConfirmDelete(b.chatId) end)
+		b.del:SetScript("OnEnter", function(self)
+			self:SetAlpha(1)
+			GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+			GameTooltip:SetText("Delete this chat")
+			GameTooltip:Show()
+		end)
+		b.del:SetScript("OnLeave", function(self)
+			self:SetAlpha(0.6)
+			GameTooltip:Hide()
+		end)
+
+		b.label = b:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+		b.label:SetPoint("LEFT", b, "LEFT", 6, 0)
+		b.label:SetPoint("RIGHT", b.del, "LEFT", -4, 0)
+		b.label:SetJustifyH("LEFT")
+		b.label:SetWordWrap(false)
+		b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+		b:SetScript("OnClick", function(self, button)
+			if button == "RightButton" then
+				ClaudeWoW.ShowChatMenu(self.chatId, self)
+			else
+				ClaudeWoW.SwitchChat(self.chatId)
+			end
+		end)
+		b:SetScript("OnDoubleClick", function(self)
+			ClaudeWoW.SwitchChat(self.chatId)
+			ClaudeWoW.RenamePrompt(self.chatId)
+		end)
+		b:Hide()
+		ui.chatButtons[i] = b
+	end
+	local function PageButton(label, delta)
+		local pb = MakeButton(panel, label, 28, function()
+			ui.chatPage = (ui.chatPage or 1) + delta
+			ClaudeWoW.RenderChatList()
+		end)
+		pb:SetHeight(18)
+		return pb
+	end
+	ui.pagePrev = PageButton("<", -1)
+	ui.pagePrev:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 8, 6)
+	ui.pageNext = PageButton(">", 1)
+	ui.pageNext:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -8, 6)
+	ui.pageLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+	ui.pageLabel:SetPoint("BOTTOM", panel, "BOTTOM", 0, 10)
+	return panel
+end
+
+Q.LEGACY_BIND_BUTTON = "ClaudeWoWRefreshButton"
+Q.LEGACY_BIND_ACTION = "CLICK " .. Q.LEGACY_BIND_BUTTON .. ":LeftButton"
+Q.WORKSPACE_BINDING = "CLAUDEWOW_WORKSPACE"
+Q.BIND_MOVED = "Use Key Bindings > AddOns to set a key that opens or closes the window."
+Q.BIND_EVENTS = { "UPDATE_BINDINGS", "PLAYER_REGEN_ENABLED" }
+
+function Q.LegacyBindKeys()
+	if type(GetBindingKey) ~= "function" then return {} end
+	return { GetBindingKey(Q.LEGACY_BIND_ACTION) }
+end
+
+function Q.MoveLegacyBinding()
+	if InCombatLockdown() then return false end
+	local keys = Q.LegacyBindKeys()
+	if #keys == 0 then return false end
+	for _, key in ipairs(keys) do SetBinding(key, Q.WORKSPACE_BINDING) end
+	SaveBindings(GetCurrentBindingSet())
+	return true
+end
+
+function Q.MigrateLegacyBinding()
+	Q.MoveLegacyBinding()
+	if ui.bindWatch then return end
+	local watch = CreateFrame("Frame")
+	for _, event in ipairs(Q.BIND_EVENTS) do watch:RegisterEvent(event) end
+	watch:SetScript("OnEvent", function() Q.MoveLegacyBinding() end)
+	ui.bindWatch = watch
 end
 
 local function BuildUI()
@@ -8299,7 +8483,7 @@ local function BuildUI()
 		holder:EnableMouse(true)
 		holder:SetScript("OnEnter", function(self)
 			GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-			GameTooltip:SetText(dot.tip or "Bridge status", 0.9, 0.9, 0.9, 1, true)
+			GameTooltip:SetText(dot.tip or "Companion app status", 0.9, 0.9, 0.9, 1, true)
 			Q.StatusTooltip()
 			GameTooltip:Show()
 		end)
@@ -8358,92 +8542,8 @@ local function BuildUI()
 		Q.UpdateMinimapSignal()
 	end)
 
-	-- Left panel: chat list
-	if native then Q.BuildQuestFrames(f) end
-	local panel = Q.Panel(f, false)
-	panel:SetPoint("TOPLEFT", f, "TOPLEFT", 14, -52)
-	panel:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 14, 50)
-	panel:SetWidth(PANEL_W)
-	if native then panel:Hide() else ui.listPanel = panel end
-
-	local newBtn = MakeButton(panel, "New Chat", PANEL_W - 16, function() ClaudeWoW.NewChat() end)
-	newBtn:SetPoint("TOP", panel, "TOP", 0, -8)
-
-	ui.chatButtons = {}
-	for i = 1, Q.CHAT_PAGE do
-		local b = CreateFrame("Button", nil, panel)
-		b:SetSize(PANEL_W - 16, 20)
-		b:SetPoint("TOP", newBtn, "BOTTOM", 0, -6 - (i - 1) * 21)
-		b.selected = b:CreateTexture(nil, "BACKGROUND")
-		b.selected:SetAllPoints()
-		b.selected:SetColorTexture(1, 1, 1, 0.12)
-		b.selected:Hide()
-		local hl = b:CreateTexture(nil, "HIGHLIGHT")
-		hl:SetAllPoints()
-		hl:SetColorTexture(1, 1, 1, 0.08)
-
-		-- Trash can: delete this chat (asks first). Blizzard's red delete button
-		-- where the client has it, a plain X elsewhere.
-		b.del = CreateFrame("Button", nil, b)
-		b.del:SetSize(16, 16)
-		b.del:SetPoint("RIGHT", b, "RIGHT", -2, 0)
-		if C_Texture and C_Texture.GetAtlasExists and C_Texture.GetAtlasExists("128-RedButton-Delete") then
-			b.del:SetNormalAtlas("128-RedButton-Delete")
-			b.del:SetPushedAtlas("128-RedButton-Delete-Pressed")
-			b.del:SetHighlightAtlas("128-RedButton-Delete-Highlight")
-		else
-			b.del:SetNormalTexture("Interface\\Buttons\\UI-GroupLoot-Pass-Up")
-			b.del:SetHighlightTexture("Interface\\Buttons\\UI-GroupLoot-Pass-Highlight")
-		end
-		b.del:SetAlpha(0.6)
-		b.del:SetScript("OnClick", function() ClaudeWoW.ConfirmDelete(b.chatId) end)
-		b.del:SetScript("OnEnter", function(self)
-			self:SetAlpha(1)
-			GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-			GameTooltip:SetText("Delete this chat")
-			GameTooltip:Show()
-		end)
-		b.del:SetScript("OnLeave", function(self)
-			self:SetAlpha(0.6)
-			GameTooltip:Hide()
-		end)
-
-		b.label = b:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-		b.label:SetPoint("LEFT", b, "LEFT", 6, 0)
-		b.label:SetPoint("RIGHT", b.del, "LEFT", -4, 0)
-		b.label:SetJustifyH("LEFT")
-		b.label:SetWordWrap(false)
-		-- Left-click switches to the chat; right-click opens its menu (Rename,
-		-- Folder, Agent). A second right-click on the same row closes the menu again.
-		b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-		b:SetScript("OnClick", function(self, button)
-			if button == "RightButton" then
-				ClaudeWoW.ShowChatMenu(self.chatId, self)
-			else
-				ClaudeWoW.SwitchChat(self.chatId)
-			end
-		end)
-		b:SetScript("OnDoubleClick", function(self)
-			ClaudeWoW.SwitchChat(self.chatId)
-			ClaudeWoW.RenamePrompt(self.chatId)
-		end)
-		b:Hide()
-		ui.chatButtons[i] = b
-	end
-	local function PageButton(label, delta)
-		local pb = MakeButton(panel, label, 28, function()
-			ui.chatPage = (ui.chatPage or 1) + delta
-			ClaudeWoW.RenderChatList()
-		end)
-		pb:SetHeight(18)
-		return pb
-	end
-	ui.pagePrev = PageButton("<", -1)
-	ui.pagePrev:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 8, 6)
-	ui.pageNext = PageButton(">", 1)
-	ui.pageNext:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -8, 6)
-	ui.pageLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-	ui.pageLabel:SetPoint("BOTTOM", panel, "BOTTOM", 0, 10)
+	local panel
+	if native then Q.BuildQuestFrames(f) else panel = Q.BuildLegacyList(f) end
 
 	-- Transcript: a scrolling stack of message bubbles
 	local scroll = CreateFrame("ScrollFrame", "ClaudeWoWScroll", native and ui.parchment or f, (native and Q.TemplateExists("ScrollFrameTemplate")) and "ScrollFrameTemplate" or "UIPanelScrollFrameTemplate")
@@ -8486,7 +8586,9 @@ local function BuildUI()
 	local plainInput = native and type(ScrollingEdit_OnCursorChanged) == "function" and type(ScrollingEdit_OnTextChanged) == "function"
 	local inScroll = CreateFrame("ScrollFrame", "ClaudeWoWInputScroll", inputBg, (not plainInput) and "UIPanelScrollFrameTemplate" or nil)
 	inScroll:SetPoint("TOPLEFT", inputBg, "TOPLEFT", 8, -6)
-	inScroll:SetPoint("BOTTOMRIGHT", inputBg, "BOTTOMRIGHT", plainInput and -8 or -24, 6)
+	ui.inputBg, ui.inputScroll = inputBg, inScroll
+	ui.inputRightInset = plainInput and Q.INPUT_INSET_PLAIN or Q.INPUT_INSET_SCROLL
+	Q.InsetComposer(false)
 
 	local input = CreateFrame("EditBox", "ClaudeWoWInput", inScroll)
 	input:SetMultiLine(true)
@@ -8577,20 +8679,21 @@ local function BuildUI()
 	stop:SetScript("OnEnter", function(self)
 		GameTooltip:SetOwner(self, "ANCHOR_TOP")
 		GameTooltip:SetText("Stop this run")
-		GameTooltip:AddLine("Tells the bridge to end the run this chat is waiting on, and frees the chat for a new message. Same as /claude cancel.", 0.8, 0.8, 0.8, true)
+		GameTooltip:AddLine("Ends the run this chat is waiting on and frees the chat for a new message. Same as /claude cancel.", 0.8, 0.8, 0.8, true)
 		GameTooltip:Show()
 	end)
 	stop:SetScript("OnLeave", function() GameTooltip:Hide() end)
 	stop:Hide()
+	stop:SetScript("OnShow", function() Q.InsetComposer(true) end)
+	stop:SetScript("OnHide", function() Q.InsetComposer(false) end)
 	ui.stop = stop
 
-	-- Connect stands in for Send until the bridge has been seen (see UpdateConnect).
 	local connect = MakeButton(f, "Connect", SEND_W, function() ClaudeWoW.Connect(true) end)
 	Q.BesideInput(connect, inputBg, native)
 	connect:SetScript("OnEnter", function(self)
 		GameTooltip:SetOwner(self, "ANCHOR_TOP")
-		GameTooltip:SetText("Connect to the bridge")
-		GameTooltip:AddLine("Start the bridge on this computer, then click here. The light turns green when it answers.", 0.8, 0.8, 0.8, true)
+		GameTooltip:SetText("Connect to the companion app")
+		GameTooltip:AddLine("Start the companion app on this computer, then click here. The light turns green when it answers.", 0.8, 0.8, 0.8, true)
 		GameTooltip:Show()
 	end)
 	connect:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -8604,13 +8707,13 @@ local function BuildUI()
 	refresh:Hide()
 	ui.refresh = refresh
 
-	-- Bottom row: Clear, plus Resend while a message is in flight. Rename, Folder
-	-- and Delete live on each chat row in the left panel.
 	local clear = MakeButton(f, "Clear", 60, function() ClaudeWoW.ConfirmClear() end)
 	clear:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 14, 16)
 
 	local resend = MakeButton(f, "Resend", 70, ClaudeWoW.Resend)
 	resend:SetPoint("LEFT", clear, "RIGHT", 6, 0)
+	resend:SetScript("OnEnter", Q.ResendTooltip)
+	resend:SetScript("OnLeave", function() GameTooltip:Hide() end)
 	resend:Hide()
 	ui.resend = resend
 	if native then
@@ -8621,33 +8724,22 @@ local function BuildUI()
 		refresh:SetPoint("RIGHT", resend, "LEFT", -4, 0)
 	end
 
-	-- A named, always-present button so a keybinding can click it (see /claude-wow bind).
-	local hotkey = CreateFrame("Button", "ClaudeWoWRefreshButton", UIParent)
-	hotkey:SetSize(1, 1)
-	hotkey:SetPoint("TOPLEFT", UIParent, "TOPLEFT", -10, 10)
-	hotkey:SetScript("OnClick", function()
-		local c = ActiveChat()
-		if c and c.pendingId then
-			ClaudeWoW.Send("")
-		else
-			ClaudeWoW.Toggle()
-		end
-	end)
+	local legacyHotkey = CreateFrame("Button", Q.LEGACY_BIND_BUTTON, UIParent)
+	legacyHotkey:SetSize(1, 1)
+	legacyHotkey:SetPoint("TOPLEFT", UIParent, "TOPLEFT", -10, 10)
+	legacyHotkey:SetScript("OnClick", function() ClaudeWoW.ToggleWorkspace() end)
+	Q.MigrateLegacyBinding()
 
-	-- Resize grip
 	local grip = CreateFrame("Button", nil, f)
 	grip:SetSize(16, 16)
 	grip:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -5, 5)
 	grip:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
 	grip:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
 	grip:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
-	grip:SetScript("OnMouseDown", function() f:StartSizing("BOTTOMRIGHT") end)
-	grip:SetScript("OnMouseUp", function()
-		f:StopMovingOrSizing()
-		s.width, s.height = f:GetSize()
-	end)
 
+	f:HookScript("OnSizeChanged", Q.LayoutListWidth)
 	if ClaudeWoWWindow then ClaudeWoWWindow.Attach(f, grip) end
+	Q.LayoutListWidth()
 end
 
 function ClaudeWoW.Toggle(show)
@@ -8753,7 +8845,7 @@ ClaudeWoW.HELP = {
 	{
 		title = "Settings and the window",
 		rows = {
-			{ "/claude config [key] [value]", "Settings: voice, roast, whisper, echo, vision, roll, achievements, orders, minimap, telemetry, ui, map, macro, context, bind. Alone it lists them with their values; all adds the troubleshooting keys. The Options page under AddOns, " .. ClaudeWoW.PRODUCT .. " in the game's settings has the same switches." },
+			{ "/claude config [key] [value]", "Settings: voice, roast, whisper, echo, vision, roll, achievements, orders, minimap, telemetry, ui, map, macro, context. Alone it lists them with their values; all adds the troubleshooting keys. The Options page under AddOns, " .. ClaudeWoW.PRODUCT .. " in the game's settings has the same switches." },
 			{ "/claude config ui [setting]", "The tabs and the window: whisper on|off, dim <10-100>|off, dodge on|off, autohide on|off, reset." },
 			{ "/claude orders [on|off]", "Show or hide the Orders card under the quest tracker." },
 			{ "/claude dm [next]", "Show or hide the Dungeon Master; next goes on to a beat that waits for you. /dm is the same." },
@@ -8820,7 +8912,7 @@ local COMMAND_ARGS = {
 	telemetry = { [""] = true, on = true, off = true },
 	auto = OnOffOrNumber,
 	echo = function(rest) return rest == "" or rest == "summary" or rest == "full" or rest == "short" or rest == "off" or tonumber(rest) ~= nil end,
-	bind = 1, agent = 1, plugin = 1, live = 0,
+	bind = true, agent = 1, plugin = 1, live = 0,
 	chat = ChatArgument, chats = ChatArgument,
 	cd = true, new = true, rename = true,
 	map = true,
@@ -8883,8 +8975,9 @@ end
 
 Cli.CONFIG_KEYS = {
 	"voice", "roast", "whisper", "echo", "vision", "roll", "achievements", "orders", "minimap", "telemetry", "context", "signal",
-	"mode", "longchat", "auto", "plugin", "ui", "map", "macro", "bind", "probe", "diag",
+	"mode", "longchat", "auto", "plugin", "ui", "map", "macro", "probe", "diag",
 }
+Cli.CONFIG_RETIRED = { bind = true }
 Cli.CONFIG_DEV = { signal = true, mode = true, auto = true, longchat = true, plugin = true, probe = true, diag = true }
 Cli.CONFIG_ALIASES = { toasts = "achievements", ctx = "context" }
 
@@ -8901,7 +8994,7 @@ end
 function Cli.ConfigKey(word)
 	word = tostring(word or ""):lower()
 	word = Cli.CONFIG_ALIASES[word] or word
-	return Contains(Cli.CONFIG_KEYS, word) and word or nil
+	return (Contains(Cli.CONFIG_KEYS, word) or Cli.CONFIG_RETIRED[word]) and word or nil
 end
 
 function Cli.IsConfig(rest)
@@ -9090,7 +9183,6 @@ Cli.CONFIG_HELP = {
 	ui = "whisper on|off, dim <10-100>|off, dodge on|off, autohide on|off, reset: the tabs and the window; list|remove <name>|run <name>: live widgets",
 	map = "map layers, the route navigator and herb/ore nodes (/aimap is the same)",
 	macro = "undo: undo the last macro the agent's button created or changed",
-	bind = "<key>: hotkey that checks for a reply while waiting, else toggles the window",
 	probe = "chatlog|asyncfile: write test lines to the client's own logs so the bridge can measure them",
 	diag = "transport diagnostics",
 }
@@ -10183,12 +10275,7 @@ RunCommand = function(cmd, rest)
 	elseif cmd == "refresh" or cmd == "reload" then
 		SafeReload()
 	elseif cmd == "bind" then
-		local key = rest:upper()
-		if key ~= "" and not InCombatLockdown() then
-			SetBinding(key, "CLICK ClaudeWoWRefreshButton:LeftButton")
-			SaveBindings(GetCurrentBindingSet())
-			AddHistory(c, "system", key .. " is now bound: checks for a reply while waiting, otherwise toggles this window")
-		end
+		AddHistory(c, "system", Q.BIND_MOVED)
 		ClaudeWoW.Render()
 		Cli.Show(c)
 	elseif cmd == "probe" then

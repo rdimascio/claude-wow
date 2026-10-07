@@ -231,40 +231,8 @@ local function Visible()
 	return win ~= nil and win:IsShown()
 end
 
-local function LootInPanelSlot()
-	if Try(GetCVar, "lootUnderMouse") == "1" or not Shown("LootFrame") then return nil end
-	local loot = _G.LootFrame
-	if Try(loot.IsProtected, loot) then return nil end
-	local r = RectOf(loot)
-	local _, sh = Screen()
-	if not r or math.abs(r.left - PanelOffset("LEFT_OFFSET", PANEL_LEFT_OFFSET)) > 1 or math.abs(r.top - (sh - PanelOffset("TOP_OFFSET", PANEL_TOP_OFFSET))) > 1 then return nil end
-	return loot
-end
-
-local function PlaceLootBeside(loot, spot, others)
-	local r = RectOf(loot)
-	if not r then return false end
-	if not Overlaps(r, spot) then return true end
-	local left = spot.right + PanelOffset("PANEl_SPACING_X", GAP)
-	local beside = { left = left, right = left + (r.right - r.left), top = r.top, bottom = r.bottom }
-	if not Free(beside, others) then return false end
-	local k = (Try(loot.GetEffectiveScale, loot) or 1) / (Try(UIParent.GetEffectiveScale, UIParent) or 1)
-	loot:ClearAllPoints()
-	loot:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left / k, r.top / k)
-	return true
-end
-
 local function DodgeSpot(home)
-	local panels = W.OpenPanels()
-	local loot = LootInPanelSlot()
-	if not loot then return Spot(home, panels) or home end
-	local others = {}
-	for _, p in ipairs(panels) do
-		if p.name ~= "LootFrame" then table.insert(others, p) end
-	end
-	local spot = Spot(home, others) or home
-	if PlaceLootBeside(loot, spot, others) then return spot end
-	return Spot(home, panels) or home
+	return Spot(home, W.OpenPanels()) or home
 end
 
 function W.Relayout()

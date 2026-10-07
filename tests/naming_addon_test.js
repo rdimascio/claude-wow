@@ -233,7 +233,7 @@ test('the chat menu: Agent is a radio list of the bridge agents, Plugin is gone,
       '(function() local t = {} for _, s in ipairs(STUB.MenuLabels(STUB.menu)) do t[#t + 1] = string.format("%q", s) end return "[" .. table.concat(t, ",") .. "]" end)()',
     ),
   );
-  assert.deepEqual(native, ['Rename...', 'Folder...', 'Agent', 'Default (Claude)', 'Claude', 'Codex', '', 'Clear Messages', '|cffff4040Delete|r']);
+  assert.deepEqual(native, ['Rename...', 'Project...', 'Agent', 'Default (Claude)', 'Claude', 'Codex', '', 'Clear Messages', '|cffff4040Delete|r']);
   assert.equal(vm.evaluate('STUB.FindItem(STUB.menu, "Codex").radio'), 'true');
   assert.equal(vm.evaluate('STUB.FindItem(STUB.menu, "Default (Claude)").get()'), 'true', 'a chat with no agent of its own is on the default');
   vm.run('STUB.FindItem(STUB.menu, "Codex").fn()');

@@ -2319,7 +2319,7 @@ test('/claude config lists every setting with its value, gets one, sets one, and
   const last = () => vm.evaluate('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history].text');
   vm.run('SlashCmdList.CLAUDE("config")');
   const list = last();
-  const player = ['voice', 'roast', 'whisper', 'echo', 'vision', 'roll', 'achievements', 'orders', 'telemetry', 'context', 'ui', 'map', 'macro', 'bind'];
+  const player = ['voice', 'roast', 'whisper', 'echo', 'vision', 'roll', 'achievements', 'orders', 'telemetry', 'context', 'ui', 'map', 'macro'];
   const dev = ['signal', 'mode', 'longchat', 'auto', 'plugin', 'probe', 'diag'];
   for (const key of player) assert.match(list, new RegExp(`\\n${key}( = [^\\n]*)?  -  `), `${key} is listed`);
   for (const key of dev) assert.doesNotMatch(list, new RegExp(`\\n${key}( = [^\\n]*)?  -  `), `${key} is only in config all`);
@@ -4035,10 +4035,13 @@ test('the effort button above Send shows the chat effort, sets it for this chat,
   assert.equal(vm.evaluate('ClaudeWoW.UI.effort.shown'), 'true');
   assert.equal(vm.evaluate('ClaudeWoW.UI.effort.rel == ClaudeWoW.UI.send'), 'true', 'it sits above Send');
   const click = () => vm.run('ClaudeWoW.UI.effort:GetScript("OnClick")(ClaudeWoW.UI.effort)');
-  click();
-  assert.equal(label(), '|cfffffffflow|r', 'without a menu, a click steps to the next effort');
-  click();
-  click();
+  const pick = text => {
+    click();
+    vm.run(`for _, r in ipairs(ClaudeWoWChatMenu.rows) do if r.shown and r.label.text == "${text}" then r.scripts.OnClick(r) end end`);
+  };
+  pick('low');
+  assert.equal(label(), '|cfffffffflow|r', 'without a menu, a click opens the fallback menu with the same choices');
+  pick('high');
   assert.equal(label(), '|cffffffffhigh|r');
   assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].effort'), 'high');
   vm.run('ClaudeWoW.Send("think hard")');
@@ -4046,13 +4049,10 @@ test('the effort button above Send shows the chat effort, sets it for this chat,
   assert.ok(rec.flags.split(';').includes('effort=high'), rec.flags);
   vm.run('ClaudeWoW.NewChat("fresh")');
   assert.equal(label(), '|cff9d9d9dauto|r', 'each chat has its own effort');
-  click();
-  click();
-  click();
-  click();
-  click();
-  click();
-  assert.equal(label(), '|cff9d9d9dauto|r', 'after max it goes back to auto');
+  pick('max');
+  assert.equal(label(), '|cffffffffmax|r');
+  pick('Auto');
+  assert.equal(label(), '|cff9d9d9dauto|r', 'Auto goes back to auto');
 });
 
 function bridgeEffortFile(globalName) {
