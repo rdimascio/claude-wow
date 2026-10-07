@@ -85,13 +85,13 @@ function createRegistry() {
   function route(job, opts = {}) {
     const fallback = opts.fallback ? normalize(opts.fallback) : null;
     const dflt = fallback || ids()[0] || null;
-    if (!dflt) return { error: 'this bridge has no plugins' };
+    if (!dflt) return { error: 'the companion app has no plugins' };
     const addr = parseAddress(job && job.text);
     if (addr && byName.has(addr.name)) return { plugin: plugins.get(byName.get(addr.name)), why: 'addressed', text: addr.text };
     const bound = job && job.plugin ? String(job.plugin) : '';
     if (bound) {
       const id = normalize(bound);
-      if (!id) return { error: `Unknown plugin "${bound}". This bridge knows: ${ids().join(', ')}.` };
+      if (!id) return { error: `Unknown plugin "${bound}". The companion app knows: ${ids().join(', ')}.` };
       return { plugin: plugins.get(id), why: 'bound' };
     }
     for (const p of plugins.values()) {

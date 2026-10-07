@@ -17,6 +17,15 @@ local DETAIL_RULES_SHOWN = 3
 local DETAIL_COMMAND_CHARS = 90
 local TOAST_WIDTH, TOAST_HEIGHT = 277, 67
 local FALLBACK_BOTTOM = 240
+local HEADER_TEXT = "Azeroth Companion asks"
+local CLICK_DELAY = 0.5
+local RELEASE_DELAY = 1
+local HOLD_TICK = 0.25
+local GROUP_LOOT_FRAMES = 4
+local HOLD_TEXT = {
+	combat = "A permission request is waiting until combat ends.",
+	loot = "A permission request is waiting until the loot roll closes.",
+}
 
 local ROLL_BUTTONS = {
 	need = { atlas = "lootroll-toast-icon-need", file = "Interface\\Buttons\\UI-GroupLoot-Dice", label = NEED or "Need" },
@@ -37,7 +46,9 @@ local SOUND_ON_CHOICE = { need = "UI_NEED_ROLL_POSITIVE", greed = "LOOT_WINDOW_C
 local frame
 local current
 local parked
-local waiting = {}
+local queue = {}
+local hold
+local holdTicker
 
 local function PlayKit(name)
 	local id = (SOUNDKIT and SOUNDKIT[name]) or SOUND_KIT_IDS[name]
@@ -92,6 +103,47 @@ end
 local function StillOpen(offer)
 	local rules, msgId = ClaudeWoW.OpenDenial(offer.chatId)
 	return rules ~= nil and msgId == offer.msgId
+end
+
+local function SameRules(a, b)
+	if type(a) ~= "table" or type(b) ~= "table" or #a ~= #b then return false end
+	for i = 1, #a do
+		if a[i] ~= b[i] then return false end
+	end
+	return true
+end
+
+local function Snapshot(chatId)
+	local rules, msgId, agent = ClaudeWoW.OpenDenial(chatId)
+	if not rules then return nil end
+	local copied = {}
+	for i, rule in ipairs(rules) do copied[i] = rule end
+	local target, plugin = ClaudeWoW.GrantTarget(chatId)
+	return {
+		key = tostring(chatId) .. ":" .. tostring(msgId),
+		chatId = chatId,
+		msgId = msgId,
+		rules = copied,
+		agent = agent,
+		target = target,
+		plugin = plugin,
+	}
+end
+
+local function Unchanged(offer)
+	local rules = ClaudeWoW.OpenDenial(offer.chatId)
+	if not rules or not SameRules(rules, offer.rules) then return false end
+	local target, plugin = ClaudeWoW.GrantTarget(offer.chatId)
+	return target == offer.target and plugin == offer.plugin
+end
+
+function R.Blocked()
+	if InCombatLockdown and InCombatLockdown() then return "combat" end
+	for i = 1, GROUP_LOOT_FRAMES do
+		local roll = _G["GroupLootFrame" .. i]
+		if type(roll) == "table" and type(roll.IsShown) == "function" and roll:IsShown() then return "loot" end
+	end
+	return nil
 end
 
 local function IsLive(offer)
@@ -178,7 +230,9 @@ local function RollButton(parent, choice)
 	b:SetSize(32, 32)
 	b.choice = choice
 	SetButtonArt(b, ROLL_BUTTONS[choice])
-	b:SetScript("OnClick", function(self) R.Choose(self.choice) end)
+	b:SetScript("OnClick", function(self)
+		if R.Armed() then R.Choose(self.choice) end
+	end)
 	b:SetScript("OnEnter", ShowButtonTooltip)
 	b:SetScript("OnLeave", function() GameTooltip:Hide() end)
 	return b
@@ -228,9 +282,14 @@ local function Build()
 	f.IconFrame:SetScript("OnEnter", ShowItemTooltip)
 	f.IconFrame:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
+	f.Header = f:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+	f.Header:SetPoint("TOPLEFT", f, "TOPLEFT", 60, -8)
+	f.Header:SetJustifyH("LEFT")
+	f.Header:SetText(HEADER_TEXT)
+
 	f.Name = f:CreateFontString(nil, "ARTWORK", "GameFontNormal")
 	f.Name:SetSize(125, 30)
-	f.Name:SetPoint("TOPLEFT", f, "TOPLEFT", 60, -15)
+	f.Name:SetPoint("TOPLEFT", f, "TOPLEFT", 60, -20)
 	f.Name:SetJustifyH("LEFT")
 	f.Name:SetJustifyV("MIDDLE")
 	f.Name:SetTextColor(EPIC_COLOR[1], EPIC_COLOR[2], EPIC_COLOR[3])
@@ -273,21 +332,17 @@ local function Build()
 	return f
 end
 
-function R.ContainerPlaced()
-	local container = _G.GroupLootContainer
-	if type(container) ~= "table" or type(container.IsShown) ~= "function" or not container:IsShown() then return false end
-	if type(container.GetTop) ~= "function" or type(container.GetBottom) ~= "function" then return false end
-	return type(container:GetTop()) == "number" and type(container:GetBottom()) == "number"
-end
-
 function R.Place(f)
 	if f.userPlaced then return end
 	f:ClearAllPoints()
-	if R.ContainerPlaced() then
-		f:SetPoint("BOTTOM", _G.GroupLootContainer, "TOP", 0, DETAIL_GAP)
-	else
-		f:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, FALLBACK_BOTTOM)
+	f:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, FALLBACK_BOTTOM)
+end
+
+local function SetButtonsEnabled(f, on)
+	for _, button in ipairs({ f.GreedButton, f.NeedButton, f.PassButton }) do
+		button:SetEnabled(on)
 	end
+	f.armed = on
 end
 
 local function Layout(f, offer)
@@ -308,14 +363,47 @@ local function HideFrame()
 	frame:Hide()
 end
 
+local PresentNext
+
+local function Hold(reason)
+	if hold then
+		if reason then hold.clearSince = nil end
+	else
+		hold = {}
+		ClaudeWoW.Print(HOLD_TEXT[reason] or HOLD_TEXT.combat)
+	end
+	if not holdTicker and C_Timer and C_Timer.NewTicker then
+		holdTicker = C_Timer.NewTicker(HOLD_TICK, function() R.CheckHold() end)
+	end
+end
+
+local function StopHold()
+	hold = nil
+	if holdTicker then
+		holdTicker:Cancel()
+		holdTicker = nil
+	end
+end
+
+local function HoldOffer(offer)
+	table.insert(queue, 1, offer)
+	Hold(R.Blocked())
+end
+
 local function Present(offer)
 	if ClaudeWoW.AllowPending(offer.chatId, offer.msgId) then
 		parked = offer
 		return
 	end
+	if hold or R.Blocked() then
+		HoldOffer(offer)
+		return
+	end
 	frame = frame or Build()
 	current = offer
-	offer.expiresAt = GetTime() + ROLL_SECONDS
+	offer.shownAt = GetTime()
+	offer.expiresAt = offer.shownAt + ROLL_SECONDS
+	SetButtonsEnabled(frame, false)
 	frame.Name:SetText(R.ItemName(offer.rules))
 	frame.IconFrame.Icon:SetTexture(R.IconFor(offer.rules))
 	R.Place(frame)
@@ -326,10 +414,10 @@ local function Present(offer)
 	PlayKit(SOUND_ON_OFFER)
 end
 
-local function PresentNext()
+PresentNext = function()
 	if current or parked then return end
-	while #waiting > 0 do
-		local offer = table.remove(waiting, 1)
+	while #queue > 0 do
+		local offer = table.remove(queue, 1)
 		if StillOpen(offer) then
 			Present(offer)
 			return
@@ -343,19 +431,48 @@ local function CloseCurrent()
 	PresentNext()
 end
 
+local function Rebuild(offer)
+	current = nil
+	HideFrame()
+	local fresh = Snapshot(offer.chatId)
+	if fresh then
+		Present(fresh)
+	else
+		PresentNext()
+	end
+end
+
+local function Release()
+	StopHold()
+	PresentNext()
+end
+
+function R.CheckHold()
+	if not hold then return end
+	if R.Blocked() then
+		hold.clearSince = nil
+		return
+	end
+	local now = GetTime()
+	hold.clearSince = hold.clearSince or now
+	if now - hold.clearSince < RELEASE_DELAY then return end
+	Release()
+end
+
+function R.Armed()
+	return current ~= nil and current.shownAt ~= nil and GetTime() - current.shownAt >= CLICK_DELAY
+end
+
 function R.Offer(chatId)
-	local rules, msgId, agent = ClaudeWoW.OpenDenial(chatId)
-	if not rules then return end
-	local key = tostring(chatId) .. ":" .. tostring(msgId)
+	local offer = Snapshot(chatId)
+	if not offer then return end
+	local key = offer.key
 	if (current and current.key == key) or (parked and parked.key == key) then return end
-	for _, queued in ipairs(waiting) do
+	for _, queued in ipairs(queue) do
 		if queued.key == key then return end
 	end
-	local copied = {}
-	for i, rule in ipairs(rules) do copied[i] = rule end
-	local offer = { key = key, chatId = chatId, msgId = msgId, rules = copied, agent = agent }
-	if current or parked then
-		table.insert(waiting, offer)
+	if current or parked or hold then
+		table.insert(queue, offer)
 	else
 		Present(offer)
 	end
@@ -365,6 +482,10 @@ function R.Choose(choice, reason)
 	local offer = current
 	if not offer or not ROLL_BUTTONS[choice] then return end
 	if choice == "need" and IsLive(offer) then choice = "greed" end
+	if choice ~= "pass" and StillOpen(offer) and not Unchanged(offer) then
+		Rebuild(offer)
+		return
+	end
 	if choice == "need" then
 		ClaudeWoW.ConfirmAllow(offer.chatId, offer.msgId, offer.rules)
 		return
@@ -393,7 +514,7 @@ end
 
 function R.Requeue(chatId, msgId)
 	if not SameOffer(parked, chatId, msgId) then return false end
-	table.insert(waiting, 1, parked)
+	table.insert(queue, 1, parked)
 	parked = nil
 	return true
 end
@@ -406,7 +527,7 @@ function R.Resume(chatId, msgId)
 	local offer = parked
 	parked = nil
 	if current then
-		table.insert(waiting, 1, offer)
+		table.insert(queue, 1, offer)
 	elseif StillOpen(offer) then
 		Present(offer)
 	else
@@ -428,8 +549,20 @@ end
 
 function R.Update()
 	if not current then return end
+	local blocked = R.Blocked()
+	if blocked then
+		local offer = current
+		current = nil
+		HideFrame()
+		HoldOffer(offer)
+		return
+	end
 	if not StillOpen(current) then
 		CloseCurrent()
+		return
+	end
+	if not Unchanged(current) then
+		Rebuild(current)
 		return
 	end
 	local left = current.expiresAt - GetTime()
@@ -437,15 +570,28 @@ function R.Update()
 		R.Choose("pass", "the roll timed out")
 		return
 	end
+	if not frame.armed and R.Armed() then SetButtonsEnabled(frame, true) end
 	frame.Timer:SetValue(left)
 end
 
 function R.CloseAll()
-	wipe(waiting)
+	wipe(queue)
 	current = nil
 	parked = nil
+	StopHold()
 	HideFrame()
 end
+
+function R.Held()
+	return hold ~= nil
+end
+
+local events = CreateFrame("Frame")
+events:RegisterEvent("PLAYER_REGEN_ENABLED")
+events:SetScript("OnEvent", function()
+	R.CheckHold()
+	if hold and C_Timer and C_Timer.After then C_Timer.After(RELEASE_DELAY, R.CheckHold) end
+end)
 
 function R.Current()
 	return current
@@ -456,5 +602,5 @@ function R.Parked()
 end
 
 function R.Waiting()
-	return #waiting
+	return #queue
 end

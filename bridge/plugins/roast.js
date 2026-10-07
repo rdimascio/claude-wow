@@ -15,7 +15,7 @@ const PLACEHOLDER_ZONES = new Set(['somewhere unmapped']);
 const HEAD_RE = /^Death recap: .+? just died in (.+)\.$/;
 const KILLING_BLOW_RE =
   /^-\d+(?:\.\d+)?s (.+?)(?: \(level [^)]*\))?: (.+?) \d+(?: crit)?(?: \(tick\))?(?:, overkill (\d+))?(?:, absorbed \d+)? <- killing blow$/;
-const BRIDGE_NOTE_RE = /(?:^|\n\n)\[bridge\]/;
+const BRIDGE_NOTE_RE = /(?:^|\n\n)\[(?:bridge|companion app)\]/;
 const PLAIN_WORDS = new Set([
   'i',
   "i'm",

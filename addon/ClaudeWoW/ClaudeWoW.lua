@@ -2264,20 +2264,20 @@ function ClaudeWoW.Version.Verdict(b)
 	local mine = version .. ", protocol " .. V.PROTO
 	local theirs = b.version .. ", protocol " .. range
 	if V.PROTO < b.protoMin then
-		return "update-addon", "This addon (" .. mine .. ") is too old for the bridge (" .. theirs .. "). The bridge refuses messages until you update the addon: update the addon in the CurseForge app or run claude-wow setup, then type /reload."
+		return "update-addon", "This addon (" .. mine .. ") is too old for the companion app (" .. theirs .. "). The companion app refuses messages until you update the addon: update the addon in the CurseForge app or run claude-wow setup, then type /reload."
 	end
 	if V.PROTO > b.protoMax then
-		return "update-bridge", "The bridge (" .. theirs .. ") is too old for this addon (" .. mine .. "). The bridge refuses messages until you update it: run brew upgrade claude-wow or the installer again, then claude-wow service restart."
+		return "update-bridge", "The companion app (" .. theirs .. ") is too old for this addon (" .. mine .. "). It refuses messages until you update it: run brew upgrade claude-wow or the installer again, then claude-wow service restart."
 	end
 	if version == b.version then return "equal", "" end
 	local order = V.Compare(version, b.version)
 	if order == -1 then
-		return "addon-older", "This addon (" .. version .. ") is older than the bridge (" .. b.version .. "). They still work together; update the addon when you can."
+		return "addon-older", "This addon (" .. version .. ") is older than the companion app (" .. b.version .. "). They still work together; update the addon when you can."
 	end
 	if order == 1 then
-		return "bridge-older", "The bridge (" .. b.version .. ") is older than this addon (" .. version .. "). They still work together; update the bridge when you can."
+		return "bridge-older", "The companion app (" .. b.version .. ") is older than this addon (" .. version .. "). They still work together; update the companion app when you can."
 	end
-	return "differs", "This addon (" .. version .. ") and the bridge (" .. b.version .. ") are different builds. They still work together."
+	return "differs", "This addon (" .. version .. ") and the companion app (" .. b.version .. ") are different builds. They still work together."
 end
 
 function ClaudeWoW.Version.Apply(b, stamp)
@@ -4004,6 +4004,12 @@ end
 
 function Q.GrantTarget(c)
 	return ChatAgent(c), Cli.ChatPlugin(c)
+end
+
+function ClaudeWoW.GrantTarget(chatId)
+	local c = FindChat(chatId)
+	if not c then return nil end
+	return Q.GrantTarget(c)
 end
 
 function Q.AlwaysTarget(c, rules, agent)
