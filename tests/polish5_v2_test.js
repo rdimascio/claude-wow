@@ -365,7 +365,12 @@ test('Resend shows only while a pixel-mode run is pending, and its tooltip stays
   vm.run('ClaudeWoW.IsConnected = function() return true end; ClaudeWoWDB.settings.mode = "pixel"; ClaudeWoW.Render()');
   assert.equal(vm.evaluate('ClaudeWoW.UI.resend.shown'), 'false');
   vm.run('ClaudeWoWDB.chats[1].pendingId = 4; ClaudeWoW.Render()');
-  assert.equal(vm.evaluate('ClaudeWoW.UI.resend.shown'), 'true');
+  assert.equal(vm.evaluate('ClaudeWoW.UI.resend.shown'), 'false', 'not while the companion app may still answer');
+  vm.run(
+    'local i = 1 while true do local n, v = debug.getupvalue(ClaudeWoW.Connect, i) if n == nil then break end if n == "run" then v.sentAt = GetTime() break end i = i + 1 end',
+  );
+  vm.run('STUB.now = STUB.now + 41; ClaudeWoW.Render()');
+  assert.equal(vm.evaluate('ClaudeWoW.UI.resend.shown'), 'true', 'after 40 s with no acknowledgement');
   vm.run('ClaudeWoWDB.settings.mode = "reload"; ClaudeWoW.Render()');
   assert.equal(vm.evaluate('ClaudeWoW.UI.resend.shown'), 'false');
   assert.equal(vm.evaluate('type(ClaudeWoW.UI.resend.scripts.OnEnter)'), 'function');

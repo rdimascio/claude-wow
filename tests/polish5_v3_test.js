@@ -150,11 +150,14 @@ function setQuietly(vm, key) {
   };
 }
 
+const WHISPER_READY =
+  'ClaudeWoWDB.settings.whisper = true; ClaudeWoWDB.settings.whisperChoice = "on"; table.insert(ClaudeWoWDB.chats[1].history, { role = "user", text = "earlier", t = time() }); STUB.now = STUB.now + 20; STUB.Tick()';
+
 const SCENARIOS = [
-  { name: 'whisper tabs on, window closed', setup: vm => vm.run('ClaudeWoWDB.settings.whisper = true') },
+  { name: 'whisper tabs on, window closed', setup: vm => vm.run(WHISPER_READY) },
   { name: 'whisper tabs off, window closed', setup: vm => vm.run('ClaudeWoWDB.settings.whisper = false') },
   { name: 'whisper tabs off, window open', setup: vm => vm.run('ClaudeWoWDB.settings.whisper = false; ClaudeWoW.Toggle(true)') },
-  { name: 'whisper tabs on, window open', setup: vm => vm.run('ClaudeWoWDB.settings.whisper = true; ClaudeWoW.Toggle(true)') },
+  { name: 'whisper tabs on, window open', setup: vm => vm.run(`${WHISPER_READY}; ClaudeWoW.Toggle(true)`) },
 ];
 
 for (const scenario of SCENARIOS) {
