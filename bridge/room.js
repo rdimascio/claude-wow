@@ -74,7 +74,6 @@ function createRoom({
   let connected = false;
   let lastError = '';
   let lastBadFrame = '';
-  let everConnected = false;
   let deadline = null;
 
   function followed(channel) {
@@ -99,9 +98,8 @@ function createRoom({
       if (!connected) log(`room: connected to agent-room, following ${[...channels.values()].filter(followed).length} channel(s) of ${conf.workspace}`);
       if (deadline) timers.clearTimeout(deadline);
       deadline = null;
-      const back = everConnected && !connected;
+      const back = !connected;
       connected = true;
-      everConnected = true;
       lastError = '';
       retryMs = RETRY_MIN_MS;
       if (back) onStatus(true);

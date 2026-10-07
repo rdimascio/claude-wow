@@ -73,6 +73,7 @@ const IDLE = require('./idle');
 const AD = require('./autodeploy');
 const ROOM = require('./room');
 let roomClient = null;
+let roomDownTimer = null;
 const CLI = require('./clients');
 const SW = require('./slotwindow');
 const PUBR = require('./publishretry');
@@ -652,6 +653,7 @@ function shutdown(sig, exitCode) {
   forgetUnstartedWork();
   stopPlugins();
   if (roomClient) roomClient.stop();
+  if (roomDownTimer) clearTimeout(roomDownTimer);
   if (discordHub) discordHub.stop().catch(() => {});
   let voteClosing = Promise.resolve();
   try {
@@ -2258,8 +2260,6 @@ function noteRoomMessage(entry) {
 }
 
 const ROOM_DOWN_AFTER_MS = cfg.roomDownAfterMs || 60000;
-let roomDownTimer = null;
-let roomDownShown = false;
 
 function roomStatusLine(text) {
   for (const c of Object.values(transcripts.chats))
@@ -2270,14 +2270,18 @@ function noteRoomStatus(up) {
   if (up) {
     if (roomDownTimer) clearTimeout(roomDownTimer);
     roomDownTimer = null;
-    if (roomDownShown) roomStatusLine('agent-room is back. Messages sent while it was unreachable are only in the room.');
-    roomDownShown = false;
+    if (!state.roomDown) return;
+    state.roomDown = false;
+    saveState();
+    roomStatusLine('agent-room is back. Messages sent while it was unreachable are only in the room.');
     return;
   }
-  if (roomDownTimer || roomDownShown) return;
+  if (roomDownTimer || state.roomDown) return;
   roomDownTimer = setTimeout(() => {
     roomDownTimer = null;
-    roomDownShown = true;
+    if (shuttingDown) return;
+    state.roomDown = true;
+    saveState();
     roomStatusLine('agent-room is unreachable, so this chat is paused. The bridge keeps trying.');
   }, ROOM_DOWN_AFTER_MS);
   if (roomDownTimer.unref) roomDownTimer.unref();

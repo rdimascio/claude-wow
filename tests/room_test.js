@@ -161,9 +161,9 @@ test('a lost connection retries with backoff, logs each new failure once, and te
   t.room.connect();
   await settle();
   t.made[0].emit(SNAPSHOT);
-  assert.deepEqual(t.status, [], 'the first connection is not a recovery');
+  assert.deepEqual(t.status, [true], 'every connect reports up; the bridge decides from its saved state whether to say back');
   t.made[0].onclose();
-  assert.deepEqual(t.status, [false]);
+  assert.deepEqual(t.status, [true, false]);
   assert.deepEqual(
     retries(t).map(x => x.ms),
     [5000],
@@ -177,11 +177,11 @@ test('a lost connection retries with backoff, logs each new failure once, and te
     'the wait doubles',
   );
   assert.equal(t.logs.filter(l => l.startsWith('room: lost')).length, 1, 'the same failure is logged once');
-  assert.deepEqual(t.status, [false], 'down is said once');
+  assert.deepEqual(t.status, [true, false], 'down is said once');
   await runRetry(t);
   t.made[2].emit(SNAPSHOT);
   assert.equal(t.room.status().connected, true);
-  assert.deepEqual(t.status, [false, true]);
+  assert.deepEqual(t.status, [true, false, true]);
   t.made[2].onclose();
   assert.deepEqual(
     retries(t).map(x => x.ms),

@@ -139,7 +139,9 @@ test('an agent-room message in a followed channel reaches the game as its own ch
           timeoutMs: 10000,
           label: 'the unreachable line in the room chat',
         });
-        await h.client.waitFor(() => room.sockets.length > 0, { timeoutMs: 20000, label: 'the bridge to reconnect' });
+        await h.bridge.restart();
+        room.sockets.splice(0).forEach(sock => sock.destroy());
+        await h.client.waitFor(() => room.sockets.length > 0, { timeoutMs: 20000, label: 'the restarted bridge to reconnect' });
         room.send(snapshot);
         await h.client.waitFor(() => transcript().messages.some(m => m.role === 'system' && /agent-room is back/.test(m.text)), {
           timeoutMs: 10000,
