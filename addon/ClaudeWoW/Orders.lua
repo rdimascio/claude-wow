@@ -656,9 +656,10 @@ function T.Status()
 	return T.IsOn() and "on" or "off"
 end
 
-function T.Command(rest)
+function T.Command(rest, ctx)
 	rest = tostring(rest or ""):lower()
 	if rest == "on" or rest == "off" then T.SetShown(rest == "on") end
+	if type(ctx) == "table" and ctx.quiet == true then return end
 	if T.IsOn() then
 		Print("The Orders card is on: it shows the agent's current order under the quest tracker, and hides when there is none. /claude orders off hides it.")
 	else

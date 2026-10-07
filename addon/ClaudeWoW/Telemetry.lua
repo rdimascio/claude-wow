@@ -344,11 +344,12 @@ function T.Status()
 	return T.IsOn() and "on" or "off"
 end
 
-function T.Command(rest)
+function T.Command(rest, ctx)
 	rest = tostring(rest or ""):lower()
 	if rest == "on" or rest == "off" then T.SetOn(rest == "on") end
+	if type(ctx) == "table" and ctx.quiet == true then return end
 	if not T.IsOn() then
-		Print("Share game state with the agent is off: the bridge gets no game state, prices or loot. /claude config telemetry on turns it back on.")
+		Print("Share game state with the agent is off: the companion app gets no game state, prices or loot. /claude config telemetry on turns it back on.")
 		return
 	end
 	local extra = ""
@@ -356,7 +357,7 @@ function T.Command(rest)
 		local loot = ClaudeWoWObserved and ClaudeWoWObserved.LootKeyed and ClaudeWoWObserved.LootKeyed()
 		extra = loot and ", plus prices and loot from windows you open" or ", plus prices from windows you open"
 	end
-	Print("Share game state with the agent is on: your money, level, zone, professions, watched items, gear and reputation" .. extra .. " go to the bridge. /claude config telemetry off stops it.")
+	Print("Share game state with the agent is on: your money, level, zone, professions, watched items, gear and reputation" .. extra .. " go to the companion app. /claude config telemetry off stops it.")
 end
 
 local function Enabled()

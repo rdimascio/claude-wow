@@ -624,15 +624,16 @@ local function Status()
 	Print("Commands: /claude config map ore|herb [on|off], filter all|skill, show|hide <layer>, nav <layer> [n], next, prev, stop  (/aimap is the same)")
 end
 
-function M.Command(msg)
+function M.Command(msg, ctx)
 	DB()
+	local quiet = type(ctx) == "table" and ctx.quiet == true
 	local cmd, rest = (msg or ""):match("^%s*(%S*)%s*(.-)%s*$")
 	cmd = (cmd or ""):lower()
 	if cmd == "" then Status()
 	elseif cmd == "ore" or cmd == "herb" then
 		local v = rest:lower()
 		mdb.nodes[cmd] = (v == "on") or (v ~= "off" and not mdb.nodes[cmd])
-		Print((cmd == "ore" and "Ore" or "Herb") .. " nodes are " .. (mdb.nodes[cmd] and "shown" or "hidden") .. " on the world map.")
+		if not quiet then Print((cmd == "ore" and "Ore" or "Herb") .. " nodes are " .. (mdb.nodes[cmd] and "shown" or "hidden") .. " on the world map.") end
 		M.Refresh()
 	elseif cmd == "filter" and (rest == "all" or rest == "skill") then
 		mdb.nodes.filter = rest

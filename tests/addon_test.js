@@ -2324,7 +2324,7 @@ test('/claude config lists every setting with its value, gets one, sets one, and
   for (const key of player) assert.match(list, new RegExp(`\\n${key}( = [^\\n]*)?  -  `), `${key} is listed`);
   for (const key of dev) assert.doesNotMatch(list, new RegExp(`\\n${key}( = [^\\n]*)?  -  `), `${key} is only in config all`);
   assert.match(list, /\n\/claude config all also lists the troubleshooting keys\.$/);
-  assert.match(list, /Options window has the same settings: AddOns, Azeroth Companion, Options\./);
+  assert.match(list, /Options window has the same settings: AddOns, Azeroth Companion\./);
   vm.run('SlashCmdList.CLAUDE("config all")');
   const all = last();
   for (const key of [...player, ...dev]) assert.match(all, new RegExp(`\\n${key}( = [^\\n]*)?  -  `), `${key} is in config all`);
@@ -3497,12 +3497,28 @@ test('/claude -r all with no handed-off session says how to hand off', () => {
 const SETTINGS_API = `
   STUB.settings = { registered = {}, addon = {}, opened = {} }
   Settings = {
+    RegisterVerticalLayoutCategory = function(name)
+      local category = { name = name, kind = "vertical" }
+      function category:GetID() return 41 end
+      table.insert(STUB.settings.registered, category)
+      return category, {}
+    end,
     RegisterCanvasLayoutCategory = function(frame, name)
       local category = { frame = frame, name = name }
-      function category:GetID() return 42 end
+      function category:GetID() return 40 end
       table.insert(STUB.settings.registered, category)
       return category
     end,
+    RegisterCanvasLayoutSubcategory = function(parent, frame, name)
+      local category = { frame = frame, name = name, parent = parent }
+      function category:GetID() return name == "Commands and tips" and 42 or 43 end
+      table.insert(STUB.settings.registered, category)
+      return category
+    end,
+    RegisterProxySetting = function(category, variable, varType, name, default, get, set) return { variable = variable } end,
+    CreateCheckbox = function() end,
+    CreateDropdown = function() end,
+    CreateControlTextContainer = function() return { Add = function() end, GetData = function() return {} end } end,
     RegisterAddOnCategory = function(category) table.insert(STUB.settings.addon, category) end,
     OpenToCategory = function(id) table.insert(STUB.settings.opened, id) end,
   }`;
@@ -3524,16 +3540,17 @@ const activeHistory = vm =>
 
 test('help: the page registers as an addon category in Settings at login and /claude help opens it there', () => {
   const vm = helpVM(SETTINGS_API);
-  assert.equal(vm.num('#STUB.settings.registered'), 1, 'one category, registered at login');
+  assert.equal(vm.num('#STUB.settings.registered'), 3, 'Options, Commands and tips and Widgets, registered at login');
   assert.equal(vm.evaluate('STUB.settings.registered[1].name'), 'Azeroth Companion');
-  assert.equal(vm.evaluate('STUB.settings.registered[1].frame == ClaudeWoWHelpPanel'), 'true', 'the canvas is the help panel');
+  assert.equal(vm.evaluate('STUB.settings.registered[2].frame == ClaudeWoWHelpPanel'), 'true', 'the help panel is a subcategory canvas');
+  assert.equal(vm.evaluate('STUB.settings.registered[2].parent == STUB.settings.registered[1]'), 'true');
   assert.equal(vm.evaluate('STUB.settings.addon[1] == STUB.settings.registered[1]'), 'true', 'listed under AddOns');
   const before = activeHistory(vm);
   vm.run('SlashCmdList.CLAUDE("help")');
   vm.run('SlashCmdList.CLAUDE("--help")');
   vm.run('ClaudeWoW.ShowHelp()');
   assert.equal(vm.evaluate('table.concat(STUB.settings.opened, ",")'), '42,42,42', 'help, --help and the gear menu open the category by its ID');
-  assert.equal(vm.num('#STUB.settings.registered'), 1, 'opening never registers twice');
+  assert.equal(vm.num('#STUB.settings.registered'), 3, 'opening never registers twice');
   assert.equal(activeHistory(vm), before, 'nothing is written into the chat');
   assert.equal(vm.evaluate('ClaudeWoWHelpWindow'), null, 'no stand-in window when Settings works');
 });
@@ -3545,12 +3562,12 @@ test('help: the addon title from the .toc names the category', () => {
 
 test('help: without the Settings API the page goes through Interface Options', () => {
   const vm = helpVM(LEGACY_OPTIONS_API);
-  assert.equal(vm.num('#STUB.legacy.added'), 2, 'the help page, then the Options page under it');
-  assert.equal(vm.evaluate('STUB.legacy.added[1] == ClaudeWoWHelpPanel'), 'true');
-  assert.equal(vm.evaluate('STUB.legacy.added[2] == ClaudeWoWOptionsPanel'), 'true');
-  assert.equal(vm.evaluate('ClaudeWoWOptionsPanel.parent'), 'Azeroth Companion', 'Interface Options nests a panel by its parent field');
-  assert.equal(vm.evaluate('ClaudeWoWOptionsPanel.name'), 'Options');
-  assert.equal(vm.evaluate('ClaudeWoWHelpPanel.name'), 'Azeroth Companion', 'Interface Options lists a panel by its name field');
+  assert.equal(vm.num('#STUB.legacy.added'), 2, 'the Options page, then the help page under it');
+  assert.equal(vm.evaluate('STUB.legacy.added[1] == ClaudeWoWOptionsPanel'), 'true');
+  assert.equal(vm.evaluate('STUB.legacy.added[2] == ClaudeWoWHelpPanel'), 'true');
+  assert.equal(vm.evaluate('ClaudeWoWHelpPanel.parent'), 'Azeroth Companion', 'Interface Options nests a panel by its parent field');
+  assert.equal(vm.evaluate('ClaudeWoWOptionsPanel.name'), 'Azeroth Companion', 'Interface Options lists a panel by its name field');
+  assert.equal(vm.evaluate('ClaudeWoWHelpPanel.name'), 'Commands and tips');
   const before = activeHistory(vm);
   vm.run('SlashCmdList.CLAUDE("help")');
   assert.ok(vm.num('#STUB.legacy.opened') >= 1);
@@ -3608,7 +3625,7 @@ test('help: the page lists every command of ClaudeWoW.HELP in its sections, comm
   for (const cmd of [
     '/claude <text>',
     '/claude -c [text]',
-    '/claude cd <folder>',
+    '/claude cd <project path>',
     '/claude config [key] [value]',
     '/claude diag [copy]',
     '/r <text>',

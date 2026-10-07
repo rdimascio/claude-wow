@@ -8794,13 +8794,15 @@ function ClaudeWoW.ShowOptions()
 	return nil
 end
 
+ClaudeWoW.ROLL_HELP = "A command that needs your OK opens a Greed, Need or Pass roll. Off: Allow once and Allow & retry buttons in the reply. Need and Allow & retry ask before they save a rule."
+
 ClaudeWoW.HELP = {
 	{
 		title = "Start and resume chats",
 		rows = {
 			{ "/claude <text>", "Start a new chat with that message, like claude \"<text>\" in a terminal. Bare /claude opens the window on the current chat; /claude new starts an empty chat." },
 			{ "/claude -c [text]", "Continue the current chat (--continue). Alone it points at its tab; with the tabs off, it opens the window on it." },
-			{ "/claude -r [id|name|n] [text]", "Resume a session (--resume). A Claude Code session started with the claude-wow channel gets the chat live; any other session is resumed headless in its folder. Bare -r lists the sessions (live ones first, marked live, running not listening, or resume): click a row or give its number; -r more lists them all." },
+			{ "/claude -r [id|name|n] [text]", "Resume a session (--resume). A Claude Code session started with the claude-wow channel gets the chat live; any other session is resumed headless in its project. Bare -r lists the sessions (live ones first, marked live, running not listening, or resume): click a row or give its number; -r more lists them all." },
 			{ "/claude -r all", "Open one chat per session handed off with claude-wow handoff in a terminal; each resumes its session headless." },
 			{ "/claude -n <name> [text]", "Name the new chat (--name). With -c it renames the current one." },
 		},
@@ -8810,20 +8812,20 @@ ClaudeWoW.HELP = {
 		rows = {
 			{ "/claude --model <model> [text]", "The model for the chat: opus, sonnet or a full model name." },
 			{ "/claude --effort <level> [text]", "low, medium, high, xhigh or max." },
-			{ "/claude --project <name|path|none> [text]", "Attach this chat to a repo (or #name in a message). none makes it a general chat." },
+			{ "/claude --project <name|path|none> [text]", "Attach this chat to a project (or #name in a message). none makes it a general chat." },
 			{ "/claude --permission-mode <mode>", "acceptEdits, auto, plan, manual, dontAsk or bypassPermissions." },
 			{ "/claude --add-dir <path> [text]", "One more folder the agent may use. Repeat the flag for more." },
 			{ "/claude --agent <name> [text]", "Which CLI runs the chat: claude, codex, grok, agy or hermes." },
 		},
 		notes = {
 			"Flags come before the text and combine: /claude --model opus fix the build starts a new chat on opus. With -c they change the current chat.",
-			"--flag=value and \"quoted values\" work, a value of - clears a setting, and a flag with no value shows it. The bridge tells you when an agent has no such option.",
+			"--flag=value and \"quoted values\" work, a value of - clears a setting, and a flag with no value shows it. The companion app tells you when an agent has no such option.",
 		},
 	},
 	{
 		title = "This chat",
 		rows = {
-			{ "/claude cd <folder>", "The folder this chat's agent works in, relative to the bridge's folder; alone it goes back to the default. A chat with a folder is a coding session there, one without is general in-game chat." },
+			{ "/claude cd <project path>", "Set this chat's project by its path, like --project. A relative path starts where the companion app runs; alone it goes back to the default. A chat with a project is a coding session there, one without is general in-game chat." },
 			{ "/claude look <question>", "Send one message to the current chat with a picture of your screen." },
 			{ "/claude rename [name]", "Rename the current chat. Alone it opens a dialog." },
 			{ "/claude delete", "Delete the current chat." },
@@ -8832,7 +8834,7 @@ ClaudeWoW.HELP = {
 			{ "/claude reset", "The next message in this chat starts a fresh session." },
 			{ "/claude cancel", "Stop waiting on this chat's reply." },
 			{ "/claude mcp [on|off <name>|none|default]", "The MCP servers this chat's Claude or Codex runs get, with their health. The MCP button in the chat header does the same." },
-			{ "/claude wrong [#n] [note]", "Mark the last reply in this chat (or reply #n) as wrong; it lands in the bridge's feedback list." },
+			{ "/claude wrong [#n] [note]", "Mark the last reply in this chat (or reply #n) as wrong; the companion app keeps it in its feedback list." },
 		},
 	},
 	{
@@ -8851,22 +8853,8 @@ ClaudeWoW.HELP = {
 			{ "/claude dm [next]", "Show or hide the Dungeon Master; next goes on to a beat that waits for you. /dm is the same." },
 			{ "/claude map [command]", "Map layers and node pins: ore, herb, filter, show, hide, nav, next, prev, stop. /aimap is the same." },
 			{ "/claude stream [command]", "Stream scenes, panes and the quest overlay. /stream is the same." },
-			{ "/claude hide | mini", "Close the window, like its X or Esc. The minimap button shows the status and pulses when a reply waits." },
 			{ "/claude config minimap [on|off]", "The minimap button: left-click opens or closes the window, right-click opens Options, drag it around the minimap." },
 			{ "/claude help", "Open this page." },
-		},
-	},
-	{
-		title = "Troubleshooting",
-		rows = {
-			{ "/claude dev [command]", "Dev tools for this chat's folder, run by the bridge: status, diff, log, run, test, doctor, errors, feedback (/claude dev help). globals saves the widget audit list in game." },
-			{ "/claude bug <text>", "Report a bug, with the addon's state and Lua errors attached." },
-			{ "/claude errors", "The Lua errors the addon caught this UI session." },
-			{ "/claude resend", "Show the strip again if the bridge missed it." },
-			{ "/claude reload", "Reload now. This also frees the slot pool." },
-			{ "/claude slots", "How many reply slots are still free this session." },
-			{ "/claude diag [copy]", "Transport diagnostics; copy opens them in a box, selected for Ctrl+C." },
-			{ "/claude probe [chatlog|asyncfile]", "Write test lines to the client's own logs so the bridge can measure them." },
 		},
 	},
 	{
@@ -8874,6 +8862,19 @@ ClaudeWoW.HELP = {
 		notes = {
 			"A command word followed by something it does not take is a message: /claude delete the unused imports starts a new chat with that text.",
 			"Shift-click an item, spell or quest to link it into your message.",
+		},
+	},
+	{
+		title = "More",
+		rows = {
+			{ "/claude bug <text>", "Report a bug, with the addon's state and Lua errors attached." },
+			{ "/claude errors", "The Lua errors the addon caught this UI session." },
+			{ "/claude reload", "Reload now. This also frees the slot pool." },
+			{ "/claude dev [command]", "Dev tools for this chat's project, run by the companion app: status, diff, log, run, test, doctor, errors, feedback (/claude dev help). globals saves the widget audit list in game." },
+			{ "/claude resend", "Show the strip again if the companion app missed it." },
+			{ "/claude slots", "How many reply slots are still free this session." },
+			{ "/claude diag [copy]", "Transport diagnostics; copy opens them in a box, selected for Ctrl+C." },
+			{ "/claude probe [chatlog|asyncfile]", "Write test lines to the client's own logs so the companion app can measure them." },
 		},
 	},
 }
@@ -9014,6 +9015,11 @@ end
 
 
 Cli.emitted = setmetatable({}, { __mode = "k" })
+Cli.invocation = nil
+
+function Cli.Quiet()
+	return type(Cli.invocation) == "table" and Cli.invocation.quiet == true
+end
 
 function Cli.WindowShown()
 	return ui.frame ~= nil and ui.frame:IsShown()
@@ -9056,7 +9062,7 @@ end
 
 
 function Cli.Out(c, text, open)
-	if not c then return end
+	if not c or Cli.Quiet() then return end
 	AddHistory(c, "system", text)
 	Cli.emitted[c.history[#c.history]] = true
 	ClaudeWoW.Render()
@@ -9169,7 +9175,7 @@ Cli.CONFIG_HELP = {
 	whisper = "on|off: each chat as a native whisper tab (same as ui whisper)",
 	echo = "summary|full|short|off|<chars>: how much of a reply the game chat prints",
 	vision = "on|off: a picture of your screen with each message (screenshot transport)",
-	roll = "on|off: a denied command pops a Greed/Need/Pass roll, or an Allow & retry button; Need and Allow & retry ask before they save a rule",
+	roll = "on|off: " .. ClaudeWoW.ROLL_HELP,
 	achievements = "on|off|test: achievement toasts; alone it lists what you earned",
 	orders = "on|off: the Orders card under the quest tracker (also /claude orders and the chat list's gear menu)",
 	minimap = "on|off: the minimap button (left-click opens or closes the window, right-click opens Options, drag it around the minimap)",
@@ -9195,7 +9201,7 @@ function Cli.ConfigList(all)
 			table.insert(lines, key .. (value ~= "" and (" = " .. value) or "") .. "  -  " .. Cli.CONFIG_HELP[key])
 		end
 	end
-	table.insert(lines, "The game's Options window has the same settings: AddOns, " .. (ClaudeWoWHelp and ClaudeWoWHelp.AddonTitle() or ClaudeWoW.PRODUCT) .. ", Options.")
+	table.insert(lines, "The game's Options window has the same settings: AddOns, " .. (ClaudeWoWHelp and ClaudeWoWHelp.AddonTitle() or ClaudeWoW.PRODUCT) .. ".")
 	if not all then table.insert(lines, "/claude config all also lists the troubleshooting keys.") end
 	return table.concat(lines, "\n")
 end
@@ -9238,6 +9244,7 @@ function Cli.SetWhisper(c, rest)
 	if rest == "on" then
 		s.whisper, s.whisperChoice = true, "on"
 		Whisper.Install()
+		if Cli.Quiet() then return end
 		local frame = Whisper.FrameFor(c, true, true)
 		Cli.Out(c, frame
 			and ("Whisper tabs are ON: this chat is the \"" .. Whisper.Title(c) .. "\" tab in the chat dock. Type there and press Enter to talk to " .. ChatAgentName(c) .. "; replies flash the tab, and /claude commands work there too. Other chats get a tab of their own. /claude config ui whisper off closes them.")
@@ -9245,6 +9252,7 @@ function Cli.SetWhisper(c, rest)
 	elseif rest == "off" then
 		s.whisper, s.whisperChoice = false, "off"
 		Whisper.CloseAll()
+		if Cli.Quiet() then return end
 		Cli.Out(c, "Whisper tabs are off; replies go to the game chat and the window as before")
 		print(ClaudeWoW.PREFIX .. "Whisper tabs are off: replies go to the game chat, and /claude opens the window. /claude config ui whisper on brings the tabs back.")
 	else
@@ -9284,27 +9292,39 @@ end
 
 local RunCommand
 
-function ClaudeWoW.Config(rest)
+function Cli.Reject(text)
+	Cli.Say(ActiveChat(), text)
+	return text
+end
+
+function Cli.ConfigCommand(rest, ctx)
 	rest = Trim(rest or "")
 	if rest == "" or rest:lower() == "all" then
 		Cli.Say(ActiveChat(), Cli.ConfigList(rest ~= ""))
-		return
+		return nil
 	end
 	local word, args = rest:match("^(%S+)%s*(.-)$")
 	local key = Cli.ConfigKey(word)
-	if not key then
-		Cli.Say(ActiveChat(), "No setting \"" .. word .. "\". " .. Cli.ConfigList())
-		return
-	end
+	if not key then return Cli.Reject("No setting \"" .. word .. "\". " .. Cli.ConfigList()) end
 	if key == "macro" and args == "" then
 		Cli.Say(ActiveChat(), "macro: " .. Cli.CONFIG_HELP.macro)
-		return
+		return nil
 	end
 	if not IsCommand(key, args) then
-		Cli.Say(ActiveChat(), key .. " does not take \"" .. args .. "\". " .. key .. ": " .. Cli.CONFIG_HELP[key])
-		return
+		return Cli.Reject(key .. " does not take \"" .. args .. "\". " .. key .. ": " .. Cli.CONFIG_HELP[key])
 	end
-	RunCommand(key, args)
+	RunCommand(key, args, ctx)
+	return nil
+end
+
+function ClaudeWoW.Config(rest, ctx)
+	ctx = type(ctx) == "table" and ctx or {}
+	local outer = Cli.invocation
+	Cli.invocation = ctx
+	local ok, result = pcall(Cli.ConfigCommand, rest, ctx)
+	Cli.invocation = outer
+	if not ok then error(result, 0) end
+	return result
 end
 
 Cli.CLI_FLAGS = {
@@ -10093,9 +10113,13 @@ function ClaudeWoW.Probe.Run(rest)
 	end
 end
 
-RunCommand = function(cmd, rest)
+RunCommand = function(cmd, rest, ctx)
 	local s = db.settings
 	local c = ActiveChat()
+	local quiet = type(ctx) == "table" and ctx.quiet == true
+	local function Missing(module)
+		if not quiet then print(ClaudeWoW.PREFIX .. "the " .. module .. " module did not load") end
+	end
 	if cmd == "" then
 		ClaudeWoW.Toggle()
 	elseif cmd == "hide" or cmd == "quit" or cmd == "mini" or cmd == "min" then
@@ -10137,17 +10161,17 @@ RunCommand = function(cmd, rest)
 		ClaudeWoW.SetFolder(rest, c)
 		Cli.Show(c)
 	elseif cmd == "map" then
-		if ClaudeWoWMap then ClaudeWoWMap.Command(rest) else print(ClaudeWoW.PREFIX .. "the map module did not load") end
+		if ClaudeWoWMap then ClaudeWoWMap.Command(rest, ctx) else Missing("map") end
 	elseif cmd == "roast" then
-		if ClaudeWoWRoast then ClaudeWoWRoast.Command(rest) else print(ClaudeWoW.PREFIX .. "the roast module did not load") end
+		if ClaudeWoWRoast then ClaudeWoWRoast.Command(rest, ctx) else Missing("roast") end
 	elseif cmd == "voice" then
-		ClaudeWoWVoice.Command(rest)
+		if ClaudeWoWVoice then ClaudeWoWVoice.Command(rest, ctx) else Missing("voice") end
 	elseif cmd == "achievements" or cmd == "toasts" then
-		if ClaudeWoWAchievements then ClaudeWoWAchievements.Command(rest) else print(ClaudeWoW.PREFIX .. "the achievements module did not load") end
+		if ClaudeWoWAchievements then ClaudeWoWAchievements.Command(rest, ctx) else Missing("achievements") end
 	elseif cmd == "orders" then
-		if ClaudeWoWOrders then ClaudeWoWOrders.Command(rest) else print(ClaudeWoW.PREFIX .. "the orders module did not load") end
+		if ClaudeWoWOrders then ClaudeWoWOrders.Command(rest, ctx) else Missing("orders") end
 	elseif cmd == "telemetry" then
-		if ClaudeWoWTelemetry then ClaudeWoWTelemetry.Command(rest) else print(ClaudeWoW.PREFIX .. "the telemetry module did not load") end
+		if ClaudeWoWTelemetry then ClaudeWoWTelemetry.Command(rest, ctx) else Missing("telemetry") end
 	elseif cmd == "ui" then
 		Cli.Ui(c, rest)
 	elseif cmd == "agent" then
@@ -10234,7 +10258,7 @@ RunCommand = function(cmd, rest)
 		elseif tonumber(rest) then
 			s.echo = tostring(math.max(200, math.floor(tonumber(rest))))
 		end
-		AddHistory(c, "system", "replies in game chat: " .. s.echo .. " (summary = the agent's TL;DR lines, full = " .. ECHO.DEFAULT .. " chars, short, off, or a number of characters)")
+		if not quiet then AddHistory(c, "system", "replies in game chat: " .. s.echo .. " (summary = the agent's TL;DR lines, full = " .. ECHO.DEFAULT .. " chars, short, off, or a number of characters)") end
 		ClaudeWoW.Render()
 	elseif cmd == "longchat" then
 		if rest == "on" then s.longchat = true elseif rest == "off" then s.longchat = false end
@@ -10244,12 +10268,12 @@ RunCommand = function(cmd, rest)
 	elseif cmd == "roll" then
 		if rest == "on" then s.lootRoll = true elseif rest == "off" then s.lootRoll = false end
 		if s.lootRoll == false and ClaudeWoWRoll then ClaudeWoWRoll.CloseAll() end
-		ClaudeWoW.Print("denied commands: " .. (ClaudeWoW.LootRollEnabled() and "Greed/Need/Pass roll frame" or "Allow & retry button in the reply"))
+		if not quiet then ClaudeWoW.Print("Ask with a roll window is " .. (ClaudeWoW.LootRollEnabled() and "on" or "off") .. ". " .. ClaudeWoW.ROLL_HELP) end
 		ClaudeWoW.Render()
 	elseif cmd == "minimap" then
 		if rest == "on" then s.minimap = true elseif rest == "off" then s.minimap = false end
 		Q.ApplyMinimapButton()
-		ClaudeWoW.Print("minimap button: " .. (Q.MinimapButtonOn() and "on. Left-click opens or closes the window, right-click opens Options, drag it to move it." or "off. /claude config minimap on brings it back."))
+		if not quiet then ClaudeWoW.Print("minimap button: " .. (Q.MinimapButtonOn() and "on. Left-click opens or closes the window, right-click opens Options, drag it to move it." or "off. /claude config minimap on brings it back.")) end
 	elseif cmd == "signal" then
 		if rest == "on" then s.signal = true elseif rest == "off" then s.signal = false end
 		AddHistory(c, "system", "signal check is " .. (s.signal and "on" or "off"))

@@ -269,6 +269,6 @@ test('stream: follow off sends no track updates, and a disconnected bridge is a 
   assert.equal(vm.evaluate('StreamChatForTest()'), null);
   vm.run('ClaudeWoW.IsConnected = function() return false end');
   slash(vm, 'code');
-  assert.ok(printed(vm).includes('Not sent: the bridge is not connected.'));
+  assert.ok(printed(vm).includes('Not sent: the companion app is not connected.'));
   assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].draft'), null, 'nothing lands in an input box');
 });
