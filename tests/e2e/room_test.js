@@ -60,6 +60,7 @@ test('an agent-room message in a followed channel reaches the game as its own ch
           const db = path.join(sb.home, 'room.sqlite');
           execFileSync(SQLITE, [db, `create table meta (key text primary key, value text not null); insert into meta values ('web_token', '${TOKEN}');`]);
           const cfg = JSON.parse(fs.readFileSync(sb.config, 'utf8'));
+          cfg.roomDownAfterMs = 1000;
           cfg.plugins.room = { enabled: true, workspace: 'wow-ai', url: `ws://127.0.0.1:${port}/ws`, db };
           fs.writeFileSync(sb.config, JSON.stringify(cfg, null, 2));
         },
@@ -67,14 +68,15 @@ test('an agent-room message in a followed channel reaches the game as its own ch
       async h => {
         await h.client.connect();
         await h.client.waitFor(() => room.sockets.length > 0, { timeoutMs: 20000, label: 'the bridge to connect to the room' });
-        room.send({
+        const snapshot = {
           type: 'snapshot',
           snapshot: {
             agents: [{ id: 'assistant', displayName: 'Ari' }],
             channels: [{ id: 'ch-ship', workspaceId: 'wow-ai', slug: 'ship', name: 'Ship', archived: false }],
             threads: [{ id: 't1', channelId: 'ch-ship', title: 'Deploy' }],
           },
-        });
+        };
+        room.send(snapshot);
         await h.bridge.waitForLine(/room: connected to agent-room, following 1 channel\(s\) of wow-ai/, { timeoutMs: 15000 });
         const fired = () => h.client.luaValue('ClaudeWoW.Presence.News().fired');
         const before = Number(fired());
@@ -136,6 +138,12 @@ test('an agent-room message in a followed channel reaches the game as its own ch
         await h.client.waitFor(() => transcript().messages.some(m => m.role === 'system' && /agent-room is unreachable/.test(m.text)), {
           timeoutMs: 10000,
           label: 'the unreachable line in the room chat',
+        });
+        await h.client.waitFor(() => room.sockets.length > 0, { timeoutMs: 20000, label: 'the bridge to reconnect' });
+        room.send(snapshot);
+        await h.client.waitFor(() => transcript().messages.some(m => m.role === 'system' && /agent-room is back/.test(m.text)), {
+          timeoutMs: 10000,
+          label: 'the back line in the room chat',
         });
         assert.ok(!h.bridge.output.includes(TOKEN), 'the token is never logged');
       },

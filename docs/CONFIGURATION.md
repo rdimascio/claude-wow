@@ -286,6 +286,7 @@ These sizes are baked into the files `install-slots.js` creates, and the addon h
 | `actMax` | `60` | Heartbeat files per message (`act/NNN/01..60.wav`). The bridge deletes one per agent action. |
 | `presenceMax` | `2000` | Presence files per ring (`presence/a/0001..2000.wav` and `presence/b/...`). The bridge deletes one per `presenceIntervalMs`. |
 | `presenceIntervalMs` | `30000` | How often the bridge deletes a presence file so the in-game light stays green. |
+| `roomDownAfterMs` | `60000` | How long the agent-room connection must stay down before each room chat says it is unreachable; shorter drops say nothing. |
 | `tocInterface` | `"11509, 16001"` | `## Interface:` versions written into every slot addon's `.toc`: Classic Era and Forever, like the addon's own `.toc`. Bump it when a client's TOC version changes. Setup replaces the old default `"16001"`. |
 
 ## Command line

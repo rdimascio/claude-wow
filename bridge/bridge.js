@@ -2257,19 +2257,30 @@ function noteRoomMessage(entry) {
   roomNews();
 }
 
-const ROOM_STATUS_GAP_MS = 10 * 60 * 1000;
-let roomStatusAt = 0;
-let roomStatusShown = '';
+const ROOM_DOWN_AFTER_MS = cfg.roomDownAfterMs || 60000;
+let roomDownTimer = null;
+let roomDownShown = false;
 
-function noteRoomStatus(up) {
-  if (up ? roomStatusShown !== 'down' : roomStatusShown === 'down' || Date.now() - roomStatusAt < ROOM_STATUS_GAP_MS) return;
-  roomStatusShown = up ? 'up' : 'down';
-  if (!up) roomStatusAt = Date.now();
-  const text = up
-    ? 'agent-room is back. Messages sent while it was unreachable are only in the room.'
-    : 'agent-room is unreachable, so this chat is paused. The bridge keeps trying.';
+function roomStatusLine(text) {
   for (const c of Object.values(transcripts.chats))
     if (c.plugin === 'room') noteRoomMessage({ chat: c.id, title: c.name, thread: '', id: '', role: 'system', from: '', text });
+}
+
+function noteRoomStatus(up) {
+  if (up) {
+    if (roomDownTimer) clearTimeout(roomDownTimer);
+    roomDownTimer = null;
+    if (roomDownShown) roomStatusLine('agent-room is back. Messages sent while it was unreachable are only in the room.');
+    roomDownShown = false;
+    return;
+  }
+  if (roomDownTimer || roomDownShown) return;
+  roomDownTimer = setTimeout(() => {
+    roomDownTimer = null;
+    roomDownShown = true;
+    roomStatusLine('agent-room is unreachable, so this chat is paused. The bridge keeps trying.');
+  }, ROOM_DOWN_AFTER_MS);
+  if (roomDownTimer.unref) roomDownTimer.unref();
 }
 
 function roomMirror() {
@@ -2297,7 +2308,6 @@ function startRoom() {
   if (!ROOM_CONF.enabled) return;
   roomClient = ROOM.createRoom({ conf: ROOM_CONF, log, onMessage: noteRoomMessage, onStatus: noteRoomStatus });
   roomClient.connect();
-  if (state.roomNewsPending) roomNews();
 }
 
 function discordReplyText(status, text, denied) {
@@ -3999,6 +4009,7 @@ if (inject !== null) {
       prepareNews(c);
     }
     presenceBeat();
+    if (roomClient && state.roomNewsPending) roomNews();
     setInterval(() => presenceBeat(), PRESENCE_INTERVAL_MS);
     // Fresh slot files right away, so the addon's first slot read tells it which
     // transport this bridge listens on (its hello can't reach a screenshot-mode
