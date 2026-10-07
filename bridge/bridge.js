@@ -70,8 +70,10 @@ const GR = require('./gamerefs');
 const RT = require('./replytokens');
 const UPD = require('./selfupdate');
 const IDLE = require('./idle');
+const AD = require('./autodeploy');
 const CLI = require('./clients');
 const SW = require('./slotwindow');
+const PUBR = require('./publishretry');
 
 // The plugins this bridge has (docs/PLATFORM.md). Registration order is the
 // order match() is asked in, and the first one is the default unless
@@ -542,6 +544,7 @@ const live = new Map(); // chatKey -> latest record shown to the game
 let lastActivityAt = Date.now();
 let lastPublish = 0;
 let publishTimer = null;
+const publishRetry = PUBR.createPublishRetry({ write: G.atomicWrite, log, republish: () => publishNow(true, { refresh: true }) });
 
 // ---------------------------------------------------------------------------
 // Small utilities
@@ -847,7 +850,7 @@ function sharedSlotFields(urgent) {
     sessions: sessionList(),
     projects: projectList(),
     mcp: mcpSlotList(),
-    contract: AC.slotField(contracts.current()),
+    contract: AC.slotField(contracts.current(), { codexConfig: CODEX_OWN_MCP.length > 0 }),
     home: os.homedir(),
     skills: FACTORY.slotSkills(FACTORY.settings(pluginsCfg['claude-code'])),
     discord: !!discordHub,
@@ -1079,23 +1082,23 @@ function slotsInstalled(client) {
 // won't see replies until `node setup.js` has run and WoW was restarted.
 function publishClient(r, records, shared) {
   const c = r.client;
-  try {
-    G.atomicWrite(c.inboxFile, slotFile('ClaudeWoW_Inbox', records, shared, c));
-  } catch (e) {
+  const batch = publishRetry.begin(c.key);
+  const inboxError = batch.write(c.inboxFile, slotFile('ClaudeWoW_Inbox', records, shared, c));
+  if (inboxError && !batch.locked()) {
+    batch.end();
     if (!r.warnedNoAddon) {
       r.warnedNoAddon = true;
-      log(G.publishFailureNote(c.inboxFile, c.label, e));
+      log(G.publishFailureNote(c.inboxFile, c.label, inboxError));
     }
     return false;
   }
-  if (!slotsInstalled(c)) return false;
-  const body = slotFile('ClaudeWoW_SlotData', records, shared, c);
-  for (let i = 1; i <= SLOTS; i++) {
-    try {
-      G.atomicWrite(path.join(c.addonDir, 'ClaudeWoW_S' + pad3(i), 'Inbox.lua'), body);
-    } catch {}
+  const slots = slotsInstalled(c);
+  if (slots) {
+    const body = slotFile('ClaudeWoW_SlotData', records, shared, c);
+    for (let i = 1; i <= SLOTS; i++) batch.write(path.join(c.addonDir, 'ClaudeWoW_S' + pad3(i), 'Inbox.lua'), body);
   }
-  return true;
+  batch.end(inLabel(c));
+  return slots;
 }
 
 function publishNow(urgent = true, { refresh = false } = {}) {
@@ -2526,6 +2529,9 @@ function runAgent(job, opts = {}) {
     seen: state.mcpSeen || {},
     codexOwn: CODEX_ALL_MCP,
     reserved: MCP_RESERVED,
+    claudeOwn: () => MC.claudeOwnServers({ cwd }),
+    codexOwnNow: () => MC.codexOwnServers(),
+    codexToolsNow: () => MC.codexOwnTools(),
   });
   state.mcpSeen = mcpPlan.seen;
   const { userMcp, seenOff, guard: mcpGuard } = mcpPlan;
@@ -2551,7 +2557,7 @@ function runAgent(job, opts = {}) {
     log(`${tag} allowed for this run only (${agentId}): ${grantOnce.rules.join(', ')}`);
   }
   const dataServer = opts.gameData && (claudeRun || codexRun || agent.mcp) ? gameDataServer(tag, job) : null;
-  const codexMcp = codexRun ? [...(dataServer ? [{ name: DM.SERVER_NAME, server: dataServer.server }] : []), ...mcpPlan.codexMcp] : [];
+  const codexMcp = [...(codexRun && dataServer ? [{ name: DM.SERVER_NAME, server: dataServer.server }] : []), ...mcpPlan.codexMcp];
   const runOnlyRules = [
     ...grantOnce.rules,
     ...(dataServer ? dataServer.rules : []),
@@ -2651,8 +2657,8 @@ function runAgent(job, opts = {}) {
   const ctx = gameContext(job);
   const system = P.systemPrompt(ctx, primer(), { tools: pluginTools, surfaces: plugin.surfaces, voice: plugin.voice });
   const systemShort = P.systemPrompt(ctx, '', { surfaces: plugin.surfaces, voice: plugin.voice });
-  const devNote = takeDevNote(job);
-  const prompt = P.messagePrompt(devNote ? `${devNote}\n\n${job.text}` : job.text, ctx, { image, rules: opts.turnRules });
+  const promptNotes = [takeDevNote(job), autoDeploy ? autoDeploy.failureNote(cwd) : ''].filter(Boolean);
+  const prompt = P.messagePrompt([...promptNotes, job.text].join('\n\n'), ctx, { image, rules: opts.turnRules });
   const promptFile = path.join(TMP_DIR, `prompt-${job.id}-${Date.now().toString(36)}.txt`);
   const input = agent.input({ prompt, system, systemShort, resume, cfg: acfg, images });
   if (input.promptFile !== undefined) {
@@ -3778,6 +3784,22 @@ function startSelfUpdate() {
   }
 }
 
+let autoDeploy = null;
+
+function startAutoDeploy() {
+  if (!holdsLock) return;
+  const conf = AD.settings(cfg, DEFAULT_CWD);
+  if (conf.error) log(`auto-deploy: off (${conf.error})`);
+  const ok = conf.enabled ? AD.eligible({ home: HOME.dir, compiled: R.compiled }) : { ok: false };
+  if (!ok.ok) {
+    if (ok.why) log(`auto-deploy: off (${ok.why})`);
+    AD.forget(HOME.dir);
+    return;
+  }
+  autoDeploy = AD.createAutoDeploy({ conf, home: HOME.dir, log, idle: bridgeIdleStatus });
+  autoDeploy.start();
+}
+
 const MCP_RESERVED = [DM.SERVER_NAME, GM.SERVER_NAME, FACTORY.SERVER_NAME];
 const USER_MCP = MC.parse(cfg.mcp, { reserved: MCP_RESERVED, log, env: process.env });
 const CODEX_ALL_MCP = MC.codexOwnServers();
@@ -3855,6 +3877,7 @@ if (inject !== null) {
   } else {
     setInterval(pollSavedVariables, cfg.pollMs || 750);
     startSelfUpdate();
+    startAutoDeploy();
     for (const c of CLIENTS) {
       migrateRuntime(c);
       const lastId = Number(clientStateOf(c).lastId);

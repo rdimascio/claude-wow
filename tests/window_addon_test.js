@@ -738,6 +738,13 @@ test('the window leaves out the closing TL;DR block of a reply, but not one in a
   assert.equal(vm.evaluate('STUB.copied[1]'), 'Renamed the helper.\nAll green.\n\n**TL;DR:** Helper renamed.', 'the copy box gets the whole reply');
 });
 
+const starters = vm =>
+  JSON.parse(
+    vm.evaluate(
+      '(function() local t = {} for _, r in ipairs(ClaudeWoW.UI.empty.rows) do if r.shown then table.insert(t, string.format("%q", r.label:GetText())) end end return "[" .. table.concat(t, ",") .. "]" end)()',
+    ),
+  );
+
 const emptyState = vm => ({
   shown: vm.evaluate('ClaudeWoW.UI.empty and ClaudeWoW.UI.empty.shown'),
   title: vm.evaluate('ClaudeWoW.UI.empty and ClaudeWoW.UI.empty.title:GetText()'),
@@ -745,7 +752,7 @@ const emptyState = vm => ({
   top: -vm.num('ClaudeWoW.UI.empty.y'),
 });
 
-test('an empty chat shows a centered empty state with the project, not a system bubble, and setting the project adds no message', () => {
+test('an empty chat shows a centered empty state with starters for its kind of chat, not a system bubble, and setting the project adds no message', () => {
   const vm = nativeVM();
   vm.run('ClaudeWoW.NewChat(); ClaudeWoW.Render()');
   let e = emptyState(vm);
@@ -755,14 +762,22 @@ test('an empty chat shows a centered empty state with the project, not a system 
   assert.equal(shownBodies(vm).filter(Boolean).length, 0, 'no bubble on an empty chat');
   e = emptyState(vm);
   assert.equal(e.shown, 'true');
-  assert.equal(e.title, 'No messages yet');
-  assert.match(e.body, /Type below and press Enter/);
-  assert.match(e.body, /Project: No project/);
+  assert.equal(e.title, 'What do you need?', 'a chat with no project is a game chat');
+  assert.equal(e.body, 'Shift-click an item, spell or quest to link it.');
+  assert.equal(vm.evaluate('ClaudeWoW.UI.empty.icon.shown'), 'true', 'the spark sits above the title');
+  assert.deepEqual(starters(vm), ['What should I do next?', 'Plan a route for my quests', 'Which gear upgrades should I look for?']);
   assert.ok(e.top > 0, 'centered in the parchment, not at the top: ' + e.top);
+  vm.run('ClaudeWoW.UI.empty.rows[2].scripts.OnClick(ClaudeWoW.UI.empty.rows[2])');
+  assert.equal(vm.evaluate('ClaudeWoWInput:GetText()'), 'Plan a route for my quests', 'a starter fills the box and sends nothing');
+  assert.equal(vm.num('#ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history'), 0);
+  vm.run('ClaudeWoWInput:SetText("my draft"); ClaudeWoW.UI.empty.rows[1].scripts.OnClick(ClaudeWoW.UI.empty.rows[1])');
+  assert.equal(vm.evaluate('ClaudeWoWInput:GetText()'), 'my draft', 'a starter never overwrites a draft');
+  vm.run('ClaudeWoWInput:SetText("")');
 
   vm.run('ClaudeWoWProjectButton.scripts.OnClick(ClaudeWoWProjectButton); STUB.Pick("wow-ai")');
   assert.equal(vm.num('#ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history'), 0, 'picking a project writes no "project:" message');
-  assert.match(emptyState(vm).body, /Project: wow-ai/, 'the empty state names the new project');
+  assert.equal(emptyState(vm).title, 'What are we working on?', 'a project chat gets the coding starters');
+  assert.deepEqual(starters(vm), ['Summarize what changed today', 'Find and fix the failing test', 'Explain how this repo is laid out']);
 
   vm.run('SlashCmdList.CLAUDE("--project nope")');
   const bodies = shownBodies(vm);
@@ -771,8 +786,9 @@ test('an empty chat shows a centered empty state with the project, not a system 
   e = emptyState(vm);
   assert.equal(e.shown, 'true', 'a chat with only system lines still gets the hint');
   assert.equal(vm.evaluate('ClaudeWoW.UI.empty.title.shown'), 'false', 'but no "No messages yet" title under a visible message');
-  assert.match(e.body, /^Type below and press Enter/);
-  assert.ok(!e.body.includes('\n'), 'only the hint line: ' + e.body);
+  assert.equal(e.body, 'Shift-click an item, spell or quest to link it.');
+  assert.equal(vm.evaluate('ClaudeWoW.UI.empty.icon.shown'), 'false', 'no spark under a visible message');
+  assert.equal(starters(vm).length, 3, 'the starters stay under a system line');
   assert.ok(e.top > 0, 'below the system line');
 
   vm.run('ClaudeWoW.IsConnected = function() return false end; ClaudeWoW.Render()');
@@ -782,14 +798,59 @@ test('an empty chat shows a centered empty state with the project, not a system 
   e = emptyState(vm);
   assert.equal(e.title, 'Not connected');
   assert.ok(!/npm|claude-wow/.test(e.body), 'no commands or folder names: ' + e.body);
+  assert.equal(starters(vm).length, 0, 'no starters while nothing can answer');
 
   vm.run('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history = {}; ClaudeWoW.IsConnected = function() return true end; ClaudeWoW.Render()');
   e = emptyState(vm);
   assert.equal(vm.evaluate('ClaudeWoW.UI.empty.title.shown'), 'true', 'a truly empty chat gets its title back');
-  assert.equal(e.title, 'No messages yet');
-  assert.match(e.body, /Project: /);
+  assert.equal(e.title, 'What are we working on?');
   vm.run('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history = { { role = "user", t = 1, text = "hi" } }; ClaudeWoW.Render()');
   assert.equal(emptyState(vm).shown, 'false', 'a chat with a message has no empty state');
+});
+
+test('a short system line is a quiet note with no header card, a session change is a ruled divider, and long or multi-line output keeps its card', () => {
+  const vm = nativeVM();
+  vm.run('ClaudeWoW.NewChat(); ClaudeWoW.IsConnected = function() return true end');
+  const bubbles = `(function() local t = {} for _, b in ipairs(ClaudeWoW.UI.bubbles) do if b.shown then table.insert(t, b) end end return t end)()`;
+  const field = (i, expr) => vm.evaluate(`(function() local b = ${bubbles}[${i}] return ${expr} end)()`);
+
+  vm.run('SlashCmdList.CLAUDE("--project nope")');
+  assert.match(field(1, 'b.body:GetText()'), /Unknown project "nope"/);
+  assert.equal(field(1, 'b.who.shown'), 'false', 'no "System" header');
+  assert.equal(field(1, 'b.bg.shown'), 'false', 'no card background');
+  assert.equal(field(1, 'b.ruleL.shown'), 'false', 'a note has no divider rules');
+
+  vm.run('SlashCmdList.CLAUDE("reset")');
+  assert.match(field(2, 'b.body:GetText()'), /^Next message: new .+ session/, 'the divider says the change waits for the next message');
+  assert.equal(field(2, 'b.who.shown'), 'false');
+  assert.equal(field(2, 'b.ruleL.shown'), 'true', 'a session change is a divider');
+  assert.equal(field(2, 'b.ruleR.shown'), 'true');
+
+  vm.run(
+    'local c = ClaudeWoWDB.chats[#ClaudeWoWDB.chats]; table.insert(c.history, { role = "system", t = 1, text = "a\\nb\\nc" }); table.insert(c.history, { role = "assistant", t = 1, text = "hi" }); ClaudeWoW.Render()',
+  );
+  assert.equal(field(3, 'b.who.shown'), 'true', 'three or more lines keep the card');
+  assert.equal(field(3, 'b.who:GetText()'), 'System');
+
+  vm.run(`
+    local c = ClaudeWoWDB.chats[#ClaudeWoWDB.chats]
+    table.insert(c.history, { role = "system", t = 1, event = true, text = string.rep("long divider label ", 6) })
+    table.insert(c.history, { role = "system", t = 1, text = string.rep("a warning with no line break ", 5) })
+    ClaudeWoW.Render()
+    for _, b in ipairs(ClaudeWoW.UI.bubbles) do b.body.GetStringWidth = function(self) return #(self.text or "") * 6 end end
+    ClaudeWoW.Render()
+  `);
+  assert.equal(field(2, 'b.ruleL.shown'), 'true', 'a short label still fits its rules at real text widths');
+  assert.equal(field(5, 'b.who.shown'), 'false');
+  assert.equal(field(5, 'b.ruleL.shown'), 'false', 'a label too wide for the rules drops them');
+  assert.equal(field(6, 'b.who.shown'), 'true', 'a one-line warning over 120 characters keeps the card');
+
+  vm.run('local c = ClaudeWoWDB.chats[#ClaudeWoWDB.chats]; c.history = { c.history[4], c.history[4] }; ClaudeWoW.Render()');
+  for (const i of [1, 2]) {
+    assert.equal(field(i, 'b.who.shown'), 'true', `bubble ${i} was a note and gets its header back for a reply`);
+    assert.equal(field(i, 'b.bg.shown'), 'true');
+    assert.equal(field(i, 'b.ruleL.shown'), 'false');
+  }
 });
 
 test('general chats sit under Chats, project chats under their project, and the project button in the header switches the project', () => {
@@ -1337,6 +1398,31 @@ test('a C2 fail in the bridge contract greys the off items and Turn all off in t
   vm.run('ClaudeWoW.ApplyContract({ claude = { version = "2.1.290", checked = true, off = false, reason = "" } }); ClaudeWoW.ApplyContract(nil)');
   vm.run('ClaudeWoWMcpButton.scripts.OnClick(ClaudeWoWMcpButton)');
   assert.equal(enabled('Turn all off'), 'true', 'a slot without the field withdraws the contract');
+});
+
+test('a Codex X2a fail greys only the sources the contract names: Codex servers stay on, config.json servers can still be turned off', () => {
+  const vm = nativeVM();
+  const list = MCP_LIST.replace(/ \}$/, ', { id = "mine", label = "mine", src = "codex", on = true, health = "unknown" } }');
+  vm.run(`ClaudeWoWDB.chats[#ClaudeWoWDB.chats].agent = "codex"; ClaudeWoW.ApplyMcp(${list}); ClaudeWoW.Render()`);
+  const enabled = text =>
+    vm.evaluate(`(function() for _, it in ipairs(STUB.menu.items) do if it.text == ${JSON.stringify(text)} then return it.enabled end end end)()`);
+  const last = () => vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history[#ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history].text');
+  const reason = 'Codex 0.160.1 failed X2a in claude-wow agents check.';
+  vm.run(`ClaudeWoW.ApplyContract({ codex = { version = "0.160.1", checked = true, off = false, reason = "${reason}", sources = { "codex", "bogus" } } })`);
+  vm.run('ClaudeWoWMcpButton.scripts.OnClick(ClaudeWoWMcpButton)');
+  assert.equal(enabled('mine  |cff999999not seen yet|r'), 'false', 'a server from config.toml cannot be turned off');
+  assert.equal(enabled('notion  |cff33cc33ok|r'), 'true', 'a config.json server is left out of a Codex run, so it can be turned off');
+  assert.equal(enabled('Slack  |cffff9933needs login|r'), 'true');
+  assert.equal(enabled('Turn all off'), 'false', 'Turn all off would turn a config.toml server off');
+  vm.run('SlashCmdList.CLAUDE("mcp off mine")');
+  assert.equal(last(), 'MCP: ' + reason);
+  vm.run('SlashCmdList.CLAUDE("mcp off notion")');
+  assert.equal(last(), 'MCP: notion is off for this chat.');
+
+  vm.run(`ClaudeWoW.ApplyMcp(${MCP_LIST}); ClaudeWoW.Render()`);
+  vm.run('ClaudeWoWMcpButton.scripts.OnClick(ClaudeWoWMcpButton)');
+  assert.equal(enabled('Turn all off'), 'true', 'with no config.toml server, X2a refuses nothing');
+  assert.ok(!menuItems(vm).includes('Turning a server off is disabled'));
 });
 
 test('without native frames the MCP button and a long project button both fit in the composer', () => {

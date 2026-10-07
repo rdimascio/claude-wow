@@ -2,6 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const I = require('../bridge/idle');
 
@@ -60,6 +61,36 @@ test('readState and the probe: a missing state.json is empty, a corrupt one is u
     true,
     'a supervisor alone, between bridge restarts, runs nothing',
   );
+});
+
+test('probeFor: a factory run going in runs.json keeps a running bridge busy; a dead or finished one does not', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'idle-factory-'));
+  const stateFile = path.join(dir, 'state.json');
+  const bridgeLockFile = path.join(dir, 'bridge.lock');
+  const runsFile = path.join(dir, 'runs.json');
+  fs.writeFileSync(stateFile, '{}');
+  fs.writeFileSync(bridgeLockFile, JSON.stringify({ pid: 300 }));
+  const alive = pid => pid === 300 || pid === 500;
+  const probe = () => I.probeFor({ stateFile, bridgeLockFile, runsFile, alive })();
+  assert.equal(probe().idle, true, 'no runs.json');
+  fs.writeFileSync(
+    runsFile,
+    JSON.stringify({
+      runs: [
+        { id: 'aa11bb22', status: 'running', pid: 500 },
+        { id: 'cc33dd44', status: 'done', pid: 500 },
+      ],
+    }),
+  );
+  assert.deepEqual(probe(), { idle: false, reason: '1 factory run(s) going (aa11bb22)' });
+  fs.writeFileSync(runsFile, JSON.stringify({ runs: [{ id: 'aa11bb22', status: 'running', pid: 600 }] }));
+  assert.equal(probe().idle, true, 'a run whose process is gone');
+  fs.writeFileSync(runsFile, '{"runs": [{"id": "aa11');
+  assert.deepEqual(probe(), { idle: false, reason: '1 factory run(s) going (runs.json cannot be read)' }, 'a half-written runs.json may hide a run');
+  fs.writeFileSync(runsFile, JSON.stringify({ runs: [{ id: 'aa11bb22', status: 'running', pid: 500 }] }));
+  fs.writeFileSync(bridgeLockFile, JSON.stringify({ pid: 400 }));
+  assert.equal(probe().idle, true, 'no bridge running: its factory runs are gone with it');
+  fs.rmSync(dir, { recursive: true, force: true });
 });
 
 test('idleStatus: a message a plugin is handling (live session, stream, a roast hook) keeps the bridge busy', () => {

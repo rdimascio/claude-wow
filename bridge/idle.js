@@ -48,10 +48,20 @@ function bridgeRunning({ lock, pidInfo }, alive) {
   return !!(pidInfo && alive(Number(pidInfo.bridgePid)));
 }
 
-function probeFor({ stateFile, bridgeLockFile = '', readPid = () => null, alive }) {
+function factoryRunsGoing(runsFile, alive) {
+  const data = runsFile ? readState(runsFile) : {};
+  if (!data) return ['runs.json cannot be read'];
+  const runs = Array.isArray(data.runs) ? data.runs : [];
+  return runs.filter(r => r && r.status === 'running' && alive(Number(r.pid))).map(r => String(r.id));
+}
+
+function probeFor({ stateFile, bridgeLockFile = '', runsFile = '', readPid = () => null, alive }) {
   return () => {
     const running = bridgeRunning({ lock: bridgeLockFile ? readBridgeLock(bridgeLockFile) : null, pidInfo: readPid() }, alive);
-    return idleStatus(readState(stateFile), { bridgeRunning: running });
+    const status = idleStatus(readState(stateFile), { bridgeRunning: running });
+    if (!status.idle || !running) return status;
+    const runs = factoryRunsGoing(runsFile, alive);
+    return runs.length ? { idle: false, reason: `${runs.length} factory run(s) going (${runs.join(', ')})` } : status;
   };
 }
 

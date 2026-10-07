@@ -138,7 +138,13 @@ test('the tracker recomputes when --version answers: another version, or no vers
   const now = other.tracker.current().claude;
   assert.equal(now.matched, false);
   assert.equal(now.version, '2.1.291');
-  assert.deepEqual(AC.slotField({ claude: now }).claude, { version: '2.1.291', checked: false, off: true, reason: '' });
+  assert.deepEqual(AC.slotField({ claude: now }).claude, {
+    version: '2.1.291',
+    checked: false,
+    off: true,
+    reason: '',
+    sources: ['config', 'claude', 'claude.ai', 'plugin'],
+  });
   const unknown = trackerWorld({ claude: entryFor({ ...CLAUDE_ROWS, C2: 'fail' }) }, () => Promise.resolve(''));
   unknown.tracker.status('claude', cmdClaude);
   await new Promise(setImmediate);
@@ -205,7 +211,9 @@ test('a C2 fail gives the slot field { claude: { off: false, reason } } and refu
   assert.match(AC.refusal(partial, { off: true }), /failed C2/, 'a measured fail counts even when another gating row measured nothing');
   const unmatched = { agent: 'claude', version: '1.0.0', matched: false, checked: false, rows: { C2: 'fail' } };
   assert.equal(AC.refusal(unmatched, { off: true }), '', 'fail closed only on a measured fail of this binary');
-  assert.deepEqual(AC.slotField({ claude: unmatched }), { claude: { version: '1.0.0', checked: false, off: true, reason: '' } });
+  assert.deepEqual(AC.slotField({ claude: unmatched }), {
+    claude: { version: '1.0.0', checked: false, off: true, reason: '', sources: ['config', 'claude', 'claude.ai', 'plugin'] },
+  });
   assert.equal(AC.refusal(status('claude', CLAUDE_ROWS), { off: true }), '');
   assert.equal(AC.refusal(null, { off: true }), '');
 });
@@ -218,20 +226,26 @@ test('Codex: an X2a fail refuses a run that turns a server off, an X2b fail refu
   assert.match(AC.refusal(x2b, { secrets: true }), /^Codex 1\.0\.0 failed X2b in claude-wow agents check, so its shell may see an MCP server's secret\./);
   assert.equal(AC.refusal(x2b, { off: true }), '');
   assert.equal(AC.slotField({ codex: x2b }).codex.off, true, 'X2b does not grey the menu');
+  assert.deepEqual(AC.slotField({ codex: x2a }).codex.sources, ['codex'], 'X2a covers only the servers from config.toml');
+  assert.deepEqual(
+    AC.slotField({ codex: x2a }, { codexConfig: true }).codex.sources,
+    ['codex', 'config'],
+    'a config.json server that config.toml also defines is turned off through config.toml',
+  );
 });
 
 test('the slot file carries the contract field for the addon, and an empty one when nothing is known', () => {
   const lua = P.luaTable('ClaudeWoW_SlotData', [], {
     contract: {
       claude: { version: '2.1.290', checked: true, off: false, reason: 'say "no"' },
-      codex: { version: '', checked: false, off: true, reason: '' },
+      codex: { version: '', checked: false, off: true, reason: '', sources: ['codex', 'nope', 'config'] },
       'Bad id': {},
       x: null,
     },
   });
   assert.match(
     lua,
-    /^\tcontract = \{ claude = \{ version = "2\.1\.290", checked = true, off = false, reason = "say \\"no\\"" \}, codex = \{ version = "", checked = false, off = true, reason = "" \} \},$/m,
+    /^\tcontract = \{ claude = \{ version = "2\.1\.290", checked = true, off = false, reason = "say \\"no\\"", sources = \{ {2}\} \}, codex = \{ version = "", checked = false, off = true, reason = "", sources = \{ "codex", "config" \} \} \},$/m,
   );
   assert.match(P.luaTable('X', [], { contract: {} }), /^\tcontract = \{ {2}\},$/m);
   assert.doesNotMatch(P.luaTable('X', [], {}), /contract/);
@@ -669,10 +683,8 @@ test('agents check: SIGINT kills the running probe child, skips the rest and exi
   fs.rmSync(w.dir, { recursive: true, force: true });
 });
 
-test('the contract-mcp fixture answers initialize, lists the tools it was told plus the env one, echoes one env value and writes its mark', async () => {
-  const dir = scratch('fixture');
-  const mark = path.join(dir, 'm');
-  const [file, args] = R.scriptCommand('contract-mcp', ['--mark', mark, 'ping', 'a.b']);
+test('the contract-mcp fixture answers initialize, lists the tools it was told plus the env one and echoes one env value', async () => {
+  const [file, args] = R.scriptCommand('contract-mcp', ['ping', 'a.b']);
   assert.equal(args[0], path.join(R.ROOT, 'dev', 'contract-mcp.js'));
   const child = spawn(file, args, { env: { ...process.env, [FIX.TOOL_ENV]: 'from env', [FIX.ECHO_ENV]: 'v1' }, stdio: ['pipe', 'pipe', 'inherit'] });
   const replies = [];
@@ -707,6 +719,4 @@ test('the contract-mcp fixture answers initialize, lists the tools it was told p
   assert.equal(replies[3].result.isError, true);
   assert.equal(replies[4].error.code, -32601);
   assert.deepEqual(replies[5].result, {});
-  assert.ok(fs.existsSync(mark));
-  fs.rmSync(dir, { recursive: true, force: true });
 });

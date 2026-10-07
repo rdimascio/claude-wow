@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const SB = require('../dev/sandbox');
 const { spawnSync } = require('child_process');
 const G = require('../bridge/goals');
 const LP = require('../bridge/liveproto');
@@ -594,7 +595,11 @@ test(
     try {
       const { home, saved } = fakeInstall(dir);
       const run = () => {
-        const r = spawnSync(process.execPath, [BRIDGE, '--once'], { encoding: 'utf8', env: { ...process.env, CLAUDE_WOW_HOME: home }, timeout: 60000 });
+        const r = spawnSync(process.execPath, [BRIDGE, '--once'], {
+          encoding: 'utf8',
+          env: SB.isolatedEnv(path.join(path.dirname(home), 'user'), { CLAUDE_WOW_HOME: home }),
+          timeout: 60000,
+        });
         assert.equal(r.status, 0, r.stdout + r.stderr);
         return JSON.parse(fs.readFileSync(path.join(home, 'state.json'), 'utf8')).context;
       };
@@ -645,7 +650,11 @@ test(
         saved,
         `ClaudeWoWDB = {\n["outbox"] = {\n["id"] = 7,\n["session"] = "sess1",\n["chat"] = "chat1",\n["text"] = "${hex('set my order')}",\n["cwd"] = "",\n["plugin"] = "ask",\n["allow"] = "${hex(allow)}",\n["allowOnce"] = "${hex(allowOnce)}",\n["t"] = 1,\n},\n}\n`,
       );
-      const r = spawnSync(process.execPath, [BRIDGE, '--once'], { encoding: 'utf8', env: { ...process.env, CLAUDE_WOW_HOME: home }, timeout: 60000 });
+      const r = spawnSync(process.execPath, [BRIDGE, '--once'], {
+        encoding: 'utf8',
+        env: SB.isolatedEnv(path.join(path.dirname(home), 'user'), { CLAUDE_WOW_HOME: home }),
+        timeout: 60000,
+      });
       const out = r.stdout + r.stderr;
       assert.equal(r.status, 0, out);
       assert.match(out, /\[ask\]/, out);
@@ -717,7 +726,11 @@ function runPluginOnce(dir, { plugin, agent = '' }) {
     install.saved,
     `ClaudeWoWDB = {\n["outbox"] = {\n["id"] = 7,\n["session"] = "sess1",\n["chat"] = "chat1",\n["text"] = "${hex('grep the home')}",\n["cwd"] = "",\n["plugin"] = "${plugin}",\n${agentLine}["allow"] = "${hex('Grep')}",\n["t"] = 1,\n},\n}\n`,
   );
-  const r = spawnSync(process.execPath, [BRIDGE, '--once'], { encoding: 'utf8', env: { ...process.env, CLAUDE_WOW_HOME: install.home }, timeout: 60000 });
+  const r = spawnSync(process.execPath, [BRIDGE, '--once'], {
+    encoding: 'utf8',
+    env: SB.isolatedEnv(path.join(path.dirname(install.home), 'user'), { CLAUDE_WOW_HOME: install.home }),
+    timeout: 60000,
+  });
   const out = r.stdout + r.stderr;
   if (!agent) assert.equal(r.status, 0, out);
   assert.match(out, new RegExp(`\\[${plugin}\\]`), out);
@@ -911,7 +924,11 @@ test('slot field through the real bridge: the slot files carry the current order
       }),
     );
     writeOutbox(saved, 7, BONE_CONTEXT);
-    const r = spawnSync(process.execPath, [BRIDGE, '--once'], { encoding: 'utf8', env: { ...process.env, CLAUDE_WOW_HOME: home }, timeout: 60000 });
+    const r = spawnSync(process.execPath, [BRIDGE, '--once'], {
+      encoding: 'utf8',
+      env: SB.isolatedEnv(path.join(path.dirname(home), 'user'), { CLAUDE_WOW_HOME: home }),
+      timeout: 60000,
+    });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     const files = [
       ['ClaudeWoW_S001', 'ClaudeWoW_SlotData'],
@@ -954,7 +971,11 @@ test(
         JSON.stringify({ chats: { legacy: { id: 'legacy', name: 'Old', cwd: '', messages: [{ role: 'user', text: 'x', id: 1, t: 1 }] } }, tokens: {} }),
       );
       const run = () => {
-        const r = spawnSync(process.execPath, [BRIDGE, '--once'], { encoding: 'utf8', env: { ...process.env, CLAUDE_WOW_HOME: home }, timeout: 60000 });
+        const r = spawnSync(process.execPath, [BRIDGE, '--once'], {
+          encoding: 'utf8',
+          env: SB.isolatedEnv(path.join(path.dirname(home), 'user'), { CLAUDE_WOW_HOME: home }),
+          timeout: 60000,
+        });
         assert.equal(r.status, 0, r.stdout + r.stderr);
         return {
           state: JSON.parse(fs.readFileSync(path.join(home, 'state.json'), 'utf8')),
@@ -1072,7 +1093,11 @@ test("two clients on two characters: each slot file carries the map of its own c
     writeOutbox(b.saved, 3, HELEN_CONTEXT, 'sessB', 'helen1');
     fs.writeFileSync(b.saved, fs.readFileSync(b.saved, 'utf8').replace(hex('hi'), hex('quiet')));
     writeOutbox(a.saved, 7, BONE_CONTEXT, 'sessA', 'bone1');
-    const r = spawnSync(process.execPath, [BRIDGE, '--once'], { encoding: 'utf8', env: { ...process.env, CLAUDE_WOW_HOME: a.home }, timeout: 60000 });
+    const r = spawnSync(process.execPath, [BRIDGE, '--once'], {
+      encoding: 'utf8',
+      env: SB.isolatedEnv(path.join(path.dirname(a.home), 'user'), { CLAUDE_WOW_HOME: a.home }),
+      timeout: 60000,
+    });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     const mapIn = install => slotData(fs.readFileSync(path.join(install.addons, 'ClaudeWoW_S001', 'Inbox.lua'), 'utf8')).map;
     assert.equal(mapIn(a).char, BONE_KEY, r.stdout);
