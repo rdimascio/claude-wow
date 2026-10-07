@@ -133,7 +133,7 @@ local function WhyNotSend()
 	if not Settings() then return "the addon has not loaded its saved data yet" end
 	if not (ClaudeWoW and ClaudeWoW.Send) then return "the addon core did not load" end
 	if ClaudeWoWDB.settings and ClaudeWoWDB.settings.mode ~= "pixel" then return "reload mode sends nothing without a /reload" end
-	if not (ClaudeWoW.IsConnected and ClaudeWoW.IsConnected()) then return "the bridge is not connected" end
+	if not (ClaudeWoW.IsConnected and ClaudeWoW.IsConnected()) then return "the companion app is not connected" end
 	return nil
 end
 

@@ -16,6 +16,15 @@ const TOC_FILES = fs
 const SETTINGS_API = `
 STUB.opened = {}
 Settings = {
+  RegisterVerticalLayoutCategory = function(name)
+    local c = { name = name, kind = "vertical" }
+    function c:GetID() return 41 end
+    return c, {}
+  end,
+  RegisterProxySetting = function(category, variable) return { variable = variable } end,
+  CreateCheckbox = function() end,
+  CreateDropdown = function() end,
+  CreateControlTextContainer = function() return { Add = function() end, GetData = function() return {} end } end,
   RegisterCanvasLayoutCategory = function(frame, name)
     local c = { frame = frame, name = name }
     function c:GetID() return 42 end
@@ -23,7 +32,7 @@ Settings = {
   end,
   RegisterCanvasLayoutSubcategory = function(parent, frame, name)
     local c = { frame = frame, name = name, parent = parent }
-    function c:GetID() return name == "Options" and 44 or 45 end
+    function c:GetID() return name == "Commands and tips" and 45 or 46 end
     return c
   end,
   RegisterAddOnCategory = function() end,
@@ -203,7 +212,7 @@ test('minimap button: left-click opens and closes the window, right-click opens 
   assert.equal(vm.evaluate('ClaudeWoWFrame.shown'), 'false');
   assert.equal(vm.evaluate('#STUB.opened'), '0');
   vm.run(`${B}.scripts.OnClick(${B}, "RightButton")`);
-  assert.equal(vm.evaluate('table.concat(STUB.opened, ",")'), '44', 'the Options subcategory');
+  assert.equal(vm.evaluate('table.concat(STUB.opened, ",")'), '41', 'the top-level Options category');
   assert.equal(vm.evaluate('ClaudeWoWFrame.shown'), 'false', 'a right-click does not toggle the window');
 });
 

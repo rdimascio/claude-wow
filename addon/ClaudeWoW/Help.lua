@@ -83,7 +83,7 @@ function H.Build()
 	if H.panel then return H.panel end
 	local panel = CreateFrame("Frame", "ClaudeWoWHelpPanel")
 	panel:Hide()
-	panel.name = AddonTitle()
+	panel.name = H.PAGE_TITLE
 	local title = Text(panel, Font("GameFontNormalLarge", "GameFontNormal"), H.PAGE_TITLE)
 	title:SetPoint("TOPLEFT", panel, "TOPLEFT", PAD, -PAD)
 	local subtitle = Text(panel, Font("GameFontHighlightSmall", "GameFontNormalSmall"), H.SUBTITLE)
@@ -109,22 +109,14 @@ end
 function H.Register()
 	if H.category or H.legacy then return true end
 	local panel = H.Build()
-	if type(Settings) == "table" and type(Settings.RegisterCanvasLayoutCategory) == "function" and type(Settings.RegisterAddOnCategory) == "function" then
-		local ok, category = pcall(Settings.RegisterCanvasLayoutCategory, panel, panel.name)
-		if ok and category then
-			H.RegisterOptions(category)
-			if pcall(Settings.RegisterAddOnCategory, category) then
-				H.category = category
-				return true
-			end
+	if type(Settings) == "table" and type(Settings.RegisterAddOnCategory) == "function" then
+		local category = H.RegisterSettings(panel)
+		if category and pcall(Settings.RegisterAddOnCategory, category) then
+			H.category = category
+			return true
 		end
 	end
-	if type(InterfaceOptions_AddCategory) == "function" and pcall(InterfaceOptions_AddCategory, panel) then
-		H.legacy = true
-		H.RegisterLegacyOptions(panel.name)
-		return true
-	end
-	return false
+	return H.RegisterLegacy(panel)
 end
 
 local function CategoryID(category)
@@ -153,7 +145,7 @@ function H.ShowWindow()
 		win:RegisterForDrag("LeftButton")
 		win:SetScript("OnDragStart", win.StartMoving)
 		win:SetScript("OnDragStop", win.StopMovingOrSizing)
-		if type(win.TitleText) == "table" then win.TitleText:SetText(panel.name) end
+		if type(win.TitleText) == "table" then win.TitleText:SetText(AddonTitle()) end
 		if type(UISpecialFrames) == "table" then table.insert(UISpecialFrames, "ClaudeWoWHelpWindow") end
 		H.window = win
 	end
@@ -167,17 +159,27 @@ function H.ShowWindow()
 	return "window"
 end
 
-function H.Open()
-	if not H.Register() then return H.ShowWindow() end
-	if H.category then
-		if type(Settings.OpenToCategory) == "function" and pcall(Settings.OpenToCategory, CategoryID(H.category)) then return "settings" end
-		return nil
-	end
-	if type(InterfaceOptionsFrame_OpenToCategory) == "function" and pcall(InterfaceOptionsFrame_OpenToCategory, H.panel) then
-		pcall(InterfaceOptionsFrame_OpenToCategory, H.panel)
+local function OpenSettings(category)
+	if type(Settings.OpenToCategory) == "function" and pcall(Settings.OpenToCategory, CategoryID(category)) then return "settings" end
+	return nil
+end
+
+local function OpenInterface(panel)
+	if type(InterfaceOptionsFrame_OpenToCategory) == "function" and pcall(InterfaceOptionsFrame_OpenToCategory, panel) then
+		pcall(InterfaceOptionsFrame_OpenToCategory, panel)
 		return "interface"
 	end
 	return nil
+end
+
+function H.Open()
+	if not H.Register() then return H.ShowWindow() end
+	if H.category then
+		if not H.helpCategory then return H.ShowWindow() end
+		return OpenSettings(H.helpCategory)
+	end
+	if not H.legacyHelp then return H.ShowWindow() end
+	return OpenInterface(H.panel)
 end
 
 H.OPTIONS_TITLE = "Options"
@@ -194,7 +196,8 @@ local function Saved()
 end
 
 local function Config(command)
-	if ClaudeWoW and type(ClaudeWoW.Config) == "function" then ClaudeWoW.Config(command) end
+	if ClaudeWoW and type(ClaudeWoW.Config) == "function" then return ClaudeWoW.Config(command, { quiet = true }) end
+	return nil
 end
 
 local function OnOff(value)
@@ -202,7 +205,7 @@ local function OnOff(value)
 end
 
 local function Switch(command)
-	return function(value) Config(command .. " " .. OnOff(value)) end
+	return function(value) return Config(command .. " " .. OnOff(value)) end
 end
 
 local function MapNodes(kind)
@@ -249,7 +252,7 @@ H.OPTIONS = {
 		key = "dim", label = "Dim the window while you move", default = "35", choices = function() return WithCurrent(H.DIM_CHOICES, DimValue(), function(v) return v .. "%" end) end,
 		tooltip = "How visible the window stays while you move or fight. It comes back when you stop or point at it.",
 		get = DimValue,
-		set = function(value) Config("ui dim " .. value) end,
+		set = function(value) return Config("ui dim " .. value) end,
 	},
 	{
 		key = "dodge", label = "Move aside for game panels", default = true,
@@ -274,13 +277,13 @@ H.OPTIONS = {
 		choices = function() return WithCurrent(H.ECHO_CHOICES, tostring(Saved().echo or "summary"), function(v) return v .. " characters" end) end,
 		tooltip = "How much of each reply the game chat prints. Summary prints the agent's short version.",
 		get = function() return tostring(Saved().echo or "summary") end,
-		set = function(value) Config("echo " .. value) end,
+		set = function(value) return Config("echo " .. value) end,
 	},
 	{
 		key = "voice", label = "Voice lines", default = "race", choices = VoiceChoices, module = "ClaudeWoWVoice",
 		tooltip = "A short voice line when the agent starts, finishes or needs you.",
 		get = VoicePack,
-		set = function(value) Config("voice " .. value) end,
+		set = function(value) return Config("voice " .. value) end,
 	},
 	{
 		key = "roast", label = "Death roasts", default = false, module = "ClaudeWoWRoast",
@@ -290,7 +293,7 @@ H.OPTIONS = {
 	},
 	{
 		key = "roll", label = "Ask with a roll window", default = true,
-		tooltip = "A command the agent needs your OK for opens a Need, Greed or Pass roll. Off: an Allow button in the reply.",
+		tooltip = ClaudeWoW and ClaudeWoW.ROLL_HELP,
 		get = function() return Saved().lootRoll ~= false end,
 		set = Switch("roll"),
 	},
@@ -308,7 +311,7 @@ H.OPTIONS = {
 	},
 	{
 		key = "telemetry", label = "Share game state with the agent", default = true, module = "ClaudeWoWTelemetry",
-		tooltip = "Your money, level, zone, professions, watched items, gear and reputation go to the bridge.",
+		tooltip = "Your money, level, zone, professions, watched items, gear and reputation go to the companion app.",
 		get = function() return ClaudeWoWTelemetry.IsOn() and true or false end,
 		set = Switch("telemetry"),
 	},
@@ -341,9 +344,10 @@ function H.OptionValue(option)
 end
 
 function H.SetOption(option, value)
-	if value == H.OptionValue(option) then return end
-	option.set(value)
+	if value == H.OptionValue(option) then return nil end
+	local rejected = option.set(value)
 	if H.canvas then H.RefreshCanvas(H.canvas) end
+	return rejected
 end
 
 local function ChoiceLabel(option, value)
@@ -384,51 +388,60 @@ function H.AddProxyOption(category, option)
 end
 
 local function CanUseProxies()
-	return type(Settings.RegisterVerticalLayoutSubcategory) == "function" and type(Settings.RegisterProxySetting) == "function"
+	return type(Settings.RegisterVerticalLayoutCategory) == "function" and type(Settings.RegisterProxySetting) == "function"
 		and type(Settings.CreateCheckbox) == "function" and type(Settings.CreateDropdown) == "function"
 		and type(Settings.CreateControlTextContainer) == "function"
 end
 
-function H.RegisterOptions(parent)
-	if H.optionsCategory or H.optionsPanel then return true end
-	if type(Settings) ~= "table" then return false end
-	H.settings = {}
-	if CanUseProxies() then
-		local ok, category = pcall(Settings.RegisterVerticalLayoutSubcategory, parent, H.OPTIONS_TITLE)
-		if ok and category then
-			H.optionsCategory = category
-			for _, option in ipairs(H.Options()) do
-				local added, setting = pcall(H.AddProxyOption, category, option)
-				if added then H.settings[option.key] = setting end
-			end
-			if type(Settings.RegisterCanvasLayoutSubcategory) == "function" then
-				local panel = H.BuildCanvas("ClaudeWoWWidgetsPanel", H.WIDGETS_TITLE, false)
-				local placed, widgets = pcall(Settings.RegisterCanvasLayoutSubcategory, parent, panel, H.WIDGETS_TITLE)
-				if placed then H.widgetsCategory = widgets end
-			end
-			return true
-		end
-	end
-	if type(Settings.RegisterCanvasLayoutSubcategory) == "function" then
-		local panel = H.BuildCanvas("ClaudeWoWOptionsPanel", H.OPTIONS_TITLE, true)
-		local ok, category = pcall(Settings.RegisterCanvasLayoutSubcategory, parent, panel, H.OPTIONS_TITLE)
-		if ok and category then
-			H.optionsCategory = category
-			return true
-		end
-	end
-	return false
+local function AddSubcategory(parent, panel, name)
+	if type(Settings.RegisterCanvasLayoutSubcategory) ~= "function" then return nil end
+	local ok, category = pcall(Settings.RegisterCanvasLayoutSubcategory, parent, panel, name)
+	return ok and category or nil
 end
 
-function H.RegisterLegacyOptions(parentName)
-	if H.optionsPanel then return true end
-	local panel = H.BuildCanvas("ClaudeWoWOptionsPanel", H.OPTIONS_TITLE, true)
-	panel.parent = parentName
-	if pcall(InterfaceOptions_AddCategory, panel) then
-		H.optionsPanel = panel
-		return true
+function H.RegisterVerticalOptions(title)
+	if not CanUseProxies() then return nil end
+	local ok, category = pcall(Settings.RegisterVerticalLayoutCategory, title)
+	if not ok or not category then return nil end
+	H.settings = {}
+	for _, option in ipairs(H.Options()) do
+		local added, setting = pcall(H.AddProxyOption, category, option)
+		if added then H.settings[option.key] = setting end
 	end
-	return false
+	return category
+end
+
+function H.RegisterCanvasOptions(title)
+	if type(Settings.RegisterCanvasLayoutCategory) ~= "function" then return nil end
+	local panel = H.BuildCanvas("ClaudeWoWOptionsPanel", title, true)
+	local ok, category = pcall(Settings.RegisterCanvasLayoutCategory, panel, title)
+	if not ok or not category then return nil end
+	H.optionsPanel = panel
+	return category
+end
+
+function H.RegisterSettings(helpPanel)
+	local title = AddonTitle()
+	local vertical = H.RegisterVerticalOptions(title)
+	local category = vertical or H.RegisterCanvasOptions(title)
+	if not category then return nil end
+	H.optionsCategory = category
+	H.helpCategory = AddSubcategory(category, helpPanel, H.PAGE_TITLE)
+	if vertical then
+		H.widgetsCategory = AddSubcategory(category, H.BuildCanvas("ClaudeWoWWidgetsPanel", H.WIDGETS_TITLE, false), H.WIDGETS_TITLE)
+	end
+	return category
+end
+
+function H.RegisterLegacy(helpPanel)
+	if type(InterfaceOptions_AddCategory) ~= "function" then return false end
+	local title = AddonTitle()
+	local options = H.optionsPanel or H.BuildCanvas("ClaudeWoWOptionsPanel", title, true)
+	if not pcall(InterfaceOptions_AddCategory, options) then return false end
+	H.legacy, H.optionsPanel = true, options
+	helpPanel.parent = title
+	H.legacyHelp = pcall(InterfaceOptions_AddCategory, helpPanel)
+	return true
 end
 
 local function Label(parent, font, text)
@@ -548,17 +561,8 @@ end
 
 function H.OpenOptions()
 	if not H.Register() then return H.ShowWindow() end
-	if H.category then
-		local target = H.optionsCategory or H.category
-		if type(Settings.OpenToCategory) == "function" and pcall(Settings.OpenToCategory, CategoryID(target)) then return "settings" end
-		return nil
-	end
-	local panel = H.optionsPanel or H.panel
-	if type(InterfaceOptionsFrame_OpenToCategory) == "function" and pcall(InterfaceOptionsFrame_OpenToCategory, panel) then
-		pcall(InterfaceOptionsFrame_OpenToCategory, panel)
-		return "interface"
-	end
-	return nil
+	if H.category then return OpenSettings(H.category) end
+	return OpenInterface(H.optionsPanel)
 end
 
 local events = CreateFrame("Frame")

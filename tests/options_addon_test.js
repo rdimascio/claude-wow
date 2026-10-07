@@ -16,6 +16,13 @@ const SETTINGS_API = `
 STUB.settings = { order = {}, categories = {}, proxies = {}, controls = {}, opened = {} }
 Settings = {
   VarType = { Boolean = "boolean", String = "string", Number = "number" },
+  RegisterVerticalLayoutCategory = function(name)
+    local c = { name = name, kind = "vertical" }
+    function c:GetID() return 41 end
+    table.insert(STUB.settings.categories, c)
+    table.insert(STUB.settings.order, "vertical " .. name)
+    return c, {}
+  end,
   RegisterCanvasLayoutCategory = function(frame, name)
     local c = { frame = frame, name = name, kind = "canvas" }
     function c:GetID() return 42 end
@@ -25,7 +32,7 @@ Settings = {
   end,
   RegisterCanvasLayoutSubcategory = function(parent, frame, name)
     local c = { frame = frame, name = name, parent = parent, kind = "canvas" }
-    function c:GetID() return 44 end
+    function c:GetID() return name == "Commands and tips" and 45 or 44 end
     table.insert(STUB.settings.categories, c)
     table.insert(STUB.settings.order, "canvas " .. name)
     return c
@@ -130,8 +137,12 @@ const PLAYER_KEYS = ['whisper', 'dim', 'dodge', 'autohide', 'minimap', 'echo', '
 
 test('options: an Options page of proxy settings and a Widgets page sit under the addon category, registered before it is listed', () => {
   const vm = newVM();
-  assert.equal(vm.evaluate('table.concat(STUB.settings.order, ",")'), 'category Azeroth Companion,vertical Options,canvas Widgets,addon Azeroth Companion');
+  assert.equal(
+    vm.evaluate('table.concat(STUB.settings.order, ",")'),
+    'vertical Azeroth Companion,canvas Commands and tips,canvas Widgets,addon Azeroth Companion',
+  );
   assert.equal(vm.evaluate('STUB.settings.categories[2].parent == STUB.settings.categories[1]'), 'true');
+  assert.equal(vm.evaluate('STUB.settings.categories[3].parent == STUB.settings.categories[1]'), 'true');
   assert.equal(vm.evaluate('STUB.settings.categories[3].frame == ClaudeWoWWidgetsPanel'), 'true');
   const keys = vm.evaluate(
     '(function() local t = {} for _, c in ipairs(STUB.settings.controls) do t[#t + 1] = c.setting.variable:sub(18):lower() .. ":" .. c.kind end return table.concat(t, ",") end)()',
@@ -140,7 +151,7 @@ test('options: an Options page of proxy settings and a Widgets page sit under th
     keys,
     'whisper:checkbox,dim:dropdown,dodge:checkbox,autohide:checkbox,minimap:checkbox,echo:dropdown,voice:dropdown,roast:checkbox,roll:checkbox,achievements:checkbox,orders:checkbox,telemetry:checkbox,ore:checkbox,herb:checkbox',
   );
-  assert.equal(vm.evaluate('STUB.settings.controls[1].category == STUB.settings.categories[2]'), 'true');
+  assert.equal(vm.evaluate('STUB.settings.controls[1].category == STUB.settings.categories[1]'), 'true');
   assert.equal(vm.evaluate(`${proxy('telemetry')}.name`), 'Share game state with the agent');
   for (const dev of ['signal', 'mode', 'auto', 'longchat', 'plugin', 'probe', 'diag'])
     assert.equal(vm.evaluate(proxy(dev)), null, `${dev} stays off the Options page`);
@@ -249,8 +260,8 @@ test('options: what the page sets is in SavedVariables, so it is the same after 
 test('options: without the Settings API, an Options panel under the help page works with plain controls and lists widgets', () => {
   const vm = newVM(LEGACY_API);
   assert.equal(vm.evaluate('#STUB.legacy'), '2');
-  assert.equal(vm.evaluate('STUB.legacy[2] == ClaudeWoWOptionsPanel'), 'true');
-  assert.equal(vm.evaluate('ClaudeWoWOptionsPanel.parent'), 'Azeroth Companion');
+  assert.equal(vm.evaluate('STUB.legacy[1] == ClaudeWoWOptionsPanel'), 'true');
+  assert.equal(vm.evaluate('ClaudeWoWHelpPanel.parent'), 'Azeroth Companion');
   const control = key => `(function() for _, c in ipairs(ClaudeWoWOptionsPanel.controls) do if c.option.key == "${key}" then return c end end end)()`;
   assert.equal(vm.evaluate('#ClaudeWoWOptionsPanel.controls'), String(PLAYER_KEYS.length));
   assert.equal(vm.evaluate(`${control('telemetry')}.label.text`), 'Share game state with the agent');
@@ -314,9 +325,9 @@ const pickGear = (vm, label) =>
 test('options: the gear menu has an Options item that opens the Options page, in Settings, in Interface Options, or the help window', () => {
   const vm = newVM(NATIVE_TEMPLATES + SETTINGS_API);
   pickGear(vm, 'Options');
-  assert.equal(vm.evaluate('table.concat(STUB.settings.opened, ",")'), '43', 'the Options subcategory, not the help page');
+  assert.equal(vm.evaluate('table.concat(STUB.settings.opened, ",")'), '41', 'the top-level Options category, not the help page');
   pickGear(vm, 'Commands and tips');
-  assert.equal(vm.evaluate('table.concat(STUB.settings.opened, ",")'), '43,42');
+  assert.equal(vm.evaluate('table.concat(STUB.settings.opened, ",")'), '41,45');
 
   const legacy = newVM(NATIVE_TEMPLATES + LEGACY_API);
   pickGear(legacy, 'Options');

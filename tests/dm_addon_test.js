@@ -258,7 +258,7 @@ test('/dm next: an old Inbox.lua read at login does not prove the bridge takes /
   assert.equal(printedCount(stale, 'cannot take /dm next'), 1);
   const fresh = newVM({ beforeLogin: `ClaudeWoW_Inbox = { now = time(), replies = {}, dm = ${dmLua({ manual: true })} }` });
   fresh.run('SlashCmdList.CLAUDEWOWDM("next")');
-  assert.equal(printedCount(fresh, 'Asked the bridge for the next beat'), 1, 'a fresh one does');
+  assert.equal(printedCount(fresh, 'Asked the companion app for the next beat'), 1, 'a fresh one does');
 });
 
 const CHAT_LOG_API = `
@@ -337,7 +337,7 @@ test('/dm next: one record with the character key, acked, then one slot load bri
   assert.equal(recs[0].text, C.MANUAL_TEXT);
   assert.equal(recs[0].chat, '');
   assert.equal(vm.num('#ClaudeWoWDB.chats'), chats, 'no chat is made');
-  assert.equal(printedCount(vm, 'Asked the bridge for the next beat'), 1);
+  assert.equal(printedCount(vm, 'Asked the companion app for the next beat'), 1);
   vm.run('SlashCmdList.CLAUDEWOWDM("next")');
   assert.equal(dmRecords(vm).length, 1, 'one in flight at a time');
   assert.equal(printedCount(vm, 'still on its way'), 1);
@@ -422,7 +422,7 @@ test('dm frame: a Continue button waits with a manual beat, sends /dm next, and 
   const recs = dmRecords(vm);
   assert.equal(recs.length, 1, 'Continue is /dm next');
   assert.equal(recs[0].name, CHAR);
-  assert.equal(printedCount(vm, 'Asked the bridge for the next beat'), 1);
+  assert.equal(printedCount(vm, 'Asked the companion app for the next beat'), 1);
   assert.equal(vm.evaluate('ClaudeWoWDMFrame.continue.disabled'), 'true');
   vm.run('local b = ClaudeWoWDMFrame.continue; b.scripts.OnClick(b)');
   assert.equal(printedCount(vm, 'still on its way'), 0, 'a held button sends nothing and says nothing');
