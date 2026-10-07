@@ -2,12 +2,13 @@
 const crypto = require('crypto');
 const os = require('os');
 const path = require('path');
-const { execFileSync } = require('child_process');
+const { execFile } = require('child_process');
 
 const DEFAULT_URL = 'ws://127.0.0.1:4319/ws';
 const DEFAULT_DB = path.join(os.homedir(), '.agent-room', 'bot.sqlite');
 const RETRY_MIN_MS = 5000;
 const RETRY_MAX_MS = 60000;
+const SNAPSHOT_DEADLINE_MS = 15000;
 const TEXT_MAX = 1500;
 const SLUG_RE = /^[a-z0-9][a-z0-9-]{0,79}$/;
 const WORKSPACE_RE = /^[\w.-]{1,100}$/;
@@ -23,14 +24,13 @@ function settings(options) {
 }
 
 function readToken(db) {
-  const out = execFileSync('/usr/bin/sqlite3', ['-readonly', db, "select value from meta where key = 'web_token'"], {
-    encoding: 'utf8',
-    timeout: 5000,
-    stdio: ['ignore', 'pipe', 'ignore'],
+  return new Promise((resolve, reject) => {
+    execFile('/usr/bin/sqlite3', ['-readonly', db, "select value from meta where key = 'web_token'"], { encoding: 'utf8', timeout: 5000 }, (err, out) => {
+      const token = String(out || '').trim();
+      if (err || !/^[0-9a-f]{16,64}$/.test(token)) reject(new Error(`no room token in ${db} (start agent-room once so it makes one)`));
+      else resolve(token);
+    });
   });
-  const token = out.trim();
-  if (!/^[0-9a-f]{16,64}$/.test(token)) throw new Error(`no room token in ${db} (start agent-room once so it makes one)`);
-  return token;
 }
 
 function chatIdFor(channelId) {
@@ -55,7 +55,15 @@ function messageText(message) {
   return clip(message && message.text);
 }
 
-function createRoom({ conf, log, onMessage, token = () => readToken(conf.db), WebSocketImpl = globalThis.WebSocket, timers = { setTimeout, clearTimeout } }) {
+function createRoom({
+  conf,
+  log,
+  onMessage,
+  onStatus = () => {},
+  token = () => readToken(conf.db),
+  WebSocketImpl = globalThis.WebSocket,
+  timers = { setTimeout, clearTimeout },
+}) {
   const channels = new Map();
   const threads = new Map();
   const agents = new Map();
@@ -65,6 +73,9 @@ function createRoom({ conf, log, onMessage, token = () => readToken(conf.db), We
   let stopped = false;
   let connected = false;
   let lastError = '';
+  let lastBadFrame = '';
+  let everConnected = false;
+  let deadline = null;
 
   function followed(channel) {
     if (!channel || channel.workspaceId !== conf.workspace || channel.archived) return false;
@@ -74,16 +85,26 @@ function createRoom({ conf, log, onMessage, token = () => readToken(conf.db), We
   function apply(event) {
     if (!event || typeof event !== 'object') return;
     if (event.type === 'snapshot' && event.snapshot) {
+      const snap = event.snapshot;
+      if (![snap.channels, snap.threads, snap.agents].every(Array.isArray)) {
+        badFrame('a snapshot without channel, thread and agent lists');
+        return;
+      }
       channels.clear();
       threads.clear();
       agents.clear();
-      for (const c of event.snapshot.channels || []) channels.set(c.id, c);
-      for (const t of event.snapshot.threads || []) threads.set(t.id, t);
-      for (const a of event.snapshot.agents || []) agents.set(a.id, a);
+      for (const c of snap.channels) if (c && c.id) channels.set(c.id, c);
+      for (const t of snap.threads) if (t && t.id) threads.set(t.id, t);
+      for (const a of snap.agents) if (a && a.id) agents.set(a.id, a);
       if (!connected) log(`room: connected to agent-room, following ${[...channels.values()].filter(followed).length} channel(s) of ${conf.workspace}`);
+      if (deadline) timers.clearTimeout(deadline);
+      deadline = null;
+      const back = everConnected && !connected;
       connected = true;
+      everConnected = true;
       lastError = '';
       retryMs = RETRY_MIN_MS;
+      if (back) onStatus(true);
       return;
     }
     if (event.type === 'channel' && event.channel) channels.set(event.channel.id, event.channel);
@@ -110,7 +131,13 @@ function createRoom({ conf, log, onMessage, token = () => readToken(conf.db), We
   function fail(why) {
     if (why !== lastError) log(`room: ${why}; retrying every ${RETRY_MAX_MS / 1000} s at most`);
     lastError = why;
+    if (connected) onStatus(false);
     connected = false;
+  }
+
+  function badFrame(why) {
+    if (why !== lastBadFrame) log(`room: ignored ${why}`);
+    lastBadFrame = why;
   }
 
   function schedule() {
@@ -129,14 +156,16 @@ function createRoom({ conf, log, onMessage, token = () => readToken(conf.db), We
       fail('this runtime has no WebSocket');
       return;
     }
-    let secret;
-    try {
-      secret = token();
-    } catch (e) {
-      fail(`cannot read the agent-room token (${e && e.message ? e.message : e})`);
-      schedule();
-      return;
-    }
+    Promise.resolve()
+      .then(() => token())
+      .then(open, e => {
+        fail(`cannot read the agent-room token (${e && e.message ? e.message : e})`);
+        schedule();
+      });
+  }
+
+  function open(secret) {
+    if (stopped) return;
     let ws;
     try {
       ws = new WebSocketImpl(`${conf.url}?token=${secret}`);
@@ -146,17 +175,33 @@ function createRoom({ conf, log, onMessage, token = () => readToken(conf.db), We
       return;
     }
     socket = ws;
-    ws.onmessage = msg => {
+    if (deadline) timers.clearTimeout(deadline);
+    deadline = timers.setTimeout(() => {
+      deadline = null;
+      if (socket !== ws || connected) return;
+      badFrame('a connection that sent no snapshot within 15 s');
       try {
-        apply(JSON.parse(typeof msg.data === 'string' ? msg.data : String(msg.data)));
-      } catch (e) {
-        log(`room: an event could not be read (${e && e.message ? e.message : e})`);
+        ws.close();
+      } catch {}
+      if (socket === ws) ws.onclose();
+    }, SNAPSHOT_DEADLINE_MS);
+    if (deadline && deadline.unref) deadline.unref();
+    ws.onmessage = msg => {
+      if (typeof msg.data !== 'string') return badFrame('a frame that is not text');
+      let event;
+      try {
+        event = JSON.parse(msg.data);
+      } catch {
+        return badFrame('a frame that is not JSON');
       }
+      apply(event);
     };
     ws.onerror = () => {};
     ws.onclose = () => {
       if (socket !== ws) return;
       socket = null;
+      if (deadline) timers.clearTimeout(deadline);
+      deadline = null;
       if (stopped) return;
       fail(`lost ${conf.url}`);
       schedule();
@@ -166,7 +211,9 @@ function createRoom({ conf, log, onMessage, token = () => readToken(conf.db), We
   function stop() {
     stopped = true;
     if (retryTimer) timers.clearTimeout(retryTimer);
+    if (deadline) timers.clearTimeout(deadline);
     retryTimer = null;
+    deadline = null;
     if (socket)
       try {
         socket.close();
@@ -177,4 +224,4 @@ function createRoom({ conf, log, onMessage, token = () => readToken(conf.db), We
   return { connect, stop, apply, status: () => ({ connected, error: lastError }) };
 }
 
-module.exports = { DEFAULT_URL, DEFAULT_DB, TEXT_MAX, settings, readToken, chatIdFor, messageText, createRoom };
+module.exports = { DEFAULT_URL, DEFAULT_DB, TEXT_MAX, SNAPSHOT_DEADLINE_MS, settings, readToken, chatIdFor, messageText, createRoom };

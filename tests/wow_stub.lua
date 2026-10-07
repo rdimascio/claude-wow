@@ -367,11 +367,15 @@ C_AddOns = {
 C_Texture = { GetAtlasExists = function() return true end }
 function PlaySound() end
 STUB.signalRoot = "ClaudeWoW_Runtime"
+function STUB.RingFile(rel, folder, max)
+	local k = tonumber(rel:match("^" .. folder .. "\\[ab]\\(%d%d%d%d)%.wav$"))
+	return k ~= nil and k >= 1 and k <= max
+end
 function STUB.SignalFile(path)
 	if type(path) ~= "string" then return false end
 	local rel = path:match("^Interface\\AddOns\\" .. STUB.signalRoot .. "\\(.+)$")
 	if not rel then return false end
-	return (rel:match("^ack\\%d%d%d%.wav$") or rel:match("^sig\\%d%d%d%.wav$") or rel:match("^act\\%d%d%d\\%d%d%.wav$") or rel:match("^presence\\[ab]\\%d%d%d%d%.wav$") or rel:match("^news\\[ab]\\%d%d%d%d%.wav$")) and true or false
+	return (rel:match("^ack\\%d%d%d%.wav$") or rel:match("^sig\\%d%d%d%.wav$") or rel:match("^act\\%d%d%d\\%d%d%.wav$")) and true or STUB.RingFile(rel, "presence", 2000) or STUB.RingFile(rel, "news", 500)
 end
 function STUB.FileExists(path)
 	local v = STUB.sounds[path]

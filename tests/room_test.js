@@ -38,6 +38,8 @@ function fakeTimers() {
   };
 }
 
+const settle = () => new Promise(resolve => setImmediate(resolve));
+
 const SNAPSHOT = {
   type: 'snapshot',
   snapshot: {
@@ -60,15 +62,17 @@ function rig(conf = {}) {
   const timers = fakeTimers();
   const logs = [];
   const got = [];
+  const status = [];
   const room = ROOM.createRoom({
     conf: { url: ROOM.DEFAULT_URL, workspace: 'wow-ai', channels: [], db: '/nowhere', ...conf },
     log: l => logs.push(l),
     onMessage: m => got.push(m),
+    onStatus: up => status.push(up),
     token: () => 'abcdef0123456789',
     WebSocketImpl: FakeSocket,
     timers,
   });
-  return { room, made, timers, logs, got };
+  return { room, made, timers, logs, got, status };
 }
 
 test('settings: off by default, needs a workspace, keeps the URL on loopback and only valid channel slugs', () => {
@@ -84,9 +88,10 @@ test('settings: off by default, needs a workspace, keeps the URL on loopback and
   assert.equal(ROOM.settings({ enabled: true, workspace: 'wow-ai', url: 'ws://127.0.0.1:5000/ws' }).url, 'ws://127.0.0.1:5000/ws');
 });
 
-test('a message in a followed channel becomes one game chat entry; other workspaces, archived channels and unknown threads are ignored', () => {
+test('a message in a followed channel becomes one game chat entry; other workspaces, archived channels and unknown threads are ignored', async () => {
   const t = rig();
   t.room.connect();
+  await settle();
   assert.equal(t.made.length, 1);
   assert.equal(t.made[0].url, `${ROOM.DEFAULT_URL}?token=abcdef0123456789`);
   t.made[0].emit(SNAPSHOT);
@@ -119,9 +124,10 @@ test('a message in a followed channel becomes one game chat entry; other workspa
   assert.equal(t.got.length, 3, 'a thread made after the snapshot is followed too');
 });
 
-test('channels: a configured slug list narrows what is followed', () => {
+test('channels: a configured slug list narrows what is followed', async () => {
   const t = rig({ channels: ['ops'] });
   t.room.connect();
+  await settle();
   t.made[0].emit(SNAPSHOT);
   t.made[0].emit({ type: 'message', threadId: 't1', message: { id: 'x', authorId: 'assistant', semantic: { kind: 'chat', text: 'hi' } } });
   assert.equal(t.got.length, 0);
@@ -142,55 +148,127 @@ test('messageText: approvals say where to answer, artifacts carry their body, lo
   assert.ok(long.endsWith('...'));
 });
 
-test('a lost connection retries with backoff and logs each new failure once; stop ends the retries', () => {
+const retries = t => t.timers.pending.filter(x => x.ms !== ROOM.SNAPSHOT_DEADLINE_MS);
+const runRetry = async t => {
+  const next = retries(t)[0];
+  t.timers.clearTimeout(next);
+  next.fn();
+  await settle();
+};
+
+test('a lost connection retries with backoff, logs each new failure once, and tells when the room goes down and comes back', async () => {
   const t = rig();
   t.room.connect();
+  await settle();
   t.made[0].emit(SNAPSHOT);
+  assert.deepEqual(t.status, [], 'the first connection is not a recovery');
   t.made[0].onclose();
-  assert.equal(t.timers.pending.length, 1);
-  assert.equal(t.timers.pending[0].ms, 5000);
-  t.timers.pending.shift().fn();
+  assert.deepEqual(t.status, [false]);
+  assert.deepEqual(
+    retries(t).map(x => x.ms),
+    [5000],
+  );
+  await runRetry(t);
   assert.equal(t.made.length, 2);
   t.made[1].onclose();
-  assert.equal(t.timers.pending[0].ms, 10000, 'the wait doubles');
+  assert.deepEqual(
+    retries(t).map(x => x.ms),
+    [10000],
+    'the wait doubles',
+  );
   assert.equal(t.logs.filter(l => l.startsWith('room: lost')).length, 1, 'the same failure is logged once');
-  t.timers.pending.shift().fn();
+  assert.deepEqual(t.status, [false], 'down is said once');
+  await runRetry(t);
   t.made[2].emit(SNAPSHOT);
   assert.equal(t.room.status().connected, true);
+  assert.deepEqual(t.status, [false, true]);
   t.made[2].onclose();
-  assert.equal(t.timers.pending[0].ms, 5000, 'a good connection resets the wait');
+  assert.deepEqual(
+    retries(t).map(x => x.ms),
+    [5000],
+    'a good connection resets the wait',
+  );
   t.room.stop();
-  assert.equal(t.timers.pending.length, 0, 'stop cancels the pending retry');
+  assert.equal(t.timers.pending.length, 0, 'stop cancels the pending retry and deadline');
   t.room.connect();
+  await settle();
   assert.equal(t.made.length, 3, 'a stopped client never connects again');
 });
 
-test('stop closes a live socket', () => {
+test('stop closes a live socket', async () => {
   const t = rig();
   t.room.connect();
+  await settle();
   t.made[0].emit(SNAPSHOT);
   t.room.stop();
   assert.equal(t.made[0].closed, true);
 });
 
-test('a missing token is a logged failure that retries, not a crash', () => {
+test('a socket that sends no snapshot within the deadline is closed and retried', async () => {
+  const t = rig();
+  t.room.connect();
+  await settle();
+  const deadline = t.timers.pending.find(x => x.ms === ROOM.SNAPSHOT_DEADLINE_MS);
+  assert.ok(deadline, 'a deadline is armed when the socket opens');
+  deadline.fn();
+  assert.equal(t.made[0].closed, true);
+  assert.deepEqual(
+    retries(t).map(x => x.ms),
+    [5000],
+  );
+  assert.ok(t.logs.some(l => l === 'room: ignored a connection that sent no snapshot within 15 s'));
+});
+
+test('frames that are not text, not JSON or a snapshot without its lists are ignored and logged once each; state survives', async () => {
+  const t = rig();
+  t.room.connect();
+  await settle();
+  t.made[0].emit(SNAPSHOT);
+  t.made[0].onmessage({ data: Buffer.from('x') });
+  t.made[0].onmessage({ data: 'not json' });
+  t.made[0].onmessage({ data: 'not json either' });
+  t.made[0].emit({ type: 'snapshot', snapshot: { channels: null } });
+  assert.deepEqual(
+    t.logs.filter(l => l.startsWith('room: ignored')),
+    ['room: ignored a frame that is not text', 'room: ignored a frame that is not JSON', 'room: ignored a snapshot without channel, thread and agent lists'],
+  );
+  t.made[0].emit({ type: 'message', threadId: 't1', message: { id: 'm', authorId: 'assistant', semantic: { kind: 'chat', text: 'still here' } } });
+  assert.equal(t.got.length, 1, 'a bad snapshot did not wipe the channels');
+});
+
+test('a missing token is a logged failure that retries, not a crash', async () => {
   const logs = [];
   const timers = fakeTimers();
   const room = ROOM.createRoom({
     conf: { url: ROOM.DEFAULT_URL, workspace: 'wow-ai', channels: [], db: '/nowhere' },
     log: l => logs.push(l),
     onMessage: () => {},
-    token: () => {
-      throw new Error('no room token');
-    },
+    token: () => Promise.reject(new Error('no room token')),
     WebSocketImpl: function NeverMade() {
       throw new Error('should not connect without a token');
     },
     timers,
   });
   room.connect();
+  await settle();
   assert.match(logs[0], /cannot read the agent-room token \(no room token\)/);
   assert.equal(timers.pending.length, 1);
+});
+
+test('readToken reads meta.web_token read-only and refuses a database without one', { skip: !require('fs').existsSync('/usr/bin/sqlite3') }, async () => {
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const { execFileSync } = require('child_process');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'room-token-'));
+  const db = path.join(dir, 'bot.sqlite');
+  execFileSync('/usr/bin/sqlite3', [
+    db,
+    "create table meta (key text primary key, value text not null); insert into meta values ('web_token', 'feedfacecafebeef01');",
+  ]);
+  assert.equal(await ROOM.readToken(db), 'feedfacecafebeef01');
+  await assert.rejects(ROOM.readToken(path.join(dir, 'none.sqlite')), /no room token/);
+  fs.rmSync(dir, { recursive: true, force: true });
 });
 
 test('the room plugin answers a message typed in a room chat with the read-only text, without an agent run', () => {

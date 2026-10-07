@@ -2633,6 +2633,25 @@ test('news ring: a fired news file loads one slot soon after, and a room mirror 
   assert.equal(vm.num('ClaudeWoW.Presence.News().fired'), 2);
 });
 
+test('news ring: news loads are at least 30 s apart, drain every fired file at once, and leave the last 50 slots for replies', () => {
+  const vm = newVM();
+  settleArmed(vm);
+  const fire = (from, to) => vm.run(`for k = ${from}, ${to} do STUB.sounds["${gamePath('news/a/')}" .. string.format("%04d", k) .. ".wav"] = false end`);
+  fire(1, 12);
+  vm.run('STUB.now = STUB.now + 2; STUB.Tick(); STUB.now = STUB.now + 2; STUB.Tick()');
+  assert.equal(vm.num('STUB.slotLoads'), 1);
+  assert.equal(vm.num('ClaudeWoW.Presence.News().fired'), 12, 'twelve fired files drained in one tick');
+  fire(13, 13);
+  vm.run('STUB.now = STUB.now + 2; STUB.Tick(); STUB.now = STUB.now + 10; STUB.Tick()');
+  assert.equal(vm.num('STUB.slotLoads'), 1, 'a second news inside 30 s waits');
+  vm.run('STUB.now = STUB.now + 20; STUB.Tick()');
+  assert.equal(vm.num('STUB.slotLoads'), 2, 'and loads once 30 s have passed');
+  vm.run(`for i = 1, ${200 - 50} do STUB.loaded[string.format("ClaudeWoW_S%03d", i)] = true end`);
+  fire(14, 14);
+  vm.run('for i = 1, 3 do STUB.now = STUB.now + 31; STUB.Tick() end');
+  assert.equal(vm.num('STUB.slotLoads'), 2, 'with 50 slots or fewer left, news waits for an ordinary read');
+});
+
 test('news ring: a game launched before the ring existed never reads its files as fired', () => {
   const vm = newVM();
   vm.run(
@@ -2659,6 +2678,19 @@ test('mirror: only a room row with an r-hex id makes a chat; other unknown chats
     '(function() local c = ClaudeWoWDB.chats[#ClaudeWoWDB.chats]; local out = {}; for _, m in ipairs(c.history) do out[#out + 1] = m.text end return table.concat(out, "|") end)()',
   );
   assert.equal(history, '(room) ship it|1 earlier message(s) are in agent-room.|later');
+});
+
+test('mirror: a deleted room chat is not brought back by a stale row, and a first row past seq 1 says what came before', () => {
+  const vm = newVM();
+  login(vm);
+  vm.run('ClaudeWoWDB.forget["r0a1b2c3d4e"] = { name = "#ship", cwd = "" }');
+  vm.run('ClaudeWoW.ApplyMirror({ { chat = "r0a1b2c3d4e", seq = 9, role = "assistant", text = "stale", room = true, title = "#ship" } })');
+  assert.equal(roomChat(vm), 'none', 'a chat the player deleted stays deleted until the bridge confirms');
+  vm.run('ClaudeWoW.ApplyMirror({ { chat = "r0b1b2c3d4e", seq = 5, role = "assistant", text = "fifth", room = true, title = "#ops" } })');
+  const history = vm.evaluate(
+    '(function() local c = ClaudeWoWDB.chats[#ClaudeWoWDB.chats]; local out = {}; for _, m in ipairs(c.history) do out[#out + 1] = m.text end return c.name .. ":" .. table.concat(out, "|") end)()',
+  );
+  assert.equal(history, '#ops:4 earlier message(s) are in agent-room.|fifth');
 });
 
 test('a new chat asks the bridge for a title with its first message and takes the one that comes back', () => {

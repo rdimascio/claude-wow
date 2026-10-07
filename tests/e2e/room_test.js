@@ -95,6 +95,48 @@ test('an agent-room message in a followed channel reaches the game as its own ch
           JSON.stringify(chat.history),
         );
         assert.ok(Number(fired()) > before, 'the news ring told the game to read');
+        room.send({
+          type: 'message',
+          threadId: 't1',
+          message: { id: 'm1', threadId: 't1', authorId: 'assistant', semantic: { kind: 'chat', text: 'Merged #172 to main.' }, text: '' },
+        });
+        room.send({
+          type: 'message',
+          threadId: 't1',
+          message: { id: 'm2', threadId: 't1', authorId: 'human:U1', semantic: { kind: 'chat', text: 'thanks' }, text: '' },
+        });
+        const transcript = () => JSON.parse(fs.readFileSync(path.join(h.sb.home, 'transcripts.json'), 'utf8')).chats[chatId];
+        await h.client.waitFor(() => transcript().messages.some(m => m.roomId === 'm2'), { timeoutMs: 10000, label: 'the second message on the bridge' });
+        assert.deepEqual(
+          transcript().messages.map(m => [m.roomId, m.seq, m.text]),
+          [
+            ['m1', 1, 'Deploy: Merged #172 to main.'],
+            ['m2', 2, 'Deploy: thanks'],
+          ],
+          'agent-room re-sends a turn after it ends; the same message id is kept once',
+        );
+        h.client.runLua(`ClaudeWoW.DeleteChat(${JSON.stringify(chatId)})`);
+        await h.bridge.waitForLine(new RegExp(`forgot chat ${chatId}`), { timeoutMs: 15000 });
+        assert.equal(h.transcripts().chats[chatId], undefined);
+        room.send({
+          type: 'message',
+          threadId: 't1',
+          message: { id: 'm3', threadId: 't1', authorId: 'assistant', semantic: { kind: 'chat', text: 'after the delete' }, text: '' },
+        });
+        await h.client.waitFor(() => transcript() && transcript().messages.some(m => m.roomId === 'm3'), {
+          timeoutMs: 10000,
+          label: 'the message after the delete',
+        });
+        assert.equal(
+          transcript().messages.find(m => m.roomId === 'm3').seq,
+          3,
+          'the sequence goes on after a delete, so another client that still shows the chat does not drop it',
+        );
+        room.sockets.splice(0).forEach(s => s.destroy());
+        await h.client.waitFor(() => transcript().messages.some(m => m.role === 'system' && /agent-room is unreachable/.test(m.text)), {
+          timeoutMs: 10000,
+          label: 'the unreachable line in the room chat',
+        });
         assert.ok(!h.bridge.output.includes(TOKEN), 'the token is never logged');
       },
     );

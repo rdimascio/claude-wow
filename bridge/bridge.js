@@ -89,7 +89,6 @@ registry.register(require('./plugins/roast'));
 registry.register(require('./plugins/stream'));
 registry.register(require('./plugins/live'));
 registry.register(require('./plugins/dev'));
-registry.register(require('./plugins/room'));
 const LP = require('./liveproto');
 const T = require('./titles');
 const GOALS = require('./goals');
@@ -429,7 +428,7 @@ function noteMessage(job, role, text, agentTexts = []) {
 }
 
 const RESTORE_CHATS = 16;
-const HIDDEN_CHAT_PLUGINS = new Set(['stream']);
+const HIDDEN_CHAT_PLUGINS = new Set(['stream', 'room']);
 const RESTORE_MESSAGES = 40;
 const RESTORE_TEXT_MAX = 2000;
 
@@ -2212,19 +2211,38 @@ function discordMirror() {
 
 const ROOM_CONF = ROOM.settings(cfg.plugins && cfg.plugins.room);
 
+const ROOM_NEWS_GAP_MS = 30000;
+const ROOM_MIRROR_MAX = 20;
+let roomNewsAt = 0;
+let roomNewsTimer = null;
+
+function roomNews() {
+  if (roomNewsTimer) return;
+  const go = () => {
+    roomNewsTimer = null;
+    roomNewsAt = Date.now();
+    publishNow(true, { refresh: true });
+    fireNews();
+  };
+  const wait = roomNewsAt + ROOM_NEWS_GAP_MS - Date.now();
+  if (wait <= 0) return go();
+  roomNewsTimer = setTimeout(go, wait);
+  if (roomNewsTimer.unref) roomNewsTimer.unref();
+}
+
 function noteRoomMessage(entry) {
   if (!Object.hasOwn(transcripts.chats, entry.chat))
     transcripts.chats[entry.chat] = { id: entry.chat, name: entry.title, cwd: '', plugin: 'room', messages: [] };
   const c = transcripts.chats[entry.chat];
   if (entry.id && c.messages.some(m => m.roomId === entry.id)) return;
-  c.seq = (c.seq || 0) + 1;
-  const text = entry.thread && entry.role !== 'user' ? `${entry.thread}: ${entry.text}` : entry.text;
+  const seqs = (state.roomSeq = state.roomSeq || {});
+  seqs[entry.chat] = (seqs[entry.chat] || 0) + 1;
   c.messages.push({
     role: entry.role,
-    text,
+    text: entry.thread ? `${entry.thread}: ${entry.text}` : entry.text,
     t: Math.floor(Date.now() / 1000),
     via: 'room',
-    seq: c.seq,
+    seq: seqs[entry.chat],
     roomId: entry.id,
     title: entry.title,
     from: entry.from,
@@ -2232,35 +2250,43 @@ function noteRoomMessage(entry) {
   while (c.messages.length > 200) c.messages.shift();
   c.updated = Date.now();
   saveTranscripts();
-  publishNow(true, { refresh: true });
-  fireNews();
+  saveState();
+  roomNews();
+}
+
+function noteRoomStatus(up) {
+  const text = up
+    ? 'agent-room is back. Messages sent while it was unreachable are only in the room.'
+    : 'agent-room is unreachable, so this chat is paused. The bridge keeps trying.';
+  for (const c of Object.values(transcripts.chats))
+    if (c.plugin === 'room') noteRoomMessage({ chat: c.id, title: c.name, thread: '', id: '', role: 'system', from: '', text });
 }
 
 function roomMirror() {
-  const out = [];
+  const rows = [];
   for (const c of Object.values(transcripts.chats)) {
     if (c.plugin !== 'room') continue;
-    for (const m of c.messages.filter(x => x.via === 'room').slice(-MIRROR_PER_CHAT)) {
-      out.push({
-        chat: c.id,
-        seq: m.seq,
-        role: m.role,
-        text: String(m.text).slice(0, MIRROR_TEXT_MAX),
-        agent: m.from || '',
-        room: true,
-        title: m.title || c.name || '',
-        from: m.role === 'user' ? 'room' : '',
-      });
-    }
+    for (const m of c.messages.filter(x => x.via === 'room').slice(-MIRROR_PER_CHAT)) rows.push({ c, m });
   }
-  return out;
+  rows.sort((a, b) => a.m.t - b.m.t);
+  return rows.slice(-ROOM_MIRROR_MAX).map(({ c, m }) => ({
+    chat: c.id,
+    seq: m.seq,
+    role: m.role,
+    text: String(m.text).slice(0, MIRROR_TEXT_MAX),
+    agent: m.role === 'assistant' ? m.from || '' : '',
+    room: true,
+    title: m.title || c.name || '',
+    from: m.role === 'user' ? m.from || 'room' : '',
+  }));
 }
 
 function startRoom() {
   if (!holdsLock) return;
   if (ROOM_CONF.error) log(`room: off (${ROOM_CONF.error})`);
   if (!ROOM_CONF.enabled) return;
-  roomClient = ROOM.createRoom({ conf: ROOM_CONF, log, onMessage: noteRoomMessage });
+  registry.register(require('./plugins/room'));
+  roomClient = ROOM.createRoom({ conf: ROOM_CONF, log, onMessage: noteRoomMessage, onStatus: noteRoomStatus });
   roomClient.connect();
 }
 
