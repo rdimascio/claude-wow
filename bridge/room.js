@@ -194,7 +194,11 @@ function createRoom({
       } catch {
         return badFrame('a frame that is not JSON');
       }
-      apply(event);
+      try {
+        apply(event);
+      } catch (e) {
+        badFrame(`an event that could not be applied (${e && e.message ? e.message : e})`);
+      }
     };
     ws.onerror = () => {};
     ws.onclose = () => {

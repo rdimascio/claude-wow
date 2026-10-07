@@ -2210,6 +2210,7 @@ function discordMirror() {
 }
 
 const ROOM_CONF = ROOM.settings(cfg.plugins && cfg.plugins.room);
+if (ROOM_CONF.enabled) registry.register(require('./plugins/room'));
 
 const ROOM_NEWS_GAP_MS = 30000;
 const ROOM_MIRROR_MAX = 20;
@@ -2221,6 +2222,7 @@ function roomNews() {
   const go = () => {
     roomNewsTimer = null;
     roomNewsAt = Date.now();
+    state.roomNewsPending = false;
     publishNow(true, { refresh: true });
     fireNews();
   };
@@ -2250,11 +2252,19 @@ function noteRoomMessage(entry) {
   while (c.messages.length > 200) c.messages.shift();
   c.updated = Date.now();
   saveTranscripts();
+  state.roomNewsPending = true;
   saveState();
   roomNews();
 }
 
+const ROOM_STATUS_GAP_MS = 10 * 60 * 1000;
+let roomStatusAt = 0;
+let roomStatusShown = '';
+
 function noteRoomStatus(up) {
+  if (up ? roomStatusShown !== 'down' : roomStatusShown === 'down' || Date.now() - roomStatusAt < ROOM_STATUS_GAP_MS) return;
+  roomStatusShown = up ? 'up' : 'down';
+  if (!up) roomStatusAt = Date.now();
   const text = up
     ? 'agent-room is back. Messages sent while it was unreachable are only in the room.'
     : 'agent-room is unreachable, so this chat is paused. The bridge keeps trying.';
@@ -2285,9 +2295,9 @@ function startRoom() {
   if (!holdsLock) return;
   if (ROOM_CONF.error) log(`room: off (${ROOM_CONF.error})`);
   if (!ROOM_CONF.enabled) return;
-  registry.register(require('./plugins/room'));
   roomClient = ROOM.createRoom({ conf: ROOM_CONF, log, onMessage: noteRoomMessage, onStatus: noteRoomStatus });
   roomClient.connect();
+  if (state.roomNewsPending) roomNews();
 }
 
 function discordReplyText(status, text, denied) {

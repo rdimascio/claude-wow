@@ -236,6 +236,28 @@ test('frames that are not text, not JSON or a snapshot without its lists are ign
   assert.equal(t.got.length, 1, 'a bad snapshot did not wipe the channels');
 });
 
+test('an error while handling an event is logged, never thrown into the bridge', async () => {
+  const { FakeSocket, made } = fakeSockets();
+  const logs = [];
+  const room = ROOM.createRoom({
+    conf: { url: ROOM.DEFAULT_URL, workspace: 'wow-ai', channels: [], db: '/nowhere' },
+    log: l => logs.push(l),
+    onMessage: () => {
+      throw new Error('disk full');
+    },
+    token: () => 'abcdef0123456789',
+    WebSocketImpl: FakeSocket,
+    timers: fakeTimers(),
+  });
+  room.connect();
+  await settle();
+  made[0].emit(SNAPSHOT);
+  assert.doesNotThrow(() =>
+    made[0].emit({ type: 'message', threadId: 't1', message: { id: 'm', authorId: 'assistant', semantic: { kind: 'chat', text: 'x' } } }),
+  );
+  assert.ok(logs.includes('room: ignored an event that could not be applied (disk full)'), logs.join('\n'));
+});
+
 test('a missing token is a logged failure that retries, not a crash', async () => {
   const logs = [];
   const timers = fakeTimers();
