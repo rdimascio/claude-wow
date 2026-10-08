@@ -3383,7 +3383,7 @@ function finish(job, status, text, session, denied) {
     noteMessage(
       job,
       status === 'done' ? 'assistant' : 'system',
-      status === 'done' ? shown.text : 'Bridge error: ' + text,
+      status === 'done' ? shown.text : 'The companion app could not finish: ' + text,
       status === 'done' && typeof job.agentText === 'string' ? [job.agentText] : [],
     );
   }

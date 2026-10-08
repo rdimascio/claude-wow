@@ -386,7 +386,7 @@ test('a chat can pick its agent: the strip says so, replies are labelled by thei
   assert.ok(vm.evaluate('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history].text').includes('Unknown agent "gemini"'));
   vm.run('SlashCmdList.CLAUDE("-c --agent default")');
   assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].agent'), '');
-  assert.ok(vm.evaluate('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history].text').includes("agent reset to the bridge's default: Claude"));
+  assert.ok(vm.evaluate('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history].text').includes("agent reset to the companion app's default: Claude"));
   // The Agent... menu item opens a prompt prefilled with the chat's agent.
   vm.run('ClaudeWoW.SetAgent("grok"); ClaudeWoW.AgentPrompt()');
   assert.equal(vm.evaluate('STUB.popup.which'), 'CLAUDEWOW_AGENT');
@@ -1170,7 +1170,10 @@ test('whisper tabs turned on: the active chat is a tab at login, Enter there goe
   assert.ok(tabLines(vm, 12).includes('whispers: for two') && !tabLines(vm, 11).includes('for two'));
   vm.run('ClaudeWoW.Send("again")');
   slotReply(vm, secondId, 'status = "error", text = "boom"');
-  assert.ok(tabLines(vm, 12).includes('Bridge error: boom  |Haddon:claudewow:open:' + secondId + '|h|cff7ec8ff[open]|r|h @1,1,0'), tabLines(vm, 12));
+  assert.ok(
+    tabLines(vm, 12).includes('The companion app could not finish: boom  |Haddon:claudewow:open:' + secondId + '|h|cff7ec8ff[open]|r|h @1,1,0'),
+    tabLines(vm, 12),
+  );
 
   vm.run('ClaudeWoWDB.settings.lootRoll = false');
   vm.run('ClaudeWoW.Send("once more")');
@@ -1543,7 +1546,7 @@ test('plugins: /claude config plugin binds the chat like --agent, the plugin pro
   vm.run('ClaudeWoWChatMenu:Hide(); STUB.texts = {}; ClaudeWoW.UpdateStatus()');
   assert.ok(!texts().includes('plugin: ask'), 'the window shows no plugin footer: ' + texts());
   vm.run('SlashCmdList.CLAUDE("config plugin")');
-  assert.ok(last().startsWith("plugin is the bridge's default: ask"), last());
+  assert.ok(last().startsWith("plugin is the companion app's default: ask"), last());
   // Bind to the coding plugin: the flag goes out with the next message, on both transports.
   vm.run('SlashCmdList.CLAUDE("config plugin Claude-Code")');
   assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].plugin'), 'claude-code');
@@ -1559,7 +1562,7 @@ test('plugins: /claude config plugin binds the chat like --agent, the plugin pro
   assert.ok(last().includes('Unknown plugin "factory"'), last());
   vm.run('SlashCmdList.CLAUDE("config plugin default")');
   assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].plugin'), '');
-  assert.ok(last().includes("plugin reset to the bridge's default: ask"), last());
+  assert.ok(last().includes("plugin reset to the companion app's default: ask"), last());
   vm.run('SlashCmdList.CLAUDE("diag")');
   assert.ok(last().includes('\nplugin: bridge default, ask (bridge has: ask, claude-code)'), last());
   vm.run('SlashCmdList.CLAUDE("config plugin for my warrior please")');
@@ -2102,7 +2105,7 @@ test('a live reply that arrives after the watchdog failed the message still land
   nextSlot(vm, `{ now = time(), cwd = "", replies = { ${failed} } }`);
   for (let i = 0; i < 8 && activeField(vm, 'pendingId') !== null; i++) vm.run('STUB.now = STUB.now + 10; STUB.Tick()');
   assert.equal(activeField(vm, 'pendingId'), null);
-  assert.match(activeField(vm, 'history[#c.history].text'), /^Bridge error: The session "wow-ai" did not pick it up/);
+  assert.match(activeField(vm, 'history[#c.history].text'), /^The companion app could not finish: The session "wow-ai" did not pick it up/);
   const late = `{ now = time(), cwd = "", replies = { ${failed}, { chat = "${chatId}", id = ${id}, status = "done", late = true, text = "Sorry, I was busy. Hi!", agent = "claude", plugin = "live" } } }`;
   nextSlot(vm, late);
   for (let i = 0; i < 30; i++) vm.run('STUB.now = STUB.now + 5; STUB.Tick()');
@@ -2785,7 +2788,7 @@ test('slash commands: a general chat refuses them, and a skill the bridge stoppe
   vm.run('ClaudeWoW.ApplySkills({ "fresh-eyes" })');
   vm.run('SlashCmdList.CLAUDEWOW_SKILL_BABYSIT_PR("12")');
   assert.ok(!stripRecords(vm).some(r => r.text === '/babysit-pr 12'));
-  assert.match(vm.evaluate('table.concat(STUB.prints, "\\n")'), /\/babysit-pr is not a factory skill on this bridge right now/);
+  assert.match(vm.evaluate('table.concat(STUB.prints, "\\n")'), /\/babysit-pr is not a factory skill in this companion app right now/);
   vm.run('ClaudeWoW.ApplySkills(nil)');
   vm.run('SlashCmdList.CLAUDEWOW_SKILL_RUNS("")');
   assert.match(vm.evaluate('table.concat(STUB.prints, "\\n")'), /\/runs is not a factory skill/, 'with the factory off even /runs is refused');
@@ -3629,7 +3632,7 @@ test('/claude discord refuses when the bridge has no Discord, and in a general c
   connectIn(off, '/Users/me/every');
   off.run('ClaudeWoWDB.chats[1].cwd = "/Users/me/every"; ClaudeWoWDB.chats[1].plugin = "claude-code"');
   off.run('SlashCmdList.CLAUDE("discord")');
-  assert.match(off.evaluate('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history].text'), /^Discord is not on in this bridge/);
+  assert.match(off.evaluate('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history].text'), /^Discord is not on in this companion app/);
   assert.ok(!stripRecords(off).some(r => /discord=link/.test(r.flags || '')));
 
   const vm = newVM();

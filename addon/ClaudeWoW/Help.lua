@@ -195,6 +195,8 @@ local function Saved()
 	return (type(ClaudeWoWDB) == "table" and type(ClaudeWoWDB.settings) == "table") and ClaudeWoWDB.settings or {}
 end
 
+H.QUIET = { quiet = true }
+
 local function Config(command)
 	if ClaudeWoW and type(ClaudeWoW.Config) == "function" then return ClaudeWoW.Config(command, { quiet = true }) end
 	return nil
@@ -498,9 +500,9 @@ local function WidgetRow(panel)
 		local data = self:GetParent().data
 		if not data or not ClaudeWoWWidgets then return end
 		if data.status == "removed" or data.status == "waiting" then
-			ClaudeWoWWidgets.Show(data)
+			ClaudeWoWWidgets.Show(data, H.QUIET)
 		else
-			ClaudeWoWWidgets.Remove(data.name)
+			ClaudeWoWWidgets.Remove(data.name, H.QUIET)
 		end
 		H.RefreshCanvas(panel)
 	end)
