@@ -18,6 +18,11 @@ const ERA = '1.15.9.70003';
 const T0 = Date.parse('2026-10-07T12:00:00Z');
 const HOUR = 60 * 60 * 1000;
 
+function fakeWagoCommand(flavor) {
+  const preloadFlag = typeof Bun !== 'undefined' ? '--preload' : '--require';
+  return [process.execPath, [preloadFlag, PRELOAD, path.join(REPO, 'bridge', 'datasync.js'), 'sync', '--flavor', flavor]];
+}
+
 function scratch(name) {
   const dir = path.join(os.tmpdir(), `claude-wow-autosync-${name}-${process.pid}-${Math.random().toString(36).slice(2, 8)}`);
   fs.mkdirSync(dir, { recursive: true });
@@ -523,10 +528,10 @@ test('runSync: a real data sync child against a fake source switches the data, i
     flavor: 'forever',
     home,
     onChild: c => children.push(c),
+    command: fakeWagoCommand('forever'),
     env: {
       ...process.env,
       CLAUDE_WOW_HOME: '/nowhere',
-      NODE_OPTIONS: `--require ${JSON.stringify(PRELOAD)}`,
       CLAUDE_WOW_FAKE_WAGO_LOG: requests,
       CLAUDE_WOW_FAKE_WAGO_BUILDS: buildsFile({ wow_cn_beta: [OLD, NEW] }),
     },
@@ -547,12 +552,17 @@ test('a forged client build reaches the real data sync child only as a trigger: 
   await D.sync({ dataDir, build: OLD, fetch: fixtureFetch });
   const env = {
     ...process.env,
-    NODE_OPTIONS: `--require ${JSON.stringify(PRELOAD)}`,
     CLAUDE_WOW_FAKE_WAGO_LOG: requests,
     CLAUDE_WOW_FAKE_WAGO_BUILDS: buildsFile({ wow_cn_beta: [OLD, NEW] }),
   };
   const state = {};
-  const sync = DAS.createAutoSync({ dataDir, home, state: () => state, now: () => T0, run: args => DAS.runSync({ ...args, env }) });
+  const sync = DAS.createAutoSync({
+    dataDir,
+    home,
+    state: () => state,
+    now: () => T0,
+    run: args => DAS.runSync({ ...args, env, command: fakeWagoCommand(args.flavor) }),
+  });
   const r = await sync.observe(FORGED).done;
   assert.equal(r.ok, false);
   assert.equal(r.build, NEW);
@@ -576,9 +586,9 @@ test('runSync: a build the source does not have fails and leaves the old build c
   const result = await DAS.runSync({
     flavor: 'forever',
     home,
+    command: fakeWagoCommand('forever'),
     env: {
       ...process.env,
-      NODE_OPTIONS: `--require ${JSON.stringify(PRELOAD)}`,
       CLAUDE_WOW_FAKE_WAGO_MISSING: NEW,
       CLAUDE_WOW_FAKE_WAGO_BUILDS: buildsFile({ wow_cn_beta: [OLD, NEW] }),
     },
@@ -596,7 +606,7 @@ test('runSync: a real data sync child that finds the lock held exits 3 and chang
   await D.sync({ dataDir, build: OLD, fetch: fixtureFetch });
   const lock = D.acquireLock(D.flavorDir(dataDir, 'forever'));
   try {
-    const result = await DAS.runSync({ flavor: 'forever', home, env: { ...process.env, NODE_OPTIONS: `--require ${JSON.stringify(PRELOAD)}` } });
+    const result = await DAS.runSync({ flavor: 'forever', home, command: fakeWagoCommand('forever') });
     assert.equal(result.ok, false);
     assert.equal(result.code, D.LOCKED_EXIT);
     assert.match(result.message, /another data sync is running/);
