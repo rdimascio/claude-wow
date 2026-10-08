@@ -141,7 +141,7 @@ function R.Blocked()
 	if InCombatLockdown and InCombatLockdown() then return "combat" end
 	for i = 1, GROUP_LOOT_FRAMES do
 		local roll = _G["GroupLootFrame" .. i]
-		if type(roll) == "table" and type(roll.IsShown) == "function" and roll:IsShown() then return "loot" end
+		if type(roll) == "table" and type(roll.IsVisible) == "function" and roll:IsVisible() then return "loot" end
 	end
 	return nil
 end
@@ -365,16 +365,26 @@ end
 
 local PresentNext
 
-local function Hold(reason)
+local function HoldLine(reason)
+	return HOLD_TEXT[reason] or HOLD_TEXT[hold and hold.reason] or HOLD_TEXT.combat
+end
+
+local function Hold(reason, chatId)
+	local started = false
 	if hold then
-		if reason then hold.clearSince = nil end
+		if reason then
+			hold.clearSince = nil
+			hold.reason = reason
+		end
 	else
-		hold = {}
-		ClaudeWoW.Print(HOLD_TEXT[reason] or HOLD_TEXT.combat)
+		hold = { reason = reason }
+		ClaudeWoW.SayAboutDenial(chatId, HoldLine(reason))
+		started = true
 	end
 	if not holdTicker and C_Timer and C_Timer.NewTicker then
 		holdTicker = C_Timer.NewTicker(HOLD_TICK, function() R.CheckHold() end)
 	end
+	return started
 end
 
 local function StopHold()
@@ -387,7 +397,14 @@ end
 
 local function HoldOffer(offer)
 	table.insert(queue, 1, offer)
-	Hold(R.Blocked())
+	return Hold(R.Blocked(), offer.chatId)
+end
+
+local function HoldCurrent()
+	local offer = current
+	current = nil
+	HideFrame()
+	return HoldOffer(offer)
 end
 
 local function Present(offer)
@@ -482,6 +499,11 @@ function R.Choose(choice, reason)
 	local offer = current
 	if not offer or not ROLL_BUTTONS[choice] then return end
 	if choice == "need" and IsLive(offer) then choice = "greed" end
+	if choice ~= "pass" and R.Blocked() then
+		HoldCurrent()
+		return
+	end
+	if choice ~= "pass" and not R.Armed() then return end
 	if choice ~= "pass" and StillOpen(offer) and not Unchanged(offer) then
 		Rebuild(offer)
 		return
@@ -536,6 +558,18 @@ function R.Resume(chatId, msgId)
 	return true
 end
 
+function R.HoldGrant(chatId, msgId)
+	local started = false
+	if SameOffer(current, chatId, msgId) then
+		started = HoldCurrent()
+	elseif SameOffer(parked, chatId, msgId) then
+		local offer = parked
+		parked = nil
+		started = HoldOffer(offer)
+	end
+	if not started then ClaudeWoW.SayAboutDenial(chatId, HoldLine(R.Blocked())) end
+end
+
 function R.Settle(chatId, msgId, granted)
 	if not SameOffer(parked, chatId, msgId) then
 		PresentNext()
@@ -549,12 +583,8 @@ end
 
 function R.Update()
 	if not current then return end
-	local blocked = R.Blocked()
-	if blocked then
-		local offer = current
-		current = nil
-		HideFrame()
-		HoldOffer(offer)
+	if R.Blocked() then
+		HoldCurrent()
 		return
 	end
 	if not StillOpen(current) then
