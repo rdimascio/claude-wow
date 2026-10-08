@@ -410,6 +410,109 @@ test('module text: player strings say companion app, never bridge, and project, 
   }
 });
 
+const SINKS = new Set(['print', 'AddHistory', 'Finish', 'Cli.Out', 'Cli.Say', 'Cli.Note', 'Cli.Reject', 'ClaudeWoW.Print']);
+const DEV_FUNCTIONS = new Set(['Cli.DevCommand']);
+const DEV_VERBS = new Set(['diag', 'probe', 'dev', 'wrong', 'bug', 'mode', 'signal', 'auto', 'longchat']);
+
+function calleeName(n) {
+  if (!n) return '?';
+  if (n.type === 'Identifier') return n.name;
+  if (n.type === 'MemberExpression') return calleeName(n.base) + n.indexer + n.identifier.name;
+  return '?';
+}
+
+function devBranch(clause) {
+  const found = [];
+  const look = n => {
+    if (!n || typeof n !== 'object') return;
+    if (n.type === 'BinaryExpression' && n.operator === '==' && n.left.type === 'Identifier' && n.left.name === 'cmd' && n.right.type === 'StringLiteral')
+      found.push(n.right.raw.slice(1, -1));
+    for (const k of ['left', 'right', 'argument']) look(n[k]);
+  };
+  look(clause.condition);
+  return found.length > 0 && found.every(v => DEV_VERBS.has(v));
+}
+
+function playerSinkLiterals(file) {
+  const ast = luaparse.parse(fs.readFileSync(path.join(ADDON, file), 'utf8'), { luaVersion: '5.1', comments: false, locations: true });
+  const out = [];
+  const literals = (node, acc) => {
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node)) return node.forEach(n => literals(n, acc));
+    if (node.type === 'StringLiteral') acc.push(node);
+    for (const k of Object.keys(node)) if (k !== 'loc') literals(node[k], acc);
+  };
+  const walk = (node, fn) => {
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node)) return node.forEach(n => walk(n, fn));
+    if (node.type === 'FunctionDeclaration' && node.identifier) fn = calleeName(node.identifier);
+    if (DEV_FUNCTIONS.has(fn)) return;
+    if ((node.type === 'IfClause' || node.type === 'ElseifClause') && devBranch(node)) return;
+    if ((node.type === 'CallExpression' || node.type === 'StringCallExpression') && SINKS.has(calleeName(node.base))) {
+      const acc = [];
+      literals(node.arguments || node.argument, acc);
+      for (const s of acc) out.push({ text: s.raw, line: s.loc.start.line, sink: calleeName(node.base), fn });
+    }
+    for (const k of Object.keys(node)) if (k !== 'loc') walk(node[k], fn);
+  };
+  walk(ast, '');
+  return out;
+}
+
+test('module text: what ClaudeWoW.lua writes to the transcript or the chat says companion app and project, except the dev and diag handlers', () => {
+  const found = playerSinkLiterals('ClaudeWoW.lua');
+  assert.ok(found.length > 200, `the scan sees the sinks (${found.length})`);
+  assert.ok(
+    found.some(s => s.text.includes('companion app could not finish')),
+    'the failed-run prefix is a sink literal the scan reads',
+  );
+  for (const s of found) {
+    assert.doesNotMatch(s.text, /bridge/i, `ClaudeWoW.lua:${s.line} ${s.sink} in ${s.fn}: ${s.text}`);
+    assert.doesNotMatch(s.text, /folder/i, `ClaudeWoW.lua:${s.line} ${s.sink} in ${s.fn}: ${s.text}`);
+  }
+});
+
+test('module text: the dev and diag allowlist still holds bridge words, so it is the allowlist and not a blind scan that passes them', () => {
+  const ast = fs.readFileSync(path.join(ADDON, 'ClaudeWoW.lua'), 'utf8');
+  assert.ok(/The bridge has not said it has dev tools/.test(ast));
+  assert.ok(!playerSinkLiterals('ClaudeWoW.lua').some(s => /dev tools/.test(s.text)));
+});
+
+test('module text: cd, agent, discord, restore and a failed run read in companion app words', () => {
+  const vm = newVM({ dock: false });
+  connect(vm);
+  const last = () => vm.evaluate('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history].text');
+  vm.run('ClaudeWoWDB.chats[1].cwd = ""; SlashCmdList.CLAUDE("cd")');
+  assert.match(last(), /^Project is the companion app's default: .* \(\/claude cd <path>, or right-click the chat and pick Project\.\.\., to change\)$/);
+  vm.run('SlashCmdList.CLAUDE("--agent nope")');
+  assert.match(last(), /Unknown agent "nope"\. The companion app knows: /);
+  vm.run('SlashCmdList.CLAUDE("discord")');
+  assert.doesNotMatch(last(), /bridge/i);
+});
+
+test('settings widgets page: Show and Remove change the widget and write nothing', () => {
+  const vm = newVM({
+    saved:
+      'ClaudeWoWWidgetDB = { approved = { meter = { rev = "r1", source = "local ui = ..." } }, set = { epoch = "e1", version = 1, items = { { name = "meter", title = "DPS meter", rev = "r1", source = "local ui = ..." }, { name = "clock", title = "Clock", rev = "r2", source = "local ui = ..." } } } }',
+  });
+  connect(vm);
+  vm.run('ClaudeWoWWidgetsPanel.scripts.OnShow(ClaudeWoWWidgetsPanel)');
+  const row = i => `ClaudeWoWWidgetsPanel.rows[${i}]`;
+  const counts = vm.evaluate('OUTPUT_COUNTS()');
+  vm.run(`${row(1)}.button.scripts.OnClick(${row(1)}.button)`);
+  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("meter")'), 'removed');
+  vm.run(`${row(2)}.button.scripts.OnClick(${row(2)}.button)`);
+  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("clock")'), 'running');
+  vm.run(`${row(1)}.button.scripts.OnClick(${row(1)}.button)`);
+  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("meter")'), 'running');
+  assert.equal(vm.evaluate('OUTPUT_COUNTS()'), counts, 'no history, chat, tab or print');
+  vm.run('SlashCmdList.CLAUDE("config ui remove clock")');
+  assert.notEqual(vm.evaluate('OUTPUT_COUNTS()'), counts, 'the typed command still answers');
+  const typed = vm.evaluate('OUTPUT_COUNTS()');
+  vm.run('ClaudeWoWWidgets.Remove("nosuch", { quiet = true })');
+  assert.equal(vm.evaluate('OUTPUT_COUNTS()'), typed, 'an unknown name is silent from Settings');
+});
+
 test('module text: the changed lines read as the player sees them', () => {
   const vm = newVM({ dock: false });
   connect(vm);

@@ -286,7 +286,7 @@ end
 
 function Cli.LinkDiscord(c)
 	if not run.bridgeDiscord then
-		Cli.Out(c, "Discord is not on in this bridge. Set discord.enabled in the bridge's config.json and restart it.")
+		Cli.Out(c, "Discord is not on in this companion app. Set discord.enabled in its config.json and restart it.")
 		return
 	end
 	local plugin = Cli.ChatPlugin(c)
@@ -2075,7 +2075,7 @@ local function ApplyReplies(replies)
 				Finish(c, "assistant", r.text or "", denied, r.agent, r.summary, ClaudeWoW.CleanMacros(r.macros))
 			elseif r.status == "error" then
 				if r.lateOk == true then Q.ArmLateWait(c, r.id, 0) end
-				Finish(c, "system", "Bridge error: " .. tostring(r.text), denied)
+				Finish(c, "system", "The companion app could not finish: " .. tostring(r.text), denied)
 			elseif r.status == "working" then
 				if ClaudeWoWVoice then ClaudeWoWVoice.Started(r.id) end
 				if c.progress ~= r.text then Q.NoteLife(c) end
@@ -2140,7 +2140,7 @@ local function ImportRestore(r)
 			end
 		end
 		Q.AddEvent(current, "Restored " .. added .. " chat(s)")
-		AddHistory(current, "system", "The game reset its saved data, so these came back from the bridge.")
+		AddHistory(current, "system", "The game reset its saved data, so these came back from the companion app.")
 		ClaudeWoW.RenderChatList()
 	end
 end
@@ -4321,7 +4321,7 @@ end
 function Cli.RunSkillCommand(name, msg, editBox)
 	if not db then return end
 	if not Contains(Cli.SlashNames(), name) then
-		TellPlayer("/" .. name .. " is not a factory skill on this bridge right now.")
+		TellPlayer("/" .. name .. " is not a factory skill in this companion app right now.")
 		return
 	end
 	local chat = editBox and Whisper.ChatForBox(editBox) or nil
@@ -4458,7 +4458,7 @@ end
 
 function Cli.SetProject(c, value)
 	local path = Cli.ResolveProject(value)
-	if not path then return nil, "Unknown project \"" .. tostring(value) .. "\". Known: " .. Cli.ProjectNames() .. ". Or give a folder path." end
+	if not path then return nil, "Unknown project \"" .. tostring(value) .. "\". Known: " .. Cli.ProjectNames() .. ". Or give a path." end
 	c.cwd = path
 	Cli.KeepPlayerRoute(c)
 	if c.plugin ~= "" and c.plugin ~= LIVE_PLUGIN then c.plugin = "" end
@@ -5154,18 +5154,18 @@ function ClaudeWoW.SetFolder(rest, c)
 	rest = Trim(rest or "")
 	if rest ~= "" or (c.cwd or "") ~= "" then Cli.KeepPlayerRoute(c) end
 	if rest == "-" or rest == "default" then rest = "" end
-	local base = run.bridgeCwd or "the bridge's default folder"
+	local base = run.bridgeCwd or Q.PROJECT_BASE_UNKNOWN
 	if rest ~= "" then
 		local changed = rest ~= c.cwd
 		c.cwd = rest
 		local absolute = rest:match("^%a:[\\/]") or rest:match("^[\\/~]")
 		local note = absolute and "" or (" (relative to " .. base .. ")")
-		Cli.Out(c, "cwd set to " .. rest .. note .. (changed and #c.history > 1 and ("; the next message starts a fresh " .. ChatAgentName(c) .. " session there") or ""))
+		Cli.Out(c, "Project set to " .. rest .. note .. (changed and #c.history > 1 and ("; the next message starts a fresh " .. ChatAgentName(c) .. " session there") or ""))
 	elseif c.cwd ~= "" then
 		c.cwd = ""
-		Cli.Out(c, "cwd reset to the bridge's default: " .. base)
+		Cli.Out(c, "Project reset to the companion app's default: " .. base)
 	else
-		Cli.Out(c, "cwd is the bridge's default: " .. base .. " (/claude cd <folder>, or right-click the chat and pick Folder, to change)")
+		Cli.Out(c, "Project is the companion app's default: " .. base .. " (/claude cd <path>, or right-click the chat and pick Project..., to change)")
 	end
 	ClaudeWoW.Render()
 end
@@ -5229,13 +5229,13 @@ function ClaudeWoW.SetAgent(rest, c)
 	if not c then return end
 	rest = Trim(rest or ""):lower()
 	if rest == "" then
-		Cli.Out(c, (c.agent ~= "" and ("agent is " .. AgentName(c.agent)) or ("agent is the bridge's default: " .. (run.bridgeAgent and AgentName(run.bridgeAgent) or "unknown until connected"))) .. " (/claude -c --agent <name>, or right-click the chat and pick Agent, to change; agents: " .. AgentList() .. ")")
+		Cli.Out(c, (c.agent ~= "" and ("agent is " .. AgentName(c.agent)) or ("agent is the companion app's default: " .. (run.bridgeAgent and AgentName(run.bridgeAgent) or "unknown until connected"))) .. " (/claude -c --agent <name>, or right-click the chat and pick Agent, to change; agents: " .. AgentList() .. ")")
 		ClaudeWoW.Render()
 		return
 	end
 	if rest == "-" or rest == "default" then rest = "" end
 	if rest ~= "" and run.bridgeAgents and not Contains(run.bridgeAgents, rest) then
-		Cli.Out(c, "Unknown agent \"" .. rest .. "\". The bridge knows: " .. AgentList())
+		Cli.Out(c, "Unknown agent \"" .. rest .. "\". The companion app knows: " .. AgentList())
 		ClaudeWoW.Render()
 		return
 	end
@@ -5244,15 +5244,15 @@ function ClaudeWoW.SetAgent(rest, c)
 	if rest ~= "" then
 		Cli.Out(c, "agent set to " .. AgentName(rest) .. (changed and #c.history > 1 and "; the next message starts a fresh session with it" or ""))
 	elseif changed then
-		Cli.Out(c, "agent reset to the bridge's default: " .. (run.bridgeAgent and AgentName(run.bridgeAgent) or "unknown until connected"))
+		Cli.Out(c, "agent reset to the companion app's default: " .. (run.bridgeAgent and AgentName(run.bridgeAgent) or "unknown until connected"))
 	else
-		Cli.Out(c, "agent is the bridge's default: " .. (run.bridgeAgent and AgentName(run.bridgeAgent) or "unknown until connected") .. " (/claude -c --agent <name>, or right-click the chat and pick Agent, to change; agents: " .. AgentList() .. ")")
+		Cli.Out(c, "agent is the companion app's default: " .. (run.bridgeAgent and AgentName(run.bridgeAgent) or "unknown until connected") .. " (/claude -c --agent <name>, or right-click the chat and pick Agent, to change; agents: " .. AgentList() .. ")")
 	end
 	ClaudeWoW.Render()
 end
 
 StaticPopupDialogs["CLAUDEWOW_AGENT"] = {
-	text = "Agent for this chat\n\nOne of: %s.\nEmpty = the bridge's default (%s). Changing it starts a fresh session.",
+	text = "Agent for this chat\n\nOne of: %s.\nEmpty = the companion app's default (%s). Changing it starts a fresh session.",
 	button1 = OKAY,
 	button2 = CANCEL,
 	hasEditBox = 1,
@@ -5308,13 +5308,13 @@ function ClaudeWoW.SetPlugin(rest, c)
 	if not c then return end
 	rest = Trim(rest or ""):lower()
 	if rest == "" then
-		Cli.Out(c, ((c.plugin or "") ~= "" and ("plugin is " .. c.plugin) or ("plugin is the bridge's default: " .. BridgePluginName())) .. " (/claude config plugin <name>, or right-click the chat and pick Plugin, to change; plugins: " .. PluginList() .. "). This is an advanced setting: a chat with a folder (/claude cd) is a coding session and one without is general chat, and /claude -r attaches running sessions.")
+		Cli.Out(c, ((c.plugin or "") ~= "" and ("plugin is " .. c.plugin) or ("plugin is the companion app's default: " .. BridgePluginName())) .. " (/claude config plugin <name>, or right-click the chat and pick Plugin, to change; plugins: " .. PluginList() .. "). This is an advanced setting: a chat with a project (/claude cd) is a coding session and one without is general chat, and /claude -r attaches running sessions.")
 		ClaudeWoW.Render()
 		return
 	end
 	if rest == "-" or rest == "default" then rest = "" end
 	if rest ~= "" and run.bridgePlugins and not Contains(run.bridgePlugins, rest) then
-		Cli.Out(c, "Unknown plugin \"" .. rest .. "\". The bridge has: " .. PluginList())
+		Cli.Out(c, "Unknown plugin \"" .. rest .. "\". The companion app has: " .. PluginList())
 		ClaudeWoW.Render()
 		return
 	end
@@ -5324,15 +5324,15 @@ function ClaudeWoW.SetPlugin(rest, c)
 	if rest ~= "" then
 		Cli.Out(c, "plugin set to " .. rest .. (changed and #c.history > 1 and "; the next message starts a fresh session with it" or ""))
 	elseif changed then
-		Cli.Out(c, "plugin reset to the bridge's default: " .. BridgePluginName())
+		Cli.Out(c, "plugin reset to the companion app's default: " .. BridgePluginName())
 	else
-		Cli.Out(c, "plugin is the bridge's default: " .. BridgePluginName() .. " (/claude config plugin <name>, or right-click the chat and pick Plugin, to change; plugins: " .. PluginList() .. ")")
+		Cli.Out(c, "plugin is the companion app's default: " .. BridgePluginName() .. " (/claude config plugin <name>, or right-click the chat and pick Plugin, to change; plugins: " .. PluginList() .. ")")
 	end
 	ClaudeWoW.Render()
 end
 
 StaticPopupDialogs["CLAUDEWOW_PLUGIN"] = {
-	text = "Plugin for this chat\n\nOne of: %s.\nEmpty = the bridge's default (%s). Changing it starts a fresh session.",
+	text = "Plugin for this chat\n\nOne of: %s.\nEmpty = the companion app's default (%s). Changing it starts a fresh session.",
 	button1 = OKAY,
 	button2 = CANCEL,
 	hasEditBox = 1,
@@ -9532,11 +9532,11 @@ function Cli.CheckFlags(o)
 		table.insert(errors, "Unknown permission mode \"" .. o.permissionMode .. "\": " .. table.concat(Cli.PERMISSION_MODES, ", ") .. ".")
 	end
 	if type(o.agent) == "string" and not Cli.Cleared(o.agent) and run.bridgeAgents and not Contains(run.bridgeAgents, o.agent:lower()) then
-		table.insert(errors, "Unknown agent \"" .. o.agent .. "\". The bridge knows: " .. AgentList() .. ".")
+		table.insert(errors, "Unknown agent \"" .. o.agent .. "\". The companion app knows: " .. AgentList() .. ".")
 	end
 	if #o.addDir > Cli.ADD_DIRS_MAX then table.insert(errors, "At most " .. Cli.ADD_DIRS_MAX .. " --add-dir folders.") end
 	if type(o.project) == "string" and not Cli.ResolveProject(o.project) then
-		table.insert(errors, "Unknown project \"" .. o.project .. "\". Known: " .. Cli.ProjectNames() .. ". Or give a folder path.")
+		table.insert(errors, "Unknown project \"" .. o.project .. "\". Known: " .. Cli.ProjectNames() .. ". Or give a path.")
 	end
 	return errors
 end
@@ -9828,7 +9828,7 @@ function Cli.AttachTo(e)
 			c.adoptBind = true
 		end
 		Q.AddEvent(c, "Attached to session " .. e.id:sub(1, 8))
-		AddHistory(c, "system", "Your next message resumes session " .. e.id .. ((e.cwd or "") ~= "" and (" in " .. Display(e.cwd)) or "") .. (e.unverified and " (the bridge looks the id up then)" or "") .. ".")
+		AddHistory(c, "system", "Your next message resumes session " .. e.id .. ((e.cwd or "") ~= "" and (" in " .. Display(e.cwd)) or "") .. (e.unverified and " (the companion app looks the id up then)" or "") .. ".")
 		if e.recap then AddHistory(c, "system", e.recap) end
 	end
 	ClaudeWoW.SwitchChat(c.id)
@@ -9931,7 +9931,7 @@ function Cli.ResumeAll()
 		end
 	end
 	if #opened + #busy + #already == 0 then
-		Cli.Say(from, "No sessions were handed off. In a terminal, run: claude-wow handoff <repository folder> --stop. Then /claude -r all again (the list can take a few seconds to reach the game).")
+		Cli.Say(from, "No sessions were handed off. In a terminal, run: claude-wow handoff <repository path> --stop. Then /claude -r all again (the list can take a few seconds to reach the game).")
 		return
 	end
 	local lines = {}
