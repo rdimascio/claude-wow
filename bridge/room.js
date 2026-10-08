@@ -11,6 +11,7 @@ const RETRY_MAX_MS = 60000;
 const SNAPSHOT_DEADLINE_MS = 15000;
 const TEXT_MAX = 1500;
 const SLUG_RE = /^[a-z0-9][a-z0-9-]{0,79}$/;
+const SLACK_THREAD_RE = /^slack:(C[A-Z0-9]{1,29}):/;
 const WORKSPACE_RE = /^[\w.-]{1,100}$/;
 
 function settings(options) {
@@ -107,23 +108,30 @@ function createRoom({
     }
     if (event.type === 'channel' && event.channel) channels.set(event.channel.id, event.channel);
     else if (event.type === 'thread' && event.thread) threads.set(event.thread.id, event.thread);
-    else if (event.type === 'message' && event.message) {
+    else if (event.type === 'slack_message' && event.message) {
+      const slack = SLACK_THREAD_RE.exec(String(event.threadId || ''));
+      if (!slack || event.project !== conf.workspace) return;
+      deliver(event.message, { chat: chatIdFor(`slack:${slack[1]}`), title: `Slack ${slack[1]}`, thread: '', via: 'Slack' });
+    } else if (event.type === 'message' && event.message) {
       const thread = threads.get(event.threadId);
       const channel = thread && channels.get(thread.channelId);
       if (!followed(channel)) return;
-      const message = event.message;
-      const human = String(message.authorId || '').startsWith('human:');
-      const agent = !human && agents.get(message.authorId);
-      onMessage({
-        chat: chatIdFor(channel.id),
-        title: `#${channel.slug}`,
-        thread: thread.title || '',
-        id: String(message.id || ''),
-        role: human ? 'user' : message.semantic && message.semantic.kind === 'system' ? 'system' : 'assistant',
-        from: human ? 'room' : (agent && agent.displayName) || '',
-        text: messageText(message),
-      });
+      deliver(event.message, { chat: chatIdFor(channel.id), title: `#${channel.slug}`, thread: thread.title || '', via: 'room' });
     }
+  }
+
+  function deliver(message, target) {
+    const human = String(message.authorId || '').startsWith('human:');
+    const agent = !human && agents.get(message.authorId);
+    onMessage({
+      chat: target.chat,
+      title: target.title,
+      thread: target.thread,
+      id: String(message.id || ''),
+      role: human ? 'user' : message.semantic && message.semantic.kind === 'system' ? 'system' : 'assistant',
+      from: human ? target.via : (agent && agent.displayName) || '',
+      text: messageText(message),
+    });
   }
 
   function fail(why) {
@@ -166,7 +174,7 @@ function createRoom({
     if (stopped) return;
     let ws;
     try {
-      ws = new WebSocketImpl(`${conf.url}?token=${secret}`);
+      ws = new WebSocketImpl(`${conf.url}?token=${secret}&slack=1`);
     } catch (e) {
       fail(`cannot open ${conf.url} (${e && e.message ? e.message : e})`);
       schedule();

@@ -93,7 +93,7 @@ test('a message in a followed channel becomes one game chat entry; other workspa
   t.room.connect();
   await settle();
   assert.equal(t.made.length, 1);
-  assert.equal(t.made[0].url, `${ROOM.DEFAULT_URL}?token=abcdef0123456789`);
+  assert.equal(t.made[0].url, `${ROOM.DEFAULT_URL}?token=abcdef0123456789&slack=1`);
   t.made[0].emit(SNAPSHOT);
   assert.match(t.logs[0], /connected to agent-room, following 1 channel\(s\) of wow-ai/);
   const msg = (threadId, authorId, semantic, text = '') => ({
@@ -122,6 +122,34 @@ test('a message in a followed channel becomes one game chat entry; other workspa
   t.made[0].emit({ type: 'thread', thread: { id: 't4', channelId: 'ch-ship', title: 'New task' } });
   t.made[0].emit(msg('t4', 'assistant', { kind: 'chat', text: 'started' }));
   assert.equal(t.got.length, 3, 'a thread made after the snapshot is followed too');
+});
+
+test('a Slack message is followed only from a public channel agent-room says is bound to the workspace', async () => {
+  const t = rig();
+  t.room.connect();
+  await settle();
+  t.made[0].emit(SNAPSHOT);
+  const slack = (threadId, project, authorId, text, type = 'slack_message') => ({
+    type,
+    project,
+    threadId,
+    message: { id: `${threadId}-${authorId}`, threadId, authorId, semantic: { kind: 'chat', text } },
+  });
+  t.made[0].emit(slack('slack:C0SHIP:1700000000.000100', 'wow-ai', 'assistant', 'merged #173'));
+  t.made[0].emit(slack('slack:C0SHIP:1700000000.000100', 'wow-ai', 'human:U1', 'ship it'));
+  t.made[0].emit(slack('slack:C0WORK:1700000000.000200', 'every', 'assistant', 'payroll numbers'));
+  t.made[0].emit(slack('slack:D0DIRECT:1700000000.000300', 'wow-ai', 'assistant', 'a direct message'));
+  t.made[0].emit(slack('slack:G0GROUP:1700000000.000400', 'wow-ai', 'assistant', 'a private group'));
+  t.made[0].emit(slack('slack:C0SHIP:1700000000.000500', undefined, 'assistant', 'no project'));
+  t.made[0].emit(slack('slack:C0SHIP:1700000000.000600', 'wow-ai', 'assistant', 'old relay shape', 'message'));
+  assert.deepEqual(
+    t.got.map(g => [g.chat, g.title, g.thread, g.role, g.from, g.text]),
+    [
+      [ROOM.chatIdFor('slack:C0SHIP'), 'Slack C0SHIP', '', 'assistant', 'Ari', 'merged #173'],
+      [ROOM.chatIdFor('slack:C0SHIP'), 'Slack C0SHIP', '', 'user', 'Slack', 'ship it'],
+    ],
+  );
+  assert.notEqual(ROOM.chatIdFor('slack:C0SHIP'), ROOM.chatIdFor('C0SHIP'), 'a Slack chat never shares an id with a room channel');
 });
 
 test('channels: a configured slug list narrows what is followed', async () => {
