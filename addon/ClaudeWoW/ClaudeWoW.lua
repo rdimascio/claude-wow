@@ -619,6 +619,7 @@ function Q.AskReload()
 	StaticPopupDialogs[Q.RELOAD_POPUP].text = Q.ReplyReloadNeeded() and Q.RELOAD_TEXT_REPLY or Q.RELOAD_TEXT_AFTER_COMBAT
 	if not StaticPopup_Show(Q.RELOAD_POPUP) then return false end
 	run.reloadAsked = Q.PendingKey()
+	run.reloadDialogManual = run.reloadAfterCombat == true
 	run.reloadAfterCombat = nil
 	return true
 end
@@ -643,7 +644,8 @@ StaticPopupDialogs[Q.RELOAD_POPUP] = {
 
 function ClaudeWoW.DisarmReload()
 	run.reloadArmed, run.reloadAsked = nil, nil
-	if StaticPopup_Hide then StaticPopup_Hide(Q.RELOAD_POPUP) end
+	if StaticPopup_Hide and not run.reloadDialogManual then StaticPopup_Hide(Q.RELOAD_POPUP) end
+	if run.reloadAfterCombat and not InCombatLockdown() then ClaudeWoW.ArmAutoRefresh() end
 end
 
 function Q.PendingKey()
@@ -1982,6 +1984,26 @@ function Q.NoteRequestAcked(chatId, id)
 	if r and r.id == id then r.acked = true end
 end
 
+function Q.NoteAckedId(id)
+	for _, c in ipairs(db.chats) do
+		if c.pendingId == id then
+			local r = run.requests and run.requests[c.id]
+			if r and r.id == id and not r.acked then
+				r.acked = true
+				return true
+			end
+			return false
+		end
+	end
+	return false
+end
+
+function Q.RestoreRequests()
+	for _, c in ipairs(db.chats) do
+		if c.pendingId then Q.NoteRequestSent(c.id, c.pendingId) end
+	end
+end
+
 function Q.PendingRequest(c)
 	local r = run.requests and run.requests[c.id]
 	if r and r.id == c.pendingId then return r end
@@ -2009,11 +2031,13 @@ function ClaudeWoW.ApplyAcks(acks)
 	if type(acks) ~= "table" or not db then return false end
 	local any = false
 	for _, a in ipairs(acks) do
-		local rec = type(a) == "table" and a.session == db.session and run.outbound[a.id]
+		local ours = type(a) == "table" and a.session == db.session
+		local rec = ours and run.outbound[a.id]
 		if rec and not rec.acked then
 			NoteAcked(rec)
 			any = true
 		end
+		if ours and Q.NoteAckedId(a.id) then any = true end
 	end
 	if any then NotedBridge() end
 	return any
@@ -10601,6 +10625,7 @@ ev:SetScript("OnEvent", function(self, event, arg1)
 		BuildUI()
 		Q.BuildMinimapButton()
 		run = { outbound = {}, startedAt = GetTime() }
+		Q.RestoreRequests()
 		SelfTestSignals()
 		ProcessInbox()
 		SyncScreenshotMode()

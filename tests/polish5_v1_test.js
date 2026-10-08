@@ -291,6 +291,37 @@ test('Resend lifecycle: an ack hides it for good, retries never push it back, a 
   assert.doesNotMatch(unacked.evaluate('Q.RESEND_TIP'), /bridge/i);
 });
 
+const PENDING_SAVED =
+  'ClaudeWoWDB = { settings = { pluginsV1 = true, chatsPerCharacterV1 = true }, lastSeq = 5, session = "s1", forget = {}, activeChat = "c1", chats = { { id = "c1", name = "Chat 1", cwd = "", agent = "", plugin = "", unread = 0, pendingId = 5, history = { { role = "user", text = "question", id = 5, t = time() } } } } }';
+
+test('Resend after a reload: an alive record or a late ack marks the restored request, with or without an outbound record', () => {
+  const show = vm => vm.evaluate('Q.ShouldShowResend(ClaudeWoWDB.chats[1])');
+  const wait = (vm, seconds) => vm.run(`STUB.now = STUB.now + ${seconds}; STUB.Tick()`);
+
+  const alive = newVM({ saved: PENDING_SAVED });
+  assert.equal(alive.evaluate('Q.PendingRequest(ClaudeWoWDB.chats[1]).id'), '5', 'the pending chat has a request record at login');
+  alive.run('STUB.RunTimers()');
+  alive.run(
+    'STUB.onLoadAddOn = function() ClaudeWoW_SlotData = { now = time(), cwd = "", agent = "claude", replies = {}, alive = { { id = 5, session = "s1", since = time() } } } end',
+  );
+  wait(alive, 6);
+  wait(alive, 45);
+  assert.equal(show(alive), 'false', 'the companion app says it is working on it: no resend');
+
+  const silent = newVM({ saved: PENDING_SAVED });
+  wait(silent, 45);
+  assert.equal(show(silent), 'true', 'control: with no word from the app, Resend is offered');
+  assert.equal(silent.evaluate('RUN().outbound[5]'), null, 'there is no outbound record to ack');
+  silent.run('ClaudeWoW.ApplyAcks({ { id = 5, session = "s1" } })');
+  assert.equal(show(silent), 'false', 'an ack matches the request itself');
+  silent.run('ClaudeWoW.ApplyAcks({ { id = 5, session = "other" } })');
+
+  const other = newVM({ saved: PENDING_SAVED });
+  wait(other, 45);
+  other.run('ClaudeWoW.ApplyAcks({ { id = 5, session = "other" } }); ClaudeWoW.ApplyAcks({ { id = 4, session = "s1" } })');
+  assert.equal(show(other), 'true', 'another session or another id acks nothing');
+});
+
 test('a reply replayed from an hour-old inbox at login is not evidence the companion app is alive', () => {
   const saved = `ClaudeWoWDB = { settings = { whisperV3 = true, whisperChoice = "on", pluginsV1 = true, chatsPerCharacterV1 = true, echoV2 = true }, lastSeq = 5, session = "s1", forget = {}, activeChat = "c1",
     chats = { { id = "c1", name = "Chat 1", cwd = "", agent = "claude", plugin = "", unread = 0, pendingId = 5, history = { { role = "user", text = "question", id = 5, t = time() - 3700 } } } } }
@@ -413,4 +444,23 @@ test('reload in combat: never reloads on its own after combat; asks again, and c
   assert.equal(busy.evaluate('STUB.reloaded'), 'false', 'never on its own');
   busy.run('STUB.popup = nil; STUB.RunTimers()');
   assert.equal(busy.evaluate('STUB.popup'), null, 'and only once');
+});
+
+test('a reload asked for in combat survives the reply finishing while the dialog stack is busy', () => {
+  const vm = newVM({ saved: 'ClaudeWoWDB = { settings = { mode = "reload", autoRefresh = false, autoRefreshV2 = true } }' });
+  vm.run('function StaticPopup_Hide(which) if STUB.popup and STUB.popup.which == which then STUB.popup = nil end end');
+  vm.run('STUB.timers = {}; STUB.popup = nil; ClaudeWoWDB.chats[1].pendingId = 9');
+  vm.run('STUB.combat = true; SlashCmdList.CLAUDE("reload")');
+  vm.run('STUB.popupBusy = true; STUB.combat = false; STUB.FireEvent("PLAYER_REGEN_ENABLED")');
+  assert.equal(vm.evaluate('STUB.popup'), null, 'the stack was busy');
+  vm.run('ClaudeWoWDB.chats[1].pendingId = nil; ClaudeWoW.DisarmReload()');
+  assert.equal(vm.evaluate('RUN().reloadAfterCombat'), 'true', 'the reply finished; the request is still there');
+  vm.run('STUB.popupBusy = false; STUB.RunTimers(); STUB.RunTimers()');
+  assert.equal(vm.evaluate('STUB.popup and STUB.popup.which'), 'CLAUDEWOW_RELOAD', 'the request is asked');
+  assert.equal(vm.evaluate('StaticPopupDialogs.CLAUDEWOW_RELOAD.text'), vm.evaluate('Q.RELOAD_TEXT_AFTER_COMBAT'));
+  assert.equal(vm.evaluate('RUN().reloadAfterCombat'), null);
+  assert.equal(vm.evaluate('STUB.reloaded'), 'false', 'never on its own');
+
+  vm.run('ClaudeWoWDB.chats[1].pendingId = 10; ClaudeWoW.DisarmReload()');
+  assert.equal(vm.evaluate('STUB.popup and STUB.popup.which'), 'CLAUDEWOW_RELOAD', 'a reply finishing does not close the dialog the player asked for');
 });
