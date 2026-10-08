@@ -66,6 +66,7 @@ const HO = require('./handoff');
 const FACTORY = require('./factory');
 const GD = require('./gamedata');
 const DSYNC = require('./datasync');
+const DAS = require('./dataautosync');
 const GR = require('./gamerefs');
 const RT = require('./replytokens');
 const UPD = require('./selfupdate');
@@ -358,6 +359,16 @@ for (const [k, v] of Object.entries(state.handled)) {
     state.handled[k] = m;
   }
 }
+
+const DATA_AUTO_SYNC = DAS.settings(cfg);
+const dataAutoSync = DAS.createAutoSync({
+  enabled: DATA_AUTO_SYNC.enabled && holdsLock,
+  dataDir: HOME.data,
+  home: HOME.dir,
+  state: () => state,
+  save: () => saveState(),
+  log,
+});
 
 const TELEMETRY_ON = TL.telemetryEnabled(cfg.telemetry);
 const OPEN_LINKS_LOG = process.env.CLAUDE_WOW_OPEN_LINKS_LOG || '';
@@ -661,7 +672,7 @@ function shutdown(sig, exitCode) {
   } catch {}
   const kids = [...running.values()]
     .map(r => r.child)
-    .concat(T.titleChildren(), factory.children(), contracts.children())
+    .concat(T.titleChildren(), factory.children(), contracts.children(), dataAutoSync.children())
     .filter(Boolean);
   if (captureChild) kids.push(captureChild);
   const n = kids.filter(PR.alive).length;
@@ -678,7 +689,7 @@ function crash(kind, err) {
   } catch {}
   const kids = [...running.values()]
     .map(r => r.child)
-    .concat(T.titleChildren(), factory.children(), contracts.children(), captureChild ? [captureChild] : [])
+    .concat(T.titleChildren(), factory.children(), contracts.children(), dataAutoSync.children(), captureChild ? [captureChild] : [])
     .filter(Boolean);
   for (const child of kids) {
     try {
@@ -1598,6 +1609,7 @@ function submit(job) {
   }
   if (job.ctx !== undefined) setContext(job);
   else noteContextHeard();
+  dataAutoSync.observe(GD.clientBuildOf(contextTextFor(job)), fromLabel(client));
   const reporter = clientFor(job);
   if (job.reportedChar && reporter) clientStateOf(reporter).char = job.reportedChar;
   job.char = characterKeyOf(contextTextFor(job)) || (reporter && clientStateOf(reporter).char) || '';
@@ -3954,6 +3966,7 @@ for (const id of Object.keys(AC.ROWS)) {
   const cmd = A.resolveCommand(id, A.agentConfig(cfg, id));
   if (cmd.found) contracts.status(id, cmd, A.AGENTS[id].env({ ...process.env }));
 }
+if (DATA_AUTO_SYNC.note) log(DATA_AUTO_SYNC.note);
 const extraPluginDirNote = A.extraArgsPluginDirNote(A.agentConfig(cfg, 'claude'));
 if (extraPluginDirNote) log(extraPluginDirNote);
 for (const p of registry.all()) {

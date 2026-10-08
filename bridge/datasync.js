@@ -980,3 +980,14 @@ module.exports = {
   MANIFEST_SCHEMA,
   FETCH_TIMEOUT_MS,
 };
+
+if (require.main === module)
+  main(process.argv.slice(2)).then(
+    code => {
+      process.exitCode = code;
+    },
+    e => {
+      process.stderr.write(`data sync failed: ${e && e.message ? e.message : String(e)}\n`);
+      process.exitCode = 1;
+    },
+  );

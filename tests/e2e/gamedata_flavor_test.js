@@ -35,5 +35,6 @@ test('a Classic Era client gets the Classic Era data server, never the Forever o
     const server = askRun.mcpConfig.mcpServers.wowdata;
     assert.deepEqual(server.args.slice(-2), ['--client-build', '1.15.9.70003']);
     await h.bridge.waitForLine(/wowdata 1\.15\.9\.300 classic_era/);
+    assert.doesNotMatch(h.bridge.output, /data sync: client/, 'data.autoSync false starts no sync for family data');
   });
 });
