@@ -22,6 +22,7 @@ local CLICK_DELAY = 0.5
 local RELEASE_DELAY = 1
 local HOLD_TICK = 0.25
 local GROUP_LOOT_FRAMES = 4
+local NOT_NOW_TEXT = "Not allowed during combat or a loot roll. Click it again afterwards."
 local HOLD_TEXT = {
 	combat = "A permission request is waiting until combat ends.",
 	loot = "A permission request is waiting until the loot roll closes.",
@@ -49,6 +50,7 @@ local parked
 local queue = {}
 local hold
 local holdTicker
+local lastBlockedAt
 
 local function PlayKit(name)
 	local id = (SOUNDKIT and SOUNDKIT[name]) or SOUND_KIT_IDS[name]
@@ -369,6 +371,38 @@ local function HoldLine(reason)
 	return HOLD_TEXT[reason] or HOLD_TEXT[hold and hold.reason] or HOLD_TEXT.combat
 end
 
+local function Sample()
+	if R.Blocked() then lastBlockedAt = GetTime() end
+end
+
+function R.Settling()
+	Sample()
+	return lastBlockedAt ~= nil and GetTime() - lastBlockedAt < RELEASE_DELAY
+end
+
+local function Watched()
+	return hold ~= nil or parked ~= nil or ClaudeWoW.ConfirmOpen()
+end
+
+local function StopIdle()
+	if holdTicker and not Watched() then
+		holdTicker:Cancel()
+		holdTicker = nil
+	end
+end
+
+function R.Tick()
+	Sample()
+	R.CheckHold()
+	StopIdle()
+end
+
+local function Watch()
+	if not holdTicker and C_Timer and C_Timer.NewTicker then
+		holdTicker = C_Timer.NewTicker(HOLD_TICK, function() R.Tick() end)
+	end
+end
+
 local function Hold(reason, chatId)
 	local started = false
 	if hold then
@@ -381,18 +415,13 @@ local function Hold(reason, chatId)
 		ClaudeWoW.SayAboutDenial(chatId, HoldLine(reason))
 		started = true
 	end
-	if not holdTicker and C_Timer and C_Timer.NewTicker then
-		holdTicker = C_Timer.NewTicker(HOLD_TICK, function() R.CheckHold() end)
-	end
+	Watch()
 	return started
 end
 
 local function StopHold()
 	hold = nil
-	if holdTicker then
-		holdTicker:Cancel()
-		holdTicker = nil
-	end
+	StopIdle()
 end
 
 local function HoldOffer(offer)
@@ -503,7 +532,10 @@ function R.Choose(choice, reason)
 		HoldCurrent()
 		return
 	end
-	if choice ~= "pass" and not R.Armed() then return end
+	if choice ~= "pass" and not (R.Armed() and ClaudeWoW.GrantReady(offer.chatId, offer.msgId)) then
+		ClaudeWoW.SayAboutDenial(offer.chatId, ClaudeWoW.TOO_SOON_TEXT)
+		return
+	end
 	if choice ~= "pass" and StillOpen(offer) and not Unchanged(offer) then
 		Rebuild(offer)
 		return
@@ -527,6 +559,7 @@ function R.Choose(choice, reason)
 end
 
 function R.Park(chatId, msgId)
+	Watch()
 	if not SameOffer(current, chatId, msgId) then return false end
 	parked = current
 	current = nil
@@ -567,7 +600,12 @@ function R.HoldGrant(chatId, msgId)
 		parked = nil
 		started = HoldOffer(offer)
 	end
-	if not started then ClaudeWoW.SayAboutDenial(chatId, HoldLine(R.Blocked())) end
+	if started then return end
+	local queued = false
+	for _, offer in ipairs(queue) do
+		if SameOffer(offer, chatId, msgId) then queued = true end
+	end
+	ClaudeWoW.SayAboutDenial(chatId, queued and HoldLine(R.Blocked()) or NOT_NOW_TEXT)
 end
 
 function R.Settle(chatId, msgId, granted)
@@ -617,8 +655,11 @@ function R.Held()
 end
 
 local events = CreateFrame("Frame")
-events:RegisterEvent("PLAYER_REGEN_ENABLED")
+for _, event in ipairs({ "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "START_LOOT_ROLL", "CANCEL_LOOT_ROLL" }) do
+	events:RegisterEvent(event)
+end
 events:SetScript("OnEvent", function()
+	lastBlockedAt = GetTime()
 	R.CheckHold()
 	if hold and C_Timer and C_Timer.After then C_Timer.After(RELEASE_DELAY, R.CheckHold) end
 end)

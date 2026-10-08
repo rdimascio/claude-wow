@@ -2722,6 +2722,7 @@ Finish = function(chat, role, text, denied, agent, summary, macros)
 		ClaudeWoW.DisarmReload()
 	end
 	if visible then Q.OfferDraft(chat) end
+	if denied then Q.DenialSeenAt(chat.id, msgId) end
 	ClaudeWoW.Render()
 	if denied and ClaudeWoW.LootRollEnabled() then ClaudeWoWRoll.Offer(chat.id) end
 	local tabbed = ClaudeWoW.Notify(chat, text, agent, summary, role, denied, msgId, macros)
@@ -4171,6 +4172,37 @@ function Q.GrantHeld()
 	return ClaudeWoWRoll ~= nil and (ClaudeWoWRoll.Held() or ClaudeWoWRoll.Blocked() ~= nil)
 end
 
+Q.GRANT_DELAY = 0.5
+ClaudeWoW.TOO_SOON_TEXT = "Click again in a moment."
+
+function Q.DenialSeenAt(chatId, msgId)
+	run.denialSeen = run.denialSeen or {}
+	local key = tostring(chatId) .. ":" .. tostring(msgId)
+	run.denialSeen[key] = run.denialSeen[key] or GetTime()
+	return run.denialSeen[key]
+end
+
+function ClaudeWoW.GrantReady(chatId, msgId)
+	if GetTime() - Q.DenialSeenAt(chatId, msgId) < Q.GRANT_DELAY then return false end
+	return not (ClaudeWoWRoll and ClaudeWoWRoll.Settling())
+end
+
+function Q.GrantGate(chatId, msgId)
+	if Q.GrantHeld() then
+		ClaudeWoWRoll.HoldGrant(chatId, msgId)
+		return "held"
+	end
+	if not ClaudeWoW.GrantReady(chatId, msgId) then
+		Q.SayAboutDenial(FindChat(chatId), ClaudeWoW.TOO_SOON_TEXT)
+		return "soon"
+	end
+	return nil
+end
+
+function ClaudeWoW.ConfirmOpen()
+	return run.allowConfirm ~= nil
+end
+
 function ClaudeWoW.AllowPending(chatId, msgId)
 	local p = run.allowConfirm
 	return p ~= nil and p.chatId == chatId and p.msgId == msgId
@@ -4186,8 +4218,9 @@ end
 function ClaudeWoW.AcceptAllow(data)
 	if not data or run.allowConfirm ~= data then return false end
 	run.allowConfirm = nil
-	if Q.GrantHeld() then
-		ClaudeWoWRoll.HoldGrant(data.chatId, data.msgId)
+	local refused = Q.GrantGate(data.chatId, data.msgId)
+	if refused then
+		if refused == "soon" and ClaudeWoWRoll then ClaudeWoWRoll.Resume(data.chatId, data.msgId) end
 		return false
 	end
 	local rules, openId = ClaudeWoW.OpenDenial(data.chatId)
@@ -4208,15 +4241,13 @@ function ClaudeWoW.ConfirmAllow(chatId, msgId, rules)
 		Q.SayAboutDenial(c, Q.STALE_DENIAL_TEXT)
 		return false
 	end
-	if ClaudeWoW.IsLiveChat(c) then
-		if Q.GrantHeld() then
-			ClaudeWoWRoll.HoldGrant(chatId, msgId)
-			return false
-		end
+	local live = ClaudeWoW.IsLiveChat(c)
+	if not live and ClaudeWoW.AllowPending(chatId, msgId) then return true end
+	if Q.GrantGate(chatId, msgId) then return false end
+	if live then
 		ClaudeWoW.AllowOnce(chatId, open)
 		return true
 	end
-	if ClaudeWoW.AllowPending(chatId, msgId) then return true end
 	local previous = run.allowConfirm
 	if previous then
 		run.allowConfirm = nil
@@ -6645,10 +6676,7 @@ function Cli.Links.roll(arg)
 		Whisper.System(c, "That request was answered already.")
 		return
 	end
-	if choice ~= "pass" and Q.GrantHeld() then
-		ClaudeWoWRoll.HoldGrant(c.id, msgId)
-		return
-	end
+	if choice ~= "pass" and Q.GrantGate(c.id, msgId) then return end
 	local current = ClaudeWoWRoll and ClaudeWoWRoll.Current()
 	if current and current.chatId == c.id and current.msgId == msgId then
 		ClaudeWoWRoll.Choose(choice)
