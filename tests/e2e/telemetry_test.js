@@ -58,6 +58,8 @@ function messageIds(h) {
   return ids;
 }
 
+const anyChatWaiting = h => (h.client.db().chats || []).some(chat => chat.pendingId);
+
 async function settleAddonRecords(h, tracker) {
   await h.bridge.waitForLine(/hello from session /);
   const ids = await h.client.waitFor(
@@ -67,9 +69,9 @@ async function settleAddonRecords(h, tracker) {
       const pending = tracker.unsettled();
       const messages = messageIds(h);
       const unanswered = pending.filter(id => messages.has(id) && !sigs.includes(slotOfId(id)));
-      return pending.every(id => acks.includes(slotOfId(id))) && unanswered.length === 0 ? pending : null;
+      return pending.every(id => acks.includes(slotOfId(id))) && unanswered.length === 0 && !anyChatWaiting(h) ? pending : null;
     },
-    { timeoutMs: 30000, label: 'the bridge to ack every record the addon sent and to answer every message among them' },
+    { timeoutMs: 30000, label: 'the bridge to ack every record the addon sent and to answer every message and quiet record among them' },
   );
   tracker.settled(ids);
 }
