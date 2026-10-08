@@ -26,7 +26,7 @@ function fakeRoom() {
   const server = http.createServer((req, res) => res.writeHead(404).end());
   server.on('upgrade', (req, socket) => {
     seen.push(req.url);
-    if (!req.url.endsWith(`token=${TOKEN}`)) {
+    if (!req.url.endsWith(`token=${TOKEN}&slack=1`)) {
       socket.end('HTTP/1.1 401 Unauthorized\r\n\r\n');
       return;
     }
