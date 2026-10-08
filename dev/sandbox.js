@@ -164,6 +164,7 @@ function buildConfig(L, opts = {}) {
   cfg.agents = Object.assign({}, cfg.agents, { claude });
   cfg.agent = 'claude';
   if (opts.primerFile !== undefined) cfg.primerFile = opts.primerFile;
+  cfg.data = { ...cfg.data, autoSync: false };
   return withInertStream(Object.assign(cfg, opts.config || {}));
 }
 
@@ -251,6 +252,7 @@ function open(name = 'default', opts = {}) {
   const recorded = JSON.parse(fs.readFileSync(path.join(dir, 'sandbox.json'), 'utf8'));
   const L = layout(dir, (recorded.opts && recorded.opts.extraClients) || []);
   const cfg = withInertStream(JSON.parse(fs.readFileSync(L.config, 'utf8')));
+  if (cfg.data === undefined) cfg.data = { autoSync: false };
   const claude = cfg.agents && cfg.agents.claude;
   const madeForRealAgent = recorded.opts && recorded.opts.agentPath === '';
   if (claude && claude.path === '' && madeForRealAgent && opts.agentPath === undefined) claude.path = FAKE_AGENT;

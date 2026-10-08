@@ -36,6 +36,7 @@ const SCRIPTS = {
   bridge: 'bridge/bridge.js',
   setup: 'setup.js',
   'install-slots': 'bridge/install-slots.js',
+  data: 'bridge/datasync.js',
   'data-mcp': 'bridge/datamcp.js',
   'goals-mcp': 'bridge/goalsmcp.js',
   'factory-mcp': 'bridge/factory.js',
