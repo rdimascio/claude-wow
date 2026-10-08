@@ -632,7 +632,7 @@ test('runCli sets the exit code from the command, and a thrown error exits 1 wit
     assert.equal(process.exitCode, 1);
     assert.deepEqual(written, ['data sync failed: boom\n']);
   } finally {
-    process.exitCode = before;
+    process.exitCode = before ?? 0;
   }
 });
 
