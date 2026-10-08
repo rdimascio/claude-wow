@@ -1002,7 +1002,7 @@ function ClaudeWoW.ChatLog.Acked(rec)
 	if run.chatlogPause or run.chatlogMisses >= ClaudeWoW.ChatLog.MISSES_BEFORE_PAUSE then
 		local wait, first = ClaudeWoW.ChatLog.Pause("the bridge read the last message only from the screenshot retry")
 		if first then
-			TellPlayer("the bridge did not read the chat log in time. Messages go out by screenshot; the chat log is tried again in " .. FmtDur(wait) .. ".")
+			TellPlayer("the companion app did not read the chat log in time. Messages go out by screenshot; the chat log is tried again in " .. FmtDur(wait) .. ".")
 		end
 	end
 end
@@ -1108,7 +1108,7 @@ local function ScreenshotDone(ok, fromEvent)
 					if db.outbox and db.outbox.id == id then db.outbox.shot = "failed" end
 					if not run.shotFailTold then
 						run.shotFailTold = true
-						TellPlayer("the client reported SCREENSHOT_FAILED " .. SHOT_RETRIES .. " times for one message" .. (shot.err and (" (" .. shot.err .. ")") or "") .. ". The message waits for the usual retries and the reload fallback, which tell the bridge to switch to the pixel capture; set capture.mode to \"pixel\" in the bridge's config.json to skip the wait.")
+						TellPlayer("the client reported SCREENSHOT_FAILED " .. SHOT_RETRIES .. " times for one message" .. (shot.err and (" (" .. shot.err .. ")") or "") .. ". The message waits for the usual retries and the reload fallback, which tell the companion app to switch to the pixel capture; set capture.mode to \"pixel\" in the companion app's config.json to skip the wait.")
 					end
 				end
 			end
@@ -1248,7 +1248,7 @@ RefreshStrip = function()
 			-- fallback carry the message, and the record tells the bridge to
 			-- fall back to the pixel capture (shot=missing). Said once.
 			run.noShotTold = true
-			TellPlayer("this client has no Screenshot() function, so the bridge's screenshot transport cannot work here. Messages wait for the reload fallback (a couple of minutes the first time), which tells the bridge to switch to the pixel capture; set capture.mode to \"pixel\" in the bridge's config.json to skip the wait.")
+			TellPlayer("this client has no Screenshot() function, so the companion app's screenshot transport cannot work here. Messages wait for the reload fallback (a couple of minutes the first time), which tells the companion app to switch to the pixel capture; set capture.mode to \"pixel\" in the companion app's config.json to skip the wait.")
 		end
 		ShowStrip(latest, table.concat(parts, RS))
 		return
@@ -1263,7 +1263,7 @@ RefreshStrip = function()
 		if not run.shotsPaused then
 			run.shotsPaused = true
 			local age = GetTime() - (run.bridgeSeen or run.startedAt or GetTime())
-			TellPlayer("bridge not seen for " .. FmtDur(age) .. ": screenshots paused so they don't pile up in your Screenshots folder. Messages wait (the strip stays up, as in pixel mode) and shooting resumes when the bridge is back; the Connect button takes one by hand.")
+			TellPlayer("Companion app not seen for " .. FmtDur(age) .. ": screenshots paused so they don't pile up with your own screenshots. Messages wait (the strip stays up, as in pixel mode) and shooting resumes when the companion app is back; the Connect button takes one by hand.")
 		end
 		ShowStrip(latest, table.concat(parts, RS))
 		return
@@ -2272,7 +2272,7 @@ function ClaudeWoW.Version.CheckFolders()
 	local ok, _, _, _, _, reason = pcall(info, "ClaudeWoW_Runtime")
 	if ok and reason == "MISSING" then
 		run.restartTold = true
-		TellPlayer("The ClaudeWoW_Runtime folder was installed after the game started. Fully quit and restart the game to load it; /reload is not enough.")
+		TellPlayer("The ClaudeWoW_Runtime addon was installed after the game started. Fully quit and restart the game to load it; /reload is not enough.")
 	end
 end
 
@@ -2499,7 +2499,7 @@ local function Tick()
 	if run.shotsPaused and not ShotsPaused(true) then
 		-- Heard from the bridge again (a beat, an ack, a slot): shoot what waited.
 		run.shotsPaused = nil
-		TellPlayer("bridge is back: screenshots resume")
+		TellPlayer("Companion app is back: screenshots resume")
 		RefreshStrip()
 	end
 	if db.settings.mode ~= "pixel" then return end

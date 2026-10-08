@@ -410,7 +410,7 @@ test('module text: player strings say companion app, never bridge, and project, 
   }
 });
 
-const SINKS = new Set(['print', 'AddHistory', 'Finish', 'Cli.Out', 'Cli.Say', 'Cli.Note', 'Cli.Reject', 'ClaudeWoW.Print']);
+const SINKS = new Set(['print', 'AddHistory', 'Finish', 'TellPlayer', 'Cli.Out', 'Cli.Say', 'Cli.Note', 'Cli.Reject', 'ClaudeWoW.Print']);
 const DEV_FUNCTIONS = new Set(['Cli.DevCommand']);
 const DEV_VERBS = new Set(['diag', 'probe', 'dev', 'wrong', 'bug', 'mode', 'signal', 'auto', 'longchat']);
 
@@ -465,6 +465,10 @@ test('module text: what ClaudeWoW.lua writes to the transcript or the chat says 
   assert.ok(
     found.some(s => s.text.includes('companion app could not finish')),
     'the failed-run prefix is a sink literal the scan reads',
+  );
+  assert.ok(
+    found.some(s => s.sink === 'TellPlayer' && s.text.includes('Companion app is back')),
+    'the transport notices are sink literals the scan reads',
   );
   for (const s of found) {
     assert.doesNotMatch(s.text, /bridge/i, `ClaudeWoW.lua:${s.line} ${s.sink} in ${s.fn}: ${s.text}`);
