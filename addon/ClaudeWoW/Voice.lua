@@ -9,7 +9,7 @@ local EVENTS = { "sent", "started", "done", "error", "permission" }
 local EVENT_PRIORITY = { sent = 1, started = 1, done = 2, error = 2, permission = 2 }
 local EVENT_MEANING = {
 	sent = "a message leaves for the agent",
-	started = "the bridge picked the message up",
+	started = "the companion app picked the message up",
 	done = "a reply arrived",
 	error = "the run failed",
 	permission = "a reply waits on Allow & retry",
@@ -505,23 +505,29 @@ function V.IsCommand(rest)
 	return false
 end
 
-function V.Command(rest)
+function V.Command(rest, ctx)
 	local words = {}
 	for w in (rest or ""):lower():gmatch("%S+") do table.insert(words, w) end
 	local first = words[1] or ""
 	local db = DB()
+	local quiet = type(ctx) == "table" and ctx.quiet == true
+	local function Report()
+		if not quiet then Status() end
+	end
 	if first == "" or first == "status" then
-		Status()
+		Report()
 	elseif first == "on" then
 		if db.pack == "off" then db.pack = DEFAULT_PACK end
-		Status()
+		Report()
 	elseif IsIn(PACK_NAMES, first) then
 		db.pack = first
-		Status()
+		Report()
 	elseif first == "reset" then
 		db.pack = DEFAULT_PACK
 		db.lines = {}
-		Status()
+		Report()
+	elseif quiet then
+		return
 	elseif first == "lines" then
 		ListLines(words[2] or "")
 	elseif first == "set" and words[2] and words[3] then

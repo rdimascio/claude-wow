@@ -217,7 +217,7 @@ test('agents.claude.maxCostUsd end to end: the run gets --max-budget-usd, a key 
   assert.match(r.out, /#9@sess1 done \(/, r.out);
   const transcript = fs.readFileSync(path.join(home, 'transcripts.json'), 'utf8');
   assert.ok(transcript.includes('"Stopped: this message hit the $0.50 cost cap."'), transcript);
-  assert.ok(!transcript.includes('Bridge error'), 'the player set the cap, so the reply is not a bridge error');
+  assert.ok(!transcript.includes('The companion app could not finish'), 'the player set the cap, so the reply is not a bridge error');
   fs.rmSync(dir, { recursive: true, force: true });
 });
 

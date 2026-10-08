@@ -265,6 +265,9 @@ test('/aimap hide, show, nav and stop', () => {
 
 test('a route from the agent is a link in its chat tab that opens the map at the first stop, and waits for the end of combat', () => {
   const vm = newVM('STUB.ChatDock(); function OpenWorldMap(id) STUB.openedMap = id; WorldMapFrame:Show() end; WorldMapFrame.shown = false');
+  vm.run(
+    'ClaudeWoWDB.settings.whisper = true; ClaudeWoWDB.settings.whisperChoice = "on"; ClaudeWoWDB.chats[1].agent = "claude"; table.insert(ClaudeWoWDB.chats[1].history, { role = "user", text = "earlier", t = time() }); ClaudeWoW.BridgeState = function() return "ok" end',
+  );
   vm.run(`ClaudeWoWMap.Sync(${LAYER})`);
   const lines = vm.evaluate('STUB.Lines(ChatFrame11)') || '';
   assert.match(lines, /Copper loop: 3 points, route\. \|Haddon:claudewow:map:mining\|h\|cffffd100\[show route\]/, 'said in the chat tab with a link: ' + lines);

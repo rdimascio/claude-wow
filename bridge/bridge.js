@@ -1248,7 +1248,7 @@ function openLink(job) {
   };
   Promise.resolve()
     .then(() => linkOpener.request(job, chat))
-    .then(answer, e => answer({ opened: false, why: 'the bridge failed', text: `open link failed (${e && e.message ? e.message : e})` }));
+    .then(answer, e => answer({ opened: false, why: 'the companion app failed', text: `open link failed (${e && e.message ? e.message : e})` }));
 }
 
 function ackJob(job, result) {
@@ -1924,7 +1924,7 @@ function runJob(job) {
     finish(
       job,
       'error',
-      `${r.error}\nUse /claude config plugin <name> to pick one, or /claude config plugin default for the bridge's default (${DEFAULT_PLUGIN}).`,
+      `${r.error}\nUse /claude config plugin <name> to pick one, or /claude config plugin default for the companion app's default (${DEFAULT_PLUGIN}).`,
     );
     return;
   }
@@ -2282,7 +2282,7 @@ function noteRoomStatus(up) {
     if (shuttingDown) return;
     state.roomDown = true;
     saveState();
-    roomStatusLine('agent-room is unreachable, so this chat is paused. The bridge keeps trying.');
+    roomStatusLine('agent-room is unreachable, so this chat is paused. The companion app keeps trying.');
   }, ROOM_DOWN_AFTER_MS);
   if (roomDownTimer.unref) roomDownTimer.unref();
 }
@@ -2369,7 +2369,7 @@ function discordJob(chatId, text) {
 function linkFromGame(job) {
   markHandled(job);
   if (!discordHub) {
-    finish(job, 'error', DISCORD.error || 'Discord is not set up on this bridge (discord.enabled in config.json).');
+    finish(job, 'error', DISCORD.error || 'Discord is not set up in the companion app (discord.enabled in config.json).');
     return;
   }
   if (discordLinkOf(job.chat)) {
@@ -2633,8 +2633,8 @@ function runAgent(job, opts = {}) {
     finish(
       job,
       'error',
-      `Unknown agent "${job.agent}". This bridge knows: ${A.agentIds().join(', ')}.\n` +
-        `Use /claude -c --agent <name> to pick one, or /claude -c --agent default for the bridge's default (${DEFAULT_AGENT}).`,
+      `Unknown agent "${job.agent}". The companion app knows: ${A.agentIds().join(', ')}.\n` +
+        `Use /claude -c --agent <name> to pick one, or /claude -c --agent default for the companion app's default (${DEFAULT_AGENT}).`,
     );
     return;
   }
@@ -2715,7 +2715,7 @@ function runAgent(job, opts = {}) {
   const cmd = A.resolveCommand(agentId, acfg);
   if (!cmd.found) {
     log(`${tag} ${agentId} not found: ${cmd.note}`);
-    finish(job, 'error', `${agent.name} is not installed on the bridge PC: ${cmd.note}.`);
+    finish(job, 'error', `${agent.name} is not installed on the computer that runs the companion app: ${cmd.note}.`);
     return;
   }
   const skey = sessKey(job);
@@ -3127,7 +3127,7 @@ function runAgent(job, opts = {}) {
       notes.push(`${agent.name} was blocked again on ${rule} although it is already allowed, so allowing it again would not help.`);
     }
     if (deniedAgain.size) log(`${tag} blocked again on ${[...deniedAgain].join(', ')} although already allowed: not offered again`);
-    const extra = notes.length ? `\n\n[bridge] ${notes.join('\n\n[bridge] ')}` : '';
+    const extra = notes.length ? `\n\n[companion app] ${notes.join('\n\n[companion app] ')}` : '';
     const usageNow = P.usageFields(job.usage);
     noteRun(job, {
       at: Date.now(),
@@ -3169,7 +3169,7 @@ function runAgent(job, opts = {}) {
         `${agent.name} reported an error with no message (exit code ${code}).${stderr.trim() ? '\n' + stderr.trim().slice(-1500) : ''}`;
       finish(job, 'error', (said + extra).trim(), sessionId, [...denied]);
     } else if (shuttingDown) {
-      finish(job, 'error', `The bridge was stopped while ${agent.name} was still working. Send the message again once it is back.`, sessionId);
+      finish(job, 'error', `The companion app was stopped while ${agent.name} was still working. Send the message again once it is back.`, sessionId);
     } else if (job.cancelled) {
       finish(job, 'error', 'Cancelled from the game.', sessionId);
     } else if (job.timedOut) {
@@ -3253,7 +3253,7 @@ function recoverInflight() {
       } catch {}
     }
     const since = new Date(run.startedAt || Date.now()).toISOString().slice(11, 19);
-    const text = `The bridge stopped unexpectedly while ${run.agent || 'the agent'} was working on this message (started ${since} UTC), so its reply is lost. Send it again. The reason is in ${LOG_FILE}.`;
+    const text = `The companion app stopped unexpectedly while ${run.agent || 'the agent'} was working on this message (started ${since} UTC), so its reply is lost. Send it again. The reason is in ${LOG_FILE}.`;
     P.markHandled(state, { session: run.session, chat: run.chat, id: run.id });
     const client = rtOf(run.client) ? rtOf(run.client).client : defaultClient();
     const orphan = { session: run.session, id: run.id, client: client ? client.key : '' };
@@ -3372,7 +3372,7 @@ function finish(job, status, text, session, denied) {
     // gets the buttons.
     if (plugin && plugin.surfaces.includes('macro')) {
       const m = P.extractMacros(text);
-      text = m.text + (m.notes.length ? `\n\n[bridge] ${m.notes.join('; ')}` : '');
+      text = m.text + (m.notes.length ? `\n\n[companion app] ${m.notes.join('; ')}` : '');
       macros = m.macros;
       summary = P.stripMacroBlocks(summary);
     }
@@ -3383,7 +3383,7 @@ function finish(job, status, text, session, denied) {
     noteMessage(
       job,
       status === 'done' ? 'assistant' : 'system',
-      status === 'done' ? shown.text : 'Bridge error: ' + text,
+      status === 'done' ? shown.text : 'The companion app could not finish: ' + text,
       status === 'done' && typeof job.agentText === 'string' ? [job.agentText] : [],
     );
   }

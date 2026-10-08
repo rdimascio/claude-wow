@@ -388,7 +388,7 @@ test('unanswered for 40 s after the click, the record is dropped, never sent aga
   tick(vm, 1);
   assert.equal(outboundUrls(vm), 0, 'a late open is worse than none: no retry');
   assert.deepEqual(copied(vm), [PR]);
-  assert.equal(toasts(vm, 'Link not opened: no answer from the bridge. Copy it from the box.'), 1);
+  assert.equal(toasts(vm, 'Link not opened: no answer from the companion app. Copy it from the box.'), 1);
   tick(vm, STRIP_SECONDS * 3);
   assert.equal(outboundUrls(vm), 0, 'and it never comes back');
 });

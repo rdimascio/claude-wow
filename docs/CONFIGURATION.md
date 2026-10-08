@@ -362,7 +362,7 @@ The bot token comes from `CLAUDE_WOW_DISCORD_BOT_TOKEN`, else from `~/.claude-wo
 
 ## Which folder the agent works in
 
-Each chat can pick its own folder with `/claude cd` or **Folder...** in the menu that opens when you right-click the chat in the left panel. Chats that have not are given the bridge's default folder, chosen in this order:
+Each chat can pick its own project folder with `/claude cd` or **Project...** in the menu that opens when you right-click the chat in the chat list. Chats that have not are given the bridge's default folder, chosen in this order:
 
 1. `--project <dir>`
 2. `CLAUDE_WOW_PROJECT`

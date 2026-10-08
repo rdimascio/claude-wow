@@ -316,7 +316,7 @@ function R.WhyNot(nowEpoch)
 	if wait > 0 then return "cooling down, " .. wait .. " s left" end
 	if not (ClaudeWoW and ClaudeWoW.Send) then return "the addon core did not load" end
 	if ClaudeWoWDB.settings and ClaudeWoWDB.settings.mode ~= "pixel" then return "reload mode sends nothing without a /reload" end
-	if not (ClaudeWoW.IsConnected and ClaudeWoW.IsConnected()) then return "the bridge is not connected" end
+	if not (ClaudeWoW.IsConnected and ClaudeWoW.IsConnected()) then return "the companion app is not connected" end
 	local chat = FindRoastChat()
 	if chat and chat.pendingId then return "the last roast is still being written" end
 	return nil
@@ -381,7 +381,7 @@ function R.Status()
 		.. " /claude config roast on|off"
 end
 
-function R.Command(rest)
+function R.Command(rest, ctx)
 	local s = Settings()
 	if not s then return end
 	rest = tostring(rest or ""):lower()
@@ -393,6 +393,7 @@ function R.Command(rest)
 		R.Reset()
 	end
 	R.Listen(s.on)
+	if type(ctx) == "table" and ctx.quiet == true then return end
 	Say(R.Status())
 end
 

@@ -74,78 +74,43 @@ const panelRect = (vm, name) => ({
   bottom: vm.num(`${name}:GetBottom()`),
 });
 
-test('a loot window in the panel slot moves to the right of the workspace window, as beside a Blizzard panel, and the window stays home', () => {
+test('a loot window is never moved: the workspace window steps aside from it like from any Blizzard panel', () => {
   const vm = newVM({
     before: `
     LootFrame = CreateFrame("Frame", "LootFrame", UIParent)
     LootFrame:SetSize(200, 400)
     UIParent:SetAttribute("PANEl_SPACING_X", 32)
     function STUB.LootInSlot() LootFrame:ClearAllPoints(); LootFrame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 16, -116) end
-    STUB.LootInSlot()`,
+    STUB.LootInSlot()
+    LootFrame:Hide()`,
   });
   open(vm);
   const home = rect(vm);
+  assert.deepEqual(home, { left: 16, top: 964, right: 796, bottom: 464 });
+  const slot = panelRect(vm, 'LootFrame');
 
   vm.run('ShowUIPanel(LootFrame)');
   settle(vm);
-  assert.deepEqual(rect(vm), home, 'the window does not move down');
-  assert.deepEqual(
-    panelRect(vm, 'LootFrame'),
-    { left: home.right + 32, right: home.right + 232, top: home.top, bottom: home.top - 400 },
-    'the loot window sits right of it, on the same line',
-  );
-  assert.equal(vm.evaluate('ClaudeWoWWindow.state.dodged'), 'false');
+  assert.deepEqual(panelRect(vm, 'LootFrame'), slot, 'the loot window stays where the game put it');
+  assert.ok(!overlaps(rect(vm), panelRect(vm, 'LootFrame')), 'the window steps aside');
+  assert.equal(vm.evaluate('ClaudeWoWWindow.state.dodged'), 'true');
 
   vm.run('STUB.combat = true; STUB.LootInSlot(); ClaudeWoWWindow.Relayout()');
-  assert.equal(vm.num('LootFrame:GetLeft()'), home.right + 32, 'it works in combat too');
+  assert.deepEqual(panelRect(vm, 'LootFrame'), slot, 'not moved in combat either');
+  assert.equal(vm.evaluate('STUB.blocked[1]'), null);
   vm.run('STUB.combat = false; HideUIPanel(LootFrame)');
   settle(vm);
+  assert.deepEqual(rect(vm), home, 'the window goes home when the loot window closes');
 
   vm.run('STUB.LootInSlot(); LootFrame:Show()');
   frames(vm, 8);
   settle(vm);
-  assert.equal(vm.num('LootFrame:GetLeft()'), home.right + 32, 'a loot window shown without the panel manager is caught by the poll');
-  assert.deepEqual(rect(vm), home);
+  assert.deepEqual(panelRect(vm, 'LootFrame'), slot, 'a loot window shown without the panel manager is left alone');
+  assert.ok(!overlaps(rect(vm), panelRect(vm, 'LootFrame')), 'the poll still steps the window aside');
   vm.run('LootFrame:Hide()');
   frames(vm, 8);
   settle(vm);
-
-  vm.run('LootFrame.protected = true; STUB.combat = true; STUB.LootInSlot(); ShowUIPanel(LootFrame)');
-  settle(vm);
-  assert.equal(vm.num('LootFrame:GetLeft()'), 16, 'a protected loot frame is never moved');
-  assert.equal(vm.evaluate('STUB.blocked[1]'), null, 'not even in combat');
-  assert.ok(!overlaps(rect(vm), panelRect(vm, 'LootFrame')), 'the window steps aside from it instead');
-  vm.run('STUB.combat = false; HideUIPanel(LootFrame); LootFrame.protected = nil');
-  settle(vm);
-
-  vm.run('LootFrame:ClearAllPoints(); LootFrame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 300, -200); ShowUIPanel(LootFrame)');
-  settle(vm);
-  assert.equal(vm.num('LootFrame:GetLeft()'), 300, 'a loot window another addon put elsewhere is left there');
-  assert.ok(!overlaps(rect(vm), panelRect(vm, 'LootFrame')), 'and the window steps aside from it');
-  vm.run('HideUIPanel(LootFrame)');
-  settle(vm);
-  vm.run('LootFrame:ClearAllPoints(); LootFrame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 16, -500); ShowUIPanel(LootFrame)');
-  settle(vm);
-  assert.equal(vm.num('LootFrame:GetLeft()'), 16, "one at the slot's x but lower down is left there too");
-  vm.run('HideUIPanel(LootFrame)');
-  settle(vm);
-
-  vm.run('UIParent:SetSize(1000, 1080); STUB.LootInSlot(); ShowUIPanel(LootFrame)');
-  settle(vm);
-  assert.ok(!overlaps(rect(vm), panelRect(vm, 'LootFrame')), 'no room on the right: the window steps aside as before');
-  vm.run('HideUIPanel(LootFrame); UIParent:SetSize(1920, 1080)');
-  settle(vm);
-
-  vm.run(
-    'ContainerFrameCombinedBags.rect = { left = 900, right = 1600, top = 1000, bottom = 500 }; ShowUIPanel(ContainerFrameCombinedBags); STUB.LootInSlot(); ShowUIPanel(LootFrame)',
-  );
-  settle(vm);
-  assert.ok(!overlaps(panelRect(vm, 'LootFrame'), panelRect(vm, 'ContainerFrameCombinedBags')), 'the loot window is never moved onto another open panel');
-  assert.ok(!overlaps(rect(vm), panelRect(vm, 'LootFrame')), 'the window steps aside instead');
-  vm.run(
-    'HideUIPanel(LootFrame); HideUIPanel(ContainerFrameCombinedBags); ContainerFrameCombinedBags.rect = { left = 1200, right = 1900, top = 700, bottom = 200 }',
-  );
-  settle(vm);
+  assert.deepEqual(rect(vm), home);
 
   vm.run(
     'STUB.cvars.lootUnderMouse = "1"; LootFrame:ClearAllPoints(); LootFrame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", 300, 800); ShowUIPanel(LootFrame)',
@@ -763,7 +728,10 @@ test('an empty chat shows a centered empty state with starters for its kind of c
   e = emptyState(vm);
   assert.equal(e.shown, 'true');
   assert.equal(e.title, 'What do you need?', 'a chat with no project is a game chat');
-  assert.equal(e.body, 'Shift-click an item, spell or quest to link it.');
+  assert.equal(
+    e.body,
+    'Shift-click an item, spell or quest to link it.\nNew here? Type below and press Enter. Replies show here, and /claude brings this window back.',
+  );
   assert.equal(vm.evaluate('ClaudeWoW.UI.empty.icon.shown'), 'true', 'the spark sits above the title');
   assert.deepEqual(starters(vm), ['What should I do next?', 'Plan a route for my quests', 'Which gear upgrades should I look for?']);
   assert.ok(e.top > 0, 'centered in the parchment, not at the top: ' + e.top);
@@ -793,7 +761,7 @@ test('an empty chat shows a centered empty state with starters for its kind of c
 
   vm.run('ClaudeWoW.IsConnected = function() return false end; ClaudeWoW.Render()');
   e = emptyState(vm);
-  assert.equal(e.body, "Can't reach the bridge. Start it, then click Connect.", 'under a system line, disconnected shows only its hint');
+  assert.equal(e.body, 'No answer from the companion app. Is it running?', 'under a system line, disconnected shows only its hint');
   vm.run('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history = {}; ClaudeWoW.Render()');
   e = emptyState(vm);
   assert.equal(e.title, 'Not connected');
@@ -899,7 +867,7 @@ test('a long project label truncates inside a bounded button, shows in full in t
   assert.equal(vm.evaluate('ClaudeWoWProjectButton.truncated'), 'true');
   assert.match(vm.evaluate('ClaudeWoWProjectButton.text:GetText()'), /^Project: /);
   vm.run('ClaudeWoWTitleBar.width = 240; for _, fn in ipairs(ClaudeWoWTitleBar.hooks.OnSizeChanged) do fn(ClaudeWoWTitleBar) end');
-  assert.equal(vm.num('ClaudeWoWProjectButton:GetWidth()'), 208, 'the band less the title minimum and the gaps');
+  assert.equal(vm.num('ClaudeWoWProjectButton:GetWidth()'), 144, 'the band less the title minimum and the gaps');
   assert.equal(
     vm.evaluate('ClaudeWoWProjectButton.text:GetText()'),
     '|cffffffffa-very-long-project-folder-name-for-the-header|r',
@@ -1032,9 +1000,9 @@ test('the window is built from Blizzard frame templates where the client has the
   assert.equal(vm.evaluate(`${rowOf(2)}.when:GetText()`), '12:00', 'the time stays with previews off');
   assert.equal(titleColorOf(vm, 1), '0.75,0.61,0', 'with previews off an empty chat keeps the idle title');
   vm.run('ClaudeWoWChatSettings.scripts.OnClick(ClaudeWoWChatSettings); STUB.Pick("Show message previews")');
-  vm.run('ClaudeWoWChatSettings.scripts.OnClick(ClaudeWoWChatSettings); STUB.Pick("Collapse all folders")');
+  vm.run('ClaudeWoWChatSettings.scripts.OnClick(ClaudeWoWChatSettings); STUB.Pick("Collapse all projects")');
   assert.equal(shownRows(vm), '', 'collapse all hides every chat');
-  vm.run('ClaudeWoWChatSettings.scripts.OnClick(ClaudeWoWChatSettings); STUB.Pick("Expand all folders")');
+  vm.run('ClaudeWoWChatSettings.scripts.OnClick(ClaudeWoWChatSettings); STUB.Pick("Expand all projects")');
   assert.equal(vm.evaluate('ClaudeWoW.UI.art.reply'), 'UI-QuestIcon-TurnIn-Normal', 'an unread reply shows the turn-in icon');
 
   vm.run('ClaudeWoWFrame.CloseButton.scripts.OnClick(ClaudeWoWFrame.CloseButton)');
@@ -1072,7 +1040,7 @@ test('a chat row shows one preview line, the last message time beside the title,
   vm.run('ClaudeWoWDB.chats[2].pendingId = nil; ClaudeWoW.Render()');
 });
 
-test('the black bar shows the chat title up to the project button, with folder, agent and plugin in its tooltip', () => {
+test('the black bar shows the chat title up to the project button, with project and agent in its tooltip', () => {
   const vm = nativeVM();
   vm.run('ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[2].id)');
   assert.equal(vm.evaluate('ClaudeWoW.UI.chatTitle:GetText()'), 'Fix the bridge');
@@ -1089,7 +1057,7 @@ test('the black bar shows the chat title up to the project button, with folder, 
 
   vm.run('LINES = {}; GameTooltip.AddDoubleLine = function(_, a, b) table.insert(LINES, a .. "=" .. b) end');
   vm.run('ClaudeWoWTitleBar.scripts.OnEnter(ClaudeWoWTitleBar)');
-  assert.equal(vm.evaluate('table.concat(LINES, "|")'), 'Folder=wow-ai|Agent=AI|Plugin=default');
+  assert.equal(vm.evaluate('table.concat(LINES, "|")'), 'Project=wow-ai|Agent=AI');
 
   vm.run(
     'CALLS = {}; ClaudeWoW.RenamePrompt = function(id) table.insert(CALLS, "rename:" .. id) end; ClaudeWoW.ShowChatMenu = function(id) table.insert(CALLS, "menu:" .. id) end',
@@ -1441,8 +1409,8 @@ const HEADER_WIDTHS = `
   for _, b in ipairs({ ClaudeWoWProjectButton, ClaudeWoWEffortButton, ClaudeWoWMcpButton }) do
     b.text.GetStringWidth = function(self) return width[self.text] or 100 end
   end
-  ClaudeWoWTitleBar.rect = { left = 60, right = 248, top = 500, bottom = 466 }
-  ClaudeWoWTitleBar.width = 188
+  ClaudeWoWTitleBar.rect = { left = 60, right = 336, top = 500, bottom = 466 }
+  ClaudeWoWTitleBar.width = 276
 `;
 
 test('at the 560 px minimum width, Project and MCP fit in the header band without overlapping, and effort stays above Send', () => {
@@ -1453,9 +1421,9 @@ test('at the 560 px minimum width, Project and MCP fit in the header band withou
   assert.equal(vm.evaluate('ClaudeWoWEffortButton:IsShown()'), vm.evaluate('ClaudeWoW.UI.send:IsShown()'), 'shown with Send');
   assert.equal(vm.evaluate('ClaudeWoWMcpButton:IsShown()'), 'true');
   const edge = (b, side) => vm.num(`${b}:Get${side}()`);
-  assert.ok(edge('ClaudeWoWProjectButton', 'Right') <= 248, 'project stays in the band');
+  assert.ok(edge('ClaudeWoWProjectButton', 'Right') <= 336, 'project stays in the band');
   assert.ok(edge('ClaudeWoWMcpButton', 'Right') <= edge('ClaudeWoWProjectButton', 'Left'), 'MCP never overlaps project');
-  assert.ok(edge('ClaudeWoWMcpButton', 'Left') >= 60 + 8 + 16, 'the title keeps its minimum room');
+  assert.ok(edge('ClaudeWoWMcpButton', 'Left') >= 60 + 8 + 80, 'the title keeps its minimum room');
   assert.equal(vm.evaluate('ClaudeWoWEffortButton.text:GetText()'), '|cffffffffxhigh|r', 'effort shows its value');
   assert.equal(vm.evaluate('ClaudeWoWProjectButton.text:GetText()'), 'Project: |cffffffffevery|r', 'with effort out of the header, the label fits');
   assert.equal(vm.evaluate('ClaudeWoW.UI.chatTitle.rel == ClaudeWoWMcpButton'), 'true');
@@ -1512,18 +1480,18 @@ test('with no chat effort the meter shows what the bridge passes for the chat ag
   vm.run('for _, c in ipairs(ClaudeWoWDB.chats) do c.agent = "claude" end; ClaudeWoW.Render()');
   assert.equal(effortOf(vm, 'text:GetText()'), '|cff9d9d9dauto|r', 'an old bridge: auto');
   assert.equal(filledBars(vm), 0);
-  assert.match(effortTooltip(vm)[1], /does not report/);
+  assert.match(effortTooltip(vm)[1], /Update the companion app/);
   vm.run(`ClaudeWoW.ApplyEfforts({ ${EFFORTS} })`);
   assert.equal(effortOf(vm, 'text:GetText()'), '|cfffffffflow|r', 'a chat with a folder runs the claude-code plugin: its effort');
   assert.equal(filledBars(vm), 1);
-  assert.deepEqual(effortTooltip(vm).slice(0, 2), ['Effort: low', "The bridge's setting for this agent; it passes it on every run."]);
+  assert.deepEqual(effortTooltip(vm).slice(0, 2), ['Effort: low', "The companion app's setting for this agent."]);
   vm.run('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].plugin = "ask"; ClaudeWoW.Render()');
   assert.equal(effortOf(vm, 'text:GetText()'), '|cffffffffmax|r', 'another plugin, its own effort');
   assert.equal(filledBars(vm), 5);
   vm.run('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].agent = "codex"; ClaudeWoW.Render()');
   assert.equal(effortOf(vm, 'text:GetText()'), '|cff9d9d9dauto|r', 'the bridge sets none for Codex: the agent picks');
   assert.equal(vm.evaluate('ClaudeWoWEffortButton:IsEnabled()'), 'true');
-  assert.match(effortTooltip(vm)[1], /the agent picks/);
+  assert.match(effortTooltip(vm)[1], /agent picks its own level/);
   vm.run('ClaudeWoWEffortButton.scripts.OnClick(ClaudeWoWEffortButton)');
   assert.equal(effortMenu(vm), 'Effort|Auto|low|medium|high|xhigh|max');
   vm.run('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].agent = "claude"; ClaudeWoW.Render(); ClaudeWoWEffortButton.scripts.OnClick(ClaudeWoWEffortButton)');
@@ -1578,7 +1546,7 @@ test('CLAUDE_CODE_EFFORT_LEVEL on the bridge overrides every choice, and the met
   vm.run('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].agent = "claude"; ClaudeWoWDB.chats[#ClaudeWoWDB.chats].effort = "max"; ClaudeWoW.Render()');
   assert.equal(effortOf(vm, 'text:GetText()'), '|cffffffffmedium|r');
   assert.equal(filledBars(vm), 2);
-  assert.match(effortTooltip(vm)[1], /CLAUDE_CODE_EFFORT_LEVEL/);
+  assert.match(effortTooltip(vm)[1], /Fixed by a setting on your computer/);
   vm.run('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].agent = "codex"; ClaudeWoW.Render()');
   assert.equal(effortOf(vm, 'text:GetText()'), '|cffffffffmax|r', 'the lock is only for its agent');
 });
@@ -1655,17 +1623,20 @@ test('first login prints one line; a bridge that is not there after the first ch
   const vm = newVM();
   const prints = () => vm.evaluate('table.concat(STUB.prints, "\\n")');
   const count = text => prints().split(text).length - 1;
-  assert.equal(count('Loaded. Type /claude to open it.'), 1);
+  assert.equal(count('Loaded. Click the minimap button or type /claude to open it.'), 1);
   vm.run('STUB.RunTimers()');
-  assert.equal(count("Can't reach the bridge. Start it, then type"), 0, 'not before the first check');
+  assert.equal(count("Can't reach the companion app. Start it, then type"), 0, 'not before the first check');
   vm.run('STUB.RunTimers(); STUB.RunTimers()');
-  assert.equal(count("Can't reach the bridge. Start it, then type"), 1);
+  assert.equal(count("Can't reach the companion app. Start it, then type"), 1);
   vm.run('STUB.FireEvent("PLAYER_LOGIN"); STUB.RunTimers(); STUB.RunTimers()');
-  assert.equal(count('Loaded. Type /claude to open it.'), 1, 'the first-run line is not repeated');
+  assert.equal(count('Loaded. Click the minimap button or type /claude to open it.'), 1, 'the first-run line is not repeated');
 
   const up = newVM();
   up.run('STUB.RunTimers(); ClaudeWoW.IsConnected = function() return true end; STUB.RunTimers()');
-  assert.ok(!up.evaluate('table.concat(STUB.prints, "\\n")').includes("Can't reach the bridge. Start it, then type"), 'a bridge that answered gets no line');
+  assert.ok(
+    !up.evaluate('table.concat(STUB.prints, "\\n")').includes("Can't reach the companion app. Start it, then type"),
+    'a bridge that answered gets no line',
+  );
 });
 
 test('the status line has four plain states and no file names, ids or commands; the detail moves to diag', () => {
@@ -1677,7 +1648,7 @@ test('the status line has four plain states and no file names, ids or commands; 
   };
   const banned = /#\d|install-slots|npm|\.js|cwd|mode:|plugin|checked \d|polls/;
   vm.run('ClaudeWoW.IsConnected = function() return false end; ClaudeWoW.Render()');
-  assert.equal(status(), "|cffff5050Can't reach the bridge. Start it, then click Connect.|r");
+  assert.equal(status(), '|cffff5050No answer from the companion app. Is it running?|r');
   vm.run('ClaudeWoW.IsConnected = function() return true end; STUB.now = STUB.now + 30; STUB.Tick(); ClaudeWoW.Render()');
   assert.equal(status(), 'Ready');
   vm.run('ClaudeWoWDB.chats[1].pendingId = 42; ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[1].id); ClaudeWoW.Render()');

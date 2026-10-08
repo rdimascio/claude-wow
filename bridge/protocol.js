@@ -411,14 +411,14 @@ function versionVerdict(addon, bridge = bridgeInfo()) {
     return {
       verdict: 'update-addon',
       refuse: true,
-      text: `This addon (${mine}) is too old for the bridge (${theirs}). The bridge refuses messages until you update the addon: ${ADDON_UPDATE_HOW}`,
+      text: `This addon (${mine}) is too old for the companion app (${theirs}). The companion app refuses messages until you update the addon: ${ADDON_UPDATE_HOW}`,
     };
   }
   if (proto > bridge.protoMax) {
     return {
       verdict: 'update-bridge',
       refuse: true,
-      text: `The bridge (${theirs}) is too old for this addon (${mine}). The bridge refuses messages until you update it: ${BRIDGE_UPDATE_HOW}`,
+      text: `The companion app (${theirs}) is too old for this addon (${mine}). It refuses messages until you update it: ${BRIDGE_UPDATE_HOW}`,
     };
   }
   if (!version) return { verdict: 'unknown', refuse: false, text: '' };
@@ -428,18 +428,18 @@ function versionVerdict(addon, bridge = bridgeInfo()) {
     return {
       verdict: 'addon-older',
       refuse: false,
-      text: `This addon (${version}) is older than the bridge (${bridge.version}). They still work together; update the addon when you can.`,
+      text: `This addon (${version}) is older than the companion app (${bridge.version}). They still work together; update the addon when you can.`,
     };
   if (order === 1)
     return {
       verdict: 'bridge-older',
       refuse: false,
-      text: `The bridge (${bridge.version}) is older than this addon (${version}). They still work together; update the bridge when you can.`,
+      text: `The companion app (${bridge.version}) is older than this addon (${version}). They still work together; update the companion app when you can.`,
     };
   return {
     verdict: 'differs',
     refuse: false,
-    text: `This addon (${version}) and the bridge (${bridge.version}) are different builds. They still work together.`,
+    text: `This addon (${version}) and the companion app (${bridge.version}) are different builds. They still work together.`,
   };
 }
 

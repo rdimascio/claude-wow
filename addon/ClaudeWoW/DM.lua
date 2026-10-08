@@ -396,11 +396,11 @@ function T.Toggle(editBox)
 end
 
 local NEXT_REPLIES = {
-	sent = "Asked the bridge for the next beat. It shows here as soon as the bridge has it.",
+	sent = "Asked the companion app for the next beat. It shows here as soon as the companion app has it.",
 	busy = "The last /dm next is still on its way. Wait a moment.",
-	unsupported = "This bridge cannot take /dm next. Update the bridge, then /reload.",
-	reload = "/dm next needs the addon to reach the bridge without a reload (/claude mode pixel).",
-	nochar = "The game did not name your character, so the bridge cannot tell whose story this is.",
+	unsupported = "This companion app cannot take /dm next. Update the companion app, then /reload.",
+	reload = "/dm next needs the addon to reach the companion app without a reload (/claude mode pixel).",
+	nochar = "The game did not name your character, so the companion app cannot tell whose story this is.",
 }
 
 function T.Next(editBox)

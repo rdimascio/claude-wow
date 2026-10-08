@@ -1,4 +1,4 @@
-# Installing Claude WoW
+# Installing Azeroth Companion
 
 Every route ends in the same place: the code on your machine, a `claude-wow` command, the addon in the game folder, and a bridge that is running while you play. Pick one route; the rest of this page (service, updating, uninstalling) is the same for all of them.
 
@@ -49,7 +49,7 @@ For example:
 curl -fsSL https://raw.githubusercontent.com/rdimascio/claude-wow/main/install.sh | sh -s -- --project ~/code/my-game --service
 ```
 
-When it finishes: fully quit and relaunch WoW, enable *Claude WoW* on the AddOns screen, and type `/claude hello` in game.
+When it finishes: fully quit and relaunch WoW, enable *Azeroth Companion* on the AddOns screen, and type `/claude hello` in game.
 
 ## Route 2: Homebrew (macOS)
 

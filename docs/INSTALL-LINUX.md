@@ -18,7 +18,7 @@ curl -fsSL https://raw.githubusercontent.com/rdimascio/claude-wow/main/install.s
 
 Without `--wow`, setup looks in `$WINEPREFIX`, `~/.wine` and `~/Games/battlenet` for `drive_c/Program Files (x86)/World of Warcraft/_classic_beta_`; pass `--wow "<that folder>"` for anything else. By hand: `git clone https://github.com/rdimascio/claude-wow && cd claude-wow && node setup.js --wow "..." --project ...`, then `npm start` (`npm ci` is only needed to run the tests).
 
-Then fully restart the game, enable *Claude WoW* on the AddOns screen, and either leave `claude-wow` running in a terminal or install the service.
+Then fully restart the game, enable *Azeroth Companion* on the AddOns screen, and either leave `claude-wow` running in a terminal or install the service.
 
 ## The service under systemd
 
@@ -26,7 +26,7 @@ Then fully restart the game, enable *Claude WoW* on the AddOns screen, and eithe
 
 ## Check the capture (deprecated pixel transport only)
 
-Log in, open the Claude WoW window and send any message, then while the strip of colored squares is in the top-left corner run:
+Log in, open the Azeroth Companion window and send any message, then while the strip of colored squares is in the top-left corner run:
 
 ```bash
 npm run probe        # in the repo folder (~/.claude-wow/app with the installer)

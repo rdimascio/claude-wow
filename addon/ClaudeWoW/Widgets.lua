@@ -55,6 +55,10 @@ local function Print(msg)
 	end
 end
 
+local function Quiet(ctx)
+	return type(ctx) == "table" and ctx.quiet == true
+end
+
 local function Report(msg)
 	Print(msg)
 	if ClaudeWoW and ClaudeWoW.SystemNote then ClaudeWoW.SystemNote("UI widget " .. msg) end
@@ -911,13 +915,13 @@ local function Current(data)
 	return item
 end
 
-function W.Approve(data)
+function W.Approve(data, ctx)
 	local item = Current(data)
 	if not item then return false end
 	Approve(item)
 	failures[item.name] = nil
 	if running[item.name] then W.Stop(running[item.name]) end
-	return W.Start(item, true)
+	return W.Start(item, not Quiet(ctx))
 end
 
 function W.Decline(data)
@@ -992,11 +996,15 @@ local function List()
 	Print("commands: /claude config ui list, /claude config ui remove <name>, /claude config ui run <name> (run also says yes to a waiting widget)")
 end
 
-function W.Remove(name)
+function W.Remove(name, ctx)
 	local item = FindItem(name)
-	if not item then Print("no widget " .. tostring(name)); return end
+	if not item then
+		if not Quiet(ctx) then Print("no widget " .. tostring(name)) end
+		return
+	end
 	DB().removed[name] = item.rev
 	if running[name] then W.Stop(running[name]) end
+	if Quiet(ctx) then return end
 	Report(string.format("%s removed. It stays off until the agent sends a new version; /claude config ui run %s brings it back.", name, name))
 end
 
@@ -1009,7 +1017,7 @@ function W.Run(name)
 	W.Start(item, true)
 end
 
-function W.Show(data)
+function W.Show(data, ctx)
 	local item = type(data) == "table" and FindItem(data.name)
 	if not item or not SameCode(item, data) then
 		W.PromptNext()
@@ -1017,7 +1025,7 @@ function W.Show(data)
 	end
 	DB().removed[item.name] = nil
 	failures[item.name] = nil
-	return W.Approve(data)
+	return W.Approve(data, ctx)
 end
 
 function W.Rows()

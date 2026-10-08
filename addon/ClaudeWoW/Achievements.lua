@@ -233,12 +233,13 @@ end
 
 local SAMPLE = { title = "Achievement Unlocked", text = "You looked at a sample toast.", points = 0, icon = "Interface\\Icons\\INV_Misc_Note_01" }
 
-function T.Command(rest)
+function T.Command(rest, ctx)
 	rest = tostring(rest or ""):lower()
 	local s = Settings()
 	if rest == "on" or rest == "off" then
 		if s then s.toasts = rest == "on" end
 		if rest == "off" then wipe(queue) end
+		if type(ctx) == "table" and ctx.quiet == true then return end
 		Print("Achievement toasts are " .. rest .. ". /claude config achievements lists what you earned.")
 	elseif rest == "test" then
 		if not T.ToastsOn() then
