@@ -112,21 +112,40 @@ test('decide: the client build picks the flavor, and a build of no known game is
   assert.equal(era.flavor, 'classic_era');
   assert.equal(era.sync, true, 'Forever data does not cover an Era client');
   assert.equal(era.check, GD.BUILD_CHECK.noData);
-  for (const clientBuild of ['', 'nonsense', '9.9.9.9']) assert.deepEqual(DAS.decide({ clientBuild, dataDir, now: T0 }), { sync: false, reason: 'no-flavor' });
+  for (const clientBuild of ['', 'nonsense', '9.9.9.9', '1.60.1.123456789', '1.60.1111.1', ` ${NEW}`])
+    assert.deepEqual(DAS.decide({ clientBuild, dataDir, now: T0 }), { sync: false, reason: 'no-flavor' });
 });
 
-test('decide: an attempt for that flavor and build waits 6 hours; another build or flavor does not wait', async () => {
+test('decide: a failed or unfinished attempt makes its flavor wait 6 hours whatever the build; a held lock waits 10 minutes; a success does not wait', async () => {
   const dataDir = await withData(OLD);
-  const attempts = { [DAS.attemptKey('forever', NEW)]: { at: T0, result: 'failed' } };
-  const early = DAS.decide({ clientBuild: NEW, dataDir, attempts, now: T0 + DAS.RETRY_MS - 1 });
+  const failed = { forever: { build: NEW, at: T0, result: 'failed' } };
+  const early = DAS.decide({ clientBuild: NEW, dataDir, attempts: failed, now: T0 + DAS.RETRY_MS - 1 });
   assert.equal(early.sync, false);
   assert.equal(early.reason, 'backoff');
   assert.equal(early.retryAt, T0 + DAS.RETRY_MS);
-  assert.equal(DAS.decide({ clientBuild: NEW, dataDir, attempts, now: T0 + DAS.RETRY_MS }).sync, true);
-  assert.equal(DAS.decide({ clientBuild: '1.60.1.70300', dataDir, attempts, now: T0 + HOUR }).sync, true);
-  assert.equal(DAS.decide({ clientBuild: NEW, dataDir, attempts: { 'classic_era@1.60.1.70245': { at: T0 } }, now: T0 + HOUR }).sync, true);
-  assert.equal(DAS.decide({ clientBuild: NEW, dataDir, attempts: { [DAS.attemptKey('forever', NEW)]: { at: T0 + HOUR } }, now: T0 }).sync, true);
-  assert.equal(DAS.decide({ clientBuild: NEW, dataDir, attempts: { [DAS.attemptKey('forever', NEW)]: { at: 'soon' } }, now: T0 }).sync, true);
+  assert.equal(DAS.decide({ clientBuild: NEW, dataDir, attempts: failed, now: T0 + DAS.RETRY_MS }).sync, true);
+  assert.equal(DAS.decide({ clientBuild: '1.60.1.70300', dataDir, attempts: failed, now: T0 + HOUR }).reason, 'backoff');
+  assert.equal(DAS.decide({ clientBuild: ERA, dataDir, attempts: failed, now: T0 + HOUR }).sync, true);
+  const running = { forever: { build: NEW, at: T0, result: 'running' } };
+  assert.equal(DAS.decide({ clientBuild: NEW, dataDir, attempts: running, now: T0 + HOUR }).reason, 'backoff');
+  const locked = { forever: { build: NEW, at: T0, result: 'locked' } };
+  assert.equal(DAS.decide({ clientBuild: NEW, dataDir, attempts: locked, now: T0 + DAS.LOCKED_RETRY_MS - 1 }).retryAt, T0 + DAS.LOCKED_RETRY_MS);
+  assert.equal(DAS.decide({ clientBuild: NEW, dataDir, attempts: locked, now: T0 + DAS.LOCKED_RETRY_MS }).sync, true);
+  assert.equal(DAS.decide({ clientBuild: NEW, dataDir, attempts: { forever: { build: '1.60.1.100', at: T0, result: 'ok' } }, now: T0 + 1 }).sync, true);
+  assert.equal(DAS.decide({ clientBuild: NEW, dataDir, attempts: { forever: { at: T0 + HOUR } }, now: T0 }).sync, true);
+  assert.equal(DAS.decide({ clientBuild: NEW, dataDir, attempts: { forever: { at: 'soon' } }, now: T0 }).sync, true);
+  assert.equal(DAS.decide({ clientBuild: NEW, dataDir, attempts: { [`forever@${NEW}`]: { at: T0 } }, now: T0 + HOUR }).sync, true);
+});
+
+test('decide: a client build older than the data, or the same build written another way, never syncs', async () => {
+  const dataDir = await withData(NEW);
+  for (const clientBuild of [OLD, '1.60.1.70244', '1.60.0.99999', '1.60.1.070245']) {
+    const d = DAS.decide({ clientBuild, dataDir, now: T0 });
+    assert.equal(d.sync, false, clientBuild);
+    assert.equal(d.reason, 'not-newer', clientBuild);
+  }
+  assert.equal(DAS.decide({ clientBuild: '1.60.1.70246', dataDir, now: T0 }).sync, true);
+  assert.equal(DAS.decide({ clientBuild: '1.60.2.1', dataDir, now: T0 }).sync, true);
 });
 
 test('decide: a flavor with a sync going is busy', async () => {
@@ -143,7 +162,7 @@ test('observe: one sync per flavor at a time, records the attempt before it star
   const h = harness({ dataDir, run: () => gate.promise });
   const first = h.sync.observe(NEW, ' from Forever');
   assert.equal(first.sync, true);
-  assert.deepEqual(h.state.dataSync, { [`forever@${NEW}`]: { at: T0, result: 'running' } });
+  assert.deepEqual(h.state.dataSync, { forever: { build: NEW, at: T0, result: 'running' } });
   assert.equal(h.saves(), 1);
   assert.equal(h.sync.observe(NEW).reason, 'busy');
   assert.equal(h.sync.observe('1.60.1.70300').reason, 'busy');
@@ -156,7 +175,7 @@ test('observe: one sync per flavor at a time, records the attempt before it star
   await D.sync({ dataDir, build: NEW, fetch: fixtureFetch });
   gate.resolve({ ok: true, message: 'done' });
   assert.deepEqual(await first.done, { ok: true, message: 'done' });
-  assert.equal(h.state.dataSync[`forever@${NEW}`].result, 'ok');
+  assert.equal(h.state.dataSync.forever.result, 'ok');
   assert.deepEqual([...h.sync.busy()], []);
   assert.deepEqual(h.lines, [
     `data sync: client ${NEW} from Forever has forever data ${OLD} (family); syncing forever ${NEW} from wago.tools in the background`,
@@ -186,7 +205,7 @@ test('observe: Forever and Classic Era clients sync independently', async () => 
   await forever.done;
 });
 
-test('observe: a failed sync waits 6 hours for that build, also after a restart, then tries again', async () => {
+test('observe: a failed sync makes its flavor wait 6 hours, also after a restart, then tries again', async () => {
   const dataDir = await withData(OLD);
   let clock = T0;
   const state = {};
@@ -198,8 +217,8 @@ test('observe: a failed sync waits 6 hours for that build, also after a restart,
   });
   const r = h.sync.observe(NEW);
   assert.deepEqual(await r.done, { ok: false, message: 'https://wago.tools/db2/UiMap/csv?build=1.60.1.70245: HTTP 404' });
-  assert.equal(state.dataSync[`forever@${NEW}`].result, 'failed');
-  assert.match(state.dataSync[`forever@${NEW}`].error, /HTTP 404/);
+  assert.equal(state.dataSync.forever.result, 'failed');
+  assert.match(state.dataSync.forever.error, /HTTP 404/);
   assert.match(h.lines[1], /^data sync: forever 1\.60\.1\.70245 failed \(.*HTTP 404\); the data in use stays, next try after 2026-10-07T18:00:00\.000Z$/);
   clock = T0 + HOUR;
   assert.equal(h.sync.observe(NEW).reason, 'backoff');
@@ -215,10 +234,13 @@ test('observe: a failed sync waits 6 hours for that build, also after a restart,
 
 test('observe: a sync that never ended (a crash) still counts as an attempt after a restart', async () => {
   const dataDir = await withData(OLD);
-  const state = { dataSync: { [`forever@${NEW}`]: { at: T0, result: 'running' } } };
+  const entry = { build: NEW, at: T0, result: 'running' };
+  const state = { dataSync: { forever: { ...entry } } };
   const h = harness({ dataDir, state, now: () => T0 + HOUR, run: async () => ({ ok: true }) });
   assert.equal(h.sync.observe(NEW).reason, 'backoff');
+  await new Promise(r => setImmediate(r));
   assert.equal(h.calls.length, 0);
+  assert.deepEqual(state.dataSync, { forever: entry });
 });
 
 test('observe: a sync that exits 0 without moving current to that build is a failed attempt', async () => {
@@ -226,7 +248,7 @@ test('observe: a sync that exits 0 without moving current to that build is a fai
   const h = harness({ dataDir, run: async () => ({ ok: true, message: 'nothing to do' }) });
   const r = h.sync.observe(NEW);
   assert.deepEqual(await r.done, { ok: false, message: `the sync ended, but ${NEW} is not the current forever data` });
-  assert.equal(h.state.dataSync[`forever@${NEW}`].result, 'failed');
+  assert.equal(h.state.dataSync.forever.result, 'failed');
   assert.match(h.lines[1], /failed \(the sync ended, but 1\.60\.1\.70245 is not the current forever data\)/);
 });
 
@@ -241,20 +263,105 @@ test('observe: a run that throws is a failed attempt, and the flavor is free aga
   const r = h.sync.observe(NEW);
   assert.deepEqual(await r.done, { ok: false, message: 'spawn EACCES' });
   assert.deepEqual([...h.sync.busy()], []);
-  assert.equal(h.state.dataSync[`forever@${NEW}`].result, 'failed');
+  assert.equal(h.state.dataSync.forever.result, 'failed');
+});
+
+function syncingRun(dataDir) {
+  return async ({ build }) => {
+    await D.sync({ dataDir, build, fetch: fixtureFetch });
+    return { ok: true, code: 0 };
+  };
+}
+
+test('observe: two clients of one flavor on different builds sync only forward, and the newest build stays current', async () => {
+  const NEWER = '1.60.1.70300';
+  const newestFirst = await withData(OLD);
+  const a = harness({ dataDir: newestFirst, run: syncingRun(newestFirst) });
+  await a.sync.observe(NEWER).done;
+  for (let k = 0; k < 4; k++) {
+    assert.equal(a.sync.observe(NEW).reason, 'not-newer');
+    assert.equal(a.sync.observe(NEWER).reason, 'exact');
+  }
+  await new Promise(r => setImmediate(r));
+  assert.deepEqual(
+    a.calls.map(c => c.build),
+    [NEWER],
+  );
+  assert.equal(D.readCurrent(D.flavorDir(newestFirst, 'forever')).build, NEWER);
+  const olderFirst = await withData(OLD);
+  const b = harness({ dataDir: olderFirst, run: syncingRun(olderFirst) });
+  await b.sync.observe(NEW).done;
+  await b.sync.observe(NEWER).done;
+  for (let k = 0; k < 4; k++) {
+    assert.equal(b.sync.observe(NEW).reason, 'not-newer');
+    assert.equal(b.sync.observe(NEWER).reason, 'exact');
+  }
+  await new Promise(r => setImmediate(r));
+  assert.deepEqual(
+    b.calls.map(c => c.build),
+    [NEW, NEWER],
+  );
+  assert.equal(D.readCurrent(D.flavorDir(olderFirst, 'forever')).build, NEWER);
+});
+
+test('observe: a flood of forged builds makes at most one attempt per flavor per 6 hours and never resets the wait', async () => {
+  const dataDir = await withData(OLD);
+  let clock = T0;
+  const state = {};
+  const h = harness({ dataDir, state, now: () => clock, run: async () => ({ ok: false, code: 1, message: 'HTTP 404' }) });
+  const first = h.sync.observe('1.60.1.80000');
+  await first.done;
+  const kept = JSON.parse(JSON.stringify(state.dataSync));
+  for (let k = 1; k <= 40; k++) {
+    clock = T0 + k * 60 * 1000;
+    const d = h.sync.observe(`1.60.1.${80000 + k}`);
+    assert.equal(d.reason, 'backoff', `forged build ${k}`);
+  }
+  await new Promise(r => setImmediate(r));
+  assert.equal(h.calls.length, 1);
+  assert.deepEqual(state.dataSync, kept);
+  assert.deepEqual(Object.keys(state.dataSync), ['forever']);
+  assert.equal(h.sync.observe(ERA).sync, true, 'the other flavor has its own wait');
+  clock = T0 + DAS.RETRY_MS;
+  const again = h.sync.observe(NEW);
+  assert.equal(again.sync, true);
+  await again.done;
+  assert.deepEqual(Object.keys(state.dataSync).sort(), ['classic_era', 'forever']);
+});
+
+test('observe: a sync that finds the lock held (exit 3) is tried again after 10 minutes, not 6 hours', async () => {
+  const dataDir = await withData(OLD);
+  let clock = T0;
+  const h = harness({ dataDir, now: () => clock, run: async () => ({ ok: false, code: D.LOCKED_EXIT, message: 'another data sync is running (pid 1)' }) });
+  assert.deepEqual(await h.sync.observe(NEW).done, { ok: false, message: 'another data sync is running (pid 1)' });
+  assert.equal(h.state.dataSync.forever.result, 'locked');
+  assert.match(h.lines[1], /^data sync: forever 1\.60\.1\.70245 waits, another data sync holds the lock \(.*\); next try after 2026-10-07T12:10:00\.000Z$/);
+  clock = T0 + DAS.LOCKED_RETRY_MS - 1;
+  assert.equal(h.sync.observe(NEW).reason, 'backoff');
+  clock = T0 + DAS.LOCKED_RETRY_MS;
+  const again = h.sync.observe(NEW);
+  assert.equal(again.sync, true);
+  await again.done;
+  assert.equal(h.calls.length, 2);
+});
+
+test('the run timeout ends a sync before its lock counts as stale', () => {
+  assert.ok(DAS.RUN_TIMEOUT_MS > 0);
+  assert.ok(DAS.RUN_TIMEOUT_MS < D.LOCK_STALE_MS);
 });
 
 test('observe: off in the config, no data folder or no client build starts nothing', async () => {
   const dataDir = await withData(OLD);
   const off = harness({ dataDir, enabled: false, run: async () => ({ ok: true }) });
   assert.equal(off.sync.observe(NEW), null);
-  assert.equal(off.calls.length, 0);
-  assert.deepEqual(off.state, {});
   const noDir = harness({ dataDir: '', run: async () => ({ ok: true }) });
   assert.equal(noDir.sync.observe(NEW), null);
   const noBuild = harness({ dataDir, run: async () => ({ ok: true }) });
   assert.equal(noBuild.sync.observe(''), null);
-  assert.equal(noDir.calls.length + noBuild.calls.length, 0);
+  await new Promise(r => setImmediate(r));
+  assert.deepEqual([off.calls.length, noDir.calls.length, noBuild.calls.length], [0, 0, 0]);
+  assert.deepEqual([off.state, noDir.state, noBuild.state], [{}, {}, {}]);
+  assert.deepEqual([off.saves(), noDir.saves(), noBuild.saves()], [0, 0, 0]);
 });
 
 test('observe: a bad dataSync value in the state is replaced, and a failed save is logged', async () => {
@@ -276,7 +383,7 @@ test('observe: a bad dataSync value in the state is replaced, and a failed save 
     },
   });
   await sync.observe(NEW).done;
-  assert.equal(state.dataSync[`forever@${NEW}`].result, 'ok');
+  assert.equal(state.dataSync.forever.result, 'ok');
   assert.ok(lines.includes('data sync: could not save the attempt (disk full)'));
 });
 
@@ -299,15 +406,10 @@ test('observe: the running sync child is listed for shutdown until it closes', a
   assert.deepEqual(sync.children(), []);
 });
 
-test('prune keeps the newest attempts only and drops broken ones', () => {
-  const attempts = { broken: null, alsoBroken: { at: 'x' } };
-  for (let k = 0; k < DAS.ATTEMPTS_KEPT + 4; k++) attempts[`forever@1.60.1.${k}`] = { at: T0 + k };
+test('prune keeps one valid entry per known flavor and drops the rest', () => {
+  const attempts = { broken: null, forever: { at: T0 }, classic_era: { at: 'x' }, [`forever@${NEW}`]: { at: T0 }, __proto__x: { at: T0 } };
   DAS.prune(attempts);
-  const keys = Object.keys(attempts);
-  assert.equal(keys.length, DAS.ATTEMPTS_KEPT);
-  assert.ok(!keys.includes('broken'));
-  assert.ok(!keys.includes('forever@1.60.1.0'));
-  assert.ok(keys.includes(`forever@1.60.1.${DAS.ATTEMPTS_KEPT + 3}`));
+  assert.deepEqual(attempts, { forever: { at: T0 } });
 });
 
 test('lastLine: the last line of the output, without the failure prefix or control characters, capped', () => {
@@ -372,6 +474,42 @@ test('runSync: a build the source does not have fails and leaves the old build c
   assert.match(result.message, /HTTP 404/);
   assert.doesNotMatch(result.message, /^data sync failed/);
   assert.equal(D.readCurrent(D.flavorDir(dataDir, 'forever')).build, OLD);
+});
+
+test('runSync: a real data sync child that finds the lock held exits 3 and changes nothing', async () => {
+  const home = scratch('home');
+  const dataDir = path.join(home, 'data');
+  await D.sync({ dataDir, build: OLD, fetch: fixtureFetch });
+  const lock = D.acquireLock(D.flavorDir(dataDir, 'forever'));
+  try {
+    const result = await DAS.runSync({ flavor: 'forever', build: NEW, home, env: { ...process.env, NODE_OPTIONS: `--require ${JSON.stringify(PRELOAD)}` } });
+    assert.equal(result.ok, false);
+    assert.equal(result.code, D.LOCKED_EXIT);
+    assert.match(result.message, /another data sync is running/);
+  } finally {
+    lock.release();
+  }
+  assert.equal(D.readCurrent(D.flavorDir(dataDir, 'forever')).build, OLD);
+});
+
+test('runCli sets the exit code from the command, and a thrown error exits 1 with one line', async t => {
+  const written = [];
+  t.mock.method(process.stderr, 'write', s => {
+    written.push(s);
+    return true;
+  });
+  const before = process.exitCode;
+  try {
+    await D.runCli(['x'], async argv => (argv[0] === 'x' ? 7 : 0));
+    assert.equal(process.exitCode, 7);
+    await D.runCli([], async () => {
+      throw new Error('boom');
+    });
+    assert.equal(process.exitCode, 1);
+    assert.deepEqual(written, ['data sync failed: boom\n']);
+  } finally {
+    process.exitCode = before;
+  }
 });
 
 test('runSync: a child that hangs is killed after the timeout; a command that cannot start fails', async () => {

@@ -38,7 +38,7 @@ test('a client on a newer build starts one background sync from the source, and 
     const root = D.flavorDir(path.join(h.sb.home, 'data'), 'forever');
     assert.equal(D.readCurrent(root).build, NEW);
     assert.ok(fs.readFileSync(source.requests, 'utf8').includes(`/db2/ItemSparse/csv?build=${NEW}`));
-    assert.equal(h.state().dataSync[`forever@${NEW}`].result, 'ok');
+    assert.equal(h.state().dataSync.forever.result, 'ok');
     await h.client.say('where is the vale roost');
     const [askRun] = h.agentCalls();
     assert.deepEqual(askRun.mcpConfig.mcpServers.wowdata.args.slice(-2), ['--client-build', NEW]);
@@ -56,7 +56,7 @@ test('with a non-boolean autoSync (ignored, logged once), a build the source doe
       timeoutMs: 60000,
     });
     assert.equal(D.readCurrent(D.flavorDir(path.join(h.sb.home, 'data'), 'forever')).build, OLD);
-    assert.equal(h.state().dataSync[`forever@${NEW}`].result, 'failed');
+    assert.equal(h.state().dataSync.forever.result, 'failed');
     assert.equal(count(h.bridge.output, /data\.autoSync: "yes" is not true or false, so it is ignored and game data sync stays on/), 1);
     await h.bridge.restart();
     await h.client.say('where is the vale roost');

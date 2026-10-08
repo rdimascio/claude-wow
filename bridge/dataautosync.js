@@ -5,12 +5,13 @@ const PR = require('./procs');
 const R = require('./runtime');
 
 const RETRY_MS = 6 * 60 * 60 * 1000;
-const RUN_TIMEOUT_MS = 45 * 60 * 1000;
+const LOCKED_RETRY_MS = 10 * 60 * 1000;
+const RUN_TIMEOUT_MS = D.LOCK_STALE_MS - 5 * 60 * 1000;
 const STATE_KEY = 'dataSync';
-const ATTEMPTS_KEPT = 16;
 const MESSAGE_MAX = 300;
 const OUTPUT_TAIL_MAX = 8192;
 const SHOWN_VALUE_MAX = 40;
+const AUTO_BUILD = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,7}$/;
 const FAILED_PREFIX = /^data sync failed:\s*/;
 const UNSAFE_TEXT = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu;
 
@@ -22,37 +23,45 @@ function settings(cfg) {
   return { enabled: true, note: `data.autoSync: ${shown} is not true or false, so it is ignored and game data sync stays on` };
 }
 
-function attemptKey(flavor, build) {
-  return `${flavor}@${build}`;
+function isAutoBuild(build) {
+  return typeof build === 'string' && AUTO_BUILD.test(build);
+}
+
+function isFlavor(name) {
+  return Object.prototype.hasOwnProperty.call(D.FLAVORS, name);
+}
+
+function validAttempt(attempt) {
+  return !!attempt && typeof attempt === 'object' && !Array.isArray(attempt) && Number.isFinite(attempt.at);
+}
+
+function waitFor(attempt) {
+  if (attempt.result === 'ok') return 0;
+  if (attempt.result === 'locked') return LOCKED_RETRY_MS;
+  return RETRY_MS;
 }
 
 function waiting(attempt, now) {
-  return !!attempt && Number.isFinite(attempt.at) && now >= attempt.at && now - attempt.at < RETRY_MS;
+  return validAttempt(attempt) && now >= attempt.at && now - attempt.at < waitFor(attempt);
 }
 
 function decide({ clientBuild, dataDir, attempts = {}, busy = new Set(), now = Date.now() }) {
-  const flavor = D.flavorForBuild(clientBuild);
+  const flavor = isAutoBuild(clientBuild) ? D.flavorForBuild(clientBuild) : null;
   if (!flavor || !dataDir) return { sync: false, reason: 'no-flavor' };
   const current = D.readCurrent(D.flavorDir(dataDir, flavor));
   const dataBuild = current ? current.build : null;
   const check = GD.buildCheckFor(clientBuild, dataBuild);
   const base = { flavor, build: clientBuild, dataBuild, check };
-  if (check === GD.BUILD_CHECK.exact) return { ...base, sync: false, reason: 'exact' };
+  if (dataBuild && D.compareBuilds(clientBuild, dataBuild) <= 0)
+    return { ...base, sync: false, reason: check === GD.BUILD_CHECK.exact ? 'exact' : 'not-newer' };
   if (busy.has(flavor)) return { ...base, sync: false, reason: 'busy' };
-  const last = attempts[attemptKey(flavor, clientBuild)];
-  if (waiting(last, now)) return { ...base, sync: false, reason: 'backoff', retryAt: last.at + RETRY_MS };
+  const last = Object.prototype.hasOwnProperty.call(attempts, flavor) ? attempts[flavor] : null;
+  if (waiting(last, now)) return { ...base, sync: false, reason: 'backoff', retryAt: last.at + waitFor(last) };
   return { ...base, sync: true, reason: check };
 }
 
 function prune(attempts) {
-  const valid = Object.entries(attempts).filter(([, a]) => a && typeof a === 'object' && Number.isFinite(a.at));
-  const kept = new Set(
-    valid
-      .sort((a, b) => b[1].at - a[1].at)
-      .slice(0, ATTEMPTS_KEPT)
-      .map(([k]) => k),
-  );
-  for (const k of Object.keys(attempts)) if (!kept.has(k)) delete attempts[k];
+  for (const k of Object.keys(attempts)) if (!isFlavor(k) || !validAttempt(attempts[k])) delete attempts[k];
 }
 
 function lastLine(text) {
@@ -118,9 +127,9 @@ function createAutoSync({ enabled = true, dataDir, home, state, save = () => {},
     return s[STATE_KEY];
   }
 
-  function record(key, entry) {
+  function record(flavor, entry) {
     const all = attempts();
-    all[key] = entry;
+    all[flavor] = entry;
     prune(all);
     try {
       save();
@@ -139,35 +148,36 @@ function createAutoSync({ enabled = true, dataDir, home, state, save = () => {},
     return !!current && current.build === d.build;
   }
 
-  function finish(d, key, at, result) {
+  function finish(d, at, result) {
     busy.delete(d.flavor);
     const claimed = !!(result && result.ok);
     const ok = claimed && switched(d);
+    const locked = !claimed && !!result && result.code === D.LOCKED_EXIT;
     const message = claimed && !ok ? `the sync ended, but ${d.build} is not the current ${d.flavor} data` : (result && result.message) || '';
-    record(key, ok ? { at, result: 'ok', endedAt: now() } : { at, result: 'failed', endedAt: now(), error: message.slice(0, MESSAGE_MAX) });
+    const entry = { build: d.build, at, result: ok ? 'ok' : locked ? 'locked' : 'failed', endedAt: now() };
+    if (!ok) entry.error = message.slice(0, MESSAGE_MAX);
+    record(d.flavor, entry);
+    const next = new Date(at + waitFor(entry)).toISOString();
     if (ok) log(`data sync: ${d.flavor} ${d.build} is current; the next game data lookup uses it`);
-    else
-      log(
-        `data sync: ${d.flavor} ${d.build} failed (${message || 'no reason given'}); the data in use stays, next try after ${new Date(at + RETRY_MS).toISOString()}`,
-      );
+    else if (locked) log(`data sync: ${d.flavor} ${d.build} waits, another data sync holds the lock (${message || 'no reason given'}); next try after ${next}`);
+    else log(`data sync: ${d.flavor} ${d.build} failed (${message || 'no reason given'}); the data in use stays, next try after ${next}`);
     return { ok, message };
   }
 
   function observe(clientBuild, where = '') {
-    if (!enabled || !dataDir || !D.isBuild(clientBuild)) return null;
+    if (!enabled || !dataDir || !isAutoBuild(clientBuild)) return null;
     const d = decide({ clientBuild, dataDir, attempts: attempts(), busy, now: now() });
     if (!d.sync) return d;
-    const key = attemptKey(d.flavor, d.build);
     const at = now();
     busy.set(d.flavor, d.build);
-    record(key, { at, result: 'running' });
+    record(d.flavor, { build: d.build, at, result: 'running' });
     const have = d.dataBuild ? `${d.flavor} data ${d.dataBuild} (${d.check})` : `no ${d.flavor} data`;
     log(`data sync: client ${d.build}${where} has ${have}; syncing ${d.flavor} ${d.build} from wago.tools in the background`);
     const done = Promise.resolve()
       .then(() => run({ flavor: d.flavor, build: d.build, home, onChild }))
       .then(
-        result => finish(d, key, at, result),
-        e => finish(d, key, at, { ok: false, message: e && e.message ? e.message : String(e) }),
+        result => finish(d, at, result),
+        e => finish(d, at, { ok: false, message: e && e.message ? e.message : String(e) }),
       );
     return { ...d, done };
   }
@@ -177,11 +187,11 @@ function createAutoSync({ enabled = true, dataDir, home, state, save = () => {},
 
 module.exports = {
   RETRY_MS,
+  LOCKED_RETRY_MS,
   RUN_TIMEOUT_MS,
   STATE_KEY,
-  ATTEMPTS_KEPT,
   settings,
-  attemptKey,
+  isAutoBuild,
   decide,
   prune,
   lastLine,

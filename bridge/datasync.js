@@ -19,6 +19,7 @@ const MAX_NAME_LENGTH = 120;
 const MAX_BODY_BYTES = 64 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 120000;
 const LOCK_STALE_MS = 30 * 60 * 1000;
+const LOCKED_EXIT = 3;
 const LOCK_FILE = '.sync.lock';
 const LOCK_TAKEOVER_SUFFIX = '.takeover';
 const CURRENT_FILE = 'current';
@@ -936,8 +937,22 @@ async function main(argv, deps = {}) {
   } catch (e) {
     err(`data sync failed: ${e && e.message ? e.message : String(e)}\n`);
     if (e instanceof UsageError) return 2;
-    return e instanceof LockedError ? 3 : 1;
+    return e instanceof LockedError ? LOCKED_EXIT : 1;
   }
+}
+
+function runCli(argv, run = main) {
+  return Promise.resolve()
+    .then(() => run(argv))
+    .then(
+      code => {
+        process.exitCode = code;
+      },
+      e => {
+        process.stderr.write(`data sync failed: ${e && e.message ? e.message : String(e)}\n`);
+        process.exitCode = 1;
+      },
+    );
 }
 
 module.exports = {
@@ -948,6 +963,7 @@ module.exports = {
   MAX_NAME_LENGTH,
   LOCK_FILE,
   LOCK_STALE_MS,
+  LOCKED_EXIT,
   CURRENT_FILE,
   MANIFEST_FILE,
   SyncError,
@@ -975,19 +991,11 @@ module.exports = {
   sync,
   parseArgs,
   main,
+  runCli,
   readCappedBytes,
   sha256,
   MANIFEST_SCHEMA,
   FETCH_TIMEOUT_MS,
 };
 
-if (require.main === module)
-  main(process.argv.slice(2)).then(
-    code => {
-      process.exitCode = code;
-    },
-    e => {
-      process.stderr.write(`data sync failed: ${e && e.message ? e.message : String(e)}\n`);
-      process.exitCode = 1;
-    },
-  );
+if (require.main === module) runCli(process.argv.slice(2));
