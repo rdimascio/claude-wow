@@ -4139,6 +4139,14 @@ function Q.SayAboutDenial(c, text)
 	ClaudeWoW.Print(text)
 end
 
+function ClaudeWoW.SayAboutDenial(chatId, text)
+	Q.SayAboutDenial(FindChat(chatId), text)
+end
+
+function Q.GrantHeld()
+	return ClaudeWoWRoll ~= nil and (ClaudeWoWRoll.Held() or ClaudeWoWRoll.Blocked() ~= nil)
+end
+
 function ClaudeWoW.AllowPending(chatId, msgId)
 	local p = run.allowConfirm
 	return p ~= nil and p.chatId == chatId and p.msgId == msgId
@@ -4154,6 +4162,10 @@ end
 function ClaudeWoW.AcceptAllow(data)
 	if not data or run.allowConfirm ~= data then return false end
 	run.allowConfirm = nil
+	if Q.GrantHeld() then
+		ClaudeWoWRoll.HoldGrant(data.chatId, data.msgId)
+		return false
+	end
 	local rules, openId = ClaudeWoW.OpenDenial(data.chatId)
 	local c = FindChat(data.chatId)
 	local agent, plugin = Q.GrantTarget(c)
@@ -4173,6 +4185,10 @@ function ClaudeWoW.ConfirmAllow(chatId, msgId, rules)
 		return false
 	end
 	if ClaudeWoW.IsLiveChat(c) then
+		if Q.GrantHeld() then
+			ClaudeWoWRoll.HoldGrant(chatId, msgId)
+			return false
+		end
 		ClaudeWoW.AllowOnce(chatId, open)
 		return true
 	end
@@ -6603,6 +6619,10 @@ function Cli.Links.roll(arg)
 	local rules, openId = ClaudeWoW.OpenDenial(c.id)
 	if not rules or openId ~= msgId then
 		Whisper.System(c, "That request was answered already.")
+		return
+	end
+	if choice ~= "pass" and Q.GrantHeld() then
+		ClaudeWoWRoll.HoldGrant(c.id, msgId)
 		return
 	end
 	local current = ClaudeWoWRoll and ClaudeWoWRoll.Current()

@@ -25,7 +25,7 @@ function answerTo(h, id, label) {
 }
 
 async function roll(h, choice) {
-  await h.client.waitFor(() => h.client.luaValue('ClaudeWoWRoll.Current() and "open"') === 'open', { label: 'the roll frame' });
+  await h.client.waitFor(() => h.client.luaValue('ClaudeWoWRoll.Armed() and "armed"') === 'armed', { label: 'the roll frame, armed' });
   const id = h.client.lastSeq() + 1;
   h.client.runLua(
     'function StaticPopup_Show(which, a, b, data) local d = { which = which, text = a, data = data, shown = true }; STUB.popup = d; return d end; STUB.popup = nil',
