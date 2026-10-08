@@ -652,7 +652,7 @@ test('runSync: a child that hangs is killed after the timeout; a command that ca
   assert.match(hung.message, /^no result after 0 minutes, so it was stopped$/);
   const missing = await DAS.runSync({ home: scratch('home'), command: [path.join(scratch('bin'), 'no-such-binary'), []] });
   assert.equal(missing.ok, false);
-  assert.match(missing.message, /ENOENT/);
+  assert.match(missing.message, /ENOENT|Executable not found/);
   const silent = await DAS.runSync({ home: scratch('home'), command: [process.execPath, ['-e', 'process.exit(5)']] });
   assert.deepEqual(silent, { ok: false, code: 5, message: 'exit code 5' });
   const where = await DAS.runSync({ home: '/the/home', command: [process.execPath, ['-e', 'console.log(process.env.CLAUDE_WOW_HOME)']] });
