@@ -242,7 +242,7 @@ test('Effort is a radio menu with the same items with and without MenuUtil; a lo
   assert.doesNotMatch(tip, /Click to change/, 'a locked effort does not offer a change');
 });
 
-test('the shared menu schema: enabled (boolean or function) reaches MenuUtil and dims fallback rows', () => {
+test('the shared menu schema: enabled (boolean or function) reaches MenuUtil as a boolean and dims fallback rows', () => {
   const vm = nativeVM(MENU_UTIL);
   vm.run(
     'ClaudeWoW.ApplyEfforts({ efforts = { [""] = { claude = "high" } }, effortLock = { claude = "low" } }); ClaudeWoWDB.chats[1].agent = "claude"; ClaudeWoW.Render()',
@@ -252,8 +252,8 @@ test('the shared menu schema: enabled (boolean or function) reaches MenuUtil and
     vm.evaluate(
       '(function() for _, it in ipairs(STUB.menu.items) do if it.text == "max" then return type(it.enabledArg) .. "," .. tostring(it.enabled) end end end)()',
     ),
-    'function,false',
-    'a function is handed to SetEnabled as is',
+    'boolean,false',
+    'SetEnabled gets the evaluated boolean, never a predicate',
   );
   vm.run('ClaudeWoW.ApplyEfforts({ efforts = { [""] = { claude = "high" } }, effortLock = {} }); ClaudeWoWEffortButton.scripts.OnClick(ClaudeWoWEffortButton)');
   assert.equal(vm.evaluate('(function() for _, it in ipairs(STUB.menu.items) do if it.text == "max" then return tostring(it.enabled) end end end)()'), 'true');
@@ -380,4 +380,52 @@ test('the window module never moves a Blizzard frame', () => {
   const src = fs.readFileSync(path.join(ADDON, 'Window.lua'), 'utf8');
   assert.doesNotMatch(src, /PlaceLootBeside|LootInPanelSlot/);
   assert.doesNotMatch(src, /loot:|_G\.LootFrame/);
+});
+
+test('a lock that arrives while the fallback Effort menu is open stops the pick and dims the row', () => {
+  const vm = nativeVM();
+  vm.run('ClaudeWoW.ApplyEfforts({ efforts = { [""] = { claude = "high" } }, effortLock = {} }); ClaudeWoWDB.chats[1].agent = "claude"; ClaudeWoW.Render()');
+  vm.run('ClaudeWoWEffortButton.scripts.OnClick(ClaudeWoWEffortButton)');
+  const row = '(function() for _, r in ipairs(ClaudeWoWChatMenu.rows) do if r.shown and r.label.text == "max" then return r end end end)()';
+  assert.equal(vm.evaluate(`${row}.disabled`), 'false');
+  vm.run('ClaudeWoW.ApplyEfforts({ efforts = { [""] = { claude = "high" } }, effortLock = { claude = "low" } })');
+  clickRow(vm, 'max');
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].effort'), null, 'the click is refused');
+  assert.equal(vm.evaluate(`${row}.disabled`), 'true', 'the row now shows as disabled');
+  assert.equal(vm.evaluate(`${row}.check.alpha`), '0.5');
+  assert.equal(vm.evaluate(`${row}.mouseEnabled`), 'false');
+});
+
+test('Project radio compares full paths and tells same-named projects apart', () => {
+  const vm = nativeVM(MENU_UTIL);
+  vm.run(
+    'ClaudeWoW.SetFolder("/work/a/service", ClaudeWoWDB.chats[1]); ClaudeWoW.NewChat(); ClaudeWoW.SetFolder("/work/b/service", ClaudeWoWDB.chats[2]); ClaudeWoW.Render()',
+  );
+  vm.run('ClaudeWoWProjectButton.scripts.OnClick(ClaudeWoWProjectButton)');
+  const items = menuTexts(vm).split('|');
+  assert.ok(items.includes('service (a)') && items.includes('service (b)'), items.join('|'));
+  const selected = vm.evaluate(
+    '(function() local t = {} for _, it in ipairs(STUB.menu.items) do if it.get and it.get() then table.insert(t, it.text) end end return table.concat(t, "|") end)()',
+  );
+  assert.equal(selected, 'service (b)', 'only the chat project is marked');
+  vm.run('for _, it in ipairs(STUB.menu.items) do if it.text == "service (a)" then it.fn() end end');
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[2].cwd'), '/work/a/service');
+  vm.run('ClaudeWoW.SetFolder("/x/a/service", ClaudeWoWDB.chats[1]); ClaudeWoW.Render(); ClaudeWoWProjectButton.scripts.OnClick(ClaudeWoWProjectButton)');
+  const full = menuTexts(vm).split('|');
+  assert.ok(full.includes('/work/a/service') && full.includes('/x/a/service'), 'same name and parent: the full path ' + full.join('|'));
+});
+
+test('an empty Project dialog detaches a coding chat like the menu No project', () => {
+  const vm = nativeVM();
+  vm.run('ClaudeWoWDB.chats[1].plugin = "claude-code"; ClaudeWoWDB.chats[1].cwd = "/work/a/service"; ClaudeWoW.Render()');
+  const accept = text =>
+    vm.run(
+      `ClaudeWoW.FolderPrompt(ClaudeWoWDB.chats[1].id); local box = CreateFrame("EditBox"); box:SetText("${text}"); StaticPopupDialogs.CLAUDEWOW_FOLDER.OnAccept({ editBox = box }, STUB.popup.data)`,
+    );
+  accept('');
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].cwd'), '');
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].plugin'), '', 'the explicit coding plugin is cleared too');
+  assert.equal(vm.evaluate('ClaudeWoWProjectButton.fullName'), 'No project');
+  accept('/work/b/service');
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].cwd'), '/work/b/service', 'a path still sets the project');
 });

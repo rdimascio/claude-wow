@@ -4492,15 +4492,41 @@ function Cli.PickProject(c, value)
 	ClaudeWoW.Render()
 end
 
+function Cli.ParentName(path)
+	local parent = tostring(path or ""):gsub("[\\/]+$", ""):match("^(.*)[\\/][^\\/]+$")
+	return parent and FolderName(parent) or ""
+end
+
+function Cli.ProjectMenuLabels(paths)
+	local function Counts(labels)
+		local n = {}
+		for _, l in ipairs(labels) do n[l] = (n[l] or 0) + 1 end
+		return n
+	end
+	local labels = {}
+	for i, p in ipairs(paths) do labels[i] = FolderName(p) end
+	local plain = Counts(labels)
+	for i, p in ipairs(paths) do
+		local parent = Cli.ParentName(p)
+		if plain[labels[i]] > 1 and parent ~= "" then labels[i] = labels[i] .. " (" .. parent .. ")" end
+	end
+	local qualified = Counts(labels)
+	for i, p in ipairs(paths) do
+		if qualified[labels[i]] > 1 then labels[i] = p end
+	end
+	return labels
+end
+
 function Cli.ProjectMenuItems(c)
-	local function Current() return Cli.ProjectLabel(c) end
+	local function Current() return Cli.NormalizeFolder(Cli.ProjectOf(c)) end
 	local items = {
 		{ title = "Project" },
-		{ text = Cli.NO_PROJECT, radio = true, selected = function() return Current() == Cli.NO_PROJECT end, fn = function() Cli.PickProject(c, "none") end },
+		{ text = Cli.NO_PROJECT, radio = true, selected = function() return Current() == "" end, fn = function() Cli.PickProject(c, "none") end },
 	}
-	for _, p in ipairs(Cli.KnownProjects()) do
-		local name = FolderName(p)
-		table.insert(items, { text = name, radio = true, selected = function() return Current() == name end, fn = function() Cli.PickProject(c, p) end })
+	local paths = Cli.KnownProjects()
+	local labels = Cli.ProjectMenuLabels(paths)
+	for i, p in ipairs(paths) do
+		table.insert(items, { text = Display(labels[i]), radio = true, selected = function() return Current() == p end, fn = function() Cli.PickProject(c, p) end })
 	end
 	return items
 end
@@ -5167,7 +5193,11 @@ StaticPopupDialogs["CLAUDEWOW_FOLDER"] = {
 		local chat = data and FindChat(data.id)
 		if not (chat and box) then return end
 		Cli.KeepPlayerRoute(chat)
-		ClaudeWoW.SetFolder(box:GetText(), chat)
+		if Cli.IsNoProject(box:GetText()) then
+			Cli.PickProject(chat, "none")
+		else
+			ClaudeWoW.SetFolder(box:GetText(), chat)
+		end
 	end,
 	EditBoxOnEnterPressed = function(box)
 		local dialog = box:GetParent()
@@ -8195,7 +8225,7 @@ end
 
 function Q.ApplyNativeEnabled(element, item)
 	if item.enabled == nil or type(element) ~= "table" or type(element.SetEnabled) ~= "function" then return end
-	element:SetEnabled(item.enabled)
+	element:SetEnabled(Q.MenuEnabled(item))
 end
 
 function Q.FillNativeMenu(root, items)
@@ -8289,11 +8319,30 @@ function Q.MenuRow(menu, i)
 	row.label:SetWordWrap(false)
 	row:SetScript("OnClick", function(self)
 		if not self.fn then return end
+		if self.item and not Q.MenuEnabled(self.item) then
+			Q.PaintMenuRow(self, false)
+			return
+		end
 		menu:Hide()
 		self.fn()
 	end)
 	menu.rows[i] = row
 	return row
+end
+
+function Q.PaintMenuRow(row, enabled)
+	local it = row.item
+	row.fn = (enabled and not it.divider and not row.header) and it.fn or nil
+	row.disabled = not enabled
+	row:EnableMouse(row.fn ~= nil)
+	if not enabled then
+		row.label:SetTextColor(0.5, 0.5, 0.5)
+	elseif row.header then
+		row.label:SetTextColor(1, 0.82, 0)
+	else
+		row.label:SetTextColor(1, 1, 1)
+	end
+	row.check:SetAlpha(enabled and 1 or 0.5)
 end
 
 function Q.MenuMarkCoords(item, on)
@@ -8317,10 +8366,7 @@ function Q.FillFallbackMenu(menu, items)
 		row:ClearAllPoints()
 		row:SetPoint("TOPLEFT", menu, "TOPLEFT", 6, -top - (i - 1) * Q.MENU_ROW_H)
 		row.item = it
-		local enabled = Q.MenuEnabled(it)
-		row.fn = (enabled and not it.divider and not r.header) and it.fn or nil
-		row.disabled = not enabled
-		row:EnableMouse(row.fn ~= nil)
+		row.header = r.header
 		row.check:ClearAllPoints()
 		row.check:SetPoint("LEFT", row, "LEFT", indent, 0)
 		if mark then
@@ -8334,14 +8380,7 @@ function Q.FillFallbackMenu(menu, items)
 		row.label:SetPoint("LEFT", row, "LEFT", indent + (mark and 16 or 0), 0)
 		row.label:SetPoint("RIGHT", row, "RIGHT", -4, 0)
 		row.label:SetText(it.divider and "" or Q.MenuLabel(it))
-		if not enabled then
-			row.label:SetTextColor(0.5, 0.5, 0.5)
-		elseif r.header then
-			row.label:SetTextColor(1, 0.82, 0)
-		else
-			row.label:SetTextColor(1, 1, 1)
-		end
-		row.check:SetAlpha(enabled and 1 or 0.5)
+		Q.PaintMenuRow(row, Q.MenuEnabled(it))
 		row:Show()
 	end
 	for i = #rows + 1, #menu.rows do menu.rows[i]:Hide() end
