@@ -58,18 +58,40 @@ function messageIds(h) {
   return ids;
 }
 
+const anyChatWaiting = h => (h.client.db().chats || []).some(chat => chat.pendingId);
+
+const ISSUED_IDS_LUA = `(function()
+  local ids = {}
+  for _, c in ipairs(ClaudeWoWDB.chats or {}) do if c.pendingId then ids[#ids + 1] = c.pendingId end end
+  for _, data in ipairs({ ClaudeWoW_SlotData or false, ClaudeWoW_Inbox or false }) do
+    if type(data) == "table" and type(data.replies) == "table" then
+      for _, r in pairs(data.replies) do if type(r) == "table" and tonumber(r.id) then ids[#ids + 1] = r.id end end
+    end
+  end
+  return table.concat(ids, ",")
+end)()`;
+
+function noteIssuedIds(h, issued) {
+  for (const id of messageIds(h)) issued.add(id);
+  for (const id of String(h.client.luaValue(ISSUED_IDS_LUA) || '').split(',')) if (/^\d+$/.test(id)) issued.add(Number(id));
+}
+
+const finishedInLog = (log, id) => new RegExp(`(?<!gs )#${id}(?:@\\S+)? \\w+ \\(\\d+ chars`).test(log);
+
 async function settleAddonRecords(h, tracker) {
   await h.bridge.waitForLine(/hello from session /);
+  const issued = new Set();
   const ids = await h.client.waitFor(
     () => {
+      noteIssuedIds(h, issued);
       const acks = spentSlots(h.sb, 'ack');
       const sigs = spentSlots(h.sb, 'sig');
+      const log = h.bridge.output;
       const pending = tracker.unsettled();
-      const messages = messageIds(h);
-      const unanswered = pending.filter(id => messages.has(id) && !sigs.includes(slotOfId(id)));
-      return pending.every(id => acks.includes(slotOfId(id))) && unanswered.length === 0 ? pending : null;
+      const unanswered = pending.filter(id => issued.has(id) && !(finishedInLog(log, id) && sigs.includes(slotOfId(id))));
+      return pending.every(id => acks.includes(slotOfId(id))) && unanswered.length === 0 && !anyChatWaiting(h) ? pending : null;
     },
-    { timeoutMs: 30000, label: 'the bridge to ack every record the addon sent and to answer every message among them' },
+    { timeoutMs: 30000, label: 'the bridge to ack every record the addon sent and to finish and signal every message and quiet record among them' },
   );
   tracker.settled(ids);
 }

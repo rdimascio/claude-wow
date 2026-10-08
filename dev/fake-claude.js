@@ -380,6 +380,12 @@ function mcpServers(argv, failing) {
   return names.map(name => ({ name, status: name === failing ? 'failed' : 'connected' }));
 }
 
+function laterInit(init, failingLater) {
+  if (typeof failingLater !== 'string') return init;
+  const others = init.mcp_servers.filter(s => s.name !== failingLater);
+  return { ...init, mcp_servers: [...others, { name: failingLater, status: 'failed' }] };
+}
+
 function mcpRuleAllows(argv, server, tool) {
   const full = `mcp__${server}__${tool}`;
   const matches = rule => rule === full || rule === `mcp__${server}`;
@@ -635,7 +641,7 @@ async function main() {
   }
 
   const subagentUsage = d['background-agent']
-    ? backgroundAgent(session, d['background-agent'] === true ? 'agent answer' : String(d['background-agent']), init)
+    ? backgroundAgent(session, d['background-agent'] === true ? 'agent answer' : String(d['background-agent']), laterInit(init, d['mcp-fail-later']))
     : null;
   const u = turnUsage(session.turns);
   session.total = addUsage(session.total, u);

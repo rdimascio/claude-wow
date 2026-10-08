@@ -2952,6 +2952,7 @@ function runAgent(job, opts = {}) {
   let stdoutText = '';
   let parserError = false;
   let pluginErrorsLogged = false;
+  const mcpDownNoted = new Set();
 
   let steps = 0;
   const pushProgress = line => {
@@ -3031,7 +3032,11 @@ function runAgent(job, opts = {}) {
     for (const p of r.progress) pushProgress(p);
     for (const d of r.denied) denied.add(d);
     if (Array.isArray(r.deniedAgain)) for (const d of r.deniedAgain) deniedAgain.add(d);
-    if (Array.isArray(r.mcpDown)) noteMcpDown(r.mcpDown);
+    if (Array.isArray(r.mcpDown)) {
+      const newlyDown = r.mcpDown.filter(s => !mcpDownNoted.has(s.name));
+      for (const s of newlyDown) mcpDownNoted.add(s.name);
+      if (newlyDown.length) noteMcpDown(newlyDown);
+    }
     if (Array.isArray(r.mcpStatus)) noteMcpHealth(r.mcpStatus, cwd);
     if (Array.isArray(r.pluginErrors) && r.pluginErrors.length && !pluginErrorsLogged) {
       pluginErrorsLogged = true;

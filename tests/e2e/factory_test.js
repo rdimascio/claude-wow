@@ -82,6 +82,37 @@ test('a coding chat with the factory on is a cheap dispatcher: it starts an allo
   });
 });
 
+test('a coding run whose factory server is down logs it and notes it once, though a background subagent sends a second init', async () => {
+  await withGame({ beforeLaunch: withFactory }, async h => {
+    const r = await h.client.say('[[mcp-fail wowfactory]] [[background-agent PROBE-AGENT-OK]] [[reply the build is fixed]]');
+    assert.equal(r.role, 'assistant');
+    const call = h.agentCalls().find(c => c.directives['background-agent']);
+    assert.ok(call, 'the run reached the agent');
+    assert.equal(call.disableBackgroundTasks, null, 'the subagent runs in the background, so the agent sends two init events');
+    assert.ok(call.mcpConfig.mcpServers.wowfactory, 'the run has the factory server');
+    const downLines = h.bridge.output.split('\n').filter(l => l.includes('MCP server(s) not connected: wowfactory (failed)'));
+    assert.equal(downLines.length, 1, 'the down server is logged once per run');
+    const note = 'The factory tools server (wowfactory) did not start (failed), so no factory run was started by this message.';
+    assert.equal(r.text.split(note).length - 1, 1, 'the reply carries the note once');
+  });
+});
+
+test('a server down only at the second init of a run is logged once, and the server down at both inits is not logged again', async () => {
+  await withGame({ beforeLaunch: withFactory }, async h => {
+    const r = await h.client.say('[[mcp-fail wowfactory]] [[mcp-fail-later project-docs]] [[background-agent PROBE-AGENT-OK]] [[reply the build is fixed]]');
+    assert.equal(r.role, 'assistant');
+    const call = h.agentCalls().find(c => c.directives['mcp-fail-later']);
+    assert.ok(call, 'the run reached the agent');
+    assert.equal(call.disableBackgroundTasks, null, 'the subagent runs in the background, so the agent sends two init events');
+    const downLines = h.bridge.output.split('\n').filter(l => l.includes('MCP server(s) not connected:'));
+    assert.equal(downLines.length, 2, downLines.join('\n'));
+    assert.ok(downLines[0].endsWith('MCP server(s) not connected: wowfactory (failed)'), downLines[0]);
+    assert.ok(downLines[1].endsWith('MCP server(s) not connected: project-docs (failed)'), downLines[1]);
+    const note = 'The factory tools server (wowfactory) did not start (failed), so no factory run was started by this message.';
+    assert.equal(r.text.split(note).length - 1, 1, 'the reply carries the factory note once');
+  });
+});
+
 test('a factory run is ended when the bridge stops, and the run is recorded as killed', { skip: process.platform === 'win32' }, async () => {
   await withGame({ beforeLaunch: withFactory }, async h => {
     const started = await h.client.say(`[[mcp-call wowfactory factory_dispatch {"skill":"babysit-pr","args":"${hidden('[[hang]]')}"}]]`);
