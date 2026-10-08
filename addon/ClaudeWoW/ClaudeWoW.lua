@@ -606,6 +606,7 @@ Q.RELOAD_TEXT_AFTER_COMBAT = "Reload needed\n\nCombat is over. Reload the interf
 local function SafeReload()
 	if InCombatLockdown() then
 		run.reloadAfterCombat = true
+		run.reloadAsked = nil
 		if ui.status then ui.status:SetText(Q.RELOAD_COMBAT_STATUS) end
 		return
 	end
@@ -615,18 +616,16 @@ end
 Q.RELOAD_POPUP = "CLAUDEWOW_RELOAD"
 
 function Q.AskReload()
-	StaticPopupDialogs[Q.RELOAD_POPUP].text = Q.ReloadNeeded() and Q.RELOAD_TEXT_REPLY or Q.RELOAD_TEXT_AFTER_COMBAT
+	StaticPopupDialogs[Q.RELOAD_POPUP].text = Q.ReplyReloadNeeded() and Q.RELOAD_TEXT_REPLY or Q.RELOAD_TEXT_AFTER_COMBAT
 	if not StaticPopup_Show(Q.RELOAD_POPUP) then return false end
 	run.reloadAsked = Q.PendingKey()
+	run.reloadAfterCombat = nil
 	return true
 end
 
 function Q.AfterCombat()
 	if not db then return end
-	if run.reloadAfterCombat then
-		run.reloadAfterCombat = nil
-		if Q.AskReload() then return end
-	end
+	if run.reloadAfterCombat and Q.AskReload() then return end
 	ClaudeWoW.ArmAutoRefresh()
 end
 
@@ -655,7 +654,16 @@ function Q.PendingKey()
 	return table.concat(ids, ",")
 end
 
+function Q.ReloadKey()
+	return Q.PendingKey() .. (run.reloadAfterCombat and "|combat" or "")
+end
+
 function Q.ReloadNeeded()
+	if not db then return false end
+	return run.reloadAfterCombat == true or Q.ReplyReloadNeeded()
+end
+
+function Q.ReplyReloadNeeded()
 	if not db or not AnyPending() then return false end
 	if db.settings.mode ~= "pixel" then return true end
 	return (run.slotsExhausted or run.slotsMissing or run.pixelFailed) and true or false
@@ -663,7 +671,7 @@ end
 
 function ClaudeWoW.ArmAutoRefresh()
 	if not Q.ReloadNeeded() then return end
-	local key = Q.PendingKey()
+	local key = Q.ReloadKey()
 	if run.reloadAsked == key or run.reloadArmed == key then return end
 	run.reloadArmed = key
 	C_Timer.After(db.settings.interval, function()
@@ -1414,6 +1422,10 @@ function Q.ActivityAtLogin(chat)
 end
 
 local function NotedBridge(at)
+	if run.replay then
+		at = run.replay.at
+		if not at then return end
+	end
 	at = at or GetTime()
 	if not run.bridgeSeen or at > run.bridgeSeen then run.bridgeSeen = at end
 	run.pixelFailed = nil
@@ -1949,7 +1961,10 @@ function Q.ApplyRuns(data)
 		local since = type(a) == "table" and type(a.since) == "number" and a.since or nil
 		if since and since <= data.now and a.session == db.session then
 			for _, c in ipairs(db.chats) do
-				if c.pendingId == a.id then Q.NoteLife(c, since > 0 and since or data.now) end
+				if c.pendingId == a.id then
+					Q.NoteLife(c, since > 0 and since or data.now)
+					Q.NoteRequestAcked(c.id, a.id)
+				end
 			end
 		end
 	end
@@ -1957,8 +1972,25 @@ end
 
 -- The bridge has read this record: whatever game context rode on it is now
 -- what the bridge knows, so later messages only carry it again if it changes.
+function Q.NoteRequestSent(chatId, id)
+	run.requests = run.requests or {}
+	run.requests[chatId] = { id = id, sentAt = GetTime() }
+end
+
+function Q.NoteRequestAcked(chatId, id)
+	local r = run.requests and run.requests[chatId]
+	if r and r.id == id then r.acked = true end
+end
+
+function Q.PendingRequest(c)
+	local r = run.requests and run.requests[c.id]
+	if r and r.id == c.pendingId then return r end
+	return nil
+end
+
 local function NoteAcked(rec)
 	rec.acked = true
+	if rec.request then Q.NoteRequestAcked(rec.chat, rec.request) end
 	ClaudeWoW.ChatLog.Acked(rec)
 	if rec.ctx ~= nil then run.contextSent = rec.ctx end
 	if not (rec.hello or rec.forget or rec.cancelOf or rec.dm or rec.openUrl) then Q.NoteLife((FindChat(rec.chat))) end
@@ -2587,9 +2619,19 @@ local function Tick()
 end
 
 -- Pull whatever bridge.js last wrote into Inbox.lua (the reload path).
+local ApplyInbox
+
 local function ProcessInbox()
 	local inbox = ClaudeWoW_Inbox
 	if type(inbox) ~= "table" then return end
+	local stamp = tonumber(inbox.now)
+	run.replay = { at = stamp and GetTime() - math.max(0, time() - stamp) or nil }
+	local ok, err = pcall(ApplyInbox, inbox)
+	run.replay = nil
+	if not ok then error(err, 0) end
+end
+
+ApplyInbox = function(inbox)
 	if type(inbox.cwd) == "string" and inbox.cwd ~= "" then run.bridgeCwd = inbox.cwd end
 	if inbox.cancel == true then run.bridgeCancel = true end
 	local inboxStamp = tonumber(inbox.now)
@@ -2652,16 +2694,14 @@ Finish = function(chat, role, text, denied, agent, summary, macros)
 	if run.act then run.act[chat.id] = nil end
 	NotedBridge()
 	local visible = ui.frame and ui.frame:IsShown() and db.activeChat == chat.id
-	if not visible and not Whisper.Active() then
-		chat.unread = (chat.unread or 0) + 1
-	end
 	if not AnyPending() then
 		ClaudeWoW.DisarmReload()
 	end
 	if visible then Q.OfferDraft(chat) end
 	ClaudeWoW.Render()
 	if denied and ClaudeWoW.LootRollEnabled() then ClaudeWoWRoll.Offer(chat.id) end
-	ClaudeWoW.Notify(chat, text, agent, summary, role, denied, msgId, macros)
+	local tabbed = ClaudeWoW.Notify(chat, text, agent, summary, role, denied, msgId, macros)
+	Q.NoteUnread(chat, visible, tabbed)
 	if not visible then Q.OfferDraft(chat) end
 end
 
@@ -2682,9 +2722,15 @@ function ClaudeWoW.LateReply(chat, r)
 	if w and w.id == r.id then run.lateWait[chat.id] = nil end
 	AddHistory(chat, "assistant", text, r.id, nil, agent, nil, r.summary)
 	local visible = ui.frame and ui.frame:IsShown() and db.activeChat == chat.id
-	if not visible and not Whisper.Active() then chat.unread = (chat.unread or 0) + 1 end
 	ClaudeWoW.Render()
-	ClaudeWoW.Notify(chat, text, agent, r.summary, "assistant", nil, r.id, nil)
+	local tabbed = ClaudeWoW.Notify(chat, text, agent, r.summary, "assistant", nil, r.id, nil)
+	Q.NoteUnread(chat, visible, tabbed)
+end
+
+function Q.NoteUnread(chat, visible, tabbed)
+	if visible or tabbed then return end
+	chat.unread = (chat.unread or 0) + 1
+	ClaudeWoW.Render()
 end
 
 ---------------------------------------------------------------------------
@@ -3717,7 +3763,8 @@ function ClaudeWoW.Send(text, allow, opts)
 	end
 
 	if db.settings.mode == "pixel" then
-		run.outbound[id] = { chat = c.id, cwd = c.cwd, flags = flags, name = c.name, text = text, ctx = ctx, sentAt = GetTime() }
+		run.outbound[id] = { chat = c.id, cwd = c.cwd, flags = flags, name = c.name, text = text, ctx = ctx, sentAt = GetTime(), request = id }
+		Q.NoteRequestSent(c.id, id)
 		NoteStaleSignals(id)
 		run.sentAt = GetTime()
 		run.polls = 0
@@ -3930,7 +3977,8 @@ function ClaudeWoW.Resend()
 	if db.settings.vision then table.insert(tokens, "v") end -- a resend is a fresh screenshot
 	for _, t in ipairs(Cli.ChatOptionTokens(c)) do table.insert(tokens, t) end
 	if c.titleFor == c.pendingId then table.insert(tokens, "t") end
-	run.outbound[c.pendingId] = { chat = c.id, cwd = c.cwd, flags = table.concat(tokens, ";"), name = c.name, text = text, sentAt = GetTime() }
+	run.outbound[c.pendingId] = { chat = c.id, cwd = c.cwd, flags = table.concat(tokens, ";"), name = c.name, text = text, sentAt = GetTime(), request = c.pendingId }
+	Q.NoteRequestSent(c.id, c.pendingId)
 	NoteStaleSignals(c.pendingId)
 	run.sentAt = GetTime()
 	run.polls = 0
@@ -5677,7 +5725,7 @@ function Q.StatusState(c)
 	if c and c.pendingId then
 		if db.settings.mode == "pixel" and (run.slotsExhausted or run.slotsMissing or run.pixelFailed) then return "reply", Q.STATUS_RELOAD_HINT end
 		local a = run.act and run.act[c.id]
-		return "working", Q.ReloadNeeded() and Q.STATUS_RELOAD_HINT or nil, (a and a.startedAt) or run.sentAt
+		return "working", Q.ReplyReloadNeeded() and Q.STATUS_RELOAD_HINT or nil, (a and a.startedAt) or run.sentAt
 	end
 	if not ClaudeWoW.IsConnected() then
 		local key = Q.ConnectionKey()
@@ -5695,20 +5743,17 @@ function Q.ShouldShowResend(c)
 	if c.progress or (run.steps and run.steps[c.id]) then return false end
 	local a = run.act and run.act[c.id]
 	if a and (a.count or 0) > 0 then return false end
-	local rec = run.outbound and run.outbound[c.pendingId]
-	if rec and rec.acked then return false end
-	local since = (rec and rec.sentAt) or run.sentAt
+	local r = Q.PendingRequest(c)
+	if r and r.acked then return false end
+	local since = (r and r.sentAt) or run.sentAt
 	return since ~= nil and GetTime() - since >= Q.RESEND_AFTER_SECONDS
 end
 
 function Q.ResendVisible(c, mode)
-	if not (c and c.pendingId ~= nil and mode == "pixel") then return false end
-	if type(Q.ShouldShowResend) == "function" then return Q.ShouldShowResend(c) and true or false end
-	return true
+	return (c and c.pendingId and mode == "pixel" and Q.ShouldShowResend(c)) and true or false
 end
 
 function Q.ResendTooltip(button)
-	if type(Q.RESEND_TIP) ~= "string" then return end
 	GameTooltip:SetOwner(button, "ANCHOR_TOP")
 	GameTooltip:SetText("Resend")
 	GameTooltip:AddLine(Q.RESEND_TIP, 0.8, 0.8, 0.8, true)
@@ -6478,11 +6523,12 @@ function ClaudeWoW.Notify(chat, text, agent, summary, role, denied, msgId, macro
 	Whisper.OfferReply(chat)
 	local tabbed = Whisper.Reply(chat, text, agent, role, denied, summary, msgId, macros)
 	if not tabbed then EchoToChat(chat, text, agent, summary) end
-	if inCombat or tabbed then return end
-	if ui.frame and ui.frame:IsShown() then return end
+	if inCombat or tabbed then return tabbed end
+	if ui.frame and ui.frame:IsShown() then return false end
 	local who = ReplyAgentName(chat, agent)
 	if UIErrorsFrame then UIErrorsFrame:AddMessage(who .. " replied.", 0.5, 0.8, 1, 1) end
 	if not Q.MinimapButtonOn() then print(ClaudeWoW.PREFIX .. who .. Q.REPLY_WAITING_NOTICE) end
+	return false
 end
 
 function ClaudeWoW.SystemNote(text)

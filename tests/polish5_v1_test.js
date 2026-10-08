@@ -233,25 +233,104 @@ test('status: Connecting... while connecting, then "No answer from the companion
   assert.match(vm.evaluate('select(5, ClaudeWoW.BridgeState())'), /^Companion app: not seen for .*\. Is it running\?$/);
 });
 
-test('Resend: offered only after the strip time passes with no acknowledgement', () => {
-  const vm = newVM();
+test('Resend lifecycle: an ack hides it for good, retries never push it back, a manual resend starts the wait again', () => {
+  const pending = vm => vm.num('ClaudeWoWDB.chats[1].pendingId');
+  const show = vm => vm.evaluate('Q.ShouldShowResend(ClaudeWoWDB.chats[1])');
+  const button = vm => vm.evaluate('ClaudeWoW.UI.resend:IsShown()');
+  const wait = (vm, seconds) => vm.run(`STUB.now = STUB.now + ${seconds}; STUB.Tick()`);
+
+  const acked = newVM();
+  hello(acked, 'claude');
+  acked.run('ClaudeWoW.Send("are you there")');
+  assert.equal(show(acked), 'false', 'not at once');
+  acked.run(`ClaudeWoW.ApplyAcks({ { id = ${pending(acked)}, session = ClaudeWoWDB.session } })`);
+  wait(acked, 2);
+  assert.equal(acked.evaluate(`RUN().outbound[${pending(acked)}]`), null, 'the transport drops the acknowledged record');
+  wait(acked, 60);
+  wait(acked, 60);
+  assert.equal(show(acked), 'false', 'acknowledged, then silent: still no resend');
+  assert.equal(button(acked), 'false');
+
+  const unacked = newVM();
+  hello(unacked, 'claude');
+  unacked.run('ClaudeWoW.Send("hello?")');
+  wait(unacked, 39);
+  assert.equal(show(unacked), 'false');
+  assert.equal(button(unacked), 'false');
+  wait(unacked, 2);
+  assert.equal(unacked.evaluate(`RUN().outbound[${pending(unacked)}].tries`), '2', 'the transport retried on its own');
+  assert.equal(show(unacked), 'true', 'its retry does not restart the wait');
+  assert.equal(button(unacked), 'true', 'the tick shows the button');
+  wait(unacked, 41);
+  assert.equal(show(unacked), 'true', 'still offered through the next retry');
+
+  unacked.run('ClaudeWoW.Resend()');
+  assert.equal(show(unacked), 'false', 'a manual resend starts the wait again');
+  wait(unacked, 39);
+  assert.equal(show(unacked), 'false');
+  wait(unacked, 2);
+  assert.equal(show(unacked), 'true');
+  unacked.run('ClaudeWoWDB.chats[1].progress = "Reading files"');
+  assert.equal(show(unacked), 'false', 'progress is an acknowledgement too');
+  unacked.run(`ClaudeWoWDB.chats[1].progress = nil; ClaudeWoW.ApplyAcks({ { id = ${pending(unacked)}, session = ClaudeWoWDB.session } })`);
+  assert.equal(show(unacked), 'false', 'so is a late ack');
+
+  const relogged = newVM({
+    saved:
+      'ClaudeWoWDB = { settings = { pluginsV1 = true, chatsPerCharacterV1 = true }, lastSeq = 5, session = "s1", forget = {}, activeChat = "c1", chats = { { id = "c1", name = "Chat 1", cwd = "", agent = "", plugin = "", unread = 0, pendingId = 5, history = { { role = "user", text = "question", id = 5, t = time() } } } } }',
+  });
+  hello(relogged, 'claude');
+  wait(relogged, 30);
+  assert.equal(button(relogged), 'false', 'a request from before the reload has no outbound record');
+  wait(relogged, 15);
+  assert.equal(button(relogged), 'true', 'the tick still shows the button once the wait is over');
+
+  assert.equal(unacked.evaluate('Q.ShouldShowResend(nil)'), 'false');
+  assert.equal(unacked.evaluate('Q.ResendVisible(ClaudeWoWDB.chats[1], "reload")'), 'false');
+  assert.match(unacked.evaluate('Q.RESEND_TIP'), /companion app/);
+  assert.doesNotMatch(unacked.evaluate('Q.RESEND_TIP'), /bridge/i);
+});
+
+test('a reply replayed from an hour-old inbox at login is not evidence the companion app is alive', () => {
+  const saved = `ClaudeWoWDB = { settings = { whisperV3 = true, whisperChoice = "on", pluginsV1 = true, chatsPerCharacterV1 = true, echoV2 = true }, lastSeq = 5, session = "s1", forget = {}, activeChat = "c1",
+    chats = { { id = "c1", name = "Chat 1", cwd = "", agent = "claude", plugin = "", unread = 0, pendingId = 5, history = { { role = "user", text = "question", id = 5, t = time() - 3700 } } } } }
+    ClaudeWoW_Inbox = { now = time() - 3600, cwd = "", agent = "claude", replies = { { chat = "c1", id = 5, status = "done", text = "old answer", agent = "claude" } } }`;
+  const vm = newVM({ dock: true, saved });
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history].text'), 'old answer', 'the saved reply is replayed');
+  vm.run('for i = 1, 3 do STUB.now = STUB.now + 1; STUB.Tick() end');
+  assert.notEqual(vm.evaluate('ClaudeWoW.BridgeState()'), 'ok', 'the replay counts at the inbox time');
+  assert.equal(vm.num('STUB.tempWindows'), 0, 'no tab while the companion app is stopped');
   hello(vm, 'claude');
-  vm.run('ClaudeWoW.Send("are you there")');
-  const show = () => vm.evaluate('Q.ShouldShowResend(ClaudeWoWDB.chats[1])');
-  assert.equal(show(), 'false', 'not at once');
-  vm.run('STUB.now = STUB.now + Q.RESEND_AFTER_SECONDS - 1');
-  assert.equal(show(), 'false');
-  vm.run('STUB.now = STUB.now + 1');
-  assert.equal(show(), 'true', 'after the strip time with no ack');
-  vm.run('RUN().outbound[ClaudeWoWDB.chats[1].pendingId].acked = true');
-  assert.equal(show(), 'false', 'an acknowledged message needs no resend');
-  vm.run('RUN().outbound[ClaudeWoWDB.chats[1].pendingId].acked = nil; ClaudeWoWDB.chats[1].progress = "Reading files"');
-  assert.equal(show(), 'false', 'progress is an acknowledgement too');
-  vm.run('ClaudeWoWDB.chats[1].progress = nil; ClaudeWoW.Resend()');
-  assert.equal(show(), 'false', 'a resend starts the wait again');
-  assert.equal(vm.evaluate('Q.ShouldShowResend(nil)'), 'false');
-  assert.match(vm.evaluate('Q.RESEND_TIP'), /companion app/);
-  assert.doesNotMatch(vm.evaluate('Q.RESEND_TIP'), /bridge/i);
+  vm.run('for i = 1, 2 do STUB.now = STUB.now + 1; STUB.Tick() end');
+  assert.equal(vm.num('STUB.tempWindows'), 1, 'a fresh answer opens it');
+
+  const fresh = newVM({ dock: true, saved: saved.replace('now = time() - 3600', 'now = time()') });
+  fresh.run('STUB.now = STUB.now + 1; STUB.Tick()');
+  assert.equal(fresh.evaluate('ClaudeWoW.BridgeState()'), 'ok', 'a fresh inbox is evidence');
+});
+
+test('unread follows where the reply went: a tab the gate refused leaves the reply unread in the window', () => {
+  const reply = vm => {
+    const id = vm.num('ClaudeWoWDB.chats[1].pendingId');
+    vm.run(
+      `STUB.onLoadAddOn = function() ClaudeWoW_SlotData = { now = time(), cwd = "", replies = { { chat = ClaudeWoWDB.chats[1].id, id = ${id}, status = "done", text = "answer" } } } end`,
+    );
+    for (let i = 0; i < 8; i++) vm.run('STUB.now = STUB.now + 10; STUB.Tick()');
+    assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].pendingId'), null, 'the reply landed');
+  };
+  const refused = newVM({ dock: true, afterLoad: WHISPER_CHOICE_ON + '; ' + USER_MESSAGE });
+  hello(refused);
+  refused.run('ClaudeWoW.Send("q"); ClaudeWoWFrame:Hide()');
+  reply(refused);
+  assert.equal(refused.num('STUB.tempWindows'), 0, 'no agent name: the gate refused the tab');
+  assert.equal(refused.num('ClaudeWoWDB.chats[1].unread'), 1, 'so the reply is unread');
+
+  const tabbed = newVM({ dock: true, afterLoad: WHISPER_CHOICE_ON + '; ' + USER_MESSAGE });
+  hello(tabbed, 'claude');
+  tabbed.run('ClaudeWoW.Send("q"); ClaudeWoWFrame:Hide()');
+  reply(tabbed);
+  assert.equal(tabbed.num('STUB.tempWindows'), 1);
+  assert.equal(tabbed.num('ClaudeWoWDB.chats[1].unread'), 0, 'a reply shown in its tab is read there');
 });
 
 test('waiting, stop and give-up text: "Click Stop", "Stopped.", and no message ids', () => {
@@ -298,6 +377,7 @@ test('reload in combat: never reloads on its own after combat; asks again, and c
   vm.run('STUB.popupBusy = false; STUB.RunTimers()');
   assert.equal(vm.evaluate('STUB.popup.which'), 'CLAUDEWOW_RELOAD', 'the next interval asks');
   assert.equal(vm.evaluate('RUN().reloadAsked'), vm.evaluate('Q.PendingKey()'));
+  assert.equal(vm.evaluate('RUN().reloadAfterCombat'), null, 'the request is done once the dialog opened');
   assert.equal(vm.evaluate('StaticPopupDialogs.CLAUDEWOW_RELOAD.text'), vm.evaluate('Q.RELOAD_TEXT_REPLY'));
   assert.equal(vm.evaluate('STUB.reloaded'), 'false');
 
@@ -319,4 +399,18 @@ test('reload in combat: never reloads on its own after combat; asks again, and c
   assert.equal(manual.evaluate('StaticPopupDialogs.CLAUDEWOW_RELOAD.text'), manual.evaluate('Q.RELOAD_TEXT_AFTER_COMBAT'));
   manual.run('STUB.popup = nil; STUB.combat = true; STUB.combat = false; STUB.FireEvent("PLAYER_REGEN_ENABLED")');
   assert.equal(manual.evaluate('STUB.popup'), null, 'asked once per request');
+
+  const busy = newVM();
+  busy.run('STUB.timers = {}; STUB.popup = nil; STUB.combat = true; SlashCmdList.CLAUDE("reload")');
+  busy.run('STUB.popupBusy = true; STUB.combat = false; STUB.FireEvent("PLAYER_REGEN_ENABLED")');
+  assert.equal(busy.evaluate('STUB.popup'), null, 'every dialog slot was taken');
+  assert.equal(busy.evaluate('RUN().reloadAfterCombat'), 'true', 'the request is kept');
+  assert.equal(busy.evaluate('Q.PendingKey()'), '', 'with nothing pending');
+  busy.run('STUB.popupBusy = false; STUB.RunTimers()');
+  assert.equal(busy.evaluate('STUB.popup.which'), 'CLAUDEWOW_RELOAD', 'the watcher asks again');
+  assert.equal(busy.evaluate('StaticPopupDialogs.CLAUDEWOW_RELOAD.text'), busy.evaluate('Q.RELOAD_TEXT_AFTER_COMBAT'));
+  assert.equal(busy.evaluate('RUN().reloadAfterCombat'), null);
+  assert.equal(busy.evaluate('STUB.reloaded'), 'false', 'never on its own');
+  busy.run('STUB.popup = nil; STUB.RunTimers()');
+  assert.equal(busy.evaluate('STUB.popup'), null, 'and only once');
 });
