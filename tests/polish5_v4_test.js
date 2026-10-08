@@ -34,7 +34,7 @@ C_Timer.NewTicker = function(delay, fn)
 end
 `;
 
-function newVM() {
+function newVM({ dock = false } = {}) {
   const L = lauxlib.luaL_newstate();
   lualib.luaL_openlibs(L);
   const run = (code, arg) => {
@@ -56,26 +56,28 @@ function newVM() {
   const num = expr => Number(evaluate(expr));
   run(fs.readFileSync(path.join(__dirname, 'wow_stub.lua'), 'utf8'));
   run(PRELUDE);
+  if (dock) run('STUB.ChatDock()');
   for (const f of ['Codec.lua', 'Inbox.lua', 'ClaudeWoW.lua', 'LootRoll.lua']) run(fs.readFileSync(path.join(ADDON, f), 'utf8'), 'ClaudeWoW');
   run('STUB.told = {}; local print0 = ClaudeWoW.Print; ClaudeWoW.Print = function(m) table.insert(STUB.told, m); return print0(m) end');
   run(
     'STUB.said = {}; local say0 = ClaudeWoW.SayAboutDenial; ClaudeWoW.SayAboutDenial = function(chatId, text) table.insert(STUB.said, { chat = chatId, text = text }); return say0(chatId, text) end',
   );
+  if (dock) run('ClaudeWoWDB = { settings = { whisperV3 = true, whisper = true, whisperChoice = "on" } }');
   run('STUB.FireEvent("ADDON_LOADED", "ClaudeWoW"); STUB.FireEvent("PLAYER_LOGIN")');
   run('STUB.RunTimers()');
-  run('STUB.onLoadAddOn = function(name) ClaudeWoW_SlotData = { now = time(), cwd = "", replies = {} } end');
+  run(`STUB.onLoadAddOn = function(name) ClaudeWoW_SlotData = { now = time(), cwd = "", ${dock ? 'agent = "claude", ' : ''}replies = {} } end`);
   run('STUB.now = STUB.now + 6; STUB.Tick()');
   assert.equal(evaluate('ClaudeWoW.IsConnected()'), 'true');
   return { run, evaluate, num };
 }
 
-function deliverDenial(vm, rules, chatIndex = 1) {
+function deliverDenial(vm, rules, chatIndex = 1, text = 'I need permission') {
   vm.run('ClaudeWoW.Send("clean the build folder")');
   const chatId = vm.evaluate(`ClaudeWoWDB.chats[${chatIndex}].id`);
   const id = vm.num(`ClaudeWoWDB.chats[${chatIndex}].pendingId`);
   const luaRules = rules.map(r => JSON.stringify(r)).join(', ');
   vm.run(
-    `STUB.onLoadAddOn = function(name) ClaudeWoW_SlotData = { now = time(), cwd = "", replies = { { chat = "${chatId}", id = ${id}, status = "done", text = "I need permission", agent = "claude", denied = { ${luaRules} } } } } end`,
+    `STUB.onLoadAddOn = function(name) ClaudeWoW_SlotData = { now = time(), cwd = "", replies = { { chat = "${chatId}", id = ${id}, status = "done", text = ${JSON.stringify(text)}, agent = "claude", denied = { ${luaRules} } } } } end`,
   );
   vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
   assert.equal(vm.evaluate(`ClaudeWoWDB.chats[${chatIndex}].pendingId`), null);
@@ -501,16 +503,96 @@ test('a confirm opened from a link for a queued request keeps the blocker watche
   assert.equal(told(vm, TOO_SOON_LINE), 1);
 });
 
-test('a link Greed after the 1 s settle but while the hold has not released yet is still held', () => {
+test('a link Greed after the 1 s settle but before the next tick releases the hold is still held', () => {
   const vm = newVM();
   vm.run('STUB.combat = true');
   const { chatId, id } = deliverDenial(vm, ['Bash(git:*)']);
-  vm.run('STUB.Tick(); STUB.combat = false; STUB.now = STUB.now + 0.9; STUB.Tick(); STUB.now = STUB.now + 0.2');
+  vm.run('STUB.Tick(); STUB.combat = false; STUB.now = STUB.now + 0.9; STUB.Tick(); STUB.now = STUB.now + 1.1');
   assert.equal(vm.evaluate('ClaudeWoWRoll.Held()'), 'true');
   assert.equal(vm.evaluate('ClaudeWoWRoll.Settling()'), 'false');
   vm.run(`STUB.ClickLink("|Haddon:claudewow:roll:${chatId}:${id}:greed|h[Greed]|h")`);
   assert.equal(grantedOnce(vm), false);
   assert.equal(told(vm, COMBAT_LINE), 2, 'the hold line, then once for the refused link');
+});
+
+test('a reply with an uncached item link: [Greed] clicked 0.2 s after the deferred whisper line grants nothing', () => {
+  const vm = newVM({ dock: true });
+  const { chatId, id } = deliverDenial(vm, ['Bash(git:*)'], 1, '{item:9999} needs a tool');
+  assert.ok(vm.num('STUB.tempWindows') >= 1, 'the chat has a whisper tab');
+  const lines = () => vm.evaluate('STUB.Lines(ChatFrame11)') || '';
+  assert.doesNotMatch(lines(), /needs permission/, 'the roll line waits for the item');
+  for (let i = 0; i < 3; i++) vm.run('STUB.now = STUB.now + 0.5; STUB.RunTimers()');
+  assert.match(lines(), /needs permission/, 'the roll line is written about 1.5 s later');
+  const link = `|Haddon:claudewow:roll:${chatId}:${id}:greed|h[Greed]|h`;
+  vm.run(`STUB.now = STUB.now + 0.2; STUB.ClickLink("${link}")`);
+  assert.equal(grantedOnce(vm), false);
+  assert.match(lines(), /Click again in a moment\./, 'the refusal goes to the chat tab');
+  vm.run(`STUB.now = STUB.now + 0.3; STUB.ClickLink("${link}")`);
+  assert.equal(grantedOnce(vm), true);
+});
+
+test('two mirrored denials in one chat: the second has its own 0.5 s', () => {
+  const vm = newVM();
+  vm.run('SlashCmdList.CLAUDE("config roll off"); SlashCmdList.CLAUDE("")');
+  const chatId = vm.evaluate('ClaudeWoWDB.chats[1].id');
+  vm.run(`ClaudeWoW.ApplyMirror({ { chat = "${chatId}", seq = 1, role = "assistant", text = "first", denied = { "Bash(git:*)" } } })`);
+  vm.run('STUB.now = STUB.now + 2');
+  vm.run(`ClaudeWoW.ApplyMirror({ { chat = "${chatId}", seq = 2, role = "assistant", text = "second", denied = { "Bash(rm:*)" } } })`);
+  allowButton(vm);
+  assert.equal(vm.evaluate('BTN.rules[1]'), 'Bash(rm:*)');
+  vm.run('STUB.now = STUB.now + 0.2; STUB.popup = nil; BTN.scripts.OnClick(BTN)');
+  assert.equal(vm.evaluate('STUB.popup'), null, 'no confirm 0.2 s after the second mirrored denial');
+  assert.equal(told(vm, TOO_SOON_LINE), 1);
+  vm.run('STUB.now = STUB.now + 0.3; BTN.scripts.OnClick(BTN)');
+  assert.equal(vm.evaluate('STUB.popup.which'), 'CLAUDEWOW_ALLOW_ALWAYS');
+});
+
+test('a denial restored from before a reload is stamped when the roll shows, so the first click 10 s later grants', () => {
+  const vm = newVM();
+  vm.run(
+    'table.insert(ClaudeWoWDB.chats[1].history, { role = "assistant", id = 77, text = "restored", denied = { "Bash(git:*)" }, t = time() }); ClaudeWoW.Render()',
+  );
+  assert.equal(shown(vm), true);
+  vm.run('STUB.now = STUB.now + 10; ClaudeWoWRoll.Update()');
+  click(vm, 'GreedButton');
+  assert.equal(grantedOnce(vm), true, 'the first click grants');
+  assert.equal(told(vm, TOO_SOON_LINE), 0);
+});
+
+test('a restored denial drawn in the window with the roll off: the first click 10 s later opens the confirm', () => {
+  const vm = newVM();
+  vm.run('SlashCmdList.CLAUDE("config roll off"); SlashCmdList.CLAUDE("")');
+  vm.run(
+    'table.insert(ClaudeWoWDB.chats[1].history, { role = "assistant", id = 77, text = "restored", denied = { "Bash(git:*)" }, t = time() }); ClaudeWoW.Render()',
+  );
+  allowButton(vm);
+  vm.run('STUB.now = STUB.now + 10; STUB.popup = nil; BTN.scripts.OnClick(BTN)');
+  assert.equal(vm.evaluate('STUB.popup.which'), 'CLAUDEWOW_ALLOW_ALWAYS');
+  assert.equal(told(vm, TOO_SOON_LINE), 0);
+});
+
+test('a loot frame that closes between two watch samples: the 1 s counts from the first clear sample', () => {
+  const vm = newVM();
+  deliverDenial(vm, ['Bash(git:*)']);
+  arm(vm);
+  click(vm, 'NeedButton');
+  const seq = vm.num('ClaudeWoWDB.lastSeq');
+  vm.run('GroupLootFrame1:Show(); STUB.Tick(); STUB.now = STUB.now + 0.2; GroupLootFrame1:Hide(); STUB.now = STUB.now + 0.05; STUB.Tick()');
+  vm.run('STUB.now = STUB.now + 0.8');
+  accept(vm);
+  assert.equal(vm.num('ClaudeWoWDB.lastSeq'), seq, '1.05 s after the last blocked sample but 0.8 s after the first clear one: nothing');
+  assert.equal(told(vm, TOO_SOON_LINE), 1);
+});
+
+test('a Greed click that lands after the timer ran out, before the next update, is a Pass', () => {
+  const vm = newVM();
+  deliverDenial(vm, ['Bash(git:*)']);
+  arm(vm);
+  vm.run('STUB.now = ClaudeWoWRoll.Current().expiresAt + 0.01');
+  click(vm, 'GreedButton');
+  assert.equal(grantedOnce(vm), false);
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history].text'), 'Passed on: Bash(git:*) (the roll timed out)');
+  assert.equal(shown(vm), false);
 });
 
 test('the watch ticker runs while a confirm is open and stops when it closes', () => {

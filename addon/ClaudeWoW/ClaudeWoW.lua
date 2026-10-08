@@ -2722,7 +2722,7 @@ Finish = function(chat, role, text, denied, agent, summary, macros)
 		ClaudeWoW.DisarmReload()
 	end
 	if visible then Q.OfferDraft(chat) end
-	if denied then Q.DenialSeenAt(chat.id, msgId) end
+	if denied then Q.StampDenial(chat.id) end
 	ClaudeWoW.Render()
 	if denied and ClaudeWoW.LootRollEnabled() then ClaudeWoWRoll.Offer(chat.id) end
 	local tabbed = ClaudeWoW.Notify(chat, text, agent, summary, role, denied, msgId, macros)
@@ -3413,6 +3413,7 @@ function Whisper.Reply(chat, text, agent, role, denied, summary, msgId, macros)
 	end
 	if denied then
 		WhisperWrite(frame, who .. " needs permission for " .. Display(ClaudeWoW.GrantsLabel(denied)) .. ": " .. Whisper.RollLinks(chat, msgId), sr, sg, sb)
+		Q.StampDenial(chat.id)
 	end
 	Whisper.Flash(frame)
 	return true
@@ -4175,15 +4176,27 @@ end
 Q.GRANT_DELAY = 0.5
 ClaudeWoW.TOO_SOON_TEXT = "Click again in a moment."
 
-function Q.DenialSeenAt(chatId, msgId)
-	run.denialSeen = run.denialSeen or {}
-	local key = tostring(chatId) .. ":" .. tostring(msgId)
-	run.denialSeen[key] = run.denialSeen[key] or GetTime()
-	return run.denialSeen[key]
+function Q.OpenDenialEntry(chatId)
+	local c = FindChat(chatId)
+	if not c or c.pendingId then return nil end
+	return c.history[Q.DenialIndex(c) or 0]
 end
 
-function ClaudeWoW.GrantReady(chatId, msgId)
-	if GetTime() - Q.DenialSeenAt(chatId, msgId) < Q.GRANT_DELAY then return false end
+function Q.StampDenial(chatId, keep)
+	local entry = Q.OpenDenialEntry(chatId)
+	if not entry then return nil end
+	run.denialSeen = run.denialSeen or setmetatable({}, { __mode = "k" })
+	if not (keep and run.denialSeen[entry]) then run.denialSeen[entry] = GetTime() end
+	return run.denialSeen[entry]
+end
+
+function ClaudeWoW.NoteDenialDrawn(chatId)
+	Q.StampDenial(chatId, true)
+end
+
+function ClaudeWoW.GrantReady(chatId)
+	local seenAt = Q.StampDenial(chatId, true) or GetTime()
+	if GetTime() - seenAt < Q.GRANT_DELAY then return false end
 	return not (ClaudeWoWRoll and ClaudeWoWRoll.Settling())
 end
 
@@ -4192,7 +4205,7 @@ function Q.GrantGate(chatId, msgId)
 		ClaudeWoWRoll.HoldGrant(chatId, msgId)
 		return "held"
 	end
-	if not ClaudeWoW.GrantReady(chatId, msgId) then
+	if not ClaudeWoW.GrantReady(chatId) then
 		Q.SayAboutDenial(FindChat(chatId), ClaudeWoW.TOO_SOON_TEXT)
 		return "soon"
 	end
@@ -6311,6 +6324,7 @@ function ClaudeWoW.Render()
 				b.allow:Hide()
 				ClaudeWoWRoll.Offer(c.id)
 			elseif denied then
+				ClaudeWoW.NoteDenialDrawn(c.id)
 				local label = "Allow " .. ClaudeWoW.GrantsLabel(denied) .. (ClaudeWoW.IsLiveChat(c) and " once & retry" or " & retry")
 				b.allow:SetText(label)
 				b.allow:SetWidth(math.min(width - 24, math.max(160, b.allow:GetFontString():GetStringWidth() + 30)))

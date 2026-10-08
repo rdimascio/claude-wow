@@ -22,6 +22,7 @@ local CLICK_DELAY = 0.5
 local RELEASE_DELAY = 1
 local HOLD_TICK = 0.25
 local GROUP_LOOT_FRAMES = 4
+local TIMEOUT_REASON = "the roll timed out"
 local NOT_NOW_TEXT = "Not allowed during combat or a loot roll. Click it again afterwards."
 local HOLD_TEXT = {
 	combat = "A permission request is waiting until combat ends.",
@@ -51,6 +52,7 @@ local queue = {}
 local hold
 local holdTicker
 local lastBlockedAt
+local sampledBlocked = false
 
 local function PlayKit(name)
 	local id = (SOUNDKIT and SOUNDKIT[name]) or SOUND_KIT_IDS[name]
@@ -372,7 +374,9 @@ local function HoldLine(reason)
 end
 
 local function Sample()
-	if R.Blocked() then lastBlockedAt = GetTime() end
+	local blocked = R.Blocked() ~= nil
+	if blocked or sampledBlocked then lastBlockedAt = GetTime() end
+	sampledBlocked = blocked
 end
 
 function R.Settling()
@@ -455,6 +459,7 @@ local function Present(offer)
 	R.Place(frame)
 	frame.Timer:SetValue(ROLL_SECONDS)
 	frame:Show()
+	ClaudeWoW.NoteDenialDrawn(offer.chatId)
 	Layout(frame, offer)
 	HighlightGreed(frame)
 	PlayKit(SOUND_ON_OFFER)
@@ -527,12 +532,15 @@ end
 function R.Choose(choice, reason)
 	local offer = current
 	if not offer or not ROLL_BUTTONS[choice] then return end
+	if offer.expiresAt and GetTime() >= offer.expiresAt then
+		choice, reason = "pass", TIMEOUT_REASON
+	end
 	if choice == "need" and IsLive(offer) then choice = "greed" end
 	if choice ~= "pass" and R.Blocked() then
 		HoldCurrent()
 		return
 	end
-	if choice ~= "pass" and not (R.Armed() and ClaudeWoW.GrantReady(offer.chatId, offer.msgId)) then
+	if choice ~= "pass" and not (R.Armed() and ClaudeWoW.GrantReady(offer.chatId)) then
 		ClaudeWoW.SayAboutDenial(offer.chatId, ClaudeWoW.TOO_SOON_TEXT)
 		return
 	end
@@ -635,7 +643,7 @@ function R.Update()
 	end
 	local left = current.expiresAt - GetTime()
 	if left <= 0 then
-		R.Choose("pass", "the roll timed out")
+		R.Choose("pass", TIMEOUT_REASON)
 		return
 	end
 	if not frame.armed and R.Armed() then SetButtonsEnabled(frame, true) end
