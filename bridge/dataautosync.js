@@ -73,11 +73,12 @@ function lastLine(text) {
   return line.slice(0, MESSAGE_MAX);
 }
 
-function syncCommand(flavor, build, runtime) {
-  return R.scriptCommand('data', ['sync', '--flavor', flavor, '--build', D.assertBuild(build)], runtime);
+function syncCommand(flavor, runtime) {
+  if (!isFlavor(flavor)) throw new D.SyncError(`unknown flavor ${JSON.stringify(flavor)}`);
+  return R.scriptCommand('data', ['sync', '--flavor', flavor], runtime);
 }
 
-function runSync({ flavor, build, home, onChild = () => {}, env = process.env, timeoutMs = RUN_TIMEOUT_MS, command, runtime, killTree = PR.killTree }) {
+function runSync({ flavor, home, onChild = () => {}, env = process.env, timeoutMs = RUN_TIMEOUT_MS, command, runtime, killTree = PR.killTree }) {
   return new Promise(resolve => {
     let settled = false;
     let timedOut = false;
@@ -90,7 +91,7 @@ function runSync({ flavor, build, home, onChild = () => {}, env = process.env, t
     };
     let child;
     try {
-      const [file, args] = command || syncCommand(flavor, build, runtime);
+      const [file, args] = command || syncCommand(flavor, runtime);
       child = PR.spawnChild(file, args, { env: { ...env, CLAUDE_WOW_HOME: home }, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
     } catch (e) {
       settle({ ok: false, message: e && e.message ? e.message : String(e) });
@@ -143,25 +144,32 @@ function createAutoSync({ enabled = true, dataDir, home, state, save = () => {},
     child.once('close', () => kids.delete(child));
   }
 
-  function switched(d) {
-    const current = D.readCurrent(D.flavorDir(dataDir, d.flavor));
-    return !!current && current.build === d.build;
+  function currentBuild(flavor) {
+    const current = D.readCurrent(D.flavorDir(dataDir, flavor));
+    return current ? current.build : null;
   }
 
   function finish(d, at, result) {
     busy.delete(d.flavor);
-    const claimed = !!(result && result.ok);
-    const ok = claimed && switched(d);
-    const locked = !claimed && !!result && result.code === D.LOCKED_EXIT;
-    const message = claimed && !ok ? `the sync ended, but ${d.build} is not the current ${d.flavor} data` : (result && result.message) || '';
-    const entry = { build: d.build, at, result: ok ? 'ok' : locked ? 'locked' : 'failed', endedAt: now() };
-    if (!ok) entry.error = message.slice(0, MESSAGE_MAX);
+    const ended = !!(result && result.ok);
+    const dataBuild = currentBuild(d.flavor);
+    const caughtUp = ended && !!dataBuild && D.compareBuilds(dataBuild, d.build) >= 0;
+    const locked = !ended && !!result && result.code === D.LOCKED_EXIT;
+    const outcome = caughtUp ? 'ok' : ended ? 'behind' : locked ? 'locked' : 'failed';
+    const message =
+      outcome === 'behind'
+        ? `wago.tools lists no ${d.flavor} ${D.FLAVORS[d.flavor].family} build as new as the client's ${d.build}; the data in use stays at ${dataBuild || 'none'}`
+        : (result && result.message) || '';
+    const entry = { build: d.build, at, result: outcome, endedAt: now() };
+    if (dataBuild) entry.dataBuild = dataBuild;
+    if (!caughtUp) entry.error = message.slice(0, MESSAGE_MAX);
     record(d.flavor, entry);
     const next = new Date(at + waitFor(entry)).toISOString();
-    if (ok) log(`data sync: ${d.flavor} ${d.build} is current; the next game data lookup uses it`);
-    else if (locked) log(`data sync: ${d.flavor} ${d.build} waits, another data sync holds the lock (${message || 'no reason given'}); next try after ${next}`);
-    else log(`data sync: ${d.flavor} ${d.build} failed (${message || 'no reason given'}); the data in use stays, next try after ${next}`);
-    return { ok, message };
+    if (outcome === 'ok') log(`data sync: ${d.flavor} ${dataBuild} is current; the next game data lookup uses it`);
+    else if (outcome === 'behind') log(`data sync: ${message}, next try after ${next}`);
+    else if (locked) log(`data sync: ${d.flavor} waits, another data sync holds the lock (${message || 'no reason given'}); next try after ${next}`);
+    else log(`data sync: ${d.flavor} failed (${message || 'no reason given'}); the data in use stays, next try after ${next}`);
+    return { ok: caughtUp, build: dataBuild, message };
   }
 
   function observe(clientBuild, where = '') {
@@ -172,9 +180,9 @@ function createAutoSync({ enabled = true, dataDir, home, state, save = () => {},
     busy.set(d.flavor, d.build);
     record(d.flavor, { build: d.build, at, result: 'running' });
     const have = d.dataBuild ? `${d.flavor} data ${d.dataBuild} (${d.check})` : `no ${d.flavor} data`;
-    log(`data sync: client ${d.build}${where} has ${have}; syncing ${d.flavor} ${d.build} from wago.tools in the background`);
+    log(`data sync: client ${d.build}${where} has ${have}; syncing the newest ${d.flavor} build from wago.tools in the background`);
     const done = Promise.resolve()
-      .then(() => run({ flavor: d.flavor, build: d.build, home, onChild }))
+      .then(() => run({ flavor: d.flavor, home, onChild }))
       .then(
         result => finish(d, at, result),
         e => finish(d, at, { ok: false, message: e && e.message ? e.message : String(e) }),

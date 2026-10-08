@@ -31,6 +31,30 @@ function fixtureFetch(url) {
   return Promise.resolve(new Response(fs.readFileSync(path.join(FIXTURES, `${table}.csv`), 'utf8'), { status: 200, headers }));
 }
 
+function wagoFetch(lists) {
+  return url => {
+    if (new URL(url).pathname !== '/api/builds') return fixtureFetch(url);
+    const body = {};
+    for (const [product, versions] of Object.entries(lists)) body[product] = versions.map(version => ({ product, version }));
+    return Promise.resolve(new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } }));
+  };
+}
+
+function buildsFile(lists) {
+  const file = path.join(scratch('builds'), 'builds.json');
+  const body = {};
+  for (const [product, versions] of Object.entries(lists)) body[product] = versions.map(version => ({ product, version }));
+  fs.writeFileSync(file, JSON.stringify(body));
+  return file;
+}
+
+function wagoRun(dataDir, lists) {
+  return async ({ flavor }) => {
+    await D.sync({ dataDir, flavor, fetch: wagoFetch(lists) });
+    return { ok: true, code: 0 };
+  };
+}
+
 async function withData(build, flavor = 'forever') {
   const dataDir = path.join(scratch('data'), 'data');
   if (build) await D.sync({ dataDir, flavor, build, fetch: fixtureFetch });
@@ -168,17 +192,17 @@ test('observe: one sync per flavor at a time, records the attempt before it star
   assert.equal(h.sync.observe('1.60.1.70300').reason, 'busy');
   await new Promise(r => setImmediate(r));
   assert.equal(h.calls.length, 1);
-  assert.deepEqual(h.calls[0].flavor, 'forever');
-  assert.deepEqual(h.calls[0].build, NEW);
+  assert.deepEqual(Object.keys(h.calls[0]).sort(), ['flavor', 'home', 'onChild']);
+  assert.equal(h.calls[0].flavor, 'forever');
   assert.equal(h.calls[0].home, path.dirname(dataDir));
   assert.deepEqual([...h.sync.busy()], [['forever', NEW]]);
   await D.sync({ dataDir, build: NEW, fetch: fixtureFetch });
   gate.resolve({ ok: true, message: 'done' });
-  assert.deepEqual(await first.done, { ok: true, message: 'done' });
+  assert.deepEqual(await first.done, { ok: true, build: NEW, message: 'done' });
   assert.equal(h.state.dataSync.forever.result, 'ok');
   assert.deepEqual([...h.sync.busy()], []);
   assert.deepEqual(h.lines, [
-    `data sync: client ${NEW} from Forever has forever data ${OLD} (family); syncing forever ${NEW} from wago.tools in the background`,
+    `data sync: client ${NEW} from Forever has forever data ${OLD} (family); syncing the newest forever build from wago.tools in the background`,
     `data sync: forever ${NEW} is current; the next game data lookup uses it`,
   ]);
   assert.equal(h.sync.observe(NEW).reason, 'exact');
@@ -194,10 +218,7 @@ test('observe: Forever and Classic Era clients sync independently', async () => 
   assert.equal(forever.sync, true);
   assert.equal(era.sync, true);
   await new Promise(r => setImmediate(r));
-  assert.deepEqual(h.calls.map(c => [c.flavor, c.build]).sort(), [
-    ['classic_era', ERA],
-    ['forever', NEW],
-  ]);
+  assert.deepEqual(h.calls.map(c => c.flavor).sort(), ['classic_era', 'forever']);
   gates.classic_era.resolve({ ok: false, message: 'HTTP 404' });
   await era.done;
   assert.deepEqual([...h.sync.busy()], [['forever', NEW]]);
@@ -216,10 +237,10 @@ test('observe: a failed sync makes its flavor wait 6 hours, also after a restart
     run: async () => ({ ok: false, message: 'https://wago.tools/db2/UiMap/csv?build=1.60.1.70245: HTTP 404' }),
   });
   const r = h.sync.observe(NEW);
-  assert.deepEqual(await r.done, { ok: false, message: 'https://wago.tools/db2/UiMap/csv?build=1.60.1.70245: HTTP 404' });
+  assert.deepEqual(await r.done, { ok: false, build: OLD, message: 'https://wago.tools/db2/UiMap/csv?build=1.60.1.70245: HTTP 404' });
   assert.equal(state.dataSync.forever.result, 'failed');
   assert.match(state.dataSync.forever.error, /HTTP 404/);
-  assert.match(h.lines[1], /^data sync: forever 1\.60\.1\.70245 failed \(.*HTTP 404\); the data in use stays, next try after 2026-10-07T18:00:00\.000Z$/);
+  assert.match(h.lines[1], /^data sync: forever failed \(.*HTTP 404\); the data in use stays, next try after 2026-10-07T18:00:00\.000Z$/);
   clock = T0 + HOUR;
   assert.equal(h.sync.observe(NEW).reason, 'backoff');
   const restarted = harness({ dataDir, state: JSON.parse(JSON.stringify(state)), now: () => clock, run: async () => ({ ok: true }) });
@@ -243,13 +264,19 @@ test('observe: a sync that never ended (a crash) still counts as an attempt afte
   assert.deepEqual(state.dataSync, { forever: entry });
 });
 
-test('observe: a sync that exits 0 without moving current to that build is a failed attempt', async () => {
+test('observe: a sync that ends with data still older than the client build waits 6 hours, because wago.tools does not list it yet', async () => {
   const dataDir = await withData(OLD);
-  const h = harness({ dataDir, run: async () => ({ ok: true, message: 'nothing to do' }) });
-  const r = h.sync.observe(NEW);
-  assert.deepEqual(await r.done, { ok: false, message: `the sync ended, but ${NEW} is not the current forever data` });
-  assert.equal(h.state.dataSync.forever.result, 'failed');
-  assert.match(h.lines[1], /failed \(the sync ended, but 1\.60\.1\.70245 is not the current forever data\)/);
+  let clock = T0;
+  const h = harness({ dataDir, now: () => clock, run: async () => ({ ok: true, message: 'nothing to do' }) });
+  const message = `wago.tools lists no forever 1.60.1 build as new as the client's ${NEW}; the data in use stays at ${OLD}`;
+  assert.deepEqual(await h.sync.observe(NEW).done, { ok: false, build: OLD, message });
+  assert.equal(h.state.dataSync.forever.result, 'behind');
+  assert.equal(h.state.dataSync.forever.dataBuild, OLD);
+  assert.equal(h.lines[1], `data sync: ${message}, next try after 2026-10-07T18:00:00.000Z`);
+  clock = T0 + DAS.RETRY_MS - 1;
+  assert.equal(h.sync.observe(NEW).reason, 'backoff');
+  clock = T0 + DAS.RETRY_MS;
+  assert.equal(h.sync.observe(NEW).sync, true);
 });
 
 test('observe: a run that throws is a failed attempt, and the flavor is free again', async () => {
@@ -261,47 +288,95 @@ test('observe: a run that throws is a failed attempt, and the flavor is free aga
     },
   });
   const r = h.sync.observe(NEW);
-  assert.deepEqual(await r.done, { ok: false, message: 'spawn EACCES' });
+  assert.deepEqual(await r.done, { ok: false, build: OLD, message: 'spawn EACCES' });
   assert.deepEqual([...h.sync.busy()], []);
   assert.equal(h.state.dataSync.forever.result, 'failed');
 });
 
-function syncingRun(dataDir) {
-  return async ({ build }) => {
-    await D.sync({ dataDir, build, fetch: fixtureFetch });
-    return { ok: true, code: 0 };
-  };
-}
-
 test('observe: two clients of one flavor on different builds sync only forward, and the newest build stays current', async () => {
   const NEWER = '1.60.1.70300';
   const newestFirst = await withData(OLD);
-  const a = harness({ dataDir: newestFirst, run: syncingRun(newestFirst) });
+  const a = harness({ dataDir: newestFirst, run: wagoRun(newestFirst, { wow_cn_beta: [OLD, NEW, NEWER] }) });
   await a.sync.observe(NEWER).done;
   for (let k = 0; k < 4; k++) {
     assert.equal(a.sync.observe(NEW).reason, 'not-newer');
     assert.equal(a.sync.observe(NEWER).reason, 'exact');
   }
   await new Promise(r => setImmediate(r));
-  assert.deepEqual(
-    a.calls.map(c => c.build),
-    [NEWER],
-  );
+  assert.equal(a.calls.length, 1);
   assert.equal(D.readCurrent(D.flavorDir(newestFirst, 'forever')).build, NEWER);
   const olderFirst = await withData(OLD);
-  const b = harness({ dataDir: olderFirst, run: syncingRun(olderFirst) });
+  const listed = { wow_cn_beta: [OLD, NEW] };
+  const b = harness({ dataDir: olderFirst, run: wagoRun(olderFirst, listed) });
   await b.sync.observe(NEW).done;
+  assert.equal(D.readCurrent(D.flavorDir(olderFirst, 'forever')).build, NEW);
+  listed.wow_cn_beta.push(NEWER);
   await b.sync.observe(NEWER).done;
   for (let k = 0; k < 4; k++) {
     assert.equal(b.sync.observe(NEW).reason, 'not-newer');
     assert.equal(b.sync.observe(NEWER).reason, 'exact');
   }
   await new Promise(r => setImmediate(r));
-  assert.deepEqual(
-    b.calls.map(c => c.build),
-    [NEW, NEWER],
-  );
+  assert.equal(b.calls.length, 2);
   assert.equal(D.readCurrent(D.flavorDir(olderFirst, 'forever')).build, NEWER);
+});
+
+test('observe: a forged newer build only triggers a sync of the newest build wago.tools lists for the product, never the forged one', async () => {
+  const PTR = '1.60.1.80000';
+  for (const forged of [PTR, '1.60.1.9999999']) {
+    const dataDir = await withData(OLD);
+    let clock = T0;
+    const h = harness({ dataDir, now: () => clock, run: wagoRun(dataDir, { wow_cn_beta: [OLD, NEW], wow_cn_beta_ptr: [PTR] }) });
+    const r = await h.sync.observe(forged).done;
+    assert.equal(r.ok, false, forged);
+    assert.equal(r.build, NEW);
+    const root = D.flavorDir(dataDir, 'forever');
+    assert.equal(D.readCurrent(root).build, NEW, `${forged} never becomes current`);
+    assert.ok(!fs.readdirSync(root).some(n => n.startsWith(forged)), `${forged} is never fetched`);
+    assert.equal(h.state.dataSync.forever.result, 'behind');
+    clock = T0 + HOUR;
+    assert.equal(h.sync.observe(NEW).reason, 'exact', 'the real build wago serves is already current, not blocked');
+    assert.equal(h.sync.observe(forged).reason, 'backoff');
+    assert.equal(h.calls.length, 1);
+  }
+});
+
+test('observe: a PTR-like Classic Era build on the same line becomes current only when the product lists it as its newest', async () => {
+  const PTR = '1.15.9.80000';
+  const dataDir = await withData(ERA, 'classic_era');
+  const root = D.flavorDir(dataDir, 'classic_era');
+  let clock = T0;
+  const lists = { wow_classic_era: [ERA], wow_classic_era_ptr: [PTR] };
+  const h = harness({ dataDir, now: () => clock, run: wagoRun(dataDir, lists) });
+  await h.sync.observe(PTR).done;
+  assert.equal(D.readCurrent(root).build, ERA);
+  assert.equal(h.state.dataSync.classic_era.result, 'behind');
+  lists.wow_classic_era.push(PTR);
+  clock = T0 + DAS.RETRY_MS;
+  assert.equal((await h.sync.observe(PTR).done).ok, true);
+  assert.equal(D.readCurrent(root).build, PTR);
+  assert.equal(h.state.dataSync.classic_era.result, 'ok');
+});
+
+test('observe: a manual sync that lands a newer build while the triggered sync waits is never moved back', async () => {
+  const NEWER = '1.60.1.70300';
+  const dataDir = await withData(OLD);
+  const gate = deferred();
+  const listed = { wow_cn_beta: [OLD, NEW] };
+  const h = harness({
+    dataDir,
+    run: async args => {
+      await gate.promise;
+      return wagoRun(dataDir, listed)(args);
+    },
+  });
+  const r = h.sync.observe(NEW);
+  assert.equal(r.sync, true);
+  await D.sync({ dataDir, build: NEWER, fetch: fixtureFetch });
+  gate.resolve();
+  assert.deepEqual(await r.done, { ok: true, build: NEWER, message: '' });
+  assert.equal(D.readCurrent(D.flavorDir(dataDir, 'forever')).build, NEWER);
+  assert.equal(h.state.dataSync.forever.result, 'ok');
 });
 
 test('observe: a flood of forged builds makes at most one attempt per flavor per 6 hours and never resets the wait', async () => {
@@ -333,9 +408,9 @@ test('observe: a sync that finds the lock held (exit 3) is tried again after 10 
   const dataDir = await withData(OLD);
   let clock = T0;
   const h = harness({ dataDir, now: () => clock, run: async () => ({ ok: false, code: D.LOCKED_EXIT, message: 'another data sync is running (pid 1)' }) });
-  assert.deepEqual(await h.sync.observe(NEW).done, { ok: false, message: 'another data sync is running (pid 1)' });
+  assert.deepEqual(await h.sync.observe(NEW).done, { ok: false, build: OLD, message: 'another data sync is running (pid 1)' });
   assert.equal(h.state.dataSync.forever.result, 'locked');
-  assert.match(h.lines[1], /^data sync: forever 1\.60\.1\.70245 waits, another data sync holds the lock \(.*\); next try after 2026-10-07T12:10:00\.000Z$/);
+  assert.match(h.lines[1], /^data sync: forever waits, another data sync holds the lock \(.*\); next try after 2026-10-07T12:10:00\.000Z$/);
   clock = T0 + DAS.LOCKED_RETRY_MS - 1;
   assert.equal(h.sync.observe(NEW).reason, 'backoff');
   clock = T0 + DAS.LOCKED_RETRY_MS;
@@ -419,15 +494,15 @@ test('lastLine: the last line of the output, without the failure prefix or contr
   assert.equal(DAS.lastLine(''), '');
 });
 
-test('syncCommand: the checkout runs datasync.js with this runtime; the binary runs its data subcommand', () => {
-  const [file, args] = DAS.syncCommand('forever', NEW);
+test('syncCommand: the checkout runs datasync.js with this runtime; the binary runs its data subcommand; neither names a build', () => {
+  const [file, args] = DAS.syncCommand('forever');
   assert.equal(file, process.execPath);
-  assert.deepEqual(args, [path.join(REPO, 'bridge', 'datasync.js'), 'sync', '--flavor', 'forever', '--build', NEW]);
-  assert.deepEqual(DAS.syncCommand('classic_era', ERA, { compiled: true, execPath: '/bin/claude-wow', root: '/x' }), [
+  assert.deepEqual(args, [path.join(REPO, 'bridge', 'datasync.js'), 'sync', '--flavor', 'forever']);
+  assert.deepEqual(DAS.syncCommand('classic_era', { compiled: true, execPath: '/bin/claude-wow', root: '/x' }), [
     '/bin/claude-wow',
-    ['data', 'sync', '--flavor', 'classic_era', '--build', ERA],
+    ['data', 'sync', '--flavor', 'classic_era'],
   ]);
-  assert.throws(() => DAS.syncCommand('forever', '--force'), D.SyncError);
+  assert.throws(() => DAS.syncCommand('--build'), D.SyncError);
 });
 
 test('datasync.js runs as a script: help exits 0 without fetching', () => {
@@ -446,10 +521,15 @@ test('runSync: a real data sync child against a fake source switches the data, i
   const children = [];
   const result = await DAS.runSync({
     flavor: 'forever',
-    build: NEW,
     home,
     onChild: c => children.push(c),
-    env: { ...process.env, CLAUDE_WOW_HOME: '/nowhere', NODE_OPTIONS: `--require ${JSON.stringify(PRELOAD)}`, CLAUDE_WOW_FAKE_WAGO_LOG: requests },
+    env: {
+      ...process.env,
+      CLAUDE_WOW_HOME: '/nowhere',
+      NODE_OPTIONS: `--require ${JSON.stringify(PRELOAD)}`,
+      CLAUDE_WOW_FAKE_WAGO_LOG: requests,
+      CLAUDE_WOW_FAKE_WAGO_BUILDS: buildsFile({ wow_cn_beta: [OLD, NEW] }),
+    },
   });
   assert.equal(result.ok, true, result.message);
   assert.match(result.message, /current build 1\.60\.1\.70245 \(forever\)/);
@@ -459,15 +539,49 @@ test('runSync: a real data sync child against a fake source switches the data, i
   assert.ok(fs.readFileSync(requests, 'utf8').includes(`/db2/ItemSparse/csv?build=${NEW}`));
 });
 
+test('a forged client build reaches the real data sync child only as a trigger: its argv names no build, and it lands the newest listed build', async () => {
+  const FORGED = '1.60.1.9999999';
+  const home = scratch('home');
+  const requests = path.join(home, 'requests.log');
+  const dataDir = path.join(home, 'data');
+  await D.sync({ dataDir, build: OLD, fetch: fixtureFetch });
+  const env = {
+    ...process.env,
+    NODE_OPTIONS: `--require ${JSON.stringify(PRELOAD)}`,
+    CLAUDE_WOW_FAKE_WAGO_LOG: requests,
+    CLAUDE_WOW_FAKE_WAGO_BUILDS: buildsFile({ wow_cn_beta: [OLD, NEW] }),
+  };
+  const state = {};
+  const sync = DAS.createAutoSync({ dataDir, home, state: () => state, now: () => T0, run: args => DAS.runSync({ ...args, env }) });
+  const r = await sync.observe(FORGED).done;
+  assert.equal(r.ok, false);
+  assert.equal(r.build, NEW);
+  const log = fs.readFileSync(requests, 'utf8');
+  const argv = log
+    .split('\n')
+    .filter(l => l.startsWith('argv '))
+    .map(l => JSON.parse(l.slice(5)));
+  assert.equal(argv.length, 1);
+  assert.deepEqual(argv[0], ['sync', '--flavor', 'forever']);
+  assert.ok(!log.includes(FORGED), 'the forged build never reaches the child or wago.tools');
+  assert.equal(D.readCurrent(D.flavorDir(dataDir, 'forever')).build, NEW);
+  assert.equal(state.dataSync.forever.result, 'behind');
+  assert.equal(sync.observe(NEW).reason, 'exact');
+});
+
 test('runSync: a build the source does not have fails and leaves the old build current', async () => {
   const home = scratch('home');
   const dataDir = path.join(home, 'data');
   await D.sync({ dataDir, build: OLD, fetch: fixtureFetch });
   const result = await DAS.runSync({
     flavor: 'forever',
-    build: NEW,
     home,
-    env: { ...process.env, NODE_OPTIONS: `--require ${JSON.stringify(PRELOAD)}`, CLAUDE_WOW_FAKE_WAGO_MISSING: NEW },
+    env: {
+      ...process.env,
+      NODE_OPTIONS: `--require ${JSON.stringify(PRELOAD)}`,
+      CLAUDE_WOW_FAKE_WAGO_MISSING: NEW,
+      CLAUDE_WOW_FAKE_WAGO_BUILDS: buildsFile({ wow_cn_beta: [OLD, NEW] }),
+    },
   });
   assert.equal(result.ok, false);
   assert.equal(result.code, 1);
@@ -482,7 +596,7 @@ test('runSync: a real data sync child that finds the lock held exits 3 and chang
   await D.sync({ dataDir, build: OLD, fetch: fixtureFetch });
   const lock = D.acquireLock(D.flavorDir(dataDir, 'forever'));
   try {
-    const result = await DAS.runSync({ flavor: 'forever', build: NEW, home, env: { ...process.env, NODE_OPTIONS: `--require ${JSON.stringify(PRELOAD)}` } });
+    const result = await DAS.runSync({ flavor: 'forever', home, env: { ...process.env, NODE_OPTIONS: `--require ${JSON.stringify(PRELOAD)}` } });
     assert.equal(result.ok, false);
     assert.equal(result.code, D.LOCKED_EXIT);
     assert.match(result.message, /another data sync is running/);

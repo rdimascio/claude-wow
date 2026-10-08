@@ -463,15 +463,43 @@ test('build family: the newest build of the configured family, and no family swi
   assert.equal(newer.build, '1.61.0.50');
 
   const lines = [];
-  await assert.rejects(syncInto(dataDir, { log: l => lines.push(l) }), /current data is 1\.61\.0\.50 .*--build/);
+  const kept = await syncInto(dataDir, { log: l => lines.push(l) });
+  assert.equal(kept.status, 'current');
+  assert.equal(kept.build, '1.61.0.50');
+  assert.match(lines.join('\n'), /forever data is at 1\.61\.0\.50, newer than the newest 1\.60\.1 build 1\.60\.1\.200; nothing to do/);
   assert.equal(D.readCurrent(root).build, '1.61.0.50');
 
-  const explicit = await syncInto(dataDir, { build: BUILD });
+  const explicit = await syncInto(dataDir, { build: BUILD, force: true });
   assert.equal(explicit.status, 'synced');
   assert.equal(D.readCurrent(root).build, BUILD);
   assert.equal(explicit.manifest.previous, undefined);
 
+  await syncInto(dataDir, { build: '1.60.0.5', force: true });
+  await assert.rejects(syncInto(dataDir), /current data is 1\.60\.0\.5 .*--build/);
+  assert.equal(D.readCurrent(root).build, '1.60.0.5');
+
   await assert.rejects(syncInto(dataDir, { family: '1.60' }), /bad build family/);
+});
+
+test('under the lock, a sync never moves current to an older build without --force', async () => {
+  const dataDir = path.join(scratch('no-downgrade'), 'data');
+  const root = path.join(dataDir, 'forever');
+  const NEWER = '1.60.1.70245';
+  await syncInto(dataDir, { build: NEWER });
+  const wago = fakeWago();
+  await assert.rejects(syncInto(dataDir, { build: BUILD, wago }), /current forever data is 1\.60\.1\.70245, newer than 1\.60\.1\.200; add --force/);
+  assert.equal(D.readCurrent(root).build, NEWER);
+  assert.ok(!wago.calls.some(u => u.includes('/db2/')), 'nothing is fetched for a refused build');
+  const lines = [];
+  const newest = await syncInto(dataDir, { log: l => lines.push(l) });
+  assert.equal(newest.status, 'current');
+  assert.equal(newest.build, NEWER);
+  assert.equal(D.readCurrent(root).build, NEWER);
+  assert.ok(!fs.existsSync(path.join(root, BUILD)), 'the older newest build is not fetched');
+  assert.equal((await syncInto(dataDir, { build: '1.60.1.70246' })).status, 'synced');
+  const back = await syncInto(dataDir, { build: BUILD, force: true });
+  assert.equal(back.status, 'synced');
+  assert.equal(D.readCurrent(root).build, BUILD);
 });
 
 test('fetch: no redirect off wago.tools, the body is capped while it streams', async () => {

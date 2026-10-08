@@ -771,6 +771,11 @@ async function sync(opts = {}) {
       log(`${flavorName} data is already at ${build}; nothing to do (--force syncs it again)`);
       return { status: 'current', build, dir: before.dir, manifest: before.manifest };
     }
+    if (!opts.force && before && compareBuilds(build, before.build) < 0) {
+      if (opts.build) throw new SyncError(`current ${flavorName} data is ${before.build}, newer than ${build}; add --force to go back to ${build}`);
+      log(`${flavorName} data is at ${before.build}, newer than the newest ${family} build ${build}; nothing to do (--build ${build} --force goes back)`);
+      return { status: 'current', build: before.build, dir: before.dir, manifest: before.manifest };
+    }
     if (!opts.build && before && compatibility(before.build, build) === 'mismatch') {
       throw new SyncError(
         `current data is ${before.build} (family ${buildFamily(before.build)}); the newest ${family} build is ${build}. Name it with --build to switch families`,
@@ -871,7 +876,7 @@ const FLAVOR_LINES = Object.entries(FLAVORS)
 const SOURCES = Object.freeze(['client', 'community']);
 const USAGE = `claude-wow data sync [--flavor <name>] [--source client|community] [--build <a.b.c.d>] [--force]\n  Fetches one game's client tables from wago.tools into <CLAUDE_WOW_HOME>/data/<flavor>/<build>/.\n  The bridge uses the flavor that matches the client build the game reports, never another one.\n  --flavor  which game (default ${DEFAULT_FLAVOR}):\n${FLAVOR_LINES}\n  --build   a build other than the newest one in the flavor's default family; needed to switch build families\n  --source  client (default): the client tables above. community: Classic Era only, NPC names, spawns and quest titles and givers
             from the cMaNGOS classic-db dump (GPL-3.0, 1.12 community data) into data/classic_era/community/; needs client data synced first
-  --force   fetch again when that build is already current\n`;
+  --force   fetch again when that build is already current, or go back to a build older than the current one\n`;
 
 function parseArgs(argv) {
   const opts = { force: false };

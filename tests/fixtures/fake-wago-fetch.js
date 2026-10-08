@@ -7,7 +7,10 @@ const WAGO = 'https://wago.tools';
 const REQUEST_LOG = process.env.CLAUDE_WOW_FAKE_WAGO_LOG || '';
 const HANG_BUILDS = new Set(String(process.env.CLAUDE_WOW_FAKE_WAGO_HANG || '').split(',').filter(Boolean));
 const MISSING_BUILDS = new Set(String(process.env.CLAUDE_WOW_FAKE_WAGO_MISSING || '').split(',').filter(Boolean));
+const BUILDS_FILE = process.env.CLAUDE_WOW_FAKE_WAGO_BUILDS || path.join(FIXTURES, 'builds.json');
 const realFetch = globalThis.fetch;
+
+if (REQUEST_LOG) fs.appendFileSync(REQUEST_LOG, `argv ${JSON.stringify(process.argv.slice(2))}\n`);
 
 function served(body, headers) {
   return new Response(body, { status: 200, headers });
@@ -17,7 +20,7 @@ globalThis.fetch = async (url, init) => {
   const u = new URL(String(url));
   if (u.origin !== WAGO) return realFetch(url, init);
   if (REQUEST_LOG) fs.appendFileSync(REQUEST_LOG, `${u.pathname}${u.search}\n`);
-  if (u.pathname === '/api/builds') return served(fs.readFileSync(path.join(FIXTURES, 'builds.json'), 'utf8'), { 'content-type': 'application/json' });
+  if (u.pathname === '/api/builds') return served(fs.readFileSync(BUILDS_FILE, 'utf8'), { 'content-type': 'application/json' });
   const table = /^\/db2\/(\w+)\/csv$/.exec(u.pathname);
   const build = u.searchParams.get('build') || '';
   if (HANG_BUILDS.has(build)) {
