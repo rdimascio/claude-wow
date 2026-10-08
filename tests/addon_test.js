@@ -979,7 +979,7 @@ test('vision: off by default; "vision on" flags every send and resend with v, "l
   vm.run('SlashCmdList.CLAUDE("config vision on")');
   assert.equal(vm.evaluate('ClaudeWoWDB.settings.vision'), 'true');
   let note = vm.evaluate('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history].text');
-  assert.ok(note.includes('Vision is ON, but the bridge listens on the pixel transport'), 'told it needs the screenshot transport: ' + note);
+  assert.ok(note.includes('Vision is ON, but the companion app listens on the pixel transport'), 'told it needs the screenshot transport: ' + note);
   vm.run('SlashCmdList.CLAUDE("-c --agent codex")');
   vm.run('ClaudeWoW.Send("with the picture")');
   assert.equal(flagsOf('with the picture'), 'agent=codex;v');
@@ -3802,7 +3802,7 @@ test('mcp: the bridge list arrives in a slot, /claude mcp overrides servers per 
     vm.run('STUB.now = STUB.now + 10; STUB.Tick()');
   };
   vm.run('SlashCmdList.CLAUDE("mcp")');
-  assert.equal(last(), 'MCP: not connected to the bridge yet.');
+  assert.equal(last(), 'MCP: not connected to the companion app yet.');
   nextSlot(vm, `{ now = time(), cwd = "/p", mcp = ${list}, replies = {} }`);
   vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
   assert.equal(vm.evaluate('ClaudeWoW.IsConnected()'), 'true');
@@ -3858,7 +3858,7 @@ test('mcp: an older bridge that sends no list gets no mcp= token, and the comman
   connectIn(vm, '/p');
   vm.run('SlashCmdList.CLAUDE("mcp off notion")');
   const said = vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history[#ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history].text');
-  assert.match(said, /this bridge sends no MCP server list\. Update the bridge/);
+  assert.match(said, /this companion app sends no MCP server list\. Update the companion app/);
   vm.run('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].mcpAllOff = true');
   vm.run('SlashCmdList.CLAUDE("-c hi")');
   const rec = stripRecords(vm).find(r => r.text === 'hi');

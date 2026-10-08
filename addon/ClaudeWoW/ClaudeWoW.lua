@@ -835,9 +835,9 @@ local function VisionStatus()
 	local s = db.settings
 	if not s.vision then return "Vision is OFF: the agent gets no picture of your screen" end
 	if s.transport ~= "screenshot" then
-		return "Vision is ON, but the bridge listens on the pixel transport, which has no screenshot to send: set capture.mode to \"screenshot\" in bridge/config.json and restart the bridge"
+		return "Vision is ON, but the companion app listens on the pixel transport, which has no screenshot to send: set capture.mode to \"screenshot\" in its config.json and restart the companion app"
 	end
-	return "Vision is ON: each message goes out with a picture of your screen (the screenshot this transport takes anyway, strip cropped off and downscaled by the bridge), so the agent can see what you see"
+	return "Vision is ON: each message goes out with a picture of your screen (the screenshot this transport takes anyway, strip cropped off and downscaled by the companion app), so the agent can see what you see"
 end
 
 -- The client writes screenshots as JPEG by default, which is lossy; the
@@ -2355,8 +2355,8 @@ local function TryLoadSlot(why)
 			run.slotErrorTold = true
 			local build = select(4, GetBuildInfo())
 			local fix = reason == "INTERFACE_VERSION"
-				and ("the slot addons were made for another game version (this client is " .. tostring(build) .. "). Set tocInterface to " .. tostring(build) .. " in the bridge's config.json, run \"npm run slots\", then restart WoW.")
-				or "run \"npm run slots\" on the bridge's machine, then restart WoW."
+				and ("the slot addons were made for another game version (this client is " .. tostring(build) .. "). Set tocInterface to " .. tostring(build) .. " in the companion app's config.json, run \"npm run slots\", then restart WoW.")
+				or "run \"npm run slots\" on the computer that runs the companion app, then restart WoW."
 			TellPlayer("reply slots do not load (" .. tostring(reason) .. "): " .. fix .. " Until then replies arrive on /reload.")
 		end
 		ClaudeWoW.UpdateStatus()
@@ -3837,7 +3837,7 @@ function Q.ApplyOpenResults(acks)
 	for _, a in ipairs(acks) do
 		if type(a) == "table" and a.session == db.session and a.id == w.id and (a.open == "ok" or a.open == "refused") then
 			run.openWait = nil
-			if a.open == "refused" then Q.OpenRefused(w.url, type(a.why) == "string" and a.why ~= "" and a.why or "the bridge refused it") end
+			if a.open == "refused" then Q.OpenRefused(w.url, type(a.why) == "string" and a.why ~= "" and a.why or "the companion app refused it") end
 			return
 		end
 	end
@@ -3853,7 +3853,7 @@ function Q.TickOpen(now)
 	if not w then return end
 	if now - w.at >= Q.OPEN_URL_EXPIRE_SECONDS then
 		run.openWait = nil
-		Q.OpenRefused(w.url, "no answer from the bridge")
+		Q.OpenRefused(w.url, "no answer from the companion app")
 		return
 	end
 	local offset = Q.OPEN_URL_POLLS[w.step]
@@ -4238,7 +4238,7 @@ end
 function ClaudeWoW.LiveStatus()
 	local live = run.bridgeLive
 	if not live then
-		return { "Running Claude Code sessions: unknown until the bridge is heard from." }
+		return { "Running Claude Code sessions: unknown until the companion app is heard from." }
 	end
 	if #live.sessions == 0 then
 		local lines = { "No Claude Code session is running with the claude-wow channel. Start one in a terminal with:" }
@@ -4968,7 +4968,7 @@ function Cli.McpOffBlocked(c, s)
 	if not (e and e.off == false) then return nil end
 	if s and e.sources and not e.sources[s.src] then return nil end
 	if e.reason ~= "" then return e.reason end
-	return ChatAgentName(c) .. " failed the MCP off check in claude-wow agents check, so this bridge cannot turn a server off."
+	return ChatAgentName(c) .. " failed the MCP off check in claude-wow agents check, so this companion app cannot turn a server off."
 end
 
 function Cli.McpAllOffBlocked(c)
@@ -5030,10 +5030,10 @@ end
 
 function Cli.McpMissing()
 	if not run.bridgeMcp then
-		if not ClaudeWoW.IsConnected() then return "not connected to the bridge yet." end
-		return "this bridge sends no MCP server list. Update the bridge (claude-wow update) and reconnect."
+		if not ClaudeWoW.IsConnected() then return "not connected to the companion app yet." end
+		return "this companion app sends no MCP server list. Update the companion app (claude-wow update) and reconnect."
 	end
-	if #run.bridgeMcp == 0 then return "the bridge sees no MCP servers: none in your Claude or Codex setup, or in mcp.servers in its config.json." end
+	if #run.bridgeMcp == 0 then return "the companion app sees no MCP servers: none in your Claude or Codex setup, or in mcp.servers in its config.json." end
 end
 
 function Cli.McpFind(name)
@@ -8027,8 +8027,8 @@ function Q.ListSettingsMenu(anchor)
 	table.insert(items, { divider = true })
 	table.insert(items, { text = "Options", fn = function() ClaudeWoW.ShowOptions() end })
 	table.insert(items, { text = "Commands and tips", fn = function() ClaudeWoW.ShowHelp() end })
-	table.insert(items, { text = "Expand all folders", fn = function() SetAll(false) end })
-	table.insert(items, { text = "Collapse all folders", fn = function() SetAll(true) end })
+	table.insert(items, { text = "Expand all projects", fn = function() SetAll(false) end })
+	table.insert(items, { text = "Collapse all projects", fn = function() SetAll(true) end })
 	Q.ShowMenu(anchor, items, "settings", true)
 end
 
@@ -9335,7 +9335,7 @@ Cli.CONFIG_HELP = {
 	ui = "whisper on|off, dim <10-100>|off, dodge on|off, autohide on|off, reset: the tabs and the window; list|remove <name>|run <name>: live widgets",
 	map = "map layers, the route navigator and herb/ore nodes (/aimap is the same)",
 	macro = "undo: undo the last macro the agent's button created or changed",
-	probe = "chatlog|asyncfile: write test lines to the client's own logs so the bridge can measure them",
+	probe = "chatlog|asyncfile: write test lines to the client's own logs so the companion app can measure them",
 	diag = "transport diagnostics",
 }
 

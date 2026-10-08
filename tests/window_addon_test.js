@@ -1000,9 +1000,9 @@ test('the window is built from Blizzard frame templates where the client has the
   assert.equal(vm.evaluate(`${rowOf(2)}.when:GetText()`), '12:00', 'the time stays with previews off');
   assert.equal(titleColorOf(vm, 1), '0.75,0.61,0', 'with previews off an empty chat keeps the idle title');
   vm.run('ClaudeWoWChatSettings.scripts.OnClick(ClaudeWoWChatSettings); STUB.Pick("Show message previews")');
-  vm.run('ClaudeWoWChatSettings.scripts.OnClick(ClaudeWoWChatSettings); STUB.Pick("Collapse all folders")');
+  vm.run('ClaudeWoWChatSettings.scripts.OnClick(ClaudeWoWChatSettings); STUB.Pick("Collapse all projects")');
   assert.equal(shownRows(vm), '', 'collapse all hides every chat');
-  vm.run('ClaudeWoWChatSettings.scripts.OnClick(ClaudeWoWChatSettings); STUB.Pick("Expand all folders")');
+  vm.run('ClaudeWoWChatSettings.scripts.OnClick(ClaudeWoWChatSettings); STUB.Pick("Expand all projects")');
   assert.equal(vm.evaluate('ClaudeWoW.UI.art.reply'), 'UI-QuestIcon-TurnIn-Normal', 'an unread reply shows the turn-in icon');
 
   vm.run('ClaudeWoWFrame.CloseButton.scripts.OnClick(ClaudeWoWFrame.CloseButton)');

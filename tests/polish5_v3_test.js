@@ -411,8 +411,39 @@ test('module text: player strings say companion app, never bridge, and project, 
 });
 
 const SINKS = new Set(['print', 'AddHistory', 'Finish', 'TellPlayer', 'Cli.Out', 'Cli.Say', 'Cli.Note', 'Cli.Reject', 'ClaudeWoW.Print']);
-const DEV_FUNCTIONS = new Set(['Cli.DevCommand']);
+const DEV_FUNCTIONS = new Set([
+  'Cli.DevCommand',
+  'ClaudeWoW.ChatLog.Status',
+  'PollPresence',
+  'Presence.Check',
+  'Presence.Scheme',
+  'ClaudeWoW.Version.ClientsStatus',
+  'ClaudeWoW.Version.Status',
+]);
 const DEV_VERBS = new Set(['diag', 'probe', 'dev', 'wrong', 'bug', 'mode', 'signal', 'auto', 'longchat']);
+const ALLOWED_LITERALS = [
+  'update-bridge',
+  'bridge-older',
+  'bridge',
+  'CLAUDEWOW_FOLDER',
+  'the bridge read the last message only from the screenshot retry',
+  "the companion app's folder",
+  'Project for this chat\\n\\nType a full path, a path that starts with ~, or a folder name inside %s.',
+  'folder ',
+  '. Extra folders for this chat: ',
+  ' folders), so it is added for this retry only',
+  'Add the folder for this retry only.',
+  'Add the folder always, for this chat, like /claude --add-dir, and retry.',
+  "outside this chat's folders:%s*$",
+  'One more folder the agent may use.',
+  ' --add-dir folders.',
+  'extra folders: ',
+];
+const PREFIX_ALLOWED = new Set([
+  'Project for this chat\\n\\nType a full path, a path that starts with ~, or a folder name inside %s.',
+  'Add the folder for this retry only.',
+  'One more folder the agent may use.',
+]);
 
 function calleeName(n) {
   if (!n) return '?';
@@ -426,60 +457,77 @@ function devBranch(clause) {
   const look = n => {
     if (!n || typeof n !== 'object') return;
     if (n.type === 'BinaryExpression' && n.operator === '==' && n.left.type === 'Identifier' && n.left.name === 'cmd' && n.right.type === 'StringLiteral')
-      found.push(n.right.raw.slice(1, -1));
+      found[found.length] = n.right.raw.slice(1, -1);
     for (const k of ['left', 'right', 'argument']) look(n[k]);
   };
   look(clause.condition);
   return found.length > 0 && found.every(v => DEV_VERBS.has(v));
 }
 
-function playerSinkLiterals(file) {
-  const ast = luaparse.parse(fs.readFileSync(path.join(ADDON, file), 'utf8'), { luaVersion: '5.1', comments: false, locations: true });
+function allowedLiteral(text) {
+  return ALLOWED_LITERALS.some(a => (PREFIX_ALLOWED.has(a) ? text.startsWith(a) : text === a));
+}
+
+function addonLiterals(file) {
+  const src = fs.readFileSync(path.join(ADDON, file), 'utf8');
+  const ast = luaparse.parse(src, { luaVersion: '5.1', comments: false, locations: true });
   const out = [];
-  const literals = (node, acc) => {
+  const walk = (node, fn, sink) => {
     if (!node || typeof node !== 'object') return;
-    if (Array.isArray(node)) return node.forEach(n => literals(n, acc));
-    if (node.type === 'StringLiteral') acc.push(node);
-    for (const k of Object.keys(node)) if (k !== 'loc') literals(node[k], acc);
-  };
-  const walk = (node, fn) => {
-    if (!node || typeof node !== 'object') return;
-    if (Array.isArray(node)) return node.forEach(n => walk(n, fn));
+    if (Array.isArray(node)) return node.forEach(n => walk(n, fn, sink));
     if (node.type === 'FunctionDeclaration' && node.identifier) fn = calleeName(node.identifier);
+    if (node.type === 'AssignmentStatement' || node.type === 'LocalStatement') {
+      node.init.forEach((v, i) => walk(v, v && v.type === 'FunctionDeclaration' && node.variables[i] ? calleeName(node.variables[i]) : fn, sink));
+      return;
+    }
     if (DEV_FUNCTIONS.has(fn)) return;
     if ((node.type === 'IfClause' || node.type === 'ElseifClause') && devBranch(node)) return;
-    if ((node.type === 'CallExpression' || node.type === 'StringCallExpression') && SINKS.has(calleeName(node.base))) {
-      const acc = [];
-      literals(node.arguments || node.argument, acc);
-      for (const s of acc) out.push({ text: s.raw, line: s.loc.start.line, sink: calleeName(node.base), fn });
-    }
-    for (const k of Object.keys(node)) if (k !== 'loc') walk(node[k], fn);
+    if ((node.type === 'CallExpression' || node.type === 'StringCallExpression') && SINKS.has(calleeName(node.base))) sink = calleeName(node.base);
+    if (node.type === 'StringLiteral') out[out.length] = { text: node.raw.slice(1, -1), line: node.loc.start.line, fn, sink };
+    for (const k of Object.keys(node)) if (k !== 'loc') walk(node[k], fn, sink);
   };
-  walk(ast, '');
+  walk(ast, '<file>', null);
   return out;
 }
 
-test('module text: what ClaudeWoW.lua writes to the transcript or the chat says companion app and project, except the dev and diag handlers', () => {
-  const found = playerSinkLiterals('ClaudeWoW.lua');
-  assert.ok(found.length > 200, `the scan sees the sinks (${found.length})`);
+test('module text: every literal in ClaudeWoW.lua says companion app and project, except the diag, log and developer functions and listed protocol words', () => {
+  const found = addonLiterals('ClaudeWoW.lua');
+  assert.ok(found.length > 2000, `the scan sees every literal (${found.length})`);
   assert.ok(
     found.some(s => s.text.includes('companion app could not finish')),
-    'the failed-run prefix is a sink literal the scan reads',
+    'the failed-run prefix is scanned',
   );
   assert.ok(
     found.some(s => s.sink === 'TellPlayer' && s.text.includes('Companion app is back')),
-    'the transport notices are sink literals the scan reads',
+    'the transport notices are scanned',
+  );
+  assert.ok(
+    found.some(s => s.fn === 'Cli.McpMissing' && s.text.includes('companion app')),
+    'helpers that build text for a sink are scanned',
+  );
+  assert.ok(
+    found.some(s => s.fn === 'VisionStatus'),
+    'local helper functions are scanned',
   );
   for (const s of found) {
-    assert.doesNotMatch(s.text, /bridge/i, `ClaudeWoW.lua:${s.line} ${s.sink} in ${s.fn}: ${s.text}`);
-    assert.doesNotMatch(s.text, /folder/i, `ClaudeWoW.lua:${s.line} ${s.sink} in ${s.fn}: ${s.text}`);
+    if (allowedLiteral(s.text)) continue;
+    assert.doesNotMatch(s.text, /bridge/i, `ClaudeWoW.lua:${s.line} in ${s.fn}: ${s.text}`);
+    assert.doesNotMatch(s.text, /folder/i, `ClaudeWoW.lua:${s.line} in ${s.fn}: ${s.text}`);
   }
 });
 
-test('module text: the dev and diag allowlist still holds bridge words, so it is the allowlist and not a blind scan that passes them', () => {
-  const ast = fs.readFileSync(path.join(ADDON, 'ClaudeWoW.lua'), 'utf8');
-  assert.ok(/The bridge has not said it has dev tools/.test(ast));
-  assert.ok(!playerSinkLiterals('ClaudeWoW.lua').some(s => /dev tools/.test(s.text)));
+test('module text: the allowlists still hold bridge words, so it is the allowlist and not a blind scan that passes them', () => {
+  const src = fs.readFileSync(path.join(ADDON, 'ClaudeWoW.lua'), 'utf8');
+  assert.ok(/The bridge has not said it has dev tools/.test(src));
+  assert.ok(/bridge default, /.test(src));
+  const found = addonLiterals('ClaudeWoW.lua');
+  assert.ok(!found.some(s => /dev tools/.test(s.text)), 'Cli.DevCommand is skipped');
+  assert.ok(!found.some(s => s.text === 'bridge default, '), 'the diag branch is skipped');
+  for (const a of ALLOWED_LITERALS)
+    assert.ok(
+      found.some(s => (PREFIX_ALLOWED.has(a) ? s.text.startsWith(a) : s.text === a)),
+      `allowlist entry still used: ${a}`,
+    );
 });
 
 test('module text: cd, agent, discord, restore and a failed run read in companion app words', () => {
