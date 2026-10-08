@@ -297,7 +297,7 @@ test('a runtime folder installed after launch asks for a full restart, once', ()
   const vm = newVM({ prelude: 'STUB.addonMissing = { ClaudeWoW_Runtime = true }' });
   helloPoll(vm, null, 'time()', luaDisk(TOC_VERSION));
   slotPoll(vm, null, 'time()', luaDisk(TOC_VERSION));
-  assert.equal(told(vm, 'The ClaudeWoW_Runtime folder was installed after the game started. Fully quit and restart the game'), 1);
+  assert.equal(told(vm, 'The ClaudeWoW_Runtime addon was installed after the game started. Fully quit and restart the game'), 1);
   const present = newVM();
   helloPoll(present, null, 'time()', luaDisk(TOC_VERSION));
   assert.equal(told(present, 'restart the game'), 0);

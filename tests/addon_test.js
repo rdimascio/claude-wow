@@ -903,7 +903,7 @@ test('screenshot transport: shots stop once the bridge has been dark for a while
   assert.equal(vm.evaluate('ClaudeWoWStrip.shown'), 'true', 'the message is not dropped: the strip stays up as in pixel mode');
   frames(vm, 3);
   assert.equal(vm.num('STUB.screenshots'), 3, 'no screenshot for a bridge that has been dark 5 minutes');
-  assert.ok(prints().includes('bridge not seen for 5m10s: screenshots paused'), 'the player is told in the game chat: ' + prints());
+  assert.ok(prints().includes('Companion app not seen for 5m10s: screenshots paused'), 'the player is told in the game chat: ' + prints());
   assert.ok(vm.evaluate('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history].text').includes('screenshots paused'), 'and in the window');
   vm.run('STUB.prints = {}; ClaudeWoW.NewChat("Two"); ClaudeWoW.Send("anyone?")');
   assert.equal(vm.evaluate('ClaudeWoWStrip.shown'), 'true');
@@ -929,7 +929,7 @@ test('screenshot transport: shots stop once the bridge has been dark for a while
   vm.run(
     'STUB.sounds["Interface\\\\AddOns\\\\ClaudeWoW_Runtime\\\\presence\\\\a\\\\0002.wav"] = false; STUB.prints = {}; STUB.now = STUB.now + 2; STUB.Tick()',
   );
-  assert.ok(prints().includes('bridge is back: screenshots resume'), prints());
+  assert.ok(prints().includes('Companion app is back: screenshots resume'), prints());
   assert.equal(vm.evaluate('ClaudeWoW.IsConnected()'), 'true');
   vm.run('ClaudeWoW.Send("back?")');
   assert.equal(vm.evaluate('ClaudeWoWStrip.shown'), 'true');
