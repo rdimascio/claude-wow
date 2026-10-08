@@ -429,3 +429,19 @@ test('an empty Project dialog detaches a coding chat like the menu No project', 
   accept('/work/b/service');
   assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].cwd'), '/work/b/service', 'a path still sets the project');
 });
+
+test('a lock that arrives while the native Effort menu is open refuses the pick and disables the item', () => {
+  const vm = nativeVM(MENU_UTIL);
+  vm.run('ClaudeWoW.ApplyEfforts({ efforts = { [""] = { claude = "high" } }, effortLock = {} }); ClaudeWoWDB.chats[1].agent = "claude"; ClaudeWoW.Render()');
+  vm.run('ClaudeWoWEffortButton.scripts.OnClick(ClaudeWoWEffortButton)');
+  const item = '(function() for _, it in ipairs(STUB.menu.items) do if it.text == "max" then return it end end end)()';
+  assert.equal(vm.evaluate(`${item}.enabled`), 'true');
+  vm.run('ClaudeWoW.ApplyEfforts({ efforts = { [""] = { claude = "high" } }, effortLock = { claude = "low" } })');
+  vm.run(`${item}.fn()`);
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].effort'), null, 'the click is refused');
+  assert.equal(vm.evaluate(`${item}.enabled`), 'false', 'the item now shows as disabled');
+  assert.equal(vm.evaluate(`type(${item}.enabledArg)`), 'boolean');
+  vm.run('ClaudeWoW.ApplyEfforts({ efforts = { [""] = { claude = "high" } }, effortLock = {} })');
+  vm.run(`${item}.fn()`);
+  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].effort'), 'max', 'unlocked again: the same item works');
+});

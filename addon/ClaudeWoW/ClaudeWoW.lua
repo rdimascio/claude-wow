@@ -8294,9 +8294,22 @@ function Q.ApplyNativeEnabled(element, item)
 	element:SetEnabled(Q.MenuEnabled(item))
 end
 
+function Q.NativeAction(item, holder)
+	if item.enabled == nil or type(item.fn) ~= "function" then return item.fn end
+	return function(...)
+		if not Q.MenuEnabled(item) then
+			Q.ApplyNativeEnabled(holder.element, item)
+			return
+		end
+		return item.fn(...)
+	end
+end
+
 function Q.FillNativeMenu(root, items)
 	for _, it in ipairs(items) do
 		local element
+		local holder = {}
+		local action = Q.NativeAction(it, holder)
 		if it.title then
 			root:CreateTitle(it.title)
 		elseif it.divider then
@@ -8305,12 +8318,13 @@ function Q.FillNativeMenu(root, items)
 			element = root:CreateButton(it.text)
 			Q.FillNativeMenu(element, it.submenu)
 		elseif it.radio then
-			element = root:CreateRadio(it.text, it.selected, it.fn)
+			element = root:CreateRadio(it.text, it.selected, action)
 		elseif it.checked then
-			element = root:CreateCheckbox(it.text, it.checked, it.fn)
+			element = root:CreateCheckbox(it.text, it.checked, action)
 		else
-			element = root:CreateButton(Q.MenuLabel(it), it.fn)
+			element = root:CreateButton(Q.MenuLabel(it), action)
 		end
+		holder.element = element
 		if element then Q.ApplyNativeEnabled(element, it) end
 	end
 end
