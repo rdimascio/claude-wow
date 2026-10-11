@@ -93,6 +93,25 @@ test('known projects: the limit holds and a label never carries Lua-breaking cha
   assert.equal(list[0].label, 'weird--');
 });
 
+test('known projects: an allow list filters before the limit, so an older allowed folder still shows', () => {
+  const t = tree();
+  const list = PJ.knownProjects({
+    recent: [
+      { cwd: t.plain, at: 2 },
+      { cwd: t.wow, at: 3 },
+    ],
+    allowed: [PJ.realFolder(t.plain)],
+    home: t.home,
+    tempRoots: [],
+    limit: 1,
+    now: 3,
+  });
+  assert.deepEqual(
+    list.map(p => PJ.realFolder(p.path)),
+    [PJ.realFolder(t.plain)],
+  );
+});
+
 test('recent Claude projects are read from the tail of history.jsonl, latest time per folder', () => {
   const t = tree();
   const dir = path.join(t.root, 'claude');

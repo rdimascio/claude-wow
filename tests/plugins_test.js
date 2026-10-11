@@ -115,6 +115,51 @@ test("the shipped coding plugin: a folder resolved against the bridge's, refused
   fs.rmSync(base, { recursive: true, force: true });
 });
 
+test('the coding plugin: with plugins.claude-code.folders set, a game chat runs only in those folders, the default and the thread folders', () => {
+  const code = require('../bridge/plugins/claude-code');
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'wowai-allow-'));
+  const home = path.join(base, 'home');
+  const allowed = path.join(base, 'allowed');
+  const thread = path.join(base, 'thread');
+  const secret = path.join(base, 'secret');
+  for (const d of [home, path.join(home, 'peek'), allowed, path.join(allowed, 'sub'), thread, secret]) fs.mkdirSync(d);
+  fs.symlinkSync(secret, path.join(allowed, 'escape'), 'junction');
+  const calls = [];
+  const core = options => ({
+    log: noop,
+    tag: j => '#' + j.id,
+    defaultCwd: home,
+    options: () => options,
+    sessionFolder: () => '',
+    fail: (job, text) => calls.push({ fail: text }),
+    runAgent: (job, o) => calls.push({ run: o.cwd }),
+  });
+  const limited = { folders: [allowed], threads: [thread] };
+  const outcomes = [
+    ['', limited, 'run'],
+    [allowed, limited, 'run'],
+    [path.join(allowed, 'sub'), limited, 'run'],
+    [thread, limited, 'run'],
+    [secret, limited, 'refused'],
+    [path.join(allowed, 'escape'), limited, 'refused'],
+    [path.join(allowed, '..', 'secret'), limited, 'refused'],
+    [secret, { threads: [thread] }, 'run'],
+    [secret, { folders: [] }, 'run'],
+  ];
+  for (const [cwd, options, want] of outcomes) {
+    code.handle({ id: 1, cwd, text: 'hi' }, core(options));
+    const last = calls.at(-1);
+    assert.equal(last.run ? 'run' : 'refused', want, JSON.stringify([cwd, options]));
+    if (want === 'refused') assert.match(last.fail, /not in plugins\.claude-code\.folders/);
+  }
+  code.handle({ id: 2, cwd: path.join(allowed, 'missing'), text: 'hi' }, core(limited));
+  assert.match(calls.at(-1).fail, /Folder does not exist/);
+  assert.ok(!calls.at(-1).fail.includes('peek'), 'no folder names are listed while an allow list is set');
+  code.handle({ id: 3, cwd: 'missing', text: 'hi' }, core({}));
+  assert.match(calls.at(-1).fail, /Folders there: .*peek/, 'without a list the hint still names the folders');
+  fs.rmSync(base, { recursive: true, force: true });
+});
+
 test('the coding plugin: a chat in a plugins.claude-code.threads folder is a thread, its dispatcher rules go to the turn prompt', () => {
   const code = require('../bridge/plugins/claude-code');
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'wowai-thread-'));

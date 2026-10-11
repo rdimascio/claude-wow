@@ -44,6 +44,7 @@ function fakeCore(home, extra = {}) {
     claudeDir: extra.claudeDir || '',
     timeoutMs: 60000,
     liveStartCommand: 'claude --dangerously-load-development-channels server:claude-wow',
+    defaultCwd: extra.defaultCwd || home,
     options: () => extra.options || {},
     log: line => calls.log.push(line),
     tag: job => `#${job.id}`,
@@ -287,6 +288,23 @@ test('bridge to session: a message becomes a channel notification, wow_reply goe
     assert.match(twice.result.content[0].text, /No player message is waiting/);
     assert.ok(r.calls.publish >= 1, 'a connect republishes the slot files');
     assert.deepEqual(r.live.status(), ['proj (/work/proj)']);
+  } finally {
+    r.cleanup();
+  }
+});
+
+test('a live session in a folder outside plugins.claude-code.folders gets no game message', async () => {
+  const r = await rig({ options: { folders: [os.tmpdir()] }, defaultCwd: os.tmpdir() });
+  try {
+    await initialize(r.ch, r.out);
+    await r.live.handle({ id: 5, session: 'tok', chat: 'c1', name: 'Live', text: 'secret question', allow: [] }, r.core);
+    assert.match(r.calls.fail.at(-1).text, /not in plugins\.claude-code\.folders/);
+    await new Promise(res => setTimeout(res, 100));
+    assert.equal(
+      r.out.lines.find(l => l.method === 'notifications/claude/channel'),
+      undefined,
+      'nothing reached the session',
+    );
   } finally {
     r.cleanup();
   }

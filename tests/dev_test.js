@@ -19,6 +19,7 @@ function fakeCore(t, over = {}) {
   const core = {
     log: line => calls.logs.push(line),
     tag: job => `#${job.id}`,
+    defaultCwd: over.defaultCwd || home,
     options: () => over.options || {},
     reply: (job, text) => calls.replies.push(text),
     fail: (job, text) => calls.fails.push(text),
@@ -417,4 +418,30 @@ test('runCommand collects output, reports a missing program and stops a slow one
   assert.equal(missing.missing, true);
   const slow = await DEV.runCommand(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'], { timeoutMs: 200 });
   assert.equal(slow.timedOut, true);
+});
+
+test('dev refuses a folder outside plugins.claude-code.folders and runs nothing', async t => {
+  const outside = tmpDir(t);
+  const allowed = tmpDir(t);
+  const run = scriptedRun([]);
+  const { core, calls } = fakeCore(t, { cwd: outside, defaultCwd: allowed, options: { folders: [allowed] } });
+  await DEV.handleDev(job('status'), core, { run });
+  assert.match(calls.replies.at(-1), /not in plugins\.claude-code\.folders/);
+  assert.equal(run.seen.length, 0);
+  assert.equal(calls.claimed, 0);
+});
+
+test('dev help and feedback still answer in a folder outside the list; the doctor refuses a repository root outside it', async t => {
+  const outside = tmpDir(t);
+  const allowed = tmpDir(t);
+  const sub = path.join(allowed, 'sub');
+  fs.mkdirSync(sub);
+  const help = fakeCore(t, { cwd: outside, defaultCwd: allowed, options: { folders: [sub] } });
+  await DEV.handleDev(job('help'), help.core, { run: scriptedRun([]) });
+  assert.doesNotMatch(help.calls.replies.at(-1), /not in plugins/);
+  const run = scriptedRun([['git rev-parse --show-toplevel', { out: outside + '\n' }]]);
+  const doc = fakeCore(t, { cwd: sub, defaultCwd: sub, options: { folders: [sub] } });
+  await DEV.handleDev(job('doctor'), doc.core, { run });
+  assert.match(doc.calls.replies.at(-1), /repository root of this folder is not in plugins\.claude-code\.folders/);
+  assert.ok(!run.seen.some(c => c.args.includes('--json')), 'the doctor never ran');
 });

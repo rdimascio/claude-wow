@@ -4,6 +4,7 @@ const fs = require('fs');
 const net = require('net');
 const LP = require('../liveproto');
 const P = require('../protocol');
+const PJ = require('../projects');
 const SS = require('../sessions');
 const GM = require('../goalsmcp');
 
@@ -736,6 +737,11 @@ function createLive(overrides = {}) {
       }
       log(`${c.tag(job)} no live session connected${target ? ' matching "' + target + '"' : ''}`);
       c.fail(job, noSessionText(target));
+      return;
+    }
+    if (s.cwd && !PJ.folderAllowed(s.cwd, PJ.allowedFolders(c.options('claude-code'), c.defaultCwd))) {
+      log(`${c.tag(job)} live session "${s.name}" is in a folder outside plugins.claude-code.folders`);
+      c.fail(job, 'That live session is in a folder that is not in plugins.claude-code.folders, so the game cannot talk to it.');
       return;
     }
     const ctx = c.gameContext(job);
