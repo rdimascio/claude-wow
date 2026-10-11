@@ -941,7 +941,7 @@ function projectList() {
   const askDir = registry.get('ask').scratchFolder(pluginsCfg.ask);
   let list = [];
   try {
-    list = PJ.knownProjects({ defaultCwd: DEFAULT_CWD, chats, recent, exclude: [HOME.dir, askDir] });
+    list = PJ.knownProjects({ defaultCwd: DEFAULT_CWD, chats, recent, exclude: [HOME.dir, askDir], allowed: gameFolders() });
   } catch (e) {
     log(`projects: cannot list (${e.message})`);
   }
@@ -2505,9 +2505,13 @@ function stopPlugins() {
 // instructions (tools) go into the system prompt; its surfaces say whether the
 // run may mark the map and whether macro blocks in the reply become buttons.
 const IN_GAME_NEVER_GRANTED = LP.GOAL_WRITE_TOOLS;
-function neverOffered(denied, userMcp) {
+function gameFolders() {
+  return PJ.allowedFolders(pluginsCfg['claude-code'], DEFAULT_CWD);
+}
+function neverOffered(denied, userMcp, allowed = gameFolders()) {
   const mcpBlocks = userMcp ? userMcp.blocks : () => false;
-  return rule => GM.isRunToolRule(rule) || FACTORY.isRunToolRule(rule) || GM.deniedBy(denied, rule) || mcpBlocks(rule);
+  const outside = rule => !!P.ruleFolder(rule) && !PJ.folderAllowed(P.ruleFolder(rule), allowed);
+  return rule => GM.isRunToolRule(rule) || FACTORY.isRunToolRule(rule) || GM.deniedBy(denied, rule) || mcpBlocks(rule) || outside(rule);
 }
 function inGameGrantable(rules, denied, userMcp) {
   const blocked = neverOffered(denied, userMcp);
@@ -2722,6 +2726,13 @@ function runAgent(job, opts = {}) {
   if (runDirs.length) {
     acfg.addDirs = [...new Set([...A.addDirs(acfg), ...runDirs])];
     log(`${tag} folders added for this run only (${agentId}): ${runDirs.join(', ')}`);
+  }
+  const allowedDirs = gameFolders();
+  if (allowedDirs && A.addDirs(acfg).length) {
+    const extra = A.addDirs(acfg).map(d => P.resolveCwd(d, cwd));
+    const outsideDirs = extra.filter(d => !PJ.folderAllowed(d, allowedDirs));
+    acfg.addDirs = extra.filter(d => PJ.folderAllowed(d, allowedDirs));
+    if (outsideDirs.length) log(`${tag} extra folders left out, not in plugins.claude-code.folders: ${outsideDirs.join(', ')}`);
   }
   const ignored = A.unsupportedSettings(agentId, chosen);
   const cmd = A.resolveCommand(agentId, acfg);

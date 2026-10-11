@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const PR = require('../procs');
 const FB = require('../feedback');
+const PJ = require('../projects');
 
 const ID = 'dev';
 const REPLY_MAX = 6000;
@@ -366,6 +367,8 @@ async function doctor(ctx) {
   const { cwd, core, job, run } = ctx;
   const g = await gitRoot(cwd, run);
   const root = g.root || cwd;
+  if (!PJ.folderAllowed(root, PJ.allowedFolders(core.options('claude-code'), core.defaultCwd)))
+    return 'The repository root of this folder is not in plugins.claude-code.folders, so the doctor cannot run there.';
   const script = path.join(root, 'dev', 'doctor.js');
   if (!fs.existsSync(script)) return `No dev/doctor.js in ${root}. The doctor runs from a claude-wow checkout: switch this chat to it with /claude cd.`;
   core.progress(job, 'running the doctor');
@@ -521,6 +524,8 @@ const COMMANDS = {
   bug,
 };
 
+const IN_FOLDER = new Set(['status', 'diff', 'test', 'doctor']);
+
 const NOTED = new Set(['status', 'diff', 'log', 'run', 'test', 'doctor', 'errors']);
 
 function noteFor(command, rest, reply) {
@@ -535,6 +540,10 @@ async function handleDev(job, core, deps = {}) {
   core.accept(job);
   if (!fn) {
     core.reply(job, `Unknown dev command "${command}".\n${HELP}`);
+    return;
+  }
+  if (IN_FOLDER.has(command) && !PJ.folderAllowed(core.resolveCwd(job), PJ.allowedFolders(core.options('claude-code'), core.defaultCwd))) {
+    core.reply(job, 'That folder is not in plugins.claude-code.folders, so /dev cannot run there.');
     return;
   }
   core.claimRun(job);

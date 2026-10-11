@@ -69,3 +69,15 @@ test('a retry blocked again for what it was just granted stops the loop: no new 
     await h.bridge.waitForLine(/not offered again/);
   });
 });
+
+test('with plugins.claude-code.folders set, a folder outside the list is never offered in game and never reaches the agent', async () => {
+  await withGame({ config: { plugins: { default: 'claude-code', 'claude-code': { folders: ['.'] } } } }, async h => {
+    const scratch = outsideFolder(h);
+    const first = await h.client.say(`[[bash-stuck touch ${scratch}/demo.txt]]`);
+    assert.equal(first.denied, undefined, 'no roll offers the outside folder');
+    assert.ok(!String(first.text).includes(`AddDir(${scratch})`));
+    assert.equal(rollOpen(h), false);
+    const argv = h.agentCalls()[0].argv;
+    assert.ok(!argv.includes(scratch), 'the outside folder is not on the command line');
+  });
+});

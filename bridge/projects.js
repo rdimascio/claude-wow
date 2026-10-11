@@ -165,6 +165,7 @@ function knownProjects({
   home = os.homedir(),
   limit = PROJECTS_MAX,
   now = Date.now(),
+  allowed = null,
 } = {}) {
   const skip = [...tempRoots, ...exclude].filter(Boolean).map(p => path.resolve(p));
   const homeDir = path.resolve(home);
@@ -174,7 +175,7 @@ function knownProjects({
     const cwd = normalize(raw, home);
     if (!cwd || seen.has(cwd)) return;
     seen.add(cwd);
-    if (cwd === homeDir || skip.some(root => isInside(cwd, root))) return;
+    if (cwd === homeDir || skip.some(root => isInside(cwd, root)) || !folderAllowed(cwd, allowed)) return;
     if (!isDirectory(cwd)) return;
     candidates.push({ cwd, at: Number(at) || 0, pinned });
   };
@@ -197,4 +198,46 @@ function knownProjects({
   return out;
 }
 
-module.exports = { PROJECTS_MAX, expandHome, normalize, remoteUrls, repoNameFromUrl, repoLabel, labelFor, recentClaudeProjects, knownProjects };
+function realFolder(p) {
+  const tail = [];
+  let at = path.resolve(p);
+  for (;;) {
+    try {
+      return path.join(fs.realpathSync.native(at), ...tail);
+    } catch {
+      const up = path.dirname(at);
+      if (up === at) return path.resolve(p);
+      tail.unshift(path.basename(at));
+      at = up;
+    }
+  }
+}
+
+function allowedFolders(options, defaultCwd, home = os.homedir()) {
+  const strings = list => (Array.isArray(list) ? list.filter(f => typeof f === 'string' && f.trim() !== '') : []);
+  const listed = strings(options && options.folders);
+  if (!listed.length) return null;
+  const base = defaultCwd || home;
+  return [base, ...strings(options.threads), ...listed].map(f => realFolder(path.resolve(base, expandHome(f.trim(), home))));
+}
+
+function folderAllowed(cwd, allowed) {
+  if (!allowed) return true;
+  const here = realFolder(path.resolve(cwd));
+  return allowed.some(root => isInside(here, root));
+}
+
+module.exports = {
+  allowedFolders,
+  folderAllowed,
+  realFolder,
+  PROJECTS_MAX,
+  expandHome,
+  normalize,
+  remoteUrls,
+  repoNameFromUrl,
+  repoLabel,
+  labelFor,
+  recentClaudeProjects,
+  knownProjects,
+};

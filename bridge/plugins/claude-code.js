@@ -8,6 +8,7 @@
 
 const fs = require('fs');
 const P = require('../protocol');
+const PJ = require('../projects');
 const FACTORY = require('../factory');
 
 // Subfolders of the bridge's folder, for the "folder not found" hint.
@@ -24,18 +25,10 @@ function siblingFolders(dir) {
   }
 }
 
-function realFolder(p) {
-  try {
-    return fs.realpathSync.native(p);
-  } catch {
-    return p;
-  }
-}
-
 function isThread(options, cwd, defaultCwd) {
   const threads = options && Array.isArray(options.threads) ? options.threads : [];
-  const here = realFolder(cwd);
-  return threads.some(d => typeof d === 'string' && d.trim() !== '' && P.sameFolder(realFolder(P.resolveCwd(d.trim(), defaultCwd)), here));
+  const here = PJ.realFolder(cwd);
+  return threads.some(d => typeof d === 'string' && d.trim() !== '' && P.sameFolder(PJ.realFolder(P.resolveCwd(d.trim(), defaultCwd)), here));
 }
 
 const plugin = {
@@ -54,9 +47,16 @@ const plugin = {
   handle(job, core) {
     const cwd = P.resolveCwd(job.cwd, core.defaultCwd);
     job.cwd = cwd;
+    const options = core.options('claude-code');
+    const allowed = PJ.allowedFolders(options, core.defaultCwd);
+    if (!PJ.folderAllowed(cwd, allowed)) {
+      core.log(`${core.tag(job)} cwd is not in plugins.claude-code.folders: ${cwd}`);
+      core.fail(job, 'That folder is not in plugins.claude-code.folders, so a game chat cannot use it.\nUse /claude cd alone for the default.');
+      return;
+    }
     if (!fs.existsSync(cwd)) {
       core.log(`${core.tag(job)} cwd does not exist: ${cwd}`);
-      const sibs = siblingFolders(core.defaultCwd);
+      const sibs = allowed ? [] : siblingFolders(core.defaultCwd);
       core.fail(
         job,
         `Folder does not exist: ${cwd}\n` +
@@ -66,7 +66,6 @@ const plugin = {
       );
       return;
     }
-    const options = core.options('claude-code');
     const conf = FACTORY.settings(options);
     const command = FACTORY.slashCommand(core.factory, job.text, { key: P.chatKey(job), job, cwd, conf, label: core.tag(job) });
     if (command) {
