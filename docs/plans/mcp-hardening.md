@@ -10,7 +10,7 @@ Merged:
 - #167: fake agents in the tests ignore the tracker's `--version` call.
 
 Open:
-- Decision 1: `enforce_admins` on `main` is still the owner's call.
+- Decision 1: `enforce_admins` on `main` stays off (owner's decision, 2026-10-14): there is one maintainer, and it would block the owner's own emergency merges.
 - Decision 3: deprecating `mcp.servers` is deferred (see below).
 
 ## Why
@@ -74,7 +74,7 @@ PR A is independent. PR D, then PR B, then PR C run one after another: B and C c
 - `npm test` green; fresh-eyes on the PR.
 
 ## Decisions for the owner
-1. `enforce_admins` on `main` (blocks the owner's own emergency merges too).
+1. Decided 2026-10-14: `enforce_admins` on `main` stays off (it would block the owner's own emergency merges too).
 2. Settled here: fail closed only on a measured failure; warn when unchecked.
 3. Deprecate adding servers through `mcp.servers`: deferred until a `mcp.default.<id>` override and a migration that keeps approval and secret exclusion exist.
 
