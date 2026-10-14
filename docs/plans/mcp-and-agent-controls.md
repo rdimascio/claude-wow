@@ -53,7 +53,7 @@ Claude:
 - `--strict-mcp-config` only when `mcp.strict: true`. On startup with strict on, log the servers in `~/.claude.json` / `.mcp.json` / plugins that will stop loading.
 
 Codex:
-- Flip the `dataServer` gate to also accept `agentId === 'codex'`. Step 3 held the `runToolsSocket` and `factoryToolSocket` flips: a run with goal tools must have no shell (`Bash` denied, LIVE-SESSION.md), and the dispatcher must have no `Edit`/`Write`/`Bash`; Codex ignores deny rules, so both need an owner decision first.
+- Flip the `dataServer` gate to also accept `agentId === 'codex'`. Step 3 held the `runToolsSocket` and `factoryToolSocket` flips: a run with goal tools must have no shell (`Bash` denied, LIVE-SESSION.md), and the dispatcher must have no `Edit`/`Write`/`Bash`; Codex ignores deny rules, so both stay off for Codex (owner's decision, 2026-10-14): Codex chats get no goal tools and no factory dispatch.
 - Every server needs `default_tools_approval_mode="approve"` (measured on codex 0.159: `exec` refuses MCP calls otherwise).
 - Each enabled server: `-c mcp_servers.<name>.command="…"`, `.args=[…]`, `.env_vars=[…]`, `.url="…"`, `.bearer_token_env_var="…"`, `.enabled_tools=[…]`, `.disabled_tools=[…]`. All values emitted as TOML string literals (escape `"` and `\`); no shell is involved (`procs.js` spawns without one).
 - `wowgoals`: `disabled_tools` = every rule from `LP.GOAL_WRITE_TOOLS` and `GM.DENIED_WITH_TOOLS`. `CLAUDE_WOW_RUN_TOKEN` goes into the spawned env and is listed in `env_vars`, never on argv.
