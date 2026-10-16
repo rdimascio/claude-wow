@@ -1,5 +1,6 @@
 'use strict';
 const GD = require('./gamedata');
+const IS = require('./itemstats');
 const L = require('./communityloot');
 
 const SERVER_NAME = 'wowdata';
@@ -592,7 +593,7 @@ function itemRow(store, it, detailed) {
     buyPrice: it.buyPrice,
     startsQuest: GD.isId(it.startQuestID) ? { id: it.startQuestID, inClientData: store.has('quests') ? !!store.byId('quests', it.startQuestID) : null } : null,
   };
-  if (detailed) Object.assign(fields, reagentUse(store, it.id));
+  if (detailed) Object.assign(fields, reagentUse(store, it.id), { stats: IS.available(store) ? IS.decode(store, it.id) : null });
   return cited(store, fields);
 }
 
@@ -658,7 +659,7 @@ const TOOLS = [
   {
     name: 'wow_item',
     description:
-      'Look up an item by ID or by name in the client item table: name, quality, item level, required level, inventory type, sell and buy price in copper, the quest it starts, and (by ID) the profession recipes that use it as a reagent. By ID it also lists, from community loot tables (cMaNGOS, 1.12; trust "community-db", on Forever "community-db-unchecked-for-this-game"), who drops it (droppedBy), skinnedFrom, pickpocketedFrom, the chests, nodes and fishing holes that hold it (objects), fishedIn (zones), inContainers and disenchantedFrom, and for a container or a disenchantable item what it gives (contains, disenchantsInto). No chances, counts or vendors. Several items can share one name; a note then lists their IDs, and the name alone does not pick one.',
+      'Look up an item by ID or by name in the client item table: name, quality, item level, required level, inventory type, sell and buy price in copper, the quest it starts, and (by ID) the profession recipes that use it as a reagent and its stats from the client tables: stats (primary stats, armor, resistances, and equip effects read as spellDamage, healing, attackPower, meleeHit and meleeCrit in percent, mp5, defense, weapon skills and similar), weapon (min, max, speed in seconds, dps), unread (equip, on-hit and other effects not read: never say an item lacks an effect while unread is not empty) and notCounted (use effects). By ID it also lists, from community loot tables (cMaNGOS, 1.12; trust "community-db", on Forever "community-db-unchecked-for-this-game"), who drops it (droppedBy), skinnedFrom, pickpocketedFrom, the chests, nodes and fishing holes that hold it (objects), fishedIn (zones), inContainers and disenchantedFrom, and for a container or a disenchantable item what it gives (contains, disenchantsInto). No chances, counts or vendors. Several items can share one name; a note then lists their IDs, and the name alone does not pick one.',
     inputSchema: {
       type: 'object',
       properties: {
