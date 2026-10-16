@@ -7,6 +7,7 @@ const D = require('./datasync');
 const GD = require('./gamedata');
 const S = require('./sqldump');
 const L = require('./communityloot');
+const PQ = require('./pfquest');
 
 const FLAVOR = 'classic_era';
 const SOURCE = 'cmangos';
@@ -232,7 +233,7 @@ function finishSpawns(owner) {
   return { ...rest, spawnTotal: all.length, onMaps: [...onMaps.values()].sort((a, b) => a.uiMapID - b.uiMapID), spawns };
 }
 
-function convert(sql, client) {
+function convert(sql, client, zones = null) {
   const droppedBy = {};
   const drop = reason => {
     droppedBy[reason] = (droppedBy[reason] || 0) + 1;
@@ -247,7 +248,8 @@ function convert(sql, client) {
     return p.map ? { maps: p.maps, ...(p.zoneAmbiguous ? { zoneAmbiguous: true } : {}) } : { mapID: map, maps: [] };
   };
   const eventGuids = table => new Set([...S.rows(sql, table, ['guid', 'event'])].filter(r => r.event > 0).map(r => r.guid));
-  const addSpawn = (owner, spot) => {
+  const addSpawn = (owner, spot, kind) => {
+    if (zones && spot) spot = zones.resolve(kind, owner.id, spot);
     if (!spot) {
       drop('badSpawn');
       return;
@@ -283,11 +285,11 @@ function convert(sql, client) {
     const entries = shared ? spawnEntries.get(r.guid) || [] : [r.id];
     for (const entry of entries) {
       const npc = npcs.get(entry);
-      if (npc) addSpawn(npc, spot && { ...spot, ...(npcEvents.has(r.guid) ? { event: true } : {}), ...(shared ? { shared: true } : {}) });
+      if (npc) addSpawn(npc, spot && { ...spot, ...(npcEvents.has(r.guid) ? { event: true } : {}), ...(shared ? { shared: true } : {}) }, 'npcs');
     }
     for (const entry of eventEntries.get(r.guid) || []) {
       const npc = npcs.get(entry);
-      if (npc && !entries.includes(entry)) addSpawn(npc, spot && { ...spot, event: true });
+      if (npc && !entries.includes(entry)) addSpawn(npc, spot && { ...spot, event: true }, 'npcs');
     }
   }
 
@@ -335,14 +337,14 @@ function convert(sql, client) {
     const object = objects.get(r.id);
     if (!object) continue;
     const spot = place(r.map, r.position_x, r.position_y);
-    addSpawn(object, spot && { ...spot, ...(objectEvents.has(r.guid) ? { event: true } : {}) });
+    addSpawn(object, spot && { ...spot, ...(objectEvents.has(r.guid) ? { event: true } : {}) }, 'objects');
   }
   const loot = L.convert(sql, client, { npcs, nameOrDrop, drop });
   const sorted = m => [...m.values()].map(finishSpawns).sort((a, b) => a.id - b.id);
   const entities = { npcs: sorted(npcs), questinfo: [...quests.values()].sort((a, b) => a.id - b.id), objects: sorted(objects), ...loot.entities };
   for (const required of ['npcs', 'questinfo'])
     if (!entities[required].length) throw new S.DumpError(`no ${required} row survived conversion; the dump layout changed`);
-  return { entities, droppedBy, loot: loot.loot };
+  return { entities, droppedBy, loot: loot.loot, zones: zones ? { ...zones.counts } : null };
 }
 
 function writeJsonl(file, records) {
@@ -400,8 +402,20 @@ async function syncCommunity(opts = {}) {
     }
     const dump = pickDump(listing);
     const version = `${dump.revision}-${dump.sha.slice(0, 7)}`;
+    const get = (url, origin, maxBytes) => fetchFrom(fetchImpl, url, origin, maxBytes);
+    let pfFiles = null;
+    let pfError = null;
+    log(`fetch ${PQ.LISTING_URL}`);
+    try {
+      pfFiles = await PQ.listFiles(get);
+    } catch (e) {
+      if (!(e instanceof PQ.PfQuestError || e instanceof D.SyncError)) throw e;
+      pfError = e.message;
+      log(`pfQuest is not used this time, so overlapping zones stay ambiguous: ${pfError}`);
+    }
     const before = readCommunity(root);
     const identity = clientIdentity(client);
+    const pfBefore = before && before.manifest.pfquest && before.manifest.pfquest.files;
     if (
       !opts.force &&
       before &&
@@ -409,7 +423,8 @@ async function syncCommunity(opts = {}) {
       before.manifest.client &&
       before.manifest.client.placementHash &&
       before.manifest.client.placementHash === identity.placementHash &&
-      before.manifest.client.lootHash === identity.lootHash
+      before.manifest.client.lootHash === identity.lootHash &&
+      (!pfFiles || JSON.stringify(PQ.filesKey(pfBefore)) === JSON.stringify(PQ.filesKey(pfFiles)))
     ) {
       log(`community data is already at ${version} for client data ${client.build}; nothing to do (--force syncs it again)`);
       return { status: 'current', version, dir: before.dir, manifest: before.manifest };
@@ -424,9 +439,20 @@ async function syncCommunity(opts = {}) {
     } catch (e) {
       throw new D.SyncError(`${dump.name}: cannot be unpacked within ${MAX_SQL_BYTES} bytes (${e.code || e.message})`);
     }
+    let zones = null;
+    if (pfFiles) {
+      try {
+        zones = PQ.zoneResolver(client, await PQ.fetchCoords(get, pfFiles, gitBlobSha));
+      } catch (e) {
+        if (!(e instanceof PQ.PfQuestError || e instanceof D.SyncError)) throw e;
+        pfError = e.message;
+        pfFiles = null;
+        log(`pfQuest is not used this time, so overlapping zones stay ambiguous: ${pfError}`);
+      }
+    }
     let converted;
     try {
-      converted = convert(sql, client);
+      converted = convert(sql, client, zones);
     } catch (e) {
       if (e instanceof S.DumpError) throw new D.SyncError(`${dump.name}: ${e.message}`);
       throw e;
@@ -460,8 +486,18 @@ async function syncCommunity(opts = {}) {
         dropped: Object.values(converted.droppedBy).reduce((s, n) => s + n, 0),
         droppedBy: converted.droppedBy,
         loot: converted.loot,
+        pfquest: pfFiles
+          ? {
+              url: PQ.REPO_URL,
+              license: PQ.LICENSE_NOTE,
+              files: Object.fromEntries(Object.entries(pfFiles).map(([kind, f]) => [kind, { name: f.name, sha: f.sha, size: f.size }])),
+              near: PQ.NEAR,
+              ...converted.zones,
+            }
+          : { error: pfError },
         entities,
       };
+      if (converted.zones) log(`pfQuest zones: ${converted.zones.resolved} spawns placed in one zone, ${converted.zones.stillAmbiguous} still ambiguous`);
       fs.writeFileSync(path.join(tmpDir, D.MANIFEST_FILE), JSON.stringify(manifest, null, 2) + '\n');
       const dir = swap(root, version, tmpDir, log);
       return { status: 'synced', version, dir, manifest };

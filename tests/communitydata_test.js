@@ -796,3 +796,162 @@ test('on Forever loot answers drop items Forever lacks or names differently, NPC
   assert.ok(unlisted.results[0].community, 'an item no loot list names is answered, not called renamed');
   assert.doesNotMatch(unlisted.notes.join(' '), /another name/);
 });
+
+const PQ = require('../bridge/pfquest');
+const PF_UNITS_URL = 'https://raw.githubusercontent.com/shagu/pfQuest/master/db/units.lua';
+const PF_OBJECTS_URL = 'https://raw.githubusercontent.com/shagu/pfQuest/master/db/objects.lua';
+const RIDGE = { area: 7102, uiMapID: 9103 };
+
+function pfTable(table, entries) {
+  const lines = [`pfDB["${table}"]["data"] = {`];
+  for (const [id, coords] of entries) {
+    lines.push(`  [${id}] = {`);
+    if (!coords.length) lines.push('    ["coords"] = {},');
+    else {
+      lines.push('    ["coords"] = {');
+      coords.forEach(([x, y, area], k) => lines.push(`      [${k + 1}] = { ${x}, ${y}, ${area}, 300 },`));
+      lines.push('    },');
+    }
+    lines.push('    ["fac"] = "AH",', '  },');
+  }
+  lines.push('}', '');
+  return lines.join('\n');
+}
+
+function fakePfQuest(gh, { units, objects, unitsSha }) {
+  const files = { units: Buffer.from(units), objects: Buffer.from(objects) };
+  const entry = (name, bytes, url) => ({ name, type: 'file', size: bytes.length, sha: C.gitBlobSha(bytes), download_url: url });
+  const listing = [entry('units.lua', files.units, PF_UNITS_URL), entry('objects.lua', files.objects, PF_OBJECTS_URL), { name: 'init.lua', type: 'file' }];
+  if (unitsSha) listing[0].sha = unitsSha;
+  return async url => {
+    if (url === PQ.LISTING_URL) return new Response(JSON.stringify(listing), { status: 200 });
+    if (url === PF_UNITS_URL) return new Response(files.units, { status: 200 });
+    if (url === PF_OBJECTS_URL) return new Response(files.objects, { status: 200 });
+    return gh.fetchImpl(url);
+  };
+}
+
+function addOverlappingZone(dataDir) {
+  const era = D.readCurrent(path.join(dataDir, 'classic_era'));
+  const append = (entity, row) => {
+    fs.appendFileSync(path.join(era.dir, `${entity}.jsonl`), JSON.stringify(row) + '\n');
+    const mf = path.join(era.dir, 'manifest.json');
+    const manifest = JSON.parse(fs.readFileSync(mf, 'utf8'));
+    manifest.entities[entity].rows++;
+    fs.writeFileSync(mf, JSON.stringify(manifest));
+  };
+  append('uimaps', { id: RIDGE.uiMapID, name: 'Era Fixture Ridge', parentUiMapID: 9101, type: 3, system: 0 });
+  append('uimapassignments', {
+    id: 8103,
+    uiMapID: RIDGE.uiMapID,
+    mapID: 1,
+    areaID: RIDGE.area,
+    orderIndex: 0,
+    uiMin: [0, 0],
+    uiMax: [1, 1],
+    region: [-1000, -1000, -1000000, 1000, 1000, 1000000],
+  });
+}
+
+test('pfQuest coordinates parse only in the layout they are published in, and anything else is refused', () => {
+  const text = pfTable('units', [
+    [7001, [[12.5, 40, 7101]]],
+    [7002, []],
+  ]);
+  const parsed = PQ.parseCoords(text, 'units');
+  assert.deepEqual(
+    [...parsed.entries()],
+    [
+      [7001, [{ x: 12.5, y: 40, areaID: 7101 }]],
+      [7002, []],
+    ],
+  );
+  const refuse = (t, re) => assert.throws(() => PQ.parseCoords(t, 'units'), re);
+  refuse(text.replace('pfDB["units"]', 'pfDB["objects"]'), /first line/);
+  refuse(text.replace('    ["fac"] = "AH",\n  },\n}', '    ["fac"] = "AH",\n  },\n  [7001] = {\n  },\n}'), /appears twice/);
+  refuse(text.replace('{ 12.5, 40, 7101, 300 }', '{ 12.5, 40, 7101 }'), /not a spawn point/);
+  refuse(text.replace('    ["coords"] = {},', '    ["coords"] = loadstring("x"),'), /unknown field/);
+  refuse(text.replace('    ["fac"] = "AH",', '    ["fac"] = { "A" },'), /unknown field/);
+  refuse(text.replace(/\}\n$/, ''), /never closes/);
+  refuse(text + 'os.exit()\n', /after the closing brace/);
+  refuse(pfTable('units', [[7002, []]]), /no spawn point/);
+
+  const sha = 'a'.repeat(40);
+  const good = [
+    { name: 'units.lua', type: 'file', sha, size: 10, download_url: PF_UNITS_URL },
+    { name: 'objects.lua', type: 'file', sha, size: 10, download_url: PF_OBJECTS_URL },
+  ];
+  assert.deepEqual(Object.keys(PQ.pickFiles(good)), ['npcs', 'objects']);
+  const listing = (k, patch) => good.map((e, i) => (i === k ? { ...e, ...patch } : e));
+  assert.throws(() => PQ.pickFiles({}), /not a folder listing/);
+  assert.throws(() => PQ.pickFiles([good[0]]), /expected one db\/objects\.lua, found 0/);
+  assert.throws(() => PQ.pickFiles(listing(0, { sha: 'nope' })), /no valid git sha/);
+  assert.throws(() => PQ.pickFiles(listing(0, { size: 17 * 1024 * 1024 })), /outside 1\.\./);
+  assert.throws(() => PQ.pickFiles(listing(0, { download_url: 'not a url' })), /no valid download URL/);
+  assert.throws(() => PQ.pickFiles(listing(1, { download_url: 'https://example.com/shagu/pfQuest/master/db/objects.lua' })), /unexpected download URL/);
+  assert.throws(() => PQ.pickFiles(listing(1, { download_url: PF_UNITS_URL })), /unexpected download URL/);
+});
+
+test('pfQuest picks the one zone of a spawn that lies in overlapping zone rectangles, and its absence never blocks a sync', async () => {
+  const dataDir = await eraData('pfquest');
+  addOverlappingZone(dataDir);
+  const gh = fakeGitHub();
+  const plain = await C.syncCommunity({ dataDir, fetch: gh.fetchImpl });
+  assert.equal(plain.status, 'synced');
+  assert.match(plain.manifest.pfquest.error, /HTTP 404/);
+  const cs = () => GD.openStore({ dataDir, clientBuild: ERA_CLIENT }).community;
+  const before = cs();
+  const giverSpot = before.byId('npcs', 7001).spawns[0];
+  assert.equal(giverSpot.zoneAmbiguous, true, 'the fixture spawn lies in both zones');
+  const at = (spot, uiMapID) => spot.maps.find(m => m.uiMapID === uiMapID);
+  const onVale = at(giverSpot, 9102);
+  const wanderer = before.byId('npcs', 7002).spawns.find(s => s.zoneAmbiguous);
+  const poster = before.byId('objects', 8001).spawns.find(s => s.zoneAmbiguous);
+  const units = pfTable('units', [
+    [7001, [[onVale.x + 0.5, onVale.y, 7101]]],
+    [
+      7002,
+      [
+        [at(wanderer, 9102).x, at(wanderer, 9102).y, 7101],
+        [at(wanderer, RIDGE.uiMapID).x, at(wanderer, RIDGE.uiMapID).y, RIDGE.area],
+      ],
+    ],
+  ]);
+  const objects = pfTable('objects', [[8001, [[at(poster, RIDGE.uiMapID).x, at(poster, RIDGE.uiMapID).y + 0.9, RIDGE.area]]]]);
+
+  const withPf = await C.syncCommunity({ dataDir, fetch: fakePfQuest(gh, { units, objects }) });
+  assert.equal(withPf.status, 'synced', 'a store built without pfQuest is converted again once pfQuest answers');
+  assert.deepEqual(
+    [withPf.manifest.pfquest.resolved > 0, withPf.manifest.pfquest.near, Object.keys(withPf.manifest.pfquest.files)],
+    [true, 1, ['npcs', 'objects']],
+  );
+  const after = cs();
+  const giver = after.byId('npcs', 7001).spawns[0];
+  assert.deepEqual(
+    [giver.zoneAmbiguous, giver.zoneFrom, giver.maps.map(m => m.uiMapID)],
+    [undefined, 'pfquest', [9102, 9101]],
+    'the zone with a pfQuest spawn within 1% stays, the other zone goes, the continent stays',
+  );
+  assert.equal(after.byId('npcs', 7001).spawns[1].mapID, 33, 'a dungeon spawn is left alone');
+  const both = after.byId('npcs', 7002).spawns.find(s => s.zoneAmbiguous);
+  assert.ok(both && !both.zoneFrom, 'pfQuest spawns near the spot in both zones decide nothing');
+  const posterAfter = after.byId('objects', 8001).spawns.find(s => s.zoneFrom);
+  assert.deepEqual(
+    posterAfter.maps.map(m => m.uiMapID),
+    [RIDGE.uiMapID, 9101],
+  );
+  const npc = call(GD.openStore({ dataDir, clientBuild: ERA_CLIENT }), 'wow_npc', { id: 7001 });
+  assert.equal(npc.results[0].spawns[0].zoneFrom, 'pfquest');
+  assert.equal(npc.results[0].spawns[0].zoneAmbiguous, undefined);
+
+  assert.equal((await C.syncCommunity({ dataDir, fetch: fakePfQuest(gh, { units, objects }) })).status, 'current');
+  assert.equal((await C.syncCommunity({ dataDir, fetch: gh.fetchImpl })).status, 'current', 'pfQuest being down keeps the store');
+  const far = pfTable('units', [[7001, [[onVale.x + 1.5, onVale.y, 7101]]]]);
+  await C.syncCommunity({ dataDir, fetch: fakePfQuest(gh, { units: far, objects }) });
+  assert.equal(cs().byId('npcs', 7001).spawns[0].zoneAmbiguous, true, 'a pfQuest spawn more than 1% away decides nothing');
+
+  const tampered = await C.syncCommunity({ dataDir, fetch: fakePfQuest(gh, { units, objects, unitsSha: 'f'.repeat(40) }) });
+  assert.equal(tampered.status, 'synced');
+  assert.match(tampered.manifest.pfquest.error, /does not match the git sha/);
+  assert.equal(cs().byId('npcs', 7001).spawns[0].zoneAmbiguous, true, 'a pfQuest file that fails its check is not used');
+});
