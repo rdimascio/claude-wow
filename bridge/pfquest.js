@@ -102,9 +102,10 @@ async function listFiles(get) {
   return pickFiles(listing);
 }
 
-async function fetchCoords(get, files, blobSha) {
+async function fetchCoords(get, files, blobSha, log = () => {}) {
   const coords = {};
   for (const [kind, f] of Object.entries(files)) {
+    log(`fetch ${f.url}`);
     const bytes = await get(f.url, RAW_ORIGIN, MAX_FILE_BYTES);
     if (bytes.length !== f.size) throw new PfQuestError(`${f.name}: got ${bytes.length} bytes, the listing says ${f.size}`);
     if (blobSha(bytes) !== f.sha) throw new PfQuestError(`${f.name}: the file does not match the git sha ${f.sha} the listing gives`);

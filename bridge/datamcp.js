@@ -481,6 +481,7 @@ function onMapRow(store, cs, m) {
     count: m.count,
     ...(cs.stale ? {} : { x: m.x, y: m.y }),
     ...(m.zoneAmbiguous ? { zoneAmbiguous: true } : {}),
+    ...(m.zoneFrom === 'pfquest' ? { zoneFrom: 'pfquest' } : {}),
     ...(m.event ? { event: true } : {}),
   };
 }
@@ -1042,6 +1043,7 @@ const TOOLS = [
             ),
             dropped: Number.isSafeInteger(c.dropped) ? c.dropped : null,
             loot: c.loot && typeof c.loot === 'object' ? c.loot : null,
+            pfquest: c.pfquest && typeof c.pfquest === 'object' ? c.pfquest : null,
           }),
         );
       }

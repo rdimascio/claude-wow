@@ -159,7 +159,12 @@ async function fetchFrom(fetchImpl, url, origin, maxBytes) {
   }
   if (res.status !== 200) throw new D.SyncError(`${url}: HTTP ${res.status}`);
   if (res.url && new URL(res.url).origin !== origin) throw new D.SyncError(`${url}: the answer came from ${new URL(res.url).origin}, not ${origin}`);
-  return D.readCappedBytes(res, url, maxBytes);
+  try {
+    return await D.readCappedBytes(res, url, maxBytes);
+  } catch (e) {
+    if (e instanceof D.SyncError) throw e;
+    throw new D.SyncError(`${url}: ${e && e.message ? e.message : String(e)}`);
+  }
 }
 
 function pickDump(listing) {
@@ -201,7 +206,13 @@ function spawnKey(spot) {
 function finishSpawns(owner) {
   const { all, ...rest } = owner;
   const onMaps = new Map();
-  const pick = (m, spot) => ({ x: m.x, y: m.y, ...(spot.zoneAmbiguous ? { zoneAmbiguous: true } : {}), ...(spot.event ? { event: true } : {}) });
+  const pick = (m, spot) => ({
+    x: m.x,
+    y: m.y,
+    ...(spot.zoneAmbiguous ? { zoneAmbiguous: true } : {}),
+    ...(spot.zoneFrom ? { zoneFrom: spot.zoneFrom } : {}),
+    ...(spot.event ? { event: true } : {}),
+  });
   for (const spot of all) {
     for (const m of spot.maps) {
       const seen = onMaps.get(m.uiMapID);
@@ -210,6 +221,7 @@ function finishSpawns(owner) {
         seen.count++;
         if (seen.event && !spot.event) {
           delete seen.zoneAmbiguous;
+          delete seen.zoneFrom;
           delete seen.event;
           Object.assign(seen, pick(m, spot));
         }
@@ -411,23 +423,36 @@ async function syncCommunity(opts = {}) {
     } catch (e) {
       if (!(e instanceof PQ.PfQuestError || e instanceof D.SyncError)) throw e;
       pfError = e.message;
-      log(`pfQuest is not used this time, so overlapping zones stay ambiguous: ${pfError}`);
+      log(`pfQuest listing not available: ${pfError}`);
     }
     const before = readCommunity(root);
     const identity = clientIdentity(client);
     const pfBefore = before && before.manifest.pfquest && before.manifest.pfquest.files;
-    if (
+    const unchanged =
       !opts.force &&
       before &&
       before.manifest.sha === dump.sha &&
       before.manifest.client &&
       before.manifest.client.placementHash &&
       before.manifest.client.placementHash === identity.placementHash &&
-      before.manifest.client.lootHash === identity.lootHash &&
-      (!pfFiles || JSON.stringify(PQ.filesKey(pfBefore)) === JSON.stringify(PQ.filesKey(pfFiles)))
-    ) {
+      before.manifest.client.lootHash === identity.lootHash;
+    const keep = () => {
       log(`community data is already at ${version} for client data ${client.build}; nothing to do (--force syncs it again)`);
       return { status: 'current', version, dir: before.dir, manifest: before.manifest };
+    };
+    if (unchanged && (!pfFiles || JSON.stringify(PQ.filesKey(pfBefore)) === JSON.stringify(PQ.filesKey(pfFiles)))) return keep();
+    let zones = null;
+    if (pfFiles) {
+      try {
+        zones = PQ.zoneResolver(client, await PQ.fetchCoords(get, pfFiles, gitBlobSha, log));
+      } catch (e) {
+        if (!(e instanceof PQ.PfQuestError || e instanceof D.SyncError)) throw e;
+        pfError = e.message;
+        pfFiles = null;
+        log(`pfQuest is not used this time: ${pfError}`);
+        if (unchanged) return keep();
+        log('converting without pfQuest, so overlapping zones stay ambiguous');
+      }
     }
     log(`fetch ${dump.url}`);
     const gz = await fetchFrom(fetchImpl, dump.url, RAW_ORIGIN, MAX_DUMP_BYTES);
@@ -438,17 +463,6 @@ async function syncCommunity(opts = {}) {
       sql = zlib.gunzipSync(gz, { maxOutputLength: MAX_SQL_BYTES }).toString('utf8');
     } catch (e) {
       throw new D.SyncError(`${dump.name}: cannot be unpacked within ${MAX_SQL_BYTES} bytes (${e.code || e.message})`);
-    }
-    let zones = null;
-    if (pfFiles) {
-      try {
-        zones = PQ.zoneResolver(client, await PQ.fetchCoords(get, pfFiles, gitBlobSha));
-      } catch (e) {
-        if (!(e instanceof PQ.PfQuestError || e instanceof D.SyncError)) throw e;
-        pfError = e.message;
-        pfFiles = null;
-        log(`pfQuest is not used this time, so overlapping zones stay ambiguous: ${pfError}`);
-      }
     }
     let converted;
     try {

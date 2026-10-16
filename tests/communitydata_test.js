@@ -818,13 +818,22 @@ function pfTable(table, entries) {
   return lines.join('\n');
 }
 
-function fakePfQuest(gh, { units, objects, unitsSha }) {
+function fakePfQuest(gh, { units, objects, unitsSha, broken }) {
   const files = { units: Buffer.from(units), objects: Buffer.from(objects) };
   const entry = (name, bytes, url) => ({ name, type: 'file', size: bytes.length, sha: C.gitBlobSha(bytes), download_url: url });
   const listing = [entry('units.lua', files.units, PF_UNITS_URL), entry('objects.lua', files.objects, PF_OBJECTS_URL), { name: 'init.lua', type: 'file' }];
   if (unitsSha) listing[0].sha = unitsSha;
   return async url => {
     if (url === PQ.LISTING_URL) return new Response(JSON.stringify(listing), { status: 200 });
+    if (url === PF_UNITS_URL && broken)
+      return new Response(
+        new ReadableStream({
+          start(c) {
+            c.error(new TypeError('terminated'));
+          },
+        }),
+        { status: 200 },
+      );
     if (url === PF_UNITS_URL) return new Response(files.units, { status: 200 });
     if (url === PF_OBJECTS_URL) return new Response(files.objects, { status: 200 });
     return gh.fetchImpl(url);
@@ -943,15 +952,27 @@ test('pfQuest picks the one zone of a spawn that lies in overlapping zone rectan
   const npc = call(GD.openStore({ dataDir, clientBuild: ERA_CLIENT }), 'wow_npc', { id: 7001 });
   assert.equal(npc.results[0].spawns[0].zoneFrom, 'pfquest');
   assert.equal(npc.results[0].spawns[0].zoneAmbiguous, undefined);
+  assert.equal(npc.results[0].onMaps.find(m => m.uiMapID === 9102).zoneFrom, 'pfquest', 'the per-map summary keeps where its zone came from');
+  const sources = call(GD.openStore({ dataDir, clientBuild: ERA_CLIENT }), 'wow_sources', {});
+  assert.deepEqual(Object.keys(sources.results.find(r => r.pfquest).pfquest.files), ['npcs', 'objects']);
 
   assert.equal((await C.syncCommunity({ dataDir, fetch: fakePfQuest(gh, { units, objects }) })).status, 'current');
   assert.equal((await C.syncCommunity({ dataDir, fetch: gh.fetchImpl })).status, 'current', 'pfQuest being down keeps the store');
+  const changed = pfTable('units', [[7001, [[onVale.x + 0.2, onVale.y, 7101]]]]);
+  for (const failing of [{ unitsSha: 'f'.repeat(40) }, { broken: true }]) {
+    const kept = await C.syncCommunity({ dataDir, fetch: fakePfQuest(gh, { units: changed, objects, ...failing }) });
+    assert.equal(kept.status, 'current', `a pfQuest failure with nothing else changed keeps the store: ${JSON.stringify(failing)}`);
+    assert.equal(cs().byId('npcs', 7001).spawns[0].zoneFrom, 'pfquest');
+  }
   const far = pfTable('units', [[7001, [[onVale.x + 1.5, onVale.y, 7101]]]]);
   await C.syncCommunity({ dataDir, fetch: fakePfQuest(gh, { units: far, objects }) });
   assert.equal(cs().byId('npcs', 7001).spawns[0].zoneAmbiguous, true, 'a pfQuest spawn more than 1% away decides nothing');
 
-  const tampered = await C.syncCommunity({ dataDir, fetch: fakePfQuest(gh, { units, objects, unitsSha: 'f'.repeat(40) }) });
-  assert.equal(tampered.status, 'synced');
-  assert.match(tampered.manifest.pfquest.error, /does not match the git sha/);
-  assert.equal(cs().byId('npcs', 7001).spawns[0].zoneAmbiguous, true, 'a pfQuest file that fails its check is not used');
+  await C.syncCommunity({ dataDir, fetch: fakePfQuest(gh, { units, objects }) });
+  const newDump = fakeGitHub({ gz: zlib.gzipSync(Buffer.from(SQL.replace("'Fixture Errand'", "'Fixture Errand Two'"))) });
+  const interrupted = await C.syncCommunity({ dataDir, fetch: fakePfQuest(newDump, { units: changed, objects, broken: true }) });
+  assert.equal(interrupted.status, 'synced', 'a new dump is converted even while pfQuest fails');
+  assert.match(interrupted.manifest.pfquest.error, /terminated/);
+  assert.equal(cs().byId('npcs', 7001).spawns[0].zoneAmbiguous, true, 'without pfQuest the spawn is ambiguous again');
+  assert.match(call(GD.openStore({ dataDir, clientBuild: ERA_CLIENT }), 'wow_sources', {}).results.find(r => r.pfquest).pfquest.error, /terminated/);
 });
