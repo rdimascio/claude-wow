@@ -1,9 +1,9 @@
 {
   "source": "https://github.com/wowsims/classic",
   "commit": "7779ebbf79dc7f1341e6ab939b28a3402c9a730a",
-  "forkCommit": "5634c852d47acfcc5b6b62a6472a536df64634dc",
+  "baselineCommit": "5634c852d47acfcc5b6b62a6472a536df64634dc",
   "level": 60,
-  "note": "Stat weights (EP) from the wowsims Classic Era simulators, one per simulator, relative to the stat each simulator scales by. Only simulators whose weights changed since the Season of Discovery fork are kept.",
+  "note": "Stat weights (EP) from the wowsims Classic Era simulators, one per simulator, relative to the stat each simulator scales by (reference). A simulator is kept when a hit or crit weight changed value since the baseline commit, which holds the weights the Season of Discovery fork carried over, and its largest hit or crit weight is at least 3 reference points (the per-percent scale). class is the UnitClass token (ROGUE), trees are the talent tree names of an English client.",
   "license": "MIT License\n\nCopyright (c) 2024 wowsims team\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.",
   "sims": {
     "rogue": {
@@ -111,19 +111,20 @@
     }
   },
   "leftOut": {
-    "warrior": "every weight is unchanged since the Season of Discovery fork",
-    "tank_warrior": "every weight is unchanged since the Season of Discovery fork",
-    "holy_paladin": "every weight is unchanged since the Season of Discovery fork",
-    "protection_paladin": "every weight is unchanged since the Season of Discovery fork",
-    "retribution_paladin": "every weight is unchanged since the Season of Discovery fork",
-    "hunter": "every weight is unchanged since the Season of Discovery fork",
-    "healing_priest": "every weight is unchanged since the Season of Discovery fork",
-    "shadow_priest": "every weight is unchanged since the Season of Discovery fork",
-    "enhancement_shaman": "every weight is unchanged since the Season of Discovery fork",
-    "restoration_shaman": "every weight is unchanged since the Season of Discovery fork",
-    "mage": "every weight is unchanged since the Season of Discovery fork",
-    "balance_druid": "every weight is unchanged since the Season of Discovery fork",
-    "feral_tank_druid": "every weight is unchanged since the Season of Discovery fork",
-    "restoration_druid": "every weight is unchanged since the Season of Discovery fork"
+    "warden_shaman": "a Season of Discovery rune spec, not a Classic Era spec",
+    "warrior": "no hit or crit weight changed value since the Season of Discovery fork",
+    "tank_warrior": "no hit or crit weight changed value since the Season of Discovery fork",
+    "holy_paladin": "no hit or crit weight changed value since the Season of Discovery fork",
+    "protection_paladin": "no hit or crit weight changed value since the Season of Discovery fork",
+    "retribution_paladin": "no hit or crit weight changed value since the Season of Discovery fork",
+    "hunter": "no hit or crit weight changed value since the Season of Discovery fork",
+    "healing_priest": "no hit or crit weight changed value since the Season of Discovery fork",
+    "shadow_priest": "no hit or crit weight changed value since the Season of Discovery fork",
+    "enhancement_shaman": "no hit or crit weight changed value since the Season of Discovery fork",
+    "restoration_shaman": "no hit or crit weight changed value since the Season of Discovery fork",
+    "mage": "no hit or crit weight changed value since the Season of Discovery fork",
+    "balance_druid": "no hit or crit weight changed value since the Season of Discovery fork",
+    "feral_tank_druid": "no hit or crit weight changed value since the Season of Discovery fork",
+    "restoration_druid": "no hit or crit weight changed value since the Season of Discovery fork"
   }
 }

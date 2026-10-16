@@ -1,0 +1,23 @@
+epReferenceStat: Stat.StatAttackPower,
+epWeights: Stats.fromMap(
+			{
+				[Stat.StatArmor]: 0.174,
+				[Stat.StatBonusArmor]: 0.155,
+				[Stat.StatStamina]: 2.336,
+				[Stat.StatStrength]: 1.555,
+				[Stat.StatAgility]: 2.771,
+				[Stat.StatAttackPower]: 0.32,
+				[Stat.StatMeleeHit]: 1.432,
+				[Stat.StatMeleeCrit]: 0.925,
+				[Stat.StatBlock]: 1.32,
+				[Stat.StatBlockValue]: 1.373,
+				[Stat.StatDodge]: 2.606,
+				[Stat.StatParry]: 2.649,
+				[Stat.StatDefense]: 3.305,
+			},
+			{
+				[PseudoStat.PseudoStatMainHandDps]: 11.92,
+				[PseudoStat.PseudoStatOffHandDps]: 4.69,
+				[PseudoStat.PseudoStatMeleeSpeedMultiplier]: 4.69,
+			},
+		),

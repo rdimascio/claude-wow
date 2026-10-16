@@ -8,6 +8,10 @@ const HEAD = '7779ebbf79dc7f1341e6ab939b28a3402c9a730a';
 const CUTOVER = '5634c852d47acfcc5b6b62a6472a536df64634dc';
 const RAW = 'https://raw.githubusercontent.com';
 const OUT = path.join(__dirname, '..', 'bridge', 'simweights.json');
+const SOURCES = path.join(__dirname, '..', 'tests', 'fixtures', 'wowsims');
+const LISTING = `https://api.github.com/repos/${REPO}/contents/ui?ref=${HEAD}`;
+const NOT_SIMS = Object.freeze(['core', 'detailed_results', 'raid', 'scss', 'shared', 'worker']);
+const NOT_ERA = Object.freeze({ warden_shaman: 'a Season of Discovery rune spec, not a Classic Era spec' });
 const SIMS = Object.freeze({
   warrior: { class: 'WARRIOR', trees: ['Arms', 'Fury'], role: 'dps' },
   tank_warrior: { class: 'WARRIOR', trees: ['Protection'], role: 'tank' },
@@ -42,12 +46,21 @@ const LINE = Object.freeze({
 function epBlock(text, where) {
   const start = text.indexOf(OPEN);
   if (start < 0 || text.indexOf(OPEN, start + 1) >= 0) throw new Error(`${where}: expected one ${OPEN}`);
+  const body = text.slice(start).replace(/\/\/[^\n]*/g, '');
   let depth = 0;
-  for (let i = start + OPEN.length - 1; i < text.length; i++) {
-    if (text[i] === '(') depth++;
-    if (text[i] === ')' && --depth === 0) return text.slice(start + OPEN.length, i);
+  for (let i = OPEN.length - 1; i < body.length; i++) {
+    if (body[i] === '(') depth++;
+    if (body[i] === ')' && --depth === 0) return body.slice(OPEN.length, i);
   }
   throw new Error(`${where}: ${OPEN} never closes`);
+}
+
+function referenceOf(text, where) {
+  const mentions = text.split('epReferenceStat').length - 1;
+  if (mentions === 0) return null;
+  const m = REFERENCE.exec(text);
+  if (mentions !== 1 || !m) throw new Error(`${where}: epReferenceStat is not one plain Stat.X`);
+  return m[1];
 }
 
 function percentScale(stats, reference) {
@@ -57,7 +70,7 @@ function percentScale(stats, reference) {
 }
 
 function verdict(now, before, reference) {
-  if (Object.entries(now.stats).every(([k, v]) => before.stats[k] === v)) return 'every weight is unchanged since the Season of Discovery fork';
+  if (SCALE_STATS.every(k => now.stats[k] === before.stats[k])) return 'no hit or crit weight changed value since the Season of Discovery fork';
   const scale = percentScale(now.stats, reference);
   if (scale === null) return 'no hit or crit weight to check the scale against';
   if (scale < MIN_PERCENT_SCALE) return `hit and crit are worth at most ${scale} reference points: a per-rating scale, not Classic per-percent weights`;
@@ -99,22 +112,33 @@ function parseWeights(block, where) {
   return { stats: stats.weights, pseudo: pseudo.weights };
 }
 
-async function simFile(commit, sim) {
-  const url = `${RAW}/${REPO}/${commit}/ui/${sim}/sim.ts`;
+async function fetchFile(commit, file) {
+  const url = `${RAW}/${REPO}/${commit}/${file}`;
   const res = await fetch(url, { redirect: 'error' });
   if (res.status !== 200) throw new Error(`${url}: HTTP ${res.status}`);
   return { url, text: await res.text() };
 }
 
-async function build() {
-  const license = await (await fetch(`${RAW}/${REPO}/${HEAD}/LICENSE`, { redirect: 'error' })).text();
+async function listSims() {
+  const res = await fetch(LISTING, { redirect: 'error' });
+  if (res.status !== 200) throw new Error(`${LISTING}: HTTP ${res.status}`);
+  return (await res.json()).filter(e => e.type === 'dir').map(e => e.name);
+}
+
+async function build(read = fetchFile, list = listSims) {
+  const unknown = (await list()).filter(d => !NOT_SIMS.includes(d) && !(d in SIMS) && !(d in NOT_ERA));
+  if (unknown.length) throw new Error(`wowsims has simulators this script does not know: ${unknown.join(', ')}; add them to SIMS or NOT_ERA`);
+  const license = (await read(HEAD, 'LICENSE')).text;
   if (!/^MIT License/.test(license)) throw new Error('the wowsims licence is no longer MIT');
   const sims = {};
-  const leftOut = {};
+  const leftOut = { ...NOT_ERA };
+  const sources = {};
   for (const [sim, info] of Object.entries(SIMS)) {
-    const [now, before] = await Promise.all([simFile(HEAD, sim), simFile(CUTOVER, sim)]);
+    const [now, before] = await Promise.all([read(HEAD, `ui/${sim}/sim.ts`), read(CUTOVER, `ui/${sim}/sim.ts`)]);
+    sources[`${HEAD}/${sim}`] = minimal(now.text, now.url);
+    sources[`${CUTOVER}/${sim}`] = minimal(before.text, before.url);
     const weights = parseWeights(epBlock(now.text, now.url), now.url);
-    const reference = (REFERENCE.exec(now.text) || [])[1] || null;
+    const reference = referenceOf(now.text, now.url);
     const why = verdict(weights, parseWeights(epBlock(before.text, before.url), before.url), reference);
     if (why) {
       leftOut[sim] = why;
@@ -125,19 +149,31 @@ async function build() {
   return {
     source: `https://github.com/${REPO}`,
     commit: HEAD,
-    forkCommit: CUTOVER,
+    baselineCommit: CUTOVER,
     level: 60,
-    note: 'Stat weights (EP) from the wowsims Classic Era simulators, one per simulator, relative to the stat each simulator scales by. Only simulators whose weights changed since the Season of Discovery fork are kept.',
+    note: 'Stat weights (EP) from the wowsims Classic Era simulators, one per simulator, relative to the stat each simulator scales by (reference). A simulator is kept when a hit or crit weight changed value since the baseline commit, which holds the weights the Season of Discovery fork carried over, and its largest hit or crit weight is at least 3 reference points (the per-percent scale). class is the UnitClass token (ROGUE), trees are the talent tree names of an English client.',
     license: license.trim(),
     sims,
     leftOut,
+    sources,
   };
+}
+
+function minimal(text, where) {
+  const reference = referenceOf(text, where);
+  return `${reference ? `epReferenceStat: Stat.${reference},\n` : ''}${OPEN}${epBlock(text, where)}),\n`;
 }
 
 if (require.main === module) {
   build()
-    .then(out => {
+    .then(({ sources, ...out }) => {
       fs.writeFileSync(OUT, JSON.stringify(out, null, 2) + '\n');
+      fs.rmSync(SOURCES, { recursive: true, force: true });
+      for (const [key, text] of Object.entries(sources)) {
+        fs.mkdirSync(path.join(SOURCES, path.dirname(key)), { recursive: true });
+        fs.writeFileSync(path.join(SOURCES, `${key}.ts`), text);
+      }
+      fs.writeFileSync(path.join(SOURCES, 'LICENSE'), out.license + '\n');
       console.log(`${Object.keys(out.sims).length} simulators kept, ${Object.keys(out.leftOut).length} left out -> ${OUT}`);
     })
     .catch(e => {
@@ -146,4 +182,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { SIMS, epBlock, parseWeights, percentScale, verdict };
+module.exports = { SIMS, NOT_SIMS, NOT_ERA, HEAD, CUTOVER, SOURCES, epBlock, parseWeights, referenceOf, percentScale, verdict, build };

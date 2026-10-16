@@ -1,0 +1,21 @@
+epReferenceStat: Stat.StatAttackPower,
+epWeights: Stats.fromMap(
+			{
+				[Stat.StatStrength]: 2.53,
+				[Stat.StatAgility]: 1.13,
+				[Stat.StatIntellect]: 0.15,
+				[Stat.StatSpellPower]: 0.32,
+				[Stat.StatSpellHit]: 0.41,
+				[Stat.StatSpellCrit]: 0.01,
+				[Stat.StatSpellHaste]: 0.12,
+				[Stat.StatMP5]: 0.05,
+				[Stat.StatAttackPower]: 1,
+				[Stat.StatMeleeHit]: 1.96,
+				[Stat.StatMeleeCrit]: 1.16,
+				[Stat.StatFireResistance]: 0.5,
+			},
+			{
+				[PseudoStat.PseudoStatMainHandDps]: 7.33,
+				[PseudoStat.PseudoStatMeleeSpeedMultiplier]: 7.33,
+			},
+		),
