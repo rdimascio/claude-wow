@@ -1,0 +1,129 @@
+{
+  "source": "https://github.com/wowsims/classic",
+  "commit": "7779ebbf79dc7f1341e6ab939b28a3402c9a730a",
+  "forkCommit": "5634c852d47acfcc5b6b62a6472a536df64634dc",
+  "level": 60,
+  "note": "Stat weights (EP) from the wowsims Classic Era simulators, one per simulator, relative to the stat each simulator scales by. Only simulators whose weights changed since the Season of Discovery fork are kept.",
+  "license": "MIT License\n\nCopyright (c) 2024 wowsims team\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.",
+  "sims": {
+    "rogue": {
+      "class": "ROGUE",
+      "trees": [
+        "Assassination",
+        "Combat",
+        "Subtlety"
+      ],
+      "role": "dps",
+      "source": "https://raw.githubusercontent.com/wowsims/classic/7779ebbf79dc7f1341e6ab939b28a3402c9a730a/ui/rogue/sim.ts",
+      "reference": "StatAttackPower",
+      "stats": {
+        "StatAgility": 2.38,
+        "StatStrength": 1.26,
+        "StatAttackPower": 1,
+        "StatSpellCrit": 0.41,
+        "StatSpellHit": 0.94,
+        "StatMeleeHit": 29.44,
+        "StatMeleeCrit": 17.92,
+        "StatFireResistance": 0.5
+      },
+      "pseudo": {
+        "PseudoStatMainHandDps": 10.49,
+        "PseudoStatOffHandDps": 3.74,
+        "PseudoStatMeleeSpeedMultiplier": 18.56
+      }
+    },
+    "elemental_shaman": {
+      "class": "SHAMAN",
+      "trees": [
+        "Elemental"
+      ],
+      "role": "dps",
+      "source": "https://raw.githubusercontent.com/wowsims/classic/7779ebbf79dc7f1341e6ab939b28a3402c9a730a/ui/elemental_shaman/sim.ts",
+      "reference": "StatSpellPower",
+      "stats": {
+        "StatIntellect": 0.14,
+        "StatSpellPower": 1,
+        "StatSpellDamage": 1,
+        "StatFirePower": 0.1,
+        "StatNaturePower": 1,
+        "StatSpellHit": 12.37,
+        "StatSpellCrit": 7.57,
+        "StatSpellHaste": 1.49,
+        "StatMP5": 0.02,
+        "StatStrength": 0.01,
+        "StatAttackPower": 0.01,
+        "StatFireResistance": 0.01
+      },
+      "pseudo": {}
+    },
+    "warlock": {
+      "class": "WARLOCK",
+      "trees": [
+        "Affliction",
+        "Demonology",
+        "Destruction"
+      ],
+      "role": "dps",
+      "source": "https://raw.githubusercontent.com/wowsims/classic/7779ebbf79dc7f1341e6ab939b28a3402c9a730a/ui/warlock/sim.ts",
+      "reference": "StatSpellPower",
+      "stats": {
+        "StatMana": 0.01,
+        "StatIntellect": 0.23,
+        "StatSpirit": 0,
+        "StatMP5": 0.14,
+        "StatSpellPower": 1,
+        "StatSpellDamage": 1,
+        "StatFirePower": 0.1,
+        "StatShadowPower": 0.9,
+        "StatSpellHit": 12.79,
+        "StatSpellCrit": 7.92,
+        "StatSpellHaste": 7.83,
+        "StatStamina": 0.01,
+        "StatFireResistance": 0
+      },
+      "pseudo": {}
+    },
+    "feral_druid": {
+      "class": "DRUID",
+      "trees": [
+        "Feral Combat"
+      ],
+      "role": "dps",
+      "source": "https://raw.githubusercontent.com/wowsims/classic/7779ebbf79dc7f1341e6ab939b28a3402c9a730a/ui/feral_druid/sim.ts",
+      "reference": "StatAttackPower",
+      "stats": {
+        "StatStrength": 2.4,
+        "StatAgility": 2.43,
+        "StatIntellect": 0.61,
+        "StatSpirit": 0.38,
+        "StatMP5": 0.79,
+        "StatAttackPower": 1,
+        "StatMeleeHit": 26.59,
+        "StatMeleeCrit": 28.68,
+        "StatExpertise": 26.59,
+        "StatMana": 0.03,
+        "StatFeralAttackPower": 1
+      },
+      "pseudo": {
+        "BonusPhysicalDamage": 13.33,
+        "PseudoStatMeleeSpeedMultiplier": 16.5
+      }
+    }
+  },
+  "leftOut": {
+    "warrior": "every weight is unchanged since the Season of Discovery fork",
+    "tank_warrior": "every weight is unchanged since the Season of Discovery fork",
+    "holy_paladin": "every weight is unchanged since the Season of Discovery fork",
+    "protection_paladin": "every weight is unchanged since the Season of Discovery fork",
+    "retribution_paladin": "every weight is unchanged since the Season of Discovery fork",
+    "hunter": "every weight is unchanged since the Season of Discovery fork",
+    "healing_priest": "every weight is unchanged since the Season of Discovery fork",
+    "shadow_priest": "every weight is unchanged since the Season of Discovery fork",
+    "enhancement_shaman": "every weight is unchanged since the Season of Discovery fork",
+    "restoration_shaman": "every weight is unchanged since the Season of Discovery fork",
+    "mage": "every weight is unchanged since the Season of Discovery fork",
+    "balance_druid": "every weight is unchanged since the Season of Discovery fork",
+    "feral_tank_druid": "every weight is unchanged since the Season of Discovery fork",
+    "restoration_druid": "every weight is unchanged since the Season of Discovery fork"
+  }
+}
