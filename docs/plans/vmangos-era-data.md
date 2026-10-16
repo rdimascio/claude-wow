@@ -125,3 +125,12 @@ Checked against the real `mangos.sqlite` and the Era 1.15.9.70003 data. Decision
 - **Download and file safety:** the asset redirects once to `release-assets.githubusercontent.com`; match `^db-sqlite-[0-9a-f]{7}\.zip$`, verify the API's `sha256` digest, stream to a capped temp file, extract only `mangos.sqlite` with a size cap (no zip reader exists in Node or Bun), refuse views, triggers and virtual tables, set `trusted_schema=OFF`, run `quick_check`.
 - **Size:** spawns as written would be about 39 MB of JSONL; group them per NPC.
 - **Gaps in the tool plan:** quest-title search (the motivating question names a title), object givers (quest 248's giver is object 31), and how replies show `{npc:ID}` (the addon has no NPC links).
+
+## 10. pfQuest zones (2026-10-16)
+
+- **Problem (§9):** 63% of continent spawns sit in overlapping zone rectangles, so `wow_npc` could not name their zone.
+- **Source:** pfQuest by Shagu (`github.com/shagu/pfQuest`, MIT). `db/units.lua` and `db/objects.lua` give each spawn as `{ x, y, AreaTableID, respawn }`: zone percent with the zone named.
+- **Measured** (pfQuest `104f356`, cMaNGOS `z2815`, Era `1.15.9.70003`): 71,158 of 71,159 pfQuest unit spawns name an area the client maps to a zone uiMap; 9,895 of 9,900 shared NPC names match; on the 25-spawn samples the per-spawn rule (a pfQuest spawn of the same NPC within 1 map percent in exactly one candidate zone) places 80% of ambiguous spawns, the per-NPC zone set 69%, with 0 disagreements. Full sync: 28,031 of 34,584 ambiguous spawns (81%) placed, 7 s, 730 MB.
+- **Rule:** per spawn, 1 map percent, exactly one zone; else unchanged. The continent map stays. pfQuest spawns in two zones near the spot (a city in its zone) decide nothing.
+- **Used for nothing else:** no names, levels, factions, quests or drop chances from pfQuest.
+- **Optional:** a pfQuest failure leaves the sync as before and records why in the manifest. No `SHAPE` bump (a bump would hide all community data until a manual sync); the pfQuest file shas in the manifest make an unchanged dump convert again.
