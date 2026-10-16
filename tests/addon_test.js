@@ -188,6 +188,113 @@ test('the talents line falls back to the old talent-tab functions when there are
   assert.equal(talentsLine(vm), 'Talents: Combat 3 / Subtlety 1');
 });
 
+const POLESTAR_STUB = `
+  Polestar = { Engine = {} }
+  local E = Polestar.Engine
+  E.live = 2
+  E.view = {
+    index = 2, status = "current", current = 7,
+    goals = {
+      { t = "accept", status = "done", quest = 788 },
+      { t = "note", status = "active", text = "Watch for the patrol" },
+      { t = "kill", status = "active", quest = 788, npc = 3098, progress = { cur = 4, max = 10 } },
+      { t = "collect", status = "pending", quest = 97279, item = 277653, progress = { cur = 2, max = 6 } },
+      { t = "kill", status = "skipped", quest = 790, npc = 3102 },
+      { t = "talk", status = "na", npc = 3143 },
+      { t = "goto", status = "pending", map = 1411, x = 44, y = 67.2, optional = true },
+      { t = "interact", status = "pending" },
+      { t = "kill", status = "pending", npc = 3121 },
+      { t = "skill", status = "pending", skillLine = 164 },
+    },
+  }
+  E.guide = { id = "forever/horde/orc-troll/01-durotar", title = "Durotar", steps = {
+    {},
+    { goals = { {}, {}, {}, {}, {}, {}, {}, { t = "interact", object = 3076 }, { t = "kill", npc = 3121, count = 5 }, { t = "skill", skillLine = 164, level = 75 } } },
+  } }
+  E.waypoint = { stepIndex = 2, goalIndex = 4 }
+  E.done, E.total = 1, 60
+  function E.GetGuide() return E.guide end
+  function E.GetStepCount() return 60 end
+  function E.GetLiveStep() return E.live end
+  function E.GetStepView(i) if i == E.view.index then return E.view end end
+  function E.GetWaypoint() return E.waypoint end
+  function E.GetProgress() return E.done, E.total end
+`;
+
+const polestarLine = vm =>
+  vm
+    .evaluate('ClaudeWoW.GameContext()')
+    .split('\n')
+    .find(l => l.startsWith('Polestar guide:'));
+
+const POLESTAR_HEAD = 'Polestar guide: forever/horde/orc-troll/01-durotar';
+
+test('with Polestar loaded the game context names its guide, the live step and the open goals by id, the arrow goal first', () => {
+  const vm = newVM();
+  login(vm);
+  assert.equal(polestarLine(vm), undefined, 'no Polestar, no line');
+  vm.run(POLESTAR_STUB);
+  assert.equal(
+    polestarLine(vm),
+    `${POLESTAR_HEAD}, step 2/60; open: collect quest 97279 item 277653 2/6, kill quest 788 npc 3098 4/10, goto map 1411 optional, interact object 3076, kill npc 3121 x5, skill skillLine 164 level 75`,
+    'the goal the arrow aims at comes first; ids and counts the view lacks come from the guide',
+  );
+  vm.run('Polestar.Engine.waypoint = { stepIndex = 3, goalIndex = 4 }');
+  assert.equal(
+    polestarLine(vm),
+    `${POLESTAR_HEAD}, step 2/60; open: goto map 1411 optional, kill quest 788 npc 3098 4/10, collect quest 97279 item 277653 2/6, interact object 3076, kill npc 3121 x5, skill skillLine 164 level 75`,
+    'an arrow on another step does not count; the step view names the goal instead',
+  );
+  vm.run('Polestar.Engine.live = nil; Polestar.Engine.done = 60');
+  assert.equal(polestarLine(vm), `${POLESTAR_HEAD}, complete`);
+  vm.run('Polestar.Engine.done = 0');
+  assert.equal(polestarLine(vm), POLESTAR_HEAD, 'no live step before Polestar evaluates is not complete');
+  vm.run('Polestar.Engine.done = 60; function Polestar.Engine.GetLiveStep() error("boom") end');
+  assert.equal(polestarLine(vm), POLESTAR_HEAD, 'a failing live step is not complete');
+});
+
+test('the Polestar line is left out for a guide id that could carry escapes, and a Polestar error never breaks the context', () => {
+  const vm = newVM();
+  login(vm);
+  vm.run(POLESTAR_STUB);
+  vm.run('Polestar.Engine.guide.id = "pack/|cffff0000red|r"');
+  assert.equal(polestarLine(vm), undefined);
+  vm.run('Polestar.Engine.guide.id = "pack/" .. string.rep("a", 80)');
+  assert.match(polestarLine(vm), /^Polestar guide: pack\/a{80}, step 2\/60; open: /, 'a long id is fine while it fits');
+  vm.run('Polestar.Engine.guide.id = "pack/ok"; function Polestar.Engine.GetStepView() error("boom") end');
+  assert.equal(polestarLine(vm), 'Polestar guide: pack/ok, step 2/60');
+  vm.run('function Polestar.Engine.GetGuide() error("boom") end');
+  assert.equal(polestarLine(vm), undefined);
+  assert.match(vm.evaluate('ClaudeWoW.GameContext()'), /^Game: /);
+});
+
+test('the Polestar line takes only the room the other context lines leave, so it never cuts them', () => {
+  const vm = newVM();
+  login(vm);
+  vm.run(`
+    C_QuestLog = C_QuestLog or {}
+    C_QuestLog.GetNumQuestLogEntries = function() return 40 end
+    C_QuestLog.GetInfo = function(i) return { questID = 1000000 + i, isHeader = false } end
+    C_QuestLog.IsComplete = function() return true end
+  `);
+  const without = vm.evaluate('ClaudeWoW.GameContext()');
+  vm.run(POLESTAR_STUB);
+  const full = vm.evaluate('ClaudeWoW.GameContext()');
+  const guide = full.split('\n').pop();
+  assert.equal(full, `${without}\n${guide}`, 'every other line is untouched and the guide line comes last');
+  assert.ok(full.length <= 900, `context is ${full.length} bytes`);
+  const whole = vm.evaluate('ClaudeWoW.Polestar.Line(10000)');
+  assert.ok(guide.startsWith(`${POLESTAR_HEAD}, step 2/60`));
+  assert.ok(guide.length < whole.length, 'this quest log leaves room for only part of it');
+  assert.ok(whole.startsWith(guide) && [',', ';'].includes(whole[guide.length]), `cut between goals, not inside one: ${guide}`);
+  assert.equal(vm.evaluate('ClaudeWoW.Polestar.Line(10)'), null, 'no room for the head, no line');
+  assert.equal(
+    vm.evaluate('ClaudeWoW.Polestar.Line(110)'),
+    `${POLESTAR_HEAD}, step 2/60; open: collect quest 97279 item 277653 2/6`,
+    'whole goals only, until the room runs out',
+  );
+});
+
 test('on Classic Era the talents line reads names and points from GetSpecializationInfo, not the reordered GetTalentTabInfo shim', () => {
   const vm = newVM();
   login(vm);
