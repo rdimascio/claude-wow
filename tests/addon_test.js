@@ -188,6 +188,89 @@ test('the talents line falls back to the old talent-tab functions when there are
   assert.equal(talentsLine(vm), 'Talents: Combat 3 / Subtlety 1');
 });
 
+const POLESTAR_STUB = `
+  Polestar = { Engine = {} }
+  local E = Polestar.Engine
+  E.guide = { id = "forever/horde/orc-troll/01-durotar", title = "Durotar" }
+  E.live = 2
+  E.view = {
+    index = 2, status = "current", current = 3,
+    goals = {
+      { t = "accept", status = "done", quest = 788 },
+      { t = "note", status = "active", text = "Watch for the patrol" },
+      { t = "kill", status = "active", quest = 788, npc = 3098, progress = { cur = 4, max = 10 } },
+      { t = "collect", status = "pending", quest = 97279, item = 277653, progress = { cur = 2, max = 6 } },
+      { t = "kill", status = "skipped", quest = 790, npc = 3102 },
+      { t = "talk", status = "na", npc = 3143 },
+      { t = "goto", status = "pending", map = 1411, x = 44, y = 67.2, optional = true },
+    },
+  }
+  function E.GetGuide() return E.guide end
+  function E.GetStepCount() return 60 end
+  function E.GetLiveStep() return E.live end
+  function E.GetStepView(i) if i == E.view.index then return E.view end end
+`;
+
+const polestarLine = vm =>
+  vm
+    .evaluate('ClaudeWoW.GameContext()')
+    .split('\n')
+    .find(l => l.startsWith('Polestar guide:'));
+
+test('with Polestar loaded the game context names its guide, the live step and the open goals by id, the arrow goal first', () => {
+  const vm = newVM();
+  login(vm);
+  assert.equal(polestarLine(vm), undefined, 'no Polestar, no line');
+  vm.run(POLESTAR_STUB);
+  assert.equal(
+    polestarLine(vm),
+    'Polestar guide: forever/horde/orc-troll/01-durotar, step 2/60; open: kill quest 788 npc 3098 4/10, collect quest 97279 item 277653 2/6, goto map 1411 optional',
+  );
+  vm.run('Polestar.Engine.live = nil');
+  assert.equal(polestarLine(vm), 'Polestar guide: forever/horde/orc-troll/01-durotar, complete');
+});
+
+test('the Polestar line is left out for a guide id that could carry escapes, and a Polestar error never breaks the context', () => {
+  const vm = newVM();
+  login(vm);
+  vm.run(POLESTAR_STUB);
+  vm.run('Polestar.Engine.guide.id = "pack/|cffff0000red|r"');
+  assert.equal(polestarLine(vm), undefined);
+  vm.run('Polestar.Engine.guide.id = "pack/ok"; function Polestar.Engine.GetStepView() error("boom") end');
+  assert.equal(polestarLine(vm), 'Polestar guide: pack/ok, step 2/60');
+  vm.run('function Polestar.Engine.GetGuide() error("boom") end');
+  assert.equal(polestarLine(vm), undefined);
+  assert.match(vm.evaluate('ClaudeWoW.GameContext()'), /^Game: /);
+});
+
+test('the Polestar line takes only the room the other context lines leave, so it never cuts them', () => {
+  const vm = newVM();
+  login(vm);
+  vm.run(POLESTAR_STUB);
+  vm.run(`
+    C_QuestLog = C_QuestLog or {}
+    C_QuestLog.GetNumQuestLogEntries = function() return 40 end
+    C_QuestLog.GetInfo = function(i) return { questID = 1000000 + i, isHeader = false } end
+    C_QuestLog.IsComplete = function() return true end
+  `);
+  const full = vm.evaluate('ClaudeWoW.GameContext()');
+  const lines = full.split('\n');
+  const quest = lines.find(l => l.startsWith('Quest log'));
+  assert.ok(quest.endsWith('1000040*'), 'the quest log line is whole');
+  assert.ok(full.length <= 900, `context is ${full.length} bytes`);
+  const guide = lines[lines.length - 1];
+  const whole = vm.evaluate('ClaudeWoW.Polestar.Line(10000)');
+  assert.ok(guide.startsWith('Polestar guide: forever/horde/orc-troll/01-durotar, step 2/60'), 'the guide line comes last');
+  assert.ok(guide.length < whole.length, 'this quest log leaves room for only part of it');
+  assert.ok(whole.startsWith(guide) && [',', ';'].includes(whole[guide.length]), `cut between goals, not inside one: ${guide}`);
+  assert.equal(vm.evaluate('ClaudeWoW.Polestar.Line(10)'), null, 'no room for the head, no line');
+  assert.equal(
+    vm.evaluate('ClaudeWoW.Polestar.Line(100)'),
+    'Polestar guide: forever/horde/orc-troll/01-durotar, step 2/60; open: kill quest 788 npc 3098 4/10',
+    'whole goals only, until the room runs out',
+  );
+});
+
 test('on Classic Era the talents line reads names and points from GetSpecializationInfo, not the reordered GetTalentTabInfo shim', () => {
   const vm = newVM();
   login(vm);

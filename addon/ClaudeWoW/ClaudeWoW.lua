@@ -2914,6 +2914,66 @@ function ClaudeWoW.CharacterLine()
 	return who
 end
 
+ClaudeWoW.Polestar = {
+	ID_KEYS = { "quest", "npc", "object", "item", "spell", "faction" },
+	OPEN = { active = true, pending = true },
+	GUIDE_ID_MAX = 64,
+	LABEL = "Polestar guide: ",
+}
+
+function ClaudeWoW.Polestar.GoalText(goal)
+	if type(goal) ~= "table" or type(goal.t) ~= "string" or not goal.t:match("^%a+$") then return nil end
+	local parts = { goal.t }
+	for _, key in ipairs(ClaudeWoW.Polestar.ID_KEYS) do
+		local id = goal[key]
+		if type(id) == "number" and id > 0 and id == math.floor(id) then table.insert(parts, key .. " " .. id) end
+	end
+	local map = goal.map
+	if #parts == 1 and type(map) == "number" and map > 0 and map == math.floor(map) then table.insert(parts, "map " .. map) end
+	local p = goal.progress
+	if type(p) == "table" and type(p.cur) == "number" and type(p.max) == "number" then
+		table.insert(parts, math.floor(p.cur) .. "/" .. math.floor(p.max))
+	end
+	if goal.optional then table.insert(parts, "optional") end
+	return table.concat(parts, " ")
+end
+
+function ClaudeWoW.Polestar.Line(room)
+	local host = rawget(_G, "Polestar")
+	local engine = type(host) == "table" and host.Engine
+	if type(engine) ~= "table" or type(room) ~= "number" then return nil end
+	local guide = Try(engine.GetGuide)
+	local id = type(guide) == "table" and type(guide.id) == "string" and guide.id or ""
+	if id == "" or #id > ClaudeWoW.Polestar.GUIDE_ID_MAX or id:find("[^%w/_%.%-]") then return nil end
+	local count = Try(engine.GetStepCount)
+	local total = type(count) == "number" and count > 0 and ("/" .. math.floor(count)) or ""
+	local step = Try(engine.GetLiveStep)
+	if type(step) ~= "number" then
+		local line = ClaudeWoW.Polestar.LABEL .. id .. ", complete"
+		return #line <= room and line or nil
+	end
+	local line = ClaudeWoW.Polestar.LABEL .. id .. ", step " .. math.floor(step) .. total
+	if #line > room then return nil end
+	local view = Try(engine.GetStepView, step)
+	local goals = type(view) == "table" and type(view.goals) == "table" and view.goals or {}
+	local order = {}
+	if type(view) == "table" and type(view.current) == "number" and goals[view.current] then table.insert(order, view.current) end
+	for i in ipairs(goals) do
+		if i ~= order[1] then table.insert(order, i) end
+	end
+	local sep = "; open: "
+	for _, i in ipairs(order) do
+		local goal = goals[i]
+		local text = type(goal) == "table" and goal.t ~= "note" and ClaudeWoW.Polestar.OPEN[goal.status] and ClaudeWoW.Polestar.GoalText(goal)
+		if text then
+			if #line + #sep + #text > room then break end
+			line = line .. sep .. text
+			sep = ", "
+		end
+	end
+	return line
+end
+
 function ClaudeWoW.GameContext()
 	local lines = {}
 	local version, build, _, toc = Try(GetBuildInfo)
@@ -3006,6 +3066,8 @@ function ClaudeWoW.GameContext()
 	if #quests > 0 then table.insert(lines, "Quest log (id, * = ready to turn in): " .. table.concat(quests, ",")) end
 
 	local s = table.concat(lines, "\n"):gsub("[\30\31]", " ")
+	local guideLine = ClaudeWoW.Polestar.Line(CTX.MAX - #s - 1)
+	if guideLine then s = s .. "\n" .. guideLine end
 	if #s > CTX.MAX then s = s:sub(1, CTX.MAX) end
 	return s
 end
