@@ -62,9 +62,7 @@ T.debug = { renders = 0, native = {} }
 local frame
 local watcher
 
-local function CanAddMessage(f)
-	return type(f) == "table" and type(f.AddMessage) == "function"
-end
+local function CanAddMessage(f) return type(f) == "table" and type(f.AddMessage) == "function" end
 
 local function OutputFrame(editBox)
 	local typedIn = type(editBox) == "table" and editBox.chatFrame
@@ -88,9 +86,7 @@ function T.TemplateExists(name)
 	return ok and info ~= nil
 end
 
-local function FontName(pair)
-	return _G[pair[1]] ~= nil and pair[1] or pair[2]
-end
+local function FontName(pair) return _G[pair[1]] ~= nil and pair[1] or pair[2] end
 
 local function Clip(value, max)
 	local s = tostring(value or ""):gsub("%c", " ")
@@ -130,7 +126,9 @@ local function Signature(view)
 	if view.beat then
 		table.insert(parts, view.beat.id)
 		table.insert(parts, view.beat.title)
-		for _, line in ipairs(view.beat.lines) do table.insert(parts, line) end
+		for _, line in ipairs(view.beat.lines) do
+			table.insert(parts, line)
+		end
 	end
 	return table.concat(parts, SIGNATURE_SEPARATOR)
 end
@@ -192,7 +190,9 @@ local function BuildParchment(f)
 	f.parchmentArea = area
 	local paint = ClaudeWoW and ClaudeWoW.PaintParchment
 	local ok, art = false, nil
-	if type(paint) == "function" then ok, art = pcall(paint, paper) end
+	if type(paint) == "function" then
+		ok, art = pcall(paint, paper)
+	end
 	if ok and art then
 		T.debug.parchment = art
 	else
@@ -209,15 +209,17 @@ local function BoundBody(body)
 	T.debug.bodyMaxLines = T.LAYOUT.bodyMaxLines
 end
 
-function T.ContinueReady()
-	return T.continueClickedAt == nil
-end
+function T.ContinueReady() return T.continueClickedAt == nil end
 
 local function UpdateContinue(manual)
 	local b = frame and frame.continue
 	if not b then return end
 	b:SetShown(manual == true)
-	if T.ContinueReady() then b:Enable() else b:Disable() end
+	if T.ContinueReady() then
+		b:Enable()
+	else
+		b:Disable()
+	end
 end
 
 function T.Continue()
@@ -255,7 +257,11 @@ local function BuildParts(f)
 	f:RegisterForDrag("LeftButton")
 	f:SetScript("OnDragStart", f.StartMoving)
 	f:SetScript("OnDragStop", f.StopMovingOrSizing)
-	if T.debug.native.frame then DecorateNative(f) else DecoratePlain(f) end
+	if T.debug.native.frame then
+		DecorateNative(f)
+	else
+		DecoratePlain(f)
+	end
 	f.paper = BuildParchment(f)
 	local page = f.parchmentArea
 	f.beatTitle = TextString(page, T.FONTS.title, INK)
@@ -308,9 +314,7 @@ local function ReportError(err, editBox)
 	Print("the DM frame could not be drawn: " .. text, editBox)
 end
 
-local function InCombat()
-	return type(InCombatLockdown) == "function" and InCombatLockdown() == true
-end
+local function InCombat() return type(InCombatLockdown) == "function" and InCombatLockdown() == true end
 
 local function Reveal()
 	if InCombat() then
@@ -321,9 +325,7 @@ local function Reveal()
 	PlayQuestSound("IG_QUEST_LIST_OPEN")
 end
 
-local function ShowingEmptyState()
-	return frame ~= nil and frame.emptyState == true and frame:IsShown()
-end
+local function ShowingEmptyState() return frame ~= nil and frame.emptyState == true and frame:IsShown() end
 
 local function Draw(view, reveal)
 	if not view.beat and not reveal and not ShowingEmptyState() then
@@ -377,9 +379,7 @@ function T.SyncSlot(data)
 	return T.Sync(data)
 end
 
-function T.Frame()
-	return frame
-end
+function T.Frame() return frame end
 
 function T.Toggle(editBox)
 	if frame and frame:IsShown() then

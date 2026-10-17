@@ -30,9 +30,7 @@ local function AddonTitle()
 end
 H.AddonTitle = AddonTitle
 
-local function Sections()
-	return (ClaudeWoW and type(ClaudeWoW.HELP) == "table") and ClaudeWoW.HELP or {}
-end
+local function Sections() return (ClaudeWoW and type(ClaudeWoW.HELP) == "table") and ClaudeWoW.HELP or {} end
 
 local function Text(parent, font, text)
 	local fs = parent:CreateFontString(nil, "ARTWORK", font)
@@ -49,7 +47,10 @@ local function BuildContent(content)
 	local body = Font("GameFontHighlight", "GameFontHighlightSmall")
 	local note = Font("GameFontHighlightSmall", body)
 	for _, section in ipairs(Sections()) do
-		table.insert(items, { fs = Text(content, header, section.title or ""), x = 0, before = #items > 0 and SECTION_GAP or 0, after = HEADER_GAP, kind = "header" })
+		table.insert(
+			items,
+			{ fs = Text(content, header, section.title or ""), x = 0, before = #items > 0 and SECTION_GAP or 0, after = HEADER_GAP, kind = "header" }
+		)
 		for _, row in ipairs(section.rows or {}) do
 			table.insert(items, { fs = Text(content, command, row[1]), x = 0, after = LINE_GAP, kind = "command" })
 			table.insert(items, { fs = Text(content, body, row[2]), x = INDENT, after = ROW_GAP, kind = "description" })
@@ -191,9 +192,7 @@ H.DIM_CHOICES = { { "off", "Off" }, { "80", "80%" }, { "60", "60%" }, { "35", "3
 H.ECHO_CHOICES = { { "summary", "Summary" }, { "short", "Short" }, { "full", "Full" }, { "off", "Off" } }
 H.VOICE_LABELS = { race = "Your race", peasant = "Peasant", peon = "Peon", off = "Off" }
 
-local function Saved()
-	return (type(ClaudeWoWDB) == "table" and type(ClaudeWoWDB.settings) == "table") and ClaudeWoWDB.settings or {}
-end
+local function Saved() return (type(ClaudeWoWDB) == "table" and type(ClaudeWoWDB.settings) == "table") and ClaudeWoWDB.settings or {} end
 
 H.QUIET = { quiet = true }
 
@@ -202,9 +201,7 @@ local function Config(command)
 	return nil
 end
 
-local function OnOff(value)
-	return value and "on" or "off"
-end
+local function OnOff(value) return value and "on" or "off" end
 
 local function Switch(command)
 	return function(value) return Config(command .. " " .. OnOff(value)) end
@@ -232,99 +229,144 @@ local function WithCurrent(list, current, label)
 		if choice[1] == current then return list end
 	end
 	local out = { { current, label(current) } }
-	for _, choice in ipairs(list) do out[#out + 1] = choice end
+	for _, choice in ipairs(list) do
+		out[#out + 1] = choice
+	end
 	return out
 end
 
 local function VoiceChoices()
 	local names = (ClaudeWoWVoice and type(ClaudeWoWVoice.PACK_NAMES) == "table") and ClaudeWoWVoice.PACK_NAMES or { "race", "off" }
 	local list = {}
-	for _, name in ipairs(names) do list[#list + 1] = { name, H.VOICE_LABELS[name] or name } end
+	for _, name in ipairs(names) do
+		list[#list + 1] = { name, H.VOICE_LABELS[name] or name }
+	end
 	return list
 end
 
 H.OPTIONS = {
 	{
-		key = "whisper", label = "Whisper tabs", default = false,
+		key = "whisper",
+		label = "Whisper tabs",
+		default = false,
 		tooltip = "Each chat is a whisper tab in the chat dock. Off: replies go to the game chat and the window.",
 		get = function() return Saved().whisper == true end,
 		set = Switch("ui whisper"),
 	},
 	{
-		key = "dim", label = "Dim the window while you move", default = "35", choices = function() return WithCurrent(H.DIM_CHOICES, DimValue(), function(v) return v .. "%" end) end,
+		key = "dim",
+		label = "Dim the window while you move",
+		default = "35",
+		choices = function()
+			return WithCurrent(H.DIM_CHOICES, DimValue(), function(v) return v .. "%" end)
+		end,
 		tooltip = "How visible the window stays while you move or fight. It comes back when you stop or point at it.",
 		get = DimValue,
 		set = function(value) return Config("ui dim " .. value) end,
 	},
 	{
-		key = "dodge", label = "Move aside for game panels", default = true,
+		key = "dodge",
+		label = "Move aside for game panels",
+		default = true,
 		tooltip = "The window steps aside when bags, the character sheet, a vendor or another panel opens.",
 		get = function() return Saved().dodge == true end,
 		set = Switch("ui dodge"),
 	},
 	{
-		key = "autohide", label = "Hide behind the world map and menus", default = true,
+		key = "autohide",
+		label = "Hide behind the world map and menus",
+		default = true,
 		tooltip = "The window steps away while the full-screen map, the game menu or the settings are open.",
 		get = function() return Saved().autohide == true end,
 		set = Switch("ui autohide"),
 	},
 	{
-		key = "minimap", label = "Minimap button", default = true,
+		key = "minimap",
+		label = "Minimap button",
+		default = true,
 		tooltip = "A button on the minimap. Left-click opens or closes the window, right-click opens these options. Drag it around the minimap.",
 		get = function() return Saved().minimap ~= false end,
 		set = Switch("minimap"),
 	},
 	{
-		key = "echo", label = "Replies in the game chat", default = "summary",
-		choices = function() return WithCurrent(H.ECHO_CHOICES, tostring(Saved().echo or "summary"), function(v) return v .. " characters" end) end,
+		key = "echo",
+		label = "Replies in the game chat",
+		default = "summary",
+		choices = function()
+			return WithCurrent(H.ECHO_CHOICES, tostring(Saved().echo or "summary"), function(v) return v .. " characters" end)
+		end,
 		tooltip = "How much of each reply the game chat prints. Summary prints the agent's short version.",
 		get = function() return tostring(Saved().echo or "summary") end,
 		set = function(value) return Config("echo " .. value) end,
 	},
 	{
-		key = "voice", label = "Voice lines", default = "race", choices = VoiceChoices, module = "ClaudeWoWVoice",
+		key = "voice",
+		label = "Voice lines",
+		default = "race",
+		choices = VoiceChoices,
+		module = "ClaudeWoWVoice",
 		tooltip = "A short voice line when the agent starts, finishes or needs you.",
 		get = VoicePack,
 		set = function(value) return Config("voice " .. value) end,
 	},
 	{
-		key = "roast", label = "Death roasts", default = false, module = "ClaudeWoWRoast",
+		key = "roast",
+		label = "Death roasts",
+		default = false,
+		module = "ClaudeWoWRoast",
 		tooltip = "When you die, the agent gets the death recap and writes a short roast in its own chat.",
 		get = function() return type(ClaudeWoWDB) == "table" and type(ClaudeWoWDB.roast) == "table" and ClaudeWoWDB.roast.on == true end,
 		set = Switch("roast"),
 	},
 	{
-		key = "roll", label = "Ask with a roll window", default = true,
+		key = "roll",
+		label = "Ask with a roll window",
+		default = true,
 		tooltip = ClaudeWoW and ClaudeWoW.ROLL_HELP,
 		get = function() return Saved().lootRoll ~= false end,
 		set = Switch("roll"),
 	},
 	{
-		key = "achievements", label = "Achievement toasts", default = true, module = "ClaudeWoWAchievements",
+		key = "achievements",
+		label = "Achievement toasts",
+		default = true,
+		module = "ClaudeWoWAchievements",
 		tooltip = "A toast when you earn one of the companion's achievements.",
 		get = function() return Saved().toasts ~= false end,
 		set = Switch("achievements"),
 	},
 	{
-		key = "orders", label = "Orders card", default = true, module = "ClaudeWoWOrders",
+		key = "orders",
+		label = "Orders card",
+		default = true,
+		module = "ClaudeWoWOrders",
 		tooltip = "The agent's current order, in a card under the quest tracker.",
 		get = function() return ClaudeWoWOrders.IsOn() and true or false end,
 		set = Switch("orders"),
 	},
 	{
-		key = "telemetry", label = "Share game state with the agent", default = true, module = "ClaudeWoWTelemetry",
+		key = "telemetry",
+		label = "Share game state with the agent",
+		default = true,
+		module = "ClaudeWoWTelemetry",
 		tooltip = "Your money, level, zone, professions, watched items, gear and reputation go to the companion app.",
 		get = function() return ClaudeWoWTelemetry.IsOn() and true or false end,
 		set = Switch("telemetry"),
 	},
 	{
-		key = "ore", label = "Ore nodes on the world map", default = false, module = "ClaudeWoWMap",
+		key = "ore",
+		label = "Ore nodes on the world map",
+		default = false,
+		module = "ClaudeWoWMap",
 		tooltip = "This character only.",
 		get = function() return MapNodes("ore") end,
 		set = Switch("map ore"),
 	},
 	{
-		key = "herb", label = "Herb nodes on the world map", default = false, module = "ClaudeWoWMap",
+		key = "herb",
+		label = "Herb nodes on the world map",
+		default = false,
+		module = "ClaudeWoWMap",
 		tooltip = "This character only.",
 		get = function() return MapNodes("herb") end,
 		set = Switch("map herb"),
@@ -370,7 +412,9 @@ end
 local function DropdownOptions(option)
 	return function()
 		local container = Settings.CreateControlTextContainer()
-		for _, choice in ipairs(option.choices()) do container:Add(choice[1], choice[2]) end
+		for _, choice in ipairs(option.choices()) do
+			container:Add(choice[1], choice[2])
+		end
 		return container:GetData()
 	end
 end
@@ -378,9 +422,15 @@ end
 function H.AddProxyOption(category, option)
 	local isChoice = option.choices ~= nil
 	local varType = (Settings.VarType and (isChoice and Settings.VarType.String or Settings.VarType.Boolean)) or (isChoice and "string" or "boolean")
-	local setting = Settings.RegisterProxySetting(category, H.VARIABLE_PREFIX .. option.key:upper(), varType, option.label, option.default,
+	local setting = Settings.RegisterProxySetting(
+		category,
+		H.VARIABLE_PREFIX .. option.key:upper(),
+		varType,
+		option.label,
+		option.default,
 		function() return H.OptionValue(option) end,
-		function(value) H.SetOption(option, value) end)
+		function(value) H.SetOption(option, value) end
+	)
 	if isChoice then
 		Settings.CreateDropdown(category, setting, DropdownOptions(option), option.tooltip)
 	else
@@ -390,8 +440,10 @@ function H.AddProxyOption(category, option)
 end
 
 local function CanUseProxies()
-	return type(Settings.RegisterVerticalLayoutCategory) == "function" and type(Settings.RegisterProxySetting) == "function"
-		and type(Settings.CreateCheckbox) == "function" and type(Settings.CreateDropdown) == "function"
+	return type(Settings.RegisterVerticalLayoutCategory) == "function"
+		and type(Settings.RegisterProxySetting) == "function"
+		and type(Settings.CreateCheckbox) == "function"
+		and type(Settings.CreateDropdown) == "function"
 		and type(Settings.CreateControlTextContainer) == "function"
 end
 
@@ -429,9 +481,7 @@ function H.RegisterSettings(helpPanel)
 	if not category then return nil end
 	H.optionsCategory = category
 	H.helpCategory = AddSubcategory(category, helpPanel, H.PAGE_TITLE)
-	if vertical then
-		H.widgetsCategory = AddSubcategory(category, H.BuildCanvas("ClaudeWoWWidgetsPanel", H.WIDGETS_TITLE, false), H.WIDGETS_TITLE)
-	end
+	if vertical then H.widgetsCategory = AddSubcategory(category, H.BuildCanvas("ClaudeWoWWidgetsPanel", H.WIDGETS_TITLE, false), H.WIDGETS_TITLE) end
 	return category
 end
 
@@ -461,7 +511,9 @@ local function Tooltip(frame, title, text)
 		if text then GameTooltip:AddLine(text, 1, 1, 1, true) end
 		GameTooltip:Show()
 	end)
-	frame:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+	frame:SetScript("OnLeave", function()
+		if GameTooltip then GameTooltip:Hide() end
+	end)
 end
 
 local function OptionControl(panel, option)
@@ -512,7 +564,9 @@ end
 H.WIDGET_STATUS = { running = "shown", removed = "hidden", waiting = "waiting for your OK", failed = "stopped after an error", stopped = "not running" }
 
 function H.RefreshCanvas(panel)
-	for _, control in ipairs(panel.controls or {}) do control:Refresh() end
+	for _, control in ipairs(panel.controls or {}) do
+		control:Refresh()
+	end
 	local rows = (ClaudeWoWWidgets and type(ClaudeWoWWidgets.Rows) == "function") and ClaudeWoWWidgets.Rows() or {}
 	panel.empty:SetShown(#rows == 0)
 	for i = 1, H.WIDGET_ROWS_MAX do
@@ -550,7 +604,11 @@ function H.BuildCanvas(name, title, withOptions)
 			anchor = control
 		end
 	end
-	panel.widgetsHeader = Label(panel, Font("GameFontNormal", "GameFontNormalSmall"), withOptions and "The agent's widgets" or "Widgets the agent made for you. Remove hides one until the agent sends a new version.")
+	panel.widgetsHeader = Label(
+		panel,
+		Font("GameFontNormal", "GameFontNormalSmall"),
+		withOptions and "The agent's widgets" or "Widgets the agent made for you. Remove hides one until the agent sends a new version."
+	)
 	panel.widgetsHeader:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -SECTION_GAP)
 	panel.empty = Label(panel, Font("GameFontHighlightSmall", "GameFontNormalSmall"), "No widgets yet. Ask the agent for one.")
 	panel.empty:SetPoint("TOPLEFT", panel.widgetsHeader, "BOTTOMLEFT", 0, -8)

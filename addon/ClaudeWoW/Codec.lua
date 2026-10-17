@@ -26,8 +26,8 @@ ClaudeWoW_Codec = {}
 local C = ClaudeWoW_Codec
 
 C.MAGIC1, C.MAGIC2 = 0xC7, 0x1A -- codec 1
-C.MAGIC2_DENSE = 0x2A           -- codec 2 (the first byte is the same)
-C.BITS = 3                      -- codec 1's bits per cell (the name the capture scripts grew up with)
+C.MAGIC2_DENSE = 0x2A -- codec 2 (the first byte is the same)
+C.BITS = 3 -- codec 1's bits per cell (the name the capture scripts grew up with)
 C.MAX_PAYLOAD = 3200
 -- Per codec: cell size in pixels, cells per row, rows at most, bits per cell,
 -- levels per channel, and how many ramp cells lead.
@@ -50,9 +50,12 @@ end
 function C.FrameBytes(id, payload, magic2)
 	local len = #payload
 	local bytes = {
-		C.MAGIC1, magic2,
-		math.floor(id / 256) % 256, id % 256,
-		math.floor(len / 256) % 256, len % 256,
+		C.MAGIC1,
+		magic2,
+		math.floor(id / 256) % 256,
+		id % 256,
+		math.floor(len / 256) % 256,
+		len % 256,
 	}
 	for i = 1, len do
 		bytes[#bytes + 1] = payload:byte(i)
@@ -122,9 +125,7 @@ function C.Encode(id, payload, codec)
 			acc = acc % 2 ^ nbits
 		end
 	end
-	if nbits > 0 then
-		cells[#cells + 1] = (acc * 2 ^ (BITS - nbits)) % base
-	end
+	if nbits > 0 then cells[#cells + 1] = (acc * 2 ^ (BITS - nbits)) % base end
 	return cells, #bytes
 end
 

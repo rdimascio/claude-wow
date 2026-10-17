@@ -11,21 +11,67 @@ local PANEL_TOP_OFFSET = 116
 local PANEL_LEFT_OFFSET = 16
 
 local PANELS = {
-	"CharacterFrame", "SpellBookFrame", "PlayerSpellsFrame", "PlayerTalentFrame", "TalentFrame", "ClassTalentFrame",
-	"QuestLogFrame", "QuestLogDetailFrame", "WorldMapFrame", "MerchantFrame", "TradeFrame", "BankFrame", "MailFrame",
-	"OpenMailFrame", "AuctionHouseFrame", "AuctionFrame", "GossipFrame", "QuestFrame", "FriendsFrame", "ClassTrainerFrame",
-	"ProfessionsFrame", "TradeSkillFrame", "CraftFrame", "MacroFrame", "LootFrame", "DressUpFrame", "InspectFrame",
-	"PVEFrame", "GuildFrame", "CommunitiesFrame", "AchievementFrame", "CollectionsJournal", "EncounterJournal",
-	"TabardFrame", "PetStableFrame", "ItemTextFrame", "ContainerFrameCombinedBags",
-	"StaticPopup1", "StaticPopup2", "StaticPopup3", "StaticPopup4",
+	"CharacterFrame",
+	"SpellBookFrame",
+	"PlayerSpellsFrame",
+	"PlayerTalentFrame",
+	"TalentFrame",
+	"ClassTalentFrame",
+	"QuestLogFrame",
+	"QuestLogDetailFrame",
+	"WorldMapFrame",
+	"MerchantFrame",
+	"TradeFrame",
+	"BankFrame",
+	"MailFrame",
+	"OpenMailFrame",
+	"AuctionHouseFrame",
+	"AuctionFrame",
+	"GossipFrame",
+	"QuestFrame",
+	"FriendsFrame",
+	"ClassTrainerFrame",
+	"ProfessionsFrame",
+	"TradeSkillFrame",
+	"CraftFrame",
+	"MacroFrame",
+	"LootFrame",
+	"DressUpFrame",
+	"InspectFrame",
+	"PVEFrame",
+	"GuildFrame",
+	"CommunitiesFrame",
+	"AchievementFrame",
+	"CollectionsJournal",
+	"EncounterJournal",
+	"TabardFrame",
+	"PetStableFrame",
+	"ItemTextFrame",
+	"ContainerFrameCombinedBags",
+	"StaticPopup1",
+	"StaticPopup2",
+	"StaticPopup3",
+	"StaticPopup4",
 }
-for i = 1, 13 do PANELS[#PANELS + 1] = "ContainerFrame" .. i end
+for i = 1, 13 do
+	PANELS[#PANELS + 1] = "ContainerFrame" .. i
+end
 W.PANELS = PANELS
 
 local FULLSCREEN = { "GameMenuFrame", "SettingsPanel", "InterfaceOptionsFrame", "VideoOptionsFrame", "CinematicFrame", "MovieFrame" }
 W.FULLSCREEN = FULLSCREEN
 
-local PANEL_HOOKS = { "ShowUIPanel", "HideUIPanel", "UpdateUIPanelPositions", "ToggleAllBags", "OpenAllBags", "CloseAllBags", "ToggleBag", "StaticPopup_Show", "StaticPopup_Hide" }
+local PANEL_HOOKS = {
+	"ShowUIPanel",
+	"HideUIPanel",
+	"UpdateUIPanelPositions",
+	"ToggleAllBags",
+	"OpenAllBags",
+	"CloseAllBags",
+	"ToggleBag",
+	"StaticPopup_Show",
+	"StaticPopup_Hide",
+}
 
 local win, grip, driver
 local state = { moving = false, combat = false, stashed = false, fullOpen = false, dodged = false, alpha = 1, pending = false, signature = "", pollIn = 0 }
@@ -43,13 +89,9 @@ local function Try(fn, ...)
 	if ok then return a, b, c, d end
 end
 
-local function Screen()
-	return UIParent:GetWidth() or 1920, UIParent:GetHeight() or 1080
-end
+local function Screen() return UIParent:GetWidth() or 1920, UIParent:GetHeight() or 1080 end
 
-local function CharKey()
-	return tostring(Try(UnitName, "player") or "?") .. "-" .. tostring(Try(GetRealmName) or "?")
-end
+local function CharKey() return tostring(Try(UnitName, "player") or "?") .. "-" .. tostring(Try(GetRealmName) or "?") end
 
 local function Layouts()
 	local db = ClaudeWoWDB
@@ -77,9 +119,7 @@ function W.Layout()
 	return l
 end
 
-local function PanelOffset(attribute, fallback)
-	return math.abs(tonumber(Try(UIParent.GetAttribute, UIParent, attribute)) or fallback)
-end
+local function PanelOffset(attribute, fallback) return math.abs(tonumber(Try(UIParent.GetAttribute, UIParent, attribute)) or fallback) end
 
 local function HomeRect()
 	local l = W.Layout()
@@ -97,9 +137,7 @@ local function Put(rect)
 	state.at = rect
 end
 
-local function Overlaps(a, b)
-	return a.left < b.right and a.right > b.left and a.bottom < b.top and a.top > b.bottom
-end
+local function Overlaps(a, b) return a.left < b.right and a.right > b.left and a.bottom < b.top and a.top > b.bottom end
 
 local function RectOf(f)
 	local l, r, t, b = Try(f.GetLeft, f), Try(f.GetRight, f), Try(f.GetTop, f), Try(f.GetBottom, f)
@@ -134,9 +172,7 @@ local function OwnPopup(name)
 	return type(f) == "table" and type(f.which) == "string" and f.which:find(OWN_POPUP) ~= nil
 end
 
-local function Blocking(name)
-	return Shown(name) and not OwnPopup(name)
-end
+local function Blocking(name) return Shown(name) and not OwnPopup(name) end
 
 function W.OpenPanels()
 	local out = {}
@@ -190,7 +226,9 @@ function W.FindSpot(home, occupied)
 			local r = { left = left, top = top, right = left + w, bottom = top - h }
 			if Free(r, occupied) then
 				local cost = math.abs(left - home.left) + math.abs(top - home.top)
-				if not bestCost or cost < bestCost then best, bestCost = r, cost end
+				if not bestCost or cost < bestCost then
+					best, bestCost = r, cost
+				end
 			end
 		end
 	end
@@ -223,17 +261,11 @@ function W.MapDock(home, occupied)
 	return nil
 end
 
-local function Spot(home, occupied)
-	return W.MapDock(home, occupied) or W.FindSpot(home, occupied)
-end
+local function Spot(home, occupied) return W.MapDock(home, occupied) or W.FindSpot(home, occupied) end
 
-local function Visible()
-	return win ~= nil and win:IsShown()
-end
+local function Visible() return win ~= nil and win:IsShown() end
 
-local function DodgeSpot(home)
-	return Spot(home, W.OpenPanels()) or home
-end
+local function DodgeSpot(home) return Spot(home, W.OpenPanels()) or home end
 
 function W.Relayout()
 	state.pending = false
@@ -296,7 +328,11 @@ function W.Fade(dt)
 	local a = state.alpha
 	if a == target then return true end
 	local step = (dt or 0) / FADE_SECONDS
-	if a < target then a = math.min(target, a + step) else a = math.max(target, a - step) end
+	if a < target then
+		a = math.min(target, a + step)
+	else
+		a = math.max(target, a - step)
+	end
 	SetAlpha(a)
 	return a == target
 end
@@ -351,7 +387,9 @@ end
 local function Skin(f)
 	if f.claudewowNative then return true end
 	local util, layouts = _G.NineSliceUtil, _G.NineSliceLayouts
-	if not (type(util) == "table" and type(util.ApplyLayoutByName) == "function" and type(layouts) == "table" and layouts.ButtonFrameTemplateNoPortrait) then return false end
+	if not (type(util) == "table" and type(util.ApplyLayoutByName) == "function" and type(layouts) == "table" and layouts.ButtonFrameTemplateNoPortrait) then
+		return false
+	end
 	local ok, border = pcall(CreateFrame, "Frame", nil, f, "NineSlicePanelTemplate")
 	if not ok or not border then return false end
 	if not pcall(util.ApplyLayoutByName, border, "ButtonFrameTemplateNoPortrait") then
@@ -429,7 +467,16 @@ function W.Attach(frame, sizeGrip)
 end
 
 local events = CreateFrame("Frame")
-for _, ev in ipairs({ "PLAYER_STARTED_MOVING", "PLAYER_STOPPED_MOVING", "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "PLAYER_ENTERING_WORLD", "ADDON_LOADED", "UI_SCALE_CHANGED", "DISPLAY_SIZE_CHANGED" }) do
+for _, ev in ipairs({
+	"PLAYER_STARTED_MOVING",
+	"PLAYER_STOPPED_MOVING",
+	"PLAYER_REGEN_DISABLED",
+	"PLAYER_REGEN_ENABLED",
+	"PLAYER_ENTERING_WORLD",
+	"ADDON_LOADED",
+	"UI_SCALE_CHANGED",
+	"DISPLAY_SIZE_CHANGED",
+}) do
 	events:RegisterEvent(ev)
 end
 events:SetScript("OnEvent", function(_, event)

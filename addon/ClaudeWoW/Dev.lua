@@ -9,9 +9,7 @@ local OWN_FILES = "AddOns[\\/]ClaudeWoW"
 local ATTACHMENT_MAX = 1400
 local ERRORS_SHOWN = 8
 
-local function Now()
-	return type(time) == "function" and time() or 0
-end
+local function Now() return type(time) == "function" and time() or 0 end
 
 local function StackHere()
 	if type(debugstack) ~= "function" then return "" end
@@ -33,7 +31,9 @@ function D.Keep(message, stack)
 		end
 	end
 	table.insert(D.errors, { message = text:sub(1, MESSAGE_MAX), stack = stack:sub(1, STACK_MAX), count = 1, first = at, last = at })
-	while #D.errors > ERRORS_KEPT do table.remove(D.errors, 1) end
+	while #D.errors > ERRORS_KEPT do
+		table.remove(D.errors, 1)
+	end
 	return true
 end
 
@@ -81,18 +81,25 @@ local function StackHead(stack)
 	return table.concat(lines, "\n")
 end
 
-local function Short(message)
-	return (tostring(message or ""):gsub("^.-AddOns[\\/]", ""))
-end
+local function Short(message) return (tostring(message or ""):gsub("^.-AddOns[\\/]", "")) end
 
 function D.Report()
 	local list = D.All()
 	if #list == 0 then
 		if D.installed then return "No Lua error from Azeroth Companion this UI session." end
-		if D.blocked then return "No Lua error caught: another addon keeps the error handler to itself, and it lists no Azeroth Companion error. /claude dev errors reads the game's own log." end
+		if D.blocked then
+			return "No Lua error caught: another addon keeps the error handler to itself, and it lists no Azeroth Companion error. /claude dev errors reads the game's own log."
+		end
 		return "No Lua error caught: this client has no seterrorhandler, so the addon cannot catch them. /claude dev errors reads the game's own log."
 	end
-	local lines = { #list .. " Lua error" .. (#list == 1 and "" or "s") .. " from Azeroth Companion this UI session" .. (list == D.errors and (" (" .. D.caught .. " in all)") or ", from BugGrabber") .. ", newest last:" }
+	local lines = {
+		#list
+			.. " Lua error"
+			.. (#list == 1 and "" or "s")
+			.. " from Azeroth Companion this UI session"
+			.. (list == D.errors and (" (" .. D.caught .. " in all)") or ", from BugGrabber")
+			.. ", newest last:",
+	}
 	for i = math.max(1, #list - ERRORS_SHOWN + 1), #list do
 		local e = list[i]
 		lines[#lines + 1] = (e.count > 1 and ("x" .. e.count .. " ") or "") .. Short(e.message)
@@ -124,13 +131,17 @@ function D.State()
 	local lines = {}
 	local cw = _G.ClaudeWoW
 	local loaded = cw and cw.Version and cw.Version.LOADED
-	if loaded then lines[#lines + 1] = "addon " .. tostring(loaded.version or "?") .. (loaded.build and loaded.build ~= "" and (" build " .. tostring(loaded.build)) or "") end
+	if loaded then
+		lines[#lines + 1] = "addon " .. tostring(loaded.version or "?") .. (loaded.build and loaded.build ~= "" and (" build " .. tostring(loaded.build)) or "")
+	end
 	if type(GetBuildInfo) == "function" then
 		local ok, version, build = pcall(GetBuildInfo)
 		if ok then lines[#lines + 1] = "client " .. tostring(version) .. " (" .. tostring(build) .. ")" end
 	end
 	local db = _G.ClaudeWoWDB
-	if type(db) == "table" and type(db.settings) == "table" then lines[#lines + 1] = "mode " .. tostring(db.settings.mode) .. ", whisper " .. tostring(db.settings.whisper) end
+	if type(db) == "table" and type(db.settings) == "table" then
+		lines[#lines + 1] = "mode " .. tostring(db.settings.mode) .. ", whisper " .. tostring(db.settings.whisper)
+	end
 	return table.concat(lines, "; ")
 end
 

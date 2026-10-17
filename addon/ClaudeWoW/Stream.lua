@@ -44,9 +44,7 @@ local function Settings()
 	return s
 end
 
-local function Say(msg)
-	print("|cff66ccff[Azeroth Companion]|r " .. msg)
-end
+local function Say(msg) print("|cff66ccff[Azeroth Companion]|r " .. msg) end
 
 local function SafeCall(fn, ...)
 	if type(fn) ~= "function" then return nil end
@@ -72,9 +70,7 @@ end
 local JSON_ESCAPES = { ['"'] = '\\"', ["\\"] = "\\\\", ["\n"] = "\\n", ["\r"] = "\\r", ["\t"] = "\\t", ["\b"] = "\\b", ["\f"] = "\\f" }
 
 local function JsonString(s)
-	return '"' .. tostring(s):gsub('[%c"\\]', function(c)
-		return JSON_ESCAPES[c] or string.format("\\u%04x", c:byte())
-	end) .. '"'
+	return '"' .. tostring(s):gsub('[%c"\\]', function(c) return JSON_ESCAPES[c] or string.format("\\u%04x", c:byte()) end) .. '"'
 end
 
 function S.Object(...)
@@ -104,7 +100,9 @@ function S.Encode(v)
 		end
 		return "{" .. table.concat(parts, ",") .. "}"
 	end
-	for _, item in ipairs(v) do table.insert(parts, S.Encode(item)) end
+	for _, item in ipairs(v) do
+		table.insert(parts, S.Encode(item))
+	end
 	return "[" .. table.concat(parts, ",") .. "]"
 end
 
@@ -171,9 +169,7 @@ local function ObjectiveTexts(quest)
 	if type(list) == "table" and #list > 0 then
 		for _, o in ipairs(list) do
 			if #out >= S.MAX_OBJECTIVES then break end
-			if type(o) == "table" and type(o.text) == "string" and o.text ~= "" then
-				table.insert(out, S.Clip(o.text, S.MAX_OBJECTIVE_CHARS))
-			end
+			if type(o) == "table" and type(o.text) == "string" and o.text ~= "" then table.insert(out, S.Clip(o.text, S.MAX_OBJECTIVE_CHARS)) end
 		end
 		return out
 	end
@@ -238,9 +234,7 @@ end
 function S.TrackPayload()
 	local quest = S.CurrentQuest()
 	local questField = NULL
-	if quest then
-		questField = S.Object("id", quest.id, "title", quest.title, "objectives", quest.objectives, "complete", quest.complete)
-	end
+	if quest then questField = S.Object("id", quest.id, "title", quest.title, "objectives", quest.objectives, "complete", quest.complete) end
 	local title = S.CurrentChatTitle()
 	local chatField = title and S.Object("title", title) or NULL
 	return S.Encode(S.Object("action", "track", "quest", questField, "chat", chatField))
@@ -248,7 +242,7 @@ end
 
 local function SendNow(payload)
 	local chat = S.EnsureChat()
-	if not chat then return false, "no room for a \"" .. S.CHAT_NAME .. "\" chat (delete one)" end
+	if not chat then return false, 'no room for a "' .. S.CHAT_NAME .. '" chat (delete one)' end
 	if chat.pendingId then return false, "busy" end
 	ClaudeWoW.Send(payload, nil, { chat = chat.id, kind = S.KIND })
 	if not chat.pendingId then return false, "the send did not go out" end
@@ -328,22 +322,20 @@ function S.Command(payload)
 		return false
 	end
 	if not S.EnsureChat() then
-		Say("No room for a \"" .. S.CHAT_NAME .. "\" chat. Delete a chat first.")
+		Say('No room for a "' .. S.CHAT_NAME .. '" chat. Delete a chat first.')
 		return false
 	end
 	table.insert(commandQueue, payload)
-	while #commandQueue > S.MAX_QUEUED_COMMANDS do table.remove(commandQueue, 1) end
+	while #commandQueue > S.MAX_QUEUED_COMMANDS do
+		table.remove(commandQueue, 1)
+	end
 	S.Pump()
 	return true
 end
 
-function S.PendingTrack()
-	return pendingTrack
-end
+function S.PendingTrack() return pendingTrack end
 
-function S.QueuedCommands()
-	return commandQueue
-end
+function S.QueuedCommands() return commandQueue end
 
 function S.Reset()
 	lastTrackPayload, lastTrackAt, pendingTrack, trackTimerArmed = nil, nil, nil, false
@@ -358,7 +350,9 @@ end
 
 local function PrintUsage(problem)
 	if problem then Say(problem) end
-	for _, line in ipairs(USAGE) do print("  " .. line) end
+	for _, line in ipairs(USAGE) do
+		print("  " .. line)
+	end
 end
 
 local function SetFollow(on)
@@ -386,7 +380,7 @@ function S.SlashCommand(msg)
 		S.Command(S.Encode(S.Object("action", "scene", "scene", SCENES[word])))
 	elseif word == "quest" then
 		if tail == "" then
-			PrintUsage("Say which quest text to show, or \"auto\".")
+			PrintUsage('Say which quest text to show, or "auto".')
 		elseif lowerTail == "auto" then
 			SetFollow(true)
 			if S.Command(S.Encode(S.Object("action", "follow", "on", true))) then S.ForceTrack() end
@@ -411,7 +405,7 @@ function S.SlashCommand(msg)
 			PrintUsage()
 		end
 	else
-		PrintUsage("Unknown scene or command \"" .. PlainText(word) .. "\".")
+		PrintUsage('Unknown scene or command "' .. PlainText(word) .. '".')
 	end
 end
 
@@ -427,7 +421,9 @@ end
 function S.Install()
 	if S.installed then return end
 	S.installed = true
-	for _, name in ipairs(S.QUEST_EVENTS) do pcall(ev.RegisterEvent, ev, name) end
+	for _, name in ipairs(S.QUEST_EVENTS) do
+		pcall(ev.RegisterEvent, ev, name)
+	end
 	if ClaudeWoW and ClaudeWoW.OnQuietReply then ClaudeWoW.OnQuietReply(S.PLUGIN, S.OnReply) end
 	if type(hooksecurefunc) == "function" and ClaudeWoW then
 		if type(ClaudeWoW.Render) == "function" then hooksecurefunc(ClaudeWoW, "Render", OnChatShown) end

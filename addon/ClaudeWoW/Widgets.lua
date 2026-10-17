@@ -3,40 +3,133 @@ local W = {}
 ClaudeWoWWidgets = W
 
 local DENIED_NAMES = {
-	"CastSpell", "CastSpellByName", "CastSpellByID", "CastShapeshiftForm", "CastPetAction",
-	"UseAction", "UseItemByName", "UseInventoryItem", "UseContainerItem", "UseToy", "UseToyByName",
-	"RunMacro", "RunMacroText", "RunBinding", "RunScript",
-	"TargetUnit", "TargetNearestEnemy", "TargetNearestFriend", "TargetLastTarget", "TargetLastEnemy", "ClearTarget",
-	"AssistUnit", "FocusUnit", "InteractUnit", "FollowUnit",
-	"AttackTarget", "StartAttack", "StopAttack", "PetAttack", "PetFollow",
-	"SpellStopCasting", "SpellStopTargeting", "SpellTargetUnit", "CancelShapeshiftForm", "CancelUnitBuff",
-	"JumpOrAscendStart", "MoveForwardStart", "MoveBackwardStart", "StrafeLeftStart", "StrafeRightStart",
-	"TurnLeftStart", "TurnRightStart", "ToggleAutoRun", "ToggleRun", "SitStandOrDescendStart",
-	"PickupAction", "PlaceAction", "PickupSpell", "PickupItem", "PickupMacro", "PickupContainerItem",
-	"PickupInventoryItem", "DeleteCursorItem", "EquipItemByName",
-	"SendChatMessage", "SendAddonMessage", "BNSendWhisper", "DoEmote", "SendMail", "ChatEdit_SendText", "ChatEdit_ParseText",
-	"InviteUnit", "UninviteUnit", "LeaveParty", "AcceptGroup", "AcceptTrade", "InitiateTrade",
-	"BuyMerchantItem", "RepairAllItems", "PlaceAuctionBid", "SetRaidTarget",
-	"CreateMacro", "EditMacro", "DeleteMacro",
-	"SetBinding", "SetBindingClick", "SetBindingSpell", "SetBindingItem", "SetBindingMacro", "SaveBindings",
-	"SetCVar", "ConsoleExec", "ReloadUI", "Logout", "Quit", "ForceQuit",
-	"LoadAddOn", "EnableAddOn", "DisableAddOn", "SlashCmdList", "hooksecurefunc", "securecall", "securecallfunction", "secureexecuterange",
-	"loadstring", "load", "getfenv", "setfenv", "getglobal", "setglobal", "rawget", "rawset", "debug",
+	"CastSpell",
+	"CastSpellByName",
+	"CastSpellByID",
+	"CastShapeshiftForm",
+	"CastPetAction",
+	"UseAction",
+	"UseItemByName",
+	"UseInventoryItem",
+	"UseContainerItem",
+	"UseToy",
+	"UseToyByName",
+	"RunMacro",
+	"RunMacroText",
+	"RunBinding",
+	"RunScript",
+	"TargetUnit",
+	"TargetNearestEnemy",
+	"TargetNearestFriend",
+	"TargetLastTarget",
+	"TargetLastEnemy",
+	"ClearTarget",
+	"AssistUnit",
+	"FocusUnit",
+	"InteractUnit",
+	"FollowUnit",
+	"AttackTarget",
+	"StartAttack",
+	"StopAttack",
+	"PetAttack",
+	"PetFollow",
+	"SpellStopCasting",
+	"SpellStopTargeting",
+	"SpellTargetUnit",
+	"CancelShapeshiftForm",
+	"CancelUnitBuff",
+	"JumpOrAscendStart",
+	"MoveForwardStart",
+	"MoveBackwardStart",
+	"StrafeLeftStart",
+	"StrafeRightStart",
+	"TurnLeftStart",
+	"TurnRightStart",
+	"ToggleAutoRun",
+	"ToggleRun",
+	"SitStandOrDescendStart",
+	"PickupAction",
+	"PlaceAction",
+	"PickupSpell",
+	"PickupItem",
+	"PickupMacro",
+	"PickupContainerItem",
+	"PickupInventoryItem",
+	"DeleteCursorItem",
+	"EquipItemByName",
+	"SendChatMessage",
+	"SendAddonMessage",
+	"BNSendWhisper",
+	"DoEmote",
+	"SendMail",
+	"ChatEdit_SendText",
+	"ChatEdit_ParseText",
+	"InviteUnit",
+	"UninviteUnit",
+	"LeaveParty",
+	"AcceptGroup",
+	"AcceptTrade",
+	"InitiateTrade",
+	"BuyMerchantItem",
+	"RepairAllItems",
+	"PlaceAuctionBid",
+	"SetRaidTarget",
+	"CreateMacro",
+	"EditMacro",
+	"DeleteMacro",
+	"SetBinding",
+	"SetBindingClick",
+	"SetBindingSpell",
+	"SetBindingItem",
+	"SetBindingMacro",
+	"SaveBindings",
+	"SetCVar",
+	"ConsoleExec",
+	"ReloadUI",
+	"Logout",
+	"Quit",
+	"ForceQuit",
+	"LoadAddOn",
+	"EnableAddOn",
+	"DisableAddOn",
+	"SlashCmdList",
+	"hooksecurefunc",
+	"securecall",
+	"securecallfunction",
+	"secureexecuterange",
+	"loadstring",
+	"load",
+	"getfenv",
+	"setfenv",
+	"getglobal",
+	"setglobal",
+	"rawget",
+	"rawset",
+	"debug",
 	"CombatLogGetCurrentEventInfo",
 }
 W.DENIED_NAMES = DENIED_NAMES
 
 local RESTRICTED_EVENTS = {
-	"COMBAT_LOG_EVENT", "COMBAT_LOG_EVENT_UNFILTERED", "COMBAT_LOG_APPLY_FILTER_SETTINGS", "COMBAT_LOG_REFILTER_ENTRIES",
-	"MINIMAP_PING", "UNIT_PING_PIN_ADDED", "UNIT_PING_PIN_REMOVED",
+	"COMBAT_LOG_EVENT",
+	"COMBAT_LOG_EVENT_UNFILTERED",
+	"COMBAT_LOG_APPLY_FILTER_SETTINGS",
+	"COMBAT_LOG_REFILTER_ENTRIES",
+	"MINIMAP_PING",
+	"UNIT_PING_PIN_ADDED",
+	"UNIT_PING_PIN_REMOVED",
 }
 W.RESTRICTED_EVENTS = RESTRICTED_EVENTS
 
 local RESTRICTED = {}
-for _, name in ipairs(RESTRICTED_EVENTS) do RESTRICTED[name] = true end
+for _, name in ipairs(RESTRICTED_EVENTS) do
+	RESTRICTED[name] = true
+end
 
 local DENIED = {}
-for _, name in ipairs(DENIED_NAMES) do DENIED[name] = true end
+for _, name in ipairs(DENIED_NAMES) do
+	DENIED[name] = true
+end
 
 local wdb
 local running = {}
@@ -55,9 +148,7 @@ local function Print(msg)
 	end
 end
 
-local function Quiet(ctx)
-	return type(ctx) == "table" and ctx.quiet == true
-end
+local function Quiet(ctx) return type(ctx) == "table" and ctx.quiet == true end
 
 local function Report(msg)
 	Print(msg)
@@ -91,74 +182,275 @@ local unpackValues = unpack or table.unpack
 local SHARED_LIBRARIES = { "math", "string", "table", "bit", "coroutine" }
 
 local LUA_FUNCTIONS = {
-	"assert", "error", "ipairs", "next", "pairs", "pcall", "select", "tonumber", "tostring", "type", "unpack",
-	"xpcall", "setmetatable", "rawequal", "print", "date", "time", "difftime",
-	"strsplit", "strjoin", "strtrim", "strconcat", "format", "tinsert", "tremove", "tContains", "tDeleteItem", "wipe", "sort",
-	"floor", "ceil", "abs", "max", "min", "mod", "sqrt", "random", "strlower", "strupper", "strlen", "strsub",
-	"strfind", "strmatch", "strrep", "strbyte", "strchar", "strrev", "gsub", "gmatch", "tostringall",
-	"CopyTable", "Mixin", "CreateFromMixins", "CreateColor",
+	"assert",
+	"error",
+	"ipairs",
+	"next",
+	"pairs",
+	"pcall",
+	"select",
+	"tonumber",
+	"tostring",
+	"type",
+	"unpack",
+	"xpcall",
+	"setmetatable",
+	"rawequal",
+	"print",
+	"date",
+	"time",
+	"difftime",
+	"strsplit",
+	"strjoin",
+	"strtrim",
+	"strconcat",
+	"format",
+	"tinsert",
+	"tremove",
+	"tContains",
+	"tDeleteItem",
+	"wipe",
+	"sort",
+	"floor",
+	"ceil",
+	"abs",
+	"max",
+	"min",
+	"mod",
+	"sqrt",
+	"random",
+	"strlower",
+	"strupper",
+	"strlen",
+	"strsub",
+	"strfind",
+	"strmatch",
+	"strrep",
+	"strbyte",
+	"strchar",
+	"strrev",
+	"gsub",
+	"gmatch",
+	"tostringall",
+	"CopyTable",
+	"Mixin",
+	"CreateFromMixins",
+	"CreateColor",
 }
 
 local GAME_FUNCTIONS = {
-	"GetTime", "debugprofilestop", "GetFramerate", "GetNetStats", "GetServerTime", "GetGameTime", "GetLocale", "GetBuildInfo",
-	"GetMoney", "GetCoinText", "GetCoinTextureString", "GetMoneyString", "BreakUpLargeNumbers", "AbbreviateLargeNumbers", "SecondsToTime",
-	"GetZoneText", "GetRealZoneText", "GetSubZoneText", "GetMinimapZoneText", "GetZonePVPInfo", "GetInstanceInfo", "GetRealmName",
-	"GetPlayerFacing", "GetUnitSpeed", "GetCursorPosition", "GetScreenWidth", "GetScreenHeight", "GetPhysicalScreenSize",
-	"GetSpellInfo", "GetSpellCooldown", "GetSpellTexture", "GetSpellCount", "GetSpellBonusDamage", "GetSpellBonusHealing",
-	"GetItemInfo", "GetItemInfoInstant", "GetItemCount", "GetItemIcon", "GetItemCooldown", "GetItemQualityColor",
-	"GetInventoryItemLink", "GetInventoryItemID", "GetInventoryItemTexture", "GetInventoryItemDurability", "GetInventorySlotInfo",
-	"GetContainerNumSlots", "GetContainerNumFreeSlots", "GetContainerItemInfo", "GetContainerItemLink",
-	"GetCombatRating", "GetCritChance", "GetRangedCritChance", "GetSpellCritChance", "GetDodgeChance", "GetParryChance",
-	"GetBlockChance", "GetHitModifier", "GetManaRegen", "GetPowerRegen", "GetHaste",
-	"GetNumGroupMembers", "GetNumSubgroupMembers", "GetRaidRosterInfo", "GetXPExhaustion", "GetRestState",
-	"GetComboPoints", "GetShapeshiftForm", "GetShapeshiftFormInfo", "GetNumShapeshiftForms", "GetTotemInfo",
-	"GetActionCooldown", "GetActionInfo", "GetActionTexture", "GetActionCount", "HasAction", "IsUsableAction", "IsActionInRange",
-	"GetNumQuestLogEntries", "GetQuestLogTitle", "GetNumSkillLines", "GetSkillLineInfo", "GetWatchedFactionInfo",
-	"GetNumFactions", "GetFactionInfo", "GetGuildInfo", "GetPetHappiness", "GetPetExperience",
-	"GetNumTalentTabs", "GetTalentTabInfo", "GetTalentInfo", "GetClassColor",
-	"InCombatLockdown", "IsInGroup", "IsInRaid", "IsInInstance", "IsInGuild", "IsResting", "IsMounted", "IsFlying", "IsSwimming",
-	"IsFalling", "IsStealthed", "IsIndoors", "IsOutdoors", "IsSpellKnown", "IsPlayerSpell", "IsUsableSpell", "IsCurrentSpell",
-	"IsSpellInRange", "IsItemInRange", "IsAutoRepeatSpell", "IsEquippedItem", "IsShiftKeyDown", "IsControlKeyDown",
-	"IsAltKeyDown", "IsModifierKeyDown", "IsMouseButtonDown", "HasFullControl", "CheckInteractDistance", "HasPetUI",
-	"GetUnitName", "GetRaidTargetIndex",
+	"GetTime",
+	"debugprofilestop",
+	"GetFramerate",
+	"GetNetStats",
+	"GetServerTime",
+	"GetGameTime",
+	"GetLocale",
+	"GetBuildInfo",
+	"GetMoney",
+	"GetCoinText",
+	"GetCoinTextureString",
+	"GetMoneyString",
+	"BreakUpLargeNumbers",
+	"AbbreviateLargeNumbers",
+	"SecondsToTime",
+	"GetZoneText",
+	"GetRealZoneText",
+	"GetSubZoneText",
+	"GetMinimapZoneText",
+	"GetZonePVPInfo",
+	"GetInstanceInfo",
+	"GetRealmName",
+	"GetPlayerFacing",
+	"GetUnitSpeed",
+	"GetCursorPosition",
+	"GetScreenWidth",
+	"GetScreenHeight",
+	"GetPhysicalScreenSize",
+	"GetSpellInfo",
+	"GetSpellCooldown",
+	"GetSpellTexture",
+	"GetSpellCount",
+	"GetSpellBonusDamage",
+	"GetSpellBonusHealing",
+	"GetItemInfo",
+	"GetItemInfoInstant",
+	"GetItemCount",
+	"GetItemIcon",
+	"GetItemCooldown",
+	"GetItemQualityColor",
+	"GetInventoryItemLink",
+	"GetInventoryItemID",
+	"GetInventoryItemTexture",
+	"GetInventoryItemDurability",
+	"GetInventorySlotInfo",
+	"GetContainerNumSlots",
+	"GetContainerNumFreeSlots",
+	"GetContainerItemInfo",
+	"GetContainerItemLink",
+	"GetCombatRating",
+	"GetCritChance",
+	"GetRangedCritChance",
+	"GetSpellCritChance",
+	"GetDodgeChance",
+	"GetParryChance",
+	"GetBlockChance",
+	"GetHitModifier",
+	"GetManaRegen",
+	"GetPowerRegen",
+	"GetHaste",
+	"GetNumGroupMembers",
+	"GetNumSubgroupMembers",
+	"GetRaidRosterInfo",
+	"GetXPExhaustion",
+	"GetRestState",
+	"GetComboPoints",
+	"GetShapeshiftForm",
+	"GetShapeshiftFormInfo",
+	"GetNumShapeshiftForms",
+	"GetTotemInfo",
+	"GetActionCooldown",
+	"GetActionInfo",
+	"GetActionTexture",
+	"GetActionCount",
+	"HasAction",
+	"IsUsableAction",
+	"IsActionInRange",
+	"GetNumQuestLogEntries",
+	"GetQuestLogTitle",
+	"GetNumSkillLines",
+	"GetSkillLineInfo",
+	"GetWatchedFactionInfo",
+	"GetNumFactions",
+	"GetFactionInfo",
+	"GetGuildInfo",
+	"GetPetHappiness",
+	"GetPetExperience",
+	"GetNumTalentTabs",
+	"GetTalentTabInfo",
+	"GetTalentInfo",
+	"GetClassColor",
+	"InCombatLockdown",
+	"IsInGroup",
+	"IsInRaid",
+	"IsInInstance",
+	"IsInGuild",
+	"IsResting",
+	"IsMounted",
+	"IsFlying",
+	"IsSwimming",
+	"IsFalling",
+	"IsStealthed",
+	"IsIndoors",
+	"IsOutdoors",
+	"IsSpellKnown",
+	"IsPlayerSpell",
+	"IsUsableSpell",
+	"IsCurrentSpell",
+	"IsSpellInRange",
+	"IsItemInRange",
+	"IsAutoRepeatSpell",
+	"IsEquippedItem",
+	"IsShiftKeyDown",
+	"IsControlKeyDown",
+	"IsAltKeyDown",
+	"IsModifierKeyDown",
+	"IsMouseButtonDown",
+	"HasFullControl",
+	"CheckInteractDistance",
+	"HasPetUI",
+	"GetUnitName",
+	"GetRaidTargetIndex",
 }
 
 local DATA_TABLES = { "RAID_CLASS_COLORS", "CLASS_ICON_TCOORDS", "ITEM_QUALITY_COLORS", "FACTION_BAR_COLORS", "PowerBarColor", "Enum", "SOUNDKIT" }
 
 local TEMPLATES = {
-	"BackdropTemplate", "TooltipBackdropTemplate", "TooltipBorderedFrameTemplate", "BasicFrameTemplate", "BasicFrameTemplateWithInset",
-	"InsetFrameTemplate", "UIPanelButtonTemplate", "UIPanelCloseButton", "UICheckButtonTemplate", "InputBoxTemplate",
-	"OptionsSliderTemplate", "UIPanelScrollFrameTemplate", "GameTooltipTemplate",
+	"BackdropTemplate",
+	"TooltipBackdropTemplate",
+	"TooltipBorderedFrameTemplate",
+	"BasicFrameTemplate",
+	"BasicFrameTemplateWithInset",
+	"InsetFrameTemplate",
+	"UIPanelButtonTemplate",
+	"UIPanelCloseButton",
+	"UICheckButtonTemplate",
+	"InputBoxTemplate",
+	"OptionsSliderTemplate",
+	"UIPanelScrollFrameTemplate",
+	"GameTooltipTemplate",
 }
 W.TEMPLATES = TEMPLATES
 
 local FRAME_KINDS = {
-	"Frame", "Button", "CheckButton", "Slider", "StatusBar", "ScrollFrame", "EditBox", "Cooldown", "ColorSelect",
-	"MessageFrame", "ScrollingMessageFrame", "SimpleHTML", "Model", "PlayerModel", "DressUpModel", "GameTooltip",
+	"Frame",
+	"Button",
+	"CheckButton",
+	"Slider",
+	"StatusBar",
+	"ScrollFrame",
+	"EditBox",
+	"Cooldown",
+	"ColorSelect",
+	"MessageFrame",
+	"ScrollingMessageFrame",
+	"SimpleHTML",
+	"Model",
+	"PlayerModel",
+	"DressUpModel",
+	"GameTooltip",
 }
 W.FRAME_KINDS = FRAME_KINDS
 
 local FONT_GETTERS = {
-	"GetFont", "GetTextColor", "GetShadowColor", "GetShadowOffset", "GetJustifyH", "GetJustifyV", "GetSpacing", "GetObjectType",
+	"GetFont",
+	"GetTextColor",
+	"GetShadowColor",
+	"GetShadowOffset",
+	"GetJustifyH",
+	"GetJustifyV",
+	"GetSpacing",
+	"GetObjectType",
 }
 
 local REGION_CONSTRUCTORS = { "CreateFontString", "CreateTexture", "CreateMaskTexture", "CreateLine", "CreateAnimationGroup" }
 
 local TOOLTIP_METHODS = {
-	"SetOwner", "ClearLines", "AddLine", "AddDoubleLine", "AddTexture", "SetText", "Show", "Hide", "IsShown", "NumLines",
-	"SetUnit", "SetUnitAura", "SetUnitBuff", "SetUnitDebuff", "SetSpellByID", "SetItemByID", "SetHyperlink",
-	"SetInventoryItem", "SetBagItem", "SetMinimumWidth", "SetPoint", "ClearAllPoints",
+	"SetOwner",
+	"ClearLines",
+	"AddLine",
+	"AddDoubleLine",
+	"AddTexture",
+	"SetText",
+	"Show",
+	"Hide",
+	"IsShown",
+	"NumLines",
+	"SetUnit",
+	"SetUnitAura",
+	"SetUnitBuff",
+	"SetUnitDebuff",
+	"SetSpellByID",
+	"SetItemByID",
+	"SetHyperlink",
+	"SetInventoryItem",
+	"SetBagItem",
+	"SetMinimumWidth",
+	"SetPoint",
+	"ClearAllPoints",
 }
 
 local TIMER_CONSTRUCTORS = { "NewTicker", "NewTimer" }
 
-local UNIT_WRITER_VERBS ={ "Set", "Switch", "Clear", "Popup", "Frame", "Select", "Toggle", "Use", "Cast", "Target" }
+local UNIT_WRITER_VERBS = { "Set", "Switch", "Clear", "Popup", "Frame", "Select", "Toggle", "Use", "Cast", "Target" }
 
 local READ_ONLY_MEMBER_PATTERNS = { "^Get%u", "^Is%u", "^Has%u", "^Can%u", "^Does%u", "^Find%u", "^Are%u", "^Should%u" }
 
 local function NameSet(names)
 	local set = {}
-	for _, name in ipairs(names) do set[name] = true end
+	for _, name in ipairs(names) do
+		set[name] = true
+	end
 	return set
 end
 
@@ -171,9 +463,7 @@ local FRAME_KIND = NameSet(FRAME_KINDS)
 local UNIT_WRITER_VERB = NameSet(UNIT_WRITER_VERBS)
 
 local function Blocked(name)
-	return function()
-		error(name .. " is not allowed in a widget: widgets are display-only", 2)
-	end
+	return function() error(name .. " is not allowed in a widget: widgets are display-only", 2) end
 end
 
 local function IsReadOnlyMember(field)
@@ -186,7 +476,9 @@ end
 
 local function ShallowCopy(source)
 	local copy = {}
-	for key, value in pairs(source) do copy[key] = value end
+	for key, value in pairs(source) do
+		copy[key] = value
+	end
 	return copy
 end
 
@@ -215,7 +507,9 @@ local function MapValues(map, ...)
 	local count = select("#", ...)
 	if count == 0 then return end
 	local values = { ... }
-	for i = 1, count do values[i] = map(values[i]) end
+	for i = 1, count do
+		values[i] = map(values[i])
+	end
 	return unpackValues(values, 1, count)
 end
 
@@ -288,9 +582,7 @@ local function NewMembrane(widget)
 		return nil
 	end
 
-	local function IsPlainTable(value)
-		return getmetatable(value) == nil and type(rawget(value, 0)) ~= "userdata"
-	end
+	local function IsPlainTable(value) return getmetatable(value) == nil and type(rawget(value, 0)) ~= "userdata" end
 
 	local ExportWithin
 	local function ExportPlainTable(source, copies)
@@ -314,23 +606,17 @@ local function NewMembrane(widget)
 		return ExportObject(value)
 	end
 
-	local function Export(value)
-		return ExportWithin(value, {})
-	end
+	local function Export(value) return ExportWithin(value, {}) end
 
 	local function Import(value)
 		if type(value) ~= "table" then return value end
 		return ownedRealOf[value] or fontRealOf[value] or value
 	end
 
-	local function CallExported(fn, ...)
-		return MapValues(Export, fn(...))
-	end
+	local function CallExported(fn, ...) return MapValues(Export, fn(...)) end
 
 	function membrane.ExportFunction(fn)
-		return function(...)
-			return CallExported(fn, MapValues(Import, ...))
-		end
+		return function(...) return CallExported(fn, MapValues(Import, ...)) end
 	end
 
 	local function FrameParent(parent)
@@ -351,7 +637,9 @@ local function NewMembrane(widget)
 		return Guarded(widget, function(...)
 			local list = widget.containerScripts[handler]
 			if not list then return end
-			for _, fn in ipairs(list) do fn(MapValues(Export, ...)) end
+			for _, fn in ipairs(list) do
+				fn(MapValues(Export, ...))
+			end
 		end)
 	end
 
@@ -399,12 +687,8 @@ local function NewMembrane(widget)
 		CheckEvent(event)
 		return Export(real:RegisterUnitEvent(event, MapValues(Import, ...)))
 	end
-	function special.RegisterAllEvents()
-		error("RegisterAllEvents is not allowed in a widget: register each event by name", 3)
-	end
-	function special.SetParent(_, real, parent)
-		return real:SetParent(FrameParent(parent))
-	end
+	function special.RegisterAllEvents() error("RegisterAllEvents is not allowed in a widget: register each event by name", 3) end
+	function special.SetParent(_, real, parent) return real:SetParent(FrameParent(parent)) end
 	function special.SetScrollChild(_, real, child)
 		local childReal = type(child) == "table" and ownedRealOf[child]
 		if not childReal or childReal == widget.frame then error("SetScrollChild needs a frame this widget made", 3) end
@@ -415,25 +699,21 @@ local function NewMembrane(widget)
 		return real:EnableKeyboard(false)
 	end
 	function special.SetPropagateKeyboardInput(_, real, propagate)
-		if real == widget.frame or not propagate then error("SetPropagateKeyboardInput is not allowed in a widget: a widget must never take the keyboard", 3) end
+		if real == widget.frame or not propagate then
+			error("SetPropagateKeyboardInput is not allowed in a widget: a widget must never take the keyboard", 3)
+		end
 		return real:SetPropagateKeyboardInput(true)
 	end
 	function special.SetAutoFocus(_, real, auto)
 		if auto then error("SetAutoFocus is not allowed in a widget: a widget must never take the keyboard", 3) end
 		return real:SetAutoFocus(false)
 	end
-	function special.SetFocus()
-		error("SetFocus is not allowed in a widget: a widget must never take the keyboard", 3)
-	end
+	function special.SetFocus() error("SetFocus is not allowed in a widget: a widget must never take the keyboard", 3) end
 	for _, name in ipairs(REGION_CONSTRUCTORS) do
-		special[name] = function(_, real, _, ...)
-			return CallExported(real[name], real, nil, MapValues(Import, ...))
-		end
+		special[name] = function(_, real, _, ...) return CallExported(real[name], real, nil, MapValues(Import, ...)) end
 	end
-	function special.CreateAnimation(_, real, animationType, _, ...)
-		return CallExported(real.CreateAnimation, real, animationType, nil, MapValues(Import, ...))
-	end
-	local CONTAINER_MOUSE_METHODS ={ "EnableMouse", "EnableMouseWheel", "SetMouseClickEnabled", "SetMouseMotionEnabled" }
+	function special.CreateAnimation(_, real, animationType, _, ...) return CallExported(real.CreateAnimation, real, animationType, nil, MapValues(Import, ...)) end
+	local CONTAINER_MOUSE_METHODS = { "EnableMouse", "EnableMouseWheel", "SetMouseClickEnabled", "SetMouseMotionEnabled" }
 	for _, name in ipairs(CONTAINER_MOUSE_METHODS) do
 		special[name] = function(_, real, enable, ...)
 			if real == widget.frame and enable then error(name .. " is not allowed on ui.frame: it covers the whole screen; use it on a child frame", 3) end
@@ -518,9 +798,7 @@ local function NewMembrane(widget)
 	return membrane
 end
 
-local function NamespaceAdmits(field)
-	return not DENIED[field] and IsReadOnlyMember(field)
-end
+local function NamespaceAdmits(field) return not DENIED[field] and IsReadOnlyMember(field) end
 
 local function NamespaceProxy(namespaceName, namespace, membrane)
 	local exported = {}
@@ -701,7 +979,9 @@ end
 
 local function FirstNames(list, room)
 	local kept = {}
-	for i = 1, math.min(#list, math.max(room, 0)) do kept[i] = list[i] end
+	for i = 1, math.min(#list, math.max(room, 0)) do
+		kept[i] = list[i]
+	end
 	return kept
 end
 
@@ -747,7 +1027,12 @@ function W.GlobalsCommand(arg)
 	local dump = W.DumpGlobals()
 	return string.format(
 		"Saved %d of %d global names (%d a widget can use, %d it cannot) for client %s (%s). /reload writes them to disk; then run npm run audit:widgets in the claude-wow checkout. /claude dev globals clear drops them.",
-		dump.saved, dump.total, dump.admittedCount, dump.refusedCount, dump.version, dump.build
+		dump.saved,
+		dump.total,
+		dump.admittedCount,
+		dump.refusedCount,
+		dump.version,
+		dump.build
 	)
 end
 
@@ -808,13 +1093,9 @@ local function Approve(item)
 	skipped[item.name] = nil
 end
 
-local function SameCode(item, data)
-	return type(data) == "table" and item.rev == data.rev and item.source == data.source
-end
+local function SameCode(item, data) return type(data) == "table" and item.rev == data.rev and item.source == data.source end
 
-local function Display(s)
-	return (tostring(s or ""):gsub("|", "¦"))
-end
+local function Display(s) return (tostring(s or ""):gsub("|", "¦")) end
 
 function W.Start(item, announce)
 	if not Approved(item) then return false end
@@ -841,14 +1122,18 @@ function W.Start(item, announce)
 		W.Fail(widget, err)
 		return false
 	end
-	if announce then Report(string.format("%s is live: %s. /claude config ui lists widgets, /claude config ui remove %s removes it.", item.name, widget.title, item.name)) end
+	if announce then
+		Report(string.format("%s is live: %s. /claude config ui lists widgets, /claude config ui remove %s removes it.", item.name, widget.title, item.name))
+	end
 	return true
 end
 
 function W.Apply(announce)
 	local d = DB()
 	local wanted = {}
-	for _, item in ipairs(Items()) do wanted[item.name] = item end
+	for _, item in ipairs(Items()) do
+		wanted[item.name] = item
+	end
 	for name, widget in pairs(running) do
 		local item = wanted[name]
 		if not item or item.rev ~= widget.rev or item.source ~= widget.source or d.removed[name] == item.rev then
@@ -865,9 +1150,7 @@ function W.Apply(announce)
 	for _, item in ipairs(Items()) do
 		local failure = failures[item.name]
 		local failedThisRevision = failure and failure.rev == item.rev
-		if not d.removed[item.name] and not running[item.name] and not failedThisRevision and Approved(item) then
-			W.Start(item, announce)
-		end
+		if not d.removed[item.name] and not running[item.name] and not failedThisRevision and Approved(item) then W.Start(item, announce) end
 	end
 	W.PromptNext()
 end
@@ -991,7 +1274,16 @@ local function List()
 	end
 	for _, item in ipairs(items) do
 		local status, err = W.Status(item.name)
-		Print(string.format("%s  %s  (%s%s, %d bytes)", item.name, item.title, status == "waiting" and "waiting for your OK" or status, err and (": " .. err) or "", #item.source))
+		Print(
+			string.format(
+				"%s  %s  (%s%s, %d bytes)",
+				item.name,
+				item.title,
+				status == "waiting" and "waiting for your OK" or status,
+				err and (": " .. err) or "",
+				#item.source
+			)
+		)
 	end
 	Print("commands: /claude config ui list, /claude config ui remove <name>, /claude config ui run <name> (run also says yes to a waiting widget)")
 end
@@ -1010,7 +1302,10 @@ end
 
 function W.Run(name)
 	local item = FindItem(name)
-	if not item then Print("no widget " .. tostring(name)); return end
+	if not item then
+		Print("no widget " .. tostring(name))
+		return
+	end
 	DB().removed[name] = nil
 	Approve(item)
 	if running[name] then W.Stop(running[name]) end
@@ -1041,9 +1336,13 @@ function W.Command(msg)
 	DB()
 	local cmd, rest = (msg or ""):match("^%s*(%S*)%s*(.-)%s*$")
 	cmd = (cmd or ""):lower()
-	if cmd == "remove" and rest ~= "" then W.Remove(rest)
-	elseif cmd == "run" and rest ~= "" then W.Run(rest)
-	else List() end
+	if cmd == "remove" and rest ~= "" then
+		W.Remove(rest)
+	elseif cmd == "run" and rest ~= "" then
+		W.Run(rest)
+	else
+		List()
+	end
 end
 
 local events = CreateFrame("Frame")

@@ -18,16 +18,16 @@ local FALLBACK_BOTTOM = 220
 local BANNER_BACKDROP = {
 	bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
 	edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-	tile = true, tileSize = 16, edgeSize = 24,
+	tile = true,
+	tileSize = 16,
+	edgeSize = 24,
 	insets = { left = 6, right = 6, top = 6, bottom = 6 },
 }
 
 local queue = {}
 local toast
 
-local function Print(msg)
-	print("|cff66ccff[Azeroth Companion]|r " .. msg)
-end
+local function Print(msg) print("|cff66ccff[Azeroth Companion]|r " .. msg) end
 
 local function Settings()
 	local db = ClaudeWoWDB
@@ -176,22 +176,16 @@ function T.Announce(entry)
 	ShowNext()
 end
 
-function T.Toast()
-	return toast
-end
+function T.Toast() return toast end
 
-function T.Pending()
-	return #queue
-end
+function T.Pending() return #queue end
 
 local function FreshEntries(recent, seen, now)
 	local fresh = {}
 	for _, r in ipairs(type(recent) == "table" and recent or {}) do
 		local seq = type(r) == "table" and tonumber(r.seq)
 		local at = type(r) == "table" and tonumber(r.at)
-		if seq and at and seq > seen and now - at <= FRESH_SECONDS then
-			table.insert(fresh, r)
-		end
+		if seq and at and seq > seen and now - at <= FRESH_SECONDS then table.insert(fresh, r) end
 	end
 	table.sort(fresh, function(a, b) return a.seq < b.seq end)
 	return fresh
@@ -209,26 +203,44 @@ function T.Sync(data, bridgeNow)
 	if seq < seen then seen = 0 end
 	store.seen = math.max(seen, seq)
 	local now = tonumber(bridgeNow) or time()
-	for _, entry in ipairs(FreshEntries(data.recent, seen, now)) do T.Announce(entry) end
+	for _, entry in ipairs(FreshEntries(data.recent, seen, now)) do
+		T.Announce(entry)
+	end
 end
 
 local function EarnedLine(e)
 	local times = (tonumber(e.count) or 1) > 1 and (" x" .. e.count) or ""
 	local when = e.at and date and date("%Y-%m-%d", e.at) or ""
-	return string.format("|cffffd100[%s]|r %d pts%s - %s%s", tostring(e.title), tonumber(e.points) or 0, times, tostring(e.text or ""), when ~= "" and (" (" .. when .. ")") or "")
+	return string.format(
+		"|cffffd100[%s]|r %d pts%s - %s%s",
+		tostring(e.title),
+		tonumber(e.points) or 0,
+		times,
+		tostring(e.text or ""),
+		when ~= "" and (" (" .. when .. ")") or ""
+	)
 end
 
 function T.List()
 	local store = Store()
 	if not store then return end
 	local earned = store.earned or {}
-	Print(string.format("Achievements: %d of %d earned, %d points. Toasts are %s (/claude config achievements on|off|test).",
-		#earned, math.max(store.total or 0, #earned), store.points or 0, T.ToastsOn() and "on" or "off"))
+	Print(
+		string.format(
+			"Achievements: %d of %d earned, %d points. Toasts are %s (/claude config achievements on|off|test).",
+			#earned,
+			math.max(store.total or 0, #earned),
+			store.points or 0,
+			T.ToastsOn() and "on" or "off"
+		)
+	)
 	if #earned == 0 then
 		Print("None yet. Finish a task, make the tests pass, commit, push...")
 		return
 	end
-	for _, e in ipairs(earned) do Print(EarnedLine(e)) end
+	for _, e in ipairs(earned) do
+		Print(EarnedLine(e))
+	end
 end
 
 local SAMPLE = { title = "Achievement Unlocked", text = "You looked at a sample toast.", points = 0, icon = "Interface\\Icons\\INV_Misc_Note_01" }

@@ -28,7 +28,8 @@ O.AUCTION_BUYOUT = 10
 O.AUCTION_ITEM_ID = 17
 O.AUCTION_HAS_ALL_INFO = 18
 O.LINK_SUFFIX_FIELD = 7
-O.ERA_AUCTION_API = { "QueryAuctionItems", "GetNumAuctionItems", "GetAuctionItemInfo", "GetAuctionItemLink", "CanSendAuctionQuery", "PlaceAuctionBid", "hooksecurefunc" }
+O.ERA_AUCTION_API =
+	{ "QueryAuctionItems", "GetNumAuctionItems", "GetAuctionItemInfo", "GetAuctionItemLink", "CanSendAuctionQuery", "PlaceAuctionBid", "hooksecurefunc" }
 O.ERA_HOOKS = { query = "QueryAuctionItems", bid = "PlaceAuctionBid", dequote = "DequoteString", search = "AuctionFrameBrowse_Search" }
 O.PROBES = {
 	"GetMerchantNumItems",
@@ -46,10 +47,33 @@ O.PROBES = {
 	"UnitGUID",
 	"UnitIsDead",
 }
-O.EVENTS = { "MERCHANT_SHOW", "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED", "COMMODITY_SEARCH_RESULTS_UPDATED", "AUCTION_ITEM_LIST_UPDATE", "AUCTION_HOUSE_CLOSED", "LOOT_READY", "LOOT_OPENED", "LOOT_CLOSED" }
+O.EVENTS = {
+	"MERCHANT_SHOW",
+	"AUCTION_HOUSE_BROWSE_RESULTS_UPDATED",
+	"COMMODITY_SEARCH_RESULTS_UPDATED",
+	"AUCTION_ITEM_LIST_UPDATE",
+	"AUCTION_HOUSE_CLOSED",
+	"LOOT_READY",
+	"LOOT_OPENED",
+	"LOOT_CLOSED",
+}
 O.debug = { ah = nil, ahUnsent = 0 }
 
-local state = { vendor = nil, ah = {}, loot = {}, looted = {}, lootedOrder = {}, windowAt = nil, spell = nil, gather = {}, queries = 0, lastQuery = nil, before = nil, playerQuery = nil, hooked = {} }
+local state = {
+	vendor = nil,
+	ah = {},
+	loot = {},
+	looted = {},
+	lootedOrder = {},
+	windowAt = nil,
+	spell = nil,
+	gather = {},
+	queries = 0,
+	lastQuery = nil,
+	before = nil,
+	playerQuery = nil,
+	hooked = {},
+}
 
 local function Try(fn, ...)
 	if type(fn) ~= "function" then return nil end
@@ -63,25 +87,15 @@ local function Returns(fn, ...)
 	if r[1] then return r end
 end
 
-local function Int(n)
-	return string.format("%d", math.floor(n))
-end
+local function Int(n) return string.format("%d", math.floor(n)) end
 
-local function WholeNumber(v)
-	return type(v) == "number" and v >= 0 and v == math.floor(v) and v or nil
-end
+local function WholeNumber(v) return type(v) == "number" and v >= 0 and v == math.floor(v) and v or nil end
 
-local function Secret(v)
-	return type(issecretvalue) == "function" and Try(issecretvalue, v) and true or false
-end
+local function Secret(v) return type(issecretvalue) == "function" and Try(issecretvalue, v) and true or false end
 
-local function PlainString(v)
-	return type(v) == "string" and not Secret(v) and v or nil
-end
+local function PlainString(v) return type(v) == "string" and not Secret(v) and v or nil end
 
-local function Active()
-	return ClaudeWoWTelemetry and type(ClaudeWoWTelemetry.Observing) == "function" and ClaudeWoWTelemetry.Observing() and true or false
-end
+local function Active() return ClaudeWoWTelemetry and type(ClaudeWoWTelemetry.Observing) == "function" and ClaudeWoWTelemetry.Observing() and true or false end
 
 local function Changed()
 	if ClaudeWoWTelemetry and type(ClaudeWoWTelemetry.Hint) == "function" then ClaudeWoWTelemetry.Hint() end
@@ -109,7 +123,11 @@ local function Place()
 	local pos = Try(C_Map.GetPlayerMapPosition, map, "player")
 	local x, y
 	if type(pos) == "table" then
-		if type(pos.GetXY) == "function" then x, y = Try(pos.GetXY, pos) else x, y = pos.x, pos.y end
+		if type(pos.GetXY) == "function" then
+			x, y = Try(pos.GetXY, pos)
+		else
+			x, y = pos.x, pos.y
+		end
 	end
 	if type(x) ~= "number" or type(y) ~= "number" or Secret(x) or Secret(y) or x < 0 or x > 1 or y < 0 or y > 1 then return Int(map), "", "" end
 	return Int(map), Int(x * O.POSITION_SCALE + 0.5), Int(y * O.POSITION_SCALE + 0.5)
@@ -117,12 +135,12 @@ end
 
 local function Push(list, entry, max)
 	list[#list + 1] = entry
-	while #list > max do table.remove(list, 1) end
+	while #list > max do
+		table.remove(list, 1)
+	end
 end
 
-local function ModernMerchant()
-	return C_MerchantFrame and type(C_MerchantFrame.GetItemInfo) == "function"
-end
+local function ModernMerchant() return C_MerchantFrame and type(C_MerchantFrame.GetItemInfo) == "function" end
 
 local function MerchantOffer(i)
 	if ModernMerchant() then
@@ -159,7 +177,9 @@ local function Quote(itemID, price, quantity, rows, stack)
 	quantity = WholeNumber(quantity) or 0
 	local now = time()
 	for _, q in ipairs(state.ah) do
-		if q.id == itemID and q.price == price and q.quantity == quantity and q.rows == rows and q.stack == stack and now - q.at < O.AH_REPEAT_SECONDS then return false end
+		if q.id == itemID and q.price == price and q.quantity == quantity and q.rows == rows and q.stack == stack and now - q.at < O.AH_REPEAT_SECONDS then
+			return false
+		end
 	end
 	Push(state.ah, { id = itemID, price = price, quantity = quantity, rows = rows, stack = stack, at = now }, O.AH_QUOTES_MAX)
 	return true
@@ -189,17 +209,11 @@ function O.OnAuctionQuery(text, exact)
 	state.lastQuery = { text = PlainString(text) or "", exact = exact and true or false }
 end
 
-function O.BeforeQuery()
-	state.before = { at = GetTime(), count = state.queries, canSend = Try(CanSendAuctionQuery, O.AH_LIST) and true or false }
-end
+function O.BeforeQuery() state.before = { at = GetTime(), count = state.queries, canSend = Try(CanSendAuctionQuery, O.AH_LIST) and true or false } end
 
-local function AsciiLower(s)
-	return (s:gsub("[A-Z]", string.lower))
-end
+local function AsciiLower(s) return (s:gsub("[A-Z]", string.lower)) end
 
-local function NonAscii(s)
-	return s:find("[\128-\255]") ~= nil
-end
+local function NonAscii(s) return s:find("[\128-\255]") ~= nil end
 
 function O.OnPlayerSearch()
 	local before, now = state.before, GetTime()
@@ -215,7 +229,8 @@ function O.OnPlayerSearch()
 	end
 	local query = state.lastQuery or { text = "", exact = false }
 	local caseSensitive = NonAscii(query.text)
-	state.playerQuery = { count = state.queries, text = caseSensitive and query.text or AsciiLower(query.text), exact = query.exact, caseSensitive = caseSensitive }
+	state.playerQuery =
+		{ count = state.queries, text = caseSensitive and query.text or AsciiLower(query.text), exact = query.exact, caseSensitive = caseSensitive }
 end
 
 function O.OnBid()
@@ -249,7 +264,9 @@ function O.AuctionLinkItem(link)
 	local body = link and link:match("|Hitem:([^|]+)|h")
 	if not body then return nil end
 	local fields = {}
-	for f in (body .. ":"):gmatch("([^:]*):") do fields[#fields + 1] = f end
+	for f in (body .. ":"):gmatch("([^:]*):") do
+		fields[#fields + 1] = f
+	end
 	local id = tonumber(fields[1])
 	if not (WholeNumber(id) and id > 0) then return nil end
 	local suffix = fields[O.LINK_SUFFIX_FIELD]
@@ -285,7 +302,9 @@ local function AuctionRows(batch, search)
 			end
 			it.rows = it.rows + 1
 			it.quantity = it.quantity + count
-			if buyout > 0 and (not it.buyout or buyout * it.count < it.buyout * count) then it.buyout, it.count = buyout, count end
+			if buyout > 0 and (not it.buyout or buyout * it.count < it.buyout * count) then
+				it.buyout, it.count = buyout, count
+			end
 		end
 	end
 	return items, order
@@ -303,7 +322,13 @@ function O.OnAuctionList()
 	if not (batch and total) then return SkipList("no result count", true) end
 	if total > batch or batch > O.AH_PAGE_MAX then return SkipList("result spans pages: " .. Int(total) .. " auctions, " .. Int(batch) .. " shown", true) end
 	local items, order = AuctionRows(batch, search)
-	if items == false then return SkipList(search.caseSensitive and "a row does not match the search text (case-sensitive: the search text is not ASCII)" or "a row does not match the search text", true) end
+	if items == false then
+		return SkipList(
+			search.caseSensitive and "a row does not match the search text (case-sensitive: the search text is not ASCII)"
+				or "a row does not match the search text",
+			true
+		)
+	end
 	if not items then return SkipList("a row has no item info yet") end
 	state.playerQuery = nil
 	local added = false
@@ -321,7 +346,9 @@ local function Looted(guid)
 	Push(state.lootedOrder, guid, O.LOOTED_GUIDS_MAX)
 	if #state.lootedOrder == O.LOOTED_GUIDS_MAX then
 		local keep = {}
-		for _, g in ipairs(state.lootedOrder) do keep[g] = true end
+		for _, g in ipairs(state.lootedOrder) do
+			keep[g] = true
+		end
 		state.looted = keep
 	end
 	return false
@@ -340,13 +367,29 @@ local function Entry(code, id, spell, place, items)
 		if #parts >= O.LOOT_ITEMS_MAX then break end
 		parts[#parts + 1] = Int(it.id) .. "=" .. Int(it.qty)
 	end
-	return code .. Int(id) .. "_" .. Int(spell) .. "@" .. Int(time()) .. "@" .. place[1] .. "@" .. place[2] .. "@" .. place[3] .. "@" .. table.concat(parts, "/")
+	return code
+		.. Int(id)
+		.. "_"
+		.. Int(spell)
+		.. "@"
+		.. Int(time())
+		.. "@"
+		.. place[1]
+		.. "@"
+		.. place[2]
+		.. "@"
+		.. place[3]
+		.. "@"
+		.. table.concat(parts, "/")
 end
 
 local function AddItem(source, itemID, qty)
 	if not itemID then return end
 	for _, it in ipairs(source.items) do
-		if it.id == itemID then it.qty = it.qty + qty return end
+		if it.id == itemID then
+			it.qty = it.qty + qty
+			return
+		end
 	end
 	source.items[#source.items + 1] = { id = itemID, qty = qty }
 end
@@ -359,9 +402,7 @@ local function LivingTarget()
 	return guid
 end
 
-function O.LootKeyed()
-	return next(state.gather) ~= nil
-end
+function O.LootKeyed() return next(state.gather) ~= nil end
 
 function O.OnLoot()
 	if not O.LootKeyed() then return end
@@ -434,7 +475,14 @@ function O.Sections()
 	local ah, bytes = {}, 0
 	for i = #state.ah, 1, -1 do
 		local q = state.ah[i]
-		local part = Int(q.id) .. "=" .. Int(q.price) .. "/" .. Int(q.quantity) .. "@" .. Int(q.at) .. (q.rows and q.stack and ("/" .. Int(q.rows) .. "/" .. Int(q.stack)) or "")
+		local part = Int(q.id)
+			.. "="
+			.. Int(q.price)
+			.. "/"
+			.. Int(q.quantity)
+			.. "@"
+			.. Int(q.at)
+			.. (q.rows and q.stack and ("/" .. Int(q.rows) .. "/" .. Int(q.stack)) or "")
 		if bytes + #part + 1 > O.AH_SECTION_BYTES then break end
 		bytes = bytes + #part + 1
 		table.insert(ah, 1, part)
@@ -474,7 +522,9 @@ frame:SetScript("OnEvent", function(_, event, ...)
 		return
 	end
 	if event == "PLAYER_LOGIN" then
-		for _, name in ipairs(O.EVENTS) do pcall(frame.RegisterEvent, frame, name) end
+		for _, name in ipairs(O.EVENTS) do
+			pcall(frame.RegisterEvent, frame, name)
+		end
 		if not (frame.RegisterUnitEvent and pcall(frame.RegisterUnitEvent, frame, "UNIT_SPELLCAST_SUCCEEDED", "player")) then
 			pcall(frame.RegisterEvent, frame, "UNIT_SPELLCAST_SUCCEEDED")
 		end

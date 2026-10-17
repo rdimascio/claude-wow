@@ -59,7 +59,7 @@ npm run check        # lint, unit suite, e2e suite
 
 `npm run lint` runs oxlint (`.oxlintrc.json`, warnings fail) and `oxfmt --check` (`.oxfmtrc.json`). `npm run format` rewrites the files. `npm run test:coverage` runs the unit suite with coverage floors for `bridge/`, `setup.js` and `build.js`: a change that drops coverage below a floor fails.
 
-`npm run lint:lua` runs [luacheck](https://github.com/lunarmodules/luacheck) over the addon with the repo's `.luacheckrc` (`brew install luacheck` on macOS, `apt install lua-check` on Debian and Ubuntu). Its `read_globals` list is the exact set of globals the addon reads, so a new game API must be added there before the lint passes.
+`npm run lint:lua` runs [luacheck](https://github.com/lunarmodules/luacheck) over the addon with the repo's `.luacheckrc` (`brew install luacheck` on macOS, `apt install lua-check` on Debian and Ubuntu). Its `read_globals` list is the exact set of globals the addon reads, so a new game API must be added there before the lint passes. The same script then runs [StyLua](https://github.com/JohnnyMorganz/StyLua) in check mode (`brew install stylua`); `stylua addon/ClaudeWoW` (also part of `npm run format`) rewrites the addon with the settings in `.stylua.toml`. The one-time reformat commit is listed in `.git-blame-ignore-revs`, so `git blame` skips it.
 
 ### CI gates (`.github/workflows/test.yml`)
 
