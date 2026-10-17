@@ -1,0 +1,17 @@
+epReferenceStat: Stat.StatAttackPower,
+epWeights: Stats.fromMap(
+			{
+				[Stat.StatStrength]: 2.38,
+				[Stat.StatAgility]: 2.35,
+				[Stat.StatAttackPower]: 1,
+				[Stat.StatFeralAttackPower]: 1,
+				[Stat.StatMeleeHit]: 24.46,
+				[Stat.StatMeleeCrit]: 16.67,
+				[Stat.StatMana]: 0.04,
+				[Stat.StatIntellect]: 0.67,
+				[Stat.StatSpirit]: 0.08,
+				[Stat.StatMP5]: 0.46,
+				[Stat.StatFireResistance]: 0.5,
+			},
+			{},
+		),

@@ -1,0 +1,15 @@
+epReferenceStat: Stat.StatSpellDamage,
+epWeights: Stats.fromMap({
+			[Stat.StatIntellect]: 0.49,
+			[Stat.StatSpellPower]: 1,
+			[Stat.StatSpellDamage]: 1,
+			[Stat.StatArcanePower]: 1,
+			[Stat.StatFirePower]: 1,
+			[Stat.StatFrostPower]: 1,
+			
+			[Stat.StatSpellHit]: 18.59,
+			[Stat.StatSpellCrit]: 13.91,
+			[Stat.StatSpellHaste]: 6.85,
+			[Stat.StatMP5]: 0.11,
+			[Stat.StatFireResistance]: 0.5,
+		}),
