@@ -22,6 +22,10 @@
 -- The magic names the codec, so a bridge and an addon of different versions
 -- never read one strip as the other: each side finds no magic and moves on.
 
+local _, ns = ...
+if not ns.Try then return end
+ns.files[#ns.files + 1] = "Codec.lua"
+
 ClaudeWoW_Codec = {}
 local C = ClaudeWoW_Codec
 

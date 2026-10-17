@@ -1,3 +1,7 @@
+local _, ns = ...
+if not ns.Try then return end
+ns.files[#ns.files + 1] = "Voice.lua"
+
 local V = {}
 ClaudeWoWVoice = V
 
@@ -304,13 +308,9 @@ local RACE_LINES = {
 
 local lastLine = { at = nil, priority = 0, handle = nil }
 
-local function Try(fn, ...)
-	if type(fn) ~= "function" then return nil end
-	local ok, a, b, c, d = pcall(fn, ...)
-	if ok then return a, b, c, d end
-end
+local Try = ns.Try
 
-local function Print(msg) print("|cff66ccff[Azeroth Companion]|r " .. msg) end
+local Print = ns.Print
 
 local function IsIn(list, value)
 	for _, v in ipairs(list) do

@@ -1,3 +1,7 @@
+local _, ns = ...
+if not ns.Try then return end
+ns.files[#ns.files + 1] = "LootRoll.lua"
+
 local R = {}
 ClaudeWoWRoll = R
 

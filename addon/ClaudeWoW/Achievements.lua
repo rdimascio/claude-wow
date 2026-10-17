@@ -1,3 +1,7 @@
+local _, ns = ...
+if not ns.Try then return end
+ns.files[#ns.files + 1] = "Achievements.lua"
+
 local T = {}
 ClaudeWoWAchievements = T
 
@@ -27,7 +31,7 @@ local BANNER_BACKDROP = {
 local queue = {}
 local toast
 
-local function Print(msg) print("|cff66ccff[Azeroth Companion]|r " .. msg) end
+local Print = ns.Print
 
 local function Settings()
 	local db = ClaudeWoWDB

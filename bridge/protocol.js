@@ -4,6 +4,7 @@
 // process state, so tests/bridge_test.js can exercise it directly.
 
 const crypto = require('crypto');
+const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const MC = require('./mcpconfig');
@@ -502,10 +503,36 @@ function tocWithBuild(text, build) {
   return /^##\s*Version:.*$/m.test(body) ? body.replace(/^(##\s*Version:.*?)(\r?)$/m, `$1$2\n${line}$2`) : `${line}\n${body}`;
 }
 
+const FILE_HASH_RE = /^[0-9a-f]{8}$/;
+
+function fnv1a(text) {
+  let hash = 0x811c9dc5;
+  for (const byte of Buffer.from(String(text), 'utf8')) hash = Math.imul(hash ^ byte, 16777619) >>> 0;
+  return hash.toString(16).padStart(8, '0');
+}
+
+function tocLuaFiles(tocText) {
+  return String(tocText || '')
+    .split(/\r?\n/)
+    .map(l => l.trim())
+    .filter(l => l.endsWith('.lua') && !l.startsWith('#'));
+}
+
 function addonDiskInfo(tocText) {
   const version = tocField(tocText, 'Version');
   const build = tocField(tocText, 'X-Build');
-  return { version: SEMVER_RE.test(version) ? version : '', build: BUILD_RE.test(build) ? build : '' };
+  const files = tocLuaFiles(tocText);
+  return { version: SEMVER_RE.test(version) ? version : '', build: BUILD_RE.test(build) ? build : '', files: files.length, fileHash: fnv1a(files.join('\n')) };
+}
+
+function addonFiles(dir, rel = '') {
+  const out = [];
+  for (const name of fs.readdirSync(path.join(dir, rel)).sort()) {
+    const sub = rel ? `${rel}/${name}` : name;
+    if (fs.statSync(path.join(dir, sub)).isDirectory()) out.push(...addonFiles(dir, sub));
+    else out.push(sub);
+  }
+  return out;
 }
 
 // Strip payload: records separated by \x1E, fields by \x1F:
@@ -1207,7 +1234,9 @@ function luaTable(globalName, records, opts = {}) {
     );
   }
   if (opts.addonDisk && typeof opts.addonDisk === 'object' && opts.addonDisk.version) {
-    lines.splice(lines.length - 1, 0, `\taddonDisk = { version = ${luaStr(opts.addonDisk.version)}, build = ${luaStr(opts.addonDisk.build || '')} },`);
+    const d = opts.addonDisk;
+    const files = FILE_HASH_RE.test(d.fileHash || '') ? `, files = ${Math.floor(Number(d.files)) || 0}, fileHash = ${luaStr(d.fileHash)}` : '';
+    lines.splice(lines.length - 1, 0, `\taddonDisk = { version = ${luaStr(d.version)}, build = ${luaStr(d.build || '')}${files} },`);
   }
   if (Array.isArray(opts.clients)) {
     const rows = opts.clients
@@ -1998,6 +2027,10 @@ module.exports = {
   tocField,
   tocWithBuild,
   addonDiskInfo,
+  addonFiles,
+  fnv1a,
+  tocLuaFiles,
+  FILE_HASH_RE,
   parseFlags,
   PERMISSION_MODES,
   permissionModeName,

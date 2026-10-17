@@ -5,6 +5,8 @@
 // assets.FILES, one import per file (tests/assets_test.js keeps the two in
 // step). Then the supervisor, which is the claude-wow command. Bun only:
 // from a checkout, node runs bridge/supervisor.js directly.
+import addonCoreNamespace from '../addon/ClaudeWoW/Core/Namespace.lua' with { type: 'file' };
+import addonCoreLog from '../addon/ClaudeWoW/Core/Log.lua' with { type: 'file' };
 import addonLua from '../addon/ClaudeWoW/ClaudeWoW.lua' with { type: 'file' };
 import addonToc from '../addon/ClaudeWoW/ClaudeWoW.toc' with { type: 'file' };
 import addonCodec from '../addon/ClaudeWoW/Codec.lua' with { type: 'file' };
@@ -36,6 +38,8 @@ import pluginWowCode from '../assets/plugins/claude-wow/agents/wow-code.md' with
 import pluginWowPlanner from '../assets/plugins/claude-wow/agents/wow-planner.md' with { type: 'file' };
 
 require('../bridge/assets').embed({
+  'addon/ClaudeWoW/Core/Namespace.lua': addonCoreNamespace,
+  'addon/ClaudeWoW/Core/Log.lua': addonCoreLog,
   'addon/ClaudeWoW/ClaudeWoW.lua': addonLua,
   'addon/ClaudeWoW/ClaudeWoW.toc': addonToc,
   'addon/ClaudeWoW/Codec.lua': addonCodec,

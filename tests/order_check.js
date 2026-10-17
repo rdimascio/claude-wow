@@ -6,10 +6,10 @@
 const fs = require('fs');
 const path = require('path');
 const luaparse = require('luaparse');
-const { tocFiles } = require('./lua/vm.js');
 
 const ADDON = process.argv[2] || path.join(__dirname, '..', 'addon', 'ClaudeWoW');
 const MAIN_CHUNK_LOCALS_MAX = 190;
+const REGISTRATION_RE = /^ns\.files\[#ns\.files \+ 1\] = "((?:[^"\\]|\\.)*)"$/m;
 let bad = 0;
 
 function mainChunkLocals(ast) {
@@ -21,8 +21,20 @@ function mainChunkLocals(ast) {
   return n;
 }
 
-for (const f of tocFiles(ADDON).filter(entry => entry.endsWith('.lua'))) {
-  const src = fs.readFileSync(path.join(ADDON, f), 'utf8');
+const registered = [];
+const files = fs
+  .readFileSync(path.join(ADDON, 'ClaudeWoW.toc'), 'utf8')
+  .split(/\r?\n/)
+  .map(l => l.trim())
+  .filter(l => l.endsWith('.lua') && !l.startsWith('#'));
+for (const f of files) {
+  const onDisk = path.join(ADDON, f.replace(/\\/g, '/'));
+  if (!fs.existsSync(onDisk)) {
+    bad++;
+    console.log('MISSING FILE: ' + f);
+    continue;
+  }
+  const src = fs.readFileSync(onDisk, 'utf8');
   const ast = luaparse.parse(src, { luaVersion: '5.1' });
   const locals = mainChunkLocals(ast);
   if (locals > MAIN_CHUNK_LOCALS_MAX) {
@@ -32,8 +44,14 @@ for (const f of tocFiles(ADDON).filter(entry => entry.endsWith('.lua'))) {
     );
   }
   console.log('OK   ' + f + ' parses (' + locals + ' main-chunk locals)');
+  const registration = REGISTRATION_RE.exec(src);
+  if (registration) registered.push(registration[1].replace(/\\\\/g, '\\'));
+  else {
+    bad++;
+    console.log('NOT REGISTERED:', f, 'has no ns.files line');
+  }
   // Blank out comments so a name mentioned in prose doesn't count as a use.
-  const code = src.replace(/--\[\[[\s\S]*?\]\]|--[^\n]*/g, m => m.replace(/[^\n]/g, ' '));
+  const code = src.replace(/--\[\[[\s\S]*?\]\]|--[^\n]*/g, m => m.replace(/[^\n]/g, ' ')).replace(REGISTRATION_RE, m => m.replace(/[^\n]/g, ' '));
   const forward = new Set([...code.matchAll(/^local (\w+)\s*$/gm)].map(m => m[1]));
   const defs = [
     ...[...code.matchAll(/^local function (\w+)/gm)].map(m => ({ name: m[1], at: m.index, kind: 'function' })),
@@ -52,5 +70,9 @@ for (const f of tocFiles(ADDON).filter(entry => entry.endsWith('.lua'))) {
     }
   }
 }
+if (registered.join('\n') !== files.join('\n')) {
+  bad++;
+  console.log('REGISTRATION ORDER: the ns.files lines read', JSON.stringify(registered), 'but the toc lists', JSON.stringify(files));
+} else console.log('OK   ns.files registrations match the toc order (' + files.length + ' files)');
 console.log(bad ? '>>> ORDER FAIL' : '>>> ORDER PASS');
 process.exit(bad ? 1 : 0);

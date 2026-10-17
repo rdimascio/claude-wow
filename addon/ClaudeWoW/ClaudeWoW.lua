@@ -19,12 +19,17 @@
 -- folder, agent, history and pending message. The bridge runs them in parallel.
 -- Everything here is plain addon API. No automation, no memory reading.
 
-local ADDON_NAME = ...
+local ADDON_NAME, ns = ...
+if not ns.Try then
+	print("|cff66ccff[Azeroth Companion]|r New addon files are not loaded yet. Type /reload; if that does not help, fully quit and restart the game.")
+	return
+end
+ns.files[#ns.files + 1] = "ClaudeWoW.lua"
 local ClaudeWoW = {}
 _G.ClaudeWoW = ClaudeWoW
 _G.BINDING_NAME_CLAUDEWOW_WORKSPACE = "Azeroth Companion: open or close the workspace"
-ClaudeWoW.PRODUCT = "Azeroth Companion"
-ClaudeWoW.PREFIX = "|cff66ccff[" .. ClaudeWoW.PRODUCT .. "]|r "
+ClaudeWoW.PRODUCT = ns.PRODUCT
+ClaudeWoW.PREFIX = ns.PREFIX
 local Codec = ClaudeWoW_Codec
 
 local DEFAULT_CWD = "" -- empty = the bridge's configured defaultCwd
@@ -49,7 +54,7 @@ local CONNECT_WAIT = 15 -- seconds the Connect button waits for the bridge befor
 local IDLE_POLL_SECONDS = 600 -- without the sound channel, spend one slot this often while idle to check the bridge
 local LIVE_PLUGIN = "live"
 local LIVE_PASS_TEXT = "Denied."
-local LINK_PREFIX = "addon:claudewow:"
+local LINK_PREFIX = ns.LINK_PREFIX
 local RS, US = "\30", "\31" -- record / unit separators in the strip payload
 
 local db
@@ -87,68 +92,30 @@ local ROLE_STYLE = {
 -- Helpers
 ---------------------------------------------------------------------------
 
-local function ToHex(s)
-	return (s:gsub(".", function(c) return string.format("%02x", c:byte()) end))
-end
+local ToHex = ns.ToHex
 
--- Record fields use control characters as separators, so keep them out of the wire format.
-local function Wire(s)
-	local value = tostring(s or "")
-	return (value:gsub("[\30\31]", " "))
-end
+local Wire = ns.Wire
 
--- EditBoxes do not render UI escape sequences, so just make pipes harmless.
-local function Display(s) return (tostring(s or ""):gsub("|", "¦")) end
+local Display = ns.Display
 
-local function Trim(s) return (s:gsub("^%s+", ""):gsub("%s+$", "")) end
+local Trim = ns.Trim
 
-local function Link(action, arg, label, hex)
-	return "|H" .. LINK_PREFIX .. action .. (arg and (":" .. arg) or "") .. "|h|cff" .. (hex or "7ec8ff") .. "[" .. Display(label) .. "]|r|h"
-end
+local Link = ns.Link
 ClaudeWoW.Link = Link
 
-local function Flat(s) return (Display(s):gsub("%s*\n%s*", " ")) end
+local Flat = ns.Flat
 
-local function FmtDur(sec)
-	sec = math.floor(sec or 0)
-	if sec < 60 then return sec .. "s" end
-	if sec < 3600 then return math.floor(sec / 60) .. "m" .. string.format("%02d", sec % 60) .. "s" end
-	return math.floor(sec / 3600) .. "h" .. string.format("%02d", math.floor(sec / 60) % 60) .. "m"
-end
+local FmtDur = ns.FmtDur
 
--- Tokens as Claude Code's status line shows them: 850, 9.5k, 186.7k, 1.2M.
-local function FmtTokens(n)
-	n = tonumber(n) or 0
-	if n < 1000 then return tostring(math.floor(n + 0.5)) end
-	if n < 1000000 then return string.format("%.1fk", n / 1000) end
-	return string.format("%.1fM", n / 1000000)
-end
+local FmtTokens = ns.FmtTokens
 
--- Elapsed time the way the same status line shows it: 45s, 11m 58s, 1h 02m.
-local function FmtElapsed(sec)
-	sec = math.max(0, math.floor(sec or 0))
-	if sec < 60 then return sec .. "s" end
-	if sec < 3600 then return math.floor(sec / 60) .. "m " .. string.format("%02d", sec % 60) .. "s" end
-	return math.floor(sec / 3600) .. "h " .. string.format("%02d", math.floor(sec / 60) % 60) .. "m"
-end
+local FmtElapsed = ns.FmtElapsed
 
 -- The footer segment's glyphs (Claude Code's own: "11m 58s · ↓ 186.7k tokens").
 -- One place to change if the client's font lacks one of them.
 local SEG = { DOT = "·", DOWN = "↓", APPROX = "≈" }
 
--- "100000", "100k", "0.5m" -> a token count; anything else nil.
-local function ParseTokens(text)
-	local num, unit = tostring(text or ""):lower():match("^(%d+%.?%d*)([km]?)$")
-	if not num then return nil end
-	local n = tonumber(num)
-	if not n then return nil end
-	if unit == "k" then
-		n = n * 1000
-	elseif unit == "m" then
-		n = n * 1000000
-	end
-	return math.floor(n + 0.5)
-end
+local ParseTokens = ns.ParseTokens
 
 function Cli.NormalizeFolder(cwd)
 	local p = tostring(cwd or "")
@@ -201,12 +168,7 @@ local function ReplyAgentName(c, agent)
 	return ChatAgentName(c)
 end
 
-local function Contains(list, v)
-	for _, x in ipairs(list or {}) do
-		if x == v then return true end
-	end
-	return false
-end
+local Contains = ns.Contains
 
 function Cli.ChatPlugin(c)
 	if not c then return "" end
@@ -2282,28 +2244,40 @@ function ClaudeWoW.Version.ApplyDisk(d, stamp)
 	if at < V.LOADED.at then return end
 	if type(d.version) ~= "string" or #d.version > 40 or not d.version:match(V.PATTERN) then return end
 	local build = type(d.build) == "string" and #d.build == 12 and d.build:match("^[0-9a-f]+$") and d.build or ""
-	run.addonDisk = { version = d.version, build = build }
+	local fileHash = type(d.fileHash) == "string" and #d.fileHash == 8 and d.fileHash:match("^[0-9a-f]+$") and d.fileHash or ""
+	run.addonDisk = { version = d.version, build = build, fileHash = fileHash }
 	local L = V.LOADED
-	if L.version == "" or (d.version == L.version and build == L.build) then
+	local sameFiles = fileHash == "" or fileHash == ns.FileHash()
+	if L.version == "" or (d.version == L.version and build == L.build and sameFiles) then
 		if run.updateReady then
 			run.updateReady, run.reloadTold = nil, nil
 			Q.UpdateNoticeBar()
 		end
 		return
 	end
-	local text = "New addon files are installed (" .. d.version .. (build ~= "" and (", build " .. build) or "") .. "). Type /reload to load them."
+	local restart = not sameFiles and not Q.IsClassicEra()
+	local text = "New addon files are installed ("
+		.. d.version
+		.. (build ~= "" and (", build " .. build) or "")
+		.. "). "
+		.. (restart and V.RESTART_TEXT or V.RELOAD_TEXT)
 	if run.reloadTold ~= text then
 		run.reloadTold = text
-		run.updateReady = { version = d.version, build = build, sameVersion = d.version == L.version }
+		run.updateReady = { version = d.version, build = build, sameVersion = d.version == L.version, restart = restart }
 		Q.Notify(text)
 		Q.UpdateNoticeBar()
 	end
 end
 
+ClaudeWoW.Version.RELOAD_TEXT = "Type /reload to load them."
+ClaudeWoW.Version.RESTART_TEXT = "Fully quit and restart the game to load the new addon files; /reload is not enough."
+
 function ClaudeWoW.Version.Notice()
 	local u = run.updateReady
 	if not u then return nil end
-	return "Addon update ready " .. SEG.DOT .. " " .. u.version .. ((u.sameVersion and u.build ~= "") and (" build " .. u.build) or "")
+	local head = "Addon update ready " .. SEG.DOT .. " " .. u.version .. ((u.sameVersion and u.build ~= "") and (" build " .. u.build) or "")
+	if u.restart then return head .. " " .. SEG.DOT .. " " .. ClaudeWoW.Version.RESTART_TEXT end
+	return head
 end
 
 ClaudeWoW.Version.CLIENTS_MAX = 8
@@ -2859,21 +2833,9 @@ end
 
 local CTX = { MAX = 900, LINK_LINES_MAX = 30, LINK_BYTES_MAX = 900 }
 
--- Call a game API that may not exist or may throw, and get its returns or nothing.
-local function Try(fn, ...)
-	if type(fn) ~= "function" then return nil end
-	return (function(ok, ...)
-		if ok then return ... end
-	end)(pcall(fn, ...))
-end
+local Try = ns.Try
 
-local function Money(copper)
-	copper = tonumber(copper) or 0
-	local g, s, c = math.floor(copper / 10000), math.floor(copper / 100) % 100, copper % 100
-	if g > 0 then return g .. "g " .. s .. "s " .. c .. "c" end
-	if s > 0 then return s .. "s " .. c .. "c" end
-	return c .. "c"
-end
+local Money = ns.Money
 
 -- A few lines about the game and the character, as the bridge will show them to the agent.
 -- Profession and secondary skill lines by skill id (vanilla ids).
@@ -6482,7 +6444,7 @@ function Q.BuildNoticeBar(native)
 		GameTooltip:AddLine("New addon files are installed")
 		local u = run.updateReady
 		if u then GameTooltip:AddLine(u.version .. (u.build ~= "" and (" build " .. u.build) or ""), 1, 1, 1) end
-		GameTooltip:AddLine("Reload the UI to load them.", 1, 1, 1, true)
+		GameTooltip:AddLine(u and u.restart and ClaudeWoW.Version.RESTART_TEXT or "Reload the UI to load them.", 1, 1, 1, true)
 		GameTooltip:Show()
 	end)
 	bar:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -6496,6 +6458,7 @@ function Q.UpdateNoticeBar()
 	if not bar or not scroll or not base then return end
 	local text = ClaudeWoW.Version.Notice()
 	bar.text:SetText(text or "")
+	bar.button:SetShown(not (run.updateReady and run.updateReady.restart))
 	bar:SetShown(text ~= nil)
 	scroll:SetPoint("BOTTOMRIGHT", base[1], "BOTTOMRIGHT", base[2], base[3] + (text and Q.NOTICE_H or 0))
 end

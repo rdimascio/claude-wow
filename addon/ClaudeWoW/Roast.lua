@@ -1,3 +1,7 @@
+local _, ns = ...
+if not ns.Try then return end
+ns.files[#ns.files + 1] = "Roast.lua"
+
 local R = {}
 ClaudeWoWRoast = R
 
@@ -37,7 +41,7 @@ local function Settings()
 	return s
 end
 
-local function Say(msg) print("|cff66ccff[Azeroth Companion]|r " .. msg) end
+local Say = ns.Print
 
 local function SafeCall(fn, ...)
 	if type(fn) ~= "function" then return nil end
