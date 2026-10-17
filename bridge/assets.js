@@ -34,6 +34,7 @@ const FILES = [
   'addon/ClaudeWoW/Transport/Signals.lua',
   'addon/ClaudeWoW/Transport/Slots.lua',
   'addon/ClaudeWoW/Transport/Tick.lua',
+  'addon/ClaudeWoW/Chat/Context.lua',
   'addon/ClaudeWoW/ClaudeWoW.lua',
   'addon/ClaudeWoW/ClaudeWoW.toc',
   'addon/ClaudeWoW/Codec.lua',

@@ -14,6 +14,7 @@ import addonTransportChatLog from '../addon/ClaudeWoW/Transport/ChatLog.lua' wit
 import addonTransportSignals from '../addon/ClaudeWoW/Transport/Signals.lua' with { type: 'file' };
 import addonTransportSlots from '../addon/ClaudeWoW/Transport/Slots.lua' with { type: 'file' };
 import addonTransportTick from '../addon/ClaudeWoW/Transport/Tick.lua' with { type: 'file' };
+import addonChatContext from '../addon/ClaudeWoW/Chat/Context.lua' with { type: 'file' };
 import addonLua from '../addon/ClaudeWoW/ClaudeWoW.lua' with { type: 'file' };
 import addonToc from '../addon/ClaudeWoW/ClaudeWoW.toc' with { type: 'file' };
 import addonCodec from '../addon/ClaudeWoW/Codec.lua' with { type: 'file' };
@@ -54,6 +55,7 @@ require('../bridge/assets').embed({
   'addon/ClaudeWoW/Transport/Signals.lua': addonTransportSignals,
   'addon/ClaudeWoW/Transport/Slots.lua': addonTransportSlots,
   'addon/ClaudeWoW/Transport/Tick.lua': addonTransportTick,
+  'addon/ClaudeWoW/Chat/Context.lua': addonChatContext,
   'addon/ClaudeWoW/ClaudeWoW.lua': addonLua,
   'addon/ClaudeWoW/ClaudeWoW.toc': addonToc,
   'addon/ClaudeWoW/Codec.lua': addonCodec,

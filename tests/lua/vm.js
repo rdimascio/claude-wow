@@ -23,7 +23,7 @@ function tocFilesUpTo(last, files = tocFiles()) {
   return files.slice(0, at + 1);
 }
 
-const isShared = f => f.startsWith('Core/') || f.startsWith('Transport/');
+const isShared = f => f.startsWith('Core/') || f.startsWith('Transport/') || f.startsWith('Chat/') || f.startsWith('Whisper/');
 
 const coreFiles = () => tocFiles().filter(f => f.startsWith('Core/'));
 
