@@ -12,6 +12,11 @@ local DEFAULT_CWD = "" -- empty = the bridge's configured defaultCwd
 local MAX_HISTORY = 200
 ns.DEFAULT_CWD = DEFAULT_CWD
 
+-- The footer segment's glyphs (Claude Code's own: "11m 58s · ↓ 186.7k tokens").
+-- One place to change if the client's font lacks one of them.
+local SEG = { DOT = "·", DOWN = "↓", APPROX = "≈" }
+ns.SEG = SEG
+
 local db
 local ui = {}
 ns.ui = ui

@@ -9,7 +9,13 @@ addon/ClaudeWoW/     the in-game addon (Lua 5.1, WoW API); every file reads `loc
   Core/Namespace.lua    first in the toc: the private namespace `ns`, one copy of each shared helper (Try, Trim, Display, Link, Fmt*, Money, ...), the product name and chat prefix, `ns.files` and its FNV-1a fingerprint
   Core/Log.lua          ns.Print (game chat with the prefix) and ns.Say (through ClaudeWoW.Print when the core is loaded)
   Core/State.lua        the `ClaudeWoW`, `Q`, `Cli` and `Whisper` tables, the saved-variables handle (`ns.db`, set by InitDB and its migrations), the per-session `run` table, `ns.ui`, and the chat primitives (NewId, FindChat, ActiveChat, AddChat, AddHistory, AnyPending, the per-character chat stash)
-  ClaudeWoW.lua        the core: strip, slots, chats, UI, slash commands
+  Transport/Strip.lua   the pixel strip: the frame, the codec and levels, one record per message
+  Transport/Screenshot.lua  the screenshot transport, its CVars, TellPlayer and Q.Notify, and RefreshStrip / ApplyTransport, which drive every outbound transport
+  Transport/ChatLog.lua the chat log transport (ClaudeWoW.ChatLog)
+  Transport/Signals.lua the sound-file signals, Presence, the bridge state and the Connect button
+  Transport/Slots.lua   slot loads, acks, late replies, the Inbox.lua path and ClaudeWoW.Version
+  Transport/Tick.lua    the 2 s tick and the reload fallback
+  ClaudeWoW.lua        the core: chats, sending, whisper tabs, UI, slash commands
   Codec.lua             pixel-strip encoder, pure Lua, no WoW calls
   Inbox.lua             placeholder the bridge overwrites at runtime
   Widgets.lua           live UI widgets from the agent, allowlist sandbox, /claude config ui list|remove|run, /claude dev globals

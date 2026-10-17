@@ -8,6 +8,12 @@
 import addonCoreNamespace from '../addon/ClaudeWoW/Core/Namespace.lua' with { type: 'file' };
 import addonCoreLog from '../addon/ClaudeWoW/Core/Log.lua' with { type: 'file' };
 import addonCoreState from '../addon/ClaudeWoW/Core/State.lua' with { type: 'file' };
+import addonTransportStrip from '../addon/ClaudeWoW/Transport/Strip.lua' with { type: 'file' };
+import addonTransportScreenshot from '../addon/ClaudeWoW/Transport/Screenshot.lua' with { type: 'file' };
+import addonTransportChatLog from '../addon/ClaudeWoW/Transport/ChatLog.lua' with { type: 'file' };
+import addonTransportSignals from '../addon/ClaudeWoW/Transport/Signals.lua' with { type: 'file' };
+import addonTransportSlots from '../addon/ClaudeWoW/Transport/Slots.lua' with { type: 'file' };
+import addonTransportTick from '../addon/ClaudeWoW/Transport/Tick.lua' with { type: 'file' };
 import addonLua from '../addon/ClaudeWoW/ClaudeWoW.lua' with { type: 'file' };
 import addonToc from '../addon/ClaudeWoW/ClaudeWoW.toc' with { type: 'file' };
 import addonCodec from '../addon/ClaudeWoW/Codec.lua' with { type: 'file' };
@@ -42,6 +48,12 @@ require('../bridge/assets').embed({
   'addon/ClaudeWoW/Core/Namespace.lua': addonCoreNamespace,
   'addon/ClaudeWoW/Core/Log.lua': addonCoreLog,
   'addon/ClaudeWoW/Core/State.lua': addonCoreState,
+  'addon/ClaudeWoW/Transport/Strip.lua': addonTransportStrip,
+  'addon/ClaudeWoW/Transport/Screenshot.lua': addonTransportScreenshot,
+  'addon/ClaudeWoW/Transport/ChatLog.lua': addonTransportChatLog,
+  'addon/ClaudeWoW/Transport/Signals.lua': addonTransportSignals,
+  'addon/ClaudeWoW/Transport/Slots.lua': addonTransportSlots,
+  'addon/ClaudeWoW/Transport/Tick.lua': addonTransportTick,
   'addon/ClaudeWoW/ClaudeWoW.lua': addonLua,
   'addon/ClaudeWoW/ClaudeWoW.toc': addonToc,
   'addon/ClaudeWoW/Codec.lua': addonCodec,

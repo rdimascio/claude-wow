@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 const luaparse = require('luaparse');
-const { createVM, ADDON_DIR: ADDON } = require('./lua/vm');
+const { createVM, ADDON_DIR: ADDON, tocFiles } = require('./lua/vm');
 
 const SETTINGS_API = `
 STUB.settings = { order = {}, categories = {}, proxies = {}, controls = {}, opened = {} }
@@ -458,15 +458,19 @@ function addonLiterals(file) {
     if (DEV_FUNCTIONS.has(fn)) return;
     if ((node.type === 'IfClause' || node.type === 'ElseifClause') && devBranch(node)) return;
     if ((node.type === 'CallExpression' || node.type === 'StringCallExpression') && SINKS.has(calleeName(node.base))) sink = calleeName(node.base);
-    if (node.type === 'StringLiteral') out[out.length] = { text: node.raw.slice(1, -1), line: node.loc.start.line, fn, sink };
+    if (node.type === 'StringLiteral') out[out.length] = { file, text: node.raw.slice(1, -1), line: node.loc.start.line, fn, sink };
     for (const k of Object.keys(node)) if (k !== 'loc') walk(node[k], fn, sink);
   };
   walk(ast, '<file>', null);
   return out;
 }
 
-test('module text: every literal in ClaudeWoW.lua says companion app and project, except the diag, log and developer functions and listed protocol words', () => {
-  const found = addonLiterals('ClaudeWoW.lua');
+const CORE_FILES = () => tocFiles().filter(f => f.startsWith('Core/') || f.startsWith('Transport/') || f === 'ClaudeWoW.lua');
+
+const coreLiterals = () => CORE_FILES().flatMap(addonLiterals);
+
+test('module text: every literal in ClaudeWoW.lua and the Core and Transport files says companion app and project, except the diag, log and developer functions and listed protocol words', () => {
+  const found = coreLiterals();
   assert.ok(found.length > 2000, `the scan sees every literal (${found.length})`);
   assert.ok(
     found.some(s => s.text.includes('companion app could not finish')),
@@ -486,8 +490,8 @@ test('module text: every literal in ClaudeWoW.lua says companion app and project
   );
   for (const s of found) {
     if (allowedLiteral(s.text)) continue;
-    assert.doesNotMatch(s.text, /bridge/i, `ClaudeWoW.lua:${s.line} in ${s.fn}: ${s.text}`);
-    assert.doesNotMatch(s.text, /folder/i, `ClaudeWoW.lua:${s.line} in ${s.fn}: ${s.text}`);
+    assert.doesNotMatch(s.text, /bridge/i, `${s.file}:${s.line} in ${s.fn}: ${s.text}`);
+    assert.doesNotMatch(s.text, /folder/i, `${s.file}:${s.line} in ${s.fn}: ${s.text}`);
   }
 });
 
@@ -495,7 +499,7 @@ test('module text: the allowlists still hold bridge words, so it is the allowlis
   const src = fs.readFileSync(path.join(ADDON, 'ClaudeWoW.lua'), 'utf8');
   assert.ok(/The bridge has not said it has dev tools/.test(src));
   assert.ok(/bridge default, /.test(src));
-  const found = addonLiterals('ClaudeWoW.lua');
+  const found = coreLiterals();
   assert.ok(!found.some(s => /dev tools/.test(s.text)), 'Cli.DevCommand is skipped');
   assert.ok(!found.some(s => s.text === 'bridge default, '), 'the diag branch is skipped');
   for (const a of ALLOWED_LITERALS)
