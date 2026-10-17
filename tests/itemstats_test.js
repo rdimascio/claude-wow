@@ -227,7 +227,7 @@ test('every aura the decoder reads has a test with the shape the real tables use
 test('an equip spell with no effects is listed, and on Classic Era an item the wowsims data disagrees with is listed', () => {
   const noEffects = fakeStore({ itemstats: [], itemeffects: [{ id: 1, item: 1, trigger: 1, spell: 9 }], spelleffects: [] });
   assert.deepEqual(IS.decode(noEffects, 1).unread, [{ kind: 'equip', spell: 9, effect: null }]);
-  const thunderfury = {
+  const thunderfury = (extra = {}) => ({
     itemstats: [
       {
         id: 19019,
@@ -241,42 +241,41 @@ test('an equip spell with no effects is listed, and on Classic Era an item the w
         ],
         delay: 1900,
         resistances: [0, 0, 8, 9, 0, 0, 0],
+        qualityModifier: -20,
+        ...extra,
       },
     ],
     itemeffects: [],
     spelleffects: [],
-  };
-  const era = IS.decode(fakeStore(thunderfury, 'classic_era'), 19019).unread.find(u => u.kind === 'sourcesDisagree');
-  assert.deepEqual(era.fields, [{ name: 'weaponDamage', client: [82, 153], wowsims: [60, 145] }]);
+  });
+  const real = IS.decode(fakeStore(thunderfury(), 'classic_era'), 19019);
+  assert.deepEqual(real.weapon, { min: 44, max: 115, speed: 1.9, dps: 41.8 }, 'the quality modifier is damage per second times speed on a weapon');
+  assert.equal(real.stats.bonusArmor, undefined, 'and never armor on a weapon');
+  assert.equal(real.crossChecked, true);
   assert.equal(
-    IS.decode(fakeStore(thunderfury, 'forever'), 19019).unread.some(u => u.kind === 'sourcesDisagree'),
+    real.unread.some(u => u.kind === 'sourcesDisagree'),
+    false,
+    'it then matches wowsims with the nature damage added',
+  );
+  const unmodified = IS.decode(fakeStore(thunderfury({ qualityModifier: 0 }), 'classic_era'), 19019).unread.find(u => u.kind === 'sourcesDisagree');
+  assert.deepEqual(unmodified.fields, [{ name: 'weaponDamage', client: [82, 153], wowsims: [60, 145] }]);
+  assert.equal(
+    IS.decode(fakeStore(thunderfury({ qualityModifier: 0 }), 'forever'), 19019).unread.some(u => u.kind === 'sourcesDisagree'),
     false,
     'the Era item data is not used for another game',
   );
-  const matching = {
-    itemstats: [
-      {
-        id: 19019,
-        stats: [
-          [3, 5],
-          [7, 8],
-        ],
-        damage: [
-          [44, 115],
-          [16, 30],
-        ],
-        delay: 1900,
-        resistances: [0, 0, 8, 9, 0, 0, 0],
-      },
-    ],
-    itemeffects: [],
-    spelleffects: [],
-  };
-  assert.equal(
-    IS.decode(fakeStore(matching, 'classic_era'), 19019).unread.some(u => u.kind === 'sourcesDisagree'),
-    false,
-    'weapon damage matches with the extra damage added',
-  );
+  for (const [k, name] of [
+    [2, 'fireResistance'],
+    [3, 'natureResistance'],
+    [4, 'frostResistance'],
+    [5, 'shadowResistance'],
+    [6, 'arcaneResistance'],
+  ]) {
+    const resistances = [0, 0, 8, 9, 0, 0, 0];
+    resistances[k] += 5;
+    const off = IS.decode(fakeStore(thunderfury({ resistances }), 'classic_era'), 19019).unread.find(u => u.kind === 'sourcesDisagree');
+    assert.ok(off && off.fields.length === 1 && off.fields[0].name === name, `${name} differing alone is listed`);
+  }
 });
 
 test('random stats, shields, rows that would not convert and weapon-only equip spells are listed, never read as nothing', () => {
@@ -394,7 +393,7 @@ test('equip spells that need a form are listed, and armor is compared with its b
   const hauberk = 3844;
   const total = at(hauberk, 'armor') + at(hauberk, 'bonusArmor');
   const era = items => fakeStore({ items: [{ id: hauberk, inventoryType: 5 }], itemstats: items, itemeffects: [], spelleffects: [] }, 'classic_era');
-  const split = IS.decode(era([{ id: hauberk, resistances: [total - 120, 0, 0, 0, 0, 0, 0], bonusArmor: 120 }]), hauberk);
+  const split = IS.decode(era([{ id: hauberk, resistances: [total - 120, 0, 0, 0, 0, 0, 0], qualityModifier: 120 }]), hauberk);
   assert.equal(split.crossChecked, true);
   assert.equal(
     split.unread.some(u => u.kind === 'sourcesDisagree' && u.fields.some(x => x.name === 'armor')),
@@ -406,4 +405,30 @@ test('equip spells that need a form are listed, and armor is compared with its b
     baseOnly.unread.some(u => u.kind === 'sourcesDisagree' && u.fields.some(x => x.name === 'armor')),
     'without the bonus the armor disagrees',
   );
+});
+
+test('a negative quality modifier off a weapon, and unreadable form and restriction rows, are listed rather than read', () => {
+  const spec = key => D.TABLES.find(x => (x.key || x.table) === key);
+  const csv = (sp, rows) => [sp.columns.join(','), ...rows.map(r => sp.columns.map(c => (c in r ? r[c] : 0)).join(','))].join('\n');
+  const forms = spec('SpellShapeshift');
+  assert.deepEqual(D.convertTable(forms, csv(forms, [{ ID: 2, SpellID: 8, ShapeshiftMask_0: 1, ShapeshiftMask_1: 'x' }]), {}).records, [
+    { id: 2, spell: 8, unreadable: true },
+  ]);
+  const store = fakeStore({
+    itemstats: [
+      { id: 1, qualityModifier: -10 },
+      { id: 2, qualityModifier: 50 },
+    ],
+    itemeffects: [
+      { id: 1, item: 3, trigger: 1, spell: 8 },
+      { id: 2, item: 4, trigger: 1, spell: 9 },
+    ],
+    spelleffects: [],
+    spellforms: [{ id: 3, spell: 8, unreadable: true }],
+    spellequipreqs: [{ id: 4, spell: 9, unreadable: true }],
+  });
+  assert.deepEqual([IS.decode(store, 1).stats, IS.decode(store, 1).unread], [{}, [{ kind: 'qualityModifier', value: -10 }]]);
+  assert.deepEqual(IS.decode(store, 2).stats, { bonusArmor: 50 }, 'Naglering-style armor bonus with no base armor');
+  assert.deepEqual(IS.decode(store, 3).unread, [{ kind: 'shapeshift', spell: 8, masks: null }]);
+  assert.deepEqual(IS.decode(store, 4).unread, [{ kind: 'restricted', spell: 9, unreadable: true }]);
 });

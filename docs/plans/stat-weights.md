@@ -12,16 +12,16 @@ Claude can say which of two items is better for the character's spec, with a num
 2. An item with an equip effect the decoder cannot read gets no score; the answer names the effect.
 3. Specs whose Era weights are unchanged since the SoD fork (2024-11-21) get no score.
 4. The level 60 weights are used at every level, labeled "tuned for level 60".
-5. Item stats are cross-checked against the wowsims Era item database: an item whose client stats differ gets no score (2026-10-16, after the Thunderfury finding in §3).
+5. Item stats are cross-checked against the wowsims Era item database: an item whose client stats differ gets no score (2026-10-16). The Thunderfury finding that prompted it was a misread `QualityModifier` (§3), not Season of Discovery data; the cross-check stays as a guard.
 
 ## 3. Measured (Classic Era 1.15.9.70003, 2026-10-16)
 
 Every item count here comes from `node dev/measure-itemstats.js <dataDir>` (items with an inventory type > 0); its output lists the rest.
 
-- 15,174 items have an inventory type; 10,218 read in full, 7,985 of the 10,668 with IDs under 200000.
-- Primary stats sit in `ItemSparse.StatModifier_*`, base armor in `Resistances_0`, the green "+X Armor" bonus in `QualityModifier` (wowsims folds it into armor). Hit, crit, spell power, attack power, mp5 and defense are equip spells: `ItemEffect` trigger 1, then `SpellEffect` effect 6 with `EffectAura` and an amount of `EffectBasePoints + EffectDieSides` (201 of 201 equip spells whose name states the amount match).
+- 15,174 items have an inventory type; 10,274 read in full, 8,041 of the 10,668 with IDs under 200000.
+- Primary stats sit in `ItemSparse.StatModifier_*`, base armor in `Resistances_0`. `QualityModifier` is the green "+X Armor" bonus on armor and a damage-per-second change on weapons (damage += modifier × speed): with it, all 1,391 weapons in the wowsims Era database match (Thunderfury reads 82-153 with modifier -20 at speed 1.9, so 44-115). Hit, crit, spell power, attack power, mp5 and defense are equip spells: `ItemEffect` trigger 1, then `SpellEffect` effect 6 with `EffectAura` and an amount of `EffectBasePoints + EffectDieSides` (201 of 201 equip spells whose name states the amount match).
 - wowsims/classic (MIT) at `7779ebb`: of 19 simulators, 4 have Era-tuned hit or crit weights on the per-percent scale (rogue, elemental shaman, warlock, feral druid); `bridge/simweights.json` says why each other is left out.
-- The Era client ships Season of Discovery values for some shared items: 69 of the 7,552 items the wowsims Era database also has differ on weapon damage (Thunderfury 19019 reads 82-153 plus 16-30 nature; the Era item is 44-115 plus 16-30, wowsims 60-145 with the nature folded in). 78 items disagree in all (71 on armor). 5,105 items read in full are not in the wowsims database, so they are not cross-checked (`crossChecked: false`); 2,872 of them have IDs under 200000.
+- 11 of the 7,552 items the wowsims Era database also has disagree (resistances, armor, one each of defense, healing, spell damage and ranged attack power); they get no score. 5,104 items read in full are not in the wowsims database, so they are not cross-checked (`crossChecked: false`); 2,871 of them have IDs under 200000.
 - Not yet compared with an in-game tooltip: check a few (Green Iron Hauberk, Naglering, Thunderfury) before step 3 ships a score.
 
 ## 4. Steps
@@ -33,7 +33,7 @@ Every item count here comes from `node dev/measure-itemstats.js <dataDir>` (item
 ## 5. Decoder facts (step 1)
 
 - One equip spell with aura 13 (all magic) and aura 135 at the same value is `spellPower` (wowsims `StatSpellPower`); aura 13 alone is `spellDamage`, aura 135 alone `healing`.
-- `Resistances_0` is base armor; `QualityModifier` and aura 22 on the physical school are `bonusArmor`. The cross-check compares their sum with wowsims armor plus bonus armor. Aura 564 is block value; aura 123 with misc 124 (all magic but holy) is spell penetration.
+- `Resistances_0` is base armor; `QualityModifier` on an item without damage and aura 22 on the physical school are `bonusArmor`; on a weapon `QualityModifier` × speed is added to its damage; a negative value on an item without damage (2 items) is listed as unread. The cross-check compares their sum with wowsims armor plus bonus armor. Aura 564 is block value; aura 123 with misc 124 (all magic but holy) is spell penetration.
 - An equip spell with a `SpellEquippedItems` row (Fletcher's Gloves: crit with ranged weapons only) or a `SpellShapeshift` mask (feral attack power in Cat or Bear form) is listed, not read.
 - Unread kinds, aura counts and stats read: see the script output.
 

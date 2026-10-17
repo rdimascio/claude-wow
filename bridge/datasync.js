@@ -371,20 +371,20 @@ const TABLES = Object.freeze([
         const damage = ITEM_DAMAGE_SLOTS.map(k => [numberOf(row, `MinDamage_${k}`), numberOf(row, `MaxDamage_${k}`)]).filter(([lo, hi]) => lo || hi);
         const resistances = ITEM_RESISTANCE_SLOTS.map(k => intOf(row, `Resistances_${k}`));
         const random = intOf(row, 'ItemRandomSuffixGroupID') > 0 || intOf(row, 'RandomSelect') > 0;
-        parsed = { stats, damage, delay: intOf(row, 'ItemDelay'), resistances, random, bonusArmor: Math.round(numberOf(row, 'QualityModifier')) };
+        parsed = { stats, damage, delay: intOf(row, 'ItemDelay'), resistances, random, qualityModifier: numberOf(row, 'QualityModifier') };
       } catch (e) {
         if (!(e instanceof Drop)) throw e;
         return { id, unreadable: e.reason };
       }
-      const { stats, damage, delay, resistances, random, bonusArmor } = parsed;
-      if (!stats.length && !damage.length && !random && !bonusArmor && resistances.every(n => n === 0)) throw new Skip();
+      const { stats, damage, delay, resistances, random, qualityModifier } = parsed;
+      if (!stats.length && !damage.length && !random && !qualityModifier && resistances.every(n => n === 0)) throw new Skip();
       return {
         id,
         ...(stats.length ? { stats } : {}),
         ...(damage.length ? { damage, delay } : {}),
         ...(resistances.some(n => n !== 0) ? { resistances } : {}),
         ...(random ? { random: true } : {}),
-        ...(bonusArmor ? { bonusArmor } : {}),
+        ...(qualityModifier ? { qualityModifier } : {}),
       };
     },
   },

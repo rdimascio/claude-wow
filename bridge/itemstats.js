@@ -106,14 +106,19 @@ function decode(store, itemId) {
     if (ITEM_STATS[id]) add(stats, ITEM_STATS[id], amount);
     else unread.push({ kind: 'itemStat', stat: id, amount });
   }
-  if (row && row.bonusArmor) add(stats, 'bonusArmor', row.bonusArmor);
   (row && row.resistances ? row.resistances : []).forEach((n, k) => {
     if (n) add(stats, k === 0 ? 'armor' : `${RESISTANCE_INDEX[k]}Resistance`, n);
   });
   let weapon = null;
-  if (row && row.damage && row.damage.length) {
-    const [[min, max], ...extra] = row.damage;
+  const modifier = (row && row.qualityModifier) || 0;
+  let damage = row && row.damage && row.damage.length ? row.damage : null;
+  if (!damage && modifier > 0) add(stats, 'bonusArmor', Math.round(modifier));
+  if (!damage && modifier < 0) unread.push({ kind: 'qualityModifier', value: modifier });
+  if (damage) {
     const speed = row.delay > 0 ? row.delay / 1000 : null;
+    if (modifier && !speed) unread.push({ kind: 'qualityModifier', value: modifier });
+    if (modifier && speed) damage = [damage[0].map(n => Math.round(n + modifier * speed)), ...damage.slice(1)];
+    const [[min, max], ...extra] = damage;
     weapon = { min, max, speed, dps: speed ? Math.round(((min + max) / 2 / speed) * 10) / 10 : null };
     if (extra.length) unread.push({ kind: 'extraDamage', damage: extra });
   }
@@ -132,7 +137,11 @@ function decode(store, itemId) {
     }
     const restriction = (restrictedTo.get(t.spell) || [])[0];
     if (restriction) {
-      unread.push({ kind: 'restricted', spell: t.spell, itemClass: restriction.itemClass, subclassMask: restriction.subclassMask });
+      unread.push(
+        restriction.unreadable
+          ? { kind: 'restricted', spell: t.spell, unreadable: true }
+          : { kind: 'restricted', spell: t.spell, itemClass: restriction.itemClass, subclassMask: restriction.subclassMask },
+      );
       continue;
     }
     const forms = (formsOf.get(t.spell) || [])[0];
@@ -157,7 +166,7 @@ function decode(store, itemId) {
   }
   let crossChecked = null;
   if (store.flavor === CROSS_CHECK_FLAVOR) {
-    const result = crossCheck(itemId, stats, row && row.damage);
+    const result = crossCheck(itemId, stats, weapon && damage);
     crossChecked = result !== null;
     if (result && result.length) unread.push({ kind: 'sourcesDisagree', fields: result });
   }
