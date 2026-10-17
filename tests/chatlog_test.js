@@ -4,11 +4,10 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { lua, lauxlib, lualib, to_luastring, to_jsstring } = require('fengari');
+const { createVM } = require('./lua/vm');
 const CL = require('../bridge/chatlog');
 const P = require('../bridge/protocol');
 
-const ADDON = path.join(__dirname, '..', 'addon', 'ClaudeWoW');
 const ACK = id => `Interface\\\\AddOns\\\\ClaudeWoW_Runtime\\\\ack\\\\${String(id).padStart(3, '0')}.wav`;
 const KEY = '0123456789abcdef0123456789abcdef';
 const SLOT = `{ now = time(), cwd = "", transport = "screenshot", chatlog = { line = 200, filler = 4096, key = "${KEY}" }, replies = {} }`;
@@ -21,23 +20,10 @@ function ChatFrame_AddMessageEventFilter(event, fn) FILTERS[#FILTERS + 1] = { ev
 `;
 
 function newVM(clientApi = CLIENT_LOG_API) {
-  const L = lauxlib.luaL_newstate();
-  lualib.luaL_openlibs(L);
-  const run = code => {
-    if (lauxlib.luaL_loadstring(L, to_luastring(code)) !== lua.LUA_OK) throw new Error('Lua load: ' + to_jsstring(lua.lua_tostring(L, -1)));
-    if (lua.lua_pcall(L, 0, 0, 0) !== lua.LUA_OK) throw new Error('Lua error: ' + to_jsstring(lua.lua_tostring(L, -1)));
-  };
-  const evaluate = expr => {
-    run(`local v = (${expr}); if v == nil then RESULT = nil else RESULT = tostring(v) end`);
-    lua.lua_getglobal(L, to_luastring('RESULT'));
-    const s = lua.lua_isnil(L, -1) ? null : Buffer.from(lua.lua_tolstring(L, -1)).toString('latin1');
-    lua.lua_pop(L, 1);
-    return s;
-  };
-  const num = expr => Number(evaluate(expr));
-  run(fs.readFileSync(path.join(__dirname, 'wow_stub.lua'), 'utf8') + clientApi);
-  for (const f of ['Codec.lua', 'Inbox.lua', 'ClaudeWoW.lua']) run(fs.readFileSync(path.join(ADDON, f), 'utf8'));
-  return { run, evaluate, num };
+  const vm = createVM({ utf8: false });
+  vm.run(clientApi);
+  vm.loadAddon(['Codec.lua', 'Inbox.lua', 'ClaudeWoW.lua']);
+  return vm;
 }
 
 function loggedIn(slot = SLOT, clientApi = CLIENT_LOG_API, { ackHello = true } = {}) {

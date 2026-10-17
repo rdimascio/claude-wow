@@ -4,10 +4,10 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { lua, lauxlib, lualib, to_luastring, to_jsstring } = require('fengari');
 const TL = require('../bridge/telemetry');
 const P = require('../bridge/protocol');
 const G = require('../bridge/goals');
+const { createVM } = require('./lua/vm');
 
 const CHARACTER = 'Bone-Forever';
 
@@ -47,12 +47,9 @@ function readEvents(dir) {
 }
 
 function luaEval(chunk, expr) {
-  const L = lauxlib.luaL_newstate();
-  lualib.luaL_openlibs(L);
-  const code = `${chunk}\nRESULT = ${expr}`;
-  if (lauxlib.luaL_dostring(L, to_luastring(code)) !== 0) throw new Error('Lua: ' + to_jsstring(lua.lua_tostring(L, -1)));
-  lua.lua_getglobal(L, to_luastring('RESULT'));
-  return lua.lua_isnil(L, -1) ? null : to_jsstring(lua.lua_tolstring(L, -1));
+  const vm = createVM({ stub: false });
+  vm.run(chunk);
+  return vm.evaluate(expr);
 }
 
 test('parseRecord reads every section into integers and drops what does not parse', () => {

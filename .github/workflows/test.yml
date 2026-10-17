@@ -37,6 +37,8 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
       - run: npm ci --ignore-scripts
+      - run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends lua-check
+      - run: npm run lint:lua
       - run: npx oxlint --deny-warnings
       - run: npx oxfmt --check
       - run: node tests/order_check.js

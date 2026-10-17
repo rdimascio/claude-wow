@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { lua, lauxlib, lualib, to_luastring, to_jsstring } = require('fengari');
+const { createVM } = require('./lua/vm');
 const P = require('../bridge/protocol');
 const S = require('../bridge/service');
 const Checks = require('../dev/doctor/checks');
@@ -24,27 +24,14 @@ end
 `;
 
 function newVM({ prelude = '', beforeLogin = '' } = {}) {
-  const L = lauxlib.luaL_newstate();
-  lualib.luaL_openlibs(L);
-  const run = code => {
-    if (lauxlib.luaL_loadstring(L, to_luastring(code)) !== lua.LUA_OK) throw new Error('Lua load: ' + to_jsstring(lua.lua_tostring(L, -1)));
-    if (lua.lua_pcall(L, 0, 0, 0) !== lua.LUA_OK) throw new Error('Lua error: ' + to_jsstring(lua.lua_tostring(L, -1)));
-  };
-  const evaluate = expr => {
-    run(`local v = (${expr}); if v == nil then RESULT = nil else RESULT = tostring(v) end`);
-    lua.lua_getglobal(L, to_luastring('RESULT'));
-    const s = lua.lua_isnil(L, -1) ? null : to_jsstring(lua.lua_tolstring(L, -1));
-    lua.lua_pop(L, 1);
-    return s;
-  };
-  run(fs.readFileSync(path.join(__dirname, 'wow_stub.lua'), 'utf8'));
-  run(LOAD_COUNTER_STUB);
-  if (prelude) run(prelude);
-  for (const f of ['Codec.lua', 'Inbox.lua', 'ClaudeWoW.lua']) run(fs.readFileSync(path.join(ADDON, f), 'utf8'));
-  run('STUB.FireEvent("ADDON_LOADED", "ClaudeWoW")');
-  if (beforeLogin) run(beforeLogin);
-  run('STUB.FireEvent("PLAYER_LOGIN")');
-  return { run, evaluate, num: expr => Number(evaluate(expr)) };
+  const vm = createVM();
+  vm.run(LOAD_COUNTER_STUB);
+  if (prelude) vm.run(prelude);
+  vm.loadAddon(['Codec.lua', 'Inbox.lua', 'ClaudeWoW.lua']);
+  vm.run('STUB.FireEvent("ADDON_LOADED", "ClaudeWoW")');
+  if (beforeLogin) vm.run(beforeLogin);
+  vm.run('STUB.FireEvent("PLAYER_LOGIN")');
+  return vm;
 }
 
 const luaBridge = b => (b ? `, bridge = { version = "${b.version}", protoMin = ${b.protoMin}, protoMax = ${b.protoMax} }` : '');

@@ -1,11 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('fs');
-const path = require('path');
-const { lua, lauxlib, lualib, to_luastring, to_jsstring } = require('fengari');
-
-const ADDON = path.join(__dirname, '..', 'addon', 'ClaudeWoW');
+const { createVM } = require('./lua/vm');
 
 const INTERNALS = `
   local function upvalue(fn, name)
@@ -22,32 +18,15 @@ const INTERNALS = `
 `;
 
 function newVM({ dock = false, saved = '', afterLoad = '' } = {}) {
-  const L = lauxlib.luaL_newstate();
-  lualib.luaL_openlibs(L);
-  const run = (code, chunk, arg) => {
-    const buf = to_luastring(code);
-    const loaded = chunk ? lauxlib.luaL_loadbuffer(L, buf, buf.length, to_luastring('@' + chunk)) : lauxlib.luaL_loadstring(L, buf);
-    if (loaded !== lua.LUA_OK) throw new Error('Lua load: ' + to_jsstring(lua.lua_tostring(L, -1)));
-    if (arg !== undefined) lua.lua_pushstring(L, to_luastring(arg));
-    if (lua.lua_pcall(L, arg === undefined ? 0 : 1, 0, 0) !== lua.LUA_OK) throw new Error('Lua error: ' + to_jsstring(lua.lua_tostring(L, -1)));
-  };
-  const evaluate = expr => {
-    run(`local v = (${expr}); if v == nil then RESULT = nil else RESULT = tostring(v) end`);
-    lua.lua_getglobal(L, to_luastring('RESULT'));
-    const s = lua.lua_isnil(L, -1) ? null : to_jsstring(lua.lua_tolstring(L, -1));
-    lua.lua_pop(L, 1);
-    return s;
-  };
-  const num = expr => Number(evaluate(expr));
-  run(fs.readFileSync(path.join(__dirname, 'wow_stub.lua'), 'utf8'));
-  if (dock) run('STUB.ChatDock()');
-  for (const f of ['Codec.lua', 'Inbox.lua', 'ClaudeWoW.lua', 'Help.lua']) run(fs.readFileSync(path.join(ADDON, f), 'utf8'), 'addon/' + f, 'ClaudeWoW');
-  run(INTERNALS);
-  if (saved) run(saved);
-  run('STUB.FireEvent("ADDON_LOADED", "ClaudeWoW")');
-  if (afterLoad) run(afterLoad);
-  run('STUB.FireEvent("PLAYER_LOGIN")');
-  return { run, evaluate, num };
+  const vm = createVM();
+  if (dock) vm.run('STUB.ChatDock()');
+  vm.loadAddon(['Codec.lua', 'Inbox.lua', 'ClaudeWoW.lua', 'Help.lua']);
+  vm.run(INTERNALS);
+  if (saved) vm.run(saved);
+  vm.run('STUB.FireEvent("ADDON_LOADED", "ClaudeWoW")');
+  if (afterLoad) vm.run(afterLoad);
+  vm.run('STUB.FireEvent("PLAYER_LOGIN")');
+  return vm;
 }
 
 const prints = vm => vm.evaluate('table.concat(STUB.prints, "\\n")') || '';

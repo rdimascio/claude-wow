@@ -4,12 +4,11 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { lua, lauxlib, lualib, to_luastring, to_jsstring } = require('fengari');
+const { createVM } = require('./lua/vm');
 const P = require('../bridge/protocol');
 const TL = require('../bridge/telemetry');
 const OB = require('../bridge/observed');
 
-const ADDON = path.join(__dirname, '..', 'addon', 'ClaudeWoW');
 const CELLS_PER_ROW = 200;
 const CHARACTER = 'Testchar-TestRealm';
 const NPC_GUID = 'Creature-0-4372-0-17-3100-00000ABCDE';
@@ -46,29 +45,11 @@ function UnitIsDead(unit) return STUB.targetDead ~= false end
 `;
 
 function newVM({ extra = '', saved = '' } = {}) {
-  const L = lauxlib.luaL_newstate();
-  lualib.luaL_openlibs(L);
-  const run = (code, arg) => {
-    if (lauxlib.luaL_loadstring(L, to_luastring(code)) !== lua.LUA_OK) throw new Error('Lua load: ' + to_jsstring(lua.lua_tostring(L, -1)));
-    let nargs = 0;
-    if (arg !== undefined) {
-      lua.lua_pushstring(L, to_luastring(arg));
-      nargs = 1;
-    }
-    if (lua.lua_pcall(L, nargs, 0, 0) !== lua.LUA_OK) throw new Error('Lua error: ' + to_jsstring(lua.lua_tostring(L, -1)));
-  };
-  const evaluate = expr => {
-    run(`local v = (${expr}); if v == nil then RESULT = nil else RESULT = tostring(v) end`);
-    lua.lua_getglobal(L, to_luastring('RESULT'));
-    const s = lua.lua_isnil(L, -1) ? null : to_jsstring(lua.lua_tolstring(L, -1));
-    lua.lua_pop(L, 1);
-    return s;
-  };
-  run(fs.readFileSync(path.join(__dirname, 'wow_stub.lua'), 'utf8'));
-  run(GAME_STUB + extra);
-  if (saved) run(saved);
-  for (const f of ['Codec.lua', 'Inbox.lua', 'ClaudeWoW.lua', 'Telemetry.lua', 'Observed.lua']) run(fs.readFileSync(path.join(ADDON, f), 'utf8'), 'ClaudeWoW');
-  return { run, evaluate, num: e => Number(evaluate(e)) };
+  const vm = createVM();
+  vm.run(GAME_STUB + extra);
+  if (saved) vm.run(saved);
+  vm.loadAddon(['Codec.lua', 'Inbox.lua', 'ClaudeWoW.lua', 'Telemetry.lua', 'Observed.lua']);
+  return vm;
 }
 
 function decodeStrip(vm) {

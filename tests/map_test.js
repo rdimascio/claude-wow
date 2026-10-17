@@ -3,8 +3,8 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { lua, lauxlib, lualib, to_luastring, to_jsstring } = require('fengari');
 const P = require('../bridge/protocol');
+const { createVM } = require('./lua/vm');
 
 const pt = (x, y, extra = {}) => ({ m: 1429, x, y, label: `p${x}`, kind: 'ore', ...extra });
 
@@ -82,13 +82,9 @@ test('parseMapFile reads one command per line', () => {
 });
 
 function runLua(src, expr) {
-  const L = lauxlib.luaL_newstate();
-  lualib.luaL_openlibs(L);
-  if (lauxlib.luaL_dostring(L, to_luastring(src + '\nRESULT = ' + expr)) !== 0) {
-    throw new Error('Lua error: ' + to_jsstring(lua.lua_tostring(L, -1)));
-  }
-  lua.lua_getglobal(L, to_luastring('RESULT'));
-  return to_jsstring(lua.lua_tostring(L, -1));
+  const vm = createVM({ stub: false });
+  vm.run(src);
+  return vm.evaluate(expr);
 }
 
 test('slot files carry the map as a Lua table the addon can read', () => {

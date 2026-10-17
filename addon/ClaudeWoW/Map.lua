@@ -231,8 +231,8 @@ end
 local SKILL_IDS = { mining = 186, herbalism = 182 }
 local SKILL_NAMES = { mining = MINING or "Mining", herbalism = HERBALISM or "Herbalism" }
 local function SkillRank(prof)
-	local lines = ClaudeWoW and ClaudeWoW.SkillLines and ClaudeWoW.SkillLines() or {}
-	for _, sk in ipairs(lines) do
+	local skillLines = ClaudeWoW and ClaudeWoW.SkillLines and ClaudeWoW.SkillLines() or {}
+	for _, sk in ipairs(skillLines) do
 		if not sk.isHeader and (sk.skillID == SKILL_IDS[prof] or sk.name == SKILL_NAMES[prof]) then return sk.rank end
 	end
 end
