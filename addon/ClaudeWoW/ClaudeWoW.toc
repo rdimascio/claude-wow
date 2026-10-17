@@ -7,6 +7,8 @@
 ## SavedVariablesPerCharacter: ClaudeWoWMapDB, ClaudeWoWCharDB
 ## OptionalDeps: ClaudeWoW_Nodes
 
+Core\Namespace.lua
+Core\Log.lua
 Dev.lua
 Codec.lua
 Inbox.lua

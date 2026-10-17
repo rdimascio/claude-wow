@@ -176,10 +176,12 @@ function copyAddonTo(addons) {
   const src = path.join(REPO, 'addon', 'ClaudeWoW');
   const dest = path.join(addons, 'ClaudeWoW');
   fs.mkdirSync(dest, { recursive: true });
-  const names = fs.readdirSync(src);
-  for (const stale of fs.readdirSync(dest)) if (!names.includes(stale)) fs.rmSync(assertSafe(path.join(dest, stale)), { recursive: true, force: true });
+  const names = P.addonFiles(src);
+  const folders = names.map(f => f.split('/')[0]);
+  for (const stale of fs.readdirSync(dest)) if (!folders.includes(stale)) fs.rmSync(assertSafe(path.join(dest, stale)), { recursive: true, force: true });
   const build = P.addonBuild(names.map(name => ({ name, data: fs.readFileSync(path.join(src, name)) })));
   for (const f of names) {
+    fs.mkdirSync(path.dirname(path.join(dest, f)), { recursive: true });
     if (f === 'ClaudeWoW.toc') fs.writeFileSync(path.join(dest, f), P.tocWithBuild(fs.readFileSync(path.join(src, f), 'utf8'), build));
     else fs.copyFileSync(path.join(src, f), path.join(dest, f));
   }

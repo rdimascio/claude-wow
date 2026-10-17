@@ -25,6 +25,8 @@ const H = require('./home');
 // exactly this list; tests/assets_test.js keeps the two, and the addon
 // folder, in step.
 const FILES = [
+  'addon/ClaudeWoW/Core/Namespace.lua',
+  'addon/ClaudeWoW/Core/Log.lua',
   'addon/ClaudeWoW/ClaudeWoW.lua',
   'addon/ClaudeWoW/ClaudeWoW.toc',
   'addon/ClaudeWoW/Codec.lua',

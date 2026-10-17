@@ -1,3 +1,7 @@
+local _, ns = ...
+if not ns.Try then return end
+ns.files[#ns.files + 1] = "Orders.lua"
+
 local T = {}
 ClaudeWoWOrders = T
 
@@ -98,13 +102,7 @@ T.debug = { renders = 0, native = {} }
 local card
 local watcher
 
-local function Print(msg)
-	if ClaudeWoW and ClaudeWoW.Print then
-		ClaudeWoW.Print(msg)
-	else
-		print("|cff66ccff[Azeroth Companion]|r " .. msg)
-	end
-end
+local Print = ns.Say
 
 local function Settings()
 	local db = ClaudeWoWDB

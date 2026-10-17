@@ -5,8 +5,10 @@ Thanks for looking at this. Bug reports, questions and pull requests are all wel
 ## Layout
 
 ```
-addon/ClaudeWoW/     the in-game addon (Lua 5.1, WoW API)
-  ClaudeWoW.lua        everything: strip, slots, chats, UI, slash commands
+addon/ClaudeWoW/     the in-game addon (Lua 5.1, WoW API); every file reads `local _, ns = ...` and returns at once when `ns.Try` is missing (the restart guard)
+  Core/Namespace.lua    first in the toc: the private namespace `ns`, one copy of each shared helper (Try, Trim, Display, Link, Fmt*, Money, ...), the product name and chat prefix, `ns.files` and its FNV-1a fingerprint
+  Core/Log.lua          ns.Print (game chat with the prefix) and ns.Say (through ClaudeWoW.Print when the core is loaded)
+  ClaudeWoW.lua        the core: strip, slots, chats, UI, slash commands
   Codec.lua             pixel-strip encoder, pure Lua, no WoW calls
   Inbox.lua             placeholder the bridge overwrites at runtime
   Widgets.lua           live UI widgets from the agent, allowlist sandbox, /claude config ui list|remove|run, /claude dev globals
@@ -83,7 +85,7 @@ To try changes in the game, run `node setup.js` (it re-copies the addon into `In
 
 | Command | What it checks |
 |---|---|
-| `node tests/order_check.js` | The addon parses as Lua 5.1 and no top-level `local` is used before it is declared. |
+| `node tests/order_check.js` | Every addon file parses as Lua 5.1 with at most 190 main-chunk locals, no top-level `local` is used before it is declared, and each file's `ns.files` line names it in the toc's order. |
 | `node --test tests/addon_test.js` | The real addon in a Lua VM with a stub client (`tests/wow_stub.lua`): login, hello, a message decoded off the strip, a slot reply, Allow, `/claude reset`, restore, chat commands, minimize, reload mode, the screenshot transport (shots per message, retries, the timeout, CVar save/restore, the dark palette), and `/claude`, `/r` and whisper tabs typed into a model of the game's chat edit box (`STUB.ChatEditBox`), where a protected call made after addon code ran in the same Enter counts as tainted and no game function may be replaced; and the `/claude` surface: the flag parser (short and long flags, `--flag=value`, quotes, text that only looks like a flag), per-chat settings on the strip and in the outbox (`mcp=` only after a choice and only to a bridge that sends its MCP list, withdrawn when a slot comes without it, the 8-server cap, the send limit counting it, the list from a fresh `Inbox.lua` only), `-r` against running, recent and unknown sessions with the picker and ambiguity, `/claude config`, and the hidden `/claude-wow` alias. |
 | `node --test tests/bridge_test.js` | `bridge/protocol.js`: strip records, flags (including `agent=`), the SavedVariables outbox, folder resolution, permission rules, dedup and pruning. |
 | `node --test tests/agents_test.js` | `bridge/agents.js`: the command line built for each agent and permission mode, the prompt delivery (stdin, prompt file, context block), a sample of each CLI's real stream (Claude stream-json, Codex `exec --json`, Grok streaming-json, agy stream-json, Hermes plain text) read back into progress lines, session id, denials and reply, and the unwrapping of npm's Windows launchers. |

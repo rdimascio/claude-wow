@@ -1,4 +1,6 @@
-local ADDON_NAME = ...
+local ADDON_NAME, ns = ...
+if not ns.Try then return end
+ns.files[#ns.files + 1] = "Widgets.lua"
 local W = {}
 ClaudeWoWWidgets = W
 
@@ -140,13 +142,7 @@ local skipped = {}
 W.POPUP = "CLAUDEWOW_WIDGET"
 W.TITLE_MAX = 60
 
-local function Print(msg)
-	if ClaudeWoW and ClaudeWoW.Print then
-		ClaudeWoW.Print(msg)
-	else
-		print("|cff66ccff[Azeroth Companion]|r " .. msg)
-	end
-end
+local Print = ns.Say
 
 local function Quiet(ctx) return type(ctx) == "table" and ctx.quiet == true end
 
@@ -1095,7 +1091,7 @@ end
 
 local function SameCode(item, data) return type(data) == "table" and item.rev == data.rev and item.source == data.source end
 
-local function Display(s) return (tostring(s or ""):gsub("|", "¦")) end
+local Display = ns.Display
 
 function W.Start(item, announce)
 	if not Approved(item) then return false end

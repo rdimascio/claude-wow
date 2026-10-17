@@ -1,3 +1,7 @@
+local _, ns = ...
+if not ns.Try then return end
+ns.files[#ns.files + 1] = "Help.lua"
+
 local H = {}
 ClaudeWoWHelp = H
 

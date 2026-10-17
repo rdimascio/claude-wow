@@ -1,3 +1,7 @@
+local _, ns = ...
+if not ns.Try then return end
+ns.files[#ns.files + 1] = "Dev.lua"
+
 local D = { errors = {}, caught = 0 }
 ClaudeWoWDev = D
 

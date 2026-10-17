@@ -7,7 +7,9 @@
 -- our copy wholesale. Everything here reads positions and draws; nothing moves,
 -- targets or acts for the player.
 
-local ADDON_NAME = ...
+local ADDON_NAME, ns = ...
+if not ns.Try then return end
+ns.files[#ns.files + 1] = "Map.lua"
 local M = {}
 ClaudeWoWMap = M
 
@@ -43,19 +45,9 @@ local KIND_COLOR = {
 
 local mdb -- ClaudeWoWMapDB: { map, hidden = { [layer] = true }, nodes = { ore, herb, filter }, nav = { layer, index }, navPos }
 
-local function Try(fn, ...)
-	if type(fn) ~= "function" then return nil end
-	local ok, a, b, c, d = pcall(fn, ...)
-	if ok then return a, b, c, d end
-end
+local Try = ns.Try
 
-local function Print(msg)
-	if ClaudeWoW and ClaudeWoW.Print then
-		ClaudeWoW.Print(msg)
-	else
-		print("|cff66ccff[Azeroth Companion]|r " .. msg)
-	end
-end
+local Print = ns.Say
 
 local function Points(n) return n == 1 and "1 point" or (tostring(n) .. " points") end
 

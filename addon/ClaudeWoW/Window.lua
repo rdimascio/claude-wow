@@ -1,3 +1,7 @@
+local _, ns = ...
+if not ns.Try then return end
+ns.files[#ns.files + 1] = "Window.lua"
+
 local W = {}
 ClaudeWoWWindow = W
 
@@ -83,11 +87,7 @@ local function Settings()
 	return (type(db) == "table" and type(db.settings) == "table") and db.settings or {}
 end
 
-local function Try(fn, ...)
-	if type(fn) ~= "function" then return nil end
-	local ok, a, b, c, d = pcall(fn, ...)
-	if ok then return a, b, c, d end
-end
+local Try = ns.Try
 
 local function Screen() return UIParent:GetWidth() or 1920, UIParent:GetHeight() or 1080 end
 

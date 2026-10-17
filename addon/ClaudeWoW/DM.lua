@@ -1,3 +1,7 @@
+local _, ns = ...
+if not ns.Try then return end
+ns.files[#ns.files + 1] = "DM.lua"
+
 local T = {}
 ClaudeWoWDM = T
 
@@ -32,7 +36,7 @@ local CONTINUE_HEIGHT = 22
 local CONTINUE_X = -14
 local CONTINUE_Y = 10
 local CONTINUE_HOLD_SECONDS = 5
-local CHAT_PREFIX = "|cff66ccff[Azeroth Companion]|r "
+local CHAT_PREFIX = ns.PREFIX
 local PORTRAIT = "Interface\\AddOns\\ClaudeWoW\\Portrait"
 local PARCHMENT_FALLBACK_COLOR = { 0.80, 0.70, 0.52, 1 }
 local INK = { 0.18, 0.12, 0.06 }
@@ -76,7 +80,7 @@ local function Print(msg, editBox)
 	if out then
 		out:AddMessage(CHAT_PREFIX .. msg)
 	else
-		print(CHAT_PREFIX .. msg)
+		ns.Print(msg)
 	end
 end
 

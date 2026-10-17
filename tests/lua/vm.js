@@ -23,12 +23,15 @@ function tocFilesUpTo(last, files = tocFiles()) {
   return files.slice(0, at + 1);
 }
 
+const coreFiles = () => tocFiles().filter(f => f.startsWith('Core/'));
+
 function createVM({ stub = true, utf8 = true } = {}) {
   const L = lauxlib.luaL_newstate();
   lualib.luaL_openlibs(L);
   lua.lua_newtable(L);
   const nsRef = lauxlib.luaL_ref(L, lua.LUA_REGISTRYINDEX);
   const decode = utf8 ? v => to_jsstring(v) : v => Buffer.from(v).toString('latin1');
+  const loaded = new Set();
 
   const fail = what => {
     const raw = lua.lua_tostring(L, -1);
@@ -39,8 +42,8 @@ function createVM({ stub = true, utf8 = true } = {}) {
 
   const run = (code, { chunk, args = [], ns = false } = {}) => {
     const buf = to_luastring(code);
-    const loaded = chunk ? lauxlib.luaL_loadbuffer(L, buf, buf.length, to_luastring('@' + chunk)) : lauxlib.luaL_loadstring(L, buf);
-    if (loaded !== lua.LUA_OK) fail('Lua load');
+    const status = chunk ? lauxlib.luaL_loadbuffer(L, buf, buf.length, to_luastring('@' + chunk)) : lauxlib.luaL_loadstring(L, buf);
+    if (status !== lua.LUA_OK) fail('Lua load');
     for (const arg of args) lua.lua_pushstring(L, to_luastring(String(arg)));
     if (ns) lua.lua_rawgeti(L, lua.LUA_REGISTRYINDEX, nsRef);
     if (lua.lua_pcall(L, args.length + (ns ? 1 : 0), 0, 0) !== lua.LUA_OK) fail('Lua error');
@@ -56,7 +59,15 @@ function createVM({ stub = true, utf8 = true } = {}) {
 
   const num = expr => Number(evaluate(expr));
 
-  const loadFile = file => run(fs.readFileSync(path.join(ADDON_DIR, file), 'utf8'), { chunk: 'addon/' + file, args: [ADDON_NAME], ns: true });
+  const loadOne = file => {
+    run(fs.readFileSync(path.join(ADDON_DIR, file), 'utf8'), { chunk: 'addon/' + file, args: [ADDON_NAME], ns: true });
+    loaded.add(file);
+  };
+
+  const loadFile = file => {
+    if (!file.startsWith('Core/')) for (const core of coreFiles()) if (!loaded.has(core)) loadOne(core);
+    loadOne(file);
+  };
 
   const loadAddon = (files = tocFiles()) => {
     for (const f of files) loadFile(f);
@@ -69,4 +80,4 @@ function createVM({ stub = true, utf8 = true } = {}) {
   return { L, run, evaluate, num, loadFile, loadAddon, login };
 }
 
-module.exports = { ADDON_NAME, ADDON_DIR, LOGIN, createVM, tocFiles, tocFilesUpTo };
+module.exports = { ADDON_NAME, ADDON_DIR, LOGIN, createVM, tocFiles, tocFilesUpTo, coreFiles };

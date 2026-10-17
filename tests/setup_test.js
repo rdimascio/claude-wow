@@ -154,7 +154,8 @@ test('copyAddon refreshes only the shipped ClaudeWoW files and never writes or d
   const before = Object.fromEntries(Object.keys(runtimeFiles).map(rel => [rel, fs.statSync(path.join(runtime, rel)).mtimeMs]));
   const { dest } = S.copyAddon(dir);
   const shippedSrc = path.join(__dirname, '..', 'addon', P.ADDON);
-  assert.deepEqual(fs.readdirSync(dest).sort(), fs.readdirSync(shippedSrc).sort(), 'the shipped folder holds exactly the shipped files');
+  assert.deepEqual(P.addonFiles(dest), P.addonFiles(shippedSrc), 'the shipped folder holds exactly the shipped files, subfolders included');
+  assert.ok(P.addonFiles(dest).includes('Core/Namespace.lua'), 'the Core subfolder is copied');
   assert.equal(
     fs.readFileSync(path.join(dest, 'Inbox.lua'), 'utf8'),
     fs.readFileSync(path.join(shippedSrc, 'Inbox.lua'), 'utf8'),

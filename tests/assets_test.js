@@ -15,14 +15,19 @@ const ROOT = path.join(__dirname, '..');
 
 test('every asset exists in the checkout, the addon folder is covered in full, and from a checkout the paths are the checkout', () => {
   for (const rel of AS.FILES) assert.ok(fs.statSync(path.join(ROOT, rel)).isFile(), rel);
-  const addon = fs.readdirSync(path.join(ROOT, 'addon', 'ClaudeWoW')).sort();
+  const addon = fs
+    .readdirSync(path.join(ROOT, 'addon', 'ClaudeWoW'), { recursive: true })
+    .map(f => String(f).replace(/\\/g, '/'))
+    .filter(f => fs.statSync(path.join(ROOT, 'addon', 'ClaudeWoW', f)).isFile())
+    .sort();
   assert.deepEqual(
     AS.FILES.filter(f => f.startsWith('addon/ClaudeWoW/'))
-      .map(f => path.basename(f))
+      .map(f => f.slice('addon/ClaudeWoW/'.length))
       .sort(),
     addon,
     'a new addon file must be embedded too',
   );
+  assert.ok(addon.includes('Core/Namespace.lua'), 'the Core subfolder is covered');
   assert.equal(AS.isEmbedded(), false);
   assert.equal(AS.root(), ROOT);
   assert.equal(AS.file('bridge/capture_mac.py'), path.join(ROOT, 'bridge', 'capture_mac.py'));
@@ -75,7 +80,11 @@ test('with an embedded table, files are written out once, rewritten when they di
     assert.equal(AS.file('docs/WOW-ADDON-PRIMER.md', home2), path.join(home2, AS.DIR_NAME, 'docs', 'WOW-ADDON-PRIMER.md'));
     assert.ok(fs.existsSync(AS.file('bridge/capture.ps1', home2)));
     assert.ok(fs.existsSync(path.join(AS.dir('addon/ClaudeWoW', home2), 'ClaudeWoW.toc')));
-    assert.equal(fs.readdirSync(AS.dir('addon/ClaudeWoW', home2)).length, AS.FILES.filter(rel => rel.startsWith('addon/ClaudeWoW/')).length);
+    const written = fs
+      .readdirSync(AS.dir('addon/ClaudeWoW', home2), { recursive: true })
+      .filter(f => fs.statSync(path.join(AS.dir('addon/ClaudeWoW', home2), String(f))).isFile());
+    assert.equal(written.length, AS.FILES.filter(rel => rel.startsWith('addon/ClaudeWoW/')).length);
+    assert.ok(fs.existsSync(path.join(AS.dir('addon/ClaudeWoW', home2), 'Core', 'Namespace.lua')), 'the Core subfolder is written out');
   } finally {
     AS.unembed();
     fs.rmSync(tmp, { recursive: true, force: true });

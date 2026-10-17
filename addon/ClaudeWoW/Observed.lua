@@ -1,3 +1,7 @@
+local _, ns = ...
+if not ns.Try then return end
+ns.files[#ns.files + 1] = "Observed.lua"
+
 local O = {}
 ClaudeWoWObserved = O
 
@@ -75,11 +79,7 @@ local state = {
 	hooked = {},
 }
 
-local function Try(fn, ...)
-	if type(fn) ~= "function" then return nil end
-	local ok, a, b, c, d, e, f, g, h = pcall(fn, ...)
-	if ok then return a, b, c, d, e, f, g, h end
-end
+local Try = ns.Try
 
 local function Returns(fn, ...)
 	if type(fn) ~= "function" then return nil end

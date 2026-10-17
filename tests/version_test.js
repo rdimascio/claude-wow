@@ -233,9 +233,33 @@ test('the toc gets one X-Build line after its Version line, and the bridge reads
   assert.equal(P.tocWithBuild(once, BUILD_B), once.replace(BUILD_A, BUILD_B), 'a new install replaces the line');
   assert.equal(P.tocWithBuild(toc.replace(/\n/g, '\r\n'), BUILD_A), once.replace(/\n/g, '\r\n'), 'CRLF stays CRLF');
   assert.equal(P.tocWithBuild('A.lua\n', BUILD_A), '## X-Build: aaaaaaaaaaaa\nA.lua\n');
-  assert.deepEqual(P.addonDiskInfo(once), { version: '1.2.3', build: BUILD_A });
-  assert.deepEqual(P.addonDiskInfo(once.replace(/\n/g, '\r\n')), { version: '1.2.3', build: BUILD_A });
-  assert.deepEqual(P.addonDiskInfo('## Version: x\n## X-Build: nothex\n'), { version: '', build: '' });
+  const oneFile = { files: 1, fileHash: P.fnv1a('A.lua') };
+  assert.deepEqual(P.addonDiskInfo(once), { version: '1.2.3', build: BUILD_A, ...oneFile });
+  assert.deepEqual(P.addonDiskInfo(once.replace(/\n/g, '\r\n')), { version: '1.2.3', build: BUILD_A, ...oneFile });
+  assert.deepEqual(P.addonDiskInfo('## Version: x\n## X-Build: nothex\n'), { version: '', build: '', files: 0, fileHash: P.fnv1a('') });
+});
+
+test('addonDiskInfo counts the Lua files the toc lists and fingerprints their names in toc order with FNV-1a', () => {
+  assert.equal(P.fnv1a(''), '811c9dc5');
+  assert.equal(P.fnv1a('a'), 'e40c292c');
+  assert.equal(P.fnv1a('foobar'), 'bf9cf968');
+  const toc = '## Version: 1.2.3\n# a comment\nCore\\A.lua\r\n  B.lua  \nBindings.xml\n\nC.lua\n';
+  assert.deepEqual(P.tocLuaFiles(toc), ['Core\\A.lua', 'B.lua', 'C.lua']);
+  const info = P.addonDiskInfo(toc);
+  assert.equal(info.files, 3);
+  assert.equal(info.fileHash, P.fnv1a('Core\\A.lua\nB.lua\nC.lua'));
+  assert.match(info.fileHash, P.FILE_HASH_RE);
+  assert.notEqual(P.addonDiskInfo(toc.replace('C.lua\n', '')).fileHash, info.fileHash, 'one file fewer is another fingerprint');
+  assert.notEqual(P.addonDiskInfo('## Version: 1.2.3\nB.lua\nCore\\A.lua\nC.lua\n').fileHash, info.fileHash, 'another order is another fingerprint');
+  assert.match(
+    P.luaTable('ClaudeWoW_SlotData', [], { now: 1000, addonDisk: { version: '1.2.3', build: BUILD_A, files: 3, fileHash: info.fileHash } }),
+    new RegExp(`\\taddonDisk = \\{ version = "1\\.2\\.3", build = "aaaaaaaaaaaa", files = 3, fileHash = "${info.fileHash}" \\},`),
+  );
+  assert.match(
+    P.luaTable('ClaudeWoW_SlotData', [], { now: 1000, addonDisk: { version: '1.2.3', build: BUILD_A, files: 3, fileHash: 'nothex' } }),
+    /\taddonDisk = \{ version = "1\.2\.3", build = "aaaaaaaaaaaa" \},/,
+    'a malformed fingerprint is left out',
+  );
 });
 
 test('slot files carry the addon toc on disk, and none without a version', () => {
@@ -278,6 +302,57 @@ test('new addon files show as an update bar with a Reload button, not as a messa
   assert.equal(vm.evaluate('ClaudeWoWNoticeBar:IsShown()'), 'true', 'and a later update shows it again');
   vm.run('ClaudeWoWNoticeReload.scripts.OnClick(ClaudeWoWNoticeReload)');
   assert.equal(vm.evaluate('STUB.reloaded'), 'true', 'the button reloads the UI from the click');
+});
+
+const REAL_TOC = fs.readFileSync(path.join(ADDON, 'ClaudeWoW.toc'), 'utf8');
+const luaDiskFiles = (version, build, info) =>
+  `, addonDisk = { version = "${version}", build = "${build}", files = ${info.files}, fileHash = "${info.fileHash}" }`;
+const prints = vm => vm.evaluate('table.concat(STUB.prints, "\\n")');
+
+function fullVM({ prelude = '' } = {}) {
+  const vm = createVM();
+  vm.run(LOAD_COUNTER_STUB);
+  if (prelude) vm.run(prelude);
+  vm.loadAddon();
+  vm.run('STUB.FireEvent("ADDON_LOADED", "ClaudeWoW")');
+  vm.run('STUB.FireEvent("PLAYER_LOGIN")');
+  return vm;
+}
+
+test('a new build with the file list the addon loaded asks for /reload; a new file list asks for a full restart and hides the Reload button', () => {
+  const vm = fullVM(loadedAs('1.2.3', BUILD_A));
+  vm.run('ClaudeWoW.Toggle(true)');
+  const onDisk = P.addonDiskInfo(REAL_TOC);
+  helloPoll(vm, null, 'time()', luaDiskFiles('1.2.3', BUILD_A, onDisk));
+  assert.equal(vm.evaluate('ClaudeWoWNoticeBar:IsShown()'), 'false', 'the loaded build and file list show no bar');
+  vm.run('STUB.prints = {}');
+  slotPoll(vm, null, 'time()', luaDiskFiles('1.2.4', BUILD_B, onDisk));
+  assert.ok(prints(vm).includes('New addon files are installed (1.2.4, build bbbbbbbbbbbb). Type /reload to load them.'), 'the same file list: /reload');
+  assert.equal(vm.evaluate('ClaudeWoWNoticeBar.text:GetText()'), 'Addon update ready · 1.2.4');
+  assert.equal(vm.evaluate('ClaudeWoWNoticeReload:IsShown()'), 'true');
+  const grown = P.addonDiskInfo(REAL_TOC + 'Core\\State.lua\n');
+  assert.equal(grown.files, onDisk.files + 1);
+  assert.notEqual(grown.fileHash, onDisk.fileHash);
+  vm.run('STUB.prints = {}');
+  slotPoll(vm, null, 'time()', luaDiskFiles('1.2.5', BUILD_B, grown));
+  assert.ok(
+    prints(vm).includes(
+      'New addon files are installed (1.2.5, build bbbbbbbbbbbb). Fully quit and restart the game to load the new addon files; /reload is not enough.',
+    ),
+    'a new file list: restart',
+  );
+  assert.equal(
+    vm.evaluate('ClaudeWoWNoticeBar.text:GetText()'),
+    'Addon update ready · 1.2.5 · Fully quit and restart the game to load the new addon files; /reload is not enough.',
+  );
+  assert.equal(vm.evaluate('ClaudeWoWNoticeReload:IsShown()'), 'false', 'a reload would load nothing, so the button goes');
+  assert.equal(told(vm, 'New addon files'), 0, 'the transcript gets no system message either way');
+  vm.run('STUB.prints = {}');
+  slotPoll(vm, null, 'time()', luaDisk('1.2.6', BUILD_B));
+  assert.ok(prints(vm).includes('(1.2.6, build bbbbbbbbbbbb). Type /reload to load them.'), 'a bridge without the fingerprint keeps the /reload text');
+  assert.equal(vm.evaluate('ClaudeWoWNoticeReload:IsShown()'), 'true');
+  slotPoll(vm, null, 'time()', luaDiskFiles('1.2.3', BUILD_A, onDisk));
+  assert.equal(vm.evaluate('ClaudeWoWNoticeBar:IsShown()'), 'false', 'the loaded build back on disk clears the bar');
 });
 
 test('a runtime folder installed after launch asks for a full restart, once', () => {

@@ -1,3 +1,7 @@
+local _, ns = ...
+if not ns.Try then return end
+ns.files[#ns.files + 1] = "Telemetry.lua"
+
 local T = {}
 ClaudeWoWTelemetry = T
 
@@ -64,11 +68,7 @@ local state = {
 	watch = { items = {}, factions = {} },
 }
 
-local function Try(fn, ...)
-	if type(fn) ~= "function" then return nil end
-	local ok, a, b, c, d = pcall(fn, ...)
-	if ok then return a, b, c, d end
-end
+local Try = ns.Try
 
 local function Returns(fn, ...)
 	if type(fn) ~= "function" then return nil end
@@ -89,7 +89,7 @@ end
 
 local function WholeNumber(v) return type(v) == "number" and v >= 0 and v == math.floor(v) and v or nil end
 
-local function Trim(s) return (s:gsub("^%s+", ""):gsub("%s+$", "")) end
+local Trim = ns.Trim
 
 local function CodePoints(s)
 	local n = 0
@@ -335,10 +335,7 @@ function T.Sections()
 	return s
 end
 
-local function Print(msg)
-	if ClaudeWoW and type(ClaudeWoW.Print) == "function" then return ClaudeWoW.Print(msg) end
-	print("|cff66ccff[Azeroth Companion]|r " .. msg)
-end
+local Print = ns.Say
 
 function T.IsOn() return not (type(ClaudeWoWDB) == "table" and type(ClaudeWoWDB.settings) == "table" and ClaudeWoWDB.settings.telemetry == false) end
 
