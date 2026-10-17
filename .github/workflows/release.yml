@@ -115,6 +115,8 @@ jobs:
           grep -qx 'ClaudeWoW/Transport/Tick.lua' files.txt
           grep -qx 'ClaudeWoW/Chat/Context.lua' files.txt
           grep -qx 'ClaudeWoW/Chat/Grants.lua' files.txt
+          grep -qx 'ClaudeWoW/Whisper/Tabs.lua' files.txt
+          grep -qx 'ClaudeWoW/Whisper/Intercept.lua' files.txt
           test -z "$(grep -E '^ClaudeWoW/(assets|bridge|build|dev|docs|homebrew|tests)/' files.txt)"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

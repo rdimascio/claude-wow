@@ -18,6 +18,9 @@ import addonChatContext from '../addon/ClaudeWoW/Chat/Context.lua' with { type: 
 import addonChatSend from '../addon/ClaudeWoW/Chat/Send.lua' with { type: 'file' };
 import addonChatReplies from '../addon/ClaudeWoW/Chat/Replies.lua' with { type: 'file' };
 import addonChatGrants from '../addon/ClaudeWoW/Chat/Grants.lua' with { type: 'file' };
+import addonWhisperTabs from '../addon/ClaudeWoW/Whisper/Tabs.lua' with { type: 'file' };
+import addonWhisperReply from '../addon/ClaudeWoW/Whisper/Reply.lua' with { type: 'file' };
+import addonWhisperIntercept from '../addon/ClaudeWoW/Whisper/Intercept.lua' with { type: 'file' };
 import addonLua from '../addon/ClaudeWoW/ClaudeWoW.lua' with { type: 'file' };
 import addonToc from '../addon/ClaudeWoW/ClaudeWoW.toc' with { type: 'file' };
 import addonCodec from '../addon/ClaudeWoW/Codec.lua' with { type: 'file' };
@@ -62,6 +65,9 @@ require('../bridge/assets').embed({
   'addon/ClaudeWoW/Chat/Send.lua': addonChatSend,
   'addon/ClaudeWoW/Chat/Replies.lua': addonChatReplies,
   'addon/ClaudeWoW/Chat/Grants.lua': addonChatGrants,
+  'addon/ClaudeWoW/Whisper/Tabs.lua': addonWhisperTabs,
+  'addon/ClaudeWoW/Whisper/Reply.lua': addonWhisperReply,
+  'addon/ClaudeWoW/Whisper/Intercept.lua': addonWhisperIntercept,
   'addon/ClaudeWoW/ClaudeWoW.lua': addonLua,
   'addon/ClaudeWoW/ClaudeWoW.toc': addonToc,
   'addon/ClaudeWoW/Codec.lua': addonCodec,
