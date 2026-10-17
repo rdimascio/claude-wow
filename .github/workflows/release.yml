@@ -50,8 +50,8 @@ jobs:
         run: |
           pkg=$(node -p "require('./package.json').version")
           toc=$(sed -n 's/^## Version: *//p' addon/ClaudeWoW/ClaudeWoW.toc | tr -d '\r')
-          lua=$(sed -n 's/^ClaudeWoW\.Version = {.*SEMVER = "\([^"]*\)".*/\1/p' addon/ClaudeWoW/ClaudeWoW.lua)
-          echo "package.json $pkg, ClaudeWoW.toc $toc, ClaudeWoW.lua Version.SEMVER $lua"
+          lua=$(sed -n 's/^ClaudeWoW\.Version = {.*SEMVER = "\([^"]*\)".*/\1/p' addon/ClaudeWoW/Transport/Slots.lua)
+          echo "package.json $pkg, ClaudeWoW.toc $toc, Transport/Slots.lua Version.SEMVER $lua"
           test "$pkg" = "$toc"
           test "$pkg" = "$lua"
           if [ "$GITHUB_REF_TYPE" = tag ]; then
