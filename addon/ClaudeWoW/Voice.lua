@@ -310,9 +310,7 @@ local function Try(fn, ...)
 	if ok then return a, b, c, d end
 end
 
-local function Print(msg)
-	print("|cff66ccff[Azeroth Companion]|r " .. msg)
-end
+local function Print(msg) print("|cff66ccff[Azeroth Companion]|r " .. msg) end
 
 local function IsIn(list, value)
 	for _, v in ipairs(list) do
@@ -393,9 +391,7 @@ function V.Event(event)
 	local now = GetTime()
 	local priority = EVENT_PRIORITY[event]
 	if Throttled(priority, now) then return false end
-	if lastLine.handle and lastLine.at and now - lastLine.at < LINE_GAP_SECONDS then
-		Try(StopSound, lastLine.handle)
-	end
+	if lastLine.handle and lastLine.at and now - lastLine.at < LINE_GAP_SECONDS then Try(StopSound, lastLine.handle) end
 	local played, handle, id = PlayIds(ids)
 	lastLine = { at = now, priority = priority, handle = handle, id = id, event = event }
 	return played
@@ -414,13 +410,13 @@ function V.Reply(role, denied)
 	return V.Event(role == "assistant" and "done" or "error")
 end
 
-function V.Last()
-	return lastLine
-end
+function V.Last() return lastLine end
 
 local function LineNames(pack)
 	local names = {}
-	for name in pairs(PackLines(pack) or {}) do table.insert(names, name) end
+	for name in pairs(PackLines(pack) or {}) do
+		table.insert(names, name)
+	end
 	table.sort(names)
 	return names
 end
@@ -496,7 +492,9 @@ local SIMPLE_WORDS = { [""] = true, status = true, on = true, reset = true }
 
 function V.IsCommand(rest)
 	local words = {}
-	for w in (rest or ""):lower():gmatch("%S+") do table.insert(words, w) end
+	for w in (rest or ""):lower():gmatch("%S+") do
+		table.insert(words, w)
+	end
 	local first = words[1] or ""
 	if #words <= 1 and (SIMPLE_WORDS[first] or IsIn(PACK_NAMES, first)) then return true end
 	if first == "lines" then return #words <= 2 end
@@ -507,7 +505,9 @@ end
 
 function V.Command(rest, ctx)
 	local words = {}
-	for w in (rest or ""):lower():gmatch("%S+") do table.insert(words, w) end
+	for w in (rest or ""):lower():gmatch("%S+") do
+		table.insert(words, w)
+	end
 	local first = words[1] or ""
 	local db = DB()
 	local quiet = type(ctx) == "table" and ctx.quiet == true

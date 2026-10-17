@@ -37,9 +37,7 @@ local function Settings()
 	return s
 end
 
-local function Say(msg)
-	print("|cff66ccff[Azeroth Companion]|r " .. msg)
-end
+local function Say(msg) print("|cff66ccff[Azeroth Companion]|r " .. msg) end
 
 local function SafeCall(fn, ...)
 	if type(fn) ~= "function" then return nil end
@@ -53,9 +51,7 @@ local function Readable(v)
 	return v
 end
 
-local function Number(v)
-	return tonumber(Readable(v))
-end
+local function Number(v) return tonumber(Readable(v)) end
 
 local function Text(v)
 	v = Readable(v)
@@ -173,13 +169,9 @@ function R.Record(hit)
 	R.Prune(hit.at)
 end
 
-function R.Hits()
-	return hits
-end
+function R.Hits() return hits end
 
-function R.Reset()
-	hits = {}
-end
+function R.Reset() hits = {} end
 
 local function LevelLabel(level)
 	if level == nil then return "" end
@@ -240,7 +232,9 @@ end
 
 local function Compose(opts)
 	local list = {}
-	for i = math.max(1, #opts.hits - R.MAX_HITS + 1), #opts.hits do table.insert(list, opts.hits[i]) end
+	for i = math.max(1, #opts.hits - R.MAX_HITS + 1), #opts.hits do
+		table.insert(list, opts.hits[i])
+	end
 	local dropped = #opts.hits - #list
 	local blow = list[#list]
 	local function compose()
@@ -249,7 +243,9 @@ local function Compose(opts)
 		for _, hit in ipairs(list) do
 			table.insert(lines, HitLine(hit, opts.now) .. (hit == blow and opts.blowMark or ""))
 		end
-		for _, line in ipairs(opts.tail) do table.insert(lines, line) end
+		for _, line in ipairs(opts.tail) do
+			table.insert(lines, line)
+		end
 		return table.concat(lines, "\n")
 	end
 	local recap = compose()
@@ -268,19 +264,39 @@ function R.BuildRecap(now, recap)
 	if recap and #recap.hits > 0 then
 		local total, sourceCount = Total(recap.hits)
 		local blow = recap.hits[#recap.hits]
-		local summary = string.format("Damage taken: %d from %d source%s. Killing blow: %s's %s.", total, sourceCount, sourceCount == 1 and "" or "s", blow.source, blow.ability)
+		local summary = string.format(
+			"Damage taken: %d from %d source%s. Killing blow: %s's %s.",
+			total,
+			sourceCount,
+			sourceCount == 1 and "" or "s",
+			blow.source,
+			blow.ability
+		)
 		if recap.maxHealth and recap.maxHealth > 0 then summary = summary .. " Max health: " .. recap.maxHealth .. "." end
-		return Compose({ now = now, head = head, title = "Last hits from the game's death recap, oldest first:", hits = recap.hits, blowMark = " <- killing blow", tail = { summary } })
+		return Compose({
+			now = now,
+			head = head,
+			title = "Last hits from the game's death recap, oldest first:",
+			hits = recap.hits,
+			blowMark = " <- killing blow",
+			tail = { summary },
+		})
 	end
 	if #hits == 0 then
-		return head .. "\nNo damage seen in the last " .. R.WINDOW_SECONDS .. " s before death (a fall, a drowning, a debuff that started earlier, or a death recap the game did not share).\n" .. NearbyLine()
+		return head
+			.. "\nNo damage seen in the last "
+			.. R.WINDOW_SECONDS
+			.. " s before death (a fall, a drowning, a debuff that started earlier, or a death recap the game did not share).\n"
+			.. NearbyLine()
 	end
 	local total = Total(hits)
 	local last = hits[#hits]
 	return Compose({
-		now = now, head = head,
+		now = now,
+		head = head,
 		title = "Hits taken in the last " .. R.WINDOW_SECONDS .. " s, oldest first (the game does not say who dealt them):",
-		hits = hits, blowMark = " <- last hit",
+		hits = hits,
+		blowMark = " <- last hit",
 		tail = { string.format("Damage taken: %d. Last hit: %s %d.", total, last.ability, last.amount), NearbyLine() },
 	})
 end
@@ -335,7 +351,7 @@ function R.OnDeath(now, nowEpoch)
 	local chat = R.EnsureChat()
 	if not chat then
 		R.lastSkip = "no room for the " .. R.CHAT_NAME .. " chat (delete one)"
-		Say("No room for a \"" .. R.CHAT_NAME .. "\" chat. Delete a chat to get roasted.")
+		Say('No room for a "' .. R.CHAT_NAME .. '" chat. Delete a chat to get roasted.')
 		return false
 	end
 	ClaudeWoW.Send(recap, nil, { chat = chat.id, kind = R.KIND })
@@ -348,16 +364,18 @@ function R.OnDeath(now, nowEpoch)
 	return true
 end
 
-function R.Listening()
-	return listening
-end
+function R.Listening() return listening end
 
 function R.Listen(on)
 	on = on and true or false
 	if on == listening then return end
 	listening = on
 	for _, name in ipairs(R.EVENTS) do
-		if on then ev:RegisterEvent(name) else ev:UnregisterEvent(name) end
+		if on then
+			ev:RegisterEvent(name)
+		else
+			ev:UnregisterEvent(name)
+		end
 	end
 	for _, name in ipairs(R.PLAYER_UNIT_EVENTS) do
 		if not on then
@@ -374,9 +392,17 @@ function R.Status()
 	local s = Settings()
 	if not s then return "Death roast: not loaded yet" end
 	local wait = R.CooldownLeft(time())
-	return "Death roast is " .. (s.on and "ON" or "OFF")
-		.. ": when you die, the game's death recap (or the last " .. R.WINDOW_SECONDS .. " s of hits you took) goes to the agent in the \"" .. R.CHAT_NAME .. "\" chat for a short roast (at most one every " .. math.floor(R.COOLDOWN_SECONDS / 60) .. " min"
-		.. (wait > 0 and (", next in " .. wait .. " s") or "") .. ")."
+	return "Death roast is "
+		.. (s.on and "ON" or "OFF")
+		.. ": when you die, the game's death recap (or the last "
+		.. R.WINDOW_SECONDS
+		.. ' s of hits you took) goes to the agent in the "'
+		.. R.CHAT_NAME
+		.. '" chat for a short roast (at most one every '
+		.. math.floor(R.COOLDOWN_SECONDS / 60)
+		.. " min"
+		.. (wait > 0 and (", next in " .. wait .. " s") or "")
+		.. ")."
 		.. (R.lastSkip and R.lastSkip ~= "off" and (" Last death was not roasted: " .. R.lastSkip .. ".") or "")
 		.. " /claude config roast on|off"
 end

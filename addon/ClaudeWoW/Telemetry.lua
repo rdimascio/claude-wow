@@ -37,7 +37,8 @@ T.PROBES = {
 	"C_Reputation.GetWatchedFactionData",
 }
 T.URGENT_EVENTS = { PLAYER_LEVEL_UP = true, PLAYER_DEAD = true, NEW_RECIPE_LEARNED = true, QUEST_TURNED_IN = true }
-T.CHANGE_EVENTS = { "PLAYER_MONEY", "PLAYER_XP_UPDATE", "ZONE_CHANGED_NEW_AREA", "BAG_UPDATE_DELAYED", "PLAYER_EQUIPMENT_CHANGED", "SKILL_LINES_CHANGED", "UPDATE_FACTION" }
+T.CHANGE_EVENTS =
+	{ "PLAYER_MONEY", "PLAYER_XP_UPDATE", "ZONE_CHANGED_NEW_AREA", "BAG_UPDATE_DELAYED", "PLAYER_EQUIPMENT_CHANGED", "SKILL_LINES_CHANGED", "UPDATE_FACTION" }
 T.FACTION_STANDING = 3
 T.FACTION_BAR_VALUE = 6
 T.FACTION_ID = 14
@@ -48,7 +49,20 @@ T.INFLIGHT_MAX = 4
 T.INBOX_MAX_AGE = 300
 
 local US = "\31"
-local state = { bridge = false, known = {}, sentAt = {}, sentSeq = {}, sent = {}, inflight = {}, urgent = false, urgentRestored = false, refusedMine = false, observed = false, hint = false, watch = { items = {}, factions = {} } }
+local state = {
+	bridge = false,
+	known = {},
+	sentAt = {},
+	sentSeq = {},
+	sent = {},
+	inflight = {},
+	urgent = false,
+	urgentRestored = false,
+	refusedMine = false,
+	observed = false,
+	hint = false,
+	watch = { items = {}, factions = {} },
+}
 
 local function Try(fn, ...)
 	if type(fn) ~= "function" then return nil end
@@ -62,9 +76,7 @@ local function Returns(fn, ...)
 	if r[1] then return r end
 end
 
-local function Int(n)
-	return string.format("%d", math.floor(n))
-end
+local function Int(n) return string.format("%d", math.floor(n)) end
 
 local function Lookup(name)
 	local value = _G
@@ -75,13 +87,9 @@ local function Lookup(name)
 	return value
 end
 
-local function WholeNumber(v)
-	return type(v) == "number" and v >= 0 and v == math.floor(v) and v or nil
-end
+local function WholeNumber(v) return type(v) == "number" and v >= 0 and v == math.floor(v) and v or nil end
 
-local function Trim(s)
-	return (s:gsub("^%s+", ""):gsub("%s+$", ""))
-end
+local function Trim(s) return (s:gsub("^%s+", ""):gsub("%s+$", "")) end
 
 local function CodePoints(s)
 	local n = 0
@@ -129,11 +137,11 @@ end
 local function CleanStamped(list, max)
 	local out = {}
 	for _, r in ipairs(type(list) == "table" and list or {}) do
-		if type(r) == "table" and WholeNumber(r.id) and r.id > 0 and WholeNumber(r.t) then
-			out[#out + 1] = { id = r.id, t = r.t }
-		end
+		if type(r) == "table" and WholeNumber(r.id) and r.id > 0 and WholeNumber(r.t) then out[#out + 1] = { id = r.id, t = r.t } end
 	end
-	while #out > max do table.remove(out, 1) end
+	while #out > max do
+		table.remove(out, 1)
+	end
 	return out
 end
 
@@ -166,7 +174,9 @@ function T.Sanitize()
 	end
 	table.sort(list, function(a, b) return a.c.seen > b.c.seen end)
 	local chars = {}
-	for i = 1, math.min(#list, T.CHARS_MAX) do chars[list[i].key] = list[i].c end
+	for i = 1, math.min(#list, T.CHARS_MAX) do
+		chars[list[i].key] = list[i].c
+	end
 	ClaudeWoWDB.telemetry = { seq = WholeNumber(root.seq) or 0, chars = chars }
 end
 
@@ -271,13 +281,17 @@ end
 local function Factions()
 	if not C_Reputation then return nil end
 	local ids = {}
-	for _, id in ipairs(state.watch.factions) do ids[#ids + 1] = id end
+	for _, id in ipairs(state.watch.factions) do
+		ids[#ids + 1] = id
+	end
 	local bar = Try(C_Reputation.GetWatchedFactionData)
 	if type(bar) == "table" and WholeNumber(bar.factionID) and bar.factionID > 0 then ids[#ids + 1] = bar.factionID end
 	local parts, seen = {}, {}
 	for _, id in ipairs(ids) do
 		local reaction, standing
-		if not seen[id] then reaction, standing = FactionStanding(id) end
+		if not seen[id] then
+			reaction, standing = FactionStanding(id)
+		end
 		seen[id] = true
 		if WholeNumber(reaction) and type(standing) == "number" and #parts < T.WATCH_FACTIONS_MAX + 1 then
 			parts[#parts + 1] = Int(id) .. "=" .. Int(reaction) .. "/" .. Int(standing)
@@ -288,7 +302,9 @@ end
 
 local function Stamped(list)
 	local parts = {}
-	for _, r in ipairs(list or {}) do parts[#parts + 1] = Int(r.id) .. "@" .. Int(r.t) end
+	for _, r in ipairs(list or {}) do
+		parts[#parts + 1] = Int(r.id) .. "@" .. Int(r.t)
+	end
 	return table.concat(parts, ",")
 end
 
@@ -324,9 +340,7 @@ local function Print(msg)
 	print("|cff66ccff[Azeroth Companion]|r " .. msg)
 end
 
-function T.IsOn()
-	return not (type(ClaudeWoWDB) == "table" and type(ClaudeWoWDB.settings) == "table" and ClaudeWoWDB.settings.telemetry == false)
-end
+function T.IsOn() return not (type(ClaudeWoWDB) == "table" and type(ClaudeWoWDB.settings) == "table" and ClaudeWoWDB.settings.telemetry == false) end
 
 function T.SetOn(on)
 	if type(ClaudeWoWDB) ~= "table" then return end
@@ -340,9 +354,7 @@ function T.Toggle()
 	T.Command("")
 end
 
-function T.Status()
-	return T.IsOn() and "on" or "off"
-end
+function T.Status() return T.IsOn() and "on" or "off" end
 
 function T.Command(rest, ctx)
 	rest = tostring(rest or ""):lower()
@@ -357,13 +369,20 @@ function T.Command(rest, ctx)
 		local loot = ClaudeWoWObserved and ClaudeWoWObserved.LootKeyed and ClaudeWoWObserved.LootKeyed()
 		extra = loot and ", plus prices and loot from windows you open" or ", plus prices from windows you open"
 	end
-	Print("Share game state with the agent is on: your money, level, zone, professions, watched items, gear and reputation" .. extra .. " go to the companion app. /claude config telemetry off stops it.")
+	Print(
+		"Share game state with the agent is on: your money, level, zone, professions, watched items, gear and reputation"
+			.. extra
+			.. " go to the companion app. /claude config telemetry off stops it."
+	)
 end
 
 local function Enabled()
-	return state.bridge and type(ClaudeWoWDB) == "table" and type(ClaudeWoWDB.session) == "string"
+	return state.bridge
+		and type(ClaudeWoWDB) == "table"
+		and type(ClaudeWoWDB.session) == "string"
 		and not (type(ClaudeWoWDB.settings) == "table" and ClaudeWoWDB.settings.context == false)
-		and not state.refusedMine and T.IsOn()
+		and not state.refusedMine
+		and T.IsOn()
 end
 
 local function SentLastHour(now)
@@ -436,7 +455,9 @@ function T.Take(room, solo)
 		state.sentSeq[name] = seq
 	end
 	table.insert(state.inflight, { rec = rec, sent = sent, urgent = restoreUrgent })
-	while #state.inflight > T.INFLIGHT_MAX do table.remove(state.inflight, 1) end
+	while #state.inflight > T.INFLIGHT_MAX do
+		table.remove(state.inflight, 1)
+	end
 	return rec
 end
 
@@ -464,13 +485,9 @@ local function Settle(rec, lost)
 	return false
 end
 
-function T.Delivered(rec)
-	return Settle(rec, false)
-end
+function T.Delivered(rec) return Settle(rec, false) end
 
-function T.Lost(rec)
-	return Settle(rec, true)
-end
+function T.Lost(rec) return Settle(rec, true) end
 
 local function Entry(gs)
 	local key = T.CharacterKey()
@@ -494,7 +511,9 @@ function T.Sync(gs)
 	if ClaudeWoWObserved and ClaudeWoWObserved.SetGather then ClaudeWoWObserved.SetGather(state.observed and gs.gather or nil) end
 	local watch = type(gs.watch) == "table" and gs.watch or {}
 	local items, factions = IdList(watch.items, T.WATCH_ITEMS_MAX), IdList(watch.factions, T.WATCH_FACTIONS_MAX)
-	if table.concat(items, ",") ~= table.concat(state.watch.items, ",") or table.concat(factions, ",") ~= table.concat(state.watch.factions, ",") then changed = true end
+	if table.concat(items, ",") ~= table.concat(state.watch.items, ",") or table.concat(factions, ",") ~= table.concat(state.watch.factions, ",") then
+		changed = true
+	end
 	state.watch = { items = items, factions = factions }
 	local key = T.CharacterKey()
 	state.refusedMine = false
@@ -522,17 +541,11 @@ function T.SyncInbox(gs, bridgeNow)
 	return T.Sync(gs)
 end
 
-function T.Active()
-	return Enabled() and true or false
-end
+function T.Active() return Enabled() and true or false end
 
-function T.Observing()
-	return Enabled() and state.observed and true or false
-end
+function T.Observing() return Enabled() and state.observed and true or false end
 
-function T.Hint()
-	state.hint = true
-end
+function T.Hint() state.hint = true end
 
 function T.Pump()
 	if not Enabled() or not (state.urgent or state.hint) or not T.Allowed(GetTime(), true) then return end
@@ -557,10 +570,14 @@ function T.OnEvent(event, ...)
 	local id = ...
 	if not (WholeNumber(id) and id > 0) then return end
 	local listKey, max = "learned", T.LEARNED_MAX
-	if event == "QUEST_TURNED_IN" then listKey, max = "turnedIn", T.TURNED_IN_MAX end
+	if event == "QUEST_TURNED_IN" then
+		listKey, max = "turnedIn", T.TURNED_IN_MAX
+	end
 	mine[listKey] = type(mine[listKey]) == "table" and mine[listKey] or {}
 	table.insert(mine[listKey], { id = id, t = time() })
-	while #mine[listKey] > max do table.remove(mine[listKey], 1) end
+	while #mine[listKey] > max do
+		table.remove(mine[listKey], 1)
+	end
 end
 
 local frame = CreateFrame("Frame")
@@ -568,8 +585,12 @@ frame:RegisterEvent("PLAYER_LOGIN")
 frame:SetScript("OnEvent", function(_, event, ...)
 	if event == "PLAYER_LOGIN" then
 		T.Sanitize()
-		for name in pairs(T.URGENT_EVENTS) do pcall(frame.RegisterEvent, frame, name) end
-		for _, name in ipairs(T.CHANGE_EVENTS) do pcall(frame.RegisterEvent, frame, name) end
+		for name in pairs(T.URGENT_EVENTS) do
+			pcall(frame.RegisterEvent, frame, name)
+		end
+		for _, name in ipairs(T.CHANGE_EVENTS) do
+			pcall(frame.RegisterEvent, frame, name)
+		end
 		if C_Timer and C_Timer.NewTicker then C_Timer.NewTicker(T.PUMP_SECONDS, T.Pump) end
 		return
 	end

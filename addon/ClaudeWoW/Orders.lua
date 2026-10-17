@@ -135,18 +135,14 @@ function T.AtlasExists(name)
 	return ok and exists == true
 end
 
-local function FontName(pair)
-	return _G[pair[1]] ~= nil and pair[1] or pair[2]
-end
+local function FontName(pair) return _G[pair[1]] ~= nil and pair[1] or pair[2] end
 
 function T.Style()
 	if type(ObjectiveTrackerFrame) ~= "table" and type(QuestWatchFrame) == "table" then return T.STYLE.watch end
 	return T.STYLE.tracker
 end
 
-local function Watching()
-	return card ~= nil and card.style == T.STYLE.watch
-end
+local function Watching() return card ~= nil and card.style == T.STYLE.watch end
 
 local function WatchColor(name)
 	local live = (name == "titleDone" and NORMAL_FONT_COLOR) or (name == "lineDone" and HIGHLIGHT_FONT_COLOR) or nil
@@ -154,9 +150,7 @@ local function WatchColor(name)
 	return c.r, c.g, c.b
 end
 
-local function PercentText(pct)
-	return string.format(type(PERCENTAGE_STRING) == "string" and PERCENTAGE_STRING or DEFAULT_PERCENT, pct)
-end
+local function PercentText(pct) return string.format(type(PERCENTAGE_STRING) == "string" and PERCENTAGE_STRING or DEFAULT_PERCENT, pct) end
 
 local function TrackerColor(style)
 	local colors = type(OBJECTIVE_TRACKER_COLOR) == "table" and OBJECTIVE_TRACKER_COLOR or FALLBACK_COLORS
@@ -189,13 +183,9 @@ function T.CharacterKey()
 	return T.ComparableKey(realm ~= "" and (name .. "-" .. realm) or name)
 end
 
-local function KeptAsciiByte(c)
-	return c:match("[%w_%-]") or ""
-end
+local function KeptAsciiByte(c) return c:match("[%w_%-]") or "" end
 
-function T.ComparableKey(key)
-	return (tostring(key or ""):gsub("[\1-\127]", KeptAsciiByte))
-end
+function T.ComparableKey(key) return (tostring(key or ""):gsub("[\1-\127]", KeptAsciiByte)) end
 
 local function Applies(data)
 	local key = T.CharacterKey()
@@ -215,9 +205,7 @@ local function Normalize(data)
 	for _, goal in ipairs(type(data.goals) == "table" and data.goals or {}) do
 		if #view.goals >= GOALS_MAX then break end
 		local pct = type(goal) == "table" and Percent(goal.pct)
-		if pct and type(goal.title) == "string" and goal.title ~= "" then
-			table.insert(view.goals, { title = Clip(goal.title, GOAL_TITLE_MAX), pct = pct })
-		end
+		if pct and type(goal.title) == "string" and goal.title ~= "" then table.insert(view.goals, { title = Clip(goal.title, GOAL_TITLE_MAX), pct = pct }) end
 	end
 	return view
 end
@@ -370,7 +358,9 @@ local function BuildParts(f)
 	f.header.MinimizeButton:SetScript("OnClick", function() T.ToggleCollapsed() end)
 	f.orderText = LineString(f, watch)
 	f.goalLines, f.bars = {}, {}
-	for i = 1, GOALS_MAX do f.goalLines[i] = LineString(f, watch) end
+	for i = 1, GOALS_MAX do
+		f.goalLines[i] = LineString(f, watch)
+	end
 	if watch then
 		f.pctLine = LineString(f, true)
 		f:Hide()
@@ -441,7 +431,9 @@ local function WatchLayout(view)
 	SetCollapsedArt(collapsed)
 	card.orderText:Hide()
 	card.pctLine:Hide()
-	for _, line in ipairs(card.goalLines) do line:Hide() end
+	for _, line in ipairs(card.goalLines) do
+		line:Hide()
+	end
 	if collapsed then
 		card:SetHeight(WATCH_HEADER_HEIGHT)
 		return
@@ -449,9 +441,7 @@ local function WatchLayout(view)
 	local order = view.order
 	local orderDone = order.pct == PERCENT_DONE
 	local y = ShowWatchLine(card.orderText, order.text, orderDone and "titleDone" or "title", -WATCH_HEADER_HEIGHT)
-	if order.pct then
-		y = ShowWatchLine(card.pctLine, WATCH_DASH .. PercentText(order.pct), orderDone and "lineDone" or "line", y)
-	end
+	if order.pct then y = ShowWatchLine(card.pctLine, WATCH_DASH .. PercentText(order.pct), orderDone and "lineDone" or "line", y) end
 	for i, goal in ipairs(view.goals) do
 		y = ShowWatchLine(card.goalLines[i], WATCH_DASH .. goal.title .. ": " .. PercentText(goal.pct), goal.pct == PERCENT_DONE and "lineDone" or "line", y)
 	end
@@ -463,8 +453,12 @@ local function Layout(view)
 	local collapsed = Collapsed()
 	SetCollapsedArt(collapsed)
 	card.orderText:Hide()
-	for _, line in ipairs(card.goalLines) do line:Hide() end
-	for _, holder in ipairs(card.bars) do holder:Hide() end
+	for _, line in ipairs(card.goalLines) do
+		line:Hide()
+	end
+	for _, holder in ipairs(card.bars) do
+		holder:Hide()
+	end
 	if collapsed then
 		card:SetHeight(HEADER_HEIGHT)
 		return
@@ -540,9 +534,7 @@ local function InVehicleUI()
 	return ok and hasUI == true
 end
 
-local function TrackerReplaced()
-	return InPetBattle() or InVehicleUI()
-end
+local function TrackerReplaced() return InPetBattle() or InVehicleUI() end
 
 local function ReportError(err)
 	local text = tostring(err)
@@ -627,17 +619,13 @@ watcher:SetScript("OnEvent", function()
 	if T.view then T.Refresh() end
 end)
 
-function T.Card()
-	return card
-end
+function T.Card() return card end
 
 function T.ToggleCollapsed()
 	local s = Settings()
 	if not s then return end
 	s.ordersCollapsed = not Collapsed()
-	if type(SOUNDKIT) == "table" and SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON then
-		pcall(PlaySound, SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
-	end
+	if type(SOUNDKIT) == "table" and SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON then pcall(PlaySound, SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON) end
 	T.Refresh()
 end
 
@@ -648,13 +636,9 @@ function T.SetShown(on)
 	T.Refresh()
 end
 
-function T.Toggle()
-	T.SetShown(not T.IsOn())
-end
+function T.Toggle() T.SetShown(not T.IsOn()) end
 
-function T.Status()
-	return T.IsOn() and "on" or "off"
-end
+function T.Status() return T.IsOn() and "on" or "off" end
 
 function T.Command(rest, ctx)
 	rest = tostring(rest or ""):lower()

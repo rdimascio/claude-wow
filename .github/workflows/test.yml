@@ -38,6 +38,11 @@ jobs:
           cache: npm
       - run: npm ci --ignore-scripts
       - run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends lua-check
+      - uses: JohnnyMorganz/stylua-action@479972f01e665acfcba96ada452c36608bdbbb5e # v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          version: v2.6.0
+          args: --check addon/ClaudeWoW
       - run: npm run lint:lua
       - run: npx oxlint --deny-warnings
       - run: npx oxfmt --check

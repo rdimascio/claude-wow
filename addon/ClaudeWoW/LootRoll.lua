@@ -59,13 +59,9 @@ local function PlayKit(name)
 	if id and PlaySound then pcall(PlaySound, id) end
 end
 
-local function AtlasExists(atlas)
-	return C_Texture and C_Texture.GetAtlasExists and C_Texture.GetAtlasExists(atlas) or false
-end
+local function AtlasExists(atlas) return C_Texture and C_Texture.GetAtlasExists and C_Texture.GetAtlasExists(atlas) or false end
 
-local function FolderOf(rule)
-	return tostring(rule):match("^AddDir%((.+)%)$")
-end
+local function FolderOf(rule) return tostring(rule):match("^AddDir%((.+)%)$") end
 
 function R.Hint(choice, rules, chatId, agent)
 	if not ROLL_BUTTONS[choice] then return "" end
@@ -100,9 +96,7 @@ local function AgentLabel(agent)
 	return agent:sub(1, 1):upper() .. agent:sub(2)
 end
 
-local function SameOffer(offer, chatId, msgId)
-	return offer ~= nil and offer.chatId == chatId and offer.msgId == msgId
-end
+local function SameOffer(offer, chatId, msgId) return offer ~= nil and offer.chatId == chatId and offer.msgId == msgId end
 
 local function StillOpen(offer)
 	local rules, msgId = ClaudeWoW.OpenDenial(offer.chatId)
@@ -121,7 +115,9 @@ local function Snapshot(chatId)
 	local rules, msgId, agent = ClaudeWoW.OpenDenial(chatId)
 	if not rules then return nil end
 	local copied = {}
-	for i, rule in ipairs(rules) do copied[i] = rule end
+	for i, rule in ipairs(rules) do
+		copied[i] = rule
+	end
 	local target, plugin = ClaudeWoW.GrantTarget(chatId)
 	return {
 		key = tostring(chatId) .. ":" .. tostring(msgId),
@@ -150,9 +146,7 @@ function R.Blocked()
 	return nil
 end
 
-local function IsLive(offer)
-	return offer ~= nil and ClaudeWoW.IsLiveChat(offer.chatId)
-end
+local function IsLive(offer) return offer ~= nil and ClaudeWoW.IsLiveChat(offer.chatId) end
 
 local function Choices(offer)
 	if IsLive(offer) then return { "greed", "pass" } end
@@ -165,9 +159,7 @@ local function Clip(text, max)
 	return text:sub(1, max - 3) .. "..."
 end
 
-local function Plain(text)
-	return (tostring(text or ""):gsub("|", "||"))
-end
+local function Plain(text) return (tostring(text or ""):gsub("|", "||")) end
 
 function R.DetailLines(offer)
 	local lines = {}
@@ -198,7 +190,9 @@ local function ShowItemTooltip(owner)
 	if #details > 0 then
 		GameTooltip:AddLine(" ")
 		GameTooltip:AddLine("What it tried:", 1, 0.82, 0)
-		for _, detail in ipairs(details) do GameTooltip:AddLine(Plain(detail), 0.8, 0.8, 0.8, true) end
+		for _, detail in ipairs(details) do
+			GameTooltip:AddLine(Plain(detail), 0.8, 0.8, 0.8, true)
+		end
 	end
 	GameTooltip:AddLine(" ")
 	for _, choice in ipairs(Choices(offer)) do
@@ -357,9 +351,7 @@ local function Layout(f, offer)
 	f:SetHeight(TOAST_HEIGHT + height)
 end
 
-local function HighlightGreed(f)
-	f.GreedButton:LockHighlight()
-end
+local function HighlightGreed(f) f.GreedButton:LockHighlight() end
 
 local function HideFrame()
 	if not frame then return end
@@ -369,9 +361,7 @@ end
 
 local PresentNext
 
-local function HoldLine(reason)
-	return HOLD_TEXT[reason] or HOLD_TEXT[hold and hold.reason] or HOLD_TEXT.combat
-end
+local function HoldLine(reason) return HOLD_TEXT[reason] or HOLD_TEXT[hold and hold.reason] or HOLD_TEXT.combat end
 
 local function Sample()
 	local blocked = R.Blocked() ~= nil
@@ -384,9 +374,7 @@ function R.Settling()
 	return lastBlockedAt ~= nil and GetTime() - lastBlockedAt < RELEASE_DELAY
 end
 
-local function Watched()
-	return hold ~= nil or parked ~= nil or ClaudeWoW.ConfirmOpen()
-end
+local function Watched() return hold ~= nil or parked ~= nil or ClaudeWoW.ConfirmOpen() end
 
 local function StopIdle()
 	if holdTicker and not Watched() then
@@ -402,9 +390,7 @@ function R.Tick()
 end
 
 local function Watch()
-	if not holdTicker and C_Timer and C_Timer.NewTicker then
-		holdTicker = C_Timer.NewTicker(HOLD_TICK, function() R.Tick() end)
-	end
+	if not holdTicker and C_Timer and C_Timer.NewTicker then holdTicker = C_Timer.NewTicker(HOLD_TICK, function() R.Tick() end) end
 end
 
 local function Hold(reason, chatId)
@@ -510,9 +496,7 @@ function R.CheckHold()
 	Release()
 end
 
-function R.Armed()
-	return current ~= nil and current.shownAt ~= nil and GetTime() - current.shownAt >= CLICK_DELAY
-end
+function R.Armed() return current ~= nil and current.shownAt ~= nil and GetTime() - current.shownAt >= CLICK_DELAY end
 
 function R.Offer(chatId)
 	local offer = Snapshot(chatId)
@@ -658,9 +642,7 @@ function R.CloseAll()
 	HideFrame()
 end
 
-function R.Held()
-	return hold ~= nil
-end
+function R.Held() return hold ~= nil end
 
 local events = CreateFrame("Frame")
 for _, event in ipairs({ "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "START_LOOT_ROLL", "CANCEL_LOOT_ROLL" }) do
@@ -672,14 +654,8 @@ events:SetScript("OnEvent", function()
 	if hold and C_Timer and C_Timer.After then C_Timer.After(RELEASE_DELAY, R.CheckHold) end
 end)
 
-function R.Current()
-	return current
-end
+function R.Current() return current end
 
-function R.Parked()
-	return parked
-end
+function R.Parked() return parked end
 
-function R.Waiting()
-	return #queue
-end
+function R.Waiting() return #queue end

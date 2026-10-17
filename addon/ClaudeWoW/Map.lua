@@ -25,10 +25,20 @@ local NAV_MENU_DISMISS = "Dismiss"
 local atan2 = math.atan2 or math.atan -- Lua 5.1 in game; 5.3 in the test VM
 
 local KIND_COLOR = {
-	ore = { 0.95, 0.6, 0.25 }, herb = { 0.35, 0.95, 0.35 }, quest = { 1, 0.85, 0 }, turnin = { 0.35, 0.8, 1 },
-	kill = { 1, 0.3, 0.3 }, loot = { 1, 0.5, 0.85 }, object = { 0.8, 0.6, 1 }, explore = { 0.5, 1, 1 },
-	npc = { 1, 1, 1 }, trainer = { 0.95, 0.95, 0.4 }, vendor = { 0.6, 0.95, 0.6 }, dungeon = { 1, 0.45, 0.1 },
-	flight = { 0.55, 0.75, 1 }, poi = { 1, 1, 1 },
+	ore = { 0.95, 0.6, 0.25 },
+	herb = { 0.35, 0.95, 0.35 },
+	quest = { 1, 0.85, 0 },
+	turnin = { 0.35, 0.8, 1 },
+	kill = { 1, 0.3, 0.3 },
+	loot = { 1, 0.5, 0.85 },
+	object = { 0.8, 0.6, 1 },
+	explore = { 0.5, 1, 1 },
+	npc = { 1, 1, 1 },
+	trainer = { 0.95, 0.95, 0.4 },
+	vendor = { 0.6, 0.95, 0.6 },
+	dungeon = { 1, 0.45, 0.1 },
+	flight = { 0.55, 0.75, 1 },
+	poi = { 1, 1, 1 },
 }
 
 local mdb -- ClaudeWoWMapDB: { map, hidden = { [layer] = true }, nodes = { ore, herb, filter }, nav = { layer, index }, navPos }
@@ -47,9 +57,7 @@ local function Print(msg)
 	end
 end
 
-local function Points(n)
-	return n == 1 and "1 point" or (tostring(n) .. " points")
-end
+local function Points(n) return n == 1 and "1 point" or (tostring(n) .. " points") end
 
 local function MapLink(l)
 	if not (ClaudeWoW and ClaudeWoW.Link) then return "Open the map (M) to see it." end
@@ -88,7 +96,10 @@ local function ContinentOf(mapID)
 	while id and id > 0 and guard < 10 do
 		local info = Try(C_Map.GetMapInfo, id)
 		if type(info) ~= "table" then break end
-		if info.mapType == CONTINENT then continentOf[mapID] = id; return id end
+		if info.mapType == CONTINENT then
+			continentOf[mapID] = id
+			return id
+		end
 		id, guard = info.parentMapID, guard + 1
 	end
 	continentOf[mapID] = false
@@ -98,14 +109,10 @@ end
 local function Project(mapID, x, y, target)
 	if mapID == target then return x, y end
 	local minX, maxX, minY, maxY = Try(C_Map.GetMapRectOnMap, mapID, target)
-	if type(minX) == "number" and maxX ~= minX and maxY ~= minY then
-		return minX + (maxX - minX) * x, minY + (maxY - minY) * y
-	end
+	if type(minX) == "number" and maxX ~= minX and maxY ~= minY then return minX + (maxX - minX) * x, minY + (maxY - minY) * y end
 	-- `target` sits inside mapID (a city map shown while the point is on its zone).
 	minX, maxX, minY, maxY = Try(C_Map.GetMapRectOnMap, target, mapID)
-	if type(minX) == "number" and maxX ~= minX and maxY ~= minY then
-		return (x - minX) / (maxX - minX), (y - minY) / (maxY - minY)
-	end
+	if type(minX) == "number" and maxX ~= minX and maxY ~= minY then return (x - minX) / (maxX - minX), (y - minY) / (maxY - minY) end
 end
 
 -- Continent-space size in yards, measured from the engine's own map->world transform.
@@ -286,9 +293,15 @@ end
 
 function M.Refresh()
 	if not overlay or not WorldMapFrame:IsShown() then return end
-	for i = 1, pinCount do pins[i]:Hide() end
-	for i = 1, lineCount do lines[i]:Hide() end
-	for i = 1, nodeCount do nodePins[i]:Hide() end
+	for i = 1, pinCount do
+		pins[i]:Hide()
+	end
+	for i = 1, lineCount do
+		lines[i]:Hide()
+	end
+	for i = 1, nodeCount do
+		nodePins[i]:Hide()
+	end
 	pinCount, lineCount, nodeCount = 0, 0, 0
 	local mapID = WorldMapFrame:GetMapID()
 	if not mapID then return end
@@ -307,7 +320,10 @@ function M.Refresh()
 					if l.ordered and prev then AddLine(prev[1], prev[2], x, y, color, 2.5 * scale) end
 					pinCount = pinCount + 1
 					local b = pins[pinCount]
-					if not b then b = NewPin(PIN_SIZE); pins[pinCount] = b end
+					if not b then
+						b = NewPin(PIN_SIZE)
+						pins[pinCount] = b
+					end
 					local current = nav and nav.layer == l.name and nav.index == i
 					b.dot:SetVertexColor(color[1], color[2], color[3], 1)
 					b.ring:SetVertexColor(current and 1 or 0, current and 1 or 0, current and 1 or 0, 0.9)
@@ -322,9 +338,7 @@ function M.Refresh()
 				end
 			end
 			-- A loop closes back to its first stop.
-			if l.loop and l.ordered and prev and first and #l.points > 2 then
-				AddLine(prev[1], prev[2], first[1], first[2], first[3], 2.5 * scale)
-			end
+			if l.loop and l.ordered and prev and first and #l.points > 2 then AddLine(prev[1], prev[2], first[1], first[2], first[3], 2.5 * scale) end
 		end
 	end
 end
@@ -365,10 +379,21 @@ end
 local function BuildNavigator()
 	nav = CreateFrame("Frame", "ClaudeWoWNavigator", UIParent, "BackdropTemplate")
 	nav:SetSize(250, 44)
-	nav:SetBackdrop({ bgFile = "Interface\\Tooltips\\UI-Tooltip-Background", edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", tile = true, tileSize = 16, edgeSize = 12, insets = { left = 3, right = 3, top = 3, bottom = 3 } })
+	nav:SetBackdrop({
+		bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+		edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+		tile = true,
+		tileSize = 16,
+		edgeSize = 12,
+		insets = { left = 3, right = 3, top = 3, bottom = 3 },
+	})
 	nav:SetBackdropColor(0, 0, 0, 0.7)
 	local p = DB().navPos
-	if p then nav:SetPoint(p[1], UIParent, p[1], p[2], p[3]) else nav:SetPoint("TOP", UIParent, "TOP", 0, -120) end
+	if p then
+		nav:SetPoint(p[1], UIParent, p[1], p[2], p[3])
+	else
+		nav:SetPoint("TOP", UIParent, "TOP", 0, -120)
+	end
 	nav:SetMovable(true)
 	nav:EnableMouse(true)
 	nav:RegisterForDrag("LeftButton")
@@ -454,7 +479,11 @@ function M.UpdateNavigator()
 	end
 	nav.arrow:Show()
 	local facing = Try(GetPlayerFacing)
-	if facing and bearing then nav.arrow:SetRotation(bearing - facing) else nav.arrow:SetRotation(0) end
+	if facing and bearing then
+		nav.arrow:SetRotation(bearing - facing)
+	else
+		nav.arrow:SetRotation(0)
+	end
 	if dist then
 		nav.text:SetText(string.format("%d yd  |cff888888%s|r", math.floor(dist + 0.5), l.title))
 		if dist <= ARRIVE_YARDS then
@@ -468,7 +497,10 @@ end
 
 function M.Navigate(layer, index)
 	local l = FindLayer(layer)
-	if not l then Print("No layer named " .. tostring(layer) .. "."); return end
+	if not l then
+		Print("No layer named " .. tostring(layer) .. ".")
+		return
+	end
 	routeAllowed, offered = true, nil
 	DB().nav = { layer = layer, index = math.max(1, math.min(index or 1, #l.points)) }
 	mdb.hidden[layer] = nil
@@ -481,7 +513,9 @@ function M.Step(delta, arrived)
 	if not l then return end
 	local nexti = i + delta
 	if nexti > #l.points then
-		if l.loop then nexti = 1 else
+		if l.loop then
+			nexti = 1
+		else
 			Print("Route finished: " .. tostring(l.title) .. ".")
 			mdb.nav = nil
 			M.UpdateNavigator()
@@ -498,8 +532,13 @@ end
 
 function M.ShowLayer(name)
 	local l = FindLayer(name)
-	if not l then Print("No layer named " .. tostring(name) .. "."); return end
-	if l.ordered and #l.points > 0 then routeAllowed, offered = true, nil end
+	if not l then
+		Print("No layer named " .. tostring(name) .. ".")
+		return
+	end
+	if l.ordered and #l.points > 0 then
+		routeAllowed, offered = true, nil
+	end
 	DB().hidden[name] = nil
 	if l.ordered and #l.points > 0 and (not mdb.nav or mdb.nav.layer ~= name) then mdb.nav = { layer = name, index = 1 } end
 	M.UpdateNavigator()
@@ -532,14 +571,10 @@ function M.StartOffered()
 	M.Navigate(name, 1)
 end
 
-function M.Offered()
-	return offered
-end
+function M.Offered() return offered end
 
 function M.NavMenuItems()
-	if offered and not NavPoint() then
-		return { { NAV_MENU_START, M.StartOffered }, { NAV_MENU_DISMISS, M.Stop } }
-	end
+	if offered and not NavPoint() then return { { NAV_MENU_START, M.StartOffered }, { NAV_MENU_DISMISS, M.Stop } } end
 	return { { NAV_MENU_SKIP, function() M.Step(1) end }, { NAV_MENU_STOP, M.Stop } }
 end
 
@@ -548,14 +583,18 @@ function M.NavMenu(anchor)
 	if type(MenuUtil) == "table" and type(MenuUtil.CreateContextMenu) == "function" then
 		local shown = pcall(MenuUtil.CreateContextMenu, anchor, function(_, root)
 			root:CreateTitle("Route")
-			for _, item in ipairs(items) do root:CreateButton(item[1], item[2]) end
+			for _, item in ipairs(items) do
+				root:CreateButton(item[1], item[2])
+			end
 		end)
 		if shown then return "menu" end
 	end
 	if type(EasyMenu) == "function" then
 		M.dropdown = M.dropdown or CreateFrame("Frame", "ClaudeWoWNavigatorMenu", UIParent, "UIDropDownMenuTemplate")
 		local list = { { text = "Route", isTitle = true, notCheckable = true } }
-		for _, item in ipairs(items) do table.insert(list, { text = item[1], func = item[2], notCheckable = true }) end
+		for _, item in ipairs(items) do
+			table.insert(list, { text = item[1], func = item[2], notCheckable = true })
+		end
 		if pcall(EasyMenu, list, M.dropdown, "cursor", 0, 0, "MENU") then return "dropdown" end
 	end
 	items[1][2]()
@@ -568,7 +607,9 @@ end
 
 local function LayerKey(l)
 	local parts = { l.title or "", tostring(l.ordered), tostring(l.loop), #(l.points or {}) }
-	for _, p in ipairs(l.points or {}) do parts[#parts + 1] = table.concat({ p[1], p[2], p[3], p[4] }, ",") end
+	for _, p in ipairs(l.points or {}) do
+		parts[#parts + 1] = table.concat({ p[1], p[2], p[3], p[4] }, ",")
+	end
 	return table.concat(parts, ";")
 end
 
@@ -579,7 +620,9 @@ function M.Sync(m)
 	local cur = DB().map
 	if cur and cur.epoch == m.epoch and (tonumber(m.version) or 0) <= (tonumber(cur.version) or 0) then return end
 	local old = {}
-	for _, l in ipairs(cur and cur.layers or {}) do old[l.name] = LayerKey(l) end
+	for _, l in ipairs(cur and cur.layers or {}) do
+		old[l.name] = LayerKey(l)
+	end
 	local layers, changed = {}, {}
 	for _, l in ipairs(m.layers) do
 		if type(l) == "table" and type(l.name) == "string" and type(l.points) == "table" then
@@ -617,10 +660,27 @@ local function Status()
 	local layers = Layers()
 	if #layers == 0 then Print("No layers yet. Ask the agent for a route, for example: /claude route me through copper veins in Loch Modan") end
 	for _, l in ipairs(layers) do
-		Print(string.format("%s%s|r  %s (%s)%s", mdb.hidden[l.name] and "|cff888888" or "|cffffffff", l.name, l.title or "", Points(#l.points), (mdb.nav and mdb.nav.layer == l.name) and string.format("  navigating %d/%d", mdb.nav.index, #l.points) or ""))
+		Print(
+			string.format(
+				"%s%s|r  %s (%s)%s",
+				mdb.hidden[l.name] and "|cff888888" or "|cffffffff",
+				l.name,
+				l.title or "",
+				Points(#l.points),
+				(mdb.nav and mdb.nav.layer == l.name) and string.format("  navigating %d/%d", mdb.nav.index, #l.points) or ""
+			)
+		)
 	end
 	local n = mdb.nodes
-	Print(string.format("Nodes: ore %s, herb %s, filter %s.%s", n.ore and "on" or "off", n.herb and "on" or "off", n.filter, ClaudeWoWNodes and "" or "  The ClaudeWoW_Nodes data addon is not installed."))
+	Print(
+		string.format(
+			"Nodes: ore %s, herb %s, filter %s.%s",
+			n.ore and "on" or "off",
+			n.herb and "on" or "off",
+			n.filter,
+			ClaudeWoWNodes and "" or "  The ClaudeWoW_Nodes data addon is not installed."
+		)
+	)
 	Print("Commands: /claude config map ore|herb [on|off], filter all|skill, show|hide <layer>, nav <layer> [n], next, prev, stop  (/aimap is the same)")
 end
 
@@ -629,7 +689,8 @@ function M.Command(msg, ctx)
 	local quiet = type(ctx) == "table" and ctx.quiet == true
 	local cmd, rest = (msg or ""):match("^%s*(%S*)%s*(.-)%s*$")
 	cmd = (cmd or ""):lower()
-	if cmd == "" then Status()
+	if cmd == "" then
+		Status()
 	elseif cmd == "ore" or cmd == "herb" then
 		local v = rest:lower()
 		mdb.nodes[cmd] = (v == "on") or (v ~= "off" and not mdb.nodes[cmd])
@@ -640,16 +701,24 @@ function M.Command(msg, ctx)
 		Print(rest == "all" and "Showing every node." or "Showing the nodes your skill can gather.")
 		M.Refresh()
 	elseif (cmd == "show" or cmd == "hide") and rest ~= "" then
-		if not FindLayer(rest) then Print("No layer named " .. rest .. "."); return end
+		if not FindLayer(rest) then
+			Print("No layer named " .. rest .. ".")
+			return
+		end
 		mdb.hidden[rest] = (cmd == "hide") or nil
 		M.Refresh()
 	elseif cmd == "nav" then
 		local name, idx = rest:match("^(%S+)%s*(%d*)$")
 		M.Navigate(name, tonumber(idx))
-	elseif cmd == "next" then M.Step(1)
-	elseif cmd == "prev" then M.Step(-1)
-	elseif cmd == "stop" then M.Stop()
-	else Status() end
+	elseif cmd == "next" then
+		M.Step(1)
+	elseif cmd == "prev" then
+		M.Step(-1)
+	elseif cmd == "stop" then
+		M.Stop()
+	else
+		Status()
+	end
 end
 
 SLASH_CLAUDEWOWMAP1 = "/aimap"
