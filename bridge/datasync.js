@@ -350,26 +350,38 @@ const TABLES = Object.freeze([
       'ID',
       'InventoryType',
       'ItemDelay',
+      'ItemRandomSuffixGroupID',
+      'RandomSelect',
       ...ITEM_STAT_SLOTS.flatMap(k => [`StatModifier_bonusStat_${k}`, `StatModifier_bonusAmount_${k}`]),
       ...ITEM_DAMAGE_SLOTS.flatMap(k => [`MinDamage_${k}`, `MaxDamage_${k}`]),
       ...ITEM_RESISTANCE_SLOTS.map(k => `Resistances_${k}`),
     ],
     convert(row) {
+      const id = idOf(row);
       if (intOf(row, 'InventoryType') <= 0) throw new Skip();
-      const stats = [];
-      for (const k of ITEM_STAT_SLOTS) {
-        const amount = intOf(row, `StatModifier_bonusAmount_${k}`);
-        if (amount !== 0) stats.push([intOf(row, `StatModifier_bonusStat_${k}`), amount]);
+      let parsed;
+      try {
+        const stats = [];
+        for (const k of ITEM_STAT_SLOTS) {
+          const amount = intOf(row, `StatModifier_bonusAmount_${k}`);
+          if (amount !== 0) stats.push([intOf(row, `StatModifier_bonusStat_${k}`), amount]);
+        }
+        const damage = ITEM_DAMAGE_SLOTS.map(k => [numberOf(row, `MinDamage_${k}`), numberOf(row, `MaxDamage_${k}`)]).filter(([lo, hi]) => lo || hi);
+        const resistances = ITEM_RESISTANCE_SLOTS.map(k => intOf(row, `Resistances_${k}`));
+        const random = intOf(row, 'ItemRandomSuffixGroupID') > 0 || intOf(row, 'RandomSelect') > 0;
+        parsed = { stats, damage, delay: intOf(row, 'ItemDelay'), resistances, random };
+      } catch (e) {
+        if (!(e instanceof Drop)) throw e;
+        return { id, unreadable: e.reason };
       }
-      const damage = ITEM_DAMAGE_SLOTS.map(k => [numberOf(row, `MinDamage_${k}`), numberOf(row, `MaxDamage_${k}`)]).filter(([lo, hi]) => lo || hi);
-      const resistances = ITEM_RESISTANCE_SLOTS.map(k => intOf(row, `Resistances_${k}`));
-      const delay = intOf(row, 'ItemDelay');
-      if (!stats.length && !damage.length && resistances.every(n => n === 0)) throw new Skip();
+      const { stats, damage, delay, resistances, random } = parsed;
+      if (!stats.length && !damage.length && !random && resistances.every(n => n === 0)) throw new Skip();
       return {
-        id: idOf(row),
+        id,
         ...(stats.length ? { stats } : {}),
         ...(damage.length ? { damage, delay } : {}),
         ...(resistances.some(n => n !== 0) ? { resistances } : {}),
+        ...(random ? { random: true } : {}),
       };
     },
   },
@@ -398,6 +410,17 @@ const TABLES = Object.freeze([
         value: intOf(row, 'EffectBasePoints') + intOf(row, 'EffectDieSides'),
         misc: intOf(row, 'EffectMiscValue_0'),
       };
+    },
+  },
+  {
+    table: 'SpellEquippedItems',
+    entity: 'spellequipreqs',
+    optional: true,
+    columns: ['ID', 'SpellID', 'EquippedItemClass', 'EquippedItemSubclass', 'EquippedItemInvTypes'],
+    convert(row) {
+      const itemClass = intOf(row, 'EquippedItemClass');
+      if (itemClass < 0) throw new Skip();
+      return { id: idOf(row), spell: idOf(row, 'SpellID'), itemClass, subclassMask: intOf(row, 'EquippedItemSubclass'), invTypeMask: intOf(row, 'EquippedItemInvTypes') };
     },
   },
   {

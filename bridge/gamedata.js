@@ -31,6 +31,7 @@ const ENTITIES = Object.freeze([
   'itemstats',
   'itemeffects',
   'spelleffects',
+  'spellequipreqs',
 ]);
 const MAX_QUERY_LENGTH = 100;
 const REPLACED_PROBLEM = 'a newer sync replaced this data while it was in use; ask again';

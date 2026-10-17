@@ -1,6 +1,7 @@
 'use strict';
 
-const ENTITIES = Object.freeze(['itemstats', 'itemeffects', 'spelleffects']);
+const ENTITIES = Object.freeze(['itemstats', 'itemeffects', 'spelleffects', 'spellequipreqs']);
+const INVENTORY_SHIELD = 14;
 const APPLY_AURA = 6;
 const TRIGGER = Object.freeze({ use: 0, equip: 1, onHit: 2 });
 const ALL_MAGIC = 126;
@@ -96,6 +97,10 @@ function decode(store, itemId) {
   const stats = {};
   const unread = [];
   const notCounted = [];
+  if (row && row.unreadable) unread.push({ kind: 'badRow', reason: row.unreadable });
+  if (row && row.random) unread.push({ kind: 'randomStats' });
+  const item = store.byId('items', itemId);
+  if (item && item.inventoryType === INVENTORY_SHIELD) unread.push({ kind: 'shieldBlock' });
   for (const [id, amount] of (row && row.stats) || []) {
     if (ITEM_STATS[id]) add(stats, ITEM_STATS[id], amount);
     else unread.push({ kind: 'itemStat', stat: id, amount });
@@ -111,6 +116,7 @@ function decode(store, itemId) {
     if (extra.length) unread.push({ kind: 'extraDamage', damage: extra });
   }
   const effectsOf = store.group('spelleffects', 'spell', e => [e.spell]);
+  const restrictedTo = store.group('spellequipreqs', 'spell', e => [e.spell]);
   const triggers = store.group('itemeffects', 'item', e => [e.item]).get(itemId) || [];
   for (const t of triggers) {
     if (t.trigger === TRIGGER.use) {
@@ -119,6 +125,11 @@ function decode(store, itemId) {
     }
     if (t.trigger !== TRIGGER.equip) {
       unread.push({ kind: t.trigger === TRIGGER.onHit ? 'onHit' : 'trigger', trigger: t.trigger, spell: t.spell });
+      continue;
+    }
+    const restriction = (restrictedTo.get(t.spell) || [])[0];
+    if (restriction) {
+      unread.push({ kind: 'restricted', spell: t.spell, itemClass: restriction.itemClass, subclassMask: restriction.subclassMask });
       continue;
     }
     const effects = effectsOf.get(t.spell) || [];
