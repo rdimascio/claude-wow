@@ -417,7 +417,7 @@ The keys you are most likely to touch. Every key, flag and environment variable 
 | `capture.mode` | `screenshot` (default: the addon calls `Screenshot()`; the bridge reads the file from the client's `Screenshots` folder) or `pixel` (deprecated screen capture; see [Transports](#transports)) |
 | `vision.maxWidth`, `vision.keep` | screenshot mode: how wide the picture of your screen is scaled to before it goes to the agent (default 1280), and how many may wait in `~/.claude-wow/tmp` at once (default 6) |
 | `capture.keepComposited`, `capture.windowName` | Linux: keep the compositor drawing the game window (if the probe sees black), or find the window by title |
-| `slots`, `actMax`, `presenceMax` | pool sizes; must match the constants at the top of `ClaudeWoW.lua` if you change them |
+| `slots`, `actMax`, `presenceMax` | pool sizes; must match the constants at the top of `Transport/Signals.lua` if you change them |
 | `timeoutMs` | kill a run that takes longer than this (default 30 min) |
 | `killGraceMs` | how long a run's process group gets after `SIGTERM` before `SIGKILL`, on a timeout or when the bridge stops (default 5 s) |
 
