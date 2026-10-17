@@ -20,6 +20,9 @@ Transport\Signals.lua
 Transport\Slots.lua
 Transport\Tick.lua
 Chat\Context.lua
+Chat\Send.lua
+Chat\Replies.lua
+Chat\Grants.lua
 ClaudeWoW.lua
 Map.lua
 Roast.lua
