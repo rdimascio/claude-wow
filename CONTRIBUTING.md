@@ -8,7 +8,14 @@ Thanks for looking at this. Bug reports, questions and pull requests are all wel
 addon/ClaudeWoW/     the in-game addon (Lua 5.1, WoW API); every file reads `local _, ns = ...`; every file after Core/Namespace.lua returns at once when `ns.Try` is missing (the restart guard; ClaudeWoW.lua prints one line first)
   Core/Namespace.lua    first in the toc: the private namespace `ns`, one copy of each shared helper (Try, Trim, Display, Link, Fmt*, Money, ...), the product name and chat prefix, `ns.files` and its FNV-1a fingerprint
   Core/Log.lua          ns.Print (game chat with the prefix) and ns.Say (through ClaudeWoW.Print when the core is loaded)
-  ClaudeWoW.lua        the core: strip, slots, chats, UI, slash commands
+  Core/State.lua        the `ClaudeWoW`, `Q`, `Cli` and `Whisper` tables, the saved-variables handle (`ns.db`, set by InitDB and its migrations), the per-session `run` table, `ns.ui`, and the chat primitives (NewId, FindChat, ActiveChat, AddChat, AddHistory, AnyPending, the per-character chat stash)
+  Transport/Strip.lua   the pixel strip: the frame, the codec and levels, one record per message
+  Transport/Screenshot.lua  the screenshot transport, its CVars, TellPlayer and Q.Notify, and RefreshStrip / ApplyTransport, which drive every outbound transport
+  Transport/ChatLog.lua the chat log transport (ClaudeWoW.ChatLog)
+  Transport/Signals.lua the sound-file signals, Presence, the bridge state and the Connect button
+  Transport/Slots.lua   slot loads, acks, late replies, the Inbox.lua path and ClaudeWoW.Version
+  Transport/Tick.lua    the 2 s tick and the reload fallback
+  ClaudeWoW.lua        the core: chats, sending, whisper tabs, UI, slash commands
   Codec.lua             pixel-strip encoder, pure Lua, no WoW calls
   Inbox.lua             placeholder the bridge overwrites at runtime
   Widgets.lua           live UI widgets from the agent, allowlist sandbox, /claude config ui list|remove|run, /claude dev globals
@@ -149,7 +156,7 @@ Two things are different inside the binary, and `bridge/runtime.js` is the one p
 
 - **Lua** uses tabs, `local` everything, and only APIs present in both clients, Forever and Classic Era, or a guarded fallback for the one that lacks it. Check against the `forever` and `classic_era` branches of [Gethe/wow-ui-source](https://github.com/Gethe/wow-ui-source) before using a new API.
 - **JavaScript** uses two-space indent, single quotes, `'use strict'`, CommonJS. The bridge must stay dependency-free: it is installed with `npm link` on machines that may never run `npm install`.
-- **Transport constants** (`slots`, `actMax`, `presenceMax`, strip cell size and row counts) live in three places that must agree: `config.example.json`, the top of `ClaudeWoW.lua`, and `Codec.lua`. See [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
+- **Transport constants** (`slots`, `actMax`, `presenceMax`, strip cell size and row counts) live in three places that must agree: `config.example.json`, the top of `Transport/Signals.lua` and `Transport/Strip.lua`, and `Codec.lua`. See [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 - **Compatibility:** the bridge accepts older strip record formats, older `state.json` layouts, a `config.json` with Claude's settings at the top level, and history with role `claude`. Keep that when changing a format, and note it in `CHANGELOG.md`.
 - **Agents:** everything an agent needs is its entry in `bridge/agents.js` (see "Adding an agent" in [docs/AGENTS.md](docs/AGENTS.md)); `bridge.js` must not know one agent from another. Permission rules are written in Claude Code's syntax everywhere and translated in the agent's `args`. A parser is fed each line of the CLI's stream as parsed JSON and must ignore what it doesn't know: the CLIs add event types between releases.
 - Comments explain why, not what. Keep the section banners in `ClaudeWoW.lua` and `bridge.js` in order.

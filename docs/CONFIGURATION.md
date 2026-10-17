@@ -279,7 +279,7 @@ The capture region is `cellsPerRow × cellPx` by `maxRows × cellPx` pixels (800
 
 ## Slot pool and signal files
 
-These sizes are baked into the files `install-slots.js` creates, and the addon has matching constants at the top of `addon/ClaudeWoW/ClaudeWoW.lua` (`SLOT_COUNT`, `ACT_MAX`, `PRESENCE_MAX`). Change all three places together, re-run `node bridge/install-slots.js`, and restart the game.
+These sizes are baked into the files `install-slots.js` creates, and the addon has matching constants at the top of `addon/ClaudeWoW/Transport/Signals.lua` (`SLOT_COUNT`, `ACT_MAX`, `PRESENCE_MAX`). Change all three places together, re-run `node bridge/install-slots.js`, and restart the game.
 
 | Key | Default | Meaning |
 |---|---|---|

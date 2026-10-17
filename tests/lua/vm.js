@@ -23,7 +23,14 @@ function tocFilesUpTo(last, files = tocFiles()) {
   return files.slice(0, at + 1);
 }
 
+const isShared = f => f.startsWith('Core/') || f.startsWith('Transport/');
+
 const coreFiles = () => tocFiles().filter(f => f.startsWith('Core/'));
+
+function sharedFilesBefore(file, files = tocFiles()) {
+  const at = files.indexOf(file);
+  return (at < 0 ? files : files.slice(0, at)).filter(isShared);
+}
 
 function createVM({ stub = true, utf8 = true } = {}) {
   const L = lauxlib.luaL_newstate();
@@ -65,7 +72,7 @@ function createVM({ stub = true, utf8 = true } = {}) {
   };
 
   const loadFile = file => {
-    if (!file.startsWith('Core/')) for (const core of coreFiles()) if (!loaded.has(core)) loadOne(core);
+    if (!isShared(file)) for (const shared of sharedFilesBefore(file)) if (!loaded.has(shared)) loadOne(shared);
     loadOne(file);
   };
 
