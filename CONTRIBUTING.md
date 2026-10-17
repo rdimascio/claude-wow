@@ -40,6 +40,7 @@ install.sh, install.ps1  the one-line installers (curl | sh, irm | iex): the bin
 homebrew/             the Homebrew tap layout (Formula/claude-wow.rb) and why it is the secondary route
 dev/widget-audit.js   `npm run audit:widgets`: reads the names /claude dev globals saved and flags allowlist gaps
 tests/                see below
+  lua/vm.js             the one fengari VM builder every addon test uses: reads the toc, passes the addon name and the shared namespace table to each file
 docs/                 INSTALL.md, ARCHITECTURE.md, AGENTS.md, CONFIGURATION.md, platform notes
 ```
 
@@ -57,6 +58,8 @@ npm run check        # lint, unit suite, e2e suite
 `npm test` runs the portable suite on every platform. `tests/unit.js` finds every `tests/*_test.js` file by itself, so a new test file needs no list entry. The codec round-trip decodes through `capture.ps1` on Windows and through `capture_x11.py` (python3) elsewhere. `npm run test:bun` runs the same files under [Bun](https://bun.sh): Node is the runtime the checkout is written for and the fallback install, Bun is what the shipped binary is built with, and the bridge must keep working on both.
 
 `npm run lint` runs oxlint (`.oxlintrc.json`, warnings fail) and `oxfmt --check` (`.oxfmtrc.json`). `npm run format` rewrites the files. `npm run test:coverage` runs the unit suite with coverage floors for `bridge/`, `setup.js` and `build.js`: a change that drops coverage below a floor fails.
+
+`npm run lint:lua` runs [luacheck](https://github.com/lunarmodules/luacheck) over the addon with the repo's `.luacheckrc` (`brew install luacheck` on macOS, `apt install lua-check` on Debian and Ubuntu). Its `read_globals` list is the exact set of globals the addon reads, so a new game API must be added there before the lint passes.
 
 ### CI gates (`.github/workflows/test.yml`)
 

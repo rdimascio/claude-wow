@@ -1,13 +1,9 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('fs');
-const path = require('path');
-const fengari = require('fengari');
-const { lua, lauxlib, lualib, to_luastring, to_jsstring } = fengari;
 const P = require('../bridge/protocol');
+const { createVM } = require('./lua/vm');
 
-const ADDON = path.join(__dirname, '..', 'addon', 'ClaudeWoW');
 const CELLS_PER_ROW = 200;
 
 const LEGACY_QUEST_STUB = `
@@ -30,30 +26,10 @@ function GetQuestIndexForWatch(n) return STUB.watched[n] end
 `;
 
 function newVM(extraStub = LEGACY_QUEST_STUB) {
-  const L = lauxlib.luaL_newstate();
-  lualib.luaL_openlibs(L);
-  const run = (code, arg) => {
-    if (lauxlib.luaL_loadstring(L, to_luastring(code)) !== lua.LUA_OK) throw new Error('Lua load: ' + to_jsstring(lua.lua_tostring(L, -1)));
-    let nargs = 0;
-    if (arg !== undefined) {
-      lua.lua_pushstring(L, to_luastring(arg));
-      nargs = 1;
-    }
-    if (lua.lua_pcall(L, nargs, 0, 0) !== lua.LUA_OK) throw new Error('Lua error: ' + to_jsstring(lua.lua_tostring(L, -1)));
-  };
-  const evaluate = expr => {
-    run(`local v = (${expr}); if v == nil then RESULT = nil else RESULT = tostring(v) end`);
-    lua.lua_getglobal(L, to_luastring('RESULT'));
-    const isNil = lua.lua_isnil(L, -1);
-    const s = isNil ? null : to_jsstring(lua.lua_tolstring(L, -1));
-    lua.lua_pop(L, 1);
-    return s;
-  };
-  const num = expr => Number(evaluate(expr));
-  run(fs.readFileSync(path.join(__dirname, 'wow_stub.lua'), 'utf8'));
-  run(extraStub);
-  for (const f of ['Codec.lua', 'Inbox.lua', 'ClaudeWoW.lua', 'Roast.lua', 'Stream.lua']) run(fs.readFileSync(path.join(ADDON, f), 'utf8'), 'ClaudeWoW');
-  return { run, evaluate, num };
+  const vm = createVM();
+  vm.run(extraStub);
+  vm.loadAddon(['Codec.lua', 'Inbox.lua', 'ClaudeWoW.lua', 'Roast.lua', 'Stream.lua']);
+  return vm;
 }
 
 function decodeStrip(vm) {

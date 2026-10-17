@@ -2878,7 +2878,8 @@ function ClaudeWoW.TabTalentTrees()
 			local _, specName, _, _, _, _, spent = Try(specInfo, i)
 			tname, points = specName, spent
 		else
-			tname, _, points = Try(GetTalentTabInfo, i)
+			local tabName, _, spent = Try(GetTalentTabInfo, i)
+			tname, points = tabName, spent
 		end
 		if type(tname) == "string" and type(points) == "number" then
 			table.insert(trees, { name = tname, points = points })
@@ -3064,16 +3065,16 @@ function ClaudeWoW.GameContext()
 	local qn = Try(C_QuestLog and C_QuestLog.GetNumQuestLogEntries) or Try(GetNumQuestLogEntries)
 	if type(qn) == "number" then
 		for i = 1, math.min(qn, 40) do
-			local id, header, complete
+			local id, questHeader, complete
 			local info = Try(C_QuestLog and C_QuestLog.GetInfo, i)
 			if type(info) == "table" then
-				id, header = info.questID, info.isHeader
+				id, questHeader = info.questID, info.isHeader
 				complete = Try(C_QuestLog.IsComplete, id)
 			else
 				local _, _, _, isHeader, _, isComplete, _, qid = Try(GetQuestLogTitle, i)
-				id, header, complete = qid, isHeader, isComplete == 1 or isComplete == true
+				id, questHeader, complete = qid, isHeader, isComplete == 1 or isComplete == true
 			end
-			if not header and type(id) == "number" and id > 0 then
+			if not questHeader and type(id) == "number" and id > 0 then
 				table.insert(quests, tostring(id) .. (complete and "*" or ""))
 			end
 		end
@@ -7504,10 +7505,10 @@ function Q.SummaryMarkerEnd(line)
 end
 
 function Q.FenceRun(line)
-	local run, rest = line:match("^%s*(```+)(.*)$")
-	if not run then run, rest = line:match("^%s*(~~~+)(.*)$") end
-	if not run then return nil end
-	return run:sub(1, 1), #run, rest
+	local fence, rest = line:match("^%s*(```+)(.*)$")
+	if not fence then fence, rest = line:match("^%s*(~~~+)(.*)$") end
+	if not fence then return nil end
+	return fence:sub(1, 1), #fence, rest
 end
 
 function Q.StripSummary(text, summary)
@@ -7616,7 +7617,7 @@ function Q.OpenQuest(id)
 	if not index and type(ExpandQuestHeader) == "function" then
 		local collapsed = Q.CollapsedHeaders()
 		pcall(ExpandQuestHeader, 0)
-		_, _, index = Q.QuestTitle(id)
+		index = select(3, Q.QuestTitle(id))
 		if not index then Q.CollapseAgain(collapsed) end
 	end
 	if not index then return false end
@@ -10521,10 +10522,10 @@ RunCommand = function(cmd, rest, ctx)
 			run.lastHelloAt = nil
 			if ClaudeWoW.IsConnected() then ClaudeWoW.SayHello() end
 		end
-		local ctx = ClaudeWoW.GameContext()
+		local gameContext = ClaudeWoW.GameContext()
 		AddHistory(c, "system", (rest == "" and (ContextReport(c) .. "\n\n") or "") .. (s.context
 			and "Game context is ON: the agent is told this with each message (it goes into its system prompt, so unrelated projects are unaffected by anything but a few lines). /claude config context off to stop.\n\n"
-			or "Game context is OFF: the agent is told nothing about the game. /claude config context on to send this:\n\n") .. ctx
+			or "Game context is OFF: the agent is told nothing about the game. /claude config context on to send this:\n\n") .. gameContext
 			.. "\n\nTip: click the input box, then shift-click an item, spell or quest to link it into your message; the agent gets its tooltip.")
 		ClaudeWoW.Render()
 		Cli.Show(c)

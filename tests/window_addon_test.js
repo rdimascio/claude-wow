@@ -1,42 +1,16 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('fs');
-const path = require('path');
-const { lua, lauxlib, lualib, to_luastring, to_jsstring } = require('fengari');
-
-const ADDON = path.join(__dirname, '..', 'addon', 'ClaudeWoW');
+const { createVM } = require('./lua/vm');
 
 function newVM({ before = '', saved = '' } = {}) {
-  const L = lauxlib.luaL_newstate();
-  lualib.luaL_openlibs(L);
-  const run = (code, arg, chunk) => {
-    const buf = to_luastring(code);
-    const loaded = chunk ? lauxlib.luaL_loadbuffer(L, buf, buf.length, to_luastring('@' + chunk)) : lauxlib.luaL_loadstring(L, buf);
-    if (loaded !== lua.LUA_OK) throw new Error('Lua load: ' + to_jsstring(lua.lua_tostring(L, -1)));
-    let nargs = 0;
-    if (arg !== undefined) {
-      lua.lua_pushstring(L, to_luastring(arg));
-      nargs = 1;
-    }
-    if (lua.lua_pcall(L, nargs, 0, 0) !== lua.LUA_OK) throw new Error('Lua error: ' + to_jsstring(lua.lua_tostring(L, -1)));
-  };
-  const evaluate = expr => {
-    run(`local v = (${expr}); if v == nil then RESULT = nil else RESULT = tostring(v) end`);
-    lua.lua_getglobal(L, to_luastring('RESULT'));
-    const s = lua.lua_isnil(L, -1) ? null : to_jsstring(lua.lua_tolstring(L, -1));
-    lua.lua_pop(L, 1);
-    return s;
-  };
-  const num = expr => Number(evaluate(expr));
-  run(fs.readFileSync(path.join(__dirname, 'wow_stub.lua'), 'utf8'));
-  run(BLIZZARD);
-  if (before) run(before);
-  for (const f of ['Codec.lua', 'Inbox.lua', 'ClaudeWoW.lua', 'LootRoll.lua', 'Window.lua', 'Help.lua'])
-    run(fs.readFileSync(path.join(ADDON, f), 'utf8'), 'ClaudeWoW', 'addon/' + f);
-  if (saved) run(saved);
-  run('STUB.FireEvent("ADDON_LOADED", "ClaudeWoW"); STUB.FireEvent("PLAYER_LOGIN")');
-  return { run, evaluate, num };
+  const vm = createVM();
+  vm.run(BLIZZARD);
+  if (before) vm.run(before);
+  vm.loadAddon(['Codec.lua', 'Inbox.lua', 'ClaudeWoW.lua', 'LootRoll.lua', 'Window.lua', 'Help.lua']);
+  if (saved) vm.run(saved);
+  vm.login();
+  return vm;
 }
 
 const BLIZZARD = `

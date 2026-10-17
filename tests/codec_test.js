@@ -3,12 +3,11 @@
 // capture_mac.py for macOS: their --test-image mode needs only the stdlib). Simulates game
 // rendering with noise and gamma.
 'use strict';
-const fengari = require('fengari');
-const { lua, lauxlib, lualib, to_luastring, to_jsstring } = fengari;
 const fs = require('fs'),
   path = require('path'),
   zlib = require('zlib');
 const { execFileSync } = require('child_process');
+const { createVM } = require('./lua/vm');
 
 // Windows decodes with capture.ps1; elsewhere the Python decoder stands in, if python3 is there.
 if (process.platform !== 'win32') {
@@ -20,7 +19,6 @@ if (process.platform !== 'win32') {
   }
 }
 
-const CODEC = path.join(__dirname, '..', 'addon', 'ClaudeWoW', 'Codec.lua');
 const CAPTURE = path.join(__dirname, '..', 'bridge', 'capture.ps1');
 const CAPTURE_X11 = path.join(__dirname, '..', 'bridge', 'capture_x11.py');
 const CAPTURE_MAC = path.join(__dirname, '..', 'bridge', 'capture_mac.py');
@@ -33,18 +31,14 @@ fs.mkdirSync(TMP, { recursive: true });
 function encodeWithLua(id, payload, codec = 1) {
   const bytes = Buffer.from(payload, 'utf8');
   const lit = '"' + [...bytes].map(b => '\\' + b).join('') + '"';
-  const L = lauxlib.luaL_newstate();
-  lualib.luaL_openlibs(L);
-  const code =
-    fs.readFileSync(CODEC, 'utf8') +
-    `\nlocal cells, n = ClaudeWoW_Codec.Encode(${id}, ${lit}, ${codec})\n` +
-    `local t = {}\nfor i = 1, #cells do t[i] = string.format("%d", cells[i]) end\n` +
-    `RESULT = table.concat(t, ",")\n`;
-  if (lauxlib.luaL_dostring(L, to_luastring(code)) !== 0) {
-    throw new Error('Lua error: ' + to_jsstring(lua.lua_tostring(L, -1)));
-  }
-  lua.lua_getglobal(L, to_luastring('RESULT'));
-  return to_jsstring(lua.lua_tostring(L, -1)).split(',').map(Number);
+  const vm = createVM({ stub: false });
+  vm.loadFile('Codec.lua');
+  vm.run(
+    `local cells, n = ClaudeWoW_Codec.Encode(${id}, ${lit}, ${codec})\n` +
+      `local t = {}\nfor i = 1, #cells do t[i] = string.format("%d", cells[i]) end\n` +
+      `RESULT = table.concat(t, ",")\n`,
+  );
+  return vm.evaluate('RESULT').split(',').map(Number);
 }
 
 function png(width, height, rgb) {

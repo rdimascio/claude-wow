@@ -4,14 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 const luaparse = require('luaparse');
-const { lua, lauxlib, lualib, to_luastring, to_jsstring } = require('fengari');
-
-const ADDON = path.join(__dirname, '..', 'addon', 'ClaudeWoW');
-const TOC_FILES = fs
-  .readFileSync(path.join(ADDON, 'ClaudeWoW.toc'), 'utf8')
-  .split(/\r?\n/)
-  .map(l => l.trim())
-  .filter(l => l.endsWith('.lua'));
+const { createVM, ADDON_DIR: ADDON } = require('./lua/vm');
 
 const SETTINGS_API = `
 STUB.settings = { order = {}, categories = {}, proxies = {}, controls = {}, opened = {} }
@@ -90,33 +83,15 @@ end
 `;
 
 function newVM({ prelude = SETTINGS_API, dock = true, saved = '' } = {}) {
-  const L = lauxlib.luaL_newstate();
-  lualib.luaL_openlibs(L);
-  const run = code => {
-    if (lauxlib.luaL_loadstring(L, to_luastring(code)) !== lua.LUA_OK) throw new Error('Lua load: ' + to_jsstring(lua.lua_tostring(L, -1)));
-    if (lua.lua_pcall(L, 0, 0, 0) !== lua.LUA_OK) throw new Error('Lua error: ' + to_jsstring(lua.lua_tostring(L, -1)));
-  };
-  const runFile = code => {
-    if (lauxlib.luaL_loadstring(L, to_luastring(code)) !== lua.LUA_OK) throw new Error('Lua load: ' + to_jsstring(lua.lua_tostring(L, -1)));
-    lua.lua_pushstring(L, to_luastring('ClaudeWoW'));
-    if (lua.lua_pcall(L, 1, 0, 0) !== lua.LUA_OK) throw new Error('Lua error: ' + to_jsstring(lua.lua_tostring(L, -1)));
-  };
-  const evaluate = expr => {
-    run(`local v = (${expr}); if v == nil then RESULT = nil else RESULT = tostring(v) end`);
-    lua.lua_getglobal(L, to_luastring('RESULT'));
-    const s = lua.lua_isnil(L, -1) ? null : to_jsstring(lua.lua_tolstring(L, -1));
-    lua.lua_pop(L, 1);
-    return s;
-  };
-  run(fs.readFileSync(path.join(__dirname, 'wow_stub.lua'), 'utf8'));
-  run('UnitRace = function() return "Human", "Human" end; UnitSex = function() return 2 end; StopSound = function() end');
-  run(COUNTS);
-  if (dock) run('STUB.ChatDock()');
-  if (prelude) run(prelude);
-  if (saved) run(saved);
-  for (const f of TOC_FILES) runFile(fs.readFileSync(path.join(ADDON, f), 'utf8'));
-  run('STUB.FireEvent("ADDON_LOADED", "ClaudeWoW"); STUB.FireEvent("PLAYER_LOGIN")');
-  return { run, evaluate };
+  const vm = createVM();
+  vm.run('UnitRace = function() return "Human", "Human" end; UnitSex = function() return 2 end; StopSound = function() end');
+  vm.run(COUNTS);
+  if (dock) vm.run('STUB.ChatDock()');
+  if (prelude) vm.run(prelude);
+  if (saved) vm.run(saved);
+  vm.loadAddon();
+  vm.login();
+  return vm;
 }
 
 function connect(vm) {

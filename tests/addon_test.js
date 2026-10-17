@@ -8,40 +8,15 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
-const fengari = require('fengari');
-const { lua, lauxlib, lualib, to_luastring, to_jsstring } = fengari;
+const { createVM } = require('./lua/vm');
 
 const ADDON = path.join(__dirname, '..', 'addon', 'ClaudeWoW');
 const CELLS_PER_ROW = 200;
 
 function newVM({ help = true } = {}) {
-  const L = lauxlib.luaL_newstate();
-  lualib.luaL_openlibs(L);
-  const run = (code, arg, chunk) => {
-    const buf = to_luastring(code);
-    const loaded = chunk ? lauxlib.luaL_loadbuffer(L, buf, buf.length, to_luastring('@' + chunk)) : lauxlib.luaL_loadstring(L, buf);
-    if (loaded !== lua.LUA_OK) throw new Error('Lua load: ' + to_jsstring(lua.lua_tostring(L, -1)));
-    let nargs = 0;
-    if (arg !== undefined) {
-      lua.lua_pushstring(L, to_luastring(arg));
-      nargs = 1;
-    }
-    if (lua.lua_pcall(L, nargs, 0, 0) !== lua.LUA_OK) throw new Error('Lua error: ' + to_jsstring(lua.lua_tostring(L, -1)));
-  };
-  // Evaluate an expression and bring it back as a string (or nil).
-  const evaluate = expr => {
-    run(`local v = (${expr}); if v == nil then RESULT = nil else RESULT = tostring(v) end`);
-    lua.lua_getglobal(L, to_luastring('RESULT'));
-    const isNil = lua.lua_isnil(L, -1);
-    const s = isNil ? null : to_jsstring(lua.lua_tolstring(L, -1));
-    lua.lua_pop(L, 1);
-    return s;
-  };
-  const num = expr => Number(evaluate(expr));
-  run(fs.readFileSync(path.join(__dirname, 'wow_stub.lua'), 'utf8'));
-  for (const f of ['Codec.lua', 'Inbox.lua', 'ClaudeWoW.lua', ...(help ? ['Help.lua'] : [])])
-    run(fs.readFileSync(path.join(ADDON, f), 'utf8'), 'ClaudeWoW', 'addon/' + f);
-  return { run, evaluate, num };
+  const vm = createVM();
+  vm.loadAddon(['Codec.lua', 'Inbox.lua', 'ClaudeWoW.lua', ...(help ? ['Help.lua'] : [])]);
+  return vm;
 }
 
 // Read the strip the addon drew, exactly like capture.ps1: 3 bits per cell,
@@ -3400,7 +3375,7 @@ function loadDev(vm, handlerSetup = '') {
     handlerSetup ||
       'DEV_PREV = 0; local h = function() DEV_PREV = DEV_PREV + 1 end; function geterrorhandler() return DEV_HANDLER or h end; function seterrorhandler(f) DEV_HANDLER = f end',
   );
-  vm.run(fs.readFileSync(path.join(ADDON, 'Dev.lua'), 'utf8'), 'ClaudeWoW', 'addon/Dev.lua');
+  vm.loadFile('Dev.lua');
 }
 
 test('dev commands: refused until the bridge advertises the dev plugin, then sent verbatim as @dev records', () => {
@@ -3865,7 +3840,7 @@ test('the hello names the character, and a restore bundle is read once per chara
     `ClaudeWoW_Inbox = { now = time(), cwd = "", replies = {}, restore = { token = "tok", char = "${char}", chats = { { id = "${id}", name = "${id}", cwd = "", plugin = "ask", messages = { { role = "user", id = 1, t = 1, agent = "", text = "hey" } } } } } }`;
   const boot = (seed, who) => {
     const vm = newVM();
-    vm.run(orders, 'ClaudeWoW', 'addon/Orders.lua');
+    vm.run(orders, { chunk: 'addon/Orders.lua', args: ['ClaudeWoW'], ns: true });
     if (who) vm.run(`UnitName = function(unit) if unit == "player" then return "${who}" end end`);
     vm.run(`ClaudeWoWDB = { session = "tok", lastSeq = 1, settings = { chatsPerCharacterV1 = true } }; ${seed}`);
     login(vm);

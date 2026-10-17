@@ -7,30 +7,24 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('fs');
-const path = require('path');
 const zlib = require('zlib');
-const fengari = require('fengari');
-const { lua, lauxlib, lualib, to_luastring, to_jsstring } = fengari;
 const D = require('../bridge/decode');
+const { createVM } = require('./lua/vm');
 
-const CODEC = path.join(__dirname, '..', 'addon', 'ClaudeWoW', 'Codec.lua');
 const CELL = 4,
   CELLS = 200;
 
 function encodeWithLua(id, payload, codec = 1) {
   const bytes = Buffer.from(payload, 'utf8');
   const lit = '"' + [...bytes].map(b => '\\' + b).join('') + '"';
-  const L = lauxlib.luaL_newstate();
-  lualib.luaL_openlibs(L);
-  const code =
-    fs.readFileSync(CODEC, 'utf8') +
-    `\nlocal cells = ClaudeWoW_Codec.Encode(${id}, ${lit}, ${codec})\n` +
-    `local t = {}\nfor i = 1, #cells do t[i] = string.format("%d", cells[i]) end\n` +
-    `RESULT = table.concat(t, ",")\n`;
-  if (lauxlib.luaL_dostring(L, to_luastring(code)) !== 0) throw new Error('Lua error: ' + to_jsstring(lua.lua_tostring(L, -1)));
-  lua.lua_getglobal(L, to_luastring('RESULT'));
-  return to_jsstring(lua.lua_tostring(L, -1)).split(',').map(Number);
+  const vm = createVM({ stub: false });
+  vm.loadFile('Codec.lua');
+  vm.run(
+    `local cells = ClaudeWoW_Codec.Encode(${id}, ${lit}, ${codec})\n` +
+      `local t = {}\nfor i = 1, #cells do t[i] = string.format("%d", cells[i]) end\n` +
+      `RESULT = table.concat(t, ",")\n`,
+  );
+  return vm.evaluate('RESULT').split(',').map(Number);
 }
 
 // A frame of the given size: noise everywhere (like a game world), the strip's

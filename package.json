@@ -34,6 +34,7 @@
     "doctor": "node dev/doctor.js",
     "audit:widgets": "node dev/widget-audit.js",
     "lint": "oxlint --deny-warnings && oxfmt --check",
+    "lint:lua": "luacheck addon/ClaudeWoW",
     "format": "oxfmt && oxlint --fix",
     "test": "node tests/unit.js",
     "test:bun": "bun tests/unit.js",

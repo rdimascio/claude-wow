@@ -83,7 +83,7 @@ end
 
 local function HomeRect()
 	local l = W.Layout()
-	local sw, sh = Screen()
+	local _, sh = Screen()
 	local _, _, w, h = Clamp(0, sh, l.w, l.h)
 	local left, top = Clamp(PanelOffset("LEFT_OFFSET", PANEL_LEFT_OFFSET), sh - PanelOffset("TOP_OFFSET", PANEL_TOP_OFFSET), w, h)
 	return { left = left, top = top, right = left + w, bottom = top - h }

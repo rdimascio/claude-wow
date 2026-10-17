@@ -6,6 +6,7 @@
 const fs = require('fs');
 const path = require('path');
 const luaparse = require('luaparse');
+const { tocFiles } = require('./lua/vm.js');
 
 const ADDON = process.argv[2] || path.join(__dirname, '..', 'addon', 'ClaudeWoW');
 const MAIN_CHUNK_LOCALS_MAX = 190;
@@ -20,25 +21,7 @@ function mainChunkLocals(ast) {
   return n;
 }
 
-for (const f of [
-  'Dev.lua',
-  'Codec.lua',
-  'ClaudeWoW.lua',
-  'Inbox.lua',
-  'Map.lua',
-  'Roast.lua',
-  'Stream.lua',
-  'Voice.lua',
-  'LootRoll.lua',
-  'Achievements.lua',
-  'Orders.lua',
-  'DM.lua',
-  'Widgets.lua',
-  'Window.lua',
-  'Telemetry.lua',
-  'Observed.lua',
-  'Help.lua',
-]) {
+for (const f of tocFiles(ADDON).filter(entry => entry.endsWith('.lua'))) {
   const src = fs.readFileSync(path.join(ADDON, f), 'utf8');
   const ast = luaparse.parse(src, { luaVersion: '5.1' });
   const locals = mainChunkLocals(ast);
