@@ -13,7 +13,7 @@ function tocFiles(dir = ADDON_DIR, name = ADDON_NAME) {
     .readFileSync(path.join(dir, name + '.toc'), 'utf8')
     .split(/\r?\n/)
     .map(l => l.trim())
-    .filter(l => l !== '' && !l.startsWith('#'))
+    .filter(l => l.endsWith('.lua') && !l.startsWith('#'))
     .map(l => l.replace(/\\/g, '/'));
 }
 
@@ -31,7 +31,8 @@ function createVM({ stub = true, utf8 = true } = {}) {
   const decode = utf8 ? v => to_jsstring(v) : v => Buffer.from(v).toString('latin1');
 
   const fail = what => {
-    const message = to_jsstring(lua.lua_tostring(L, -1));
+    const raw = lua.lua_tostring(L, -1);
+    const message = raw ? to_jsstring(raw) : 'a non-string error value';
     lua.lua_pop(L, 1);
     throw new Error(what + ': ' + message);
   };
