@@ -1,6 +1,6 @@
 'use strict';
 
-const ENTITIES = Object.freeze(['itemstats', 'itemeffects', 'spelleffects', 'spellequipreqs']);
+const ENTITIES = Object.freeze(['itemstats', 'itemeffects', 'spelleffects', 'spellequipreqs', 'spellforms']);
 const INVENTORY_SHIELD = 14;
 const APPLY_AURA = 6;
 const TRIGGER = Object.freeze({ use: 0, equip: 1, onHit: 2 });
@@ -63,7 +63,6 @@ const AURAS = Object.freeze({
   55: (stats, e) => add(stats, 'spellHit', e.value),
   57: (stats, e) => add(stats, 'spellCrit', e.value),
   552: (stats, e) => (e.misc === ALL_MAGIC ? add(stats, 'spellCrit', e.value) : false),
-  71: (stats, e) => (e.misc === ALL_MAGIC ? add(stats, 'spellCrit', e.value) : false),
   99: (stats, e) => add(stats, 'attackPower', e.value),
   124: (stats, e) => add(stats, 'rangedAttackPower', e.value),
   85: (stats, e) => (e.misc === POWER_MANA ? add(stats, 'mp5', e.value) : false),
@@ -107,6 +106,7 @@ function decode(store, itemId) {
     if (ITEM_STATS[id]) add(stats, ITEM_STATS[id], amount);
     else unread.push({ kind: 'itemStat', stat: id, amount });
   }
+  if (row && row.bonusArmor) add(stats, 'bonusArmor', row.bonusArmor);
   (row && row.resistances ? row.resistances : []).forEach((n, k) => {
     if (n) add(stats, k === 0 ? 'armor' : `${RESISTANCE_INDEX[k]}Resistance`, n);
   });
@@ -119,6 +119,7 @@ function decode(store, itemId) {
   }
   const effectsOf = store.group('spelleffects', 'spell', e => [e.spell]);
   const restrictedTo = store.group('spellequipreqs', 'spell', e => [e.spell]);
+  const formsOf = store.group('spellforms', 'spell', e => [e.spell]);
   const triggers = store.group('itemeffects', 'item', e => [e.item]).get(itemId) || [];
   for (const t of triggers) {
     if (t.trigger === TRIGGER.use) {
@@ -132,6 +133,11 @@ function decode(store, itemId) {
     const restriction = (restrictedTo.get(t.spell) || [])[0];
     if (restriction) {
       unread.push({ kind: 'restricted', spell: t.spell, itemClass: restriction.itemClass, subclassMask: restriction.subclassMask });
+      continue;
+    }
+    const forms = (formsOf.get(t.spell) || [])[0];
+    if (forms) {
+      unread.push({ kind: 'shapeshift', spell: t.spell, masks: forms.masks || null });
       continue;
     }
     const effects = effectsOf.get(t.spell) || [];
@@ -149,11 +155,13 @@ function decode(store, itemId) {
       if (!read) unread.push({ kind: 'equip', spell: t.spell, effect: e.effect, aura: e.aura, misc: e.misc, value: e.value });
     }
   }
+  let crossChecked = null;
   if (store.flavor === CROSS_CHECK_FLAVOR) {
-    const disagree = crossCheck(itemId, stats, row && row.damage);
-    if (disagree) unread.push({ kind: 'sourcesDisagree', fields: disagree });
+    const result = crossCheck(itemId, stats, row && row.damage);
+    crossChecked = result !== null;
+    if (result && result.length) unread.push({ kind: 'sourcesDisagree', fields: result });
   }
-  return { stats, weapon, unread, notCounted };
+  return { stats, weapon, unread, notCounted, crossChecked };
 }
 
 let simItems;
@@ -164,8 +172,10 @@ function crossCheck(itemId, stats, damage) {
   if (!theirs) return null;
   const at = name => theirs[simItems.fields.indexOf(name)];
   const fields = [];
+  const totalArmor = (stats.armor || 0) + (stats.bonusArmor || 0);
+  if (Math.abs(totalArmor - at('armor') - at('bonusArmor')) > 0.01) fields.push({ name: 'armor', client: totalArmor, wowsims: at('armor') + at('bonusArmor') });
   for (const name of simItems.fields) {
-    if (name === 'weaponMin' || name === 'weaponMax') continue;
+    if (['weaponMin', 'weaponMax', 'armor', 'bonusArmor'].includes(name)) continue;
     const client = stats[name] || 0;
     if (Math.abs(client - at(name)) > 0.01) fields.push({ name, client, wowsims: at(name) });
   }
@@ -173,7 +183,7 @@ function crossCheck(itemId, stats, damage) {
   const withExtra = extra.reduce(([a, b], [lo, hi]) => [a + lo, b + hi], main);
   const matches = range => range[0] === at('weaponMin') && range[1] === at('weaponMax');
   if (!matches(main) && !matches(withExtra)) fields.push({ name: 'weaponDamage', client: main, wowsims: [at('weaponMin'), at('weaponMax')] });
-  return fields.length ? fields : null;
+  return fields;
 }
 
 module.exports = { ENTITIES, AURAS, available, decode };

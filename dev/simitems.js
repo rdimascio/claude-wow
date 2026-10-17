@@ -23,6 +23,12 @@ const STAT_SLOTS = Object.freeze({
   armor: 26,
   rangedAttackPower: 27,
   defense: 28,
+  arcaneResistance: 35,
+  fireResistance: 36,
+  frostResistance: 37,
+  natureResistance: 38,
+  shadowResistance: 39,
+  bonusArmor: 40,
   healing: 41,
   spellDamage: 42,
 });

@@ -16,11 +16,13 @@ Claude can say which of two items is better for the character's spec, with a num
 
 ## 3. Measured (Classic Era 1.15.9.70003, 2026-10-16)
 
-- 13,952 equippable items. 9,287 have primary stats in `ItemSparse.StatModifier_bonusStat_*` (stat ids 3 Agility, 4 Strength, 5 Intellect, 6 Spirit, 7 Stamina; 38 and 51 once each). 9,926 have armor in `Resistances_0`. 2,543 weapons have `MinDamage_0`, `MaxDamage_0` and `ItemDelay`.
-- Hit, crit, spell power, attack power, mp5, defense and similar are equip spells: `ItemEffect` rows with `TriggerType` 1 on 6,526 items, whose `SpellEffect` rows with `Effect` 6 carry `EffectAura`, `EffectBasePoints`, `EffectDieSides` and `EffectMiscValue_0`. The amount is `EffectBasePoints + EffectDieSides`: 201 of 201 equip spells whose name states the amount ("Attack Power 20", "Increase Spell Dam 12", "Increased Hit Chance 1") match.
-- Aura 552 (spell crit by school mask) is on 1,651 items; aura 593 (expertise) on 424 items, all Season of Discovery items (ids 233xxx).
-- wowsims/classic (MIT) at `7779ebb`: of 19 simulators, 4 have Era-tuned hit or crit weights on the per-percent scale (rogue, elemental shaman, warlock, feral druid); see `bridge/simweights.json` for why each other is left out.
-- The Era client's `ItemSparse` carries Season of Discovery values for some shared items: Thunderfury 19019 reads 82-153 plus 16-30 nature, the Era item is 44-115 plus 16-30 (wowsims 60-145, nature folded in). Against the 7,553 items of the wowsims Era database, 258 of 6,749 fully read items differed on stats and 57 of 1,113 weapons on damage.
+Every item count here comes from `node dev/measure-itemstats.js <dataDir>` (items with an inventory type > 0); its output lists the rest.
+
+- 15,174 items have an inventory type; 10,218 read in full, 7,985 of the 10,668 with IDs under 200000.
+- Primary stats sit in `ItemSparse.StatModifier_*`, base armor in `Resistances_0`, the green "+X Armor" bonus in `QualityModifier` (wowsims folds it into armor). Hit, crit, spell power, attack power, mp5 and defense are equip spells: `ItemEffect` trigger 1, then `SpellEffect` effect 6 with `EffectAura` and an amount of `EffectBasePoints + EffectDieSides` (201 of 201 equip spells whose name states the amount match).
+- wowsims/classic (MIT) at `7779ebb`: of 19 simulators, 4 have Era-tuned hit or crit weights on the per-percent scale (rogue, elemental shaman, warlock, feral druid); `bridge/simweights.json` says why each other is left out.
+- The Era client ships Season of Discovery values for some shared items: 69 of the 7,552 items the wowsims Era database also has differ on weapon damage (Thunderfury 19019 reads 82-153 plus 16-30 nature; the Era item is 44-115 plus 16-30, wowsims 60-145 with the nature folded in). 78 items disagree in all (71 on armor). 5,105 items read in full are not in the wowsims database, so they are not cross-checked (`crossChecked: false`); 2,872 of them have IDs under 200000.
+- Not yet compared with an in-game tooltip: check a few (Green Iron Hauberk, Naglering, Thunderfury) before step 3 ships a score.
 
 ## 4. Steps
 
@@ -30,11 +32,10 @@ Claude can say which of two items is better for the character's spec, with a num
 
 ## 5. Decoder facts (step 1)
 
-`node dev/measure-itemstats.js` prints the current numbers from the synced data (items with an inventory type, unread kinds, unread auras, stats read). On 1.15.9.70003: 9,995 of 15,174 read in full; 7,739 of 10,668 with IDs under 200000. Items by unread kind: randomStats 1,745, equip 1,374, itemStat 1,290 (stat id -1, SoD only), shieldBlock 416, sourcesDisagree 383, onHit 366, restricted 29, trigger 28, extraDamage 22.
-
 - One equip spell with aura 13 (all magic) and aura 135 at the same value is `spellPower` (wowsims `StatSpellPower`); aura 13 alone is `spellDamage`, aura 135 alone `healing`.
-- `Resistances_0` is base armor (`StatArmor`); aura 22 on the physical school is `bonusArmor`. Aura 564 is block value; aura 123 with misc 124 (all magic but holy) is spell penetration.
-- An equip spell with a `SpellEquippedItems` row (Fletcher's Gloves: crit with ranged weapons only) is listed, not read.
+- `Resistances_0` is base armor; `QualityModifier` and aura 22 on the physical school are `bonusArmor`. The cross-check compares their sum with wowsims armor plus bonus armor. Aura 564 is block value; aura 123 with misc 124 (all magic but holy) is spell penetration.
+- An equip spell with a `SpellEquippedItems` row (Fletcher's Gloves: crit with ranged weapons only) or a `SpellShapeshift` mask (feral attack power in Cat or Bear form) is listed, not read.
+- Unread kinds, aura counts and stats read: see the script output.
 
 ## 6. Score mapping (step 3)
 

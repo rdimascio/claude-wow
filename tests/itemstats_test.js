@@ -67,7 +67,7 @@ test('the client sync keeps item stats, equip effects and spell effects, and rea
   assert.equal(r.manifest.tables.ItemEffect.droppedBy.badId, 1, 'an effect row with no spell is dropped and counted');
   const item = call(store, 'wow_item', { id: 512 }).results[0];
   assert.equal(item.trust, 'client-data');
-  assert.deepEqual(item.stats.stats, { agility: 5, stamina: 3, armor: 40, fireResistance: 5, meleeHit: 1, spellDamage: 12 });
+  assert.deepEqual(item.stats.stats, { agility: 5, stamina: 3, bonusArmor: 10, armor: 40, fireResistance: 5, meleeHit: 1, spellDamage: 12 });
   assert.equal(item.stats.weapon, null);
   assert.deepEqual(
     item.stats.unread.map(u => [u.kind, u.spell]),
@@ -75,6 +75,9 @@ test('the client sync keeps item stats, equip effects and spell effects, and rea
     'an on-hit proc is listed, not read',
   );
   assert.deepEqual(item.stats.notCounted, [{ kind: 'use', spell: 9203 }]);
+  assert.equal(item.stats.crossChecked, false, 'an item the wowsims data lacks says it was not cross-checked');
+  assert.deepEqual(store.rows('spellequipreqs'), [{ id: 9401, spell: 9999, itemClass: 2, subclassMask: 262156, invTypeMask: 0 }]);
+  assert.deepEqual(store.rows('spellforms'), [{ id: 9501, spell: 9998, masks: [3, 0] }]);
   assert.equal(call(store, 'wow_item', { name: 'Era Fixture Cap' }).results[0].stats, undefined, 'a name search stays short');
 });
 
@@ -176,7 +179,7 @@ test('the decoder reads weapons, skills, all-stat and school auras, and lists wh
     { spellPower: 12, healing: 31, spellDamage: 5 },
     'one spell raising damage and healing by the same amount is spell power; healing alone, or a different amount, is not',
   );
-  assert.deepEqual(IS.decode(store, 99), { stats: {}, weapon: null, unread: [], notCounted: [] });
+  assert.deepEqual(IS.decode(store, 99), { stats: {}, weapon: null, unread: [], notCounted: [], crossChecked: null });
 });
 
 const AURA_SHAPES = [
@@ -188,7 +191,6 @@ const AURA_SHAPES = [
   [55, 0, 1, 'spellHit'],
   [57, 0, 1, 'spellCrit'],
   [552, 126, 1, 'spellCrit'],
-  [71, 126, 1, 'spellCrit'],
   [99, 0, 20, 'attackPower'],
   [124, 0, 20, 'rangedAttackPower'],
   [85, 0, 4, 'mp5'],
@@ -238,6 +240,7 @@ test('an equip spell with no effects is listed, and on Classic Era an item the w
           [16, 30],
         ],
         delay: 1900,
+        resistances: [0, 0, 8, 9, 0, 0, 0],
       },
     ],
     itemeffects: [],
@@ -263,6 +266,7 @@ test('an equip spell with no effects is listed, and on Classic Era an item the w
           [16, 30],
         ],
         delay: 1900,
+        resistances: [0, 0, 8, 9, 0, 0, 0],
       },
     ],
     itemeffects: [],
@@ -293,13 +297,14 @@ test('random stats, shields, rows that would not convert and weapon-only equip s
     spellequipreqs: [{ id: 3, spell: 9, itemClass: 2, subclassMask: 262156 }],
   });
   assert.deepEqual(IS.decode(store, 1).unread, [{ kind: 'randomStats' }]);
-  assert.deepEqual(IS.decode(store, 2), { stats: { armor: 1500 }, weapon: null, unread: [{ kind: 'shieldBlock' }], notCounted: [] });
+  assert.deepEqual(IS.decode(store, 2), { stats: { armor: 1500 }, weapon: null, unread: [{ kind: 'shieldBlock' }], notCounted: [], crossChecked: null });
   assert.deepEqual(IS.decode(store, 3).unread, [{ kind: 'badRow', reason: 'badInteger' }]);
   assert.deepEqual(IS.decode(store, 4), {
     stats: {},
     weapon: null,
     unread: [{ kind: 'restricted', spell: 9, itemClass: 2, subclassMask: 262156 }],
     notCounted: [],
+    crossChecked: null,
   });
 });
 
@@ -333,4 +338,72 @@ test('the wowsims item file is compacted from the database, refuses a changed la
   assert.deepEqual(pinned.fields, SI.FIELDS);
   assert.ok(Object.values(pinned.items).every(v => v.length === SI.FIELDS.length && v.every(Number.isFinite)));
   assert.deepEqual(pinned.items[19019].slice(-2), [60, 145], 'Thunderfury at its Era damage with the nature damage added');
+});
+
+test('the converters keep random stats, an unparsable stat cell and an unparsable restriction as flags, and the cross-check compares ordinary stats too', () => {
+  const spec = key => D.TABLES.find(t => (t.key || t.table) === key);
+  const csv = (s, rows) => [s.columns.join(','), ...rows.map(r => s.columns.map(c => (c in r ? r[c] : 0)).join(','))].join('\n');
+  const stats = spec('ItemSparse:stats');
+  const out = D.convertTable(
+    stats,
+    csv(stats, [
+      { ID: 1, InventoryType: 5, RandomSelect: 12 },
+      { ID: 2, InventoryType: 5, ItemRandomSuffixGroupID: 7 },
+      { ID: 3, InventoryType: 5, StatModifier_bonusStat_0: 3, StatModifier_bonusAmount_0: 'x' },
+      { ID: 4, InventoryType: 5 },
+    ]),
+    {},
+  ).records;
+  assert.deepEqual(out, [
+    { id: 1, random: true },
+    { id: 2, random: true },
+    { id: 3, unreadable: 'badInteger' },
+  ]);
+  const reqs = spec('SpellEquippedItems');
+  assert.deepEqual(
+    D.convertTable(
+      reqs,
+      csv(reqs, [
+        { ID: 1, SpellID: 9, EquippedItemClass: 2, EquippedItemSubclass: 'x' },
+        { ID: 2, SpellID: 8, EquippedItemClass: -1 },
+        { ID: 3, SpellID: 7, EquippedItemClass: 4, EquippedItemSubclass: 64 },
+      ]),
+      {},
+    ).records,
+    [
+      { id: 1, spell: 9, unreadable: true },
+      { id: 3, spell: 7, itemClass: 4, subclassMask: 64, invTypeMask: 0 },
+    ],
+  );
+  const helm = { itemstats: [{ id: 12640, stats: [[4, 99]], resistances: [565, 0, 0, 0, 0, 0, 0] }], itemeffects: [], spelleffects: [] };
+  const disagree = IS.decode(fakeStore(helm, 'classic_era'), 12640).unread.find(u => u.kind === 'sourcesDisagree');
+  assert.ok(disagree && disagree.fields.some(f => f.name === 'strength' && f.client === 99), 'a primary stat that differs is listed');
+});
+
+test('equip spells that need a form are listed, and armor is compared with its bonus folded in', () => {
+  const store = fakeStore({
+    itemstats: [],
+    itemeffects: [{ id: 1, item: 1, trigger: 1, spell: 9 }],
+    spelleffects: [{ id: 2, spell: 9, effect: 6, aura: 99, value: 154, misc: 0 }],
+    spellforms: [{ id: 3, spell: 9, masks: [3, 0] }],
+  });
+  assert.deepEqual(IS.decode(store, 1).unread, [{ kind: 'shapeshift', spell: 9, masks: [3, 0] }]);
+  assert.deepEqual(IS.decode(store, 1).stats, {}, 'form-only attack power is not read');
+  const pinned = require('../bridge/simitems.json');
+  const at = (id, name) => pinned.items[id][pinned.fields.indexOf(name)];
+  const hauberk = 3844;
+  const total = at(hauberk, 'armor') + at(hauberk, 'bonusArmor');
+  const era = items => fakeStore({ items: [{ id: hauberk, inventoryType: 5 }], itemstats: items, itemeffects: [], spelleffects: [] }, 'classic_era');
+  const split = IS.decode(era([{ id: hauberk, resistances: [total - 120, 0, 0, 0, 0, 0, 0], bonusArmor: 120 }]), hauberk);
+  assert.equal(split.crossChecked, true);
+  assert.equal(
+    split.unread.some(u => u.kind === 'sourcesDisagree' && u.fields.some(x => x.name === 'armor')),
+    false,
+    'base armor plus the green bonus matches',
+  );
+  const baseOnly = IS.decode(era([{ id: hauberk, resistances: [total - 120, 0, 0, 0, 0, 0, 0] }]), hauberk);
+  assert.ok(
+    baseOnly.unread.some(u => u.kind === 'sourcesDisagree' && u.fields.some(x => x.name === 'armor')),
+    'without the bonus the armor disagrees',
+  );
 });

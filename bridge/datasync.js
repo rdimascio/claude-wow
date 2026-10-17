@@ -351,6 +351,7 @@ const TABLES = Object.freeze([
       'ID',
       'InventoryType',
       'ItemDelay',
+      'QualityModifier',
       'ItemRandomSuffixGroupID',
       'RandomSelect',
       ...ITEM_STAT_SLOTS.flatMap(k => [`StatModifier_bonusStat_${k}`, `StatModifier_bonusAmount_${k}`]),
@@ -370,19 +371,20 @@ const TABLES = Object.freeze([
         const damage = ITEM_DAMAGE_SLOTS.map(k => [numberOf(row, `MinDamage_${k}`), numberOf(row, `MaxDamage_${k}`)]).filter(([lo, hi]) => lo || hi);
         const resistances = ITEM_RESISTANCE_SLOTS.map(k => intOf(row, `Resistances_${k}`));
         const random = intOf(row, 'ItemRandomSuffixGroupID') > 0 || intOf(row, 'RandomSelect') > 0;
-        parsed = { stats, damage, delay: intOf(row, 'ItemDelay'), resistances, random };
+        parsed = { stats, damage, delay: intOf(row, 'ItemDelay'), resistances, random, bonusArmor: Math.round(numberOf(row, 'QualityModifier')) };
       } catch (e) {
         if (!(e instanceof Drop)) throw e;
         return { id, unreadable: e.reason };
       }
-      const { stats, damage, delay, resistances, random } = parsed;
-      if (!stats.length && !damage.length && !random && resistances.every(n => n === 0)) throw new Skip();
+      const { stats, damage, delay, resistances, random, bonusArmor } = parsed;
+      if (!stats.length && !damage.length && !random && !bonusArmor && resistances.every(n => n === 0)) throw new Skip();
       return {
         id,
         ...(stats.length ? { stats } : {}),
         ...(damage.length ? { damage, delay } : {}),
         ...(resistances.some(n => n !== 0) ? { resistances } : {}),
         ...(random ? { random: true } : {}),
+        ...(bonusArmor ? { bonusArmor } : {}),
       };
     },
   },
@@ -422,15 +424,30 @@ const TABLES = Object.freeze([
     flavors: ['classic_era'],
     columns: ['ID', 'SpellID', 'EquippedItemClass', 'EquippedItemSubclass', 'EquippedItemInvTypes'],
     convert(row) {
-      const itemClass = intOf(row, 'EquippedItemClass');
-      if (itemClass < 0) throw new Skip();
+      const id = idOf(row);
+      const spell = idOf(row, 'SpellID');
+      const itemClass = toInt(row.EquippedItemClass);
+      if (itemClass !== null && itemClass < 0) throw new Skip();
+      if (itemClass === null || toInt(row.EquippedItemSubclass) === null || toInt(row.EquippedItemInvTypes) === null) return { id, spell, unreadable: true };
       return {
-        id: idOf(row),
-        spell: idOf(row, 'SpellID'),
+        id,
+        spell,
         itemClass,
         subclassMask: intOf(row, 'EquippedItemSubclass'),
         invTypeMask: intOf(row, 'EquippedItemInvTypes'),
       };
+    },
+  },
+  {
+    table: 'SpellShapeshift',
+    entity: 'spellforms',
+    optional: true,
+    flavors: ['classic_era'],
+    columns: ['ID', 'SpellID', 'ShapeshiftMask_0', 'ShapeshiftMask_1'],
+    convert(row) {
+      const masks = [toInt(row.ShapeshiftMask_0), toInt(row.ShapeshiftMask_1)];
+      if (masks.every(m => m === 0)) throw new Skip();
+      return { id: idOf(row), spell: idOf(row, 'SpellID'), ...(masks.some(m => m === null) ? { unreadable: true } : { masks }) };
     },
   },
   {
