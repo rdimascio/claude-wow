@@ -27,6 +27,7 @@ const H = require('./home');
 const FILES = [
   'addon/ClaudeWoW/Core/Namespace.lua',
   'addon/ClaudeWoW/Core/Log.lua',
+  'addon/ClaudeWoW/Core/State.lua',
   'addon/ClaudeWoW/ClaudeWoW.lua',
   'addon/ClaudeWoW/ClaudeWoW.toc',
   'addon/ClaudeWoW/Codec.lua',

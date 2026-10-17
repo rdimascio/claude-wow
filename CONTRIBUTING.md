@@ -8,6 +8,7 @@ Thanks for looking at this. Bug reports, questions and pull requests are all wel
 addon/ClaudeWoW/     the in-game addon (Lua 5.1, WoW API); every file reads `local _, ns = ...`; every file after Core/Namespace.lua returns at once when `ns.Try` is missing (the restart guard; ClaudeWoW.lua prints one line first)
   Core/Namespace.lua    first in the toc: the private namespace `ns`, one copy of each shared helper (Try, Trim, Display, Link, Fmt*, Money, ...), the product name and chat prefix, `ns.files` and its FNV-1a fingerprint
   Core/Log.lua          ns.Print (game chat with the prefix) and ns.Say (through ClaudeWoW.Print when the core is loaded)
+  Core/State.lua        the `ClaudeWoW`, `Q`, `Cli` and `Whisper` tables, the saved-variables handle (`ns.db`, set by InitDB and its migrations), the per-session `run` table, `ns.ui`, and the chat primitives (NewId, FindChat, ActiveChat, AddChat, AddHistory, AnyPending, the per-character chat stash)
   ClaudeWoW.lua        the core: strip, slots, chats, UI, slash commands
   Codec.lua             pixel-strip encoder, pure Lua, no WoW calls
   Inbox.lua             placeholder the bridge overwrites at runtime

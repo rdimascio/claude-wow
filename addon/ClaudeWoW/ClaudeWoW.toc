@@ -9,6 +9,7 @@
 
 Core\Namespace.lua
 Core\Log.lua
+Core\State.lua
 Dev.lua
 Codec.lua
 Inbox.lua
