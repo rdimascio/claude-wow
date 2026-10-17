@@ -68,13 +68,6 @@ function ns.Contains(list, v)
 	return false
 end
 
-function ns.Try(fn, ...)
-	if type(fn) ~= "function" then return nil end
-	return (function(ok, ...)
-		if ok then return ... end
-	end)(pcall(fn, ...))
-end
-
 function ns.Money(copper)
 	copper = tonumber(copper) or 0
 	local g, s, c = math.floor(copper / 10000), math.floor(copper / 100) % 100, copper % 100
@@ -106,3 +99,10 @@ function ns.Fnv1a(text)
 end
 
 function ns.FileHash() return ns.Fnv1a(table.concat(ns.files, "\n")) end
+
+function ns.Try(fn, ...)
+	if type(fn) ~= "function" then return nil end
+	return (function(ok, ...)
+		if ok then return ... end
+	end)(pcall(fn, ...))
+end

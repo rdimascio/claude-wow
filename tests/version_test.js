@@ -319,7 +319,10 @@ function fullVM({ prelude = '' } = {}) {
   return vm;
 }
 
-test('a new build with the file list the addon loaded asks for /reload; a new file list asks for a full restart and hides the Reload button', () => {
+const ERA_BUILD_INFO = 'function GetBuildInfo() return "1.15.9", "70003", "Oct 1 2026", 11509 end';
+const RESTART_TEXT = 'Fully quit and restart the game to load the new addon files; /reload is not enough.';
+
+test('a new build with the file list the addon loaded asks for /reload; a new file list asks for a full restart on Forever and hides the Reload button', () => {
   const vm = fullVM(loadedAs('1.2.3', BUILD_A));
   vm.run('ClaudeWoW.Toggle(true)');
   const onDisk = P.addonDiskInfo(REAL_TOC);
@@ -335,16 +338,8 @@ test('a new build with the file list the addon loaded asks for /reload; a new fi
   assert.notEqual(grown.fileHash, onDisk.fileHash);
   vm.run('STUB.prints = {}');
   slotPoll(vm, null, 'time()', luaDiskFiles('1.2.5', BUILD_B, grown));
-  assert.ok(
-    prints(vm).includes(
-      'New addon files are installed (1.2.5, build bbbbbbbbbbbb). Fully quit and restart the game to load the new addon files; /reload is not enough.',
-    ),
-    'a new file list: restart',
-  );
-  assert.equal(
-    vm.evaluate('ClaudeWoWNoticeBar.text:GetText()'),
-    'Addon update ready · 1.2.5 · Fully quit and restart the game to load the new addon files; /reload is not enough.',
-  );
+  assert.ok(prints(vm).includes('New addon files are installed (1.2.5, build bbbbbbbbbbbb). ' + RESTART_TEXT), 'a new file list: restart');
+  assert.equal(vm.evaluate('ClaudeWoWNoticeBar.text:GetText()'), 'Addon update ready · 1.2.5 · ' + RESTART_TEXT);
   assert.equal(vm.evaluate('ClaudeWoWNoticeReload:IsShown()'), 'false', 'a reload would load nothing, so the button goes');
   assert.equal(told(vm, 'New addon files'), 0, 'the transcript gets no system message either way');
   vm.run('STUB.prints = {}');
@@ -353,6 +348,57 @@ test('a new build with the file list the addon loaded asks for /reload; a new fi
   assert.equal(vm.evaluate('ClaudeWoWNoticeReload:IsShown()'), 'true');
   slotPoll(vm, null, 'time()', luaDiskFiles('1.2.3', BUILD_A, onDisk));
   assert.equal(vm.evaluate('ClaudeWoWNoticeBar:IsShown()'), 'false', 'the loaded build back on disk clears the bar');
+  vm.run('STUB.prints = {}');
+  slotPoll(vm, null, 'time()', luaDiskFiles('1.2.3', BUILD_A, grown));
+  assert.ok(
+    prints(vm).includes('New addon files are installed (1.2.3, build aaaaaaaaaaaa). ' + RESTART_TEXT),
+    'a toc-only change with the loaded version and build still asks for a restart',
+  );
+  assert.equal(vm.evaluate('ClaudeWoWNoticeBar.text:GetText()'), 'Addon update ready · 1.2.3 build aaaaaaaaaaaa · ' + RESTART_TEXT);
+  assert.equal(vm.evaluate('ClaudeWoWNoticeReload:IsShown()'), 'false');
+  slotPoll(vm, null, 'time()', luaDiskFiles('1.2.3', BUILD_A, onDisk));
+  assert.equal(vm.evaluate('ClaudeWoWNoticeBar:IsShown()'), 'false', 'the loaded file list back on disk clears it');
+});
+
+test('on Classic Era a new file list keeps the /reload text and the Reload button, because /reload reads the toc again there', () => {
+  const vm = fullVM(loadedAs('1.2.3', BUILD_A));
+  vm.run(ERA_BUILD_INFO);
+  vm.run('ClaudeWoW.Toggle(true)');
+  const onDisk = P.addonDiskInfo(REAL_TOC);
+  const grown = P.addonDiskInfo(REAL_TOC + 'Core\\State.lua\n');
+  helloPoll(vm, null, 'time()', luaDiskFiles('1.2.3', BUILD_A, onDisk));
+  assert.equal(vm.evaluate('ClaudeWoWNoticeBar:IsShown()'), 'false');
+  vm.run('STUB.prints = {}');
+  slotPoll(vm, null, 'time()', luaDiskFiles('1.2.5', BUILD_B, grown));
+  assert.ok(prints(vm).includes('New addon files are installed (1.2.5, build bbbbbbbbbbbb). Type /reload to load them.'), 'a new file list on Era: /reload');
+  assert.ok(!prints(vm).includes(RESTART_TEXT));
+  assert.equal(vm.evaluate('ClaudeWoWNoticeBar.text:GetText()'), 'Addon update ready · 1.2.5');
+  assert.equal(vm.evaluate('ClaudeWoWNoticeReload:IsShown()'), 'true', 'the button stays on Era');
+  vm.run('STUB.prints = {}');
+  slotPoll(vm, null, 'time()', luaDiskFiles('1.2.3', BUILD_A, grown));
+  assert.ok(prints(vm).includes('New addon files are installed (1.2.3, build aaaaaaaaaaaa). Type /reload to load them.'), 'a toc-only change on Era: /reload');
+  assert.equal(vm.evaluate('ClaudeWoWNoticeBar.text:GetText()'), 'Addon update ready · 1.2.3 build aaaaaaaaaaaa');
+  assert.equal(vm.evaluate('ClaudeWoWNoticeReload:IsShown()'), 'true');
+  slotPoll(vm, null, 'time()', luaDiskFiles('1.2.3', BUILD_A, onDisk));
+  assert.equal(vm.evaluate('ClaudeWoWNoticeBar:IsShown()'), 'false');
+});
+
+test('ClaudeWoW.lua loaded without the namespace prints one line that says how to load the new files and defines nothing', () => {
+  const vm = createVM();
+  const src = fs.readFileSync(path.join(ADDON, 'ClaudeWoW.lua'), 'utf8');
+  assert.ok(!src.includes(']==]'));
+  vm.run('SRC = [==[' + src + ']==]');
+  vm.run('local f = assert((loadstring or load)(SRC, "@addon/ClaudeWoW.lua")); f("ClaudeWoW", {})');
+  assert.equal(
+    prints(vm),
+    '|cff66ccff[Azeroth Companion]|r New addon files are not loaded yet. Type /reload; if that does not help, fully quit and restart the game.',
+  );
+  assert.equal(vm.num('#STUB.prints'), 1);
+  assert.equal(vm.evaluate('ClaudeWoW'), null);
+  const quiet = createVM();
+  quiet.run('SRC = [==[' + fs.readFileSync(path.join(ADDON, 'Core', 'Log.lua'), 'utf8') + ']==]');
+  quiet.run('local f = assert((loadstring or load)(SRC, "@addon/Core/Log.lua")); f("ClaudeWoW", {})');
+  assert.equal(quiet.num('#STUB.prints'), 0, 'every other file keeps the silent guard');
 });
 
 test('a runtime folder installed after launch asks for a full restart, once', () => {

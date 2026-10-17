@@ -20,7 +20,10 @@
 -- Everything here is plain addon API. No automation, no memory reading.
 
 local ADDON_NAME, ns = ...
-if not ns.Try then return end
+if not ns.Try then
+	print("|cff66ccff[Azeroth Companion]|r New addon files are not loaded yet. Type /reload; if that does not help, fully quit and restart the game.")
+	return
+end
 ns.files[#ns.files + 1] = "ClaudeWoW.lua"
 local ClaudeWoW = {}
 _G.ClaudeWoW = ClaudeWoW
@@ -2244,14 +2247,15 @@ function ClaudeWoW.Version.ApplyDisk(d, stamp)
 	local fileHash = type(d.fileHash) == "string" and #d.fileHash == 8 and d.fileHash:match("^[0-9a-f]+$") and d.fileHash or ""
 	run.addonDisk = { version = d.version, build = build, fileHash = fileHash }
 	local L = V.LOADED
-	if L.version == "" or (d.version == L.version and build == L.build) then
+	local sameFiles = fileHash == "" or fileHash == ns.FileHash()
+	if L.version == "" or (d.version == L.version and build == L.build and sameFiles) then
 		if run.updateReady then
 			run.updateReady, run.reloadTold = nil, nil
 			Q.UpdateNoticeBar()
 		end
 		return
 	end
-	local restart = fileHash ~= "" and fileHash ~= ns.FileHash()
+	local restart = not sameFiles and not Q.IsClassicEra()
 	local text = "New addon files are installed ("
 		.. d.version
 		.. (build ~= "" and (", build " .. build) or "")
