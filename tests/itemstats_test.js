@@ -36,8 +36,9 @@ async function eraStore(name, missing) {
 
 const call = (store, tool, args) => JSON.parse(DM.callTool(store, tool, args).content[0].text);
 
-function fakeStore(tables) {
+function fakeStore(tables, flavor = 'forever') {
   return {
+    flavor,
     has: e => e in tables,
     byId: (e, id) => (tables[e] || []).find(r => r.id === id) || null,
     group: (e, _name, keysOf) => {
@@ -126,8 +127,8 @@ test('the decoder reads weapons, skills, all-stat and school auras, and lists wh
       { id: 27, spell: 102, effect: 6, aura: 85, value: 4, misc: 1 },
       { id: 28, spell: 102, effect: 6, aura: 13, value: 9, misc: 4 },
       { id: 29, spell: 102, effect: 6, aura: 13, value: 9, misc: 1 },
-      { id: 30, spell: 102, effect: 6, aura: 123, value: -10, misc: 126 },
-      { id: 31, spell: 102, effect: 42, aura: 0, value: 0, misc: 0 },
+      { id: 30, spell: 102, effect: 6, aura: 123, value: -10, misc: 124 },
+      { id: 31, spell: 102, effect: 35, aura: 13, value: 7, misc: 126 },
       { id: 41, spell: 104, effect: 6, aura: 13, value: 12, misc: 126 },
       { id: 42, spell: 104, effect: 6, aura: 135, value: 12, misc: 126 },
       { id: 43, spell: 105, effect: 6, aura: 135, value: 22, misc: 126 },
@@ -165,7 +166,7 @@ test('the decoder reads weapons, skills, all-stat and school auras, and lists wh
       ['equip', '6/552'],
       ['equip', '6/85'],
       ['equip', '6/13'],
-      ['equip', '42/0'],
+      ['equip', '35/13'],
       ['trigger', 7],
     ],
     'crit for one school, regen of another power, physical damage done and other effects are not read',
@@ -176,4 +177,160 @@ test('the decoder reads weapons, skills, all-stat and school auras, and lists wh
     'one spell raising damage and healing by the same amount is spell power; healing alone, or a different amount, is not',
   );
   assert.deepEqual(IS.decode(store, 99), { stats: {}, weapon: null, unread: [], notCounted: [] });
+});
+
+const AURA_SHAPES = [
+  [13, 126, 12, 'spellDamage'],
+  [13, 4, 9, 'fireSpellDamage'],
+  [135, 126, 22, 'healing'],
+  [52, 0, 1, 'meleeCrit'],
+  [54, 0, 1, 'meleeHit'],
+  [55, 0, 1, 'spellHit'],
+  [57, 0, 1, 'spellCrit'],
+  [552, 126, 1, 'spellCrit'],
+  [71, 126, 1, 'spellCrit'],
+  [99, 0, 20, 'attackPower'],
+  [124, 0, 20, 'rangedAttackPower'],
+  [85, 0, 4, 'mp5'],
+  [49, 0, 1, 'dodge'],
+  [47, 0, 1, 'parry'],
+  [51, 0, 1, 'block'],
+  [564, 0, 30, 'blockValue'],
+  [123, 124, -10, 'spellPenetration'],
+  [30, 95, 7, 'defense'],
+  [30, 43, 5, 'swordsSkill'],
+  [29, 1, 3, 'agility'],
+  [22, 1, 50, 'bonusArmor'],
+];
+
+test('every aura the decoder reads has a test with the shape the real tables use', () => {
+  assert.deepEqual(
+    Object.keys(IS.AURAS)
+      .map(Number)
+      .sort((a, b) => a - b),
+    [...new Set(AURA_SHAPES.map(([aura]) => aura))].sort((a, b) => a - b),
+    'an aura added to the decoder needs a row here',
+  );
+  for (const [aura, misc, value, name] of AURA_SHAPES) {
+    const store = fakeStore({
+      itemstats: [],
+      itemeffects: [{ id: 1, item: 1, trigger: 1, spell: 9 }],
+      spelleffects: [{ id: 2, spell: 9, effect: 6, aura, value, misc }],
+    });
+    const d = IS.decode(store, 1);
+    assert.deepEqual([d.stats, d.unread], [{ [name]: Math.abs(value) }, []], `aura ${aura} misc ${misc}`);
+  }
+});
+
+test('an equip spell with no effects is listed, and on Classic Era an item the wowsims data disagrees with is listed', () => {
+  const noEffects = fakeStore({ itemstats: [], itemeffects: [{ id: 1, item: 1, trigger: 1, spell: 9 }], spelleffects: [] });
+  assert.deepEqual(IS.decode(noEffects, 1).unread, [{ kind: 'equip', spell: 9, effect: null }]);
+  const thunderfury = {
+    itemstats: [
+      {
+        id: 19019,
+        stats: [
+          [3, 5],
+          [7, 8],
+        ],
+        damage: [
+          [82, 153],
+          [16, 30],
+        ],
+        delay: 1900,
+      },
+    ],
+    itemeffects: [],
+    spelleffects: [],
+  };
+  const era = IS.decode(fakeStore(thunderfury, 'classic_era'), 19019).unread.find(u => u.kind === 'sourcesDisagree');
+  assert.deepEqual(era.fields, [{ name: 'weaponDamage', client: [82, 153], wowsims: [60, 145] }]);
+  assert.equal(
+    IS.decode(fakeStore(thunderfury, 'forever'), 19019).unread.some(u => u.kind === 'sourcesDisagree'),
+    false,
+    'the Era item data is not used for another game',
+  );
+  const matching = {
+    itemstats: [
+      {
+        id: 19019,
+        stats: [
+          [3, 5],
+          [7, 8],
+        ],
+        damage: [
+          [44, 115],
+          [16, 30],
+        ],
+        delay: 1900,
+      },
+    ],
+    itemeffects: [],
+    spelleffects: [],
+  };
+  assert.equal(
+    IS.decode(fakeStore(matching, 'classic_era'), 19019).unread.some(u => u.kind === 'sourcesDisagree'),
+    false,
+    'weapon damage matches with the extra damage added',
+  );
+});
+
+test('random stats, shields, rows that would not convert and weapon-only equip spells are listed, never read as nothing', () => {
+  const store = fakeStore({
+    items: [
+      { id: 1, inventoryType: 5 },
+      { id: 2, inventoryType: 14 },
+      { id: 3, inventoryType: 5 },
+      { id: 4, inventoryType: 10 },
+    ],
+    itemstats: [
+      { id: 1, random: true },
+      { id: 2, resistances: [1500, 0, 0, 0, 0, 0, 0] },
+      { id: 3, unreadable: 'badInteger' },
+    ],
+    itemeffects: [{ id: 1, item: 4, trigger: 1, spell: 9 }],
+    spelleffects: [{ id: 2, spell: 9, effect: 6, aura: 52, value: 1, misc: 0 }],
+    spellequipreqs: [{ id: 3, spell: 9, itemClass: 2, subclassMask: 262156 }],
+  });
+  assert.deepEqual(IS.decode(store, 1).unread, [{ kind: 'randomStats' }]);
+  assert.deepEqual(IS.decode(store, 2), { stats: { armor: 1500 }, weapon: null, unread: [{ kind: 'shieldBlock' }], notCounted: [] });
+  assert.deepEqual(IS.decode(store, 3).unread, [{ kind: 'badRow', reason: 'badInteger' }]);
+  assert.deepEqual(IS.decode(store, 4), {
+    stats: {},
+    weapon: null,
+    unread: [{ kind: 'restricted', spell: 9, itemClass: 2, subclassMask: 262156 }],
+    notCounted: [],
+  });
+});
+
+test('the wowsims item file is compacted from the database, refuses a changed layout, and matches the pinned commit', () => {
+  const SI = require('../dev/simitems');
+  const stats = Array(44).fill(0);
+  stats[1] = 5;
+  stats[26] = 120;
+  const items = SI.compact({ items: [{ id: 7, stats, weaponDamageMin: 10, weaponDamageMax: 20 }] });
+  assert.deepEqual(Object.fromEntries(SI.FIELDS.map((f, i) => [f, items[7][i]]).filter(([, v]) => v)), {
+    agility: 5,
+    armor: 120,
+    weaponMin: 10,
+    weaponMax: 20,
+  });
+  assert.throws(() => SI.compact({ items: [{ id: 7, stats: stats.slice(1) }] }), /Stat enum changed/);
+  assert.throws(
+    () =>
+      SI.compact({
+        items: [
+          { id: 7, stats },
+          { id: 7, stats },
+        ],
+      }),
+    /twice/,
+  );
+  assert.throws(() => SI.compact({}), /no items list/);
+  const pinned = require('../bridge/simitems.json');
+  assert.equal(pinned.commit, require('../dev/simweights').HEAD);
+  assert.match(pinned.license, /^MIT License/);
+  assert.deepEqual(pinned.fields, SI.FIELDS);
+  assert.ok(Object.values(pinned.items).every(v => v.length === SI.FIELDS.length && v.every(Number.isFinite)));
+  assert.deepEqual(pinned.items[19019].slice(-2), [60, 145], 'Thunderfury at its Era damage with the nature damage added');
 });

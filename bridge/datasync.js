@@ -346,6 +346,7 @@ const TABLES = Object.freeze([
     key: 'ItemSparse:stats',
     entity: 'itemstats',
     optional: true,
+    flavors: ['classic_era'],
     columns: [
       'ID',
       'InventoryType',
@@ -389,6 +390,7 @@ const TABLES = Object.freeze([
     table: 'ItemEffect',
     entity: 'itemeffects',
     optional: true,
+    flavors: ['classic_era'],
     columns: ['ID', 'ParentItemID', 'TriggerType', 'SpellID'],
     convert(row) {
       return { id: idOf(row), item: idOf(row, 'ParentItemID'), trigger: intOf(row, 'TriggerType'), spell: idOf(row, 'SpellID') };
@@ -398,6 +400,7 @@ const TABLES = Object.freeze([
     table: 'SpellEffect',
     entity: 'spelleffects',
     optional: true,
+    flavors: ['classic_era'],
     columns: ['ID', 'SpellID', 'Effect', 'EffectAura', 'EffectBasePoints', 'EffectDieSides', 'EffectMiscValue_0'],
     convert(row) {
       const effect = intOf(row, 'Effect');
@@ -416,11 +419,18 @@ const TABLES = Object.freeze([
     table: 'SpellEquippedItems',
     entity: 'spellequipreqs',
     optional: true,
+    flavors: ['classic_era'],
     columns: ['ID', 'SpellID', 'EquippedItemClass', 'EquippedItemSubclass', 'EquippedItemInvTypes'],
     convert(row) {
       const itemClass = intOf(row, 'EquippedItemClass');
       if (itemClass < 0) throw new Skip();
-      return { id: idOf(row), spell: idOf(row, 'SpellID'), itemClass, subclassMask: intOf(row, 'EquippedItemSubclass'), invTypeMask: intOf(row, 'EquippedItemInvTypes') };
+      return {
+        id: idOf(row),
+        spell: idOf(row, 'SpellID'),
+        itemClass,
+        subclassMask: intOf(row, 'EquippedItemSubclass'),
+        invTypeMask: intOf(row, 'EquippedItemInvTypes'),
+      };
     },
   },
   {

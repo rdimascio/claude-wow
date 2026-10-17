@@ -5,6 +5,8 @@ const INVENTORY_SHIELD = 14;
 const APPLY_AURA = 6;
 const TRIGGER = Object.freeze({ use: 0, equip: 1, onHit: 2 });
 const ALL_MAGIC = 126;
+const MAGIC_BUT_HOLY = 124;
+const CROSS_CHECK_FLAVOR = 'classic_era';
 const MOD_DAMAGE_DONE = 13;
 const MOD_HEALING_DONE = 135;
 const SCHOOLS = Object.freeze([
@@ -68,8 +70,8 @@ const AURAS = Object.freeze({
   49: (stats, e) => add(stats, 'dodge', e.value),
   47: (stats, e) => add(stats, 'parry', e.value),
   51: (stats, e) => add(stats, 'block', e.value),
-  158: (stats, e) => add(stats, 'blockValue', e.value),
-  123: (stats, e) => (e.misc === ALL_MAGIC ? add(stats, 'spellPenetration', Math.abs(e.value)) : false),
+  564: (stats, e) => add(stats, 'blockValue', e.value),
+  123: (stats, e) => (e.misc === ALL_MAGIC || e.misc === MAGIC_BUT_HOLY ? add(stats, 'spellPenetration', Math.abs(e.value)) : false),
   30: (stats, e) => {
     if (e.misc === DEFENSE_SKILL) return add(stats, 'defense', e.value);
     if (WEAPON_SKILLS[e.misc]) return add(stats, `${WEAPON_SKILLS[e.misc]}Skill`, e.value);
@@ -133,6 +135,10 @@ function decode(store, itemId) {
       continue;
     }
     const effects = effectsOf.get(t.spell) || [];
+    if (!effects.length) {
+      unread.push({ kind: 'equip', spell: t.spell, effect: null });
+      continue;
+    }
     const damage = effects.find(e => e.effect === APPLY_AURA && e.aura === MOD_DAMAGE_DONE && e.misc === ALL_MAGIC);
     const healing = effects.find(e => e.effect === APPLY_AURA && e.aura === MOD_HEALING_DONE);
     const bothAtOnce = damage && healing && damage.value === healing.value;
@@ -143,7 +149,31 @@ function decode(store, itemId) {
       if (!read) unread.push({ kind: 'equip', spell: t.spell, effect: e.effect, aura: e.aura, misc: e.misc, value: e.value });
     }
   }
+  if (store.flavor === CROSS_CHECK_FLAVOR) {
+    const disagree = crossCheck(itemId, stats, row && row.damage);
+    if (disagree) unread.push({ kind: 'sourcesDisagree', fields: disagree });
+  }
   return { stats, weapon, unread, notCounted };
+}
+
+let simItems;
+
+function crossCheck(itemId, stats, damage) {
+  if (simItems === undefined) simItems = require('./simitems.json');
+  const theirs = simItems.items[itemId];
+  if (!theirs) return null;
+  const at = name => theirs[simItems.fields.indexOf(name)];
+  const fields = [];
+  for (const name of simItems.fields) {
+    if (name === 'weaponMin' || name === 'weaponMax') continue;
+    const client = stats[name] || 0;
+    if (Math.abs(client - at(name)) > 0.01) fields.push({ name, client, wowsims: at(name) });
+  }
+  const [main = [0, 0], ...extra] = damage || [];
+  const withExtra = extra.reduce(([a, b], [lo, hi]) => [a + lo, b + hi], main);
+  const matches = range => range[0] === at('weaponMin') && range[1] === at('weaponMax');
+  if (!matches(main) && !matches(withExtra)) fields.push({ name: 'weaponDamage', client: main, wowsims: [at('weaponMin'), at('weaponMax')] });
+  return fields.length ? fields : null;
 }
 
 module.exports = { ENTITIES, AURAS, available, decode };

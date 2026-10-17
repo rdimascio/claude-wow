@@ -454,9 +454,10 @@ Nothing schedules it. Two ways to run it daily, neither installed by the bridge:
 | File | Table | Fields |
 |---|---|---|
 | `items.jsonl` | `ItemSparse` | `id`, `name`, `quality`, `itemLevel`, `requiredLevel`, `inventoryType`, `sellPrice`, `buyPrice`, `startQuestID` |
-| `itemstats.jsonl` | `ItemSparse` (optional, read from the same download as `items.jsonl`; listed as `ItemSparse:stats` in the manifest) | `id`, `stats` (`[statID, amount]` pairs), `damage` (`[min, max]` pairs) and `delay` in ms, `resistances` (armor first). Only equippable items with any of them. |
+| `itemstats.jsonl` | `ItemSparse` (optional, Classic Era only, read from the same download as `items.jsonl`; listed as `ItemSparse:stats` in the manifest) | `id`, `stats` (`[statID, amount]` pairs), `damage` (`[min, max]` pairs) and `delay` in ms, `resistances` (armor first). `random` for items with random stats, `unreadable` when a stat cell would not convert. Only equippable items with any of them. |
 | `itemeffects.jsonl` | `ItemEffect` (optional) | `id`, `item`, `trigger` (0 use, 1 equip, 2 on hit), `spell` |
 | `spelleffects.jsonl` | `SpellEffect` (optional) | `id`, `spell`, `effect`, `aura`, `value` (`EffectBasePoints + EffectDieSides`: 201 of 201 equip spells whose name states the amount match), `misc` (`EffectMiscValue_0`) |
+| `spellequipreqs.jsonl` | `SpellEquippedItems` (optional) | `id`, `spell`, `itemClass`, `subclassMask`, `invTypeMask`: the item a spell needs equipped; rows with no item class are skipped |
 | `quests.jsonl` | `QuestV2` | `id` only. The client tables carry no quest titles or text. |
 | `zones.jsonl` | `AreaTable` | `id`, `name`, `continentID`, `parentAreaID` |
 | `flightpaths.jsonl` | `TaxiNodes` | `id`, `name`, `continentID`, `flags` (raw), `world` (`x`, `y`, `z`), `map`, `maps`, `zoneAmbiguous` |
