@@ -28,6 +28,11 @@ const ENTITIES = Object.freeze([
   'instances',
   'encounters',
   'instancelevels',
+  'itemstats',
+  'itemeffects',
+  'spelleffects',
+  'spellequipreqs',
+  'spellforms',
 ]);
 const MAX_QUERY_LENGTH = 100;
 const REPLACED_PROBLEM = 'a newer sync replaced this data while it was in use; ask again';

@@ -28,6 +28,9 @@ const STRAY_SUFFIXES = ['.tmp', '.old'];
 const UI_MAP_TYPE_CONTINENT = 2;
 const UI_MAP_TYPE_ZONE = 3;
 const INSTANCE_TYPES = Object.freeze({ 1: 'dungeon', 2: 'raid' });
+const ITEM_STAT_SLOTS = Object.freeze([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+const ITEM_DAMAGE_SLOTS = Object.freeze([0, 1, 2, 3, 4]);
+const ITEM_RESISTANCE_SLOTS = Object.freeze([0, 1, 2, 3, 4, 5, 6]);
 const LFG_ZONE_TYPE = 4;
 const DEV_MAP = /\bTest\b|CashTest|<unused>|\bunused\b/i;
 const DEV_ENCOUNTER = /^Test|\bTest\b|No Longer in Use|<unused>/i;
@@ -339,6 +342,115 @@ const TABLES = Object.freeze([
     },
   },
   {
+    table: 'ItemSparse',
+    key: 'ItemSparse:stats',
+    entity: 'itemstats',
+    optional: true,
+    flavors: ['classic_era'],
+    columns: [
+      'ID',
+      'InventoryType',
+      'ItemDelay',
+      'QualityModifier',
+      'ItemRandomSuffixGroupID',
+      'RandomSelect',
+      ...ITEM_STAT_SLOTS.flatMap(k => [`StatModifier_bonusStat_${k}`, `StatModifier_bonusAmount_${k}`]),
+      ...ITEM_DAMAGE_SLOTS.flatMap(k => [`MinDamage_${k}`, `MaxDamage_${k}`]),
+      ...ITEM_RESISTANCE_SLOTS.map(k => `Resistances_${k}`),
+    ],
+    convert(row) {
+      const id = idOf(row);
+      if (intOf(row, 'InventoryType') <= 0) throw new Skip();
+      let parsed;
+      try {
+        const stats = [];
+        for (const k of ITEM_STAT_SLOTS) {
+          const amount = intOf(row, `StatModifier_bonusAmount_${k}`);
+          if (amount !== 0) stats.push([intOf(row, `StatModifier_bonusStat_${k}`), amount]);
+        }
+        const damage = ITEM_DAMAGE_SLOTS.map(k => [numberOf(row, `MinDamage_${k}`), numberOf(row, `MaxDamage_${k}`)]).filter(([lo, hi]) => lo || hi);
+        const resistances = ITEM_RESISTANCE_SLOTS.map(k => intOf(row, `Resistances_${k}`));
+        const random = intOf(row, 'ItemRandomSuffixGroupID') > 0 || intOf(row, 'RandomSelect') > 0;
+        parsed = { stats, damage, delay: intOf(row, 'ItemDelay'), resistances, random, qualityModifier: numberOf(row, 'QualityModifier') };
+      } catch (e) {
+        if (!(e instanceof Drop)) throw e;
+        return { id, unreadable: e.reason };
+      }
+      const { stats, damage, delay, resistances, random, qualityModifier } = parsed;
+      if (!stats.length && !damage.length && !random && !qualityModifier && resistances.every(n => n === 0)) throw new Skip();
+      return {
+        id,
+        ...(stats.length ? { stats } : {}),
+        ...(damage.length ? { damage, delay } : {}),
+        ...(resistances.some(n => n !== 0) ? { resistances } : {}),
+        ...(random ? { random: true } : {}),
+        ...(qualityModifier ? { qualityModifier } : {}),
+      };
+    },
+  },
+  {
+    table: 'ItemEffect',
+    entity: 'itemeffects',
+    optional: true,
+    flavors: ['classic_era'],
+    columns: ['ID', 'ParentItemID', 'TriggerType', 'SpellID'],
+    convert(row) {
+      return { id: idOf(row), item: idOf(row, 'ParentItemID'), trigger: intOf(row, 'TriggerType'), spell: idOf(row, 'SpellID') };
+    },
+  },
+  {
+    table: 'SpellEffect',
+    entity: 'spelleffects',
+    optional: true,
+    flavors: ['classic_era'],
+    columns: ['ID', 'SpellID', 'Effect', 'EffectAura', 'EffectBasePoints', 'EffectDieSides', 'EffectMiscValue_0'],
+    convert(row) {
+      const effect = intOf(row, 'Effect');
+      if (effect === 0) throw new Skip();
+      return {
+        id: idOf(row),
+        spell: idOf(row, 'SpellID'),
+        effect,
+        aura: intOf(row, 'EffectAura'),
+        value: intOf(row, 'EffectBasePoints') + intOf(row, 'EffectDieSides'),
+        misc: intOf(row, 'EffectMiscValue_0'),
+      };
+    },
+  },
+  {
+    table: 'SpellEquippedItems',
+    entity: 'spellequipreqs',
+    optional: true,
+    flavors: ['classic_era'],
+    columns: ['ID', 'SpellID', 'EquippedItemClass', 'EquippedItemSubclass', 'EquippedItemInvTypes'],
+    convert(row) {
+      const id = idOf(row);
+      const spell = idOf(row, 'SpellID');
+      const itemClass = toInt(row.EquippedItemClass);
+      if (itemClass !== null && itemClass < 0) throw new Skip();
+      if (itemClass === null || toInt(row.EquippedItemSubclass) === null || toInt(row.EquippedItemInvTypes) === null) return { id, spell, unreadable: true };
+      return {
+        id,
+        spell,
+        itemClass,
+        subclassMask: intOf(row, 'EquippedItemSubclass'),
+        invTypeMask: intOf(row, 'EquippedItemInvTypes'),
+      };
+    },
+  },
+  {
+    table: 'SpellShapeshift',
+    entity: 'spellforms',
+    optional: true,
+    flavors: ['classic_era'],
+    columns: ['ID', 'SpellID', 'ShapeshiftMask_0', 'ShapeshiftMask_1'],
+    convert(row) {
+      const masks = [toInt(row.ShapeshiftMask_0), toInt(row.ShapeshiftMask_1)];
+      if (masks.every(m => m === 0)) throw new Skip();
+      return { id: idOf(row), spell: idOf(row, 'SpellID'), ...(masks.some(m => m === null) ? { unreadable: true } : { masks }) };
+    },
+  },
+  {
     table: 'SkillLine',
     entity: 'skilllines',
     columns: ['ID', 'DisplayName_lang', 'CategoryID', 'ParentSkillLineID'],
@@ -457,7 +569,7 @@ const TABLES = Object.freeze([
     },
   },
 ]);
-const TABLES_VERSION = 3;
+const TABLES_VERSION = 4;
 
 function sha256(text) {
   return crypto.createHash('sha256').update(text).digest('hex');
@@ -797,21 +909,26 @@ async function sync(opts = {}) {
       };
       const tables = {};
       const entities = {};
+      const fetched = new Map();
       for (const spec of TABLES) {
         if (spec.flavors && !spec.flavors.includes(flavorName)) continue;
+        const key = spec.key || spec.table;
         const url = tableUrl(spec.table, build);
-        log(`fetch ${url}`);
         let text;
         let converted;
         try {
-          text = await fetchText(fetchImpl, url, { expect: 'csv', filename: `${spec.table}.${build}.csv`, maxBytes: opts.maxBodyBytes });
+          if (!fetched.has(spec.table)) {
+            log(`fetch ${url}`);
+            fetched.set(spec.table, await fetchText(fetchImpl, url, { expect: 'csv', filename: `${spec.table}.${build}.csv`, maxBytes: opts.maxBodyBytes }));
+          }
+          text = fetched.get(spec.table);
           converted = convertTable(spec, text, ctx);
         } catch (e) {
           if (!spec.optional || !(e instanceof SyncError)) throw e;
-          const had = before && before.build === build && before.manifest.tables && before.manifest.tables[spec.table];
+          const had = before && before.build === build && before.manifest.tables && before.manifest.tables[key];
           if (had && had.sha256)
             throw new SyncError(`${spec.table} could not be fetched again (${e.message}); the current data keeps it, so nothing was changed. Try again later`);
-          tables[spec.table] = { url, entity: spec.entity, error: e.message };
+          tables[key] = { url, entity: spec.entity, error: e.message };
           log(`${spec.entity}: skipped, ${e.message}`);
           continue;
         }
@@ -819,7 +936,7 @@ async function sync(opts = {}) {
         const file = `${spec.entity}.jsonl`;
         writeJsonl(path.join(tmpDir, file), records);
         const droppedCount = Object.values(dropped).reduce((s, n) => s + n, 0);
-        tables[spec.table] = {
+        tables[key] = {
           url,
           sha256: sha256(text),
           entity: spec.entity,
