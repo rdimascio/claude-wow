@@ -115,12 +115,15 @@ jobs:
           grep -qx 'ClaudeWoW/Transport/Tick.lua' files.txt
           grep -qx 'ClaudeWoW/Chat/Context.lua' files.txt
           grep -qx 'ClaudeWoW/Chat/Grants.lua' files.txt
+          grep -qx 'ClaudeWoW/Chat/Options.lua' files.txt
           grep -qx 'ClaudeWoW/Chat/Sessions.lua' files.txt
           grep -qx 'ClaudeWoW/Whisper/Tabs.lua' files.txt
           grep -qx 'ClaudeWoW/Whisper/Intercept.lua' files.txt
           grep -qx 'ClaudeWoW/UI/Markdown.lua' files.txt
           grep -qx 'ClaudeWoW/UI/Window.lua' files.txt
           grep -qx 'ClaudeWoW/Commands/Diag.lua' files.txt
+          grep -qx 'ClaudeWoW/Commands/Registry.lua' files.txt
+          grep -qx 'ClaudeWoW/Commands/Claude.lua' files.txt
           grep -qx 'ClaudeWoW/Commands/Config.lua' files.txt
           grep -qx 'ClaudeWoW/Boot.lua' files.txt
           test -z "$(grep -E '^ClaudeWoW/(assets|bridge|build|dev|docs|homebrew|tests)/' files.txt)"

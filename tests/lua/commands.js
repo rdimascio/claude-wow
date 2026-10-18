@@ -20,6 +20,15 @@ const REST = [
   'ore on',
   'left',
   'on foo',
+  'test',
+  'list',
+  'pane left',
+  'quest x',
+  'filter all',
+  'show x',
+  'nav x 3',
+  'herb off',
+  'follow on',
 ];
 
 const CONFIG_REST = [
