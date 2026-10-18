@@ -36,6 +36,10 @@ UI\Copy.lua
 UI\Transcript.lua
 UI\ChatList.lua
 UI\Frame.lua
+Commands\Diag.lua
+Commands\Registry.lua
+Commands\Claude.lua
+Commands\Config.lua
 ClaudeWoW.lua
 Map.lua
 Roast.lua

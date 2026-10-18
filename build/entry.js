@@ -31,6 +31,10 @@ import addonUiCopy from '../addon/ClaudeWoW/UI/Copy.lua' with { type: 'file' };
 import addonUiTranscript from '../addon/ClaudeWoW/UI/Transcript.lua' with { type: 'file' };
 import addonUiChatList from '../addon/ClaudeWoW/UI/ChatList.lua' with { type: 'file' };
 import addonUiFrame from '../addon/ClaudeWoW/UI/Frame.lua' with { type: 'file' };
+import addonCommandsDiag from '../addon/ClaudeWoW/Commands/Diag.lua' with { type: 'file' };
+import addonCommandsRegistry from '../addon/ClaudeWoW/Commands/Registry.lua' with { type: 'file' };
+import addonCommandsClaude from '../addon/ClaudeWoW/Commands/Claude.lua' with { type: 'file' };
+import addonCommandsConfig from '../addon/ClaudeWoW/Commands/Config.lua' with { type: 'file' };
 import addonLua from '../addon/ClaudeWoW/ClaudeWoW.lua' with { type: 'file' };
 import addonToc from '../addon/ClaudeWoW/ClaudeWoW.toc' with { type: 'file' };
 import addonCodec from '../addon/ClaudeWoW/Codec.lua' with { type: 'file' };
@@ -88,6 +92,10 @@ require('../bridge/assets').embed({
   'addon/ClaudeWoW/UI/Transcript.lua': addonUiTranscript,
   'addon/ClaudeWoW/UI/ChatList.lua': addonUiChatList,
   'addon/ClaudeWoW/UI/Frame.lua': addonUiFrame,
+  'addon/ClaudeWoW/Commands/Diag.lua': addonCommandsDiag,
+  'addon/ClaudeWoW/Commands/Registry.lua': addonCommandsRegistry,
+  'addon/ClaudeWoW/Commands/Claude.lua': addonCommandsClaude,
+  'addon/ClaudeWoW/Commands/Config.lua': addonCommandsConfig,
   'addon/ClaudeWoW/ClaudeWoW.lua': addonLua,
   'addon/ClaudeWoW/ClaudeWoW.toc': addonToc,
   'addon/ClaudeWoW/Codec.lua': addonCodec,

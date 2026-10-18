@@ -388,6 +388,7 @@ test('module text: player strings say companion app, never bridge, and project, 
 const SINKS = new Set(['print', 'AddHistory', 'Finish', 'TellPlayer', 'Cli.Out', 'Cli.Say', 'Cli.Note', 'Cli.Reject', 'ClaudeWoW.Print']);
 const DEV_FUNCTIONS = new Set([
   'Cli.DevCommand',
+  'Cli.Diag',
   'ClaudeWoW.ChatLog.Status',
   'PollPresence',
   'Presence.Check',
@@ -498,7 +499,7 @@ test('module text: every literal in ClaudeWoW.lua and the Core and Transport fil
 test('module text: the allowlists still hold bridge words, so it is the allowlist and not a blind scan that passes them', () => {
   const src = fs.readFileSync(path.join(ADDON, 'ClaudeWoW.lua'), 'utf8');
   assert.ok(/The bridge has not said it has dev tools/.test(src));
-  assert.ok(/bridge default, /.test(src));
+  assert.ok(/bridge default, /.test(fs.readFileSync(path.join(ADDON, 'Commands', 'Diag.lua'), 'utf8')));
   const found = coreLiterals();
   assert.ok(!found.some(s => /dev tools/.test(s.text)), 'Cli.DevCommand is skipped');
   assert.ok(!found.some(s => s.text === 'bridge default, '), 'the diag branch is skipped');
