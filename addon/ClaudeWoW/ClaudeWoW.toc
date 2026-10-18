@@ -26,6 +26,8 @@ Chat\Grants.lua
 Whisper\Tabs.lua
 Whisper\Reply.lua
 Whisper\Intercept.lua
+Chat\Options.lua
+Chat\Sessions.lua
 UI\Markdown.lua
 UI\Menu.lua
 UI\Minimap.lua
@@ -34,6 +36,10 @@ UI\Copy.lua
 UI\Transcript.lua
 UI\ChatList.lua
 UI\Frame.lua
+Commands\Diag.lua
+Commands\Registry.lua
+Commands\Claude.lua
+Commands\Config.lua
 ClaudeWoW.lua
 Map.lua
 Roast.lua
@@ -48,3 +54,4 @@ UI\Window.lua
 Telemetry.lua
 Observed.lua
 Help.lua
+Boot.lua

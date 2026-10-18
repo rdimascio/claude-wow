@@ -6,6 +6,8 @@ const { lua, lauxlib, lualib, to_luastring, to_jsstring } = require('fengari');
 const ADDON_NAME = 'ClaudeWoW';
 const ADDON_DIR = path.join(__dirname, '..', '..', 'addon', ADDON_NAME);
 const STUB_FILE = path.join(__dirname, '..', 'wow_stub.lua');
+const CORE_FILE = 'ClaudeWoW.lua';
+const BOOT_FILE = 'Boot.lua';
 const LOGIN = 'STUB.FireEvent("ADDON_LOADED", "ClaudeWoW"); STUB.FireEvent("PLAYER_LOGIN")';
 
 function tocFiles(dir = ADDON_DIR, name = ADDON_NAME) {
@@ -71,13 +73,15 @@ function createVM({ stub = true, utf8 = true } = {}) {
     loaded.add(file);
   };
 
-  const loadFile = file => {
+  const loadFile = (file, bootAfterCore = true) => {
     if (!isShared(file)) for (const shared of sharedFilesBefore(file)) if (!loaded.has(shared)) loadOne(shared);
     loadOne(file);
+    if (bootAfterCore && file === CORE_FILE && tocFiles().includes(BOOT_FILE)) loadOne(BOOT_FILE);
   };
 
   const loadAddon = (files = tocFiles()) => {
-    for (const f of files) loadFile(f);
+    const bootAfterCore = !files.includes(BOOT_FILE);
+    for (const f of files) loadFile(f, bootAfterCore);
   };
 
   const login = () => run(LOGIN);
