@@ -27,8 +27,8 @@ end
 function Cli.ConfigValue(key)
 	local s = ns.db.settings
 	local c = ActiveChat()
-	if key == "voice" then return (type(ClaudeWoWDB.voice) == "table" and ClaudeWoWDB.voice.pack) or "race" end
-	if key == "roast" then return (type(ClaudeWoWDB.roast) == "table" and ClaudeWoWDB.roast.on) and "on" or "off" end
+	if key == "voice" then return (type(ns.db.voice) == "table" and ns.db.voice.pack) or "race" end
+	if key == "roast" then return (type(ns.db.roast) == "table" and ns.db.roast.on) and "on" or "off" end
 	if key == "whisper" then return s.whisper and "on" or "off" end
 	if key == "ui" then return Cli.UiStatus() end
 	if key == "echo" then return tostring(s.echo) end

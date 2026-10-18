@@ -82,11 +82,6 @@ local state = { moving = false, combat = false, stashed = false, fullOpen = fals
 W.state = state
 local hooked = {}
 
-local function Settings()
-	local db = ClaudeWoWDB
-	return (type(db) == "table" and type(db.settings) == "table") and db.settings or {}
-end
-
 local Try = ns.Try
 
 local function Screen() return UIParent:GetWidth() or 1920, UIParent:GetHeight() or 1080 end
@@ -94,7 +89,7 @@ local function Screen() return UIParent:GetWidth() or 1920, UIParent:GetHeight()
 local function CharKey() return tostring(Try(UnitName, "player") or "?") .. "-" .. tostring(Try(GetRealmName) or "?") end
 
 local function Layouts()
-	local db = ClaudeWoWDB
+	local db = ns.db
 	db.layouts = db.layouts or {}
 	return db.layouts
 end
@@ -113,8 +108,7 @@ function W.Layout()
 	local key = CharKey()
 	local l = all[key]
 	if l and l.w and l.h then return l end
-	local s = Settings()
-	l = { w = tonumber(s.width) or DEFAULT_W, h = tonumber(s.height) or DEFAULT_H }
+	l = { w = tonumber(ns.Settings("width")) or DEFAULT_W, h = tonumber(ns.Settings("height")) or DEFAULT_H }
 	all[key] = l
 	return l
 end
@@ -270,12 +264,11 @@ local function DodgeSpot(home) return Spot(home, W.OpenPanels()) or home end
 function W.Relayout()
 	state.pending = false
 	if not win then return end
-	local s = Settings()
 	state.signature = Signature()
 	local full = W.FullscreenOpen()
 	if full ~= state.fullOpen then
 		state.fullOpen = full
-		if full and s.autohide ~= false and Visible() then
+		if full and ns.Settings("autohide") ~= false and Visible() then
 			state.stashed = ClaudeWoW.Suspend(true) and true or false
 		elseif not full and state.stashed then
 			state.stashed = false
@@ -288,7 +281,7 @@ function W.Relayout()
 	end
 	local home = HomeRect()
 	local spot = home
-	if s.dodge ~= false then spot = DodgeSpot(home) end
+	if ns.Settings("dodge") ~= false then spot = DodgeSpot(home) end
 	state.dodged = spot ~= home
 	Put(spot)
 	W.Drive()
@@ -307,7 +300,7 @@ local function Hovered()
 end
 
 function W.DimAlpha()
-	local dim = tonumber(Settings().dim) or 1
+	local dim = tonumber(ns.Settings("dim")) or 1
 	if dim >= 1 then return 1 end
 	return math.max(DIM_FLOOR, dim)
 end
@@ -361,8 +354,8 @@ function W.SaveFromFrame()
 	local _, _, cw, ch = Clamp(0, 0, w, h)
 	local l = W.Layout()
 	l.w, l.h = cw, ch
-	local s = Settings()
-	s.width, s.height = cw, ch
+	ns.Setting("width", cw)
+	ns.Setting("height", ch)
 	state.dodged = false
 	Put(HomeRect())
 	W.Schedule()
@@ -370,8 +363,8 @@ end
 
 function W.Reset()
 	Layouts()[CharKey()] = nil
-	local s = Settings()
-	s.width, s.height = DEFAULT_W, DEFAULT_H
+	ns.Setting("width", DEFAULT_W)
+	ns.Setting("height", DEFAULT_H)
 	if win then
 		W.Layout()
 		W.Relayout()

@@ -104,22 +104,9 @@ local watcher
 
 local Print = ns.Say
 
-local function Settings()
-	local db = ClaudeWoWDB
-	if type(db) ~= "table" then return nil end
-	db.settings = db.settings or {}
-	return db.settings
-end
+function T.IsOn() return ns.Settings("ordersCard") ~= false end
 
-function T.IsOn()
-	local s = Settings()
-	return not s or s.ordersCard ~= false
-end
-
-local function Collapsed()
-	local s = Settings()
-	return s ~= nil and s.ordersCollapsed == true
-end
+local function Collapsed() return ns.Settings("ordersCollapsed") == true end
 
 function T.TemplateExists(name)
 	if type(C_XMLUtil) ~= "table" or type(C_XMLUtil.GetTemplateInfo) ~= "function" then return false end
@@ -620,16 +607,13 @@ end)
 function T.Card() return card end
 
 function T.ToggleCollapsed()
-	local s = Settings()
-	if not s then return end
-	s.ordersCollapsed = not Collapsed()
+	if not ns.Setting("ordersCollapsed", not Collapsed()) then return end
 	if type(SOUNDKIT) == "table" and SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON then pcall(PlaySound, SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON) end
 	T.Refresh()
 end
 
 function T.SetShown(on)
-	local s = Settings()
-	if s then s.ordersCard = on and true or false end
+	ns.Setting("ordersCard", on and true or false)
 	T.debug.lastError = nil
 	T.Refresh()
 end

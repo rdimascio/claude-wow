@@ -142,73 +142,183 @@ function ClaudeWoW.RepairQuietChats(data)
 	if active and active.quiet and firstUserChat then data.activeChat = firstUserChat.id end
 end
 
-local function InitDB()
-	-- Nothing saved yet: a first run, as opposed to an install from before some setting existed.
-	local fresh = ClaudeWoWDB == nil or next(ClaudeWoWDB) == nil
-	ClaudeWoWDB = ClaudeWoWDB or {}
-	db = ClaudeWoWDB
-	ns.db = db
-	db.settings = db.settings or {}
-	local s = db.settings
-	if s.autoRefresh == nil then s.autoRefresh = true end
-	if not s.autoRefreshV2 then
-		s.autoRefreshV2 = true
-		if s.mode ~= "reload" then s.autoRefresh = false end
+local DEFAULTS = {
+	autoRefresh = true,
+	signal = true,
+	minimap = true,
+	context = true,
+	echo = "summary",
+	mode = "pixel",
+	vision = false,
+	interval = 20,
+	cwd = DEFAULT_CWD,
+	width = 780,
+	height = 500,
+	dim = Cli.DIM_DEFAULT,
+	dodge = true,
+	autohide = true,
+}
+ns.DEFAULTS = DEFAULTS
+
+local RUN_FIELDS = {
+	ackPollAt = true,
+	act = true,
+	addonDisk = true,
+	allowConfirm = true,
+	bridgeAgent = true,
+	bridgeAgents = true,
+	bridgeCancel = true,
+	bridgeClients = true,
+	bridgeContract = true,
+	bridgeCwd = true,
+	bridgeDiscord = true,
+	bridgeDm = true,
+	bridgeEffortLock = true,
+	bridgeEfforts = true,
+	bridgeHome = true,
+	bridgeLive = true,
+	bridgeMcp = true,
+	bridgeNow = true,
+	bridgeOpenUrl = true,
+	bridgePlugin = true,
+	bridgePlugins = true,
+	bridgePresence = true,
+	bridgeProjectLabels = true,
+	bridgeProjects = true,
+	bridgeSeen = true,
+	bridgeSessions = true,
+	bridgeSkills = true,
+	bridgeVersion = true,
+	chatlogMisses = true,
+	chatlogPause = true,
+	chatlogStats = true,
+	cmd = true,
+	connKey = true,
+	connectFailed = true,
+	connectingAt = true,
+	contextSent = true,
+	denialSeen = true,
+	dmPollAt = true,
+	dmSentAt = true,
+	helloPollAt = true,
+	lastHelloAt = true,
+	lastIdlePoll = true,
+	lastNewsLoad = true,
+	lastPresenceCheck = true,
+	lastReplyChat = true,
+	lateProbe = true,
+	lateWait = true,
+	loginChecked = true,
+	news = true,
+	newsPollAt = true,
+	nextPollAt = true,
+	noShotTold = true,
+	openUrlAt = true,
+	openWait = true,
+	outbound = true,
+	pixelFailed = true,
+	polls = true,
+	presence = true,
+	quietShot = true,
+	reloadAfterCombat = true,
+	reloadArmed = true,
+	reloadAsked = true,
+	reloadDialogManual = true,
+	reloadTold = true,
+	replay = true,
+	replyNames = true,
+	replyTarget = true,
+	requests = true,
+	restartTold = true,
+	restoring = true,
+	resumeList = true,
+	runLimit = true,
+	sendOnConnect = true,
+	sentAt = true,
+	shot = true,
+	shotFailTold = true,
+	shotGen = true,
+	shotOverride = true,
+	shotStats = true,
+	shotsPaused = true,
+	signalUnreliable = true,
+	slotError = true,
+	slotErrorTold = true,
+	slotsExhausted = true,
+	slotsMissing = true,
+	staleShotGen = true,
+	staleShotUntil = true,
+	staleSig = true,
+	startedAt = true,
+	statusText = true,
+	statusWorking = true,
+	steps = true,
+	stripShown = true,
+	unreachableTold = true,
+	updateReady = true,
+	versionTold = true,
+	versionVerdict = true,
+	waitSaid = true,
+	whisperBooted = true,
+	whisperBridgeBad = true,
+	whisperBridgeKey = true,
+	whisperError = true,
+	whisperFlash = true,
+	whisperLastLeak = true,
+	whisperLayer = true,
+	whisperLayers = true,
+	whisperLeaks = true,
+	whisperProbe = true,
+	whisperSentAt = true,
+	whisperSwallowed = true,
+	whisperTabs = true,
+}
+ns.RUN_FIELDS = RUN_FIELDS
+
+function ns.Settings(key)
+	local saved = ns.db
+	return saved and saved.settings[key]
+end
+
+function ns.Setting(key, value)
+	local saved = ns.db
+	if not saved then return false end
+	saved.settings[key] = value
+	return true
+end
+
+local function ApplyDefaults(s)
+	for key, value in pairs(DEFAULTS) do
+		if s[key] == nil then s[key] = value end
 	end
-	if s.signal == nil then s.signal = true end
-	if s.minimap == nil then s.minimap = true end
-	Q.MigrateMiniBar(s)
-	if s.context == nil then s.context = true end -- tell the agent about the character, zone, etc.
-	if not s.contextWarnV2 then
-		s.contextWarnV2 = true
-		if s.contextWarn == nil or s.contextWarn == Cli.CONTEXT_WARN_OLD then s.contextWarn = Cli.CONTEXT_WARN_DEFAULT end
-	end
-	-- How much of each reply to print in the game chat. "summary" (the agent's
-	-- closing TL;DR lines) replaced "full" as the default; an install that still
-	-- has the old default saved moves over once, any other choice is kept.
-	if not s.echoV2 then
-		s.echoV2 = true
-		if s.echo == "full" then s.echo = "summary" end
-	end
-	s.echo = s.echo or "summary"
-	s.mode = s.mode or "pixel"
-	if s.vision == nil then s.vision = false end -- send a picture of the screen with each message (screenshot transport); opt-in
-	s.interval = s.interval or 20
-	s.cwd = s.cwd or DEFAULT_CWD
-	s.width = s.width or 780
-	s.height = s.height or 500
-	db.lastSeq = db.lastSeq or 0
-	-- Chats deleted in game that the bridge hasn't confirmed forgetting yet.
-	db.forget = db.forget or {}
-	-- Identifies this counter's lifetime. If the saved data is ever reset, a new
-	-- session lets the bridge tell "message #1 again" from "message #1, already done".
-	if not db.session then db.session = string.format("%x%04x%04x", time() % 0xFFFFFF, math.random(0, 0xFFFF), math.random(0, 0xFFFF)) end
-	if not s.chatsPerCharacterV1 then
-		s.chatsPerCharacterV1 = true
-		Q.ResetChats(db)
-	end
-	if not db.chats then
-		-- Migrate the single-chat layout into the first chat.
-		db.chats = {}
+end
+
+local function NewSession() return string.format("%x%04x%04x", time() % 0xFFFFFF, math.random(0, 0xFFFF), math.random(0, 0xFFFF)) end
+
+local function LoadChats(data, s)
+	data.lastSeq = data.lastSeq or 0
+	data.forget = data.forget or {}
+	if not data.session then data.session = NewSession() end
+	if not data.chats then
+		data.chats = {}
 		local c = {
 			id = NewId(),
 			name = "Chat 1",
 			cwd = s.cwd,
-			history = db.history or {},
-			pendingId = db.pendingId,
-			unread = db.unread or 0,
-			draft = db.draft,
+			history = data.history or {},
+			pendingId = data.pendingId,
+			unread = data.unread or 0,
+			draft = data.draft,
 			created = time(),
 		}
-		table.insert(db.chats, c)
-		db.activeChat = c.id
-		db.history, db.pendingId, db.unread, db.draft = nil, nil, nil, nil
+		table.insert(data.chats, c)
+		data.activeChat = c.id
+		data.history, data.pendingId, data.unread, data.draft = nil, nil, nil, nil
 	end
-	ClaudeWoWCharDB = Q.LoadCharacterChats(db, ClaudeWoWCharDB)
-	if #db.chats == 0 then AddChat() end
-	if not FindChat(db.activeChat) then db.activeChat = db.chats[1].id end
-	-- Chats from before agents had names: replies were stored with role "claude".
-	for _, c in ipairs(db.chats) do
+	ClaudeWoWCharDB = Q.LoadCharacterChats(data, ClaudeWoWCharDB)
+	if #data.chats == 0 then AddChat() end
+	if not FindChat(data.activeChat) then data.activeChat = data.chats[1].id end
+	for _, c in ipairs(data.chats) do
 		c.agent = c.agent or ""
 		for _, m in ipairs(c.history or {}) do
 			if m.role == "claude" then
@@ -216,44 +326,99 @@ local function InitDB()
 			end
 		end
 	end
-	-- Chats from before plugins existed were all coding chats and stay bound to
-	-- that plugin; chats made since follow the bridge's default ("" = its
-	-- default, "ask" unless its config says otherwise), like a fresh install.
-	if not s.pluginsV1 then
-		s.pluginsV1 = true
-		if not fresh then
-			for _, c in ipairs(db.chats) do
-				if not c.plugin or c.plugin == "" then c.plugin = "claude-code" end
-			end
-		end
+end
+
+local function BindPluginsOnce(data, _, fresh)
+	if fresh then return end
+	for _, c in ipairs(data.chats) do
+		if not c.plugin or c.plugin == "" then c.plugin = "claude-code" end
 	end
-	for _, c in ipairs(db.chats) do
+end
+
+local function RepairChats(data)
+	for _, c in ipairs(data.chats) do
 		c.plugin = c.plugin or ""
 	end
-	ClaudeWoW.RepairQuietChats(db)
-	if FindChat(db.activeChat).quiet then db.activeChat = AddChat().id end
-	ClaudeWoW.MigrateWhisper(s, fresh)
-	if s.dim == nil then s.dim = Cli.DIM_DEFAULT end
-	if s.dodge == nil then s.dodge = true end
-	if s.autohide == nil then s.autohide = true end
+	ClaudeWoW.RepairQuietChats(data)
+	if FindChat(data.activeChat).quiet then data.activeChat = AddChat().id end
+end
+
+local function KeepWhisperChoice(_, s, fresh)
+	if not s.whisperChoice and not fresh and not s.whisperV2 and s.whisper == true then s.whisperChoice = "on" end
+end
+
+local function DeriveWhisper(_, s)
+	s.whisperNews = nil
+	s.whisper = s.whisperChoice == "on"
+end
+
+local MIGRATIONS = {
+	{
+		flag = "autoRefreshV2",
+		run = function(_, s)
+			if s.mode ~= "reload" then s.autoRefresh = false end
+		end,
+	},
+	{
+		flag = "miniBarV2",
+		run = function(_, s)
+			if s.minimized then s.shown = false end
+			s.minimized = nil
+			s.miniPoint, s.miniRelPoint, s.miniX, s.miniY = nil, nil, nil, nil
+		end,
+	},
+	{
+		flag = "contextWarnV2",
+		run = function(_, s)
+			if s.contextWarn == nil or s.contextWarn == Cli.CONTEXT_WARN_OLD then s.contextWarn = Cli.CONTEXT_WARN_DEFAULT end
+		end,
+	},
+	{
+		flag = "echoV2",
+		run = function(_, s)
+			if s.echo == "full" then s.echo = "summary" end
+		end,
+	},
+	{ flag = "chatsPerCharacterV1", run = function(data) Q.ResetChats(data) end },
+	{ name = "chats", run = LoadChats },
+	{ flag = "pluginsV1", run = BindPluginsOnce },
+	{ name = "repair", run = RepairChats },
+	{ flag = "whisperV3", run = KeepWhisperChoice },
+	{ name = "whisper", run = DeriveWhisper },
+}
+ns.MIGRATIONS = MIGRATIONS
+
+local function RunMigration(m, data, s, fresh)
+	if m.flag then
+		if s[m.flag] then return end
+		s[m.flag] = true
+	end
+	m.run(data, s, fresh)
+end
+
+local function Migration(key)
+	for _, m in ipairs(MIGRATIONS) do
+		if m.flag == key or m.name == key then return m end
+	end
+end
+
+local function InitDB()
+	local fresh = ClaudeWoWDB == nil or next(ClaudeWoWDB) == nil
+	ClaudeWoWDB = ClaudeWoWDB or {}
+	db = ClaudeWoWDB
+	ns.db = db
+	db.settings = db.settings or {}
+	local s = db.settings
+	ApplyDefaults(s)
+	for _, m in ipairs(MIGRATIONS) do
+		RunMigration(m, db, s, fresh)
+	end
 end
 ns.InitDB = InitDB
 
 function ClaudeWoW.MigrateWhisper(s, fresh)
-	s.whisperNews = nil
-	if not s.whisperV3 then
-		s.whisperV3 = true
-		if not s.whisperChoice and not fresh and not s.whisperV2 and s.whisper == true then s.whisperChoice = "on" end
-	end
-	s.whisper = s.whisperChoice == "on"
-end
-
-function Q.MigrateMiniBar(s)
-	if s.miniBarV2 then return end
-	s.miniBarV2 = true
-	if s.minimized then s.shown = false end
-	s.minimized = nil
-	s.miniPoint, s.miniRelPoint, s.miniX, s.miniY = nil, nil, nil, nil
+	RunMigration(Migration("whisperV3"), db, s, fresh)
+	RunMigration(Migration("whisper"), db, s, fresh)
 end
 
 local function AddHistory(chat, role, text, id, denied, agent, macros, summary)

@@ -33,10 +33,11 @@ local lastRecapStamp = nil
 local listening = false
 local ev = CreateFrame("Frame")
 
-local function Settings()
-	if type(ClaudeWoWDB) ~= "table" then return nil end
-	ClaudeWoWDB.roast = ClaudeWoWDB.roast or {}
-	local s = ClaudeWoWDB.roast
+local function RoastDB()
+	local db = ns.db
+	if not db then return nil end
+	db.roast = db.roast or {}
+	local s = db.roast
 	if s.on == nil then s.on = false end
 	return s
 end
@@ -306,15 +307,15 @@ function R.BuildRecap(now, recap)
 end
 
 function R.CooldownLeft(nowEpoch)
-	local s = Settings()
+	local s = RoastDB()
 	if not s or not s.lastAt then return 0 end
 	return math.max(0, s.lastAt + R.COOLDOWN_SECONDS - nowEpoch)
 end
 
 local function FindRoastChat()
-	local s = Settings()
-	if not s or type(ClaudeWoWDB.chats) ~= "table" then return nil end
-	for _, c in ipairs(ClaudeWoWDB.chats) do
+	local s = RoastDB()
+	if not s or type(ns.db.chats) ~= "table" then return nil end
+	for _, c in ipairs(ns.db.chats) do
 		if c.id == s.chat then return c end
 	end
 end
@@ -324,18 +325,18 @@ function R.EnsureChat()
 	if chat then return chat end
 	if not (ClaudeWoW and ClaudeWoW.AddChat) then return nil end
 	chat = ClaudeWoW.AddChat(R.CHAT_NAME, { cwd = "", plugin = R.PLUGIN })
-	if chat then Settings().chat = chat.id end
+	if chat then RoastDB().chat = chat.id end
 	return chat
 end
 
 function R.WhyNot(nowEpoch)
-	local s = Settings()
+	local s = RoastDB()
 	if not s then return "the addon has not loaded its saved data yet" end
 	if not s.on then return "off" end
 	local wait = R.CooldownLeft(nowEpoch)
 	if wait > 0 then return "cooling down, " .. wait .. " s left" end
 	if not (ClaudeWoW and ClaudeWoW.Send) then return "the addon core did not load" end
-	if ClaudeWoWDB.settings and ClaudeWoWDB.settings.mode ~= "pixel" then return "reload mode sends nothing without a /reload" end
+	if ns.Settings("mode") ~= "pixel" then return "reload mode sends nothing without a /reload" end
 	if not (ClaudeWoW.IsConnected and ClaudeWoW.IsConnected()) then return "the companion app is not connected" end
 	local chat = FindRoastChat()
 	if chat and chat.pendingId then return "the last roast is still being written" end
@@ -363,7 +364,7 @@ function R.OnDeath(now, nowEpoch)
 		R.lastSkip = "the send did not go out"
 		return false
 	end
-	Settings().lastAt = nowEpoch
+	RoastDB().lastAt = nowEpoch
 	R.lastSkip = nil
 	return true
 end
@@ -393,7 +394,7 @@ function R.Listen(on)
 end
 
 function R.Status()
-	local s = Settings()
+	local s = RoastDB()
 	if not s then return "Death roast: not loaded yet" end
 	local wait = R.CooldownLeft(time())
 	return "Death roast is "
@@ -412,7 +413,7 @@ function R.Status()
 end
 
 function R.Command(rest, ctx)
-	local s = Settings()
+	local s = RoastDB()
 	if not s then return end
 	rest = tostring(rest or ""):lower()
 	if rest == "on" then
@@ -430,10 +431,10 @@ end
 ev:RegisterEvent("PLAYER_LOGIN")
 ev:SetScript("OnEvent", function(self, event, ...)
 	if event == "PLAYER_LOGIN" then
-		local s = Settings()
+		local s = RoastDB()
 		R.Listen(s and s.on)
 	elseif event == "UNIT_COMBAT" then
-		local s = Settings()
+		local s = RoastDB()
 		if not (s and s.on) then return end
 		R.Record(R.HitFromUnitCombat(GetTime(), ...))
 	elseif event == "PLAYER_DEAD" then
