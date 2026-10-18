@@ -7,7 +7,7 @@ function newVM({ before = '', saved = '' } = {}) {
   const vm = createVM();
   vm.run(BLIZZARD);
   if (before) vm.run(before);
-  vm.loadAddon(['Codec.lua', 'Inbox.lua', 'ClaudeWoW.lua', 'LootRoll.lua', 'Window.lua', 'Help.lua']);
+  vm.loadAddon(['Codec.lua', 'Inbox.lua', 'ClaudeWoW.lua', 'LootRoll.lua', 'UI/Window.lua', 'Help.lua']);
   if (saved) vm.run(saved);
   vm.login();
   return vm;

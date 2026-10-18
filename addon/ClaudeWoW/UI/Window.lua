@@ -1,6 +1,6 @@
 local _, ns = ...
 if not ns.Try then return end
-ns.files[#ns.files + 1] = "Window.lua"
+ns.files[#ns.files + 1] = "UI\\Window.lua"
 
 local W = {}
 ClaudeWoWWindow = W

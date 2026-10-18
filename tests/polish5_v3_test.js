@@ -465,8 +465,7 @@ function addonLiterals(file) {
   return out;
 }
 
-const CORE_FILES = () =>
-  tocFiles().filter(f => f.startsWith('Core/') || f.startsWith('Transport/') || f.startsWith('Chat/') || f.startsWith('Whisper/') || f === 'ClaudeWoW.lua');
+const CORE_FILES = () => tocFiles().filter((f, i, files) => (f.includes('/') && i < files.indexOf('ClaudeWoW.lua')) || f === 'ClaudeWoW.lua');
 
 const coreLiterals = () => CORE_FILES().flatMap(addonLiterals);
 

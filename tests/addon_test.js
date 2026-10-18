@@ -3493,7 +3493,7 @@ test('dev errors and bug attach the caught errors under the marker the bridge sp
   login(vm);
   loadDev(vm);
   connectWithPlugins(vm, ['dev']);
-  vm.run('for i = 1, 20 do DEV_HANDLER("Interface/AddOns/ClaudeWoW/Window.lua:" .. i .. ": " .. string.rep("x", 200)) end');
+  vm.run('for i = 1, 20 do DEV_HANDLER("Interface/AddOns/ClaudeWoW/UI/Window.lua:" .. i .. ": " .. string.rep("x", 200)) end');
   vm.run('SlashCmdList.CLAUDE("dev errors")');
   const rec = stripRecords(vm).find(r => r.text.startsWith('@dev errors'));
   assert.ok(rec);

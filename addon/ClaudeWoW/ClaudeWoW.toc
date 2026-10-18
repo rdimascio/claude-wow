@@ -26,6 +26,8 @@ Chat\Grants.lua
 Whisper\Tabs.lua
 Whisper\Reply.lua
 Whisper\Intercept.lua
+UI\Markdown.lua
+UI\Menu.lua
 ClaudeWoW.lua
 Map.lua
 Roast.lua
@@ -36,7 +38,7 @@ Achievements.lua
 Orders.lua
 DM.lua
 Widgets.lua
-Window.lua
+UI\Window.lua
 Telemetry.lua
 Observed.lua
 Help.lua
