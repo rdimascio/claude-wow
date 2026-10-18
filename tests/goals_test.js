@@ -16,7 +16,7 @@ const GM = require('../bridge/goalsmcp');
 
 const ROOT = path.join(__dirname, '..');
 const BRIDGE = path.join(ROOT, 'bridge', 'bridge.js');
-const ADDON = path.join(ROOT, 'addon', 'ClaudeWoW', 'ClaudeWoW.lua');
+const ADDON = path.join(ROOT, 'addon', 'ClaudeWoW', 'Chat', 'Context.lua');
 
 const BONE_CONTEXT = [
   'Game: World of Warcraft: Forever (client 1.60.1.70124, interface 16001)',
@@ -446,7 +446,7 @@ test('order_issue is refused when the game context is older than 15 minutes; cle
 
 test('context cut by the addon at 900 bytes: the last Professions entry is dropped, so a cut rank never counts', async () => {
   const src = fs.readFileSync(ADDON, 'utf8');
-  assert.equal(Number((/^local CTX = \{ MAX = (\d+)/m.exec(src) || [])[1]), G.ADDON_CONTEXT_MAX_BYTES, 'mirrors CTX.MAX in ClaudeWoW.lua');
+  assert.equal(Number((/^local CTX = \{ MAX = (\d+)/m.exec(src) || [])[1]), G.ADDON_CONTEXT_MAX_BYTES, 'mirrors CTX.MAX in Chat/Context.lua');
   const head = 'Character: Bone on Forever, level 20 Orc Rogue (Horde)\n';
   const tail = 'Professions: Leatherworking 107/150, Skinning 18';
   const cut = head + 'Money: 1g'.padEnd(G.ADDON_CONTEXT_MAX_BYTES - head.length - tail.length - 1, '.') + '\n' + tail;
