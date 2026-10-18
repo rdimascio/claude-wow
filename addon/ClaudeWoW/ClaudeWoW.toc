@@ -31,6 +31,9 @@ UI\Menu.lua
 UI\Minimap.lua
 UI\Popups.lua
 UI\Copy.lua
+UI\Transcript.lua
+UI\ChatList.lua
+UI\Frame.lua
 ClaudeWoW.lua
 Map.lua
 Roast.lua
