@@ -26,6 +26,8 @@ Chat\Grants.lua
 Whisper\Tabs.lua
 Whisper\Reply.lua
 Whisper\Intercept.lua
+Chat\Options.lua
+Chat\Sessions.lua
 UI\Markdown.lua
 UI\Menu.lua
 UI\Minimap.lua

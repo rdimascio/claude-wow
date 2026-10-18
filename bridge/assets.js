@@ -41,6 +41,8 @@ const FILES = [
   'addon/ClaudeWoW/Whisper/Tabs.lua',
   'addon/ClaudeWoW/Whisper/Reply.lua',
   'addon/ClaudeWoW/Whisper/Intercept.lua',
+  'addon/ClaudeWoW/Chat/Options.lua',
+  'addon/ClaudeWoW/Chat/Sessions.lua',
   'addon/ClaudeWoW/UI/Markdown.lua',
   'addon/ClaudeWoW/UI/Menu.lua',
   'addon/ClaudeWoW/UI/Minimap.lua',

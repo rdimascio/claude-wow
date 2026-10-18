@@ -21,6 +21,8 @@ import addonChatGrants from '../addon/ClaudeWoW/Chat/Grants.lua' with { type: 'f
 import addonWhisperTabs from '../addon/ClaudeWoW/Whisper/Tabs.lua' with { type: 'file' };
 import addonWhisperReply from '../addon/ClaudeWoW/Whisper/Reply.lua' with { type: 'file' };
 import addonWhisperIntercept from '../addon/ClaudeWoW/Whisper/Intercept.lua' with { type: 'file' };
+import addonChatOptions from '../addon/ClaudeWoW/Chat/Options.lua' with { type: 'file' };
+import addonChatSessions from '../addon/ClaudeWoW/Chat/Sessions.lua' with { type: 'file' };
 import addonUiMarkdown from '../addon/ClaudeWoW/UI/Markdown.lua' with { type: 'file' };
 import addonUiMenu from '../addon/ClaudeWoW/UI/Menu.lua' with { type: 'file' };
 import addonUiMinimap from '../addon/ClaudeWoW/UI/Minimap.lua' with { type: 'file' };
@@ -76,6 +78,8 @@ require('../bridge/assets').embed({
   'addon/ClaudeWoW/Whisper/Tabs.lua': addonWhisperTabs,
   'addon/ClaudeWoW/Whisper/Reply.lua': addonWhisperReply,
   'addon/ClaudeWoW/Whisper/Intercept.lua': addonWhisperIntercept,
+  'addon/ClaudeWoW/Chat/Options.lua': addonChatOptions,
+  'addon/ClaudeWoW/Chat/Sessions.lua': addonChatSessions,
   'addon/ClaudeWoW/UI/Markdown.lua': addonUiMarkdown,
   'addon/ClaudeWoW/UI/Menu.lua': addonUiMenu,
   'addon/ClaudeWoW/UI/Minimap.lua': addonUiMinimap,
