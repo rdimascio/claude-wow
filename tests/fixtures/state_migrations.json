@@ -1,0 +1,5358 @@
+{
+  "nil": {
+    "saved": null,
+    "own": null,
+    "after": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    },
+    "again": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    }
+  },
+  "empty": {
+    "saved": "{}",
+    "own": null,
+    "after": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    },
+    "again": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    }
+  },
+  "settings-empty": {
+    "saved": "{ settings = {} }",
+    "own": null,
+    "after": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    },
+    "again": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    }
+  },
+  "autoRefresh-pre-v2-pixel": {
+    "saved": "{ settings = { autoRefresh = true } }",
+    "own": null,
+    "after": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    },
+    "again": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    }
+  },
+  "autoRefresh-pre-v2-reload": {
+    "saved": "{ settings = { autoRefresh = true, mode = \"reload\" } }",
+    "own": null,
+    "after": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": true,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "reload",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    },
+    "again": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": true,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "reload",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    }
+  },
+  "autoRefresh-v2-on": {
+    "saved": "{ settings = { autoRefreshV2 = true, autoRefresh = true } }",
+    "own": null,
+    "after": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": true,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    },
+    "again": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": true,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    }
+  },
+  "autoRefresh-v2-off": {
+    "saved": "{ settings = { autoRefreshV2 = true, autoRefresh = false } }",
+    "own": null,
+    "after": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    },
+    "again": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    }
+  },
+  "whisper-pre-v2-on": {
+    "saved": "{ settings = { whisper = true } }",
+    "own": null,
+    "after": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": true,
+          "whisperChoice": "on",
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    },
+    "again": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": true,
+          "whisperChoice": "on",
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    }
+  },
+  "whisper-pre-v2-off": {
+    "saved": "{ settings = { whisper = false } }",
+    "own": null,
+    "after": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    },
+    "again": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    }
+  },
+  "whisper-v2-auto": {
+    "saved": "{ settings = { whisperV2 = true, whisper = true } }",
+    "own": null,
+    "after": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV2": true,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    },
+    "again": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV2": true,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    }
+  },
+  "whisper-v2-news": {
+    "saved": "{ settings = { whisperV2 = true, whisper = true, whisperNews = true } }",
+    "own": null,
+    "after": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV2": true,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    },
+    "again": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV2": true,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    }
+  },
+  "whisper-v2-choice-on": {
+    "saved": "{ settings = { whisperV2 = true, whisper = false, whisperChoice = \"on\" } }",
+    "own": null,
+    "after": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": true,
+          "whisperChoice": "on",
+          "whisperV2": true,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    },
+    "again": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": true,
+          "whisperChoice": "on",
+          "whisperV2": true,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    }
+  },
+  "whisper-v2-choice-off": {
+    "saved": "{ settings = { whisperV2 = true, whisper = true, whisperChoice = \"off\" } }",
+    "own": null,
+    "after": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperChoice": "off",
+          "whisperV2": true,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    },
+    "again": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperChoice": "off",
+          "whisperV2": true,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    }
+  },
+  "whisper-v3-stale-on": {
+    "saved": "{ settings = { whisperV3 = true, whisper = true } }",
+    "own": null,
+    "after": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    },
+    "again": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    }
+  },
+  "whisper-v3-choice-on": {
+    "saved": "{ settings = { whisperV3 = true, whisperChoice = \"on\" } }",
+    "own": null,
+    "after": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": true,
+          "whisperChoice": "on",
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    },
+    "again": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": true,
+          "whisperChoice": "on",
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    }
+  },
+  "echo-full-pre-v2": {
+    "saved": "{ settings = { echo = \"full\" } }",
+    "own": null,
+    "after": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    },
+    "again": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    }
+  },
+  "echo-full-v2": {
+    "saved": "{ settings = { echoV2 = true, echo = \"full\" } }",
+    "own": null,
+    "after": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "full",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    },
+    "again": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "full",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    }
+  },
+  "echo-short-pre-v2": {
+    "saved": "{ settings = { echo = \"short\" } }",
+    "own": null,
+    "after": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "short",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    },
+    "again": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "short",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    }
+  },
+  "echo-unset-v2": {
+    "saved": "{ settings = { echoV2 = true } }",
+    "own": null,
+    "after": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    },
+    "again": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    }
+  },
+  "minibar-minimized": {
+    "saved": "{ settings = { minimized = true, shown = true, miniPoint = \"TOPLEFT\", miniRelPoint = \"TOPLEFT\", miniX = 10, miniY = -20 } }",
+    "own": null,
+    "after": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "shown": false,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    },
+    "again": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "shown": false,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    }
+  },
+  "minibar-not-minimized": {
+    "saved": "{ settings = { minimized = false, shown = true, miniX = 10 } }",
+    "own": null,
+    "after": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "shown": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    },
+    "again": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "shown": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    }
+  },
+  "minibar-v2-minimized": {
+    "saved": "{ settings = { miniBarV2 = true, minimized = true, shown = true, miniX = 10 } }",
+    "own": null,
+    "after": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "miniX": 10,
+          "minimap": true,
+          "minimized": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "shown": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    },
+    "again": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "miniX": 10,
+          "minimap": true,
+          "minimized": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "shown": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    }
+  },
+  "contextWarn-pre-v2-unset": {
+    "saved": "{ settings = { context = true } }",
+    "own": null,
+    "after": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    },
+    "again": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    }
+  },
+  "contextWarn-pre-v2-old": {
+    "saved": "{ settings = { contextWarn = 100000 } }",
+    "own": null,
+    "after": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    },
+    "again": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    }
+  },
+  "contextWarn-pre-v2-custom": {
+    "saved": "{ settings = { contextWarn = 50000 } }",
+    "own": null,
+    "after": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 50000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    },
+    "again": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 50000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    }
+  },
+  "contextWarn-v2-old": {
+    "saved": "{ settings = { contextWarnV2 = true, contextWarn = 100000 } }",
+    "own": null,
+    "after": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 100000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    },
+    "again": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 100000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    }
+  },
+  "contextWarn-v2-unset": {
+    "saved": "{ settings = { contextWarnV2 = true } }",
+    "own": null,
+    "after": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    },
+    "again": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    }
+  },
+  "loginNotice-seen": {
+    "saved": "{ settings = { loginNoticeV1 = true } }",
+    "own": null,
+    "after": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "loginNoticeV1": true,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    },
+    "again": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "loginNoticeV1": true,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    }
+  },
+  "loginNotice-false": {
+    "saved": "{ settings = { loginNoticeV1 = false } }",
+    "own": null,
+    "after": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "loginNoticeV1": false,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    },
+    "again": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "loginNoticeV1": false,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    }
+  },
+  "single-chat-layout": {
+    "saved": "{ settings = { chatsPerCharacterV1 = true, cwd = \"/work\" }, history = { { role = \"user\", text = \"hi\", t = 100 }, { role = \"claude\", text = \"hello\", t = 101 } }, pendingId = 7, unread = 2, draft = \"typing\", lastSeq = 7 }",
+    "own": null,
+    "after": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "/work",
+            "draft": "typing",
+            "history": [
+              {
+                "role": "user",
+                "t": 100,
+                "text": "hi"
+              },
+              {
+                "agent": "claude",
+                "role": "assistant",
+                "t": 101,
+                "text": "hello"
+              }
+            ],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "pendingId": 7,
+            "plugin": "claude-code",
+            "unread": 2
+          }
+        ],
+        "forget": [],
+        "lastSeq": 7,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "/work",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    },
+    "again": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "/work",
+            "draft": "typing",
+            "history": [
+              {
+                "role": "user",
+                "t": 100,
+                "text": "hi"
+              },
+              {
+                "agent": "claude",
+                "role": "assistant",
+                "t": 101,
+                "text": "hello"
+              }
+            ],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "pendingId": 7,
+            "plugin": "claude-code",
+            "unread": 2
+          }
+        ],
+        "forget": [],
+        "lastSeq": 7,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "/work",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    }
+  },
+  "single-chat-layout-pre-per-character": {
+    "saved": "{ history = { { role = \"user\", text = \"hi\", t = 100 } }, pendingId = 7, unread = 2, draft = \"typing\", lastSeq = 7 }",
+    "own": null,
+    "after": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 7,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    },
+    "again": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 7,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    }
+  },
+  "chats-pre-per-character": {
+    "saved": "{ settings = { pluginsV1 = true }, chats = { { id = \"a1\", name = \"Chat a1\", cwd = \"\", history = {}, unread = 0, created = 50 } }, activeChat = \"a1\" }",
+    "own": null,
+    "after": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    },
+    "again": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    }
+  },
+  "chats-role-claude": {
+    "saved": "{ settings = { chatsPerCharacterV1 = true, pluginsV1 = true }, chats = { { id = \"a1\", name = \"Chat a1\", cwd = \"\", history = {}, unread = 0, created = 50, plugin = \"\", history = { { role = \"claude\", text = \"old\", t = 100 }, { role = \"claude\", text = \"named\", agent = \"codex\", t = 101 }, { role = \"assistant\", text = \"new\", agent = \"claude\", t = 102 } } } }, activeChat = \"a1\" }",
+    "own": null,
+    "after": {
+      "account": {
+        "activeChat": "a1",
+        "chats": [
+          {
+            "agent": "",
+            "created": 50,
+            "cwd": "",
+            "history": [
+              {
+                "agent": "claude",
+                "role": "assistant",
+                "t": 100,
+                "text": "old"
+              },
+              {
+                "agent": "codex",
+                "role": "assistant",
+                "t": 101,
+                "text": "named"
+              },
+              {
+                "agent": "claude",
+                "role": "assistant",
+                "t": 102,
+                "text": "new"
+              }
+            ],
+            "id": "a1",
+            "name": "Chat a1",
+            "plugin": "",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    },
+    "again": {
+      "account": {
+        "activeChat": "a1",
+        "chats": [
+          {
+            "agent": "",
+            "created": 50,
+            "cwd": "",
+            "history": [
+              {
+                "agent": "claude",
+                "role": "assistant",
+                "t": 100,
+                "text": "old"
+              },
+              {
+                "agent": "codex",
+                "role": "assistant",
+                "t": 101,
+                "text": "named"
+              },
+              {
+                "agent": "claude",
+                "role": "assistant",
+                "t": 102,
+                "text": "new"
+              }
+            ],
+            "id": "a1",
+            "name": "Chat a1",
+            "plugin": "",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    }
+  },
+  "plugins-pre-v1-chats": {
+    "saved": "{ settings = { chatsPerCharacterV1 = true }, chats = { { id = \"a1\", name = \"Chat a1\", cwd = \"\", history = {}, unread = 0, created = 50, cwd = \"/work\" }, { id = \"a2\", name = \"Chat a2\", cwd = \"\", history = {}, unread = 0, created = 50, plugin = \"\" }, { id = \"a3\", name = \"Chat a3\", cwd = \"\", history = {}, unread = 0, created = 50, plugin = \"live\" } }, activeChat = \"a2\" }",
+    "own": null,
+    "after": {
+      "account": {
+        "activeChat": "a2",
+        "chats": [
+          {
+            "agent": "",
+            "created": 50,
+            "cwd": "/work",
+            "history": [],
+            "id": "a1",
+            "name": "Chat a1",
+            "plugin": "claude-code",
+            "unread": 0
+          },
+          {
+            "agent": "",
+            "created": 50,
+            "cwd": "",
+            "history": [],
+            "id": "a2",
+            "name": "Chat a2",
+            "plugin": "claude-code",
+            "unread": 0
+          },
+          {
+            "agent": "",
+            "created": 50,
+            "cwd": "",
+            "history": [],
+            "id": "a3",
+            "name": "Chat a3",
+            "plugin": "live",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    },
+    "again": {
+      "account": {
+        "activeChat": "a2",
+        "chats": [
+          {
+            "agent": "",
+            "created": 50,
+            "cwd": "/work",
+            "history": [],
+            "id": "a1",
+            "name": "Chat a1",
+            "plugin": "claude-code",
+            "unread": 0
+          },
+          {
+            "agent": "",
+            "created": 50,
+            "cwd": "",
+            "history": [],
+            "id": "a2",
+            "name": "Chat a2",
+            "plugin": "claude-code",
+            "unread": 0
+          },
+          {
+            "agent": "",
+            "created": 50,
+            "cwd": "",
+            "history": [],
+            "id": "a3",
+            "name": "Chat a3",
+            "plugin": "live",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    }
+  },
+  "plugins-v1-chat-without-plugin": {
+    "saved": "{ settings = { chatsPerCharacterV1 = true, pluginsV1 = true }, chats = { { id = \"a1\", name = \"Chat a1\", cwd = \"\", history = {}, unread = 0, created = 50, cwd = \"/work\" } }, activeChat = \"a1\" }",
+    "own": null,
+    "after": {
+      "account": {
+        "activeChat": "a1",
+        "chats": [
+          {
+            "agent": "",
+            "created": 50,
+            "cwd": "/work",
+            "history": [],
+            "id": "a1",
+            "name": "Chat a1",
+            "plugin": "",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    },
+    "again": {
+      "account": {
+        "activeChat": "a1",
+        "chats": [
+          {
+            "agent": "",
+            "created": 50,
+            "cwd": "/work",
+            "history": [],
+            "id": "a1",
+            "name": "Chat a1",
+            "plugin": "",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    }
+  },
+  "plugins-pre-v1-no-chats": {
+    "saved": "{ settings = { chatsPerCharacterV1 = true } }",
+    "own": null,
+    "after": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    },
+    "again": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "claude-code",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    }
+  },
+  "quiet-active-chat": {
+    "saved": "{ settings = { chatsPerCharacterV1 = true, pluginsV1 = true }, chats = { { id = \"q1\", name = \"Chat q1\", cwd = \"\", history = {}, unread = 0, created = 50, plugin = \"stream\", quiet = true }, { id = \"u1\", name = \"Chat u1\", cwd = \"\", history = {}, unread = 0, created = 50, plugin = \"stream\" } }, activeChat = \"q1\" }",
+    "own": null,
+    "after": {
+      "account": {
+        "activeChat": "u1",
+        "chats": [
+          {
+            "agent": "",
+            "created": 50,
+            "cwd": "",
+            "history": [],
+            "id": "q1",
+            "name": "Chat q1",
+            "plugin": "stream",
+            "quiet": true,
+            "unread": 0
+          },
+          {
+            "agent": "",
+            "created": 50,
+            "cwd": "",
+            "history": [],
+            "id": "u1",
+            "name": "Chat u1",
+            "plugin": "",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    },
+    "again": {
+      "account": {
+        "activeChat": "u1",
+        "chats": [
+          {
+            "agent": "",
+            "created": 50,
+            "cwd": "",
+            "history": [],
+            "id": "q1",
+            "name": "Chat q1",
+            "plugin": "stream",
+            "quiet": true,
+            "unread": 0
+          },
+          {
+            "agent": "",
+            "created": 50,
+            "cwd": "",
+            "history": [],
+            "id": "u1",
+            "name": "Chat u1",
+            "plugin": "",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    }
+  },
+  "only-quiet-chat": {
+    "saved": "{ settings = { chatsPerCharacterV1 = true, pluginsV1 = true }, chats = { { id = \"q1\", name = \"Chat q1\", cwd = \"\", history = {}, unread = 0, created = 50, plugin = \"stream\", quiet = true } }, activeChat = \"q1\" }",
+    "own": null,
+    "after": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 50,
+            "cwd": "",
+            "history": [],
+            "id": "q1",
+            "name": "Chat q1",
+            "plugin": "stream",
+            "quiet": true,
+            "unread": 0
+          },
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 2",
+            "plugin": "",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    },
+    "again": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 50,
+            "cwd": "",
+            "history": [],
+            "id": "q1",
+            "name": "Chat q1",
+            "plugin": "stream",
+            "quiet": true,
+            "unread": 0
+          },
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 2",
+            "plugin": "",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    }
+  },
+  "dangling-active-chat": {
+    "saved": "{ settings = { chatsPerCharacterV1 = true, pluginsV1 = true }, chats = { { id = \"a1\", name = \"Chat a1\", cwd = \"\", history = {}, unread = 0, created = 50, plugin = \"\" }, { id = \"a2\", name = \"Chat a2\", cwd = \"\", history = {}, unread = 0, created = 50, plugin = \"\" } }, activeChat = \"zz\" }",
+    "own": null,
+    "after": {
+      "account": {
+        "activeChat": "a1",
+        "chats": [
+          {
+            "agent": "",
+            "created": 50,
+            "cwd": "",
+            "history": [],
+            "id": "a1",
+            "name": "Chat a1",
+            "plugin": "",
+            "unread": 0
+          },
+          {
+            "agent": "",
+            "created": 50,
+            "cwd": "",
+            "history": [],
+            "id": "a2",
+            "name": "Chat a2",
+            "plugin": "",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    },
+    "again": {
+      "account": {
+        "activeChat": "a1",
+        "chats": [
+          {
+            "agent": "",
+            "created": 50,
+            "cwd": "",
+            "history": [],
+            "id": "a1",
+            "name": "Chat a1",
+            "plugin": "",
+            "unread": 0
+          },
+          {
+            "agent": "",
+            "created": 50,
+            "cwd": "",
+            "history": [],
+            "id": "a2",
+            "name": "Chat a2",
+            "plugin": "",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    }
+  },
+  "empty-chat-list": {
+    "saved": "{ settings = { chatsPerCharacterV1 = true, pluginsV1 = true }, chats = {} }",
+    "own": null,
+    "after": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    },
+    "again": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    }
+  },
+  "session-and-forget-kept": {
+    "saved": "{ settings = { autoRefreshV2 = true, whisperV3 = true, echoV2 = true, chatsPerCharacterV1 = true, pluginsV1 = true, miniBarV2 = true, contextWarnV2 = true }, chats = { { id = \"a1\", name = \"Chat a1\", cwd = \"\", history = {}, unread = 0, created = 50, plugin = \"\" } }, activeChat = \"a1\", session = \"sess1\", lastSeq = 42, forget = { \"d1\", \"d2\" } }",
+    "own": null,
+    "after": {
+      "account": {
+        "activeChat": "a1",
+        "chats": [
+          {
+            "agent": "",
+            "created": 50,
+            "cwd": "",
+            "history": [],
+            "id": "a1",
+            "name": "Chat a1",
+            "plugin": "",
+            "unread": 0
+          }
+        ],
+        "forget": [
+          "d1",
+          "d2"
+        ],
+        "lastSeq": 42,
+        "session": "sess1",
+        "settings": {
+          "autoRefresh": true,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    },
+    "again": {
+      "account": {
+        "activeChat": "a1",
+        "chats": [
+          {
+            "agent": "",
+            "created": 50,
+            "cwd": "",
+            "history": [],
+            "id": "a1",
+            "name": "Chat a1",
+            "plugin": "",
+            "unread": 0
+          }
+        ],
+        "forget": [
+          "d1",
+          "d2"
+        ],
+        "lastSeq": 42,
+        "session": "sess1",
+        "settings": {
+          "autoRefresh": true,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    }
+  },
+  "missing-session-and-forget": {
+    "saved": "{ settings = { autoRefreshV2 = true, whisperV3 = true, echoV2 = true, chatsPerCharacterV1 = true, pluginsV1 = true, miniBarV2 = true, contextWarnV2 = true }, chats = { { id = \"a1\", name = \"Chat a1\", cwd = \"\", history = {}, unread = 0, created = 50, plugin = \"\" } }, activeChat = \"a1\", lastSeq = 3 }",
+    "own": null,
+    "after": {
+      "account": {
+        "activeChat": "a1",
+        "chats": [
+          {
+            "agent": "",
+            "created": 50,
+            "cwd": "",
+            "history": [],
+            "id": "a1",
+            "name": "Chat a1",
+            "plugin": "",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 3,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": true,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    },
+    "again": {
+      "account": {
+        "activeChat": "a1",
+        "chats": [
+          {
+            "agent": "",
+            "created": 50,
+            "cwd": "",
+            "history": [],
+            "id": "a1",
+            "name": "Chat a1",
+            "plugin": "",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 3,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": true,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    }
+  },
+  "character-chats-restored": {
+    "saved": "{ settings = { autoRefreshV2 = true, whisperV3 = true, echoV2 = true, chatsPerCharacterV1 = true, pluginsV1 = true, miniBarV2 = true, contextWarnV2 = true }, chats = { { id = \"a1\", name = \"Chat a1\", cwd = \"\", history = {}, unread = 0, created = 50, plugin = \"\" } }, activeChat = \"a1\", session = \"sess1\" }",
+    "own": "{ chats = { { id = \"c1\", name = \"Chat c1\", cwd = \"\", history = {}, unread = 0, created = 50, plugin = \"\" } }, activeChat = \"c1\", restored = true }",
+    "after": {
+      "account": {
+        "activeChat": "c1",
+        "chats": [
+          {
+            "agent": "",
+            "created": 50,
+            "cwd": "",
+            "history": [],
+            "id": "a1",
+            "name": "Chat a1",
+            "plugin": "",
+            "unread": 0
+          },
+          {
+            "agent": "",
+            "created": 50,
+            "cwd": "",
+            "history": [],
+            "id": "c1",
+            "name": "Chat c1",
+            "plugin": "",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "sess1",
+        "settings": {
+          "autoRefresh": true,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": [],
+        "restored": true
+      }
+    },
+    "again": {
+      "account": {
+        "activeChat": "c1",
+        "chats": [
+          {
+            "agent": "",
+            "created": 50,
+            "cwd": "",
+            "history": [],
+            "id": "a1",
+            "name": "Chat a1",
+            "plugin": "",
+            "unread": 0
+          },
+          {
+            "agent": "",
+            "created": 50,
+            "cwd": "",
+            "history": [],
+            "id": "c1",
+            "name": "Chat c1",
+            "plugin": "",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "sess1",
+        "settings": {
+          "autoRefresh": true,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": [],
+        "restored": true
+      }
+    }
+  },
+  "character-chats-not-restored": {
+    "saved": "{ settings = { autoRefreshV2 = true, whisperV3 = true, echoV2 = true, chatsPerCharacterV1 = true, pluginsV1 = true, miniBarV2 = true, contextWarnV2 = true }, chats = { { id = \"a1\", name = \"Chat a1\", cwd = \"\", history = {}, unread = 0, created = 50, plugin = \"\" } }, activeChat = \"a1\", session = \"sess1\" }",
+    "own": "{ chats = { { id = \"c1\", name = \"Chat c1\", cwd = \"\", history = {}, unread = 0, created = 50, plugin = \"\" } }, activeChat = \"c1\" }",
+    "after": {
+      "account": {
+        "activeChat": "c1",
+        "chats": [
+          {
+            "agent": "",
+            "created": 50,
+            "cwd": "",
+            "history": [],
+            "id": "a1",
+            "name": "Chat a1",
+            "plugin": "",
+            "unread": 0
+          },
+          {
+            "agent": "",
+            "created": 50,
+            "cwd": "",
+            "history": [],
+            "id": "c1",
+            "name": "Chat c1",
+            "plugin": "",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "sess1",
+        "settings": {
+          "autoRefresh": true,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    },
+    "again": {
+      "account": {
+        "activeChat": "c1",
+        "chats": [
+          {
+            "agent": "",
+            "created": 50,
+            "cwd": "",
+            "history": [],
+            "id": "a1",
+            "name": "Chat a1",
+            "plugin": "",
+            "unread": 0
+          },
+          {
+            "agent": "",
+            "created": 50,
+            "cwd": "",
+            "history": [],
+            "id": "c1",
+            "name": "Chat c1",
+            "plugin": "",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "sess1",
+        "settings": {
+          "autoRefresh": true,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    }
+  },
+  "character-chats-pre-plugins": {
+    "saved": "{ settings = { chatsPerCharacterV1 = true }, chats = { { id = \"a1\", name = \"Chat a1\", cwd = \"\", history = {}, unread = 0, created = 50 } }, activeChat = \"a1\", session = \"sess1\" }",
+    "own": "{ chats = { { id = \"c1\", name = \"Chat c1\", cwd = \"\", history = {}, unread = 0, created = 50 }, { id = \"c2\", name = \"Chat c2\", cwd = \"\", history = {}, unread = 0, created = 50, plugin = \"live\" } }, activeChat = \"c2\" }",
+    "after": {
+      "account": {
+        "activeChat": "c2",
+        "chats": [
+          {
+            "agent": "",
+            "created": 50,
+            "cwd": "",
+            "history": [],
+            "id": "a1",
+            "name": "Chat a1",
+            "plugin": "claude-code",
+            "unread": 0
+          },
+          {
+            "agent": "",
+            "created": 50,
+            "cwd": "",
+            "history": [],
+            "id": "c1",
+            "name": "Chat c1",
+            "plugin": "claude-code",
+            "unread": 0
+          },
+          {
+            "agent": "",
+            "created": 50,
+            "cwd": "",
+            "history": [],
+            "id": "c2",
+            "name": "Chat c2",
+            "plugin": "live",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "sess1",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    },
+    "again": {
+      "account": {
+        "activeChat": "c2",
+        "chats": [
+          {
+            "agent": "",
+            "created": 50,
+            "cwd": "",
+            "history": [],
+            "id": "a1",
+            "name": "Chat a1",
+            "plugin": "claude-code",
+            "unread": 0
+          },
+          {
+            "agent": "",
+            "created": 50,
+            "cwd": "",
+            "history": [],
+            "id": "c1",
+            "name": "Chat c1",
+            "plugin": "claude-code",
+            "unread": 0
+          },
+          {
+            "agent": "",
+            "created": 50,
+            "cwd": "",
+            "history": [],
+            "id": "c2",
+            "name": "Chat c2",
+            "plugin": "live",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "sess1",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    }
+  },
+  "character-chats-duplicate-id": {
+    "saved": "{ settings = { autoRefreshV2 = true, whisperV3 = true, echoV2 = true, chatsPerCharacterV1 = true, pluginsV1 = true, miniBarV2 = true, contextWarnV2 = true }, chats = { { id = \"a1\", name = \"Chat a1\", cwd = \"\", history = {}, unread = 0, created = 50, plugin = \"\" } }, activeChat = \"a1\", session = \"sess1\" }",
+    "own": "{ chats = { { id = \"a1\", name = \"Chat a1\", cwd = \"\", history = {}, unread = 0, created = 50, plugin = \"\", name = \"Dupe\" } }, activeChat = \"a1\", restored = false }",
+    "after": {
+      "account": {
+        "activeChat": "a1",
+        "chats": [
+          {
+            "agent": "",
+            "created": 50,
+            "cwd": "",
+            "history": [],
+            "id": "a1",
+            "name": "Chat a1",
+            "plugin": "",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "sess1",
+        "settings": {
+          "autoRefresh": true,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": [],
+        "restored": false
+      }
+    },
+    "again": {
+      "account": {
+        "activeChat": "a1",
+        "chats": [
+          {
+            "agent": "",
+            "created": 50,
+            "cwd": "",
+            "history": [],
+            "id": "a1",
+            "name": "Chat a1",
+            "plugin": "",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "sess1",
+        "settings": {
+          "autoRefresh": true,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": [],
+        "restored": false
+      }
+    }
+  },
+  "character-chats-empty": {
+    "saved": "{ settings = { autoRefreshV2 = true, whisperV3 = true, echoV2 = true, chatsPerCharacterV1 = true, pluginsV1 = true, miniBarV2 = true, contextWarnV2 = true }, chats = {}, session = \"sess1\" }",
+    "own": "{ chats = {}, restored = true }",
+    "after": {
+      "account": {
+        "activeChat": "53f54d0001",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0001",
+            "name": "Chat 1",
+            "plugin": "",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "sess1",
+        "settings": {
+          "autoRefresh": true,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": [],
+        "restored": true
+      }
+    },
+    "again": {
+      "account": {
+        "activeChat": "53f54d0001",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "",
+            "history": [],
+            "id": "53f54d0001",
+            "name": "Chat 1",
+            "plugin": "",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "sess1",
+        "settings": {
+          "autoRefresh": true,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": [],
+        "restored": true
+      }
+    }
+  },
+  "window-and-toggles": {
+    "saved": "{ settings = { autoRefreshV2 = true, whisperV3 = true, echoV2 = true, chatsPerCharacterV1 = true, pluginsV1 = true, miniBarV2 = true, contextWarnV2 = true, dim = 0.5, dodge = false, autohide = false, signal = false, minimap = false, context = false, vision = true, toasts = false, ordersCard = false, ordersCollapsed = true, telemetry = false, interval = 5, width = 900, height = 600, cwd = \"/x\", mode = \"reload\", echo = \"off\", shown = true, longchat = true, minimapAngle = 90, autoRefresh = true, contextWarn = 200000, whisperChoice = \"on\", loginNoticeV1 = true } }",
+    "own": null,
+    "after": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "/x",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": true,
+          "autoRefreshV2": true,
+          "autohide": false,
+          "chatsPerCharacterV1": true,
+          "context": false,
+          "contextWarn": 200000,
+          "contextWarnV2": true,
+          "cwd": "/x",
+          "dim": 0.5,
+          "dodge": false,
+          "echo": "off",
+          "echoV2": true,
+          "height": 600,
+          "interval": 5,
+          "loginNoticeV1": true,
+          "longchat": true,
+          "miniBarV2": true,
+          "minimap": false,
+          "minimapAngle": 90,
+          "mode": "reload",
+          "ordersCard": false,
+          "ordersCollapsed": true,
+          "pluginsV1": true,
+          "shown": true,
+          "signal": false,
+          "telemetry": false,
+          "toasts": false,
+          "vision": true,
+          "whisper": true,
+          "whisperChoice": "on",
+          "whisperV3": true,
+          "width": 900
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    },
+    "again": {
+      "account": {
+        "activeChat": "53f54d0003",
+        "chats": [
+          {
+            "agent": "",
+            "created": 1700001000,
+            "cwd": "/x",
+            "history": [],
+            "id": "53f54d0003",
+            "name": "Chat 1",
+            "plugin": "",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "session": "53f54d00010002",
+        "settings": {
+          "autoRefresh": true,
+          "autoRefreshV2": true,
+          "autohide": false,
+          "chatsPerCharacterV1": true,
+          "context": false,
+          "contextWarn": 200000,
+          "contextWarnV2": true,
+          "cwd": "/x",
+          "dim": 0.5,
+          "dodge": false,
+          "echo": "off",
+          "echoV2": true,
+          "height": 600,
+          "interval": 5,
+          "loginNoticeV1": true,
+          "longchat": true,
+          "miniBarV2": true,
+          "minimap": false,
+          "minimapAngle": 90,
+          "mode": "reload",
+          "ordersCard": false,
+          "ordersCollapsed": true,
+          "pluginsV1": true,
+          "shown": true,
+          "signal": false,
+          "telemetry": false,
+          "toasts": false,
+          "vision": true,
+          "whisper": true,
+          "whisperChoice": "on",
+          "whisperV3": true,
+          "width": 900
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    }
+  },
+  "modern-complete": {
+    "saved": "{ settings = { autoRefreshV2 = true, whisperV3 = true, echoV2 = true, chatsPerCharacterV1 = true, pluginsV1 = true, miniBarV2 = true, contextWarnV2 = true, autoRefresh = false, signal = true, minimap = true, context = true, contextWarn = 300000, echo = \"summary\", mode = \"pixel\", vision = false, interval = 20, cwd = \"\", width = 780, height = 500, whisper = false, dim = 0.35, dodge = true, autohide = true, loginNoticeV1 = true }, chats = { { id = \"a1\", name = \"Chat a1\", cwd = \"\", history = {}, unread = 0, created = 50, plugin = \"\", agent = \"\" } }, activeChat = \"a1\", session = \"sess1\", lastSeq = 9, forget = {} }",
+    "own": "{ chats = {}, restored = true }",
+    "after": {
+      "account": {
+        "activeChat": "a1",
+        "chats": [
+          {
+            "agent": "",
+            "created": 50,
+            "cwd": "",
+            "history": [],
+            "id": "a1",
+            "name": "Chat a1",
+            "plugin": "",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 9,
+        "session": "sess1",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "loginNoticeV1": true,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": [],
+        "restored": true
+      }
+    },
+    "again": {
+      "account": {
+        "activeChat": "a1",
+        "chats": [
+          {
+            "agent": "",
+            "created": 50,
+            "cwd": "",
+            "history": [],
+            "id": "a1",
+            "name": "Chat a1",
+            "plugin": "",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 9,
+        "session": "sess1",
+        "settings": {
+          "autoRefresh": false,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarn": 300000,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "loginNoticeV1": true,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        }
+      },
+      "character": {
+        "chats": [],
+        "restored": true
+      }
+    }
+  },
+  "modules-outside-settings": {
+    "saved": "{ settings = { autoRefreshV2 = true, whisperV3 = true, echoV2 = true, chatsPerCharacterV1 = true, pluginsV1 = true, miniBarV2 = true, contextWarnV2 = true }, chats = { { id = \"a1\", name = \"Chat a1\", cwd = \"\", history = {}, unread = 0, created = 50, plugin = \"\" } }, activeChat = \"a1\", session = \"sess1\", roast = { on = true, lastAt = 5, chat = \"r1\" }, stream = { follow = false, chat = \"s1\", stale = 1 }, voice = { pack = \"peon\", lines = {} }, telemetry = { seq = 3, chars = {} }, layouts = { [\"Bone-Realm\"] = { w = 700, h = 450 } }, achievements = { earned = {}, points = 1, total = 2 } }",
+    "own": null,
+    "after": {
+      "account": {
+        "achievements": {
+          "earned": [],
+          "points": 1,
+          "total": 2
+        },
+        "activeChat": "a1",
+        "chats": [
+          {
+            "agent": "",
+            "created": 50,
+            "cwd": "",
+            "history": [],
+            "id": "a1",
+            "name": "Chat a1",
+            "plugin": "",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "layouts": {
+          "Bone-Realm": {
+            "h": 450,
+            "w": 700
+          }
+        },
+        "roast": {
+          "chat": "r1",
+          "lastAt": 5,
+          "on": true
+        },
+        "session": "sess1",
+        "settings": {
+          "autoRefresh": true,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        },
+        "stream": {
+          "chat": "s1",
+          "follow": false,
+          "stale": 1
+        },
+        "telemetry": {
+          "chars": [],
+          "seq": 3
+        },
+        "voice": {
+          "lines": [],
+          "pack": "peon"
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    },
+    "again": {
+      "account": {
+        "achievements": {
+          "earned": [],
+          "points": 1,
+          "total": 2
+        },
+        "activeChat": "a1",
+        "chats": [
+          {
+            "agent": "",
+            "created": 50,
+            "cwd": "",
+            "history": [],
+            "id": "a1",
+            "name": "Chat a1",
+            "plugin": "",
+            "unread": 0
+          }
+        ],
+        "forget": [],
+        "lastSeq": 0,
+        "layouts": {
+          "Bone-Realm": {
+            "h": 450,
+            "w": 700
+          }
+        },
+        "roast": {
+          "chat": "r1",
+          "lastAt": 5,
+          "on": true
+        },
+        "session": "sess1",
+        "settings": {
+          "autoRefresh": true,
+          "autoRefreshV2": true,
+          "autohide": true,
+          "chatsPerCharacterV1": true,
+          "context": true,
+          "contextWarnV2": true,
+          "cwd": "",
+          "dim": 0.35,
+          "dodge": true,
+          "echo": "summary",
+          "echoV2": true,
+          "height": 500,
+          "interval": 20,
+          "miniBarV2": true,
+          "minimap": true,
+          "mode": "pixel",
+          "pluginsV1": true,
+          "signal": true,
+          "vision": false,
+          "whisper": false,
+          "whisperV3": true,
+          "width": 780
+        },
+        "stream": {
+          "chat": "s1",
+          "follow": false,
+          "stale": 1
+        },
+        "telemetry": {
+          "chars": [],
+          "seq": 3
+        },
+        "voice": {
+          "lines": [],
+          "pack": "peon"
+        }
+      },
+      "character": {
+        "chats": []
+      }
+    }
+  }
+}
