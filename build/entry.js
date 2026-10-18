@@ -53,6 +53,7 @@ import addonTelemetry from '../addon/ClaudeWoW/Telemetry.lua' with { type: 'file
 import addonObserved from '../addon/ClaudeWoW/Observed.lua' with { type: 'file' };
 import addonDev from '../addon/ClaudeWoW/Dev.lua' with { type: 'file' };
 import addonHelp from '../addon/ClaudeWoW/Help.lua' with { type: 'file' };
+import addonBoot from '../addon/ClaudeWoW/Boot.lua' with { type: 'file' };
 import addonBindings from '../addon/ClaudeWoW/Bindings.xml' with { type: 'file' };
 import addonPortrait from '../addon/ClaudeWoW/Portrait.tga' with { type: 'file' };
 import addonMinimapIcon from '../addon/ClaudeWoW/MinimapIcon.tga' with { type: 'file' };
@@ -114,6 +115,7 @@ require('../bridge/assets').embed({
   'addon/ClaudeWoW/Observed.lua': addonObserved,
   'addon/ClaudeWoW/Dev.lua': addonDev,
   'addon/ClaudeWoW/Help.lua': addonHelp,
+  'addon/ClaudeWoW/Boot.lua': addonBoot,
   'addon/ClaudeWoW/Bindings.xml': addonBindings,
   'addon/ClaudeWoW/Portrait.tga': addonPortrait,
   'addon/ClaudeWoW/MinimapIcon.tga': addonMinimapIcon,

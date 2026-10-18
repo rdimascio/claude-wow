@@ -19,7 +19,7 @@
 -- folder, agent, history and pending message. The bridge runs them in parallel.
 -- Everything here is plain addon API. No automation, no memory reading.
 
-local ADDON_NAME, ns = ...
+local _, ns = ...
 if not ns.Try then
 	print("|cff66ccff[Azeroth Companion]|r New addon files are not loaded yet. Type /reload; if that does not help, fully quit and restart the game.")
 	return
@@ -30,9 +30,6 @@ _G.BINDING_NAME_CLAUDEWOW_WORKSPACE = "Azeroth Companion: open or close the work
 ClaudeWoW.PRODUCT = ns.PRODUCT
 ClaudeWoW.PREFIX = ns.PREFIX
 
-local TICK_SECONDS = 2
-
-local db
 local ui = ns.ui
 ClaudeWoW.UI = ui
 local run = ns.run
@@ -91,11 +88,6 @@ local ActiveChat = ns.ActiveChat
 
 local AddChat = ns.AddChat
 
-local AnyPending = ns.AnyPending
-local function InitDB()
-	ns.InitDB()
-	db = ns.db
-end
 local AddHistory = ns.AddHistory
 
 function ClaudeWoW.ApplyMirror(list)
@@ -103,7 +95,7 @@ function ClaudeWoW.ApplyMirror(list)
 	local changed = false
 	for _, e in ipairs(list) do
 		local c = type(e) == "table" and type(e.chat) == "string" and FindChat(e.chat) or nil
-		if not c and type(e) == "table" and e.room == true and type(e.chat) == "string" and e.chat:match("^r%x+$") and not db.forget[e.chat] then
+		if not c and type(e) == "table" and e.room == true and type(e.chat) == "string" and e.chat:match("^r%x+$") and not ns.db.forget[e.chat] then
 			local title = type(e.title) == "string" and e.title ~= "" and e.title:sub(1, 40) or "agent-room"
 			c = ClaudeWoW.AddChat(title, { id = e.chat, cwd = "", plugin = "room" })
 		end
@@ -123,20 +115,13 @@ function ClaudeWoW.ApplyMirror(list)
 				AddHistory(c, "system", text)
 			end
 			c.mirrorSeq = seq
-			if db.activeChat ~= c.id then c.unread = (c.unread or 0) + 1 end
+			if ns.db.activeChat ~= c.id then c.unread = (c.unread or 0) + 1 end
 			changed = true
 		end
 	end
 	if changed then ClaudeWoW.Render() end
 end
 
-local ScreenshotCVarsOff = ns.ScreenshotCVarsOff
-
-local SyncScreenshotMode = ns.SyncScreenshotMode
-
-local ScreenshotDone = ns.ScreenshotDone
-
-local SelfTestSignals = ns.SelfTestSignals
 function Cli.WorkCount(chat)
 	local steps = run.steps and run.steps[chat.id] or 0
 	if steps > 0 then return steps .. (steps == 1 and " step" or " steps") end
@@ -182,16 +167,9 @@ function Cli.StepLines(chat)
 	return out, lines[#lines]
 end
 
-local ScheduleNextPoll = ns.ScheduleNextPoll
-
-local Tick = ns.Tick
-local ProcessInbox = ns.ProcessInbox
-
 local Try = ns.Try
 
 local ForgetOnBridge = ns.ForgetOnBridge
-
-local WL = ns.WL
 
 ---------------------------------------------------------------------------
 -- Chats
@@ -205,7 +183,7 @@ function ClaudeWoW.SwitchChat(id)
 		local typed = Trim(ui.input:GetText() or "")
 		prev.draft = typed ~= "" and typed or nil
 	end
-	db.activeChat = c.id
+	ns.db.activeChat = c.id
 	c.unread = 0
 	ui.chatPage = nil
 	if ui.input then
@@ -249,10 +227,10 @@ function ClaudeWoW.DeleteChat(id)
 	ForgetOnBridge(c)
 	Whisper.Close(c)
 	local otherUserChats = 0
-	for _, ch in ipairs(db.chats) do
+	for _, ch in ipairs(ns.db.chats) do
 		if ch ~= c and not ch.quiet then otherUserChats = otherUserChats + 1 end
 	end
-	if #db.chats == 1 or (otherUserChats == 0 and not c.quiet) then
+	if #ns.db.chats == 1 or (otherUserChats == 0 and not c.quiet) then
 		wipe(c.history)
 		c.pendingId, c.progress, c.unread, c.draft = nil, nil, 0, nil
 		c.gaveUp, c.lifeAt = nil, nil
@@ -263,10 +241,10 @@ function ClaudeWoW.DeleteChat(id)
 		ClaudeWoW.RenderChatList()
 		return
 	end
-	table.remove(db.chats, idx)
+	table.remove(ns.db.chats, idx)
 	local heldReply = run.replyTarget and run.replyNames and run.replyNames[run.replyTarget:lower()] == c.id
 	if run.lastReplyChat == c.id then run.lastReplyChat = nil end
-	if db.activeChat == c.id then
+	if ns.db.activeChat == c.id then
 		ClaudeWoW.SwitchChat(Cli.LatestChat().id)
 	else
 		ClaudeWoW.RenderChatList()
@@ -365,7 +343,7 @@ function ClaudeWoW.InstallMacro(m, confirmed)
 	if index then
 		local _, oldIcon = FindMacro(m.name, m.char)
 		ok, newIndex = pcall(EditMacro, index, m.name, m.icon ~= nil and MacroIcon(m.icon) or nil, m.body)
-		if ok and type(newIndex) == "number" then db.macroUndo = { name = m.name, char = m.char, icon = oldIcon, body = oldBody } end
+		if ok and type(newIndex) == "number" then ns.db.macroUndo = { name = m.name, char = m.char, icon = oldIcon, body = oldBody } end
 	else
 		local acc, chr = Try(GetNumMacros)
 		if m.char and type(chr) == "number" and chr >= MACRO.CHAR_MAX then
@@ -379,7 +357,7 @@ function ClaudeWoW.InstallMacro(m, confirmed)
 		if (not ok or type(newIndex) ~= "number") and m.icon ~= nil then
 			ok, newIndex = pcall(CreateMacro, m.name, MACRO.DEFAULT_ICON, m.body, m.char)
 		end
-		if ok and type(newIndex) == "number" then db.macroUndo = { name = m.name, char = m.char, created = true } end
+		if ok and type(newIndex) == "number" then ns.db.macroUndo = { name = m.name, char = m.char, created = true } end
 	end
 	if not ok or type(newIndex) ~= "number" then
 		MacroSay('could not save macro "' .. m.name .. '": ' .. (ok and "the game refused it (is the list full?)" or tostring(newIndex)))
@@ -417,7 +395,7 @@ function ClaudeWoW.MacroPrompt(m)
 end
 
 function ClaudeWoW.UndoMacro()
-	local u = db.macroUndo
+	local u = ns.db.macroUndo
 	if not u then
 		MacroSay("nothing to undo.")
 		return
@@ -429,7 +407,7 @@ function ClaudeWoW.UndoMacro()
 	local index = FindMacro(u.name, u.char)
 	if not index then
 		MacroSay('macro "' .. u.name .. '" is gone already.')
-		db.macroUndo = nil
+		ns.db.macroUndo = nil
 		return
 	end
 	if MacroFrame and MacroFrame:IsShown() then
@@ -443,16 +421,13 @@ function ClaudeWoW.UndoMacro()
 		Try(EditMacro, index, u.name, u.icon, u.body)
 		MacroSay('macro "' .. u.name .. '" is back to what it was.')
 	end
-	db.macroUndo = nil
+	ns.db.macroUndo = nil
 	ClaudeWoW.Render()
 end
 
 ---------------------------------------------------------------------------
 -- Rendering
 ---------------------------------------------------------------------------
-
-local InstallChatHooks = ns.InstallChatHooks
-local ApplyLongChat = ns.ApplyLongChat
 
 function Cli.Split(s)
 	local out = {}
@@ -478,7 +453,7 @@ function Cli.Links.open(arg) ClaudeWoW.OpenWorkspace(Cli.Split(arg)[1]) end
 function Cli.Links.reply(arg)
 	local id = Cli.Split(arg)[1]
 	if Whisper.Active() then
-		if FindChat(id) and db.activeChat ~= id then ClaudeWoW.SwitchChat(id) end
+		if FindChat(id) and ns.db.activeChat ~= id then ClaudeWoW.SwitchChat(id) end
 		return
 	end
 	ClaudeWoW.OpenWorkspace(id, true)
@@ -548,7 +523,7 @@ function Cli.Links.map(arg)
 end
 
 function ClaudeWoW.OnLink(link, button)
-	if not db then return false end
+	if not ns.db then return false end
 	link = tostring(link or "")
 	local body = link:match("^addon:claudewow:(.*)$") or link:match("^claudewow:(.*)$")
 	if not body then return false end
@@ -577,8 +552,6 @@ if type(ChatFrameUtil) == "table" and type(ChatFrameUtil.InsertLink) == "functio
 elseif type(ChatEdit_InsertLink) == "function" then
 	hooksecurefunc("ChatEdit_InsertLink", TakeLink)
 end
-
-local BuildUI = ns.BuildUI
 
 ---------------------------------------------------------------------------
 -- Slash commands
@@ -636,75 +609,4 @@ ev:RegisterEvent("SCREENSHOT_SUCCEEDED")
 ev:RegisterEvent("SCREENSHOT_FAILED")
 ev:RegisterEvent("PLAYER_LOGOUT")
 ev:RegisterEvent("PLAYER_ENTERING_WORLD")
-ev:SetScript("OnEvent", function(self, event, arg1)
-	if event == "PLAYER_ENTERING_WORLD" then
-		if db then Q.NoteLogin(arg1) end
-	elseif event == "ADDON_LOADED" then
-		if arg1 == ADDON_NAME then
-			InitDB()
-			-- The saved data is here: a screenshotFormat left behind by a crash
-			-- (no PLAYER_LOGOUT, no restore) goes back to the player's value now,
-			-- unless the remembered transport is about to need ours again.
-			SyncScreenshotMode()
-		end
-	elseif event == "SCREENSHOT_SUCCEEDED" then
-		ScreenshotDone(true, true)
-	elseif event == "SCREENSHOT_FAILED" then
-		ScreenshotDone(false, true)
-	elseif event == "PLAYER_LOGOUT" then
-		-- The player's screenshot format goes back before the client saves its CVars.
-		if db then
-			ScreenshotCVarsOff()
-			ClaudeWoWCharDB = Q.StashCharacterChats(db, ClaudeWoWCharDB)
-		end
-	elseif event == "PLAYER_LOGIN" then
-		if not db then InitDB() end
-		BuildUI()
-		Q.BuildMinimapButton()
-		wipe(run)
-		run.outbound = {}
-		run.startedAt = GetTime()
-		Q.RestoreRequests()
-		SelfTestSignals()
-		ProcessInbox()
-		SyncScreenshotMode()
-		if AnyPending() then
-			-- Still waiting after a reload: resume polling with a fresh slot pool.
-			run.sentAt = GetTime()
-			run.polls = 0
-			run.act = {}
-			for _, ch in ipairs(db.chats) do
-				if ch.pendingId then run.act[ch.id] = Q.ActivityAtLogin(ch) end
-			end
-			ScheduleNextPoll()
-		end
-		local c = ActiveChat()
-		if c and c.draft and c.draft ~= "" then
-			ui.input:SetText(c.draft)
-			if not c.pendingId then c.draft = nil end
-		end
-		ClaudeWoW.Render()
-		InstallChatHooks()
-		Whisper.Install()
-		if db.settings.shown and Whisper.Active() then
-			db.settings.shown = false
-		elseif db.settings.shown then
-			ClaudeWoW.Toggle(true)
-		end
-		ClaudeWoW.ArmAutoRefresh()
-		ClaudeWoW.UpdateDot()
-		if db.settings.longchat then ApplyLongChat() end
-		C_Timer.NewTicker(TICK_SECONDS, Tick)
-		C_Timer.NewTicker(WL.PULSE_SECONDS, Whisper.Pulse)
-		Q.LoginNotice()
-		C_Timer.After(3, function()
-			ClaudeWoW.SayHello()
-			C_Timer.After(Q.BRIDGE_CHECK_SECONDS, Q.UnreachableNotice)
-		end)
-	elseif event == "UPDATE_MACROS" then
-		-- "Create" / "Update" on the macro buttons follows what exists now.
-		if ui.frame and ui.frame:IsShown() then ClaudeWoW.Render() end
-	elseif event == "PLAYER_REGEN_ENABLED" then
-		Q.AfterCombat()
-	end
-end)
+ns.events = ev

@@ -73,6 +73,7 @@ const FILES = [
   'addon/ClaudeWoW/Observed.lua',
   'addon/ClaudeWoW/Dev.lua',
   'addon/ClaudeWoW/Help.lua',
+  'addon/ClaudeWoW/Boot.lua',
   'addon/ClaudeWoW/Bindings.xml',
   'addon/ClaudeWoW/Portrait.tga',
   'addon/ClaudeWoW/MinimapIcon.tga',

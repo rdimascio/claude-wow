@@ -54,3 +54,4 @@ UI\Window.lua
 Telemetry.lua
 Observed.lua
 Help.lua
+Boot.lua
