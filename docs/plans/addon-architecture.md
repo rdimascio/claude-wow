@@ -1,6 +1,6 @@
 # Plan: the ClaudeWoW addon as a modular, linted, measured codebase
 
-Status: draft, revision 1 (2026-10-17). Reviewed `origin/main` at `f7f3a12`. Every number below was measured on that checkout with the commands named next to it; **(unverified)** marks a claim nobody has checked in the game client yet. Code references name functions, not line numbers.
+Status: revision 2 (2026-10-17). Phases 0 to 5 merged the same day (PRs #185 to #191); §6 has the numbers. Phases 6 to 9 and the bridge items in §8.2 are open. Reviewed `origin/main` at `f7f3a12`. Every number below was measured on that checkout with the commands named next to it; **(unverified)** marks a claim nobody has checked in the game client yet. Code references name functions, not line numbers.
 
 ## 1. What the review found
 
@@ -164,13 +164,21 @@ Phases 2 to 4 can go in any order and in parallel sessions, since each moves a d
 
 ## 6. Measurements
 
-Taken before Phase 1 and after Phases 7 and 8, recorded in `docs/plans/measurements/addon-architecture.md`:
+After Phase 5 (`origin/main` at `22e5b3b`, 2026-10-17), against the numbers in §1.1:
 
-- `/claude diag`: addon memory (MB) and CPU (ms, with `scriptProfile` on) after a fixed script: login, open the window, 20 messages in one chat, 5 chats.
-- `npm test` wall time, and `tests/addon_test.js` alone.
-- Lines per file, locals per main chunk, longest function (from `addon_check.js`).
-- `luacheck` warning count.
-- Count of `if ClaudeWoWX then` guards in the core.
+| Measure | Before (`f7f3a12`) | After Phase 5 |
+|---|---|---|
+| `ClaudeWoW.lua` | 10,790 lines, 189 main-chunk locals | 612 lines, 29 locals |
+| Addon Lua files | 17 | 48 (`Core/` 3, `Transport/` 6, `Chat/` 6, `Whisper/` 3, `UI/` 9, `Commands/` 4, `Boot.lua`, the features) |
+| Largest file | `ClaudeWoW.lua` | `Widgets.lua` 1,354 (unchanged), then `Chat/Options.lua` 1,271 |
+| Highest main-chunk locals | 189 | 83 (`Orders.lua`) |
+| Private copies of `Try` / `Print` / `Settings` | 6 / 7 / 5 | 0 / 0 / 6 (`Settings` is Phase 6) |
+| `if ClaudeWoWX then` guards in the core file | 22 | 1 (the rest moved with their code) |
+| Lua lint and formatter | none | `luacheck` 0 warnings on 48 files, StyLua checked, both in CI; 7 findings fixed in Phase 0 |
+| Unit tests | 1,440 (1,431 pass, 9 skipped) | 1,448 (1,439 pass, 9 skipped) |
+| Command behaviour pinned | by hand in 6 tables | `tests/fixtures/commands.json`, 52 verbs x 28 inputs from main, byte-equal |
+
+Still to take, before and after Phases 7 and 8: `/claude diag` addon memory and CPU after a fixed script (login, open the window, 20 messages in one chat, 5 chats), and `npm test` wall time with `tests/addon_test.js` alone (21.7 s on Node 24 before Phase 0).
 
 ## 7. Decisions for the owner
 
