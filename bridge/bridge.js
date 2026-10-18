@@ -720,7 +720,9 @@ function takeMapCommands(job, text) {
     const r = P.parseMapFile(fs.readFileSync(file, 'utf8'));
     cmds = r.cmds;
     errors = r.errors;
-  } catch {}
+  } catch (e) {
+    if (e.code !== 'ENOENT') log(`#${job.id} map: cannot read ${file} (${e.code || e.message}); its commands are lost`);
+  }
   try {
     fs.unlinkSync(file);
   } catch {}
@@ -760,7 +762,9 @@ function takeWidgetCommands(job, text) {
     const fromFile = P.parseWidgetFile(fs.readFileSync(file, 'utf8'));
     cmds = fromFile.cmds;
     errors = fromFile.errors;
-  } catch {}
+  } catch (e) {
+    if (e.code !== 'ENOENT') log(`#${job.id} ui: cannot read ${file} (${e.code || e.message}); its commands are lost`);
+  }
   try {
     fs.unlinkSync(file);
   } catch {}
@@ -3278,22 +3282,26 @@ function nameChat(job, key) {
     text: job.text,
     cwd: TMP_DIR,
     env: A.AGENTS.claude.env({ ...process.env }),
-  }).then(title => {
-    if (!title) {
-      log(`#${job.id} title: ${model} gave none`);
-      return;
-    }
-    titles.set(key, { id: job.id, title });
-    while (titles.size > TITLES_KEPT) titles.delete(titles.keys().next().value);
-    log(`#${job.id} title (${model}): ${title}`);
-    const kept = transcripts.chats[job.chat];
-    if (kept && (!kept.name || kept.name === job.name)) {
-      kept.name = title;
-      saveTranscripts();
-    }
-    const rec = live.get(key);
-    if (rec) publish(key, { ...rec, title: '' }, true);
-  });
+  })
+    .then(title => {
+      if (!title) {
+        log(`#${job.id} title: ${model} gave none`);
+        return;
+      }
+      titles.set(key, { id: job.id, title });
+      while (titles.size > TITLES_KEPT) titles.delete(titles.keys().next().value);
+      log(`#${job.id} title (${model}): ${title}`);
+      const kept = transcripts.chats[job.chat];
+      if (kept && (!kept.name || kept.name === job.name)) {
+        kept.name = title;
+        saveTranscripts();
+      }
+      const rec = live.get(key);
+      if (rec) publish(key, { ...rec, title: '' }, true);
+    })
+    .catch(e => {
+      log(`#${job.id} title: not applied (${e && e.message ? e.message : e}); the chat keeps its first words`);
+    });
 }
 
 function tellPluginFinished(plugin, job, outcome) {
