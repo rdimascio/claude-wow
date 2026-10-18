@@ -28,6 +28,9 @@ Whisper\Reply.lua
 Whisper\Intercept.lua
 UI\Markdown.lua
 UI\Menu.lua
+UI\Minimap.lua
+UI\Popups.lua
+UI\Copy.lua
 ClaudeWoW.lua
 Map.lua
 Roast.lua
