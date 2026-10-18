@@ -705,41 +705,45 @@ function applyToolMap(cmds) {
   return { changed, notes };
 }
 
-function mapFileFor(job) {
-  return path.join(MAP_DIR, `${String(job.chat || 'default').replace(/[^\w-]/g, '_')}-${job.id}.jsonl`);
+// A side file is where a run's tools append commands (one JSON per line) for a
+// surface; its ```blocks in the reply carry the same commands. Collect both,
+// apply them, and return the reply text without the blocks plus a note for the
+// reply, if anything was asked.
+function sideFile(kind, { dir, label, extract, apply, onChange }) {
+  const fileFor = job => path.join(dir, `${String(job.chat || 'default').replace(/[^\w-]/g, '_')}-${job.id}.jsonl`);
+  function take(job, text) {
+    const file = fileFor(job);
+    const fromFile = P.readSideFile(kind, file);
+    if (fromFile.unreadable) log(`#${job.id} ${label}: cannot read ${file} (${fromFile.unreadable}); its commands are lost`);
+    const blocks = extract(text);
+    const cmds = [...fromFile.cmds, ...blocks.cmds];
+    const errors = [...fromFile.errors, ...(blocks.errors || [])];
+    if (!cmds.length && !errors.length) return { text: blocks.text, note: '' };
+    const { changed, notes, where } = apply(job, cmds);
+    if (changed) {
+      saveState();
+      onChange();
+    }
+    const all = [...notes, ...errors];
+    log(`#${job.id} ${label}: ${all.join('; ') || 'no change'}${where}`);
+    return { text: blocks.text, note: all.length ? `${label}: ${all.join('; ')}` : '' };
+  }
+  return { fileFor, take };
 }
 
-// Collect what the run asked for (its map file, then ```wowmap blocks in its
-// reply), apply it, and return the reply text without the blocks plus a note
-// for the reply, if anything was asked.
-function takeMapCommands(job, text) {
-  const file = mapFileFor(job);
-  let cmds = [],
-    errors = [];
-  try {
-    const r = P.parseMapFile(fs.readFileSync(file, 'utf8'));
-    cmds = r.cmds;
-    errors = r.errors;
-  } catch (e) {
-    if (e.code !== 'ENOENT') log(`#${job.id} map: cannot read ${file} (${e.code || e.message}); its commands are lost`);
-  }
-  try {
-    fs.unlinkSync(file);
-  } catch {}
-  const blocks = P.extractMapBlocks(text);
-  cmds.push(...blocks.cmds);
-  errors.push(...blocks.errors);
-  if (!cmds.length && !errors.length) return { text: blocks.text, note: '' };
-  const map = mapFor(job.char);
-  const { changed, notes } = P.applyMapCommands(map, cmds);
-  if (changed) {
-    saveState();
-    mapShare.touch();
-  }
-  const all = [...notes, ...errors];
-  log(`#${job.id} map: ${all.join('; ') || 'no change'} for ${map.char || 'no character'} (version ${map.version})`);
-  return { text: blocks.text, note: all.length ? `map: ${all.join('; ')}` : '' };
-}
+const mapSide = sideFile('map', {
+  dir: MAP_DIR,
+  label: 'map',
+  extract: P.extractMapBlocks,
+  apply(job, cmds) {
+    const map = mapFor(job.char);
+    const { changed, notes } = P.applyMapCommands(map, cmds);
+    return { changed, notes, where: ` for ${map.char || 'no character'} (version ${map.version})` };
+  },
+  onChange: () => mapShare.touch(),
+});
+const mapFileFor = mapSide.fileFor;
+const takeMapCommands = mapSide.take;
 
 if (!state.widgets) state.widgets = P.newWidgetSet();
 const WIDGET_DIR = HOME.uijobs;
@@ -750,36 +754,20 @@ function widgetSourceBytes() {
   return Object.values(state.widgets.items).reduce((sum, w) => sum + w.source.length, 0);
 }
 
-function widgetFileFor(job) {
-  return path.join(WIDGET_DIR, `${String(job.chat || 'default').replace(/[^\w-]/g, '_')}-${job.id}.jsonl`);
-}
-
-function takeWidgetCommands(job, text) {
-  const file = widgetFileFor(job);
-  let cmds = [],
-    errors = [];
-  try {
-    const fromFile = P.parseWidgetFile(fs.readFileSync(file, 'utf8'));
-    cmds = fromFile.cmds;
-    errors = fromFile.errors;
-  } catch (e) {
-    if (e.code !== 'ENOENT') log(`#${job.id} ui: cannot read ${file} (${e.code || e.message}); its commands are lost`);
-  }
-  try {
-    fs.unlinkSync(file);
-  } catch {}
-  const blocks = P.extractWidgetBlocks(text);
-  cmds.push(...blocks.cmds);
-  if (!cmds.length && !errors.length) return { text: blocks.text, note: '' };
-  const { changed, notes } = P.applyWidgetCommands(state.widgets, cmds);
-  if (changed) {
-    saveState();
+const widgetSide = sideFile('widget', {
+  dir: WIDGET_DIR,
+  label: 'ui',
+  extract: P.extractWidgetBlocks,
+  apply(job, cmds) {
+    const { changed, notes } = P.applyWidgetCommands(state.widgets, cmds);
+    return { changed, notes, where: ` (version ${state.widgets.version})` };
+  },
+  onChange: () => {
     widgetShareUntil = Date.now() + WIDGET_SHARE_MS;
-  }
-  const all = [...notes, ...errors];
-  log(`#${job.id} ui: ${all.join('; ') || 'no change'} (version ${state.widgets.version})`);
-  return { text: blocks.text, note: all.length ? `ui: ${all.join('; ')}` : '' };
-}
+  },
+});
+const widgetFileFor = widgetSide.fileFor;
+const takeWidgetCommands = widgetSide.take;
 
 const BRIDGE_INFO = P.bridgeInfo();
 

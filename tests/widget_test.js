@@ -100,6 +100,38 @@ test('parseWidgetFile reads one command per line', () => {
   const r = P.parseWidgetFile('{"op":"set","name":"a","source":"local ui = ..."}\n\n{"op":"remove","name":"b"}\n{broken\n');
   assert.equal(r.cmds.length, 2);
   assert.equal(r.errors.length, 1);
+  assert.deepEqual(r.errors, ['unreadable widget file line']);
+  assert.deepEqual(
+    P.parseSideFile('widget', '{broken'),
+    { cmds: [], errors: ['unreadable widget file line'] },
+    'the widget parser is the shared side-file parser',
+  );
+});
+
+test('readSideFile names the widget kind in its errors and tells a missing file from an unreadable one', () => {
+  const missing = P.readSideFile('widget', path.join(__dirname, 'fixtures', 'no-such-widget-file.jsonl'));
+  assert.deepEqual(missing, { cmds: [], errors: [], unreadable: '' });
+  const r = P.readSideFile('widget', 'x', {
+    read: () => '{"op":"remove","name":"b"}\n{broken\n',
+    remove: () => {
+      throw new Error('already gone');
+    },
+  });
+  assert.deepEqual(r, { cmds: [{ op: 'remove', name: 'b' }], errors: ['unreadable widget file line'], unreadable: '' });
+  const denied = P.readSideFile('widget', 'x', {
+    read: () => {
+      throw Object.assign(new Error('denied'), { code: 'EACCES' });
+    },
+    remove: () => {},
+  });
+  assert.equal(denied.unreadable, 'EACCES');
+  const noCode = P.readSideFile('widget', 'x', {
+    read: () => {
+      throw new Error('odd failure');
+    },
+    remove: () => {},
+  });
+  assert.equal(noCode.unreadable, 'odd failure');
 });
 
 test('the system prompt explains widgets to a plugin with the ui surface, in a game chat', () => {
