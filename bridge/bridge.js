@@ -324,6 +324,7 @@ const CLIENT_RT = new Map(
       lastMtime: 0,
       shotHint: null,
       shotWatch: null,
+      sweeper: null,
       chatLogWatch: null,
       sweepMemo: new Map(),
       acks: [],
@@ -612,6 +613,10 @@ function shutdown(sig, exitCode) {
   stopPlugins();
   if (roomClient) roomClient.stop();
   if (roomDownTimer) clearTimeout(roomDownTimer);
+  if (roomNewsTimer) {
+    clearTimeout(roomNewsTimer);
+    roomNewsTimer = null;
+  }
   if (discordHub) discordHub.stop().catch(() => {});
   let voteClosing = Promise.resolve();
   try {
@@ -1021,6 +1026,10 @@ function fallbackToPixel(reason, job) {
     if (r.shotWatch) {
       r.shotWatch.close();
       r.shotWatch = null;
+    }
+    if (r.sweeper) {
+      clearInterval(r.sweeper);
+      r.sweeper = null;
     }
     if (r.chatLogWatch) {
       r.chatLogWatch.close();
@@ -3686,8 +3695,8 @@ function startScreenshotWatch(r) {
   r.shotWatch = S.watchScreenshots(dir, file => handleScreenshot(file, r), { log, adoptMs: WATCHER_AGE_MS, now: startedAt });
   log(`screenshot transport: watching ${dir} (strip codec ${STRIP_CODEC}: ${stripGeometry()})`);
   sweepScreenshots(r, 'startup', startedAt);
-  const sweeper = setInterval(() => sweepScreenshots(r, 'periodic'), SWEEP_MS);
-  if (sweeper.unref) sweeper.unref();
+  r.sweeper = setInterval(() => sweepScreenshots(r, 'periodic'), SWEEP_MS);
+  if (r.sweeper.unref) r.sweeper.unref();
 }
 
 function chatLogWritesOf(client) {
