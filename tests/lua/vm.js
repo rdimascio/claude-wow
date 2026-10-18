@@ -23,13 +23,13 @@ function tocFilesUpTo(last, files = tocFiles()) {
   return files.slice(0, at + 1);
 }
 
-const isShared = f => f.startsWith('Core/') || f.startsWith('Transport/') || f.startsWith('Chat/') || f.startsWith('Whisper/');
+const isShared = (f, files = tocFiles()) => f.includes('/') && files.indexOf(f) < files.indexOf('ClaudeWoW.lua');
 
 const coreFiles = () => tocFiles().filter(f => f.startsWith('Core/'));
 
 function sharedFilesBefore(file, files = tocFiles()) {
   const at = files.indexOf(file);
-  return (at < 0 ? files : files.slice(0, at)).filter(isShared);
+  return (at < 0 ? files : files.slice(0, at)).filter(f => isShared(f, files));
 }
 
 function createVM({ stub = true, utf8 = true } = {}) {

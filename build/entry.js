@@ -21,6 +21,14 @@ import addonChatGrants from '../addon/ClaudeWoW/Chat/Grants.lua' with { type: 'f
 import addonWhisperTabs from '../addon/ClaudeWoW/Whisper/Tabs.lua' with { type: 'file' };
 import addonWhisperReply from '../addon/ClaudeWoW/Whisper/Reply.lua' with { type: 'file' };
 import addonWhisperIntercept from '../addon/ClaudeWoW/Whisper/Intercept.lua' with { type: 'file' };
+import addonUiMarkdown from '../addon/ClaudeWoW/UI/Markdown.lua' with { type: 'file' };
+import addonUiMenu from '../addon/ClaudeWoW/UI/Menu.lua' with { type: 'file' };
+import addonUiMinimap from '../addon/ClaudeWoW/UI/Minimap.lua' with { type: 'file' };
+import addonUiPopups from '../addon/ClaudeWoW/UI/Popups.lua' with { type: 'file' };
+import addonUiCopy from '../addon/ClaudeWoW/UI/Copy.lua' with { type: 'file' };
+import addonUiTranscript from '../addon/ClaudeWoW/UI/Transcript.lua' with { type: 'file' };
+import addonUiChatList from '../addon/ClaudeWoW/UI/ChatList.lua' with { type: 'file' };
+import addonUiFrame from '../addon/ClaudeWoW/UI/Frame.lua' with { type: 'file' };
 import addonLua from '../addon/ClaudeWoW/ClaudeWoW.lua' with { type: 'file' };
 import addonToc from '../addon/ClaudeWoW/ClaudeWoW.toc' with { type: 'file' };
 import addonCodec from '../addon/ClaudeWoW/Codec.lua' with { type: 'file' };
@@ -34,7 +42,7 @@ import addonAchievements from '../addon/ClaudeWoW/Achievements.lua' with { type:
 import addonOrders from '../addon/ClaudeWoW/Orders.lua' with { type: 'file' };
 import addonDM from '../addon/ClaudeWoW/DM.lua' with { type: 'file' };
 import addonWidgets from '../addon/ClaudeWoW/Widgets.lua' with { type: 'file' };
-import addonWindow from '../addon/ClaudeWoW/Window.lua' with { type: 'file' };
+import addonWindow from '../addon/ClaudeWoW/UI/Window.lua' with { type: 'file' };
 import addonTelemetry from '../addon/ClaudeWoW/Telemetry.lua' with { type: 'file' };
 import addonObserved from '../addon/ClaudeWoW/Observed.lua' with { type: 'file' };
 import addonDev from '../addon/ClaudeWoW/Dev.lua' with { type: 'file' };
@@ -68,6 +76,14 @@ require('../bridge/assets').embed({
   'addon/ClaudeWoW/Whisper/Tabs.lua': addonWhisperTabs,
   'addon/ClaudeWoW/Whisper/Reply.lua': addonWhisperReply,
   'addon/ClaudeWoW/Whisper/Intercept.lua': addonWhisperIntercept,
+  'addon/ClaudeWoW/UI/Markdown.lua': addonUiMarkdown,
+  'addon/ClaudeWoW/UI/Menu.lua': addonUiMenu,
+  'addon/ClaudeWoW/UI/Minimap.lua': addonUiMinimap,
+  'addon/ClaudeWoW/UI/Popups.lua': addonUiPopups,
+  'addon/ClaudeWoW/UI/Copy.lua': addonUiCopy,
+  'addon/ClaudeWoW/UI/Transcript.lua': addonUiTranscript,
+  'addon/ClaudeWoW/UI/ChatList.lua': addonUiChatList,
+  'addon/ClaudeWoW/UI/Frame.lua': addonUiFrame,
   'addon/ClaudeWoW/ClaudeWoW.lua': addonLua,
   'addon/ClaudeWoW/ClaudeWoW.toc': addonToc,
   'addon/ClaudeWoW/Codec.lua': addonCodec,
@@ -81,7 +97,7 @@ require('../bridge/assets').embed({
   'addon/ClaudeWoW/Orders.lua': addonOrders,
   'addon/ClaudeWoW/DM.lua': addonDM,
   'addon/ClaudeWoW/Widgets.lua': addonWidgets,
-  'addon/ClaudeWoW/Window.lua': addonWindow,
+  'addon/ClaudeWoW/UI/Window.lua': addonWindow,
   'addon/ClaudeWoW/Telemetry.lua': addonTelemetry,
   'addon/ClaudeWoW/Observed.lua': addonObserved,
   'addon/ClaudeWoW/Dev.lua': addonDev,

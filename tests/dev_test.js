@@ -308,11 +308,11 @@ test('errors reads General.log and the addon block', async t => {
   fs.mkdirSync(path.join(dir, 'Logs'));
   fs.writeFileSync(path.join(dir, 'Logs', 'General.log'), '10/1 21:00:01.000  [E][Lua] Lua Error: Interface/AddOns/ClaudeWoW/Map.lua:3: nil\n');
   const { core, calls } = fakeCore(t, { client: { dir } });
-  await DEV.handleDev(job('errors\n--- addon errors ---\nx2 ClaudeWoW/Window.lua:5: oops'), core, {});
+  await DEV.handleDev(job('errors\n--- addon errors ---\nx2 ClaudeWoW/UI/Window.lua:5: oops'), core, {});
   const text = calls.replies.pop();
   assert.match(text, /1 Lua error in General.log/);
   assert.match(text, /Map.lua:3: nil/);
-  assert.match(text, /From the addon, this UI session:\n```\nx2 ClaudeWoW\/Window.lua:5: oops/);
+  assert.match(text, /From the addon, this UI session:\n```\nx2 ClaudeWoW\/UI\/Window.lua:5: oops/);
 });
 
 test('wrong stores the last reply with its prompt and note; bug stores the addon state', async t => {

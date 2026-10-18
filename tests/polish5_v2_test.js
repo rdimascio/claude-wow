@@ -11,7 +11,7 @@ function newVM({ before = '', saved = '' } = {}) {
   const vm = createVM();
   vm.run(BINDINGS);
   if (before) vm.run(before);
-  vm.loadAddon(['Codec.lua', 'Inbox.lua', 'ClaudeWoW.lua', 'LootRoll.lua', 'Window.lua', 'Help.lua']);
+  vm.loadAddon(['Codec.lua', 'Inbox.lua', 'ClaudeWoW.lua', 'LootRoll.lua', 'UI/Window.lua', 'Help.lua']);
   if (saved) vm.run(saved);
   vm.login();
   return vm;
@@ -361,7 +361,7 @@ test('Resend shows only while a pixel-mode run is pending, and its tooltip stays
 });
 
 test('the window module never moves a Blizzard frame', () => {
-  const src = fs.readFileSync(path.join(ADDON, 'Window.lua'), 'utf8');
+  const src = fs.readFileSync(path.join(ADDON, 'UI', 'Window.lua'), 'utf8');
   assert.doesNotMatch(src, /PlaceLootBeside|LootInPanelSlot/);
   assert.doesNotMatch(src, /loot:|_G\.LootFrame/);
 });
