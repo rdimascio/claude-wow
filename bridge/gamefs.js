@@ -166,7 +166,7 @@ function mkdir(dir) {
   const created = missingAncestors(dir);
   fs.mkdirSync(dir, { recursive: true });
   if (!matchesGame()) return;
-  for (const d of created.reverse()) openUpFolder(d);
+  for (const d of created.toReversed()) openUpFolder(d);
 }
 
 function folderFor(file) {

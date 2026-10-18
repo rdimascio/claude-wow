@@ -147,6 +147,7 @@ function createChatHub({ config, token, home, log = () => {}, links, onNewChat, 
 
   async function gatewayLoop() {
     let failures = 0;
+    // oxlint-disable-next-line no-unmodified-loop-condition
     while (!stopped) {
       const begun = Date.now();
       try {

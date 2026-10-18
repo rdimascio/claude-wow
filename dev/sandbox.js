@@ -73,10 +73,10 @@ function realish(p) {
   const rest = [];
   for (;;) {
     try {
-      return path.join(fs.realpathSync(cur), ...rest.reverse());
+      return path.join(fs.realpathSync(cur), ...rest.toReversed());
     } catch {}
     const up = path.dirname(cur);
-    if (up === cur) return path.join(cur, ...rest.reverse());
+    if (up === cur) return path.join(cur, ...rest.toReversed());
     rest.push(path.basename(cur));
     cur = up;
   }

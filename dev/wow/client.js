@@ -569,7 +569,7 @@ class WowClient {
   diag() {
     this.slash('/claude diag');
     const history = (this.activeChat() || {}).history || [];
-    const last = [...history].reverse().find(m => m.role === 'system' && /^Diagnostics:/.test(m.text || ''));
+    const last = history.findLast(m => m.role === 'system' && /^Diagnostics:/.test(m.text || ''));
     return last ? last.text : '';
   }
 

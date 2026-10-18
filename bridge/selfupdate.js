@@ -271,7 +271,7 @@ async function latestRelease(api, limits = LIMITS) {
   try {
     body = await get(`${api}/releases/latest`, { ...limits.json, headers: { Accept: 'application/vnd.github+json' } });
   } catch (e) {
-    if (/\(404\)/.test(e.message)) throw new Error(`no release is published yet (${e.message})`);
+    if (/\(404\)/.test(e.message)) throw new Error(`no release is published yet (${e.message})`, { cause: e });
     throw e;
   }
   let data;

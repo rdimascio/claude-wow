@@ -460,7 +460,7 @@ function createFactory({
       return run ? { ok: true, text: describe(run, now()) } : refuse(`There is no factory run ${id.slice(0, 20)}.`);
     }
     if (!runs.length) return { ok: true, text: 'No factory runs yet.' };
-    const latest = runs.slice(-STATUS_LIST).reverse();
+    const latest = runs.slice(-STATUS_LIST).toReversed();
     return { ok: true, text: latest.map(r => describe(r, now())).join('\n\n') };
   }
 

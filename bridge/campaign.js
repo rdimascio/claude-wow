@@ -105,13 +105,13 @@ function readStore(file, character) {
     raw = fs.readFileSync(file, 'utf8');
   } catch (e) {
     if (e.code === 'ENOENT') return emptyStore(character);
-    throw new Error(`cannot read ${file}: ${e.message}`);
+    throw new Error(`cannot read ${file}: ${e.message}`, { cause: e });
   }
   let doc;
   try {
     doc = JSON.parse(raw);
   } catch (e) {
-    throw new Error(`${file} is not valid JSON (${e.message}); fix or move it first`);
+    throw new Error(`${file} is not valid JSON (${e.message}); fix or move it first`, { cause: e });
   }
   if (!doc || doc.v !== STORE_VERSION) throw new Error(`${file} is not a version ${STORE_VERSION} campaign store`);
   const c = doc.campaign;
@@ -259,7 +259,7 @@ function fitBody(narration, live) {
     keptNarration.push(line);
   }
   const keptLive = keptNewest ? [newest] : [];
-  for (const line of live.slice(0, -1).reverse()) {
+  for (const line of live.slice(0, -1).toReversed()) {
     if (!take(line)) break;
     keptLive.unshift(line);
   }
@@ -552,7 +552,7 @@ function createCampaigns(opts) {
       stat = fs.statSync(file);
     } catch (e) {
       if (e.code === 'ENOENT') return emptyStore(key);
-      throw new Error(`cannot read ${file}: ${e.message}`);
+      throw new Error(`cannot read ${file}: ${e.message}`, { cause: e });
     }
     const stamp = fileStamp(stat);
     if (cached.file === file && cached.stamp === stamp) return cached.doc;

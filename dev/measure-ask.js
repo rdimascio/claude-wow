@@ -332,7 +332,7 @@ async function main() {
   };
   const warmed = new Set();
   outer: for (const [i, prompt] of prompts.entries()) {
-    const order = i % 2 ? [...o.models].reverse() : o.models;
+    const order = i % 2 ? o.models.toReversed() : o.models;
     for (const model of order) {
       const first = await step(prompt, model, warmed.has(model) ? 'warm-first' : 'cold-first', prompt.text, null);
       if (!first) break outer;

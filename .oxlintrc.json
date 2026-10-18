@@ -1,9 +1,16 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "env": { "node": true, "es2024": true },
-  "categories": { "correctness": "error" },
+  "categories": { "correctness": "error", "suspicious": "error" },
   "rules": {
+    "import/no-cycle": "error",
+    "no-empty": ["error", { "allowEmptyCatch": true }],
     "no-control-regex": "off",
+    "no-shadow": "off",
+    "no-underscore-dangle": "off",
+    "unicorn/consistent-function-scoping": "off",
+    "unicorn/no-array-sort": "off",
+    "unicorn/prefer-add-event-listener": "off",
     "unicorn/no-useless-spread": "off",
     "unicorn/no-new-array": "off",
     "unicorn/prefer-string-starts-ends-with": "off",

@@ -169,7 +169,7 @@ function parseDump(text) {
   try {
     ast = luaparse.parse(source, { luaVersion: '5.1', encodingMode: 'pseudo-latin1', comments: false });
   } catch (e) {
-    throw new Error(`cannot parse ${TABLE_NAME}: ${e.message}`);
+    throw new Error(`cannot parse ${TABLE_NAME}: ${e.message}`, { cause: e });
   }
   const statement = ast.body[0];
   const db = statement && statement.init && valueOf(statement.init[0]);

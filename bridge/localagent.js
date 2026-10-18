@@ -120,7 +120,9 @@ async function chatCompletion({ url, model, messages, tools, timeoutMs, fetchImp
       e && (e.name === 'TimeoutError' || e.name === 'AbortError')
         ? `no answer within ${timeoutMs} ms`
         : (e && e.cause && e.cause.code) || (e && e.message) || String(e);
-    throw new Error(`The local model server at ${url.origin} did not answer (${why}). Start llama-server, or set agents.local.baseUrl in config.json.`);
+    throw new Error(`The local model server at ${url.origin} did not answer (${why}). Start llama-server, or set agents.local.baseUrl in config.json.`, {
+      cause: e,
+    });
   }
   const text = await res.text();
   if (text.length > MAX_RESPONSE_CHARS) throw new Error('The local model server sent an answer that is too large.');

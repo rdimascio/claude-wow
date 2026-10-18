@@ -217,13 +217,13 @@ function readStore(file, character) {
     raw = fs.readFileSync(file, 'utf8');
   } catch (e) {
     if (e.code === 'ENOENT') return emptyStore(character);
-    throw new Error(`cannot read ${file}: ${e.message}`);
+    throw new Error(`cannot read ${file}: ${e.message}`, { cause: e });
   }
   let doc;
   try {
     doc = JSON.parse(raw);
   } catch (e) {
-    throw new Error(`${file} is not valid JSON (${e.message}); fix or move it before setting goals`);
+    throw new Error(`${file} is not valid JSON (${e.message}); fix or move it before setting goals`, { cause: e });
   }
   if (!doc || doc.v !== STORE_VERSION || !Array.isArray(doc.goals)) throw new Error(`${file} is not a version ${STORE_VERSION} goal store`);
   const orders = doc.orders && typeof doc.orders === 'object' ? doc.orders : {};
@@ -677,7 +677,7 @@ function createGoals(opts) {
       stat = fs.statSync(file);
     } catch (e) {
       if (e.code === 'ENOENT') return emptyStore(key);
-      throw new Error(`cannot read ${file}: ${e.message}`);
+      throw new Error(`cannot read ${file}: ${e.message}`, { cause: e });
     }
     const stamp = fileStamp(stat);
     if (cached.file === file && cached.stamp === stamp) return cached.doc;
