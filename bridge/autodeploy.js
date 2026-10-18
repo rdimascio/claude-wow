@@ -6,6 +6,7 @@ const { execFile, spawn: nodeSpawn } = require('child_process');
 const P = require('./protocol');
 const REL = require('./releases');
 const D = require('./deploy');
+const FS = require('./fsutil');
 
 const DEFAULT_REF = 'origin/main';
 const REF_RE = /^origin\/[A-Za-z0-9][A-Za-z0-9._-]*(?:\/[A-Za-z0-9][A-Za-z0-9._-]*)*$/;
@@ -59,17 +60,12 @@ function git(repo, args) {
 }
 
 function readJson(file) {
-  try {
-    const v = JSON.parse(fs.readFileSync(file, 'utf8'));
-    return v && typeof v === 'object' && !Array.isArray(v) ? v : {};
-  } catch {
-    return {};
-  }
+  const v = FS.readJson(file, null);
+  return v && typeof v === 'object' && !Array.isArray(v) ? v : {};
 }
 
 function writeJson(file, value) {
-  fs.writeFileSync(`${file}.tmp`, JSON.stringify(value) + '\n', { mode: 0o600 });
-  fs.renameSync(`${file}.tmp`, file);
+  FS.atomicWrite(file, JSON.stringify(value) + '\n', { mode: 0o600 });
 }
 
 function createAutoDeploy({ conf, home, log, idle, run = git, spawn = nodeSpawn, lockHolder = REL.liveLockHolder }) {

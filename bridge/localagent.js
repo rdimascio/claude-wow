@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
+const FS = require('./fsutil');
 const { lineReader } = require('./liveproto');
 
 const DEFAULTS = Object.freeze({
@@ -320,9 +321,7 @@ function pruneSessions(dir, keep = MAX_SESSION_FILES) {
 function saveSession(dir, id, messages) {
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   const file = sessionFile(dir, id);
-  const tmp = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify({ id, messages: trimHistory(messages) }), { mode: 0o600 });
-  fs.renameSync(tmp, file);
+  FS.atomicWrite(file, JSON.stringify({ id, messages: trimHistory(messages) }), { mode: 0o600 });
   pruneSessions(dir);
 }
 

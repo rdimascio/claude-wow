@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const FS = require('./fsutil');
 
 const FILE_NAME = 'feedback.jsonl';
 const ITEMS_MAX = 500;
@@ -42,9 +43,7 @@ function readItems(file) {
 
 function writeItems(file, items) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.${process.pid}.${Date.now().toString(36)}.tmp`;
-  fs.writeFileSync(tmp, items.map(i => JSON.stringify(i)).join('\n') + (items.length ? '\n' : ''), { mode: 0o600 });
-  fs.renameSync(tmp, file);
+  FS.atomicWrite(file, items.map(i => JSON.stringify(i)).join('\n') + (items.length ? '\n' : ''), { mode: 0o600 });
 }
 
 function createStore(dir, { now = Date.now } = {}) {

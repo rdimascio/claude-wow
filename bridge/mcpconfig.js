@@ -2,6 +2,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const FS = require('./fsutil');
 
 const SERVER_NAME_RE = /^[A-Za-z0-9]+(?:[-_][A-Za-z0-9]+)*$/;
 const SERVER_ID_RE = /^(?!-)(?!.*__)(?!.*_$)[A-Za-z0-9_-]+$/;
@@ -242,11 +243,7 @@ function scopeAllowed(agentCfg, plan) {
 }
 
 function readJson(file) {
-  try {
-    return JSON.parse(fs.readFileSync(file, 'utf8'));
-  } catch {
-    return null;
-  }
+  return FS.readJson(file, null);
 }
 
 function serverNames(json) {

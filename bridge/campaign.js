@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const FS = require('./fsutil');
 const GR = require('./gamerefs');
 const G = require('./goals');
 const TL = require('./telemetry');
@@ -120,9 +121,7 @@ function readStore(file, character) {
 
 function writeStore(file, doc) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(doc, null, 2) + '\n');
-  fs.renameSync(tmp, file);
+  FS.atomicWrite(file, JSON.stringify(doc, null, 2) + '\n');
 }
 
 function storeFile(root, characterKey) {

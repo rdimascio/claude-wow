@@ -8,6 +8,7 @@ const https = require('https');
 const { execFile } = require('child_process');
 const R = require('./runtime');
 const H = require('./home');
+const FS = require('./fsutil');
 const B = require('../build');
 const REL = require('./releases');
 
@@ -483,10 +484,8 @@ function skipVersion(home, version, reason = '', now = Date.now) {
   if (!v) throw new Error(`"${version}" is not a version to skip`);
   const record = { version: v, reason: String(reason || ''), at: now() };
   const file = skipFile(home);
-  const tmp = `${file}.${process.pid}.tmp`;
   fs.mkdirSync(home, { recursive: true });
-  fs.writeFileSync(tmp, JSON.stringify(record, null, 2) + '\n');
-  fs.renameSync(tmp, file);
+  FS.atomicWrite(file, JSON.stringify(record, null, 2) + '\n');
   return record;
 }
 
@@ -539,10 +538,8 @@ function readRecord(home) {
 function writeRecord(home, patch) {
   const next = { ...readRecord(home), ...patch };
   const file = recordFile(home);
-  const tmp = `${file}.${process.pid}.tmp`;
   fs.mkdirSync(home, { recursive: true });
-  fs.writeFileSync(tmp, JSON.stringify(next, null, 2) + '\n');
-  fs.renameSync(tmp, file);
+  FS.atomicWrite(file, JSON.stringify(next, null, 2) + '\n');
   return next;
 }
 

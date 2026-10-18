@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { StringDecoder } = require('string_decoder');
+const FS = require('./fsutil');
 const G = require('./goals');
 const OT = require('./observedtools');
 const C = require('./campaign');
@@ -50,10 +51,7 @@ function writeToken(homeDir) {
   const token = crypto.randomBytes(32).toString('hex');
   const file = tokenFile(homeDir);
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, token, { mode: 0o600 });
-  fs.chmodSync(tmp, 0o600);
-  fs.renameSync(tmp, file);
+  FS.atomicWrite(file, token, { mode: 0o600 });
   return token;
 }
 

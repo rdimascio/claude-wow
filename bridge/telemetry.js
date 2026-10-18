@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const FS = require('./fsutil');
 const OB = require('./observed');
 
 const KIND = 'gs';
@@ -421,9 +422,7 @@ function readSnapshot(file, character, log = () => {}) {
 
 function writeAtomic(file, content) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, content);
-  fs.renameSync(tmp, file);
+  FS.atomicWrite(file, content);
 }
 
 function rotateIfFull(file, rotated, limit) {

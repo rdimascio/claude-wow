@@ -58,6 +58,7 @@ const CQ = require('./chatqueue');
 const DH = require('./chathub');
 const PJ = require('./projects');
 const G = require('./gamefs');
+const FS = require('./fsutil');
 const SIG = require('./signals');
 const DM = require('./datamcp');
 const GM = require('./goalsmcp');
@@ -238,15 +239,7 @@ const LOCK_FILE = path.join(HOME.dir, 'bridge.lock');
 const BOOTED_AT = Date.now() - os.uptime() * 1000;
 const SELF_MARKER = path.basename(process.argv[1] || process.execPath);
 
-function pidAlive(pid) {
-  if (!Number.isInteger(pid) || pid <= 0) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
+const { pidAlive, isDirectory } = FS;
 
 function commandOf(pid) {
   if (process.platform === 'win32') return null;
@@ -263,11 +256,7 @@ function isSameProcess(pid, startedAt, marker) {
 }
 
 function readJsonQuiet(file) {
-  try {
-    return JSON.parse(fs.readFileSync(file, 'utf8'));
-  } catch {
-    return null;
-  }
+  return FS.readJson(file, null);
 }
 
 function holdLock() {
@@ -565,41 +554,11 @@ const publishRetry = PUBR.createPublishRetry({ write: G.atomicWrite, log, republ
 // ---------------------------------------------------------------------------
 
 function readJson(file, fallback) {
-  let text;
-  try {
-    text = fs.readFileSync(file, 'utf8');
-  } catch (e) {
-    if (e.code !== 'ENOENT') log(`${path.basename(file)}: cannot read it (${e.code || e.message}); starting from empty`);
-    return fallback;
-  }
-  try {
-    return JSON.parse(text);
-  } catch (e) {
-    const aside = `${file}.corrupt-${Date.now()}`;
-    let kept = true;
-    try {
-      fs.renameSync(file, aside);
-    } catch {
-      kept = false;
-    }
-    log(
-      `${path.basename(file)} is corrupt (${e.message}); ${kept ? `kept it as ${path.basename(aside)}` : 'could not move it aside'} and started from empty. To recover, stop the bridge, repair that copy, and put it back as ${path.basename(file)}.`,
-    );
-    return fallback;
-  }
+  return FS.readJson(file, fallback, { log, moveAside: true });
 }
 
 function durableWrite(file, content) {
-  const tmp = `${file}.${process.pid}.tmp`;
-  const fd = fs.openSync(tmp, 'w', PRIVATE_FILE_MODE);
-  try {
-    if (process.platform !== 'win32') fs.fchmodSync(fd, PRIVATE_FILE_MODE);
-    fs.writeSync(fd, content);
-    fs.fsyncSync(fd);
-  } finally {
-    fs.closeSync(fd);
-  }
-  fs.renameSync(tmp, file);
+  FS.atomicWrite(file, content, { mode: PRIVATE_FILE_MODE, fsync: true });
 }
 
 function saveState() {
@@ -619,19 +578,7 @@ const slotNumber = id => P.slotNumber(id, SLOTS);
 const alreadyHandled = job => P.alreadyHandled(state, job);
 const markHandled = job => P.markHandled(state, job);
 
-function atomicWrite(file, content) {
-  const tmp = file + '.tmp';
-  fs.writeFileSync(tmp, content);
-  fs.renameSync(tmp, file);
-}
-
-function isDirectory(p) {
-  try {
-    return fs.statSync(p).isDirectory();
-  } catch {
-    return false;
-  }
-}
+const atomicWrite = FS.atomicWrite;
 
 // Stop a run and whatever it spawned: an npm launcher runs the real binary as a
 // child of its own, an agent shells out to builds and test runs. procs.js: on
