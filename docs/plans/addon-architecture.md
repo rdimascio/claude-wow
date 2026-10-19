@@ -1,6 +1,6 @@
 # Plan: the ClaudeWoW addon as a modular, linted, measured codebase
 
-Status: revision 2 (2026-10-17). Phases 0 to 5 merged the same day (PRs #185 to #191); §6 has the numbers. Phase 6 is on `refactor/addon-state`; phases 7 to 9 and the bridge items in §8.2 are open. Reviewed `origin/main` at `f7f3a12`. Every number below was measured on that checkout with the commands named next to it; **(unverified)** marks a claim nobody has checked in the game client yet. Code references name functions, not line numbers.
+Status: revision 3 (2026-10-18). Phases 0 to 6 merged (PRs #185 to #191 and the `refactor/addon-state` PR); §6 has the numbers. Phase 7 is on `refactor/addon-render` (§6 has its bench numbers; the in-game `/claude diag` numbers are still to take); phases 8 and 9 and the bridge items in §8.2 are open. Reviewed `origin/main` at `f7f3a12`. Every number below was measured on that checkout with the commands named next to it; **(unverified)** marks a claim nobody has checked in the game client yet. Code references name functions, not line numbers.
 
 ## 1. What the review found
 
@@ -178,7 +178,21 @@ After Phase 5 (`origin/main` at `22e5b3b`, 2026-10-17), against the numbers in �
 | Unit tests | 1,440 (1,431 pass, 9 skipped) | 1,448 (1,439 pass, 9 skipped) |
 | Command behaviour pinned | by hand in 6 tables | `tests/fixtures/commands.json`, 52 verbs x 28 inputs from main, byte-equal |
 
-Still to take, before and after Phases 7 and 8: `/claude diag` addon memory and CPU after a fixed script (login, open the window, 20 messages in one chat, 5 chats), and `npm test` wall time with `tests/addon_test.js` alone (21.7 s on Node 24 before Phase 0).
+Phase 7 (`refactor/addon-render`, 2026-10-18), measured with `node dev/render-bench.js` in the test VM (`docs/plans/measurements/render.md` has the method): connect, 5 chats, 10 messages and 10 slot replies in one chat, 60 ticks with the window open, 10 chat switches.
+
+| Measure | Before (`a433d10`) | After phase 7 |
+|---|---|---|
+| `Render` calls | 63 | 63 |
+| bubble `SetText` calls | 1,596 | 216 |
+| chat-list `SetText` calls | 1,153 | 132 |
+| `GetStringHeight` calls | 1,430 | 171 |
+| chat-list rows laid out | 342 | 40 |
+| wall time in the stub (median of 5) | 541 ms | 499 ms |
+| Unit tests | 1,448 (1,439 pass, 9 skipped) | 1,523 (1,514 pass, 9 skipped) |
+
+The stub's text metrics are constants, so the counts are the result and the wall time is noise; in the game each `SetText` and `GetStringHeight` is a layout. `Tick` already called `Render` only on a connection change, so the idle ticks cost nothing before and after; the saving is in every render another path asks for. Same pixels: `tests/render_test.js` compares the incremental tree with a cold redraw after each of 32 steps.
+
+Still to take, before and after Phase 8: `/claude diag` addon memory and CPU in the game client after the same script, and `npm test` wall time with `tests/addon_test.js` alone (21.7 s on Node 24 before Phase 0).
 
 ## 7. Decisions for the owner
 
