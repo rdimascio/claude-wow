@@ -1541,8 +1541,6 @@ function extractMapBlocks(text) {
   return { text: stripped, cmds, errors };
 }
 
-// Commands the agent's tools appended to CLAUDE_WOW_MAP_FILE or
-// CLAUDE_WOW_UI_FILE (one JSON per line).
 function parseSideFile(kind, src) {
   const cmds = [],
     errors = [];

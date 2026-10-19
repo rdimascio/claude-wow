@@ -62,14 +62,28 @@ function readJson(file, fallback, { log = null, moveAside = false } = {}) {
   }
 }
 
-function pidAlive(pid) {
-  if (!Number.isSafeInteger(pid) || pid <= 0) return false;
+function probePid(pid) {
+  if (!Number.isSafeInteger(pid) || pid <= 0) return { alive: false, code: 'EINVAL' };
   try {
     process.kill(pid, 0);
-    return true;
+    return { alive: true, code: null };
   } catch (e) {
-    return e.code === 'EPERM';
+    const code = e && e.code ? e.code : 'ESRCH';
+    return { alive: code === 'EPERM', code };
   }
+}
+
+function pidAlive(pid) {
+  return probePid(pid).alive;
+}
+
+function isSameProcess(pid, startedAt, marker, { bootedAt, commandOf, platform = process.platform }) {
+  const probe = probePid(pid);
+  if (!probe.alive) return false;
+  if (!Number.isFinite(startedAt) || startedAt < bootedAt) return false;
+  const cmd = commandOf(pid);
+  if (cmd === null) return platform === 'win32' && probe.code !== 'EPERM';
+  return !!marker && cmd.includes(marker);
 }
 
 function isDirectory(p) {
@@ -80,4 +94,4 @@ function isDirectory(p) {
   }
 }
 
-module.exports = { atomicWrite, readJson, pidAlive, isDirectory };
+module.exports = { atomicWrite, readJson, probePid, pidAlive, isSameProcess, isDirectory };

@@ -113,6 +113,45 @@ test('pidAlive: EPERM means alive, the process exists but is not ours; ESRCH mea
   assert.equal(FS.pidAlive(4242), false);
 });
 
+test('probePid: alive with the code behind it, so a caller can tell our process from one of another user', t => {
+  assert.deepEqual(FS.probePid(process.pid), { alive: true, code: null });
+  assert.deepEqual(FS.probePid(0), { alive: false, code: 'EINVAL' });
+  assert.deepEqual(FS.probePid('12'), { alive: false, code: 'EINVAL' });
+  const fail = code => () => {
+    throw Object.assign(new Error(code), { code });
+  };
+  t.mock.method(process, 'kill', fail('EPERM'));
+  assert.deepEqual(FS.probePid(4242), { alive: true, code: 'EPERM' }, 'EPERM: the process exists and belongs to another user');
+  assert.equal(FS.pidAlive(4242), true, 'pidAlive keeps the boolean view');
+  process.kill.mock.mockImplementation(fail('ESRCH'));
+  assert.deepEqual(FS.probePid(4242), { alive: false, code: 'ESRCH' });
+  process.kill.mock.mockImplementation(() => {
+    throw new Error('no code');
+  });
+  assert.deepEqual(FS.probePid(4242), { alive: false, code: 'ESRCH' }, 'a throw without a code counts as gone');
+});
+
+test('isSameProcess: a same-boot lock from another user is not the same process when the command is unknown', t => {
+  const bootedAt = Date.now() - 60000;
+  const now = Date.now();
+  const same = (startedAt, command, platform) => FS.isSameProcess(4242, startedAt, 'bridge.js', { bootedAt, commandOf: () => command, platform });
+  t.mock.method(process, 'kill', () => {
+    throw Object.assign(new Error('EPERM'), { code: 'EPERM' });
+  });
+  assert.equal(same(now, null, 'win32'), false, 'EPERM with no command: another user, so no exit 3');
+  assert.equal(same(now, 'node bridge.js', 'darwin'), true, 'a readable command still decides');
+  assert.equal(same(now, 'node other.js', 'darwin'), false);
+  process.kill.mock.mockImplementation(() => undefined);
+  assert.equal(same(now, null, 'win32'), true, 'our own live process on Windows keeps the old answer');
+  assert.equal(same(now, null, 'darwin'), false, 'no command on a POSIX host is not the same process');
+  assert.equal(same(bootedAt - 1, null, 'win32'), false, 'a lock from before this boot is stale');
+  assert.equal(same(NaN, 'node bridge.js', 'darwin'), false);
+  process.kill.mock.mockImplementation(() => {
+    throw Object.assign(new Error('ESRCH'), { code: 'ESRCH' });
+  });
+  assert.equal(same(now, 'node bridge.js', 'darwin'), false, 'a dead pid is never the same process');
+});
+
 test('isDirectory: true for a folder, false for a file and for nothing', t => {
   const dir = scratch(t);
   const file = path.join(dir, 'f');

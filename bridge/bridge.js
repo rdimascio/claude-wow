@@ -248,11 +248,7 @@ function commandOf(pid) {
 }
 
 function isSameProcess(pid, startedAt, marker) {
-  if (!pidAlive(pid)) return false;
-  if (!Number.isFinite(startedAt) || startedAt < BOOTED_AT) return false;
-  const cmd = commandOf(pid);
-  if (cmd === null) return process.platform === 'win32';
-  return !!marker && cmd.includes(marker);
+  return FS.isSameProcess(pid, startedAt, marker, { bootedAt: BOOTED_AT, commandOf });
 }
 
 function readJsonQuiet(file) {
@@ -705,10 +701,6 @@ function applyToolMap(cmds) {
   return { changed, notes };
 }
 
-// A side file is where a run's tools append commands (one JSON per line) for a
-// surface; its ```blocks in the reply carry the same commands. Collect both,
-// apply them, and return the reply text without the blocks plus a note for the
-// reply, if anything was asked.
 function sideFile(kind, { dir, label, extract, apply, onChange }) {
   const fileFor = job => path.join(dir, `${String(job.chat || 'default').replace(/[^\w-]/g, '_')}-${job.id}.jsonl`);
   function take(job, text) {
