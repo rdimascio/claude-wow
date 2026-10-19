@@ -1,6 +1,6 @@
 # Plan: the ClaudeWoW addon as a modular, linted, measured codebase
 
-Status: revision 2 (2026-10-17). Phases 0 to 5 merged the same day (PRs #185 to #191); §6 has the numbers. Phases 6 to 9 and the bridge items in §8.2 are open. Reviewed `origin/main` at `f7f3a12`. Every number below was measured on that checkout with the commands named next to it; **(unverified)** marks a claim nobody has checked in the game client yet. Code references name functions, not line numbers.
+Status: revision 2 (2026-10-17). Phases 0 to 5 merged the same day (PRs #185 to #191); §6 has the numbers. Phase 6 is on `refactor/addon-state`; phases 7 to 9 and the bridge items in §8.2 are open. Reviewed `origin/main` at `f7f3a12`. Every number below was measured on that checkout with the commands named next to it; **(unverified)** marks a claim nobody has checked in the game client yet. Code references name functions, not line numbers.
 
 ## 1. What the review found
 
@@ -146,7 +146,7 @@ Each phase is one PR unless noted, lands with the full suite green, and changes 
 | 3 | `Chat/`: send, replies, grants, context, options, sessions. | L | medium | `addon_test.js`, `lootroll_test.js`, `polish5_*`, e2e permissions |
 | 4 | `Whisper/` and `UI/`: transcript, chat list, menu, minimap, markdown, popups through one factory. | L | low: UI code is leaf code | `window_addon_test.js`, `minimap_addon_test.js`, `naming_addon_test.js`, `options_addon_test.js` |
 | 5 | `Commands/Registry.lua`: one table per verb; `RunCommand` becomes a lookup; `COMMAND_ARGS`, `CLAUDE_VERBS`, `CONFIG_KEYS`, `CONFIG_HELP`, `MODULE_SUBCOMMANDS` and `ClaudeWoW.HELP` are derived from it. A test asserts every verb has args, help and a runner. | M | low | `addon_test.js` command cases, `options_addon_test.js`, the help page test |
-| 6 | `Core/State.lua`: `DEFAULTS`, ordered `MIGRATIONS` with a `db.schema` integer, `run` fields declared in one table, modules read settings through `ns.Settings`. | M | medium: migrations must reproduce today's flag logic exactly; a test loads each historical saved-variables shape | `polish5_v1_test.js` (whisper migrations), new migration fixtures |
+| 6 | `Core/State.lua`: `DEFAULTS`, ordered `MIGRATIONS` guarded by the legacy flags (no `db.schema` integer: a new field would change every install's saved data, which the fixture forbids), `run` fields declared in `RUN_FIELDS`, modules read settings through `ns.Settings`. Done: `tests/fixtures/state_migrations.json` holds `InitDB`'s result for 54 historical shapes, generated once from `origin/main`. | M | medium: migrations must reproduce today's flag logic exactly; a test loads each historical saved-variables shape | `polish5_v1_test.js` (whisper migrations), `state_migrations_test.js`, `run_fields_test.js` |
 | 7 | Render: dirty flags per chat, cached heights per message, append-only path, `Tick` never calls `Render` unless something changed. Measure with `/claude diag` before and after. | M | medium | numbers in `docs/plans/measurements/` |
 | 8 | Test speed: shared VM builder already in place; compile the addon once per test file with `string.dump` (`fengari` ships `ldump.js`) and load bytecode per test. Measure. | S | low | `npm test` wall time before and after |
 | 9 | Optional, owner decision: `StyLua` repo-wide with a `.git-blame-ignore-revs` entry; `ScrollBoxListMixin` for the transcript where the client has it **(verify on Era 11509)**. | M | low | — |
@@ -172,7 +172,7 @@ After Phase 5 (`origin/main` at `22e5b3b`, 2026-10-17), against the numbers in �
 | Addon Lua files | 17 | 48 (`Core/` 3, `Transport/` 6, `Chat/` 6, `Whisper/` 3, `UI/` 9, `Commands/` 4, `Boot.lua`, the features) |
 | Largest file | `ClaudeWoW.lua` | `Widgets.lua` 1,354 (unchanged), then `Chat/Options.lua` 1,271 |
 | Highest main-chunk locals | 189 | 83 (`Orders.lua`) |
-| Private copies of `Try` / `Print` / `Settings` | 6 / 7 / 5 | 0 / 0 / 6 (`Settings` is Phase 6) |
+| Private copies of `Try` / `Print` / `Settings` | 6 / 7 / 5 | 0 / 0 / 6 after Phase 5; 0 / 0 / 0 after Phase 6 (`ns.Settings`, `ns.Setting`; `Roast.lua` and `Stream.lua` keep a `RoastDB` / `StreamDB` helper for their own tables, read through `ns.db`) |
 | `if ClaudeWoWX then` guards in the core file | 22 | 1 (the rest moved with their code) |
 | Lua lint and formatter | none | `luacheck` 0 warnings on 48 files, StyLua checked, both in CI; 7 findings fixed in Phase 0 |
 | Unit tests | 1,440 (1,431 pass, 9 skipped) | 1,448 (1,439 pass, 9 skipped) |

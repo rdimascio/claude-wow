@@ -127,9 +127,10 @@ function T.CharacterKey()
 end
 
 local function Root()
-	if type(ClaudeWoWDB) ~= "table" then return nil end
-	if type(ClaudeWoWDB.telemetry) ~= "table" then ClaudeWoWDB.telemetry = {} end
-	local root = ClaudeWoWDB.telemetry
+	local db = ns.db
+	if not db then return nil end
+	if type(db.telemetry) ~= "table" then db.telemetry = {} end
+	local root = db.telemetry
 	if type(root.chars) ~= "table" then root.chars = {} end
 	return root
 end
@@ -177,7 +178,7 @@ function T.Sanitize()
 	for i = 1, math.min(#list, T.CHARS_MAX) do
 		chars[list[i].key] = list[i].c
 	end
-	ClaudeWoWDB.telemetry = { seq = WholeNumber(root.seq) or 0, chars = chars }
+	ns.db.telemetry = { seq = WholeNumber(root.seq) or 0, chars = chars }
 end
 
 function T.Hash(s)
@@ -337,12 +338,10 @@ end
 
 local Print = ns.Say
 
-function T.IsOn() return not (type(ClaudeWoWDB) == "table" and type(ClaudeWoWDB.settings) == "table" and ClaudeWoWDB.settings.telemetry == false) end
+function T.IsOn() return ns.Settings("telemetry") ~= false end
 
 function T.SetOn(on)
-	if type(ClaudeWoWDB) ~= "table" then return end
-	ClaudeWoWDB.settings = type(ClaudeWoWDB.settings) == "table" and ClaudeWoWDB.settings or {}
-	ClaudeWoWDB.settings.telemetry = on and true or false
+	if not ns.Setting("telemetry", on and true or false) then return end
 	if on then state.hint = true end
 end
 
@@ -374,12 +373,7 @@ function T.Command(rest, ctx)
 end
 
 local function Enabled()
-	return state.bridge
-		and type(ClaudeWoWDB) == "table"
-		and type(ClaudeWoWDB.session) == "string"
-		and not (type(ClaudeWoWDB.settings) == "table" and ClaudeWoWDB.settings.context == false)
-		and not state.refusedMine
-		and T.IsOn()
+	return state.bridge and ns.db ~= nil and type(ns.db.session) == "string" and ns.Settings("context") ~= false and not state.refusedMine and T.IsOn()
 end
 
 local function SentLastHour(now)
@@ -403,7 +397,7 @@ function T.Record(room)
 	local root, key = Root(), T.CharacterKey()
 	if not root or not key then return nil end
 	local seq = math.max((WholeNumber(root.seq) or 0) + 1, time())
-	local head = table.concat({ (ClaudeWoWDB.session:gsub("[\30\31]", " ")), "", Int(seq), "", "kind=" .. T.KIND, key, T.VERSION }, US)
+	local head = table.concat({ (ns.db.session:gsub("[\30\31]", " ")), "", Int(seq), "", "kind=" .. T.KIND, key, T.VERSION }, US)
 	local limit = math.min(room, T.RECORD_MAX)
 	if #head > limit then return nil, nil, true end
 	local sections = T.Sections()
@@ -488,7 +482,7 @@ function T.Lost(rec) return Settle(rec, true) end
 
 local function Entry(gs)
 	local key = T.CharacterKey()
-	local session = type(ClaudeWoWDB) == "table" and ClaudeWoWDB.session
+	local session = ns.db and ns.db.session
 	for _, e in ipairs(type(gs.chars) == "table" and gs.chars or {}) do
 		if type(e) == "table" and e.character == key and e.session == session and type(e.hashes) == "table" then return e end
 	end

@@ -196,7 +196,7 @@ H.DIM_CHOICES = { { "off", "Off" }, { "80", "80%" }, { "60", "60%" }, { "35", "3
 H.ECHO_CHOICES = { { "summary", "Summary" }, { "short", "Short" }, { "full", "Full" }, { "off", "Off" } }
 H.VOICE_LABELS = { race = "Your race", peasant = "Peasant", peon = "Peon", off = "Off" }
 
-local function Saved() return (type(ClaudeWoWDB) == "table" and type(ClaudeWoWDB.settings) == "table") and ClaudeWoWDB.settings or {} end
+local function Saved() return ns.db and ns.db.settings or {} end
 
 H.QUIET = { quiet = true }
 
@@ -218,7 +218,7 @@ local function MapNodes(kind)
 end
 
 local function VoicePack()
-	local voice = type(ClaudeWoWDB) == "table" and type(ClaudeWoWDB.voice) == "table" and ClaudeWoWDB.voice.pack
+	local voice = ns.db and type(ns.db.voice) == "table" and ns.db.voice.pack
 	return type(voice) == "string" and voice or "race"
 end
 
@@ -319,7 +319,7 @@ H.OPTIONS = {
 		default = false,
 		module = "ClaudeWoWRoast",
 		tooltip = "When you die, the agent gets the death recap and writes a short roast in its own chat.",
-		get = function() return type(ClaudeWoWDB) == "table" and type(ClaudeWoWDB.roast) == "table" and ClaudeWoWDB.roast.on == true end,
+		get = function() return ns.db ~= nil and type(ns.db.roast) == "table" and ns.db.roast.on == true end,
 		set = Switch("roast"),
 	},
 	{

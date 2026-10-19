@@ -33,17 +33,15 @@ local toast
 
 local Print = ns.Print
 
-local function Settings()
-	local db = ClaudeWoWDB
-	if type(db) ~= "table" then return nil end
-	db.settings = db.settings or {}
-	if db.settings.toasts == nil then db.settings.toasts = true end
-	return db.settings
+local function ToastsSetting()
+	if not ns.db then return nil end
+	if ns.Settings("toasts") == nil then ns.Setting("toasts", true) end
+	return ns.Settings("toasts")
 end
 
 local function Store()
-	local db = ClaudeWoWDB
-	if type(db) ~= "table" then return nil end
+	local db = ns.db
+	if not db then return nil end
 	db.achievements = db.achievements or {}
 	local store = db.achievements
 	store.earned = store.earned or {}
@@ -52,10 +50,7 @@ local function Store()
 	return store
 end
 
-function T.ToastsOn()
-	local s = Settings()
-	return not s or s.toasts ~= false
-end
+function T.ToastsOn() return ToastsSetting() ~= false end
 
 local function PlayAchievementSound()
 	local ok, willPlay = pcall(PlaySoundFile, ACHIEVEMENT_SOUND_FILE_ID, "Master")
@@ -251,9 +246,9 @@ local SAMPLE = { title = "Achievement Unlocked", text = "You looked at a sample 
 
 function T.Command(rest, ctx)
 	rest = tostring(rest or ""):lower()
-	local s = Settings()
+	ToastsSetting()
 	if rest == "on" or rest == "off" then
-		if s then s.toasts = rest == "on" end
+		ns.Setting("toasts", rest == "on")
 		if rest == "off" then wipe(queue) end
 		if type(ctx) == "table" and ctx.quiet == true then return end
 		Print("Achievement toasts are " .. rest .. ". /claude config achievements lists what you earned.")

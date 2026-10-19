@@ -320,9 +320,9 @@ local function IsIn(list, value)
 end
 
 local function DB()
-	ClaudeWoWDB = ClaudeWoWDB or {}
-	local settings = ClaudeWoWDB.voice or {}
-	ClaudeWoWDB.voice = settings
+	local db = ns.db or {}
+	local settings = db.voice or {}
+	db.voice = settings
 	if not IsIn(PACK_NAMES, settings.pack) then settings.pack = DEFAULT_PACK end
 	settings.lines = settings.lines or {}
 	return settings

@@ -37,10 +37,11 @@ local trackTimerArmed = false
 local commandQueue = {}
 local ev = CreateFrame("Frame")
 
-local function Settings()
-	if type(ClaudeWoWDB) ~= "table" then return nil end
-	if type(ClaudeWoWDB.stream) ~= "table" then ClaudeWoWDB.stream = {} end
-	local s = ClaudeWoWDB.stream
+local function StreamDB()
+	local db = ns.db
+	if not db then return nil end
+	if type(db.stream) ~= "table" then db.stream = {} end
+	local s = db.stream
 	for key in pairs(s) do
 		if key ~= "follow" and key ~= "chat" then s[key] = nil end
 	end
@@ -111,9 +112,9 @@ function S.Encode(v)
 end
 
 local function FindStreamChat()
-	local s = Settings()
-	if not s or not s.chat or type(ClaudeWoWDB.chats) ~= "table" then return nil end
-	for _, c in ipairs(ClaudeWoWDB.chats) do
+	local s = StreamDB()
+	if not s or not s.chat or type(ns.db.chats) ~= "table" then return nil end
+	for _, c in ipairs(ns.db.chats) do
 		if c.id == s.chat then return c end
 	end
 end
@@ -124,7 +125,7 @@ function S.EnsureChat()
 		if not (ClaudeWoW and ClaudeWoW.AddChat) then return nil end
 		chat = ClaudeWoW.AddChat(S.CHAT_NAME, { cwd = "", plugin = S.PLUGIN, quiet = true })
 		if not chat then return nil end
-		Settings().chat = chat.id
+		StreamDB().chat = chat.id
 	end
 	chat.quiet = true
 	chat.plugin = S.PLUGIN
@@ -132,9 +133,9 @@ function S.EnsureChat()
 end
 
 local function WhyNotSend()
-	if not Settings() then return "the addon has not loaded its saved data yet" end
+	if not StreamDB() then return "the addon has not loaded its saved data yet" end
 	if not (ClaudeWoW and ClaudeWoW.Send) then return "the addon core did not load" end
-	if ClaudeWoWDB.settings and ClaudeWoWDB.settings.mode ~= "pixel" then return "reload mode sends nothing without a /reload" end
+	if ns.Settings("mode") ~= "pixel" then return "reload mode sends nothing without a /reload" end
 	if not (ClaudeWoW.IsConnected and ClaudeWoW.IsConnected()) then return "the companion app is not connected" end
 	return nil
 end
@@ -224,10 +225,11 @@ function S.CurrentQuest()
 end
 
 function S.CurrentChatTitle()
-	if type(ClaudeWoWDB) ~= "table" or type(ClaudeWoWDB.chats) ~= "table" then return nil end
-	local s = Settings()
-	for _, c in ipairs(ClaudeWoWDB.chats) do
-		if c.id == ClaudeWoWDB.activeChat then
+	local db = ns.db
+	if not db or type(db.chats) ~= "table" then return nil end
+	local s = StreamDB()
+	for _, c in ipairs(db.chats) do
+		if c.id == db.activeChat then
 			if s and c.id == s.chat then return nil end
 			local title = S.Clip(c.name, S.MAX_CHAT_TITLE_CHARS)
 			return title ~= "" and title or nil
@@ -299,7 +301,7 @@ function S.Pump(now)
 end
 
 function S.Update(now)
-	local s = Settings()
+	local s = StreamDB()
 	if not (s and s.follow) then
 		pendingTrack = nil
 		return
@@ -360,7 +362,7 @@ local function PrintUsage(problem)
 end
 
 local function SetFollow(on)
-	local s = Settings()
+	local s = StreamDB()
 	if not s then return end
 	s.follow = on
 	if not on then pendingTrack = nil end
@@ -376,7 +378,7 @@ function S.SlashCommand(msg)
 		PrintUsage()
 		return
 	end
-	if not Settings() then
+	if not StreamDB() then
 		Say("The addon has not loaded its saved data yet.")
 		return
 	end
@@ -405,7 +407,7 @@ function S.SlashCommand(msg)
 			SetFollow(on)
 			if S.Command(S.Encode(S.Object("action", "follow", "on", on))) and on then S.ForceTrack() end
 		else
-			Say("Follow is " .. (Settings().follow and "on" or "off") .. ".")
+			Say("Follow is " .. (StreamDB().follow and "on" or "off") .. ".")
 			PrintUsage()
 		end
 	else
@@ -414,7 +416,7 @@ function S.SlashCommand(msg)
 end
 
 local function OnChatShown()
-	local s = Settings()
+	local s = StreamDB()
 	if not (s and s.follow) then return end
 	local title = S.CurrentChatTitle()
 	if title == S.lastChatTitle then return end
@@ -442,7 +444,7 @@ ev:RegisterEvent("PLAYER_LOGIN")
 ev:SetScript("OnEvent", function(self, event)
 	if event == "PLAYER_LOGIN" then
 		S.Install()
-		Settings()
+		StreamDB()
 		return
 	end
 	S.Update()
