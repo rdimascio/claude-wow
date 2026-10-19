@@ -46,7 +46,8 @@ addon/ClaudeWoW/     the in-game addon (Lua 5.1, WoW API); every file reads `loc
   Bindings.xml          the "open or close the workspace" key binding
   ClaudeWoW.toc
 bridge/               the companion process (Node.js; the Chat SDK packages are its only runtime dependencies)
-  bridge.js             I/O, processes, publishing
+  bridge.js             I/O, processes, the agent runs
+  publisher.js          slot publishing: `createPublisher({ state, live, clients, fields, ... })` writes Inbox.lua and the slot files, keeps and restores replies, fires signal files
   protocol.js           re-export barrel over proto/: every importer reads `require('./protocol')`
   proto/                the pure protocol code, one file per concern
     util.js               shared helpers: the addon names, luaStr, cleanText, folder resolution
@@ -134,6 +135,7 @@ To try changes in the game, run `node setup.js` (it re-copies the addon into `In
 | `node --test tests/agents_test.js` | `bridge/agents.js`: the command line built for each agent and permission mode, the prompt delivery (stdin, prompt file, context block), a sample of each CLI's real stream (Claude stream-json, Codex `exec --json`, Grok streaming-json, agy stream-json, Hermes plain text) read back into progress lines, session id, denials and reply, and the unwrapping of npm's Windows launchers. |
 | `node --test tests/localagent_test.js` | `bridge/localagent.js` against a fake OpenAI server and a fake MCP server (no model, no network): the request it sends, tool calls over stdio, the tool-step limit, resume from the session file, error results, and the stream read back by the local agent's parser. `tests/e2e/localagent_test.js` runs an ask chat through the sandboxed bridge with the real wowdata server. |
 | `node --test tests/restore_test.js` | Slot files are valid Lua and read back field by field, including a restore bundle. |
+| `node --test tests/publisher_test.js` | `bridge/publisher.js` over a scratch game folder, no bridge process: `Inbox.lua` and every slot file carry both chats in order with the shared and per-client fields, a shared field that throws is logged and left out, `keepReply` keeps only final replies (newest 10, a failed save logged), `restoreReplies` drops stale and unfinished ones and gives an unknown client the default, the progress throttle and its timer, signal files armed and fired, the restore bundle dropped after three publishes that carried it, a missing addon folder logged once, the toc read once per change, and the character map in the slots only while shared and small. |
 | `node --test tests/map_test.js` | The map protocol in `proto/map.js`: command validation and sanitizing, versioned application and budgets, ```` ```wowmap ```` blocks and map files, and the `map` table in slot files read back in a Lua VM. |
 | `node --test tests/map_addon_test.js` | The real `Map.lua` (with `ClaudeWoW.lua`) in a Lua VM: sync and versions, pin projection on zone and continent maps, the navigator's yards, bearing and auto-advance, herb/ore nodes filtered by skill, and `/claude config map`. |
 | `node --test tests/voice_test.js` | The real `Voice.lua` (with `ClaudeWoW.lua`) in a Lua VM: every classic race and gender has every line, each pack covers every event, the lines played on send, pick-up, reply, error and permission, the throttle, and `/claude config voice`. |

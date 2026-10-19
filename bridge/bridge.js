@@ -57,7 +57,6 @@ const SS = require('./sessions');
 const CQ = require('./chatqueue');
 const DH = require('./chathub');
 const PJ = require('./projects');
-const G = require('./gamefs');
 const FS = require('./fsutil');
 const SIG = require('./signals');
 const DM = require('./datamcp');
@@ -78,7 +77,7 @@ let roomClient = null;
 let roomDownTimer = null;
 const CLI = require('./clients');
 const SW = require('./slotwindow');
-const PUBR = require('./publishretry');
+const { createPublisher, addonSessionOfKey, FINAL_STATUSES } = require('./publisher');
 
 // The plugins this bridge has (docs/PLATFORM.md). Registration order is the
 // order match() is asked in, and the first one is the default unless
@@ -378,8 +377,6 @@ if (P.pruneStale(state, transcripts)) {
   saveState();
   saveTranscripts();
 } else if (adoptedLegacyState) saveState();
-let pendingRestore = null;
-
 function saveTranscripts() {
   try {
     durableWrite(TRANSCRIPT_FILE, JSON.stringify(transcripts));
@@ -445,10 +442,6 @@ function clientFor(job) {
   return r ? r.client : null;
 }
 
-function restoreFor(client) {
-  return pendingRestore && (!pendingRestore.client || pendingRestore.client === client.key) ? pendingRestore : null;
-}
-
 function maybeOfferRestore(job) {
   const tokenKey = job.char ? `${job.session}#${job.char}` : job.session;
   if (!job.session || transcripts.tokens[tokenKey]) return;
@@ -474,7 +467,7 @@ function maybeOfferRestore(job) {
     }));
   saveTranscripts();
   if (chats.length) {
-    pendingRestore = { token: job.session, char: job.char || '', chats, client: job.client || '' };
+    publisher.offerRestore({ token: job.session, char: job.char || '', chats, client: job.client || '' });
     log(`new addon session ${job.session}: offering ${chats.length} chat(s) to restore`);
   }
 }
@@ -499,6 +492,7 @@ function forgetChat(job) {
   unlinkDiscord(job.chat);
   if (state.lastRuns) delete state.lastRuns[sessKey(job)];
   devNotes.delete(chatKey(job));
+  const pendingRestore = publisher.pendingRestore();
   if (pendingRestore) pendingRestore.chats = pendingRestore.chats.filter(c => c.id !== job.chat);
   saveTranscripts();
   log(`#${job.id}${job.session ? '@' + job.session : ''} forgot chat ${job.chat}${had ? '' : ' (nothing stored)'}`);
@@ -542,9 +536,6 @@ const running = new Map(); // chatKey -> { job, child }
 const queued = CQ.createChatQueue();
 const live = new Map(); // chatKey -> latest record shown to the game
 let lastActivityAt = Date.now();
-let lastPublish = 0;
-let publishTimer = null;
-const publishRetry = PUBR.createPublishRetry({ write: G.atomicWrite, log, republish: () => publishNow(true, { refresh: true }) });
 
 // ---------------------------------------------------------------------------
 // Small utilities
@@ -570,7 +561,7 @@ function log(...parts) {
   } catch {}
 }
 
-const { pad3, chatKey, sessKey, jobsFromStrip } = P;
+const { chatKey, sessKey, jobsFromStrip } = P;
 const slotNumber = id => P.slotNumber(id, SLOTS);
 const alreadyHandled = job => P.alreadyHandled(state, job);
 const markHandled = job => P.markHandled(state, job);
@@ -674,21 +665,6 @@ const MAP_DIR = HOME.mapjobs;
 const MAP_SHARE_MS = 3 * 60 * 1000;
 const MAP_PROGRESS_MAX = 20000;
 const mapShare = MH.createMapShare({ state, shareMs: MAP_SHARE_MS, save: () => saveState() });
-const mapLuaSizes = new Map();
-function mapLuaSize(map) {
-  const hit = mapLuaSizes.get(map);
-  if (hit && hit.version === map.version && hit.epoch === map.epoch) return hit.size;
-  const size = P.luaMap(map).length;
-  mapLuaSizes.set(map, { version: map.version, epoch: map.epoch, size });
-  return size;
-}
-
-function slotMap(client, urgent) {
-  const key = clientStateOf(client).char || characterKeyOf(CLI.contextText(state, client.key));
-  const map = mapFor(key);
-  if (!key && !Object.keys(map.layers).length) return null;
-  return mapShare.inSlots({ urgent, size: mapLuaSize(map), progressMax: MAP_PROGRESS_MAX }) ? map : null;
-}
 
 function applyToolMap(cmds) {
   const map = mapFor(runGrantCharacter());
@@ -762,87 +738,6 @@ const widgetFileFor = widgetSide.fileFor;
 const takeWidgetCommands = widgetSide.take;
 
 const BRIDGE_INFO = P.bridgeInfo();
-
-function addonOnDisk(client) {
-  const r = rtOf(client.key);
-  const toc = path.join(client.addonDir, P.ADDON, P.ADDON + '.toc');
-  try {
-    const st = fs.statSync(toc);
-    const key = `${st.mtimeMs}:${st.size}:${st.ino}`;
-    if (r.diskCache.key !== key) r.diskCache = { key, info: P.addonDiskInfo(fs.readFileSync(toc, 'utf8')) };
-    return r.diskCache.info;
-  } catch {
-    return null;
-  }
-}
-
-function sharedSlotFields(urgent) {
-  const widgets = Date.now() < widgetShareUntil && (urgent || widgetSourceBytes() <= WIDGET_PROGRESS_MAX) ? state.widgets : null;
-  const transportNote = TRANSPORT_SOURCE === 'fallback' ? P.transportNote(state.transportFallback) : '';
-  const achievementsLua = ACHIEVEMENTS_ON ? ACH.luaAchievements(state) : '';
-  const lp = livePlugin();
-  const liveInfo = lp ? { sessions: lp.status(), start: liveStartCommand() } : null;
-  const goalsLua = goalStore.slotLua();
-  let dmLua = '';
-  try {
-    dmLua = campaignStore.slotLua();
-  } catch (e) {
-    log(`campaign: slot field dm left out (${e && e.message ? e.message : e})`);
-  }
-  let gsLua = '';
-  if (TELEMETRY_ON) {
-    try {
-      gsLua = telemetry.luaGs();
-    } catch (e) {
-      log(`telemetry: slot field gs left out (${e && e.message ? e.message : e})`);
-    }
-  }
-  return {
-    live: liveInfo,
-    sessions: sessionList(),
-    projects: projectList(),
-    mcp: mcpSlotList(),
-    contract: AC.slotField(contracts.current(), { codexConfig: CODEX_OWN_MCP.length > 0 }),
-    home: os.homedir(),
-    skills: FACTORY.slotSkills(FACTORY.settings(pluginsCfg['claude-code'])),
-    discord: !!discordHub,
-    mirror: discordMirror().concat(roomMirror()),
-    cwd: DEFAULT_CWD,
-    agent: DEFAULT_AGENT,
-    agents: A.agentIds(),
-    efforts: A.effortDefaults(cfg, registry.ids(), core.options),
-    effortLock: A.effortLocks(process.env),
-    plugin: DEFAULT_PLUGIN,
-    plugins: registry.ids(),
-    widgets,
-    transport: TRANSPORT,
-    levels: LEVELS,
-    codec: STRIP_CODEC,
-    transportNote,
-    achievementsLua,
-    goalsLua,
-    dmLua,
-    gsLua,
-    openUrl: linkOpener.available,
-    bridge: BRIDGE_INFO,
-  };
-}
-
-function slotFile(globalName, records, shared, client) {
-  const r = rtOf(client.key);
-  const clients = CLI.slotClients(CLIENTS, state, client.key, { diskOf: addonOnDisk });
-  return P.luaTable(globalName, records, {
-    ...shared,
-    restore: restoreFor(client),
-    chatlog: chatLogSlot(client),
-    acks: P.recentAcks(r.acks),
-    presence: presenceInfo(client),
-    addonDisk: addonOnDisk(client),
-    clients,
-    runLimit: RUN_LIMIT_SECONDS,
-    alive: aliveRuns(client),
-  });
-}
 
 function recentClaudeSessions() {
   if (cfg.claudeSessions === false) return [];
@@ -1028,97 +923,6 @@ function addonInstalled(client) {
   return fs.existsSync(path.join(client.addonDir, 'ClaudeWoW', 'ClaudeWoW.toc'));
 }
 
-function slotsInstalled(client) {
-  return fs.existsSync(path.join(client.addonDir, 'ClaudeWoW_S001', 'Inbox.lua'));
-}
-
-// The game will load *some* unused slot next, so every slot gets the full picture.
-// A missing addon folder (not installed yet, or the game folder moved) must not
-// take the bridge down: capture and agent runs keep working, and the game just
-// won't see replies until `node setup.js` has run and WoW was restarted.
-function publishClient(r, records, shared) {
-  const c = r.client;
-  const batch = publishRetry.begin(c.key);
-  const inboxError = batch.write(c.inboxFile, slotFile('ClaudeWoW_Inbox', records, shared, c));
-  if (inboxError && !batch.locked()) {
-    batch.end();
-    if (!r.warnedNoAddon) {
-      r.warnedNoAddon = true;
-      log(G.publishFailureNote(c.inboxFile, c.label, inboxError));
-    }
-    return false;
-  }
-  const slots = slotsInstalled(c);
-  if (slots) {
-    const body = slotFile('ClaudeWoW_SlotData', records, shared, c);
-    for (let i = 1; i <= SLOTS; i++) batch.write(path.join(c.addonDir, 'ClaudeWoW_S' + pad3(i), 'Inbox.lua'), body);
-  }
-  batch.end(inLabel(c));
-  return slots;
-}
-
-function publishNow(urgent = true, { refresh = false } = {}) {
-  lastPublish = Date.now();
-  const all = SW.windowRecords(live, addonSessionOfKey);
-  const shared = sharedSlotFields(urgent);
-  let restoreSent = false;
-  for (const r of CLIENT_RT.values()) {
-    if (publishClient(r, CLI.recordsFor(all, r.client.key), { ...shared, map: slotMap(r.client, urgent) }) && restoreFor(r.client)) restoreSent = true;
-  }
-  // The restore bundle is large; it rides along once and is then dropped.
-  // (The game keeps loading fresh slots until it has read one carrying it.)
-  pendingRestore = SW.restoreAfterPublish(pendingRestore, { refresh, restoreSent });
-}
-
-const REPLIES_KEPT = 10;
-const REPLY_KEEP_MS = 24 * 60 * 60 * 1000;
-const FINAL_STATUSES = new Set(['done', 'error']);
-
-function keepReply(key, record) {
-  const kept = state.replies && typeof state.replies === 'object' ? state.replies : {};
-  const had = Object.prototype.hasOwnProperty.call(kept, key);
-  delete kept[key];
-  if (FINAL_STATUSES.has(record.status)) kept[key] = { at: Date.now(), record };
-  else if (!had) return;
-  const keys = Object.keys(kept);
-  for (const old of keys.slice(0, Math.max(0, keys.length - REPLIES_KEPT))) delete kept[old];
-  if (Object.keys(kept).length) state.replies = kept;
-  else delete state.replies;
-  try {
-    saveState();
-  } catch (e) {
-    log(`could not save the latest reply to state.json (${e.message})`);
-  }
-}
-
-function restoreReplies() {
-  const kept = state.replies && typeof state.replies === 'object' ? state.replies : {};
-  const now = Date.now();
-  const fresh = {};
-  for (const [key, entry] of Object.entries(kept)) {
-    const r = entry && entry.record;
-    if (!r || typeof r !== 'object' || !FINAL_STATUSES.has(r.status) || !Number.isInteger(r.id) || !(now - entry.at < REPLY_KEEP_MS)) continue;
-    if (!rtOf(r.client)) {
-      const fallback = defaultClient();
-      if (!fallback) continue;
-      r.client = fallback.key;
-    }
-    fresh[key] = entry;
-    live.set(key, r);
-  }
-  const restored = Object.keys(fresh).length;
-  if (restored !== Object.keys(kept).length) {
-    if (restored) state.replies = fresh;
-    else delete state.replies;
-    saveState();
-  }
-  if (restored)
-    log(`republishing ${restored} finished repl${restored === 1 ? 'y' : 'ies'} from before the restart, so a reply the game has not read yet is not lost`);
-}
-
-function addonSessionOfKey(key) {
-  return String(key).split(':')[0];
-}
 function noteAddonSession(job) {
   const r = rtOf(job.client);
   const token = typeof job.session === 'string' ? job.session : '';
@@ -1153,43 +957,6 @@ function noteAddonSession(job) {
   );
 }
 
-// Final results publish immediately; progress is throttled. `key` is the chat
-// (record.session is the agent's session id, a different thing).
-function publish(key, record, urgent) {
-  const named = titles.get(key);
-  if (named && !record.title) {
-    record.title = named.title;
-    record.titleFor = named.id;
-  }
-  SW.place(live, key, record);
-  keepReply(key, record);
-  if (urgent) {
-    if (publishTimer) {
-      clearTimeout(publishTimer);
-      publishTimer = null;
-    }
-    publishNow();
-    return;
-  }
-  const wait = (cfg.progressWriteMs || 3000) - (Date.now() - lastPublish);
-  if (wait <= 0) publishNow(false);
-  else if (!publishTimer)
-    publishTimer = setTimeout(() => {
-      publishTimer = null;
-      publishNow(false);
-    }, wait);
-}
-
-function setSignalFile(file, on) {
-  if (on) SIG.fire(file);
-  else SIG.arm(file);
-}
-
-function signal(client, kind, id, on) {
-  if (!client) return;
-  setSignalFile(SIG.signalFile(client.addonDir, kind, slotNumber(id)), on);
-}
-
 function openLink(job) {
   const chat = P.CHAT_ID_RE.test(String(job.chat)) ? OU.chatFor(transcripts.chats, job.chat) : null;
   const answer = result => {
@@ -1217,6 +984,51 @@ function aliveRuns(client) {
   for (const entry of held.values()) if (mine(entry.job)) runs.push({ session: entry.job.session, id: entry.job.id, since: 0 });
   return runs;
 }
+
+const publisher = createPublisher({
+  state,
+  live,
+  cfg,
+  log,
+  saveState,
+  slots: SLOTS,
+  clients: { list: CLIENTS, runtimes: CLIENT_RT, defaultClient, inLabel },
+  titleOf: key => titles.get(key),
+  map: { mapFor, share: mapShare, characterKeyOf, progressMax: MAP_PROGRESS_MAX },
+  fields: {
+    widgets: urgent => (Date.now() < widgetShareUntil && (urgent || widgetSourceBytes() <= WIDGET_PROGRESS_MAX) ? state.widgets : null),
+    transportNote: () => (TRANSPORT_SOURCE === 'fallback' ? P.transportNote(state.transportFallback) : ''),
+    achievementsLua: () => (ACHIEVEMENTS_ON ? ACH.luaAchievements(state) : ''),
+    live: () => {
+      const lp = livePlugin();
+      return lp ? { sessions: lp.status(), start: liveStartCommand() } : null;
+    },
+    goalsLua: () => goalStore.slotLua(),
+    dmLua: () => campaignStore.slotLua(),
+    gsLua: () => (TELEMETRY_ON ? telemetry.luaGs() : ''),
+    sessions: () => sessionList(),
+    projects: () => projectList(),
+    mcp: () => mcpSlotList(),
+    contract: () => AC.slotField(contracts.current(), { codexConfig: CODEX_OWN_MCP.length > 0 }),
+    skills: () => FACTORY.slotSkills(FACTORY.settings(pluginsCfg['claude-code'])),
+    discord: () => !!discordHub,
+    mirror: () => discordMirror().concat(roomMirror()),
+    cwd: () => DEFAULT_CWD,
+    agent: () => DEFAULT_AGENT,
+    agents: () => A.agentIds(),
+    efforts: () => A.effortDefaults(cfg, registry.ids(), core.options),
+    effortLock: () => A.effortLocks(process.env),
+    plugin: () => DEFAULT_PLUGIN,
+    plugins: () => registry.ids(),
+    transport: () => TRANSPORT,
+    levels: () => LEVELS,
+    codec: () => STRIP_CODEC,
+    openUrl: () => linkOpener.available,
+    bridge: () => BRIDGE_INFO,
+  },
+  perClient: { chatlog: chatLogSlot, presence: presenceInfo, alive: aliveRuns, runLimit: RUN_LIMIT_SECONDS },
+});
+const { publish, publishNow, keepReply, restoreReplies, slotsInstalled, signal, setSignalFile } = publisher;
 
 function pendingIds(client) {
   const mine = job => job && job.client === client.key;
@@ -1323,7 +1135,7 @@ function presenceBeat(only) {
   for (const c of only ? [only] : CLIENTS) if (presenceBeatClient(c)) beaten++;
   if (!beaten) return;
   saveState();
-  if (Date.now() - lastPublish >= PRESENCE_INTERVAL_MS) publishNow(false, { refresh: true });
+  if (Date.now() - publisher.lastPublishAt() >= PRESENCE_INTERVAL_MS) publishNow(false, { refresh: true });
 }
 function presenceInfo(client) {
   if (!presenceReady(client)) return null;
@@ -1585,7 +1397,7 @@ function submit(job) {
     mapShare.touch();
     widgetShareUntil = Date.now() + WIDGET_SHARE_MS;
     publishNow();
-    log(`hello from session ${job.session}${inLabel(client)}${pendingRestore ? ' (restore offered)' : ''}`);
+    log(`hello from session ${job.session}${inLabel(client)}${publisher.pendingRestore() ? ' (restore offered)' : ''}`);
     return;
   }
   admit(job);
