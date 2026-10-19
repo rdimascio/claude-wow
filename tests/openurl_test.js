@@ -363,6 +363,7 @@ test('a request whose chat resolves to Object.prototype is refused', async () =>
   const owned = await o.request(job(PR, { client: 'k1' }), borrowed);
   assert.equal(owned.opened, true, 'an inherited client field is not the owner of the chat');
   calls.length = 0;
+  // oxlint-disable-next-line no-extend-native
   Object.prototype.links = [PR];
   try {
     const r = await o.request(job(PR), {});

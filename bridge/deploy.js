@@ -6,6 +6,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const H = require('./home');
 const R = require('./runtime');
+const FS = require('./fsutil');
 const REL = require('./releases');
 const I = require('./idle');
 const SVC = require('./service');
@@ -80,13 +81,7 @@ function tail(text, n = OUTPUT_TAIL_LINES) {
     .join('\n');
 }
 
-function isDir(p) {
-  try {
-    return fs.statSync(p).isDirectory();
-  } catch {
-    return false;
-  }
-}
+const isDir = FS.isDirectory;
 
 function bunPath(env = process.env, home = os.homedir()) {
   if (env.BUN) return env.BUN;

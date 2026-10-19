@@ -5,6 +5,7 @@ const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 const H = require('./home');
+const FS = require('./fsutil');
 
 const BINARY = process.platform === 'win32' ? 'claude-wow.exe' : 'claude-wow';
 const RELEASES_DIR = 'releases';
@@ -131,18 +132,7 @@ function writeDurable(file, text) {
   }
 }
 
-function writeAtomic(file, text) {
-  const tmp = `${file}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`;
-  fs.writeFileSync(tmp, text);
-  try {
-    fs.renameSync(tmp, file);
-  } catch (e) {
-    try {
-      fs.unlinkSync(tmp);
-    } catch {}
-    throw e;
-  }
-}
+const writeAtomic = FS.atomicWrite;
 
 function installRelease(l, { name, binaryFile, meta = {}, now = Date.now }) {
   checkName(name);
@@ -337,15 +327,7 @@ async function installAndActivate(l, { name, binaryFile, meta, keep = KEEP_RELEA
   return { ...installed, ...flip, outcome, pruned: pruned.removed, prunedStaging: pruned.staging, pruneError: pruned.error };
 }
 
-function pidAlive(pid) {
-  if (!Number.isInteger(pid) || pid <= 0) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (e) {
-    return e.code === 'EPERM';
-  }
-}
+const { pidAlive } = FS;
 
 function readLock(file) {
   let text = '',

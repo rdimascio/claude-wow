@@ -5,6 +5,7 @@ const { spawn } = require('child_process');
 const SB = require('./sandbox');
 const { WowClient } = require('./wow/client');
 const CLI = require('../bridge/clients');
+const FS = require('../bridge/fsutil');
 
 const BRIDGE = path.join(SB.REPO, 'bridge', 'bridge.js');
 const SUPERVISOR = path.join(SB.REPO, 'bridge', 'supervisor.js');
@@ -105,11 +106,7 @@ class BridgeProcess {
 }
 
 function readJson(file, fallback = null) {
-  try {
-    return JSON.parse(fs.readFileSync(file, 'utf8'));
-  } catch {
-    return fallback;
-  }
+  return FS.readJson(file, fallback);
 }
 
 function agentCalls(sb) {

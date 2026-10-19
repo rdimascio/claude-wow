@@ -216,7 +216,7 @@ test('the build hash covers every shipped file but the toc, in any order', () =>
   ];
   const build = P.addonBuild(files);
   assert.match(build, P.BUILD_RE);
-  assert.equal(P.addonBuild([...files].reverse()), build);
+  assert.equal(P.addonBuild(files.toReversed()), build);
   assert.equal(
     P.addonBuild(files.map(f => (f.name.endsWith('.toc') ? { ...f, data: Buffer.from('changed') } : f))),
     build,

@@ -126,7 +126,8 @@ test('RotatingLog keeps the log, its folder and its archives private, and repair
   fs.mkdirSync(path.dirname(winLog));
   publicFile(winLog);
   publicFile(winLog + '.1');
-  new S.RotatingLog(winLog, { platform: 'win32' });
+  const rotating = new S.RotatingLog(winLog, { platform: 'win32' });
+  assert.equal(rotating.file, winLog);
   assert.equal(modeOf(winLog), 0o644, 'Windows: no chmod');
   assert.equal(modeOf(winLog + '.1'), 0o644, 'Windows: no chmod');
 });

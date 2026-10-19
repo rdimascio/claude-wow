@@ -1541,8 +1541,7 @@ function extractMapBlocks(text) {
   return { text: stripped, cmds, errors };
 }
 
-// Commands the agent's tools appended to CLAUDE_WOW_MAP_FILE (one JSON per line).
-function parseMapFile(src) {
+function parseSideFile(kind, src) {
   const cmds = [],
     errors = [];
   for (const line of String(src || '').split('\n')) {
@@ -1550,10 +1549,28 @@ function parseMapFile(src) {
     try {
       cmds.push(JSON.parse(line));
     } catch {
-      errors.push('unreadable map file line');
+      errors.push(`unreadable ${kind} file line`);
     }
   }
   return { cmds, errors };
+}
+
+function readSideFile(kind, file, { read = f => fs.readFileSync(f, 'utf8'), remove = f => fs.unlinkSync(f) } = {}) {
+  let src = '';
+  let unreadable = '';
+  try {
+    src = read(file);
+  } catch (e) {
+    if (e.code !== 'ENOENT') unreadable = e.code || e.message;
+  }
+  try {
+    remove(file);
+  } catch {}
+  return { ...parseSideFile(kind, src), unreadable };
+}
+
+function parseMapFile(src) {
+  return parseSideFile('map', src);
 }
 
 function luaMap(map) {
@@ -1951,17 +1968,7 @@ function extractWidgetBlocks(text) {
 }
 
 function parseWidgetFile(src) {
-  const cmds = [],
-    errors = [];
-  for (const line of String(src || '').split('\n')) {
-    if (!line.trim()) continue;
-    try {
-      cmds.push(JSON.parse(line));
-    } catch {
-      errors.push('unreadable widget file line');
-    }
-  }
-  return { cmds, errors };
+  return parseSideFile('widget', src);
 }
 
 function luaWidgets(set) {
@@ -2083,6 +2090,8 @@ module.exports = {
   newMap,
   applyMapCommands,
   extractMapBlocks,
+  parseSideFile,
+  readSideFile,
   parseMapFile,
   luaMap,
   MACRO_LIMITS,

@@ -3,6 +3,9 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const P = require('../bridge/protocol');
 const { createVM } = require('./lua/vm');
 
@@ -79,6 +82,31 @@ test('parseMapFile reads one command per line', () => {
   const r = P.parseMapFile('{"op":"clearall"}\n\n{"op":"clear","layer":"x"}\n{broken\n');
   assert.equal(r.cmds.length, 2);
   assert.equal(r.errors.length, 1);
+  assert.deepEqual(r.errors, ['unreadable map file line']);
+});
+
+test('readSideFile takes the map file, deletes it, and reports a read error that is not a missing file', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-wow-mapside-'));
+  try {
+    const file = path.join(dir, 'chat-1.jsonl');
+    fs.writeFileSync(file, '{"op":"clearall"}\n{broken\n');
+    const r = P.readSideFile('map', file);
+    assert.deepEqual(r, { cmds: [{ op: 'clearall' }], errors: ['unreadable map file line'], unreadable: '' });
+    assert.equal(fs.existsSync(file), false, 'the file is taken');
+    assert.deepEqual(P.readSideFile('map', file), { cmds: [], errors: [], unreadable: '' }, 'a missing file is no commands and no error');
+    assert.equal(P.readSideFile('map', dir).unreadable, 'EISDIR', 'any other read error is reported');
+    const seen = [];
+    const r2 = P.readSideFile('map', file, {
+      read: () => {
+        throw Object.assign(new Error('denied'), { code: 'EACCES' });
+      },
+      remove: f => seen.push(f),
+    });
+    assert.deepEqual(r2, { cmds: [], errors: [], unreadable: 'EACCES' });
+    assert.deepEqual(seen, [file], 'an unreadable file is still removed');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 function runLua(src, expr) {

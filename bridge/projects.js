@@ -3,6 +3,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const FS = require('./fsutil');
 
 const PROJECTS_MAX = 12;
 const LABEL_MAX = 40;
@@ -148,13 +149,7 @@ function recentClaudeProjects(claudeDir) {
   return [...latest.entries()].map(([cwd, at]) => ({ cwd, at }));
 }
 
-function isDirectory(p) {
-  try {
-    return fs.statSync(p).isDirectory();
-  } catch {
-    return false;
-  }
-}
+const { isDirectory } = FS;
 
 function knownProjects({
   defaultCwd = '',

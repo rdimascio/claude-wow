@@ -5,6 +5,7 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 const SS = require('./sessions');
 const H = require('./home');
+const FS = require('./fsutil');
 
 const FILE_NAME = 'handoff.json';
 const FRESH_MS = 24 * 3600 * 1000;
@@ -46,14 +47,7 @@ function repoKey(dir, exec = execFileSync) {
   }
 }
 
-function pidAlive(pid) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (e) {
-    return !!e && e.code === 'EPERM';
-  }
-}
+const { pidAlive } = FS;
 
 function psField(pid, field, exec = execFileSync) {
   if (process.platform === 'win32') return null;
@@ -235,9 +229,7 @@ function fileIn(homeDir) {
 function writeHandoff(homeDir, handoff) {
   fs.mkdirSync(homeDir, { recursive: true });
   const file = fileIn(homeDir);
-  const tmp = `${file}.${process.pid}.${Date.now().toString(36)}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(handoff, null, 2) + '\n', { mode: 0o600 });
-  fs.renameSync(tmp, file);
+  FS.atomicWrite(file, JSON.stringify(handoff, null, 2) + '\n', { mode: 0o600 });
   return file;
 }
 

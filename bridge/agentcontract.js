@@ -3,6 +3,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
+const FS = require('./fsutil');
 const A = require('./agents');
 const MC = require('./mcpconfig');
 const R = require('./runtime');
@@ -524,9 +525,7 @@ function writeContract(file, id, entry, readText) {
   const all = readContract(file, readText);
   all[id] = entry;
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(all, null, 2) + '\n');
-  fs.renameSync(tmp, file);
+  FS.atomicWrite(file, JSON.stringify(all, null, 2) + '\n');
 }
 
 const USAGE = 'claude-wow agents check [--agent claude|codex]   probe the MCP behaviors the bridge relies on, with one short run per check';

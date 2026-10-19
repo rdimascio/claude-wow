@@ -52,7 +52,7 @@ function checkNode() {
   const [maj, min] = process.versions.node.split('.').map(Number);
   if (maj > MIN_NODE[0] || (maj === MIN_NODE[0] && min >= MIN_NODE[1])) return;
   throw new Error(
-    `Node ${MIN_NODE.join('.')} or newer is required; this is ${process.versions.node}. ` + 'Install a newer Node (https://nodejs.org) and run setup again.',
+    `Node ${MIN_NODE.join('.')} or newer is required; this is ${process.versions.node}. Install a newer Node (https://nodejs.org) and run setup again.`,
   );
 }
 
@@ -64,7 +64,7 @@ function resolveProject(raw) {
   if (!p) throw new Error('--project needs a folder (e.g. --project ~/code/my-game)');
   const windowsShaped = /^[A-Za-z]:[\\/]/.test(p) || p.startsWith('\\\\');
   if (windowsShaped && process.platform !== 'win32') {
-    throw new Error(`--project "${p}" is a Windows path, but this is ${process.platform}. ` + 'Pass a path for this machine, e.g. --project ~/code/my-game');
+    throw new Error(`--project "${p}" is a Windows path, but this is ${process.platform}. Pass a path for this machine, e.g. --project ~/code/my-game`);
   }
   const abs = path.resolve(p.replace(/^~(?=[\\/]|$)/, os.homedir()));
   if (!fs.existsSync(abs)) {
@@ -469,7 +469,7 @@ function main() {
     if (!fs.existsSync(cfg.defaultCwd)) {
       warn(
         `the default project folder does not exist: ${cfg.defaultCwd}`,
-        'Every chat that has not picked its own folder will fail. Fix it with: ' + 'node setup.js --project "<folder>"',
+        'Every chat that has not picked its own folder will fail. Fix it with: node setup.js --project "<folder>"',
       );
     }
     console.log(`agent    : ${cfg.agent} by default (change with /claude-wow agent in game, or "agent" in config.json)`);

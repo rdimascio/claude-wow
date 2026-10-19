@@ -58,6 +58,7 @@ const CQ = require('./chatqueue');
 const DH = require('./chathub');
 const PJ = require('./projects');
 const G = require('./gamefs');
+const FS = require('./fsutil');
 const SIG = require('./signals');
 const DM = require('./datamcp');
 const GM = require('./goalsmcp');
@@ -238,15 +239,7 @@ const LOCK_FILE = path.join(HOME.dir, 'bridge.lock');
 const BOOTED_AT = Date.now() - os.uptime() * 1000;
 const SELF_MARKER = path.basename(process.argv[1] || process.execPath);
 
-function pidAlive(pid) {
-  if (!Number.isInteger(pid) || pid <= 0) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
+const { pidAlive, isDirectory } = FS;
 
 function commandOf(pid) {
   if (process.platform === 'win32') return null;
@@ -255,19 +248,11 @@ function commandOf(pid) {
 }
 
 function isSameProcess(pid, startedAt, marker) {
-  if (!pidAlive(pid)) return false;
-  if (!Number.isFinite(startedAt) || startedAt < BOOTED_AT) return false;
-  const cmd = commandOf(pid);
-  if (cmd === null) return process.platform === 'win32';
-  return !!marker && cmd.includes(marker);
+  return FS.isSameProcess(pid, startedAt, marker, { bootedAt: BOOTED_AT, commandOf });
 }
 
 function readJsonQuiet(file) {
-  try {
-    return JSON.parse(fs.readFileSync(file, 'utf8'));
-  } catch {
-    return null;
-  }
+  return FS.readJson(file, null);
 }
 
 function holdLock() {
@@ -335,6 +320,7 @@ const CLIENT_RT = new Map(
       lastMtime: 0,
       shotHint: null,
       shotWatch: null,
+      sweeper: null,
       chatLogWatch: null,
       sweepMemo: new Map(),
       acks: [],
@@ -565,41 +551,11 @@ const publishRetry = PUBR.createPublishRetry({ write: G.atomicWrite, log, republ
 // ---------------------------------------------------------------------------
 
 function readJson(file, fallback) {
-  let text;
-  try {
-    text = fs.readFileSync(file, 'utf8');
-  } catch (e) {
-    if (e.code !== 'ENOENT') log(`${path.basename(file)}: cannot read it (${e.code || e.message}); starting from empty`);
-    return fallback;
-  }
-  try {
-    return JSON.parse(text);
-  } catch (e) {
-    const aside = `${file}.corrupt-${Date.now()}`;
-    let kept = true;
-    try {
-      fs.renameSync(file, aside);
-    } catch {
-      kept = false;
-    }
-    log(
-      `${path.basename(file)} is corrupt (${e.message}); ${kept ? `kept it as ${path.basename(aside)}` : 'could not move it aside'} and started from empty. To recover, stop the bridge, repair that copy, and put it back as ${path.basename(file)}.`,
-    );
-    return fallback;
-  }
+  return FS.readJson(file, fallback, { log, moveAside: true });
 }
 
 function durableWrite(file, content) {
-  const tmp = `${file}.${process.pid}.tmp`;
-  const fd = fs.openSync(tmp, 'w', PRIVATE_FILE_MODE);
-  try {
-    if (process.platform !== 'win32') fs.fchmodSync(fd, PRIVATE_FILE_MODE);
-    fs.writeSync(fd, content);
-    fs.fsyncSync(fd);
-  } finally {
-    fs.closeSync(fd);
-  }
-  fs.renameSync(tmp, file);
+  FS.atomicWrite(file, content, { mode: PRIVATE_FILE_MODE, fsync: true });
 }
 
 function saveState() {
@@ -619,19 +575,7 @@ const slotNumber = id => P.slotNumber(id, SLOTS);
 const alreadyHandled = job => P.alreadyHandled(state, job);
 const markHandled = job => P.markHandled(state, job);
 
-function atomicWrite(file, content) {
-  const tmp = file + '.tmp';
-  fs.writeFileSync(tmp, content);
-  fs.renameSync(tmp, file);
-}
-
-function isDirectory(p) {
-  try {
-    return fs.statSync(p).isDirectory();
-  } catch {
-    return false;
-  }
-}
+const atomicWrite = FS.atomicWrite;
 
 // Stop a run and whatever it spawned: an npm launcher runs the real binary as a
 // child of its own, an agent shells out to builds and test runs. procs.js: on
@@ -665,6 +609,10 @@ function shutdown(sig, exitCode) {
   stopPlugins();
   if (roomClient) roomClient.stop();
   if (roomDownTimer) clearTimeout(roomDownTimer);
+  if (roomNewsTimer) {
+    clearTimeout(roomNewsTimer);
+    roomNewsTimer = null;
+  }
   if (discordHub) discordHub.stop().catch(() => {});
   let voteClosing = Promise.resolve();
   try {
@@ -753,39 +701,41 @@ function applyToolMap(cmds) {
   return { changed, notes };
 }
 
-function mapFileFor(job) {
-  return path.join(MAP_DIR, `${String(job.chat || 'default').replace(/[^\w-]/g, '_')}-${job.id}.jsonl`);
+function sideFile(kind, { dir, label, extract, apply, onChange }) {
+  const fileFor = job => path.join(dir, `${String(job.chat || 'default').replace(/[^\w-]/g, '_')}-${job.id}.jsonl`);
+  function take(job, text) {
+    const file = fileFor(job);
+    const fromFile = P.readSideFile(kind, file);
+    if (fromFile.unreadable) log(`#${job.id} ${label}: cannot read ${file} (${fromFile.unreadable}); its commands are lost`);
+    const blocks = extract(text);
+    const cmds = [...fromFile.cmds, ...blocks.cmds];
+    const errors = [...fromFile.errors, ...(blocks.errors || [])];
+    if (!cmds.length && !errors.length) return { text: blocks.text, note: '' };
+    const { changed, notes, where } = apply(job, cmds);
+    if (changed) {
+      saveState();
+      onChange();
+    }
+    const all = [...notes, ...errors];
+    log(`#${job.id} ${label}: ${all.join('; ') || 'no change'}${where}`);
+    return { text: blocks.text, note: all.length ? `${label}: ${all.join('; ')}` : '' };
+  }
+  return { fileFor, take };
 }
 
-// Collect what the run asked for (its map file, then ```wowmap blocks in its
-// reply), apply it, and return the reply text without the blocks plus a note
-// for the reply, if anything was asked.
-function takeMapCommands(job, text) {
-  const file = mapFileFor(job);
-  let cmds = [],
-    errors = [];
-  try {
-    const r = P.parseMapFile(fs.readFileSync(file, 'utf8'));
-    cmds = r.cmds;
-    errors = r.errors;
-  } catch {}
-  try {
-    fs.unlinkSync(file);
-  } catch {}
-  const blocks = P.extractMapBlocks(text);
-  cmds.push(...blocks.cmds);
-  errors.push(...blocks.errors);
-  if (!cmds.length && !errors.length) return { text: blocks.text, note: '' };
-  const map = mapFor(job.char);
-  const { changed, notes } = P.applyMapCommands(map, cmds);
-  if (changed) {
-    saveState();
-    mapShare.touch();
-  }
-  const all = [...notes, ...errors];
-  log(`#${job.id} map: ${all.join('; ') || 'no change'} for ${map.char || 'no character'} (version ${map.version})`);
-  return { text: blocks.text, note: all.length ? `map: ${all.join('; ')}` : '' };
-}
+const mapSide = sideFile('map', {
+  dir: MAP_DIR,
+  label: 'map',
+  extract: P.extractMapBlocks,
+  apply(job, cmds) {
+    const map = mapFor(job.char);
+    const { changed, notes } = P.applyMapCommands(map, cmds);
+    return { changed, notes, where: ` for ${map.char || 'no character'} (version ${map.version})` };
+  },
+  onChange: () => mapShare.touch(),
+});
+const mapFileFor = mapSide.fileFor;
+const takeMapCommands = mapSide.take;
 
 if (!state.widgets) state.widgets = P.newWidgetSet();
 const WIDGET_DIR = HOME.uijobs;
@@ -796,34 +746,20 @@ function widgetSourceBytes() {
   return Object.values(state.widgets.items).reduce((sum, w) => sum + w.source.length, 0);
 }
 
-function widgetFileFor(job) {
-  return path.join(WIDGET_DIR, `${String(job.chat || 'default').replace(/[^\w-]/g, '_')}-${job.id}.jsonl`);
-}
-
-function takeWidgetCommands(job, text) {
-  const file = widgetFileFor(job);
-  let cmds = [],
-    errors = [];
-  try {
-    const fromFile = P.parseWidgetFile(fs.readFileSync(file, 'utf8'));
-    cmds = fromFile.cmds;
-    errors = fromFile.errors;
-  } catch {}
-  try {
-    fs.unlinkSync(file);
-  } catch {}
-  const blocks = P.extractWidgetBlocks(text);
-  cmds.push(...blocks.cmds);
-  if (!cmds.length && !errors.length) return { text: blocks.text, note: '' };
-  const { changed, notes } = P.applyWidgetCommands(state.widgets, cmds);
-  if (changed) {
-    saveState();
+const widgetSide = sideFile('widget', {
+  dir: WIDGET_DIR,
+  label: 'ui',
+  extract: P.extractWidgetBlocks,
+  apply(job, cmds) {
+    const { changed, notes } = P.applyWidgetCommands(state.widgets, cmds);
+    return { changed, notes, where: ` (version ${state.widgets.version})` };
+  },
+  onChange: () => {
     widgetShareUntil = Date.now() + WIDGET_SHARE_MS;
-  }
-  const all = [...notes, ...errors];
-  log(`#${job.id} ui: ${all.join('; ') || 'no change'} (version ${state.widgets.version})`);
-  return { text: blocks.text, note: all.length ? `ui: ${all.join('; ')}` : '' };
-}
+  },
+});
+const widgetFileFor = widgetSide.fileFor;
+const takeWidgetCommands = widgetSide.take;
 
 const BRIDGE_INFO = P.bridgeInfo();
 
@@ -1074,6 +1010,10 @@ function fallbackToPixel(reason, job) {
     if (r.shotWatch) {
       r.shotWatch.close();
       r.shotWatch = null;
+    }
+    if (r.sweeper) {
+      clearInterval(r.sweeper);
+      r.sweeper = null;
     }
     if (r.chatLogWatch) {
       r.chatLogWatch.close();
@@ -3322,22 +3262,26 @@ function nameChat(job, key) {
     text: job.text,
     cwd: TMP_DIR,
     env: A.AGENTS.claude.env({ ...process.env }),
-  }).then(title => {
-    if (!title) {
-      log(`#${job.id} title: ${model} gave none`);
-      return;
-    }
-    titles.set(key, { id: job.id, title });
-    while (titles.size > TITLES_KEPT) titles.delete(titles.keys().next().value);
-    log(`#${job.id} title (${model}): ${title}`);
-    const kept = transcripts.chats[job.chat];
-    if (kept && (!kept.name || kept.name === job.name)) {
-      kept.name = title;
-      saveTranscripts();
-    }
-    const rec = live.get(key);
-    if (rec) publish(key, { ...rec, title: '' }, true);
-  });
+  })
+    .then(title => {
+      if (!title) {
+        log(`#${job.id} title: ${model} gave none`);
+        return;
+      }
+      titles.set(key, { id: job.id, title });
+      while (titles.size > TITLES_KEPT) titles.delete(titles.keys().next().value);
+      log(`#${job.id} title (${model}): ${title}`);
+      const kept = transcripts.chats[job.chat];
+      if (kept && (!kept.name || kept.name === job.name)) {
+        kept.name = title;
+        saveTranscripts();
+      }
+      const rec = live.get(key);
+      if (rec) publish(key, { ...rec, title: '' }, true);
+    })
+    .catch(e => {
+      log(`#${job.id} title: not applied (${e && e.message ? e.message : e}); the chat keeps its first words`);
+    });
 }
 
 function tellPluginFinished(plugin, job, outcome) {
@@ -3739,8 +3683,8 @@ function startScreenshotWatch(r) {
   r.shotWatch = S.watchScreenshots(dir, file => handleScreenshot(file, r), { log, adoptMs: WATCHER_AGE_MS, now: startedAt });
   log(`screenshot transport: watching ${dir} (strip codec ${STRIP_CODEC}: ${stripGeometry()})`);
   sweepScreenshots(r, 'startup', startedAt);
-  const sweeper = setInterval(() => sweepScreenshots(r, 'periodic'), SWEEP_MS);
-  if (sweeper.unref) sweeper.unref();
+  r.sweeper = setInterval(() => sweepScreenshots(r, 'periodic'), SWEEP_MS);
+  if (r.sweeper.unref) r.sweeper.unref();
 }
 
 function chatLogWritesOf(client) {

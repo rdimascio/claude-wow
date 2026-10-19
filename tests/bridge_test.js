@@ -619,6 +619,28 @@ test('titles: generateTitle runs the command and cleans its output, and gives up
   assert.deepEqual(T.titleChildren(), [], 'a finished title run is not tracked');
 });
 
+test('titles: generateTitle never rejects, a missing command and a timeout both resolve to no title', async () => {
+  const T = require('../bridge/titles');
+  const missing = await T.generateTitle({ file: path.join(os.tmpdir(), 'claude-wow-no-such-command'), args: [], model: 'm', text: 't' });
+  assert.equal(missing, '');
+  const slow = await T.generateTitle({ file: process.execPath, args: ['-e', 'setTimeout(() => {}, 20000)', '--'], model: 'm', text: 't', timeoutMs: 100 });
+  assert.equal(slow, '');
+  assert.deepEqual(T.titleChildren(), [], 'a killed title run is not tracked');
+});
+
+test('titles: the bridge chain ends in a catch that logs the miss and publishes nothing', () => {
+  const src = require('fs').readFileSync(path.join(__dirname, '..', 'bridge', 'bridge.js'), 'utf8');
+  const start = src.indexOf('function nameChat(');
+  assert.ok(start > 0);
+  const body = src.slice(start, src.indexOf('\n}\n', start));
+  const chain = body.slice(body.indexOf('job.titlePending = T.generateTitle('));
+  const tail = chain.slice(chain.lastIndexOf('.catch('));
+  assert.match(tail, /log\(`#\$\{job\.id\} title: not applied \(/, 'the catch logs the reason');
+  assert.match(tail, /the chat keeps its first words/);
+  assert.doesNotMatch(tail, /publish\(|saveTranscripts\(|titles\.set\(/, 'a failed title run changes nothing');
+  assert.ok(chain.indexOf('.then(') < chain.indexOf('.catch('), 'the catch covers the apply step too');
+});
+
 test('the ask plugin speaks as a player: one lowercase line, no TL;DR block; other plugins keep the summary rule', () => {
   const ask = require('../bridge/plugins/ask');
   const code = require('../bridge/plugins/claude-code');

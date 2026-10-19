@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
+const FS = require('./fsutil');
 const { lineReader } = require('./liveproto');
 
 const DEFAULTS = Object.freeze({
@@ -119,7 +120,9 @@ async function chatCompletion({ url, model, messages, tools, timeoutMs, fetchImp
       e && (e.name === 'TimeoutError' || e.name === 'AbortError')
         ? `no answer within ${timeoutMs} ms`
         : (e && e.cause && e.cause.code) || (e && e.message) || String(e);
-    throw new Error(`The local model server at ${url.origin} did not answer (${why}). Start llama-server, or set agents.local.baseUrl in config.json.`);
+    throw new Error(`The local model server at ${url.origin} did not answer (${why}). Start llama-server, or set agents.local.baseUrl in config.json.`, {
+      cause: e,
+    });
   }
   const text = await res.text();
   if (text.length > MAX_RESPONSE_CHARS) throw new Error('The local model server sent an answer that is too large.');
@@ -320,9 +323,7 @@ function pruneSessions(dir, keep = MAX_SESSION_FILES) {
 function saveSession(dir, id, messages) {
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   const file = sessionFile(dir, id);
-  const tmp = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify({ id, messages: trimHistory(messages) }), { mode: 0o600 });
-  fs.renameSync(tmp, file);
+  FS.atomicWrite(file, JSON.stringify({ id, messages: trimHistory(messages) }), { mode: 0o600 });
   pruneSessions(dir);
 }
 

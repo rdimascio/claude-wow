@@ -2,6 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const FS = require('./fsutil');
 
 const BUILD_PATTERN = /^\d+\.\d+\.\d+\.\d+$/;
 const FAMILY_PATTERN = /^\d+\.\d+\.\d+$/;
@@ -722,15 +723,7 @@ function readCurrent(root) {
   }
 }
 
-function pidAlive(pid) {
-  if (!Number.isSafeInteger(pid) || pid <= 0) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (e) {
-    return e.code === 'EPERM';
-  }
-}
+const { pidAlive } = FS;
 
 function inspectLock(file) {
   let mtimeMs;
@@ -853,9 +846,7 @@ function swapInto(root, build, tmpDir, log) {
   const name = freshDirName(root, build);
   const finalDir = path.join(root, name);
   fs.renameSync(tmpDir, finalDir);
-  const pointerTmp = path.join(root, `${CURRENT_FILE}.tmp`);
-  fs.writeFileSync(pointerTmp, name + '\n');
-  fs.renameSync(pointerTmp, path.join(root, CURRENT_FILE));
+  FS.atomicWrite(path.join(root, CURRENT_FILE), name + '\n');
   sweep(root, build, name, log);
   return finalDir;
 }

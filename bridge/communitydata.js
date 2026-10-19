@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 const crypto = require('crypto');
+const FS = require('./fsutil');
 const D = require('./datasync');
 const GD = require('./gamedata');
 const S = require('./sqldump');
@@ -367,9 +368,7 @@ function swap(root, version, tmpDir, log) {
   let name = version;
   for (let k = 1; fs.existsSync(path.join(root, name)); k++) name = `${version}-${k}`;
   fs.renameSync(tmpDir, path.join(root, name));
-  const pointerTmp = path.join(root, `${D.CURRENT_FILE}.tmp`);
-  fs.writeFileSync(pointerTmp, name + '\n');
-  fs.renameSync(pointerTmp, path.join(root, D.CURRENT_FILE));
+  FS.atomicWrite(path.join(root, D.CURRENT_FILE), name + '\n');
   for (const old of fs.readdirSync(root)) {
     if (old === name || !(POINTER.test(old) || old.endsWith('.tmp'))) continue;
     try {

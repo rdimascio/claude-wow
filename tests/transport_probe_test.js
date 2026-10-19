@@ -96,7 +96,7 @@ test('stripInPlace removes probe and frame lines, keeps other chat, and keeps th
   const file = path.join(dir, 'WoWChatLog.txt');
   const keep1 = '9/30 19:00:00.000  You feel rested.\r\n';
   const keep2 = '9/30 19:00:03.000  [1. General] Someone: CWX1 and CWLOG1 are only words here\r\n';
-  fs.writeFileSync(file, keep1 + '9/30 19:00:01.000  CWLOG17 H 00002 zzz\r\n' + '9/30 19:00:02.000  CWX1 7 1/1 abcd\r\n' + keep2, 'latin1');
+  fs.writeFileSync(file, keep1 + '9/30 19:00:01.000  CWLOG17 H 00002 zzz\r\n9/30 19:00:02.000  CWX1 7 1/1 abcd\r\n' + keep2, 'latin1');
   const inode = fs.statSync(file).ino;
   try {
     const r = T.stripInPlace(file, T.STRIP_LINE);
