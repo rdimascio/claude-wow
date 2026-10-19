@@ -317,6 +317,18 @@ end
 
 Q.TITLE_EMPTY = { 0.5, 0.5, 0.5 }
 
+function ClaudeWoW.InvalidateRender()
+	run.renderKey = nil
+	local q = ui.questList
+	if not q then return end
+	for _, r in ipairs(q.rows) do
+		r.drawn = nil
+	end
+	for _, h in ipairs(q.headers) do
+		h.drawn = nil
+	end
+end
+
 local function SameRow(d, title, when, titleColor, glyph, index, active, width, linesKey)
 	return d ~= nil
 		and d.title == title

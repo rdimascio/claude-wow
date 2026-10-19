@@ -247,3 +247,46 @@ test('a render with nothing changed sets no bubble text and reads no height', ()
   assert.ok(vm.num('TEXTS') > 0 && vm.num('TEXTS') <= 2, 'only the new note is laid out: ' + vm.num('TEXTS'));
   assert.ok(vm.num('LIST_TEXTS') <= 4, 'only the row of the chat that changed is filled: ' + vm.num('LIST_TEXTS'));
 });
+
+test('an item link that loads after the first draw replaces its placeholder on the retry render', () => {
+  const vm = boot({ native: true, cold: false });
+  vm.run('ClaudeWoW.Toggle(true)');
+  vm.run(STEPS[1][1], { ns: true });
+  vm.run('C_Item.GetItemInfo = function() return nil end');
+  vm.run('ClaudeWoW.Send("what sword"); ' + reply('status = "done", text = "Take {item:2140} now", agent = "claude"'), { ns: true });
+  const body = '(function() local last for _, b in ipairs(ClaudeWoW.UI.bubbles) do if b.shown then last = b end end return last.body:GetText() end)()';
+  const before = vm.evaluate(body);
+  assert.ok(before.includes('item 2140'), 'the first draw shows the placeholder: ' + before);
+  assert.ok(!before.includes('|Hitem:2140'), 'and no link yet');
+  vm.run(
+    'C_Item.GetItemInfo = function(id) if id == 2140 then return "Fine Longsword", "|cff1eff00|Hitem:2140|h[Fine Longsword]|h|r" end end; STUB.FireEvent("GET_ITEM_INFO_RECEIVED", 2140, true); STUB.RunTimers()',
+  );
+  const after = vm.evaluate(body);
+  assert.ok(after.includes('|Hitem:2140|h[Fine Longsword]|h'), 'the retry render shows the link: ' + after);
+  assert.ok(!after.includes('item 2140|r'), 'and the placeholder is gone');
+});
+
+test('a scale change or a show drops the records: the next render lays out every bubble and row again', () => {
+  const vm = boot({ native: true, cold: false });
+  vm.run('ClaudeWoW.Toggle(true)');
+  vm.run(STEPS[1][1], { ns: true });
+  vm.run('ClaudeWoW.Send("hello"); ' + reply('status = "done", text = "hi there", agent = "claude"'), { ns: true });
+  vm.run('ClaudeWoW.NewChat("Second"); ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[1].id)');
+  vm.run(COUNT_TEXT);
+  vm.run('ClaudeWoW.Render()');
+  assert.equal(vm.num('TEXTS'), 0, 'nothing changed: no SetText under the transcript');
+  for (const event of ['UI_SCALE_CHANGED', 'DISPLAY_SIZE_CHANGED']) {
+    vm.run(`TEXTS, LIST_TEXTS = 0, 0; STUB.FireEvent("${event}"); ClaudeWoW.Render()`);
+    assert.ok(vm.num('TEXTS') >= 2, `${event}: every bubble is laid out again: ` + vm.num('TEXTS'));
+    assert.ok(vm.num('LIST_TEXTS') >= 2, `${event}: every list row is filled again: ` + vm.num('LIST_TEXTS'));
+    vm.run('TEXTS, LIST_TEXTS = 0, 0; ClaudeWoW.Render()');
+    assert.equal(vm.num('TEXTS'), 0, `${event}: then the records hold again`);
+  }
+  vm.run('TEXTS, LIST_TEXTS = 0, 0; ClaudeWoW.Toggle(false); ClaudeWoW.Toggle(true)');
+  assert.ok(vm.num('TEXTS') >= 2, 'a show lays every bubble out again: ' + vm.num('TEXTS'));
+  assert.ok(vm.num('LIST_TEXTS') >= 2, 'and fills every list row: ' + vm.num('LIST_TEXTS'));
+  vm.run('TEXTS, LIST_TEXTS = 0, 0; ClaudeWoW.Suspend(true); ClaudeWoW.Suspend(false)');
+  assert.ok(vm.num('TEXTS') >= 2, 'so does the show after a suspend: ' + vm.num('TEXTS'));
+  vm.run('TEXTS, LIST_TEXTS = 0, 0; ClaudeWoW.Render()');
+  assert.equal(vm.num('TEXTS'), 0, 'and the records hold again after the show');
+});

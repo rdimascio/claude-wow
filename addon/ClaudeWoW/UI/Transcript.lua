@@ -548,11 +548,11 @@ local function RenderState(c, width)
 	return s
 end
 
-local function SameCard(prev, role, text, when, dim, who, newChat, macroSig, pickerSig)
+local function SameCard(prev, role, body, when, dim, who, newChat, macroSig, pickerSig)
 	return prev ~= nil
 		and prev.kind == "card"
 		and prev.role == role
-		and prev.text == text
+		and prev.body == body
 		and prev.when == when
 		and prev.dim == dim
 		and prev.who == who
@@ -605,8 +605,9 @@ function ClaudeWoW.Render()
 			local look = ui.parchment and (Q.PARCHMENT_STYLE[role] or Q.PARCHMENT_STYLE.system) or st
 			local who = st == ROLE_STYLE.assistant and ns.ReplyAgentName(c, agent) or st.label
 			local macroSig, pickerSig = MacroSignature(macros), PickerSignature(picker)
+			local body = role == "assistant" and Q.RichText(Display(text), ui.parchment ~= nil) or Display(text)
 			local prev = items[n]
-			if not fresh and not denied and SameCard(prev, role, text, when, dim, who, newChat == true, macroSig, pickerSig) then
+			if not fresh and not denied and SameCard(prev, role, body, when, dim, who, newChat == true, macroSig, pickerSig) then
 				for k, m in ipairs(macros or {}) do
 					b.macroBtns[k].macro = m
 				end
@@ -627,7 +628,7 @@ function ClaudeWoW.Render()
 			b.who:SetTextColor(look.color[1], look.color[2], look.color[3])
 			b.when:SetText(when or "")
 			b.body:SetWidth(width - 18)
-			b.body:SetText(role == "assistant" and Q.RichText(Display(text), ui.parchment ~= nil) or Display(text))
+			b.body:SetText(body)
 			local ink = ui.parchment and (dim and Q.PARCHMENT_DIM or Q.PARCHMENT_TEXT) or (dim and { 0.72, 0.72, 0.72 } or { 0.93, 0.93, 0.93 })
 			b.body:SetTextColor(ink[1], ink[2], ink[3])
 			local h = b.body:GetStringHeight()
@@ -711,7 +712,7 @@ function ClaudeWoW.Render()
 				items[n] = {
 					kind = "card",
 					role = role,
-					text = text,
+					body = body,
 					when = when,
 					dim = dim,
 					who = who,

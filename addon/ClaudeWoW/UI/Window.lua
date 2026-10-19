@@ -488,6 +488,7 @@ events:SetScript("OnEvent", function(_, event)
 		HookPanels()
 		return
 	else
+		ClaudeWoW.InvalidateRender()
 		W.Schedule()
 	end
 	W.Drive()
