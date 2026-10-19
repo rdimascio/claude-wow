@@ -780,8 +780,8 @@ test('a short system line is a quiet note with no header card, a session change 
     table.insert(c.history, { role = "system", t = 1, text = string.rep("a warning with no line break ", 5) })
     ClaudeWoW.Render()
     for _, b in ipairs(ClaudeWoW.UI.bubbles) do b.body.GetStringWidth = function(self) return #(self.text or "") * 6 end end
-    ClaudeWoW.Render()
   `);
+  vm.run('local ns = ...; ns.run.renderKey = nil; ClaudeWoW.Render()', { ns: true });
   assert.equal(field(2, 'b.ruleL.shown'), 'true', 'a short label still fits its rules at real text widths');
   assert.equal(field(5, 'b.who.shown'), 'false');
   assert.equal(field(5, 'b.ruleL.shown'), 'false', 'a label too wide for the rules drops them');
