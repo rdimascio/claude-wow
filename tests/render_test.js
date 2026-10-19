@@ -85,12 +85,25 @@ ClaudeWoW.Render = function(...)
 	ns.run.renderKey = nil
 	return render(...)
 end
+local renderList = ClaudeWoW.RenderChatList
+ClaudeWoW.RenderChatList = function(...)
+	local q = ns.ui.questList
+	if q then
+		for _, r in ipairs(q.rows) do
+			r.drawn = nil
+		end
+		for _, h in ipairs(q.headers) do
+			h.drawn = nil
+		end
+	end
+	return renderList(...)
+end
 `;
 
 const COUNT_TEXT = `
 local mt = getmetatable(UIParent)
 local orig = mt.__index
-TEXTS, HEIGHTS = 0, 0
+TEXTS, HEIGHTS, LIST_TEXTS = 0, 0, 0
 local function under(o, root)
 	local seen = 0
 	while o and seen < 64 do
@@ -104,7 +117,11 @@ mt.__index = function(t, k)
 	local v = orig(t, k)
 	if k == "SetText" then
 		return function(self, ...)
-			if under(self, ClaudeWoWContent) then TEXTS = TEXTS + 1 end
+			if under(self, ClaudeWoWContent) then
+				TEXTS = TEXTS + 1
+			elseif under(self, ClaudeWoWChatListContent) then
+				LIST_TEXTS = LIST_TEXTS + 1
+			end
 			return v(self, ...)
 		end
 	elseif k == "GetStringHeight" then
@@ -220,10 +237,13 @@ test('a render with nothing changed sets no bubble text and reads no height', ()
   vm.run(STEPS[1][1], { ns: true });
   vm.run('ClaudeWoW.Send("hello"); ' + reply('status = "done", text = "hi there\\nsecond line", agent = "claude"'), { ns: true });
   vm.run('ClaudeWoW.SystemNote("noted")');
+  vm.run('ClaudeWoW.NewChat("Second"); ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[1].id)');
   vm.run(COUNT_TEXT);
   vm.run('ClaudeWoW.Render()');
   assert.equal(vm.num('TEXTS'), 0, 'no SetText under the transcript');
   assert.equal(vm.num('HEIGHTS'), 0, 'no GetStringHeight under the transcript');
+  assert.equal(vm.num('LIST_TEXTS'), 0, 'no SetText under the chat list');
   vm.run('ClaudeWoW.SystemNote("one more")');
   assert.ok(vm.num('TEXTS') > 0 && vm.num('TEXTS') <= 2, 'only the new note is laid out: ' + vm.num('TEXTS'));
+  assert.ok(vm.num('LIST_TEXTS') <= 4, 'only the row of the chat that changed is filled: ' + vm.num('LIST_TEXTS'));
 });

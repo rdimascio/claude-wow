@@ -69,8 +69,8 @@ ClaudeWoW.Render = function(...)
 	BENCH.render = BENCH.render + 1
 	return render(...)
 end
-local fill = ns.Q.FillRow
-ns.Q.FillRow = function(...)
+local fill = ns.Q.PoiState
+ns.Q.PoiState = function(...)
 	BENCH.fills = BENCH.fills + 1
 	return fill(...)
 end
@@ -153,7 +153,7 @@ function main() {
     ['bubble `SetText` calls (under `ClaudeWoWContent`)', counts.bubbleText],
     ['chat-list `SetText` calls (under `ClaudeWoWChatListContent`)', counts.listText],
     ['`GetStringHeight` calls', counts.stringHeight],
-    ['chat-list row fills (`Q.FillRow`)', counts.fills],
+    ['chat-list rows laid out (`Q.FillRow` past its cache, one `Q.PoiState` each)', counts.fills],
     [`wall time, median of ${runs} runs`, ms.toFixed(0) + ' ms'],
   ];
   console.log(

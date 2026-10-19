@@ -317,6 +317,18 @@ end
 
 Q.TITLE_EMPTY = { 0.5, 0.5, 0.5 }
 
+local function SameRow(d, title, when, titleColor, glyph, index, active, width, linesKey)
+	return d ~= nil
+		and d.title == title
+		and d.when == when
+		and d.color == titleColor
+		and d.glyph == glyph
+		and d.index == index
+		and d.active == active
+		and d.width == width
+		and d.lines == linesKey
+end
+
 function Q.FillRow(r, c, index, width)
 	local active = c.id == ns.db.activeChat
 	local unread = c.unread or 0
@@ -325,21 +337,29 @@ function Q.FillRow(r, c, index, width)
 	r.chatId = c.id
 	r.poi.chatId = c.id
 	r.active = active
-	r:SetWidth(width)
-	r.glow:SetShown(active)
 	local title = Display(Q.ShownName(c))
 	r.fullTitle = title
 	r.summary = Q.MessageSummary(last, count)
 	if c.agent and c.agent ~= "" then title = title .. " |cff9d9d9d" .. ns.AgentName(c.agent) .. "|r" end
 	if unread > 0 then title = title .. " (" .. unread .. ")" end
-	r.title:SetText(title)
-	r.when:SetText(last and last.t and Q.WhenShort(last.t) or "")
+	local when = last and last.t and Q.WhenShort(last.t) or ""
 	local titleColor = Q.TitleColor(c)
 	if previews and not last and titleColor == Q.TITLE_IDLE then titleColor = Q.TITLE_EMPTY end
 	r.titleColor = active and { 1, 1, 1 } or titleColor
 	local glyph = (c.pendingId and (active and "workingSelected" or "working")) or (unread > 0 and "reply") or nil
-	Q.PoiState(r.poi, glyph, tostring(index), active)
 	local lines = previews and Q.ChatObjectives(c) or {}
+	local linesKey = table.concat(lines, "\n")
+	local drawn = r.drawn
+	if SameRow(drawn, title, when, titleColor, glyph, index, active, width, linesKey) then
+		Q.RowColors(r, false)
+		return drawn.height
+	end
+	r.drawn = nil
+	r:SetWidth(width)
+	r.glow:SetShown(active)
+	r.title:SetText(title)
+	r.when:SetText(when)
+	Q.PoiState(r.poi, glyph, tostring(index), active)
 	local textW = width - Q.ROW_TITLE_X - 22
 	local titleH = Try(r.title.GetStringHeight, r.title) or 14
 	if titleH < 1 then titleH = 14 end
@@ -364,6 +384,8 @@ function Q.FillRow(r, c, index, width)
 	local height = math.max(textBottom + Q.ROW_BOTTOM, Q.ROW_MIN_H)
 	r:SetHeight(height)
 	Q.RowColors(r, false)
+	r.drawn =
+		{ title = title, when = when, color = titleColor, glyph = glyph, index = index, active = active, width = width, lines = linesKey, height = height }
 	return height
 end
 
@@ -459,9 +481,14 @@ function ClaudeWoW.RenderQuestList()
 			local closed = filter == "" and collapsed[key] == true
 			h.key = key
 			h.collapsed = closed
-			h.text:SetText(Display(key))
-			Q.SetHeaderIcon(h, closed)
-			h:SetWidth(width - Q.HEADER_INSET - Q.HEADER_RIGHT)
+			local drawn = h.drawn
+			if not (drawn and drawn.key == key and drawn.closed == closed and drawn.width == width) then
+				h.drawn = nil
+				h.text:SetText(Display(key))
+				Q.SetHeaderIcon(h, closed)
+				h:SetWidth(width - Q.HEADER_INSET - Q.HEADER_RIGHT)
+				h.drawn = { key = key, closed = closed, width = width }
+			end
 			h:ClearAllPoints()
 			h:SetPoint("TOPLEFT", q.content, "TOPLEFT", Q.HEADER_INSET, -y)
 			h:Show()
