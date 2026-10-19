@@ -25,6 +25,8 @@ const SHAPES = {
   'echo-full-v2': { saved: '{ settings = { echoV2 = true, echo = "full" } }' },
   'echo-short-pre-v2': { saved: '{ settings = { echo = "short" } }' },
   'echo-unset-v2': { saved: '{ settings = { echoV2 = true } }' },
+  'echo-false': { saved: '{ settings = { echoV2 = true, echo = false } }' },
+  'interval-false': { saved: '{ settings = { interval = false } }' },
   'minibar-minimized': { saved: '{ settings = { minimized = true, shown = true, miniPoint = "TOPLEFT", miniRelPoint = "TOPLEFT", miniX = 10, miniY = -20 } }' },
   'minibar-not-minimized': { saved: '{ settings = { minimized = false, shown = true, miniX = 10 } }' },
   'minibar-v2-minimized': { saved: '{ settings = { miniBarV2 = true, minimized = true, shown = true, miniX = 10 } }' },
@@ -82,6 +84,14 @@ const SHAPES = {
   'character-chats-empty': {
     saved: `{ settings = { ${FLAGS} }, chats = {}, session = "sess1" }`,
     own: '{ chats = {}, restored = true }',
+  },
+  'character-chats-dangling-active': {
+    saved: `{ settings = { ${FLAGS} }, chats = { ${chat('a1', 'plugin = ""')} }, activeChat = "a1", session = "sess1" }`,
+    own: `{ chats = { ${chat('c1', 'plugin = ""')} }, activeChat = "zz", restored = true }`,
+  },
+  'character-chats-bad-entry': {
+    saved: `{ settings = { ${FLAGS} }, chats = { ${chat('a1', 'plugin = ""')} }, activeChat = "a1", session = "sess1" }`,
+    own: `{ chats = { "junk", { name = "No id", cwd = "", history = {}, unread = 0, created = 50, plugin = "" }, ${chat('c1', 'plugin = ""')} }, activeChat = "c1", restored = true }`,
   },
   'window-and-toggles': {
     saved: `{ settings = { ${FLAGS}, dim = 0.5, dodge = false, autohide = false, signal = false, minimap = false, context = false, vision = true, toasts = false, ordersCard = false, ordersCollapsed = true, telemetry = false, interval = 5, width = 900, height = 600, cwd = "/x", mode = "reload", echo = "off", shown = true, longchat = true, minimapAngle = 90, autoRefresh = true, contextWarn = 200000, whisperChoice = "on", loginNoticeV1 = true } }`,

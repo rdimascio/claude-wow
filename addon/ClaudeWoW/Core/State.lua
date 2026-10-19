@@ -287,9 +287,11 @@ function ns.Setting(key, value)
 	return true
 end
 
+local OR_KEYS = { echo = true, mode = true, interval = true, cwd = true, width = true, height = true }
+
 local function ApplyDefaults(s)
 	for key, value in pairs(DEFAULTS) do
-		if s[key] == nil then s[key] = value end
+		if s[key] == nil or (OR_KEYS[key] and s[key] == false) then s[key] = value end
 	end
 end
 
