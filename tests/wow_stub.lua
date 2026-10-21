@@ -199,8 +199,6 @@ function Methods.SetBackdrop(self, t)
 	assert(type(t) == "table", "SetBackdrop called with " .. tostring(t) .. " on " .. tostring(self.name or self.kind))
 	self.backdrop = t
 end
-function Methods.ClearBackdrop(self) self.backdrop = nil end
-function Methods.SetBackdropBorderColor(self, r, g, b, a) self.edgeColor = { r, g, b, a } end
 function Methods.SetSpacing(self, n) self.spacing = n end
 function Methods.SetFontObject(self, font)
 	self.font = font

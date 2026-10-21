@@ -81,30 +81,19 @@ test('the live line cuts a long step and keeps a pipe from becoming an escape; a
   assert.ok(!body.includes('|c'), 'no raw color escape: ' + body);
 });
 
-test('on the parchment a message sits in a Blizzard tooltip-border box tinted by role; notes and the dark theme have none', () => {
+test('on the parchment a message bubble lies flat on the page with no backdrop edge', () => {
   const vm = boot();
   const seed =
     'local c = ClaudeWoWDB.chats[1]; ClaudeWoW.SwitchChat(c.id); c.history = { { role = "user", t = 1, text = "hi" }, { role = "assistant", t = 2, text = "hello" } }; ClaudeWoW.Render()';
   vm.run(seed);
+  assert.notEqual(vm.evaluate('ClaudeWoW.UI.parchment'), null);
   const bubble = i => `ClaudeWoW.UI.bubbles[${i}]`;
-  assert.equal(vm.evaluate(`${bubble(1)}.template`), 'BackdropTemplate');
-  assert.equal(vm.evaluate(`${bubble(1)}.backdrop.edgeFile`), 'Interface\\Tooltips\\UI-Tooltip-Border');
-  const edge = (i, role) =>
-    vm.evaluate(
-      `(function(ns) local e, w = ${bubble(i)}.edgeColor, ns.Q.PARCHMENT_STYLE.${role}.edge return e[1] == w[1] and e[2] == w[2] and e[3] == w[3] and e[4] == w[4] end)(NS)`,
-    );
-  assert.equal(edge(1, 'user'), 'true', 'the user box has the user tint');
-  assert.equal(edge(2, 'assistant'), 'true', 'the reply box has the agent tint');
+  for (const i of [1, 2]) {
+    assert.equal(vm.evaluate(`${bubble(i)}.template`), null, `bubble ${i} has no backdrop template`);
+    assert.equal(vm.evaluate(`${bubble(i)}.backdrop`), null, `bubble ${i} has no backdrop edge`);
+  }
   assert.equal(vm.evaluate(`${bubble(1)}.accent.shown`), 'false', 'no web quote bar');
-  assert.equal(vm.evaluate(`${bubble(1)}.bg.point`), 'BOTTOMRIGHT', 'the wash is inset inside the border');
-  assert.equal(vm.num(`${bubble(1)}.bg.x`), -3);
-  assert.equal(vm.num(`${bubble(1)}.bg.y`), 3);
-
-  vm.run(
-    'local c = ClaudeWoWDB.chats[1]; c.history = { { role = "system", t = 1, text = "A short note" }, { role = "assistant", t = 2, text = "hello" } }; ClaudeWoW.Render()',
-  );
-  assert.equal(vm.evaluate(`${bubble(1)}.backdrop`), null, 'a short note that reuses a boxed bubble drops the box');
-  assert.equal(vm.evaluate(`${bubble(2)}.backdrop.edgeFile`), 'Interface\\Tooltips\\UI-Tooltip-Border');
+  assert.equal(vm.num(`${bubble(2)}.bg.color[4]`), 0, 'the reply has no wash');
 
   const dark = boot({ native: false });
   dark.run(seed);
