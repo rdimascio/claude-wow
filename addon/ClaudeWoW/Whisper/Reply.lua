@@ -21,6 +21,18 @@ function Q.CutLine(line, width)
 	return cut:match("%S") and cut or line
 end
 
+function Q.CutText(text, max)
+	if #text <= max then return text end
+	local n = #Q.CutLine(text, max)
+	if n > max then n = max end
+	local nextByte = text:byte(n + 1)
+	while n > 0 and nextByte and nextByte >= 128 and nextByte < 192 do
+		n = n - 1
+		nextByte = text:byte(n + 1)
+	end
+	return text:sub(1, n) .. "..."
+end
+
 function Whisper.BodyLines(source, max, width)
 	local lines, total = {}, 0
 	for line in (source .. "\n"):gmatch("(.-)\n") do
@@ -125,7 +137,7 @@ function Whisper.ProgressText(chat)
 	local _, latest = Cli.StepLines(chat)
 	local p = Trim(Flat(latest or ""))
 	if p ~= "" then
-		if #p > WL.PROGRESS_MAX then p = p:sub(1, WL.PROGRESS_MAX) .. "..." end
+		p = Q.CutText(p, WL.PROGRESS_MAX)
 		text = text .. " - " .. p
 	end
 	return text .. "  " .. Link("cancel", chat.id, "stop", "888888")
