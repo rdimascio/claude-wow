@@ -518,6 +518,49 @@ function Q.PlaceEmpty(state, y, width)
 	return top + h
 end
 
+local function MacroSignature(macros)
+	if type(macros) ~= "table" or #macros == 0 then return "" end
+	local labels = {}
+	for k, m in ipairs(macros) do
+		labels[k] = ClaudeWoW.MacroLabel(m)
+	end
+	return #macros .. "\n" .. table.concat(labels, "\n")
+end
+
+local function PickerSignature(picker)
+	if not picker then return "" end
+	local rows = {}
+	for k, row in ipairs(picker) do
+		rows[k] = row.text or ""
+	end
+	return #picker .. "\n" .. table.concat(rows, "\n")
+end
+
+local function RenderState(c, width)
+	local s = run.renderKey
+	local parchment = ui.parchment ~= nil
+	local count = #c.history
+	if not s or s.chat ~= c.id or s.width ~= width or s.parchment ~= parchment or s.bubbles ~= ui.bubbles or count < s.count then
+		s = { chat = c.id, width = width, parchment = parchment, bubbles = ui.bubbles, items = {} }
+		run.renderKey = s
+	end
+	s.count = count
+	return s
+end
+
+local function SameCard(prev, role, body, when, dim, who, newChat, macroSig, pickerSig)
+	return prev ~= nil
+		and prev.kind == "card"
+		and prev.role == role
+		and prev.body == body
+		and prev.when == when
+		and prev.dim == dim
+		and prev.who == who
+		and prev.newChat == newChat
+		and prev.macros == macroSig
+		and prev.picker == pickerSig
+end
+
 function ClaudeWoW.Render()
 	local c = ActiveChat()
 	Cli.UpdateMcpButton()
@@ -529,33 +572,63 @@ function ClaudeWoW.Render()
 		local width = ui.scroll:GetWidth()
 		if not width or width < 80 then width = 400 end
 		ui.content:SetWidth(width)
+		local items = RenderState(c, width).items
 		local y, n = 0, 0
+		local function Anchor(b)
+			b:ClearAllPoints()
+			b:SetPoint("TOPLEFT", ui.content, "TOPLEFT", 0, -y)
+			b:Show()
+		end
 		local function PlaceNote(text, kind)
 			n = n + 1
 			local b = GetBubble(n)
+			local prev = items[n]
+			if prev and prev.kind == kind and prev.text == text then
+				Anchor(b)
+				b.text = text
+				y = y + prev.h + Q.NOTE_GAP
+				return b
+			end
 			b:SetWidth(width)
 			Q.LayoutNote(b, Display(text), kind, width)
-			b:ClearAllPoints()
-			b:SetPoint("TOPLEFT", ui.content, "TOPLEFT", 0, -y)
+			Anchor(b)
 			b.text = text
-			b:Show()
-			y = y + b:GetHeight() + Q.NOTE_GAP
+			local h = b:GetHeight()
+			items[n] = { kind = kind, text = text, h = h }
+			y = y + h + Q.NOTE_GAP
 			return b
 		end
-		local function Place(role, text, when, dim, denied, agent, macros, newChat, picker)
+		local function Place(role, text, when, dim, denied, agent, macros, newChat, picker, fresh)
 			n = n + 1
 			local b = GetBubble(n)
-			Q.LayoutCard(b)
 			local st = ROLE_STYLE[role] or ROLE_STYLE.system
 			local look = ui.parchment and (Q.PARCHMENT_STYLE[role] or Q.PARCHMENT_STYLE.system) or st
+			local who = st == ROLE_STYLE.assistant and ns.ReplyAgentName(c, agent) or st.label
+			local macroSig, pickerSig = MacroSignature(macros), PickerSignature(picker)
+			local body = role == "assistant" and Q.RichText(Display(text), ui.parchment ~= nil) or Display(text)
+			local prev = items[n]
+			if not fresh and not denied and SameCard(prev, role, body, when, dim, who, newChat == true, macroSig, pickerSig) then
+				for k, m in ipairs(macros or {}) do
+					b.macroBtns[k].macro = m
+				end
+				for k, row in ipairs(picker or {}) do
+					b.rowBtns[k].row = row
+				end
+				Anchor(b)
+				b.text = text
+				y = y + prev.h + 6
+				return b
+			end
+			items[n] = nil
+			Q.LayoutCard(b)
 			b:SetWidth(width)
 			b.bg:SetColorTexture(look.bg[1], look.bg[2], look.bg[3], look.bg[4])
 			b.accent:SetColorTexture(look.color[1], look.color[2], look.color[3], ui.parchment and 0.6 or 0.9)
-			b.who:SetText(st == ROLE_STYLE.assistant and ns.ReplyAgentName(c, agent) or st.label)
+			b.who:SetText(who)
 			b.who:SetTextColor(look.color[1], look.color[2], look.color[3])
 			b.when:SetText(when or "")
 			b.body:SetWidth(width - 18)
-			b.body:SetText(role == "assistant" and Q.RichText(Display(text), ui.parchment ~= nil) or Display(text))
+			b.body:SetText(body)
 			local ink = ui.parchment and (dim and Q.PARCHMENT_DIM or Q.PARCHMENT_TEXT) or (dim and { 0.72, 0.72, 0.72 } or { 0.93, 0.93, 0.93 })
 			b.body:SetTextColor(ink[1], ink[2], ink[3])
 			local h = b.body:GetStringHeight()
@@ -632,11 +705,24 @@ function ClaudeWoW.Render()
 			end
 			local whoH = math.max(12, Try(b.who.GetStringHeight, b.who) or 12)
 			b:SetHeight(6 + whoH + 4 + h + 8 + extra)
-			b:ClearAllPoints()
-			b:SetPoint("TOPLEFT", ui.content, "TOPLEFT", 0, -y)
+			Anchor(b)
 			b.text = text
-			b:Show()
-			y = y + b:GetHeight() + 6
+			local height = b:GetHeight()
+			if not fresh and not denied then
+				items[n] = {
+					kind = "card",
+					role = role,
+					body = body,
+					when = when,
+					dim = dim,
+					who = who,
+					newChat = newChat == true,
+					macros = macroSig,
+					picker = pickerSig,
+					h = height,
+				}
+			end
+			y = y + height + 6
 			return b
 		end
 		local openDenial = not c.pendingId and Q.DenialIndex(c) or nil
@@ -667,12 +753,13 @@ function ClaudeWoW.Render()
 			local head = "Working " .. SEG.DOT .. " " .. ns.ActivityLine(c)
 			if run.statusText and run.statusText ~= "" and not run.statusWorking then head = head .. "\n" .. run.statusText end
 			local steps = Cli.StepLines(c)
-			Place("assistant", #steps > 0 and (head .. "\n\n" .. table.concat(steps, "\n")) or head, "", true, nil, ns.ChatAgent(c))
+			Place("assistant", #steps > 0 and (head .. "\n\n" .. table.concat(steps, "\n")) or head, "", true, nil, ns.ChatAgent(c), nil, nil, nil, true)
 		else
 			empty = Q.EmptyState(c)
 		end
 		for i = n + 1, #ui.bubbles do
 			ui.bubbles[i]:Hide()
+			items[i] = nil
 		end
 		if empty then
 			y = Q.PlaceEmpty(empty, y, width)

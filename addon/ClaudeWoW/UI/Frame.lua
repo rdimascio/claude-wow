@@ -503,6 +503,7 @@ function ClaudeWoW.Toggle(show)
 	ui.quitting = nil
 	ns.db.settings.shown = show
 	if show then
+		ClaudeWoW.InvalidateRender()
 		ClaudeWoW.Render()
 		-- No auto-focus: the game keeps the keyboard until you click the box.
 		-- No automatic hello either: if the bridge hasn't been seen, the panel
@@ -521,6 +522,7 @@ function ClaudeWoW.Suspend(hidden)
 	end
 	if not ns.db.settings.shown or ui.frame:IsShown() then return false end
 	ui.frame:Show()
+	ClaudeWoW.InvalidateRender()
 	ClaudeWoW.Render()
 	return true
 end

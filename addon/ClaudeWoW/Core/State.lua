@@ -225,6 +225,7 @@ local RUN_FIELDS = {
 	reloadAsked = true,
 	reloadDialogManual = true,
 	reloadTold = true,
+	renderKey = true,
 	replay = true,
 	replyNames = true,
 	replyTarget = true,
