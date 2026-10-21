@@ -6,6 +6,8 @@ All notable changes to this project are recorded here. The format follows [Keep 
 
 ### Changed
 
+- The chat window is easier to read. On the quest-page parchment each message sits in a box with the Blizzard tooltip border, tinted blue for you and brown for the agent; short notes stay plain. Message text is 14 pt (was 13 pt) with a little more line spacing, the speaker label is 16 pt (was 18 pt), and the dim text used for notes and the working line is darker on the parchment (contrast about 5.4:1, was about 4.0:1).
+- While the agent works, its message shows one live line (time, step count and the newest step) instead of up to nine lines of steps. Hover the message to see every step the companion app sent, or click it to copy them.
 - The chat window redraws only what changed: a message bubble, a chat-list row or a folder header whose inputs did not change keeps its text and height and is only re-anchored. No visible change.
 
 ### Added
