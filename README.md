@@ -349,7 +349,7 @@ The system prompt tells every agent how to hand marks to the bridge: append comm
 
 ### Voice lines
 
-Your character talks back while the agent works. By default the lines are your own race and gender's emote and error voices: a *yes* when a message goes out, a *hello* when the bridge picks it up, a *cheer* when the reply lands, the "can't use that item" error voice when a run fails, and the "ability not ready yet" error voice when a reply waits on **Allow & retry**. Two other packs swap in the Warcraft III workers: `peasant` (*"Ready to work"*, *"More work?"*) and `peon` (*"Work work"*, *"Work complete"*). Lines closer than 2 seconds apart are dropped, except that a reply cuts off an ack.
+Your character talks back when the agent answers. By default the lines are your own race and gender's emote and error voices: a *cheer* when the reply lands, the "can't use that item" error voice when a run fails, and the "ability not ready yet" error voice when a reply waits on **Allow & retry**. Sending a message and the companion app picking it up play nothing by default; `/claude config voice set sent yes` or `set started hello` turns one on. Two other packs swap in the Warcraft III workers: `peasant` (*"More work?"*) and `peon` (*"Work complete"*). Lines closer than 2 seconds apart are dropped, except that a reply cuts off an ack.
 
 Nothing is shipped: the addon plays sounds the game client already has, by FileDataID. The WoW client has no *"Job's done!"* recording, so the peasant's done line is *"More work?"*.
 

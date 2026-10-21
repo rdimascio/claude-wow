@@ -77,9 +77,50 @@ function slash(vm, text) {
   return vm.evaluate('table.concat(STUB.prints, "\\n")') || '';
 }
 
-test('the bridge picking a message up plays the started line once the sent line has had its time', () => {
+function sendAndPickUp(vm) {
+  vm.run('ClaudeWoW.Send("fix the bug")');
+  const id = vm.num('ClaudeWoWDB.chats[1].pendingId');
+  const slot = String(id).padStart(3, '0');
+  vm.run(`STUB.now = STUB.now + 3; STUB.sounds["Interface\\\\AddOns\\\\ClaudeWoW_Runtime\\\\ack\\\\${slot}.wav"] = false; STUB.Tick()`);
+  return id;
+}
+
+for (const pack of ['race', 'peasant', 'peon']) {
+  test(`with the ${pack} pack a question plays only the reply line: sending and the pick-up are silent`, () => {
+    const vm = ready();
+    vm.run(`SlashCmdList.CLAUDE("config voice ${pack}")`);
+    vm.run(
+      'VOICE.played = {}; VOICE.events = {}; local event = ClaudeWoWVoice.Event; ClaudeWoWVoice.Event = function(e) table.insert(VOICE.events, e); return event(e) end',
+    );
+    const id = sendAndPickUp(vm);
+    assert.equal(vm.evaluate('table.concat(VOICE.events, ",")'), 'sent,started', 'the sent and started events fired');
+    assert.equal(played(vm).length, 0, 'sending and the pick-up play no line');
+    assert.equal(vm.evaluate('ClaudeWoWVoice.LineFor("sent")'), null);
+    assert.equal(vm.evaluate('ClaudeWoWVoice.LineFor("started")'), null);
+    const chatId = vm.evaluate('ClaudeWoWDB.chats[1].id');
+    nextSlot(vm, `{ now = time(), cwd = "", replies = { { chat = "${chatId}", id = ${id}, status = "done", text = "fixed" } } }`);
+    vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
+    const ids = played(vm);
+    assert.equal(ids.length, 1, 'the reply plays exactly one line');
+    assert.equal(vm.evaluate('ClaudeWoWVoice.Last().event'), 'done');
+  });
+}
+
+test('/claude config voice shows sent and started as off by default and lists them', () => {
+  const vm = ready();
+  const out = slash(vm, 'voice');
+  assert.match(out, /sent -> off /);
+  assert.match(out, /started -> off /);
+  assert.match(out, /done -> race:cheer/);
+  assert.match(slash(vm, 'voice test sent'), /nothing to play for sent/);
+});
+
+test('an explicit sent and started line still plays: the started line once the sent line has had its time', () => {
   const vm = ready();
   vm.run('SlashCmdList.CLAUDE("config voice peasant")');
+  vm.run('SlashCmdList.CLAUDE("config voice set sent peasant:yes")');
+  vm.run('SlashCmdList.CLAUDE("config voice set started peasant:ready")');
+  vm.run('VOICE.played = {}');
   vm.run('ClaudeWoW.Send("fix the bug")');
   const id = vm.num('ClaudeWoWDB.chats[1].pendingId');
   const slot = String(id).padStart(3, '0');
@@ -98,6 +139,9 @@ test('the bridge picking a message up plays the started line once the sent line 
 test('overlapping events are throttled: a quick ack is dropped, a reply cuts in, a second reply waits its turn', () => {
   const vm = ready();
   vm.run('SlashCmdList.CLAUDE("config voice peon")');
+  vm.run('SlashCmdList.CLAUDE("config voice set sent peon:yes")');
+  vm.run('SlashCmdList.CLAUDE("config voice set started peon:ready")');
+  vm.run('VOICE.played = {}');
   vm.run('ClaudeWoWVoice.Event("sent")');
   vm.run('STUB.now = STUB.now + 0.5; ClaudeWoWVoice.Event("started")');
   assert.equal(played(vm).length, 1, 'started right after sent is dropped');
