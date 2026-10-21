@@ -42,9 +42,9 @@ local UNIT_PACK_LINES = {
 }
 
 local EVENT_LINES = {
-	race = { sent = "yes", started = "hello", done = "cheer", error = "cantuse", permission = "notready" },
-	peasant = { sent = "yes", started = "ready", done = "morework", error = "pissed", permission = "what" },
-	peon = { sent = "yes", started = "ready", done = "workcomplete", error = "pissed", permission = "what" },
+	race = { done = "cheer", error = "cantuse", permission = "notready" },
+	peasant = { done = "morework", error = "pissed", permission = "what" },
+	peon = { done = "workcomplete", error = "pissed", permission = "what" },
 }
 
 local RACE_LINES = {
@@ -363,7 +363,8 @@ local function EventLineRef(event)
 	local override = db.lines[event]
 	if override then return override, true end
 	local defaults = EVENT_LINES[db.pack]
-	return defaults and (db.pack .. ":" .. defaults[event]) or "off", false
+	local line = defaults and defaults[event]
+	return line and (db.pack .. ":" .. line) or "off", false
 end
 
 local function PlayIds(ids)

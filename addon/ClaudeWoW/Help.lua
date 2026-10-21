@@ -309,7 +309,7 @@ H.OPTIONS = {
 		default = "race",
 		choices = VoiceChoices,
 		module = "ClaudeWoWVoice",
-		tooltip = "A short voice line when the agent starts, finishes or needs you.",
+		tooltip = "A short voice line when a reply arrives, a run fails or a reply needs you.",
 		get = VoicePack,
 		set = function(value) return Config("voice " .. value) end,
 	},
