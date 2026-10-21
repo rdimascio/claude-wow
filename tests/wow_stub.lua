@@ -199,6 +199,9 @@ function Methods.SetBackdrop(self, t)
 	assert(type(t) == "table", "SetBackdrop called with " .. tostring(t) .. " on " .. tostring(self.name or self.kind))
 	self.backdrop = t
 end
+function Methods.ClearBackdrop(self) self.backdrop = nil end
+function Methods.SetBackdropBorderColor(self, r, g, b, a) self.edgeColor = { r, g, b, a } end
+function Methods.SetSpacing(self, n) self.spacing = n end
 function Methods.SetFocus(self) STUB.focus = self end
 function Methods.ClearFocus(self) if STUB.focus == self then STUB.focus = nil end end
 function Methods.HasFocus(self) return STUB.focus == self end

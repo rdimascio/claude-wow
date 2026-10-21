@@ -148,7 +148,7 @@ local function ActivityLine(chat)
 end
 ns.ActivityLine = ActivityLine
 
-Cli.STEPS_SHOWN = 6
+Cli.STEPS_SHOWN = 10
 
 function Cli.StepLines(chat)
 	local lines = {}
