@@ -202,6 +202,10 @@ end
 function Methods.ClearBackdrop(self) self.backdrop = nil end
 function Methods.SetBackdropBorderColor(self, r, g, b, a) self.edgeColor = { r, g, b, a } end
 function Methods.SetSpacing(self, n) self.spacing = n end
+function Methods.SetFontObject(self, font)
+	self.font = font
+	self.spacing = 0
+end
 function Methods.SetFocus(self) STUB.focus = self end
 function Methods.ClearFocus(self) if STUB.focus == self then STUB.focus = nil end end
 function Methods.HasFocus(self) return STUB.focus == self end
@@ -224,7 +228,7 @@ end
 -- Tooltip scanning: SetHyperlink fills <name>TextLeft<i> / TextRight<i> from
 -- STUB.tooltips[link], a list of strings or { left, right } pairs.
 function Methods.ClearLines(self) self.lines = {} end
-function Methods.SetOwner(self, owner) self.owner = owner; self.lines = {} end
+function Methods.SetOwner(self, owner, anchor) self.owner = owner; self.anchor = anchor; self.lines = {} end
 function Methods.AddLine(self, text) self.lines = self.lines or {}; table.insert(self.lines, tostring(text)) end
 function Methods.NumLines(self) return #(self.lines or {}) end
 function Methods.SetHyperlink(self, link)

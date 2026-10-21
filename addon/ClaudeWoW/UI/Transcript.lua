@@ -27,7 +27,9 @@ Q.PARCHMENT_TEXT, Q.PARCHMENT_DIM = { 0.18, 0.12, 0.06 }, { 0.30, 0.22, 0.12 }
 
 Q.BUBBLE_EDGE = { edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", edgeSize = 12 }
 Q.BUBBLE_EDGE_INSET = 3
-Q.BUBBLE_PAD_X, Q.BUBBLE_PAD_TOP, Q.BUBBLE_PAD_BOTTOM, Q.BUBBLE_WHO_GAP = 12, 8, 10, 4
+Q.BUBBLE_PAD = { left = 12, right = 12, top = 8, bottom = 10 }
+Q.FLAT_PAD = { left = 10, right = 8, top = 6, bottom = 8 }
+Q.BUBBLE_WHO_GAP = 4
 Q.BODY_FONT, Q.SPEAKER_FONT, Q.BODY_SPACING = "GameFontBlackMedium", "Fancy16Font", 2
 Q.STEP_MAX_CHARS = 90
 Q.STEPS_TITLE, Q.STEPS_HINT = "Steps so far", "Click the message to copy them."
@@ -136,7 +138,7 @@ end
 
 function Q.StepsTooltip(b)
 	if not b.steps then return end
-	GameTooltip:SetOwner(b, "ANCHOR_RIGHT")
+	GameTooltip:SetOwner(b, "ANCHOR_TOP")
 	GameTooltip:SetText(Q.STEPS_TITLE)
 	for _, line in ipairs(b.steps) do
 		GameTooltip:AddLine(Display(line), 1, 1, 1, true)
@@ -151,7 +153,7 @@ function Q.WorkingLine(c)
 	local steps, latest = Cli.StepLines(c)
 	if latest then
 		local step = Flat(latest)
-		if #step > Q.STEP_MAX_CHARS then step = Q.CutLine(step, Q.STEP_MAX_CHARS) .. "..." end
+		step = Q.CutText(step, Q.STEP_MAX_CHARS)
 		head = head .. " - " .. step
 	end
 	if run.statusText and run.statusText ~= "" and not run.statusWorking then head = head .. "\n" .. run.statusText end
@@ -172,6 +174,8 @@ local function GetBubble(i)
 	local onParchment = ui.parchment ~= nil
 	b.boxed = onParchment and type(b.SetBackdrop) == "function"
 	local inset = b.boxed and Q.BUBBLE_EDGE_INSET or 0
+	b.pad = b.boxed and Q.BUBBLE_PAD or Q.FLAT_PAD
+	b.bodySpacing = onParchment and Q.BODY_SPACING or nil
 	b.bg = b:CreateTexture(nil, "BACKGROUND")
 	b.bg:SetPoint("TOPLEFT", b, "TOPLEFT", inset, -inset)
 	b.bg:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -inset, inset)
@@ -186,10 +190,10 @@ local function GetBubble(i)
 		onParchment and Q.FontObject(Q.SPEAKER_FONT, Q.FontObject("QuestTitleFont", Q.FontObject("QuestFontNormalSmall", "GameFontNormalSmall")))
 			or "GameFontNormalSmall"
 	)
-	b.who:SetPoint("TOPLEFT", b, "TOPLEFT", Q.BUBBLE_PAD_X, -Q.BUBBLE_PAD_TOP)
+	b.who:SetPoint("TOPLEFT", b, "TOPLEFT", b.pad.left, -b.pad.top)
 	b.who:SetJustifyH("LEFT")
 	b.when = b:CreateFontString(nil, "OVERLAY", onParchment and Q.FontObject("QuestFontNormalSmall", "GameFontDisableSmall") or "GameFontDisableSmall")
-	b.when:SetPoint("TOPRIGHT", b, "TOPRIGHT", -Q.BUBBLE_PAD_X, -Q.BUBBLE_PAD_TOP)
+	b.when:SetPoint("TOPRIGHT", b, "TOPRIGHT", -b.pad.right, -b.pad.top)
 	b.bodyFont = onParchment and Q.FontObject(Q.BODY_FONT, Q.FontObject("QuestFont", "ChatFontNormal")) or "ChatFontNormal"
 	b.noteFont = onParchment and Q.FontObject("QuestFontNormalSmall", "GameFontNormalSmall") or "GameFontDisableSmall"
 	b.body = b:CreateFontString(nil, "OVERLAY", b.bodyFont)
@@ -198,7 +202,6 @@ local function GetBubble(i)
 	b.body:SetJustifyV("TOP")
 	b.body:SetWordWrap(true)
 	b.body:SetNonSpaceWrap(true)
-	if b.body.SetSpacing then b.body:SetSpacing(Q.BODY_SPACING) end
 	b.ruleL = b:CreateTexture(nil, "ARTWORK")
 	b.ruleL:SetHeight(1)
 	b.ruleL:Hide()
@@ -318,6 +321,7 @@ function Q.LayoutCard(b)
 	b.ruleL:Hide()
 	b.ruleR:Hide()
 	b.body:SetFontObject(b.bodyFont)
+	if b.bodySpacing and b.body.SetSpacing then b.body:SetSpacing(b.bodySpacing) end
 	b.body:SetJustifyH("LEFT")
 	b.body:ClearAllPoints()
 	b.body:SetPoint("TOPLEFT", b.who, "BOTTOMLEFT", 0, -Q.BUBBLE_WHO_GAP)
@@ -673,7 +677,7 @@ function ClaudeWoW.Render()
 			b.who:SetText(who)
 			b.who:SetTextColor(look.color[1], look.color[2], look.color[3])
 			b.when:SetText(when or "")
-			b.body:SetWidth(width - 2 * Q.BUBBLE_PAD_X)
+			b.body:SetWidth(width - b.pad.left - b.pad.right)
 			b.body:SetText(body)
 			local ink = ui.parchment and (dim and Q.PARCHMENT_DIM or Q.PARCHMENT_TEXT) or (dim and { 0.72, 0.72, 0.72 } or { 0.93, 0.93, 0.93 })
 			b.body:SetTextColor(ink[1], ink[2], ink[3])
@@ -750,7 +754,7 @@ function ClaudeWoW.Render()
 				b.rowBtns[k]:Hide()
 			end
 			local whoH = math.max(12, Try(b.who.GetStringHeight, b.who) or 12)
-			b:SetHeight(Q.BUBBLE_PAD_TOP + whoH + Q.BUBBLE_WHO_GAP + h + Q.BUBBLE_PAD_BOTTOM + extra)
+			b:SetHeight(b.pad.top + whoH + Q.BUBBLE_WHO_GAP + h + b.pad.bottom + extra)
 			Anchor(b)
 			b.text = text
 			local height = b:GetHeight()
@@ -797,12 +801,12 @@ function ClaudeWoW.Render()
 		local empty = nil
 		if c.pendingId then
 			local head, steps = Q.WorkingLine(c)
-			local hovered = ui.bubbles[n + 1] and ui.bubbles[n + 1].tipShown
+			local tipWasOpen = ui.bubbles[n + 1] and ui.bubbles[n + 1].tipShown
 			local b = Place("assistant", head, "", true, nil, ns.ChatAgent(c), nil, nil, nil, true)
 			if #steps > 0 then
 				b.steps = steps
 				b.text = head .. "\n\n" .. table.concat(steps, "\n")
-				if hovered then Q.StepsTooltip(b) end
+				if tipWasOpen or Try(b.IsMouseOver, b) then Q.StepsTooltip(b) end
 			end
 		else
 			empty = Q.EmptyState(c)
