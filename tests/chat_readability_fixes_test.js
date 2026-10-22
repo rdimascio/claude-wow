@@ -56,7 +56,7 @@ test('message line spacing survives the font reset when a bubble is laid out aga
   assert.equal(dark.num('ClaudeWoW.UI.bubbles[1].body.spacing'), 0, 'the dark theme keeps the font spacing');
 });
 
-test('the dark theme keeps its old bubble padding; only the parchment box gets the wider one', () => {
+test('the parchment and the dark theme both keep the old bubble padding', () => {
   const geometry = vm => {
     vm.run(history('{ role = "assistant", t = 2, text = "hello" }'));
     const b = 'ClaudeWoW.UI.bubbles[1]';
@@ -70,8 +70,8 @@ test('the dark theme keeps its old bubble padding; only the parchment box gets t
   };
   const dark = geometry(boot({ native: false }));
   assert.deepEqual(dark, { whoX: 10, whoY: -6, whenX: -8, inset: 18, height: 6 + 14 + 4 + 14 + 8 });
-  const boxed = geometry(boot());
-  assert.deepEqual(boxed, { whoX: 12, whoY: -8, whenX: -12, inset: 24, height: 8 + 14 + 4 + 14 + 10 });
+  const parchment = geometry(boot());
+  assert.deepEqual(parchment, { whoX: 10, whoY: -6, whenX: -8, inset: 18, height: 6 + 14 + 4 + 14 + 8 });
 });
 
 test('a long step is cut without splitting a multibyte character in the working bubble and the whisper progress line', () => {

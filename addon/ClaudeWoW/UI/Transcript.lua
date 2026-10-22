@@ -19,16 +19,13 @@ local ROLE_STYLE = {
 }
 
 Q.PARCHMENT_STYLE = {
-	user = { color = { 0.10, 0.22, 0.45 }, bg = { 0.10, 0.20, 0.40, 0.10 }, edge = { 0.10, 0.22, 0.45, 0.70 } },
-	assistant = { color = { 0.45, 0.13, 0.02 }, bg = { 0.45, 0.30, 0.10, 0.08 }, edge = { 0.40, 0.26, 0.10, 0.70 } },
-	system = { color = { 0.32, 0.25, 0.16 }, bg = { 0, 0, 0, 0 }, edge = { 0.30, 0.22, 0.12, 0.45 } },
+	user = { color = { 0.10, 0.22, 0.45 }, bg = { 0.10, 0.20, 0.40, 0.07 } },
+	assistant = { color = { 0.45, 0.13, 0.02 }, bg = { 0, 0, 0, 0 } },
+	system = { color = { 0.32, 0.25, 0.16 }, bg = { 0, 0, 0, 0 } },
 }
 Q.PARCHMENT_TEXT, Q.PARCHMENT_DIM = { 0.18, 0.12, 0.06 }, { 0.30, 0.22, 0.12 }
 
-Q.BUBBLE_EDGE = { edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", edgeSize = 12 }
-Q.BUBBLE_EDGE_INSET = 3
-Q.BUBBLE_PAD = { left = 12, right = 12, top = 8, bottom = 10 }
-Q.FLAT_PAD = { left = 10, right = 8, top = 6, bottom = 8 }
+Q.BUBBLE_PAD = { left = 10, right = 8, top = 6, bottom = 8 }
 Q.BUBBLE_WHO_GAP = 4
 Q.BODY_FONT, Q.SPEAKER_FONT, Q.BODY_SPACING = "GameFontBlackMedium", "Fancy16Font", 2
 Q.STEP_MAX_CHARS = 90
@@ -164,7 +161,7 @@ end
 local function GetBubble(i)
 	local b = ui.bubbles[i]
 	if b then return b end
-	b = CreateFrame("Frame", nil, ui.content, "BackdropTemplate")
+	b = CreateFrame("Frame", nil, ui.content)
 	if b.SetHyperlinksEnabled then
 		pcall(b.SetHyperlinksEnabled, b, true)
 		b:SetScript("OnHyperlinkClick", Q.LinkClick)
@@ -172,13 +169,10 @@ local function GetBubble(i)
 		b:SetScript("OnHyperlinkLeave", function() GameTooltip:Hide() end)
 	end
 	local onParchment = ui.parchment ~= nil
-	b.boxed = onParchment and type(b.SetBackdrop) == "function"
-	local inset = b.boxed and Q.BUBBLE_EDGE_INSET or 0
-	b.pad = b.boxed and Q.BUBBLE_PAD or Q.FLAT_PAD
+	b.pad = Q.BUBBLE_PAD
 	b.bodySpacing = onParchment and Q.BODY_SPACING or nil
 	b.bg = b:CreateTexture(nil, "BACKGROUND")
-	b.bg:SetPoint("TOPLEFT", b, "TOPLEFT", inset, -inset)
-	b.bg:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", -inset, inset)
+	b.bg:SetAllPoints()
 	b.accent = b:CreateTexture(nil, "BORDER")
 	b.accent:SetPoint("TOPLEFT", b, "TOPLEFT", 0, 0)
 	b.accent:SetPoint("BOTTOMLEFT", b, "BOTTOMLEFT", 0, 0)
@@ -317,7 +311,6 @@ function Q.LayoutCard(b)
 	b.when:Show()
 	b.bg:Show()
 	b.accent:SetShown(ui.parchment == nil)
-	if b.boxed then b:SetBackdrop(Q.BUBBLE_EDGE) end
 	b.ruleL:Hide()
 	b.ruleR:Hide()
 	b.body:SetFontObject(b.bodyFont)
@@ -331,7 +324,6 @@ function Q.LayoutNote(b, text, kind, width)
 	for _, part in ipairs({ b.who, b.when, b.bg, b.accent, b.allow, b.fresh }) do
 		part:Hide()
 	end
-	if b.boxed then b:ClearBackdrop() end
 	for _, part in ipairs(b.macroBtns) do
 		part:Hide()
 	end
@@ -673,7 +665,6 @@ function ClaudeWoW.Render()
 			b:SetWidth(width)
 			b.bg:SetColorTexture(look.bg[1], look.bg[2], look.bg[3], look.bg[4])
 			b.accent:SetColorTexture(look.color[1], look.color[2], look.color[3], ui.parchment and 0.6 or 0.9)
-			if b.boxed then b:SetBackdropBorderColor(look.edge[1], look.edge[2], look.edge[3], look.edge[4]) end
 			b.who:SetText(who)
 			b.who:SetTextColor(look.color[1], look.color[2], look.color[3])
 			b.when:SetText(when or "")
