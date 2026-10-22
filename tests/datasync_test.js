@@ -22,7 +22,7 @@ function response(status, body, headers, url) {
   return res;
 }
 
-function fakeWago({ failTable, overrides = {}, disposition, servedFrom } = {}) {
+function fakeWago({ failTable, overrides = {}, disposition, servedFrom, builds } = {}) {
   const calls = [];
   const fetchImpl = async (url, init) => {
     calls.push(url);
@@ -30,7 +30,8 @@ function fakeWago({ failTable, overrides = {}, disposition, servedFrom } = {}) {
     const u = new URL(url);
     assert.equal(u.origin, 'https://wago.tools');
     if (u.pathname === '/api/builds') {
-      return response(200, fs.readFileSync(path.join(FIXTURES, 'builds.json'), 'utf8'), { 'content-type': 'application/json' }, servedFrom);
+      const body = builds ? JSON.stringify(builds) : fs.readFileSync(path.join(FIXTURES, 'builds.json'), 'utf8');
+      return response(200, body, { 'content-type': 'application/json' }, servedFrom);
     }
     const m = /^\/db2\/(\w+)\/csv$/.exec(u.pathname);
     assert.ok(m, `unexpected url ${url}`);
@@ -479,6 +480,39 @@ test('build family: the newest build of the configured family, and no family swi
   assert.equal(D.readCurrent(root).build, '1.60.0.5');
 
   await assert.rejects(syncInto(dataDir, { family: '1.60' }), /bad build family/);
+});
+
+function listedBuilds(byProduct) {
+  return Object.fromEntries(Object.entries(byProduct).map(([product, versions]) => [product, versions.map(version => ({ product, version }))]));
+}
+
+function syncedBuilds(wago) {
+  return wago.calls.filter(u => u.includes('/db2/')).map(u => new URL(u).searchParams.get('build'));
+}
+
+test('forever: the newest 1.60.1 build of the release product wowf wins over a newer beta build', async () => {
+  const dataDir = path.join(scratch('release-product'), 'data');
+  const wago = fakeWago({ builds: listedBuilds({ wowf: ['1.60.1.150', BUILD, '1.61.0.300'], wow_cn_beta: ['1.60.1.900'] }) });
+  const r = await syncInto(dataDir, { wago });
+  assert.equal(r.status, 'synced');
+  assert.equal(r.build, BUILD);
+  assert.equal(r.manifest.product, 'wowf');
+  assert.ok(syncedBuilds(wago).length > 0);
+  assert.ok(syncedBuilds(wago).every(b => b === BUILD));
+});
+
+test('forever: with no 1.60.1 build under wowf the sync falls back to the beta product', async () => {
+  for (const builds of [listedBuilds({ wow_cn_beta: ['1.60.1.150', BUILD] }), listedBuilds({ wowf: ['1.61.0.300'], wow_cn_beta: [BUILD] })]) {
+    const dataDir = path.join(scratch('beta-fallback'), 'data');
+    const r = await syncInto(dataDir, { wago: fakeWago({ builds }) });
+    assert.equal(r.build, BUILD);
+    assert.equal(r.manifest.product, 'wow_cn_beta');
+  }
+  const dataDir = path.join(scratch('no-product'), 'data');
+  await assert.rejects(
+    syncInto(dataDir, { wago: fakeWago({ builds: listedBuilds({ wow_classic: ['5.5.4.1'] }) }) }),
+    /no valid wowf or wow_cn_beta build in family 1\.60\.1/,
+  );
 });
 
 test('under the lock, a sync never moves current to an older build without --force', async () => {

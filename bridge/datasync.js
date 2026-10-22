@@ -8,7 +8,7 @@ const BUILD_PATTERN = /^\d+\.\d+\.\d+\.\d+$/;
 const FAMILY_PATTERN = /^\d+\.\d+\.\d+$/;
 const POINTER_PATTERN = /^(\d+\.\d+\.\d+\.\d+)(?:-\d+)?$/;
 const FLAVORS = Object.freeze({
-  forever: Object.freeze({ product: 'wow_cn_beta', family: '1.60.1', clientLine: '1.60', label: 'Forever' }),
+  forever: Object.freeze({ product: 'wowf', fallbackProduct: 'wow_cn_beta', family: '1.60.1', clientLine: '1.60', label: 'Forever' }),
   classic_era: Object.freeze({ product: 'wow_classic_era', family: '1.15.9', clientLine: '1.15', label: 'Classic Era' }),
 });
 const DEFAULT_FLAVOR = 'forever';
@@ -675,19 +675,23 @@ async function fetchText(fetchImpl, url, { expect, filename, maxBytes = MAX_BODY
 
 async function latestBuild(fetchImpl, flavor, family, maxBytes) {
   const text = await fetchText(fetchImpl, buildsUrl(), { expect: 'json', maxBytes });
-  let list;
+  let listed;
   try {
-    list = JSON.parse(text)[flavor.product];
+    listed = JSON.parse(text);
   } catch {
-    list = null;
+    listed = null;
   }
-  if (!Array.isArray(list)) throw new SyncError(`${buildsUrl()}: no ${flavor.product} builds listed`);
-  const builds = list
-    .map(b => b && b.version)
-    .filter(isBuild)
-    .filter(b => buildFamily(b) === family);
-  if (!builds.length) throw new SyncError(`${buildsUrl()}: no valid ${flavor.product} build in family ${family}`);
-  return builds.sort(compareBuilds).pop();
+  const products = flavor.fallbackProduct ? [flavor.product, flavor.fallbackProduct] : [flavor.product];
+  for (const product of products) {
+    const list = listed && listed[product];
+    if (!Array.isArray(list)) continue;
+    const builds = list
+      .map(b => b && b.version)
+      .filter(isBuild)
+      .filter(b => buildFamily(b) === family);
+    if (builds.length) return { build: builds.sort(compareBuilds).pop(), product };
+  }
+  throw new SyncError(`${buildsUrl()}: no valid ${products.join(' or ')} build in family ${family}`);
 }
 
 function compareBuilds(a, b) {
@@ -866,7 +870,8 @@ async function sync(opts = {}) {
   const root = flavorDir(opts.dataDir, flavorName);
   const lock = acquireLock(root, now, opts.pidAlive);
   try {
-    const build = opts.build || (await latestBuild(fetchImpl, flavor, family, opts.maxBodyBytes));
+    const picked = opts.build ? { build: opts.build, product: flavor.product } : await latestBuild(fetchImpl, flavor, family, opts.maxBodyBytes);
+    const build = picked.build;
     assertBuild(build);
     assertFlavorBuild(flavorName, build);
     const before = readCurrent(root);
@@ -946,7 +951,7 @@ async function sync(opts = {}) {
         flavor: flavorName,
         tablesVersion: TABLES_VERSION,
         source: SOURCE_NAME,
-        product: flavor.product,
+        product: picked.product,
         url: WAGO_ORIGIN,
         build,
         buildFamily: family,
@@ -979,7 +984,10 @@ async function sync(opts = {}) {
 }
 
 const FLAVOR_LINES = Object.entries(FLAVORS)
-  .map(([name, f]) => `    ${name.padEnd(12)}${f.label} clients ${f.clientLine}.* (wago.tools product ${f.product}, newest ${f.family} build by default)`)
+  .map(
+    ([name, f]) =>
+      `    ${name.padEnd(12)}${f.label} clients ${f.clientLine}.* (wago.tools product ${f.fallbackProduct ? `${f.product}, else ${f.fallbackProduct}` : f.product}, newest ${f.family} build by default)`,
+  )
   .join('\n');
 const SOURCES = Object.freeze(['client', 'community']);
 const USAGE = `claude-wow data sync [--flavor <name>] [--source client|community] [--build <a.b.c.d>] [--force]\n  Fetches one game's client tables from wago.tools into <CLAUDE_WOW_HOME>/data/<flavor>/<build>/.\n  The bridge uses the flavor that matches the client build the game reports, never another one.\n  --flavor  which game (default ${DEFAULT_FLAVOR}):\n${FLAVOR_LINES}\n  --build   a build other than the newest one in the flavor's default family; needed to switch build families\n  --source  client (default): the client tables above. community: Classic Era only, NPC names, spawns and quest titles and givers
