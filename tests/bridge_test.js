@@ -410,6 +410,26 @@ test('handled ids are tracked per session token and capped', () => {
   assert.equal(P.alreadyHandled(state, { session: '', id: 5000 }), false);
 });
 
+test('a rolled-back id under the same session token is a new message when its text differs', () => {
+  const state = { lastId: 0, handled: {}, sessions: {} };
+  P.markHandled(state, { session: 's1', chat: 'c1', id: 7, text: 'where is the inn' });
+  assert.equal(P.alreadyHandled(state, { session: 's1', chat: 'c1', id: 7, text: 'where is the inn' }), true, 'a retry of the same record');
+  assert.equal(P.alreadyHandled(state, { session: 's1', chat: 'c1', id: 7, text: 'what drops linen' }), false, 'new text');
+  assert.equal(P.alreadyHandled(state, { session: 's1', chat: 'c2', id: 7, text: 'where is the inn' }), false, 'another chat');
+  P.markHandled(state, { session: 's1', chat: 'c1', id: 7, text: 'what drops linen' });
+  assert.equal(P.alreadyHandled(state, { session: 's1', chat: 'c1', id: 7, text: 'what drops linen' }), true);
+  assert.equal(P.alreadyHandled(state, { session: 's1', chat: 'c1', id: 7, text: 'where is the inn' }), false);
+});
+
+test('a handled id with no text on record, or a job with no text, still counts as handled', () => {
+  const state = { lastId: 0, handled: { s1: { 3: 1 } }, sessions: {} };
+  assert.equal(P.alreadyHandled(state, { session: 's1', chat: 'c', id: 3, text: 'anything' }), true, 'an entry saved before prints');
+  P.markHandled(state, { session: 's1', chat: 'c', id: 4 });
+  assert.equal(P.alreadyHandled(state, { session: 's1', chat: 'c', id: 4, text: 'a lost run' }), true, 'an orphaned run is marked without text');
+  P.markHandled(state, { session: 's1', chat: 'c', id: 5, text: 'x' });
+  assert.equal(P.alreadyHandled(state, { session: 's1', chat: 'c', id: 5 }), true);
+});
+
 test('pruneStale forgets session tokens not seen for a month', () => {
   const day = 24 * 3600 * 1000;
   const now = 100 * day;
