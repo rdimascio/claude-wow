@@ -56,7 +56,8 @@ test(
       for (const png of pngs) assert.equal(modeOf(png), PRIVATE_FILE, `${path.basename(png)} is private`);
       assert.equal(modeOf(tmp), PRIVATE_DIR, 'tmp is private');
       assert.equal(modeOf(h.sb.home), PRIVATE_DIR, 'the home folder is private');
-      for (const file of [h.sb.config, h.sb.state, h.sb.transcripts, h.sb.bridgeLog]) assert.equal(modeOf(file), PRIVATE_FILE, `${path.basename(file)} is private`);
+      for (const file of [h.sb.config, h.sb.state, h.sb.transcripts, h.sb.bridgeLog])
+        assert.equal(modeOf(file), PRIVATE_FILE, `${path.basename(file)} is private`);
       h.client.slash('/claude cancel');
       await h.bridge.waitForLine(/cancelled from the game; ending it/);
     });
