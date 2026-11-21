@@ -179,7 +179,7 @@ On Classic Era 1.15.9, `/reload` re-reads the toc and every Lua file it lists: a
 
 ## What ships and what the bridge writes
 
-`ClaudeWoW/` holds only shipped files; an addon update (CurseForge replaces the whole folder) may overwrite or delete anything in it. Everything the bridge writes while it runs lives in `ClaudeWoW_Runtime/` (the name is `P.RUNTIME_ADDON` in `bridge/protocol.js` and `Presence.ROOT` in the addon), plus the 200 slot folders:
+`ClaudeWoW/` holds only shipped files; an addon update may overwrite or delete anything in it. Everything the bridge writes while it runs lives in `ClaudeWoW_Runtime/` (the name is `P.RUNTIME_ADDON` in `bridge/protocol.js` and `Presence.ROOT` in the addon), plus the 200 slot folders:
 
 | Folder | Written by | Holds |
 |---|---|---|

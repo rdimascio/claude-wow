@@ -8,7 +8,7 @@ Before any of them you need:
 - **Nothing else, on route 1 or 2**: the bridge ships as one self-contained binary for macOS (arm64, x64), Linux (x64) and Windows (x64), with its runtime inside. Route 3, and route 1 where there is no binary for your machine, run the checkout and need **Node.js 22.2 or newer** (`node -v`: [nodejs.org](https://nodejs.org), `brew install node`, `winget install OpenJS.NodeJS.LTS`) or [Bun](https://bun.sh).
 - **At least one agent CLI**, installed and logged in: `claude`, `codex`, `grok`, `agy` or `hermes` (see [AGENTS.md](AGENTS.md)). One is enough; the bridge lists what it found.
 
-The addon can also come from an addon manager (the CurseForge app, WoWUp) or from the addon zip on the GitHub release. Every route below still needs the bridge and `claude-wow setup`, and setup writes the addon that ships with the bridge into `Interface/AddOns/ClaudeWoW` either way. The README's [Install](../README.md#install) section is the short version for players.
+The addon can also come from the addon zip on the GitHub release. Every route below still needs the bridge and `claude-wow setup`, and setup writes the addon that ships with the bridge into `Interface/AddOns/ClaudeWoW` either way. The README's [Install](../README.md#install) section is the short version for players.
 
 Platform notes that are not about installing (which display mode, screen-capture permissions, Wine and X11) stay in [INSTALL-WINDOWS.md](INSTALL-WINDOWS.md) and [INSTALL-LINUX.md](INSTALL-LINUX.md), and in the README's macOS section.
 

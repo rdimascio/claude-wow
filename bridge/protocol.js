@@ -412,7 +412,7 @@ function protoRange(bridge) {
   return bridge.protoMin === bridge.protoMax ? String(bridge.protoMin) : `${bridge.protoMin} to ${bridge.protoMax}`;
 }
 
-const ADDON_UPDATE_HOW = 'update the addon in the CurseForge app or run claude-wow setup, then type /reload.';
+const ADDON_UPDATE_HOW = 'run claude-wow setup, then type /reload.';
 const BRIDGE_UPDATE_HOW = 'run brew upgrade claude-wow or the installer again, then claude-wow service restart.';
 
 function versionVerdict(addon, bridge = bridgeInfo()) {

@@ -306,7 +306,7 @@ function ClaudeWoW.Version.Verdict(b)
 				.. mine
 				.. ") is too old for the companion app ("
 				.. theirs
-				.. "). The companion app refuses messages until you update the addon: update the addon in the CurseForge app or run claude-wow setup, then type /reload."
+				.. "). The companion app refuses messages until you update the addon: run claude-wow setup, then type /reload."
 	end
 	if V.PROTO > b.protoMax then
 		return "update-bridge",
