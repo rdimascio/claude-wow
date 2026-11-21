@@ -265,7 +265,7 @@ Every run tells the agent that only a short summary of its reply is printed in t
 
 ### The agent knows where you are
 
-The addon tells the agent which game and client you are on, your character (name, realm, level, race, class, faction, guild), where you are (zone, subzone and the map coordinates the minimap shows), your money, talents, professions with their skill, and your quest log (quest ids, marking the ones ready to turn in). With the Polestar guide addon on Forever, it also sends the guide you follow, its live step and that step's open goals as ids. A few lines, sent with the addon's hello and again whenever they change, and put at the top of every message by the bridge as a marked situation block (the rules for reading it, and the addon primer, go in the agent's system prompt, which stays the same for the life of a chat so it is cached and, with Claude Code, recorded once), so you can ask "what should I be doing at my level around here?" or "write me a macro for my class" without explaining yourself first. It is only a hint: for a chat about an unrelated project it changes nothing. `/claude config context` shows exactly what is sent; `/claude config context off` stops sending it (the bridge forgets it too), and `"gameContext": false` in `~/.claude-wow/config.json` turns it off for good.
+The addon tells the agent which game and client you are on, your character (name, realm, level, race, class, faction, guild), where you are (zone, subzone and the map coordinates the minimap shows), your money, talents, professions with their skill, and your quest log (quest ids, marking the ones ready to turn in). With the Polestar guide addon on Forever, it also sends the guide you follow, its live step and that step's open goals as ids. A few lines, sent with the addon's hello and again whenever they change, and put at the top of every message by the bridge as a marked situation block (the rules for reading it, and the addon primer, go in the agent's system prompt, which stays the same for the life of a chat so it is cached and, with Claude Code, recorded once), so you can ask "what should I be doing at my level around here?" or "write me a macro for my class" without explaining yourself first. It is only a hint: for a chat about an unrelated project it changes nothing. `/claude config context` shows exactly what is sent; `/claude config context off` stops sending it (the bridge forgets it too), and `"gameContext": false` in `~/.claude-wow/config.json` turns it off for good. It is on only when you agreed at setup: see [Privacy](#privacy-what-leaves-your-machine).
 
 Along with it, every run gets [docs/WOW-ADDON-PRIMER.md](docs/WOW-ADDON-PRIMER.md): a short reference on writing addons and macros for this client (TOC layout, sandbox rules, common frames and events, where to verify an API), so "write me an addon that..." works from any folder, not just this repo. Edit the file to suit your setup; the bridge re-reads it on every run. `"primerFile": ""` in the config drops it, and `/claude config context off` turns it off together with the character context.
 
@@ -397,6 +397,21 @@ The roll never shows while you are in combat or while a real group loot roll is 
 Claude Code also blocks a command that touches a path outside the chat's folder, and no allow rule can change that. That denial rolls for the folder instead, as **Scroll of /tmp**: Need adds the folder to the chat for good (what `/claude --add-dir /tmp` does), Greed adds it for the retry only. When a retry is blocked again for something it was just granted, the reply says so in one line and no new roll comes up.
 
 The bar under the item counts down 60 seconds from when the frame shows. When it runs out, that is a Pass; it never allows. The count stops while the Need dialog is open or the roll waits. Each choice plays the game's own loot sounds. `/claude config roll off` brings back the **Allow & retry** button (it asks first, like Need), and `/claude config roll on` returns to the roll frame.
+
+## Privacy: what leaves your machine
+
+Your messages and the agent's replies go to the agent you picked (for example Claude Code to Anthropic, Codex to OpenAI), as with any use of that agent. Beyond that, the companion app talks to the internet only here:
+
+| What | Where it goes | When |
+|---|---|---|
+| Your game state: character, realm, zone and position, quests, money, bags, professions, equipped items, deaths, and vendor, auction and loot windows you opened | The agent provider, inside each message and through the goal tools | **Only when you agreed.** Setup asks once: "Share your game state with the agent?" The answer is no unless you type yes, and a setup with no terminal (a script, CI) answers no. |
+| The update check | `api.github.com` (and `github.com` for the download) | Once a day. `"autoUpdate": false` turns it off. |
+| Game data sync: the client's map, item, spell and quest tables | `wago.tools` and `raw.githubusercontent.com` | When the game reports a client build the app has no data for. `"data": { "autoSync": false }` turns it off. |
+| Discord sync | `discord.com` | Only when you set it up. Off by default. |
+
+To change your answer later, run `claude-wow setup --share-game-state yes` (or `no`), or set `"gameContext"` and `"telemetry": { "enabled": ... }` in `~/.claude-wow/config.json`, then restart the companion app. A `config.json` made before this question existed keeps sharing, as it did before.
+
+With sharing off, the addon still sends its game context to the companion app on your computer, which keeps it in `state.json` there. The companion app does not put it in any message and does not give the agent the goal tools. It does not ask the addon for the rest of the game state at all. `/claude config context off` in game also stops the addon from sending the context.
 
 ## Configuration (`~/.claude-wow/config.json`)
 

@@ -153,6 +153,8 @@ function buildConfig(L, opts = {}) {
     presenceIntervalMs: Math.max(250, Math.round((opts.presenceIntervalMs || 30000) / scale)),
     pollMs: opts.pollMs || 250,
     timeoutMs: opts.timeoutMs || cfg.timeoutMs || 1800000,
+    gameContext: true,
+    telemetry: { ...cfg.telemetry, enabled: true },
   });
   if (L.clients.length > 1) {
     for (const k of ['addonDir', 'savedVariablesFile', 'inboxFile']) delete cfg[k];

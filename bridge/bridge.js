@@ -357,6 +357,8 @@ const dataAutoSync = DAS.createAutoSync({
 });
 
 const TELEMETRY_ON = TL.telemetryEnabled(cfg.telemetry);
+const CONTEXT_ON = cfg.gameContext !== false;
+const sharedContext = () => (CONTEXT_ON ? state.context : null);
 const OPEN_LINKS_LOG = process.env.CLAUDE_WOW_OPEN_LINKS_LOG || '';
 const linkOpener = OU.createOpener({ enabled: cfg.openLinks !== false, log, ...(OPEN_LINKS_LOG ? { spawnFn: OU.recordingSpawn(OPEN_LINKS_LOG) } : {}) });
 const observed = OB.createObserved({ dir: HOME.goals, log });
@@ -1403,7 +1405,7 @@ function contextTextFor(job) {
 }
 
 function gameContext(job) {
-  if (cfg.gameContext === false || (job && job.noGameContext)) return '';
+  if (!CONTEXT_ON || (job && job.noGameContext)) return '';
   return contextTextFor(job);
 }
 
@@ -2023,7 +2025,7 @@ const voteBox = VOTES.createVotes({
 
 const goalStore = GOALS.createBridgeGoals({
   home: HOME,
-  context: () => state.context,
+  context: sharedContext,
   streamOptions: () => core.options('stream'),
   onChange: () => publishNow(true, { refresh: true }),
   equipped: TL.equippedReader(telemetry, TELEMETRY_ON),
@@ -2033,7 +2035,7 @@ const goalStore = GOALS.createBridgeGoals({
 
 const observedTools = OT.createObservedTools({
   observed,
-  context: () => state.context,
+  context: sharedContext,
   gameData: contextText => {
     try {
       return GR.openFor(HOME.data, contextText || '');
@@ -2048,7 +2050,7 @@ const observedTools = OT.createObservedTools({
 
 const campaignStore = CAMPAIGN.createBridgeCampaigns({
   home: HOME,
-  context: () => state.context,
+  context: sharedContext,
   onChange: () => publishNow(true, { refresh: true }),
   standing: TL.standingReader(telemetry, TELEMETRY_ON),
   telemetryOn: TELEMETRY_ON,
@@ -2437,6 +2439,7 @@ function runToolsSocket(tag, job) {
   const lp = livePlugin();
   const socket = lp && typeof lp.runEndpoint === 'function' ? lp.runEndpoint() : '';
   if (!socket) return noRunTools(tag, 'the live socket is not listening (plugins.live.enabled, or --once)');
+  if (!CONTEXT_ON) return noRunTools(tag, 'gameContext is off in config.json');
   if (!runGrantCharacter()) return noRunTools(tag, 'the game context names no character');
   const client = clientFor(job);
   const theirs = CLI.foreignContext(state, client ? client.key : '', text => (GOALS.characterOf(text) || {}).key || '');
@@ -2450,7 +2453,8 @@ function runToolsSocket(tag, job) {
   return socket;
 }
 function runGrantCharacter() {
-  return (GOALS.characterOf((state.context && state.context.text) || '') || {}).key || '';
+  const context = sharedContext();
+  return (GOALS.characterOf((context && context.text) || '') || {}).key || '';
 }
 
 const MCP_CONFIG_DIR = path.join(TMP_DIR, 'mcp');
@@ -3789,7 +3793,7 @@ function banner() {
   console.log(`  sessions : ${Object.keys(state.sessions).length} saved`);
   const ctx = gameContext();
   console.log(
-    `  context  : ${cfg.gameContext === false ? 'off (gameContext in config.json)' : ctx ? (ctx.split('\n').find(l => /^Character:/i.test(l)) || ctx.split('\n')[0]).slice(0, 100) : 'none yet (the addon sends it with its hello; /claude config context in game)'}`,
+    `  context  : ${!CONTEXT_ON ? 'off (gameContext in config.json)' : ctx ? (ctx.split('\n').find(l => /^Character:/i.test(l)) || ctx.split('\n')[0]).slice(0, 100) : 'none yet (the addon sends it with its hello; /claude config context in game)'}`,
   );
   console.log(
     `  primer   : ${!PRIMER_FILE ? 'off (primerFile in config.json)' : primer() ? primerPath() + ' (' + primer().length + ' chars, in the system prompt while the addon sends a context)' : 'NOT FOUND: ' + primerPath()}`,
