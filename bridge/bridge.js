@@ -2025,7 +2025,7 @@ const voteBox = VOTES.createVotes({
 
 const goalStore = GOALS.createBridgeGoals({
   home: HOME,
-  context: sharedContext,
+  context: () => state.context,
   streamOptions: () => core.options('stream'),
   onChange: () => publishNow(true, { refresh: true }),
   equipped: TL.equippedReader(telemetry, TELEMETRY_ON),
@@ -2035,7 +2035,7 @@ const goalStore = GOALS.createBridgeGoals({
 
 const observedTools = OT.createObservedTools({
   observed,
-  context: sharedContext,
+  context: () => state.context,
   gameData: contextText => {
     try {
       return GR.openFor(HOME.data, contextText || '');
@@ -2050,7 +2050,7 @@ const observedTools = OT.createObservedTools({
 
 const campaignStore = CAMPAIGN.createBridgeCampaigns({
   home: HOME,
-  context: sharedContext,
+  context: () => state.context,
   onChange: () => publishNow(true, { refresh: true }),
   standing: TL.standingReader(telemetry, TELEMETRY_ON),
   telemetryOn: TELEMETRY_ON,
