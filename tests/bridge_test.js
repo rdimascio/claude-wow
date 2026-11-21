@@ -421,6 +421,15 @@ test('a rolled-back id under the same session token is a new message when its te
   assert.equal(P.alreadyHandled(state, { session: 's1', chat: 'c1', id: 7, text: 'where is the inn' }), false);
 });
 
+test('a job keeps the print of its text as it arrived, so a retry still matches after the bridge rewrites the text', () => {
+  const state = { lastId: 0, handled: {}, sessions: {} };
+  const job = { session: 's1', chat: 'c1', id: 9, text: '@ask where is the inn' };
+  assert.equal(P.alreadyHandled(state, job), false);
+  job.text = 'where is the inn';
+  P.markHandled(state, job);
+  assert.equal(P.alreadyHandled(state, { session: 's1', chat: 'c1', id: 9, text: '@ask where is the inn' }), true);
+});
+
 test('a handled id with no text on record, or a job with no text, still counts as handled', () => {
   const state = { lastId: 0, handled: { s1: { 3: 1 } }, sessions: {} };
   assert.equal(P.alreadyHandled(state, { session: 's1', chat: 'c', id: 3, text: 'anything' }), true, 'an entry saved before prints');

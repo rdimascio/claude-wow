@@ -88,18 +88,29 @@ function sessKey(job) {
 
 const ANY_CONTENT = 1;
 
+// Kept on the job at its first check, because the bridge rewrites a job's text
+// (an @agent prefix, for one) before it marks the job handled.
 function contentPrint(job) {
-  if (typeof job.text !== 'string') return ANY_CONTENT;
-  return crypto.createHash('sha256').update(`${job.chat || ''}\n${job.text}`).digest('hex').slice(0, 16);
+  if (job.intakePrint !== undefined) return job.intakePrint;
+  const print =
+    typeof job.text !== 'string'
+      ? ANY_CONTENT
+      : crypto
+          .createHash('sha256')
+          .update(`${job.chat || ''}\n${job.text}`)
+          .digest('hex')
+          .slice(0, 16);
+  job.intakePrint = print;
+  return print;
 }
 
 function alreadyHandled(state, job) {
+  const print = contentPrint(job);
   const key = job.session || '';
   const h = state.handled[key];
   if (!h) return key === '' && job.id <= state.lastId;
   const seen = h[job.id];
   if (!seen) return false;
-  const print = contentPrint(job);
   return seen === ANY_CONTENT || print === ANY_CONTENT || seen === print;
 }
 
