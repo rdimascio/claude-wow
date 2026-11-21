@@ -158,9 +158,14 @@ local function DB()
 		wdb.removed = wdb.removed or {}
 		wdb.data = wdb.data or {}
 		wdb.approved = type(wdb.approved) == "table" and wdb.approved or {}
+		if type(wdb.enabled) ~= "boolean" then wdb.enabled = next(wdb.approved) ~= nil end
 	end
 	return wdb
 end
+
+W.OFF_HINT = "Widgets are off. /claude config ui widgets on lets the agent's widgets run, each one after you say yes."
+
+function W.Enabled() return DB().enabled == true end
 
 local function Items()
 	local set = DB().set
@@ -1094,7 +1099,7 @@ local function SameCode(item, data) return type(data) == "table" and item.rev ==
 local Display = ns.Display
 
 function W.Start(item, announce)
-	if not Approved(item) then return false end
+	if not W.Enabled() or not Approved(item) then return false end
 	local widget = { name = item.name, title = item.title or item.name, rev = item.rev, source = item.source, frames = {}, timers = {}, containerScripts = {} }
 	widget.frame = Container(item.name)
 	widget.frame:Show()
@@ -1172,7 +1177,7 @@ local function RetryLater()
 end
 
 function W.PromptNext()
-	if W.asking or type(StaticPopup_Show) ~= "function" then return false end
+	if not W.Enabled() or W.asking or type(StaticPopup_Show) ~= "function" then return false end
 	for _, item in ipairs(W.Waiting()) do
 		if skipped[item.name] ~= item.rev then
 			local data = { name = item.name, rev = item.rev, source = item.source }
@@ -1248,12 +1253,14 @@ function W.Sync(set)
 		end
 	end
 	d.set = { epoch = set.epoch, version = tonumber(set.version) or 0, items = items }
+	if not W.Enabled() and #items > 0 then Report(string.format("the agent sent %d widget(s); none runs. %s", #items, W.OFF_HINT)) end
 	W.Apply(true)
 end
 
 function W.Status(name)
 	local item = FindItem(name)
 	if not item then return nil end
+	if not W.Enabled() then return "off" end
 	if running[name] then return "running" end
 	if DB().removed[name] == item.rev then return "removed" end
 	local failure = failures[name]
@@ -1263,6 +1270,7 @@ function W.Status(name)
 end
 
 local function List()
+	if not W.Enabled() then Print(W.OFF_HINT) end
 	local items = Items()
 	if #items == 0 then
 		Print("no widgets yet. Ask the agent for one, e.g. /claude give me a small DPS meter")
@@ -1275,13 +1283,15 @@ local function List()
 				"%s  %s  (%s%s, %d bytes)",
 				item.name,
 				item.title,
-				status == "waiting" and "waiting for your OK" or status,
+				status == "waiting" and "waiting for your OK" or status == "off" and "widgets are off" or status,
 				err and (": " .. err) or "",
 				#item.source
 			)
 		)
 	end
-	Print("commands: /claude config ui list, /claude config ui remove <name>, /claude config ui run <name> (run also says yes to a waiting widget)")
+	Print(
+		"commands: /claude config ui list, /claude config ui remove <name>, /claude config ui run <name> (run also says yes to a waiting widget), /claude config ui widgets on|off"
+	)
 end
 
 function W.Remove(name, ctx)
@@ -1297,6 +1307,10 @@ function W.Remove(name, ctx)
 end
 
 function W.Run(name)
+	if not W.Enabled() then
+		Print(W.OFF_HINT)
+		return
+	end
 	local item = FindItem(name)
 	if not item then
 		Print("no widget " .. tostring(name))
@@ -1309,6 +1323,10 @@ function W.Run(name)
 end
 
 function W.Show(data, ctx)
+	if not W.Enabled() then
+		Print(W.OFF_HINT)
+		return false
+	end
 	local item = type(data) == "table" and FindItem(data.name)
 	if not item or not SameCode(item, data) then
 		W.PromptNext()
@@ -1328,11 +1346,27 @@ function W.Rows()
 	return rows
 end
 
+function W.SetEnabled(on)
+	DB().enabled = on
+	if on then
+		Report("widgets are on. Each new widget still asks before it runs.")
+		W.Apply(true)
+		return
+	end
+	for _, widget in pairs(running) do
+		W.Stop(widget)
+	end
+	Report("widgets are off. None runs until /claude config ui widgets on.")
+end
+
 function W.Command(msg)
 	DB()
 	local cmd, rest = (msg or ""):match("^%s*(%S*)%s*(.-)%s*$")
 	cmd = (cmd or ""):lower()
-	if cmd == "remove" and rest ~= "" then
+	local switch = (rest or ""):lower()
+	if cmd == "widgets" and (switch == "on" or switch == "off") then
+		W.SetEnabled(switch == "on")
+	elseif cmd == "remove" and rest ~= "" then
 		W.Remove(rest)
 	elseif cmd == "run" and rest ~= "" then
 		W.Run(rest)

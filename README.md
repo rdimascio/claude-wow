@@ -13,7 +13,7 @@ Chat with your local coding agents from inside **World of Warcraft: Forever** or
 - The agent can draw on your world map: numbered routes, quest stops and marks, with a navigator arrow that walks you from stop to stop
 - Herb and ore spawns on the world map, filtered by your gathering skill (`/claude config map ore`, `/claude config map herb`)
 - Ready-made macros: ask for one and the reply carries a **Create Macro** button that saves it and puts it on your cursor, ready to drop on an action bar (`/claude config macro undo` reverts it)
-- Live UI widgets: ask for *"a DPS meter"* or *"a timer bar for my buffs"* and the agent's Lua loads in the game once you click **Show**, no `/reload`; display-only, listed and removed with `/claude config ui` or the **Widgets** page in the game's AddOns settings
+- Live UI widgets: ask for *"a DPS meter"* or *"a timer bar for my buffs"* and the agent's Lua loads in the game once you click **Show**, no `/reload`; off until `/claude config ui widgets on` (see [the risk](#live-ui-widgets)); display-only, listed and removed with `/claude config ui` or the **Widgets** page in the game's AddOns settings
 - **Need / Greed / Pass** on permissions: when Claude or Grok needs a command outside your allowlist, an **Azeroth Companion asks** frame offers it as an epic item. It waits while you are in combat or a real loot roll is open
 - A status light for the companion app, automatic retries, and recovery of your chats (and map layers) if the beta client wipes addon data
 - Runs on Windows, on Linux with the game under Wine, and on macOS with a native client
@@ -366,13 +366,16 @@ The settings are saved with the addon's other settings (`ClaudeWoWDB.voice`).
 
 ### Live UI widgets
 
-Ask for a small UI element (*"give me a DPS meter"*, *"a timer bar for my buffs"*) and it shows up in the game a moment later, without `/reload`. The agent writes addon Lua in a ```` ```wowui <name> ```` block (or appends it to the file in `CLAUDE_WOW_UI_FILE`). The bridge refuses anything that names a protected or outward action (casting, targeting, movement, chat, macros, bindings, secure templates), keeps the rest versioned in `state.json` and ships it in the slot files, like map layers. The addon runs each widget in its own sandbox inside a `pcall`: the widget sees only an allowlist of display APIs, through wrapped frames, and no Blizzard frame. An error stops the widget and shows up in the chat window.
+Ask for a small UI element (*"give me a DPS meter"*, *"a timer bar for my buffs"*) and, once you turned widgets on, it shows up in the game a moment later, without `/reload`. The agent writes addon Lua in a ```` ```wowui <name> ```` block (or appends it to the file in `CLAUDE_WOW_UI_FILE`). The bridge refuses anything that names a protected or outward action (casting, targeting, movement, chat, macros, bindings, secure templates), keeps the rest versioned in `state.json` and ships it in the slot files, like map layers. The addon runs each widget in its own sandbox inside a `pcall`: the widget sees only an allowlist of display APIs, through wrapped frames, and no Blizzard frame. An error stops the widget and shows up in the chat window.
 
 | Command | What it does |
 |---|---|
 | `/claude config ui` | list the widgets and their state (running, waiting for your OK, removed, failed) |
 | `/claude config ui remove <name>` | stop a widget and keep it off after login, until the agent sends a new version |
 | `/claude config ui run <name>` | start a widget again, or say yes to one that waits |
+| `/claude config ui widgets on\|off` | let widgets run at all; they are off until you turn them on |
+
+**Widgets are off by default, and turning them on is a risk you choose.** A widget is Lua code that the agent writes and your game runs. The sandbox blocks the dangerous game functions it knows about, but a sandbox can have holes, and the code comes from an AI model that can be wrong or can be tricked by text it read (a web page, a file, a message). A widget could show you false information, slow the game down or spam errors. Turn widgets on only if you accept that, and read a widget's code (in the agent's reply, or in `~/.claude-wow/state.json`) before you say yes to it. A player who said yes to a widget before this switch existed keeps widgets on.
 
 A widget runs only after you say yes. Each new widget, and each new version of one, opens a popup, one at a time: "Show the agent's '<title>' widget?" with **Show** and **Not Now**. **Show** runs it and remembers that version; **Not Now** keeps it off until the agent sends a new version; Escape asks again at the next login. The **Widgets** page in the game's AddOns settings lists them with **Remove** and **Show** buttons. Widgets you said yes to start again at login. The contract, the allowlist, what a widget cannot do and the limits are in [docs/UI-WIDGETS.md](docs/UI-WIDGETS.md). `/claude dev globals` and `npm run audit:widgets` check the allowlist against your client.
 
@@ -411,7 +414,7 @@ Your messages and the agent's replies go to the agent you picked (for example Cl
 
 To change your answer later, run `claude-wow setup --share-game-state yes` (or `no`), or set `"gameContext"` and `"telemetry": { "enabled": ... }` in `~/.claude-wow/config.json`, then restart the companion app. A `config.json` made before this question existed keeps sharing, as it did before.
 
-With sharing off, the addon still sends its game context to the companion app on your computer, which keeps it in `state.json` there. The companion app does not put it in any message and does not give the agent the goal tools. It does not ask the addon for the rest of the game state at all. `/claude config context off` in game also stops the addon from sending the context.
+With sharing off, the addon still sends its game context to the companion app on your computer, which keeps it in `state.json` there. The companion app does not put it in any message and does not give in-game chats the goal tools. A live Claude Code session you connect yourself ([docs/LIVE-SESSION.md](docs/LIVE-SESSION.md)) still has its goal tools, which read your professions from the context. It does not ask the addon for the rest of the game state at all. `/claude config context off` in game also stops the addon from sending the context.
 
 ## Configuration (`~/.claude-wow/config.json`)
 
