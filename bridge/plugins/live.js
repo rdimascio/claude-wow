@@ -739,7 +739,8 @@ function createLive(overrides = {}) {
       c.fail(job, noSessionText(target));
       return;
     }
-    if (s.cwd && !PJ.folderAllowed(s.cwd, PJ.allowedFolders(c.options('claude-code'), c.defaultCwd))) {
+    const codeOptions = c.options('claude-code');
+    if (s.cwd && PJ.foldersListed(codeOptions) && !PJ.folderAllowed(s.cwd, PJ.allowedFolders(codeOptions, c.defaultCwd))) {
       log(`${c.tag(job)} live session "${s.name}" is in a folder outside plugins.claude-code.folders`);
       c.fail(job, 'That live session is in a folder that is not in plugins.claude-code.folders, so the game cannot talk to it.');
       return;

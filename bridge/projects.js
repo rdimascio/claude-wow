@@ -208,12 +208,16 @@ function realFolder(p) {
   }
 }
 
+const folderStrings = list => (Array.isArray(list) ? list.filter(f => typeof f === 'string' && f.trim() !== '') : []);
+
+function foldersListed(options) {
+  return folderStrings(options && options.folders).length > 0;
+}
+
 function allowedFolders(options, defaultCwd, home = os.homedir()) {
-  const strings = list => (Array.isArray(list) ? list.filter(f => typeof f === 'string' && f.trim() !== '') : []);
-  const listed = strings(options && options.folders);
-  if (!listed.length) return null;
   const base = defaultCwd || home;
-  return [base, ...strings(options.threads), ...listed].map(f => realFolder(path.resolve(base, expandHome(f.trim(), home))));
+  const configured = [...folderStrings(options && options.threads), ...folderStrings(options && options.folders)];
+  return [base, ...configured].map(f => realFolder(path.resolve(base, expandHome(f.trim(), home))));
 }
 
 function folderAllowed(cwd, allowed) {
@@ -224,6 +228,7 @@ function folderAllowed(cwd, allowed) {
 
 module.exports = {
   allowedFolders,
+  foldersListed,
   folderAllowed,
   realFolder,
   PROJECTS_MAX,

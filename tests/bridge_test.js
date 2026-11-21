@@ -46,6 +46,14 @@ test('parseFlags reads the per-chat settings and the resume and live targets /cl
   assert.equal(P.parseFlags('plugin=live').liveTarget, undefined, 'plugin=live is a binding, not a target');
 });
 
+test('recordPermissionMode keeps acceptEdits and the read-only modes and drops a higher one unless config.json lists it', () => {
+  for (const mode of ['acceptEdits', 'default', 'manual', 'PLAN']) assert.ok(P.recordPermissionMode(mode, []), mode);
+  for (const mode of ['auto', 'dontAsk', 'bypassPermissions']) assert.equal(P.recordPermissionMode(mode, undefined), '', mode);
+  assert.equal(P.recordPermissionMode('bypasspermissions', ['bypassPermissions']), 'bypassPermissions');
+  assert.equal(P.recordPermissionMode('auto', ['bypassPermissions', 'yolo']), '', 'the list allows only what it names');
+  assert.equal(P.recordPermissionMode('', ['bypassPermissions']), '');
+});
+
 test('withRunOnlyRules adds greed rules to one run without touching the saved agent config', () => {
   const saved = { permissionMode: 'acceptEdits', allowedTools: ['WebSearch'] };
   const run = P.withRunOnlyRules(saved, ['Bash(rm:*)', 'WebSearch', '']);

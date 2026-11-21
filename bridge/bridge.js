@@ -496,6 +496,7 @@ function forgetChat(job) {
   if (state.sessionRules) delete state.sessionRules[sessKey(job)];
   if (state.sessionUsage) delete state.sessionUsage[sessKey(job)];
   if (state.chatSettings) delete state.chatSettings[job.chat];
+  if (state.offeredRules) delete state.offeredRules[sessKey(job)];
   unlinkDiscord(job.chat);
   if (state.lastRuns) delete state.lastRuns[sessKey(job)];
   devNotes.delete(chatKey(job));
@@ -574,8 +575,6 @@ const { pad3, chatKey, sessKey, jobsFromStrip } = P;
 const slotNumber = id => P.slotNumber(id, SLOTS);
 const alreadyHandled = job => P.alreadyHandled(state, job);
 const markHandled = job => P.markHandled(state, job);
-
-const atomicWrite = FS.atomicWrite;
 
 // Stop a run and whatever it spawned: an npm launcher runs the real binary as a
 // child of its own, an agent shells out to builds and test runs. procs.js: on
@@ -1463,26 +1462,37 @@ function primer() {
   }
 }
 
-// Persist newly allowed rules for an agent so they stick across bridge restarts.
-// They go under agents.<id>.allowedTools; a config.json from before agents
-// existed keeps Claude's list at the top level, which moves down on first write.
-function allowRules(agentId, rules) {
-  const current = new Set(A.agentConfig(cfg, agentId).allowedTools || []);
-  const added = rules.filter(r => r && !current.has(r));
-  if (!added.length) return [];
-  const list = [...current, ...added];
-  cfg.agents = cfg.agents || {};
-  cfg.agents[agentId] = { ...cfg.agents[agentId], allowedTools: list };
-  try {
-    const onDisk = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
-    onDisk.agents = onDisk.agents || {};
-    onDisk.agents[agentId] = { ...onDisk.agents[agentId], allowedTools: list };
-    if (agentId === 'claude') delete onDisk.allowedTools;
-    atomicWrite(CONFIG_FILE, JSON.stringify(onDisk, null, 2) + '\n');
-  } catch (e) {
-    log('could not save config.json:', e.message);
-  }
-  return added;
+// A record's allow= list is unauthenticated, so it never reaches config.json.
+// It runs once; a rule this chat's last reply offered (Need on the roll) is
+// also kept in state.json for that agent's later runs.
+const OFFERED_RULES_MAX = 20;
+const KEPT_GRANTS_MAX = 200;
+
+function noteOffered(job, denied) {
+  if (!job.chat) return;
+  const rules = (Array.isArray(denied) ? denied : []).filter(r => typeof r === 'string' && r).slice(0, OFFERED_RULES_MAX);
+  state.offeredRules = state.offeredRules || {};
+  if (rules.length) state.offeredRules[sessKey(job)] = rules;
+  else delete state.offeredRules[sessKey(job)];
+}
+
+function keptGrants(agentId) {
+  const list = state.grants && state.grants[agentId];
+  return Array.isArray(list) ? list.filter(r => typeof r === 'string' && r) : [];
+}
+
+function keepOfferedGrants(job, agentId, rules) {
+  const offered = (state.offeredRules && state.offeredRules[sessKey(job)]) || [];
+  const keep = rules.filter(r => offered.includes(r));
+  if (!keep.length) return [];
+  const current = keptGrants(agentId);
+  const added = keep.filter(r => !current.includes(r));
+  (state.grants = state.grants || {})[agentId] = [...current, ...added].slice(-KEPT_GRANTS_MAX);
+  const left = offered.filter(r => !keep.includes(r));
+  if (left.length) state.offeredRules[sessKey(job)] = left;
+  else delete state.offeredRules[sessKey(job)];
+  saveState();
+  return keep;
 }
 
 // ---------------------------------------------------------------------------
@@ -2597,6 +2607,7 @@ function runAgent(job, opts = {}) {
   job.agent = agentId;
   const agent = A.AGENTS[agentId];
   const chosen = chatSettings(job);
+  const droppedMode = droppedPermissionMode(job);
   const claudeRun = agentId === 'claude';
   const codexRun = agentId === 'codex';
   const runToolSocket = claudeRun && opts.runTools ? runToolsSocket(tag, job) : '';
@@ -2632,8 +2643,10 @@ function runAgent(job, opts = {}) {
   const grantForGood = P.splitGrants(inGameGrantable(job.allow, runDenied, mcpGuard));
   const grantOnce = P.splitGrants(inGameGrantable(job.allowOnce, runDenied, mcpGuard));
   if (grantForGood.rules.length) {
-    const added = allowRules(agentId, grantForGood.rules);
-    log(`${tag} allowed for ${agentId}: ${grantForGood.rules.join(', ')}${added.length ? '' : ' (already allowed)'}`);
+    const kept = keepOfferedGrants(job, agentId, grantForGood.rules);
+    const runOnly = grantForGood.rules.filter(r => !kept.includes(r));
+    if (kept.length) log(`${tag} allowed for ${agentId}, kept in state.json: ${kept.join(', ')}`);
+    if (runOnly.length) log(`${tag} allowed for this run only (${agentId}), not offered in this chat: ${runOnly.join(', ')}`);
   }
   if (grantOnce.rules.length) {
     log(`${tag} allowed for this run only (${agentId}): ${grantOnce.rules.join(', ')}`);
@@ -2641,6 +2654,8 @@ function runAgent(job, opts = {}) {
   const dataServer = opts.gameData && (claudeRun || codexRun || agent.mcp) ? gameDataServer(tag, job) : null;
   const codexMcp = [...(codexRun && dataServer ? [{ name: DM.SERVER_NAME, server: dataServer.server }] : []), ...mcpPlan.codexMcp];
   const runOnlyRules = [
+    ...grantForGood.rules,
+    ...inGameGrantable(keptGrants(agentId), runDenied, mcpGuard),
     ...grantOnce.rules,
     ...(dataServer ? dataServer.rules : []),
     ...(runToolSocket ? GM.RUN_RULES : []),
@@ -2944,6 +2959,10 @@ function runAgent(job, opts = {}) {
   if (agent.stream === 'text') pushProgress(`${agent.name} is working (no live progress)`);
   if (input.note) notes.push(input.note);
   if (visionNote) notes.push(visionNote);
+  if (droppedMode)
+    notes.push(
+      `The permission mode ${droppedMode} was not used: a chat may pick it only when gamePermissionModes in config.json lists it, so it ran in ${acfg.permissionMode || 'acceptEdits'}.`,
+    );
   if (ignored.length) {
     notes.push(
       `${agent.name} has no ${ignored.map(f => f.split(' ')[0]).join(', ')} option, so ${ignored.join(', ')} ${ignored.length === 1 ? 'was' : 'were'} ignored.`,
@@ -3155,11 +3174,23 @@ function runAgent(job, opts = {}) {
   });
 }
 
+const GAME_PERMISSION_MODES = Array.isArray(cfg.gamePermissionModes) ? cfg.gamePermissionModes : [];
+const loggedDroppedModes = new Set();
+function droppedPermissionMode(job) {
+  const mode = job.permissionMode || '';
+  if (!mode || P.recordPermissionMode(mode, GAME_PERMISSION_MODES)) return '';
+  if (!loggedDroppedModes.has(mode)) {
+    loggedDroppedModes.add(mode);
+    log(`${tagOf(job)} permission mode ${mode} from the game ignored: it is not in gamePermissionModes in config.json`);
+  }
+  return mode;
+}
+
 function chatSettings(job) {
   return {
     model: job.model || '',
     effort: job.effort || '',
-    permissionMode: job.permissionMode || '',
+    permissionMode: P.recordPermissionMode(job.permissionMode, GAME_PERMISSION_MODES),
     addDirs: (Array.isArray(job.addDirs) ? job.addDirs : []).map(d => P.resolveCwd(d, DEFAULT_CWD)),
     ...(job.mcp && typeof job.mcp === 'object' ? { mcp: job.mcp } : {}),
   };
@@ -3352,6 +3383,7 @@ function finish(job, status, text, session, denied) {
   const shown = status === 'done' ? checkedReply(job, { text, summary }) : { text, summary };
   if (job.via === 'discord') job.mirrorDenied = denied;
   if (!chatDeletedSince(job)) {
+    noteOffered(job, denied);
     noteMessage(
       job,
       status === 'done' ? 'assistant' : 'system',

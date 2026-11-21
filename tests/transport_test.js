@@ -380,8 +380,9 @@ test('mcp.servers end to end: servers reach --mcp-config with ${VAR} only, stric
   const second = run();
   assert.equal(second.status, 0, second.stdout + second.stderr);
   const saved2 = JSON.parse(fs.readFileSync(path.join(home, 'config.json'), 'utf8'));
-  assert.ok(saved2.agents.claude.allowedTools.includes('mcp__slack__post'), JSON.stringify(saved2.agents.claude));
-  assert.ok(!saved2.agents.claude.allowedTools.includes('mcp__notion__create_page'), JSON.stringify(saved2.agents.claude));
+  assert.deepEqual(saved2.agents.claude.allowedTools, withMcp.agents.claude.allowedTools, 'a record never writes config.json');
+  const kept = JSON.parse(fs.readFileSync(path.join(home, 'state.json'), 'utf8')).grants.claude;
+  assert.deepEqual(kept, ['mcp__slack__post'], 'only the offered rule is kept');
   const secondArgv = JSON.parse(fs.readFileSync(record, 'utf8')).argv;
   assert.ok(!secondArgv.slice(secondArgv.indexOf('--allowedTools'), secondArgv.indexOf('--disallowedTools')).includes('mcp__notion__create_page'));
 
@@ -472,6 +473,7 @@ test('per-chat MCP end to end: discovered servers are listed, a chat turns one o
     path.join(home, 'config.json'),
     JSON.stringify({
       ...cfg,
+      plugins: { ...cfg.plugins, 'claude-code': { folders: [path.join(dir, 'other-repo')] } },
       mcp: {
         servers: {
           notion: { type: 'http', url: 'https://mcp.notion.com/mcp', allow: '*', default: true },
