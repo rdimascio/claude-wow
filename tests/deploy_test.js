@@ -274,7 +274,10 @@ test(
       h.out.some(l => /does not run .*current.*nothing was restarted and setup was not run/.test(l)),
       h.out.join('\n'),
     );
-    assert.ok(h.out.some(l => l.includes('MIGRATE-PROD-INSTALL.md')));
+    assert.ok(
+      h.out.some(l => l.endsWith(`run: ${REL.currentBinary(h.l)} service install`)),
+      h.out.join('\n'),
+    );
   },
 );
 

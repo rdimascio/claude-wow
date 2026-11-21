@@ -127,7 +127,7 @@ Things worth knowing:
 - Route 1 from source (`--from-source`): run the installer again. It pulls the source and re-runs setup. Then `claude-wow service restart`. A bridge that runs from source never updates itself.
 - Route 2: `brew upgrade claude-wow` (`--fetch-HEAD` for a `--HEAD` install), then `claude-wow service restart` (your config and sessions are in `~/.claude-wow`, untouched; `claude-wow setup` again only if the addon changed, which the changelog says). The bridge never replaces a binary that Homebrew installed; when a newer release is out, its daily check logs `brew upgrade claude-wow`.
 - Route 3: `git pull && node setup.js`, then restart the bridge.
-- A developer machine whose service should not run the checkout you edit: build releases with `claude-wow dev deploy` and run the service from `~/.claude-wow/current/claude-wow`. See [MIGRATE-PROD-INSTALL.md](MIGRATE-PROD-INSTALL.md).
+- A developer machine whose service should not run the checkout you edit: build releases with `claude-wow dev deploy` and run the service from `~/.claude-wow/current/claude-wow` (`~/.claude-wow/current/claude-wow service install` once, from your normal terminal, when no chat is running; then `~/.claude-wow/current/claude-wow setup`).
 
 ## Uninstalling
 
