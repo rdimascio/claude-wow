@@ -5,7 +5,7 @@
 //   node setup.js [--wow "<client folder>"] [--project "<default work folder>"] [--account <name>]
 //
 // Finds the WoW: Forever client, copies the addon into Interface\AddOns, writes
-// bridge/config.json from the example (if missing), and builds the slot pool.
+// config.json in the home folder from the example (if missing), and builds the slot pool.
 // Re-running is safe: existing config and generated files are kept, except that
 // an explicit --project updates defaultCwd (that is the only way to correct it
 // without editing config.json by hand).

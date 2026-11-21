@@ -34,6 +34,7 @@ All notable changes to this project are recorded here. The format follows [Keep 
 
 ### Fixed
 
+- `claude-wow bridge --help` and the note after Codex is refused a command now name the real `config.json` in the home folder, not `bridge/config.json`.
 - The whisper tab's progress line no longer cuts a character such as ¦ in half when a step is long. It and the chat window now cut a long step the same way, at a word break where there is one.
 
 ### Added

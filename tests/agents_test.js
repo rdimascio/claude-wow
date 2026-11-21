@@ -360,6 +360,8 @@ test('Codex stream: thread id, one line per item, the last agent message is the 
   const declined = feed({ type: 'item.completed', item: { id: 'i6', type: 'command_execution', command: 'git push', status: 'declined' } });
   assert.deepEqual(declined.progress, ['$ git push']);
   assert.ok(declined.notes[0].startsWith('Codex was not allowed to run: git push'));
+  assert.ok(declined.notes[0].includes(`for codex in ${require('../bridge/home').resolve().config} `), declined.notes[0]);
+  assert.ok(!declined.notes[0].includes('bridge/config.json'));
   assert.deepEqual(feed({ type: 'item.completed', item: { id: 'i7', type: 'agent_message', text: 'First draft of the answer.' } }).progress, [
     'First draft of the answer.',
   ]);

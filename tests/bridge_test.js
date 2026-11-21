@@ -695,3 +695,20 @@ test('luaTable marks an agent-room mirror row with room, its chat title and who 
     /^\t\t\{ chat = "r0a1b2c3d4e", seq = 2, role = "user", text = "ship it", agent = "", denied = \{  \}, room = true, title = "#ship", from = "room" \},$/m,
   );
 });
+
+test('bridge --help names the config file in the home folder, not bridge/config.json', () => {
+  const { spawnSync } = require('child_process');
+  const fs = require('fs');
+  const SB = require('../dev/sandbox');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-wow-help-'));
+  const home = path.join(dir, 'home');
+  const r = spawnSync(process.execPath, [path.join(__dirname, '..', 'bridge', 'bridge.js'), '--help'], {
+    encoding: 'utf8',
+    env: SB.isolatedEnv(path.join(dir, 'user'), { CLAUDE_WOW_HOME: home }),
+    timeout: 30000,
+  });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.ok(r.stdout.includes(`defaultCwd from ${path.join(home, 'config.json')}.`), r.stdout);
+  assert.ok(!r.stdout.includes('bridge/config.json'), r.stdout);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
