@@ -83,10 +83,11 @@ for _, name in ipairs({ "GameTooltipText", "Tooltip_Med", "GameFontHighlightSmal
 end
 `;
 
-function newVM(savedVariables = '') {
+function newVM(savedVariables = '', { widgetsOn = true } = {}) {
   const vm = createVM({ stub: false });
   vm.run(fs.readFileSync(STUB_FILE, 'utf8') + STUB_EXTRAS, { chunk: 'tests/wow_stub.lua' });
   if (savedVariables) vm.run(savedVariables);
+  if (widgetsOn) vm.run('ClaudeWoWWidgetDB = ClaudeWoWWidgetDB or {}; if ClaudeWoWWidgetDB.enabled == nil then ClaudeWoWWidgetDB.enabled = true end');
   vm.loadAddon(['Codec.lua', 'Inbox.lua', 'ClaudeWoW.lua', 'Map.lua', 'Widgets.lua']);
   vm.login();
   return vm;
@@ -943,4 +944,44 @@ test('when no popup frame is free, the question is retried on a timer until one 
   assert.equal(vm.evaluate('#STUB.timers'), '0');
   vm.run('STUB.ClickPopup(1)');
   assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("meter")'), 'running');
+});
+
+test('widgets are off by default: a new set runs nothing and asks nothing, says how to turn them on, and run and Show refuse', () => {
+  const vm = newVM('', { widgetsOn: false });
+  vm.run(widgetSet([['meter', TARGET_METER]], 1, 'e1', false));
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.enabled'), 'false');
+  assert.equal(vm.evaluate('STUB.popup'), null, 'no popup while widgets are off');
+  assert.equal(vm.evaluate(meterFrame), null);
+  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("meter")'), 'off');
+  assert.match(vm.evaluate(lastSystemNote), /the agent sent 1 widget\(s\); none runs\. Widgets are off\. \/claude config ui widgets on/);
+  vm.run('SlashCmdList.CLAUDE("config ui run meter")');
+  assert.equal(vm.evaluate(meterFrame), null, 'run does not start it');
+  const item = 'ClaudeWoWWidgetDB.set.items[1]';
+  assert.equal(vm.evaluate(`ClaudeWoWWidgets.Show({ name = "meter", rev = ${item}.rev, source = ${item}.source })`), 'false');
+  vm.run(`ClaudeWoWWidgetDB.approved.meter = { rev = ${item}.rev, source = ${item}.source }`);
+  assert.equal(vm.evaluate(`ClaudeWoWWidgets.Start(${item}, true)`), 'false', 'Start refuses even an approved revision');
+  assert.equal(vm.evaluate(meterFrame), null);
+});
+
+test('config ui widgets on asks for each widget as before, and off stops the running ones and keeps them off', () => {
+  const vm = newVM('', { widgetsOn: false });
+  vm.run(widgetSet([['meter', TARGET_METER]], 1, 'e1', false));
+  vm.run('SlashCmdList.CLAUDE("config ui widgets on")');
+  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.enabled'), 'true');
+  assert.equal(vm.evaluate('STUB.popup.text'), 'meter title', 'turning them on still asks first');
+  vm.run('ACCEPT_WIDGETS()');
+  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("meter")'), 'running');
+  vm.run('SlashCmdList.CLAUDE("config ui widgets off")');
+  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("meter")'), 'off');
+  assert.equal(vm.evaluate(meterFrame), null, 'the running widget stopped');
+  assert.equal(vm.evaluate('STUB.lastTicker.cancelled'), 'true');
+});
+
+test('a player who approved a widget before widgets became opt-in keeps them on; one who never did starts with them off', () => {
+  const before = newVM(savedWidgets([['meter', TARGET_METER]]), { widgetsOn: false });
+  assert.equal(before.evaluate('ClaudeWoWWidgetDB.enabled'), 'true');
+  assert.equal(before.evaluate('ClaudeWoWWidgets.Status("meter")'), 'running');
+  const never = newVM(savedWidgets([['meter', TARGET_METER]], false), { widgetsOn: false });
+  assert.equal(never.evaluate('ClaudeWoWWidgetDB.enabled'), 'false');
+  assert.equal(never.evaluate('STUB.popup'), null);
 });

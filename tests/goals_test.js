@@ -524,7 +524,7 @@ function hex(s) {
   return Buffer.from(s, 'utf8').toString('hex');
 }
 
-function fakeInstall(dir) {
+function fakeInstall(dir, { gameContext = false } = {}) {
   const home = path.join(dir, 'home');
   const client = path.join(dir, 'client');
   const addons = path.join(client, 'Interface', 'AddOns');
@@ -563,7 +563,7 @@ function fakeInstall(dir) {
     agent: 'claude',
     agents: { claude: { path: agent, allowedTools: ['WebSearch'] } },
     plugins: { default: 'ask', ask: { cwd: path.join(dir, 'scratch') }, stream: { ...ST.INERT_OPTIONS } },
-    gameContext: false,
+    gameContext,
     primerFile: '',
     capture: { enabled: true },
   };
@@ -912,7 +912,7 @@ test('slot field: a store edited on disk is read again; one that cannot be read 
 test('slot field through the real bridge: the slot files carry the current order next to the other fields', { timeout: 60000 }, () => {
   const dir = tmpDir('slotbridge');
   try {
-    const { home, addons, saved } = fakeInstall(dir);
+    const { home, addons, saved } = fakeInstall(dir, { gameContext: true });
     const file = path.join(home, 'goals', BONE_KEY, G.GOALS_FILE);
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(
@@ -945,6 +945,43 @@ test('slot field through the real bridge: the slot files carry the current order
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test(
+  'with gameContext off the real bridge gives the goal and campaign stores no character: the slot files carry no order and no beat',
+  { timeout: 60000 },
+  () => {
+    const dir = tmpDir('slotoff');
+    try {
+      const { home, addons, saved } = fakeInstall(dir, { gameContext: false });
+      const file = path.join(home, 'goals', BONE_KEY, G.GOALS_FILE);
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(
+        file,
+        JSON.stringify({
+          v: 1,
+          rev: 12,
+          character: BONE_KEY,
+          goals: [{ id: 'g_393', title: 'Skinning 225', target: { skillID: 393, rank: 225 } }],
+          orders: { current: { id: 'o_12', text: 'Skin 30 more', goalId: 'g_393' }, history: [] },
+        }),
+      );
+      writeOutbox(saved, 7, BONE_CONTEXT);
+      const r = spawnSync(process.execPath, [BRIDGE, '--once'], {
+        encoding: 'utf8',
+        env: SB.isolatedEnv(path.join(path.dirname(home), 'user'), { CLAUDE_WOW_HOME: home }),
+        timeout: 60000,
+      });
+      assert.equal(r.status, 0, r.stdout + r.stderr);
+      assert.equal(JSON.parse(fs.readFileSync(path.join(home, 'state.json'), 'utf8')).context.text, BONE_CONTEXT, 'the context stays on this machine');
+      const data = slotData(fs.readFileSync(path.join(addons, 'ClaudeWoW_S001', 'Inbox.lua'), 'utf8'), 'ClaudeWoW_SlotData');
+      assert.ok(!data.goals || !data.goals.char, JSON.stringify(data.goals));
+      assert.ok(!data.goals || !data.goals.order, 'no order without a character');
+      assert.ok(!data.dm || !data.dm.char, JSON.stringify(data.dm));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
 
 test(
   'map layers through the real bridge: the old account-wide map and chats are dropped, a route lands on the character that asked, and an alt gets an empty map',

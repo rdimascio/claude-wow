@@ -293,9 +293,9 @@ const NATIVE_TEMPLATES = `
 const nativeVM = () => {
   const vm = newVM({ before: NATIVE_TEMPLATES });
   open(vm);
-  vm.run('ClaudeWoW.SetFolder("~/every-io/every", ClaudeWoWDB.chats[1])');
+  vm.run('ClaudeWoW.SetFolder("~/acme/shop", ClaudeWoWDB.chats[1])');
   vm.run('ClaudeWoW.NewChat(); ClaudeWoW.SetFolder("~/wow-ai", ClaudeWoW.UI and ClaudeWoWDB.chats[2]); ClaudeWoWDB.chats[2].name = "Fix the bridge"');
-  vm.run('ClaudeWoW.NewChat(); ClaudeWoWDB.chats[3].name = "Leatherworking route"; ClaudeWoW.SetFolder("~/every-io/every", ClaudeWoWDB.chats[3])');
+  vm.run('ClaudeWoW.NewChat(); ClaudeWoWDB.chats[3].name = "Leatherworking route"; ClaudeWoW.SetFolder("~/acme/shop", ClaudeWoWDB.chats[3])');
   vm.run('ClaudeWoW.Render()');
   return vm;
 };
@@ -497,9 +497,9 @@ test('a coding reply reads cleanly: bold, code and headings are styled, fences d
       "\`\`\`bash",
       "gh pr merge 18610",
       "\`\`\`",
-      "See [the ticket](https://linear.app/every/issue/PRD-8708/pandl-month) and https://github.com/every-io/every/pull/18632.",
+      "See [the ticket](https://linear.app/acme/issue/PRD-8708/pandl-month) and https://github.com/acme/shop/pull/18632.",
       "Docs: https://example.com/a/very/long/path/that/goes/on/and/on",
-      "Ticket: https://linear.app/every/issue/PRD-7671/enrollment-state",
+      "Ticket: https://linear.app/acme/issue/PRD-7671/enrollment-state",
     }, "\\n") } }
     ClaudeWoW.Render()
     STUB.bubble = (function() for _, b in ipairs(ClaudeWoW.UI.bubbles) do if b.shown then return b end end end)()
@@ -510,16 +510,16 @@ test('a coding reply reads cleanly: bold, code and headings are styled, fences d
   assert.ok(body.includes('|cff5c1a002 of the 3|r'), 'bold is emphasized');
   assert.ok(body.includes('|cff7a2e0einternal|r'), 'inline code has its own ink');
   assert.ok(body.includes('gh pr merge 18610') && !body.includes('bash'), 'fence lines are dropped, the code stays');
-  assert.ok(body.includes('|Haddon:claudewow:url:https://linear.app/every/issue/PRD-8708/pandl-month|h[the ticket]|h'), 'a markdown link keeps its label');
+  assert.ok(body.includes('|Haddon:claudewow:url:https://linear.app/acme/issue/PRD-8708/pandl-month|h[the ticket]|h'), 'a markdown link keeps its label');
   assert.ok(
-    body.includes('|Haddon:claudewow:url:https://github.com/every-io/every/pull/18632|h[PR #18632]|h|r.'),
+    body.includes('|Haddon:claudewow:url:https://github.com/acme/shop/pull/18632|h[PR #18632]|h|r.'),
     'a bare PR URL is a short link, its full stop kept outside',
   );
   assert.ok(body.includes('[example.com/a/very/long/path/th…]'), 'another long URL is shortened: ' + body);
   assert.ok(body.includes('|h[PRD-7671]|h'), 'a bare Linear URL is named by its issue key');
   assert.equal((body.match(/\|Haddon:claudewow:url:/g) || []).length, 4, 'each URL becomes exactly one link');
-  vm.run('STUB.bubble.scripts.OnHyperlinkClick(STUB.bubble, "addon:claudewow:url:https://github.com/every-io/every/pull/18632", "[PR #18632]", "LeftButton")');
-  assert.equal(vm.evaluate('STUB.copied[1]'), 'https://github.com/every-io/every/pull/18632', 'a click opens the copy box with the full URL');
+  vm.run('STUB.bubble.scripts.OnHyperlinkClick(STUB.bubble, "addon:claudewow:url:https://github.com/acme/shop/pull/18632", "[PR #18632]", "LeftButton")');
+  assert.equal(vm.evaluate('STUB.copied[1]'), 'https://github.com/acme/shop/pull/18632', 'a click opens the copy box with the full URL');
 });
 
 const parchmentInkReply = 'use `internal` and see https://github.com/o/r/pull/5 and {spell:1752}';
@@ -800,7 +800,7 @@ test('general chats sit under Chats, project chats under their project, and the 
   vm.run('ClaudeWoW.NewChat("Best rogue race")');
   vm.run('ClaudeWoW.Render()');
   assert.equal(shownHeaders(vm).split('|')[0], 'Chats', 'the section of the most recently active chat comes first');
-  assert.ok(shownHeaders(vm).split('|').includes('every') && shownHeaders(vm).split('|').includes('wow-ai'));
+  assert.ok(shownHeaders(vm).split('|').includes('shop') && shownHeaders(vm).split('|').includes('wow-ai'));
   assert.match(vm.evaluate('ClaudeWoWProjectButton.text:GetText()'), /Project: \|cffffffffNo project/);
   vm.run('ClaudeWoWProjectButton.scripts.OnClick(ClaudeWoWProjectButton)');
   const items = vm.evaluate('(function() local t = {} for _, it in ipairs(STUB.menu.items) do table.insert(t, it.text) end return table.concat(t, "|") end)()');
@@ -939,7 +939,7 @@ test('the window is built from Blizzard frame templates where the client has the
   assert.equal(vm.evaluate('ClaudeWoWWindow.skinned'), 'true');
   assert.equal(vm.evaluate('ClaudeWoWFrame.claudewowBorder'), null, 'no extra border on top of the template');
 
-  assert.equal(shownHeaders(vm), 'every|wow-ai', 'chats are grouped under folder headers in first-seen order');
+  assert.equal(shownHeaders(vm), 'shop|wow-ai', 'chats are grouped under folder headers in first-seen order');
   assert.equal(vm.evaluate('ClaudeWoW.UI.chatCount:GetText()'), 'Chats: |cffffffff3|r');
   assert.equal(vm.evaluate('ClaudeWoW.UI.art.frame'), 'questlog-frame');
   assert.equal(vm.evaluate('ClaudeWoW.UI.art.filigree'), 'questlog-frame-filigree');
@@ -952,14 +952,14 @@ test('the window is built from Blizzard frame templates where the client has the
   assert.equal(vm.evaluate('ClaudeWoW.UI.art.minus'), 'common-button-list-minus');
 
   vm.run('ClaudeWoW.UI.questList.headers[1].scripts.OnClick(ClaudeWoW.UI.questList.headers[1])');
-  assert.equal(vm.evaluate('ClaudeWoWDB.settings.collapsedFolders.every'), 'true');
+  assert.equal(vm.evaluate('ClaudeWoWDB.settings.collapsedFolders.shop'), 'true');
   assert.equal(shownRows(vm), 'Fix the bridge', 'a collapsed folder hides its chats');
   assert.equal(vm.evaluate('ClaudeWoW.UI.art.plus'), 'common-button-list-plus');
   vm.run('ClaudeWoW.UI.questList.headers[1].scripts.OnClick(ClaudeWoW.UI.questList.headers[1])');
 
   vm.run('ClaudeWoWChatSearch:SetText("leather"); for _, fn in ipairs(ClaudeWoWChatSearch.hooks.OnTextChanged) do fn(ClaudeWoWChatSearch) end');
   assert.equal(shownRows(vm), 'Leatherworking route', 'search filters by chat name');
-  assert.equal(shownHeaders(vm), 'every');
+  assert.equal(shownHeaders(vm), 'shop');
   vm.run('ClaudeWoWChatSearch:SetText("zzz"); for _, fn in ipairs(ClaudeWoWChatSearch.hooks.OnTextChanged) do fn(ClaudeWoWChatSearch) end');
   assert.equal(vm.evaluate('ClaudeWoW.UI.questList.empty.shown'), 'true');
   vm.run('ClaudeWoWChatSearch:SetText(""); for _, fn in ipairs(ClaudeWoWChatSearch.hooks.OnTextChanged) do fn(ClaudeWoWChatSearch) end');
@@ -992,11 +992,11 @@ test('a chat row shows one preview line, the last message time beside the title,
   vm.run(`date = function(fmt, t) if fmt == "%Y-%m-%d" then return t == time() and "today" or "before" end return fmt == "%b %d" and "Oct 02" or "18:01" end
     local h = ClaudeWoWDB.chats[2].history
     table.insert(h, { role = "user", text = "why is it down", t = time() - 90000 })
-    table.insert(h, { role = "assistant", agent = "claude", text = "Factory run done\\nsecond line", t = time() })
+    table.insert(h, { role = "assistant", agent = "claude", text = "Run done\\nsecond line", t = time() })
     table.insert(ClaudeWoWDB.chats[3].history, { role = "user", text = "route please", t = time() - 90000 })
     ClaudeWoW.Render()`);
   assert.equal(shownLines(2), 1, 'an idle chat shows one objective line: the preview');
-  assert.match(vm.evaluate(`${rowOf(2)}.objectives[1].text:GetText()`), /: Factory run done$/);
+  assert.match(vm.evaluate(`${rowOf(2)}.objectives[1].text:GetText()`), /: Run done$/);
   assert.equal(vm.evaluate(`${rowOf(2)}.when:GetText()`), '18:01', 'today shows the clock time');
   assert.equal(vm.evaluate(`${rowOf(3)}.when:GetText()`), 'Oct 02', 'an older day shows the date');
   assert.equal(vm.evaluate(`${rowOf(2)}.title.rel == ${rowOf(2)}.when`), 'true', 'the title truncates before the time');
@@ -1188,7 +1188,7 @@ test('the input box, Send and New chat sit on one footer line, as 22 px Blizzard
 
 test('a chat row with no preview line keeps the same spacing before the next row as one with a preview line', () => {
   const vm = nativeVM();
-  vm.run(`ClaudeWoW.NewChat(); ClaudeWoWDB.chats[4].name = "Chat 4"; ClaudeWoW.SetFolder("~/every-io/every", ClaudeWoWDB.chats[4])
+  vm.run(`ClaudeWoW.NewChat(); ClaudeWoWDB.chats[4].name = "Chat 4"; ClaudeWoW.SetFolder("~/acme/shop", ClaudeWoWDB.chats[4])
     table.insert(ClaudeWoWDB.chats[3].history, { role = "user", text = "route please", t = time() + 60 })
     ClaudeWoW.Render()`);
   const rows = JSON.parse(
@@ -1379,7 +1379,7 @@ test('without native frames the MCP button and a long project button both fit in
 });
 
 const HEADER_WIDTHS = `
-  local width = { ["Project: |cffffffffevery|r"] = 76, ["|cffffffffevery|r"] = 28, ["Effort: |cffffffffxhigh|r"] = 64, ["|cffffffffxhigh|r"] = 28, ["MCP |cffff99332/3|r"] = 42 }
+  local width = { ["Project: |cffffffffshop|r"] = 76, ["|cffffffffshop|r"] = 28, ["Effort: |cffffffffxhigh|r"] = 64, ["|cffffffffxhigh|r"] = 28, ["MCP |cffff99332/3|r"] = 42 }
   for _, b in ipairs({ ClaudeWoWProjectButton, ClaudeWoWEffortButton, ClaudeWoWMcpButton }) do
     b.text.GetStringWidth = function(self) return width[self.text] or 100 end
   end
@@ -1399,7 +1399,7 @@ test('at the 560 px minimum width, Project and MCP fit in the header band withou
   assert.ok(edge('ClaudeWoWMcpButton', 'Right') <= edge('ClaudeWoWProjectButton', 'Left'), 'MCP never overlaps project');
   assert.ok(edge('ClaudeWoWMcpButton', 'Left') >= 60 + 8 + 80, 'the title keeps its minimum room');
   assert.equal(vm.evaluate('ClaudeWoWEffortButton.text:GetText()'), '|cffffffffxhigh|r', 'effort shows its value');
-  assert.equal(vm.evaluate('ClaudeWoWProjectButton.text:GetText()'), 'Project: |cffffffffevery|r', 'with effort out of the header, the label fits');
+  assert.equal(vm.evaluate('ClaudeWoWProjectButton.text:GetText()'), 'Project: |cffffffffshop|r', 'with effort out of the header, the label fits');
   assert.equal(vm.evaluate('ClaudeWoW.UI.chatTitle.rel == ClaudeWoWMcpButton'), 'true');
   vm.run('ClaudeWoWEffortButton.scripts.OnEnter(ClaudeWoWEffortButton)');
   assert.equal(vm.evaluate('GameTooltip:GetText()'), 'Effort: xhigh', 'the tooltip names the value in full');
@@ -1638,7 +1638,7 @@ test('the status line has four plain states and no file names, ids or commands; 
   const diag = vm.evaluate('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history].text');
   assert.ok(diag.includes('status: reply, pending #42'), diag);
   assert.ok(diag.includes('reply slots missing (MISSING; run install-slots.js'), diag);
-  assert.ok(diag.includes('folder: ~/every-io/every'), diag);
+  assert.ok(diag.includes('folder: ~/acme/shop'), diag);
   vm.run('ClaudeWoWDB.chats[1].pendingId = nil; ClaudeWoWDB.chats[1].draft = "kept"; ClaudeWoW.UpdateStatus()');
   assert.equal(status(), '|cff55ff55Reply waiting|r', 'a reply that came back while a draft was typed');
 });

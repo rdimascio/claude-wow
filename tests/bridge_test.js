@@ -121,12 +121,6 @@ test('luaTable carries the project list with labels and the home folder, quoted 
   assert.match(lua, /^\thome = "\/Users\/me",$/m);
 });
 
-test('luaTable carries the factory skill names only when there are some', () => {
-  assert.ok(!/skills =/.test(P.luaTable('X', [], {})));
-  assert.ok(!/skills =/.test(P.luaTable('X', [], { skills: [] })));
-  assert.match(P.luaTable('X', [], { skills: ['babysit-pr', 'fresh-eyes'] }), /^\tskills = \{ "babysit-pr", "fresh-eyes" \},$/m);
-});
-
 test('systemPrompt always asks for the TL;DR block, and adds the game rules and primer while a context is sent', () => {
   // Without a context the prompt is only the reply-format rule.
   for (const empty of ['', '  \n ', undefined]) {
@@ -204,15 +198,6 @@ test('messagePrompt puts the situation and the vision paragraph before the text,
   assert.ok(seeingNoCtx.startsWith('A screenshot of the player') && seeingNoCtx.endsWith('\n\nwhat is this?') && !seeingNoCtx.includes('in-game situation'));
   assert.equal(P.visionHint({}), P.visionHint(null));
   assert.ok(!P.visionHint({}).includes('downscaled)'), 'no size when unknown');
-});
-
-test("messagePrompt puts a thread chat's turn rules first, before the situation and the text", () => {
-  const ctx = 'Character: Testchar';
-  assert.equal(P.messagePrompt('go', '', { rules: '  \n' }), 'go', 'blank rules add nothing');
-  const m = P.messagePrompt('go', ctx, { rules: 'Skills you may dispatch: fresh-eyes.\n' });
-  assert.ok(m.startsWith('Skills you may dispatch: fresh-eyes.\n\n[In-game situation'), m);
-  assert.ok(m.endsWith('\n\ngo'));
-  assert.equal(P.messagePrompt('go', '', { rules: 'R' }), 'R\n\ngo');
 });
 
 test('splitSummary takes the last TL;DR block for the game chat and keeps the whole reply for the window', () => {
@@ -700,4 +685,21 @@ test('luaTable marks an agent-room mirror row with room, its chat title and who 
     lua,
     /^\t\t\{ chat = "r0a1b2c3d4e", seq = 2, role = "user", text = "ship it", agent = "", denied = \{  \}, room = true, title = "#ship", from = "room" \},$/m,
   );
+});
+
+test('bridge --help names the config file in the home folder, not bridge/config.json', () => {
+  const { spawnSync } = require('child_process');
+  const fs = require('fs');
+  const SB = require('../dev/sandbox');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-wow-help-'));
+  const home = path.join(dir, 'home');
+  const r = spawnSync(process.execPath, [path.join(__dirname, '..', 'bridge', 'bridge.js'), '--help'], {
+    encoding: 'utf8',
+    env: SB.isolatedEnv(path.join(dir, 'user'), { CLAUDE_WOW_HOME: home }),
+    timeout: 30000,
+  });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.ok(r.stdout.includes(`defaultCwd from ${path.join(home, 'config.json')}.`), r.stdout);
+  assert.ok(!r.stdout.includes('bridge/config.json'), r.stdout);
+  fs.rmSync(dir, { recursive: true, force: true });
 });

@@ -5,6 +5,11 @@ bridge/transcripts.json
 bridge/bridge.log
 bridge/tmp/
 bridge/data/
+bridge/discord.token
+bridge/discord-webhook.json
+bridge/live.token
+bridge/live.sock
+bridge/goals/
 *.tmp
 
 # tooling

@@ -565,7 +565,14 @@ local function WidgetRow(panel)
 	return row
 end
 
-H.WIDGET_STATUS = { running = "shown", removed = "hidden", waiting = "waiting for your OK", failed = "stopped after an error", stopped = "not running" }
+H.WIDGET_STATUS = {
+	running = "shown",
+	removed = "hidden",
+	waiting = "waiting for your OK",
+	failed = "stopped after an error",
+	stopped = "not running",
+	off = "widgets are off",
+}
 
 function H.RefreshCanvas(panel)
 	for _, control in ipairs(panel.controls or {}) do

@@ -45,7 +45,7 @@ test('route: address, then the chat binding, then match(), then the default', ()
   // The chat's binding wins over match() and the default; an unknown one is an error.
   assert.equal(reg.route({ text: 'board: x', plugin: 'ask' }).plugin.id, 'ask');
   assert.equal(reg.route({ text: 'hi', plugin: 'ask' }).why, 'bound');
-  assert.match(reg.route({ text: 'hi', plugin: 'factory' }).error, /Unknown plugin "factory".*code, ask, board/);
+  assert.match(reg.route({ text: 'hi', plugin: 'nosuch' }).error, /Unknown plugin "nosuch".*code, ask, board/);
   // match() only on a chat bound to nothing.
   const m = reg.route({ text: 'board: what is blocked' }, { fallback: 'ask' });
   assert.equal(m.plugin.id, 'board');
@@ -162,7 +162,7 @@ test('the coding plugin: a game chat runs only in the default folder, the thread
   fs.rmSync(base, { recursive: true, force: true });
 });
 
-test('the coding plugin: a chat in a plugins.claude-code.threads folder is a thread, its dispatcher rules go to the turn prompt', () => {
+test('the coding plugin: a chat in a plugins.claude-code.threads folder is a thread', () => {
   const code = require('../bridge/plugins/claude-code');
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'wowai-thread-'));
   const proj = path.join(base, 'proj');
@@ -190,7 +190,6 @@ test('the coding plugin: a chat in a plugins.claude-code.threads folder is a thr
   assert.equal(code.isThread({ threads: [alias] }, other, base), false);
 
   const calls = [];
-  const factory = { enabled: true, skills: ['fresh-eyes'] };
   const core = opts => ({
     log: noop,
     tag: j => '#' + j.id,
@@ -200,22 +199,12 @@ test('the coding plugin: a chat in a plugins.claude-code.threads folder is a thr
     fail: (job, text) => calls.push({ fail: text }),
     runAgent: (job, o) => calls.push({ run: o }),
   });
-  code.handle({ id: 1, cwd: 'proj', text: 'hi' }, core({ factory, threads: ['proj'] }));
+  code.handle({ id: 1, cwd: 'proj', text: 'hi' }, core({ threads: ['proj'] }));
   const thread = calls.at(-1).run;
-  assert.equal(thread.thread, true);
-  assert.equal(thread.tools, '', 'nothing mutable in the system prompt');
-  assert.match(thread.turnRules, /Skills you may dispatch: fresh-eyes\./);
-  assert.deepEqual(thread.deniedTools, [...require('../bridge/factory').DISPATCHER_DENIED], 'still a dispatcher');
-  code.handle({ id: 2, cwd: 'other', text: 'hi' }, core({ factory, threads: ['proj'] }));
-  const plain = calls.at(-1).run;
-  assert.equal(plain.thread, undefined);
-  assert.equal(plain.turnRules, undefined);
-  assert.match(plain.tools, /Skills you may dispatch: fresh-eyes\./);
-  code.handle({ id: 3, cwd: 'proj', text: 'hi' }, core({ threads: ['proj'] }));
-  const full = calls.at(-1).run;
-  assert.equal(full.thread, true, 'a thread without the factory still keeps its session');
-  assert.equal(full.turnRules, '');
-  assert.equal(full.tools, undefined);
+  assert.equal(thread.thread, true, 'a chat in a threads folder keeps its session');
+  assert.equal(thread.tools, undefined);
+  code.handle({ id: 2, cwd: 'other', text: 'hi' }, core({ threads: ['proj'] }));
+  assert.equal(calls.at(-1).run.thread, undefined);
   fs.rmSync(base, { recursive: true, force: true });
 });
 

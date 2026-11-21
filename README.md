@@ -13,7 +13,7 @@ Chat with your local coding agents from inside **World of Warcraft: Forever** or
 - The agent can draw on your world map: numbered routes, quest stops and marks, with a navigator arrow that walks you from stop to stop
 - Herb and ore spawns on the world map, filtered by your gathering skill (`/claude config map ore`, `/claude config map herb`)
 - Ready-made macros: ask for one and the reply carries a **Create Macro** button that saves it and puts it on your cursor, ready to drop on an action bar (`/claude config macro undo` reverts it)
-- Live UI widgets: ask for *"a DPS meter"* or *"a timer bar for my buffs"* and the agent's Lua loads in the game once you click **Show**, no `/reload`; display-only, listed and removed with `/claude config ui` or the **Widgets** page in the game's AddOns settings
+- Live UI widgets: ask for *"a DPS meter"* or *"a timer bar for my buffs"* and the agent's Lua loads in the game once you click **Show**, no `/reload`; off until `/claude config ui widgets on` (see [the risk](#live-ui-widgets)); display-only, listed and removed with `/claude config ui` or the **Widgets** page in the game's AddOns settings
 - **Need / Greed / Pass** on permissions: when Claude or Grok needs a command outside your allowlist, an **Azeroth Companion asks** frame offers it as an epic item. It waits while you are in combat or a real loot roll is open
 - A status light for the companion app, automatic retries, and recovery of your chats (and map layers) if the beta client wipes addon data
 - Runs on Windows, on Linux with the game under Wine, and on macOS with a native client
@@ -62,10 +62,9 @@ You also need one agent CLI, installed and logged in on that computer. For Claud
 
 ### 1. Get the addon
 
-- **With an addon manager (CurseForge app, WoWUp):** search for the addon and install it for World of Warcraft Classic (Classic Era) or World of Warcraft: Forever. The listing goes up with the first release.
-- **Without a manager:** you can skip this step. `claude-wow setup` (step 3) copies the addon that ships inside the bridge into `Interface/AddOns/ClaudeWoW`. To install it by hand instead, download the addon zip (its name starts with `ClaudeWoW`) from the project's GitHub release and unzip it into `Interface/AddOns`, so that `Interface/AddOns/ClaudeWoW/ClaudeWoW.toc` exists.
+You can skip this step. `claude-wow setup` (step 3) copies the addon that ships inside the bridge into `Interface/AddOns/ClaudeWoW`. To install it by hand instead, download the addon zip (its name starts with `ClaudeWoW`) from the project's GitHub release and unzip it into `Interface/AddOns`, so that `Interface/AddOns/ClaudeWoW/ClaudeWoW.toc` exists.
 
-Setup always writes its own copy of the addon into `Interface/AddOns/ClaudeWoW`. When the addon manager and the bridge have the same version, the files are the same. When they differ, the addon says once which side is older; update that side (see [Troubleshooting](#troubleshooting)).
+Setup always writes its own copy of the addon into `Interface/AddOns/ClaudeWoW`, so the addon and the bridge come from the same release. When they differ, the addon says once which side is older; update that side (see [Troubleshooting](#troubleshooting)).
 
 ### 2. Install the bridge (one command)
 
@@ -131,7 +130,7 @@ In game, type `/claude hello`. This starts a new chat and sends "hello" to your 
 
 ### Updating
 
-- **Addon:** your addon manager updates it. Without a manager, `claude-wow setup --wow "<client folder>"` installs the addon that ships with the bridge. Always repeat `--wow`: without it, setup searches again and picks `_classic_beta_` first, even if you play Classic Era.
+- **Addon:** `claude-wow setup --wow "<client folder>"` installs the addon that ships with the bridge. Always repeat `--wow`: without it, setup searches again and picks `_classic_beta_` first, even if you play Classic Era.
 - **Bridge:** run the installer again, or `brew upgrade claude-wow`. Then run `claude-wow service restart` (or restart the bridge in its terminal).
 - **In game:** if the update made a new addon folder, quit and start the game again. Otherwise `/reload` is usually enough. If setup or the addon asks for a full restart, do that.
 
@@ -265,7 +264,7 @@ Every run tells the agent that only a short summary of its reply is printed in t
 
 ### The agent knows where you are
 
-The addon tells the agent which game and client you are on, your character (name, realm, level, race, class, faction, guild), where you are (zone, subzone and the map coordinates the minimap shows), your money, talents, professions with their skill, and your quest log (quest ids, marking the ones ready to turn in). With the Polestar guide addon on Forever, it also sends the guide you follow, its live step and that step's open goals as ids. A few lines, sent with the addon's hello and again whenever they change, and put at the top of every message by the bridge as a marked situation block (the rules for reading it, and the addon primer, go in the agent's system prompt, which stays the same for the life of a chat so it is cached and, with Claude Code, recorded once), so you can ask "what should I be doing at my level around here?" or "write me a macro for my class" without explaining yourself first. It is only a hint: for a chat about an unrelated project it changes nothing. `/claude config context` shows exactly what is sent; `/claude config context off` stops sending it (the bridge forgets it too), and `"gameContext": false` in `~/.claude-wow/config.json` turns it off for good.
+The addon tells the agent which game and client you are on, your character (name, realm, level, race, class, faction, guild), where you are (zone, subzone and the map coordinates the minimap shows), your money, talents, professions with their skill, and your quest log (quest ids, marking the ones ready to turn in). With the Polestar guide addon on Forever, it also sends the guide you follow, its live step and that step's open goals as ids. A few lines, sent with the addon's hello and again whenever they change, and put at the top of every message by the bridge as a marked situation block (the rules for reading it, and the addon primer, go in the agent's system prompt, which stays the same for the life of a chat so it is cached and, with Claude Code, recorded once), so you can ask "what should I be doing at my level around here?" or "write me a macro for my class" without explaining yourself first. It is only a hint: for a chat about an unrelated project it changes nothing. `/claude config context` shows exactly what is sent; `/claude config context off` stops sending it (the bridge forgets it too), and `"gameContext": false` in `~/.claude-wow/config.json` turns it off for good. It is on only when you agreed at setup: see [Privacy](#privacy-what-leaves-your-machine).
 
 Along with it, every run gets [docs/WOW-ADDON-PRIMER.md](docs/WOW-ADDON-PRIMER.md): a short reference on writing addons and macros for this client (TOC layout, sandbox rules, common frames and events, where to verify an API), so "write me an addon that..." works from any folder, not just this repo. Edit the file to suit your setup; the bridge re-reads it on every run. `"primerFile": ""` in the config drops it, and `/claude config context off` turns it off together with the character context.
 
@@ -366,13 +365,16 @@ The settings are saved with the addon's other settings (`ClaudeWoWDB.voice`).
 
 ### Live UI widgets
 
-Ask for a small UI element (*"give me a DPS meter"*, *"a timer bar for my buffs"*) and it shows up in the game a moment later, without `/reload`. The agent writes addon Lua in a ```` ```wowui <name> ```` block (or appends it to the file in `CLAUDE_WOW_UI_FILE`). The bridge refuses anything that names a protected or outward action (casting, targeting, movement, chat, macros, bindings, secure templates), keeps the rest versioned in `state.json` and ships it in the slot files, like map layers. The addon runs each widget in its own sandbox inside a `pcall`: the widget sees only an allowlist of display APIs, through wrapped frames, and no Blizzard frame. An error stops the widget and shows up in the chat window.
+Ask for a small UI element (*"give me a DPS meter"*, *"a timer bar for my buffs"*) and, once you turned widgets on, it shows up in the game a moment later, without `/reload`. The agent writes addon Lua in a ```` ```wowui <name> ```` block (or appends it to the file in `CLAUDE_WOW_UI_FILE`). The bridge refuses anything that names a protected or outward action (casting, targeting, movement, chat, macros, bindings, secure templates), keeps the rest versioned in `state.json` and ships it in the slot files, like map layers. The addon runs each widget in its own sandbox inside a `pcall`: the widget sees only an allowlist of display APIs, through wrapped frames, and no Blizzard frame. An error stops the widget and shows up in the chat window.
 
 | Command | What it does |
 |---|---|
 | `/claude config ui` | list the widgets and their state (running, waiting for your OK, removed, failed) |
 | `/claude config ui remove <name>` | stop a widget and keep it off after login, until the agent sends a new version |
 | `/claude config ui run <name>` | start a widget again, or say yes to one that waits |
+| `/claude config ui widgets on\|off` | let widgets run at all; they are off until you turn them on |
+
+**Widgets are off by default, and turning them on is a risk you choose.** A widget is Lua code that the agent writes and your game runs. The sandbox blocks the dangerous game functions it knows about, but a sandbox can have holes, and the code comes from an AI model that can be wrong or can be tricked by text it read (a web page, a file, a message). A widget could show you false information, slow the game down or spam errors. Turn widgets on only if you accept that, and read a widget's code (in the agent's reply, or in `~/.claude-wow/state.json`) before you say yes to it. A player who said yes to a widget before this switch existed keeps widgets on.
 
 A widget runs only after you say yes. Each new widget, and each new version of one, opens a popup, one at a time: "Show the agent's '<title>' widget?" with **Show** and **Not Now**. **Show** runs it and remembers that version; **Not Now** keeps it off until the agent sends a new version; Escape asks again at the next login. The **Widgets** page in the game's AddOns settings lists them with **Remove** and **Show** buttons. Widgets you said yes to start again at login. The contract, the allowlist, what a widget cannot do and the limits are in [docs/UI-WIDGETS.md](docs/UI-WIDGETS.md). `/claude dev globals` and `npm run audit:widgets` check the allowlist against your client.
 
@@ -397,6 +399,21 @@ The roll never shows while you are in combat or while a real group loot roll is 
 Claude Code also blocks a command that touches a path outside the chat's folder, and no allow rule can change that. That denial rolls for the folder instead, as **Scroll of /tmp**: Need adds the folder to the chat for good (what `/claude --add-dir /tmp` does), Greed adds it for the retry only. When a retry is blocked again for something it was just granted, the reply says so in one line and no new roll comes up.
 
 The bar under the item counts down 60 seconds from when the frame shows. When it runs out, that is a Pass; it never allows. The count stops while the Need dialog is open or the roll waits. Each choice plays the game's own loot sounds. `/claude config roll off` brings back the **Allow & retry** button (it asks first, like Need), and `/claude config roll on` returns to the roll frame.
+
+## Privacy: what leaves your machine
+
+Your messages and the agent's replies go to the agent you picked (for example Claude Code to Anthropic, Codex to OpenAI), as with any use of that agent. Beyond that, the companion app talks to the internet only here:
+
+| What | Where it goes | When |
+|---|---|---|
+| Your game state: character, realm, zone and position, quests, money, bags, professions, equipped items, deaths, and vendor, auction and loot windows you opened | The agent provider, inside each message and through the goal tools | **Only when you agreed.** Setup asks once: "Share your game state with the agent?" The answer is no unless you type yes, and a setup with no terminal (a script, CI) answers no. |
+| The update check | `api.github.com` (and `github.com` for the download) | Once a day. `"autoUpdate": false` turns it off. |
+| Game data sync: the client's map, item, spell and quest tables | `wago.tools` and `raw.githubusercontent.com` | When the game reports a client build the app has no data for. `"data": { "autoSync": false }` turns it off. |
+| Discord sync | `discord.com` | Only when you set it up. Off by default. |
+
+To change your answer later, run `claude-wow setup --share-game-state yes` (or `no`), or set `"gameContext"` and `"telemetry": { "enabled": ... }` in `~/.claude-wow/config.json`, then restart the companion app. A `config.json` made before this question existed keeps sharing, as it did before.
+
+With sharing off, the addon still sends its game context to the companion app on your computer, which keeps it in `state.json` there. The companion app does not put it in any message, and the goal, order and campaign features see no character, so they stay idle. It does not ask the addon for the rest of the game state at all. `/claude config context off` in game also stops the addon from sending the context.
 
 ## Configuration (`~/.claude-wow/config.json`)
 
@@ -427,7 +444,7 @@ The keys you are most likely to touch. Every key, flag and environment variable 
 
 - **Battle.net says the game is not playable: "Permissions check failure (2113)" (macOS, Linux).** Battle.net checks the file modes in the game folder. The game installs every file and folder as `0777`, and a file with another mode (for example `0644`) under `Interface/AddOns` makes the check fail. Run `claude-wow setup --wow "<client folder>"` again: it sets every file and folder under `ClaudeWoW`, `ClaudeWoW_Runtime` and `ClaudeWoW_S001` … `ClaudeWoW_S200` to `0777` and prints how many it changed (`permissions: N of M file(s) and folder(s) ...`). The bridge writes its own files as `0777` already. Other addon folders are not changed; if the error stays, look for another addon whose files are not `0777`. From a checkout, `npm run doctor` warns about a file that is not world-writable.
 - **The addon is not in the AddOns list, or `/claude diag` says `no presence file existed when the game started: run setup, then restart WoW`.** The game builds its addon list when it starts. A new addon folder (the first install, `ClaudeWoW_Runtime`, the slot folders) appears only after you fully quit and start the game again; `/reload` does not add a folder. Measured on Classic Era 1.15.9, in an addon folder the game already knows, `/reload` picks up a changed Lua file, a Lua file that was missing at launch, a new file added to the `.toc`, and a changed `## Version` (1 to 2). Textures and sounds added after launch are not checked, so restart for those. Forever is not checked. If setup or the addon says to restart, quit and start the game.
-- **"This addon (…) is too old for the bridge (…)" or "The bridge (…) is too old for this addon (…)".** The addon and the bridge speak different protocol versions, so the bridge refuses every message until you update the side that the message names. The full text says how: update the addon in the CurseForge app or run `claude-wow setup --wow "<client folder>"`; for the bridge, run `brew upgrade claude-wow` or the installer again, then `claude-wow service restart`. Then reload or restart the game as the message says.
+- **"This addon (…) is too old for the bridge (…)" or "The bridge (…) is too old for this addon (…)".** The addon and the bridge speak different protocol versions, so the bridge refuses every message until you update the side that the message names. The full text says how: for the addon, run `claude-wow setup --wow "<client folder>"`; for the bridge, run `brew upgrade claude-wow` or the installer again, then `claude-wow service restart`. Then reload or restart the game as the message says.
 - **"This addon (…) is older than the bridge (…). They still work together; update the addon when you can."** Only the release numbers differ. Nothing is refused, and the addon says it once per session. The reverse message names the bridge. `/claude diag` and `claude-wow service status` show both versions.
 - **Classic Era: progress and replies arrive in steps, not at once.** On Classic Era a signal file that the bridge deletes still reads as present in the game, so the instant signals (the ack, "reply ready" and the 30-second heartbeat) do not work. The addon gets the ack, the progress text and the reply from its scheduled slot reads instead: 5, 10, 16, 24, 34, 46 and 60 s after you send, then further apart (every 60 s after 5 minutes). The action count comes only from the heartbeat files the bridge deletes, so on Classic Era the progress line shows the elapsed time and the agent's current step, but no action count. The bridge's ack reaches the game at the first read (about 5 s), the progress text changes at each read, and a reply can appear up to a minute after the agent finished on a long run. `/claude diag` shows `presence: slot polls only (self-test failed: …)`. This is expected and nothing is broken; the status light then allows 12 minutes without news before it turns yellow.
 

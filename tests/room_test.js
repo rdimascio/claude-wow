@@ -47,7 +47,7 @@ const SNAPSHOT = {
     channels: [
       { id: 'ch-ship', workspaceId: 'wow-ai', slug: 'ship', name: 'Ship', archived: false },
       { id: 'ch-old', workspaceId: 'wow-ai', slug: 'old', name: 'Old', archived: true },
-      { id: 'ch-other', workspaceId: 'every', slug: 'ship', name: 'Ship', archived: false },
+      { id: 'ch-other', workspaceId: 'shop', slug: 'ship', name: 'Ship', archived: false },
     ],
     threads: [
       { id: 't1', channelId: 'ch-ship', title: 'Deploy notes' },
@@ -137,7 +137,7 @@ test('a Slack message is followed only from a public channel agent-room says is 
   });
   t.made[0].emit(slack('slack:C0SHIP:1700000000.000100', 'wow-ai', 'assistant', 'merged #173'));
   t.made[0].emit(slack('slack:C0SHIP:1700000000.000100', 'wow-ai', 'human:U1', 'ship it'));
-  t.made[0].emit(slack('slack:C0WORK:1700000000.000200', 'every', 'assistant', 'payroll numbers'));
+  t.made[0].emit(slack('slack:C0WORK:1700000000.000200', 'shop', 'assistant', 'payroll numbers'));
   t.made[0].emit(slack('slack:D0DIRECT:1700000000.000300', 'wow-ai', 'assistant', 'a direct message'));
   t.made[0].emit(slack('slack:G0GROUP:1700000000.000400', 'wow-ai', 'assistant', 'a private group'));
   t.made[0].emit(slack('slack:C0SHIP:1700000000.000500', undefined, 'assistant', 'no project'));

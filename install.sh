@@ -319,6 +319,13 @@ main() {
   set --
   [ -n "$WOW" ] && set -- "$@" --wow "$WOW"
   [ -n "$PROJECT" ] && set -- "$@" --project "$PROJECT"
+  if [ ! -f "$HOME_DIR/config.json" ]; then
+    if ask "Share your game state with the agent? This sends your character, zone, quests, money, bags and professions to the agent provider (for example Anthropic or OpenAI) with each message. [y/N] "; then
+      set -- "$@" --share-game-state yes
+    else
+      set -- "$@" --share-game-state no
+    fi
+  fi
   if ! "$CMD" setup "$@"; then
     fail "the game-side setup did not finish (see above)" \
       "The claude-wow command is installed. Fix what setup reported (usually: pass the client folder), then run:  claude-wow setup --wow \"<World of Warcraft/_classic_beta_>\""

@@ -409,7 +409,7 @@ test('disk: leftover strips and a large session file warn', () => {
   const big = C.checkDisk(context(makeWorld('disk-big', { sessionBytes: C.LIMITS.sessionBytes + 1, leftovers: C.LIMITS.screenshotLeftovers + 1 })));
   assert.equal(big.status, 'warn');
   assert.equal(big.problems.length, 2);
-  assert.equal(C.claudeProjectDir('/h', '/Users/ryan/every-io/every'), path.join('/h', '.claude', 'projects', '-Users-ryan-every-io-every'));
+  assert.equal(C.claudeProjectDir('/h', '/Users/me/acme/shop'), path.join('/h', '.claude', 'projects', '-Users-me-acme-shop'));
 });
 
 test('data: a broken state.json fails loudly; legacy files in the checkout warn', () => {

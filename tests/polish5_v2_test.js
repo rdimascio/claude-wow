@@ -143,22 +143,22 @@ test('the input text area gives way to Stop while a run is in flight, in both th
 test('Project is a radio menu marking the current project, with the same items with and without MenuUtil', () => {
   const vm = nativeVM(MENU_UTIL);
   vm.run(
-    'ClaudeWoW.SetFolder("~/wow-ai", ClaudeWoWDB.chats[1]); ClaudeWoW.NewChat(); ClaudeWoW.SetFolder("~/every-io/every", ClaudeWoWDB.chats[2]); ClaudeWoW.Render()',
+    'ClaudeWoW.SetFolder("~/wow-ai", ClaudeWoWDB.chats[1]); ClaudeWoW.NewChat(); ClaudeWoW.SetFolder("~/acme/shop", ClaudeWoWDB.chats[2]); ClaudeWoW.Render()',
   );
   vm.run('ClaudeWoWProjectButton.scripts.OnClick(ClaudeWoWProjectButton)');
   const native = menuTexts(vm);
   assert.match(native, /^Project\|No project\|/);
-  assert.ok(native.includes('wow-ai') && native.includes('every'));
+  assert.ok(native.includes('wow-ai') && native.includes('shop'));
   const radio = text =>
     vm.evaluate(
       `(function() for _, it in ipairs(STUB.menu.items) do if it.text == "${text}" then return tostring(it.radio) .. "," .. tostring(it.get()) end end end)()`,
     );
-  assert.equal(radio('every'), 'true,true', 'the current project is marked');
+  assert.equal(radio('shop'), 'true,true', 'the current project is marked');
   assert.equal(radio('wow-ai'), 'true,false');
   assert.equal(radio('No project'), 'true,false');
   vm.run('for _, it in ipairs(STUB.menu.items) do if it.text == "wow-ai" then it.fn() end end');
   assert.equal(vm.evaluate('ClaudeWoWDB.chats[2].cwd'), '~/wow-ai');
-  vm.run('ClaudeWoW.SetFolder("~/every-io/every", ClaudeWoWDB.chats[1]); ClaudeWoW.Render(); ClaudeWoWProjectButton.scripts.OnClick(ClaudeWoWProjectButton)');
+  vm.run('ClaudeWoW.SetFolder("~/acme/shop", ClaudeWoWDB.chats[1]); ClaudeWoW.Render(); ClaudeWoWProjectButton.scripts.OnClick(ClaudeWoWProjectButton)');
   const again = menuTexts(vm);
 
   vm.run('MenuUtil = nil; ClaudeWoWProjectButton.scripts.OnClick(ClaudeWoWProjectButton)');

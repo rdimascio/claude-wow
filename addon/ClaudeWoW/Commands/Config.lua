@@ -188,7 +188,7 @@ function Cli.Ui(c, rest)
 			c,
 			"Window and tabs: "
 				.. Cli.UiStatus()
-				.. ".\n/claude config ui whisper on|off, dim <10-100>|off, dodge on|off, autohide on|off, reset.\nLive widgets: /claude config ui list, remove <name>, run <name>."
+				.. ".\n/claude config ui whisper on|off, dim <10-100>|off, dodge on|off, autohide on|off, reset.\nLive widgets: /claude config ui list, remove <name>, run <name>, widgets on|off."
 		)
 		if ClaudeWoWWidgets then ClaudeWoWWidgets.Command("") end
 	elseif ClaudeWoWWidgets then
