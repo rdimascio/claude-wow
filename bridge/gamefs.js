@@ -37,23 +37,33 @@ function partsBelowAddOns(dir) {
   }
 }
 
-// Node has no openat, so a part can still be swapped for a link between the
-// lstat walk and the write. The realpath check after the write catches that
-// and removes what was written. The game's own 0777 folders (Battle.net error
-// 2113) let any local user swap a part, not only the owner.
+// Only another local account is a real attacker: the owner can edit every
+// file anyway. Our folders under AddOns must stay 0777 (Battle.net error 2113),
+// so a mode check would refuse every write; a part owned by another account,
+// or a link, is refused instead. Node has no openat, so a part can still be
+// swapped between this walk and the write; the realpath check after the write
+// and the removal of what was written narrow that, they do not close it.
 function resolvesWhereExpected(dir, parts) {
   const root = path.dirname(parts.at(-1));
   return fs.realpathSync(dir) === path.join(fs.realpathSync(root), path.relative(root, path.resolve(dir)));
 }
 
+function checkOwnParts(dir, parts) {
+  const uid = process.getuid();
+  for (const part of parts) {
+    const st = fs.lstatSync(part);
+    if (st.isSymbolicLink()) throw unsafe(dir, `${part} is a link`);
+    if (st.uid !== uid) throw unsafe(dir, `${part} belongs to another account`);
+  }
+}
+
 function realFolder(dir) {
   const parts = matchesGame() ? partsBelowAddOns(dir) : [];
-  for (const part of parts.slice(1)) {
-    if (fs.lstatSync(part).isSymbolicLink()) throw unsafe(dir, `${part} is a link`);
-  }
+  checkOwnParts(dir, parts.slice(1));
   if (parts.length && !resolvesWhereExpected(dir, parts)) throw unsafe(dir, 'resolves outside the AddOns folder');
   const st = fs.lstatSync(dir);
   if (!st.isDirectory()) throw unsafe(dir, 'not a real folder');
+  if (parts.length && st.uid !== process.getuid()) throw unsafe(dir, 'belongs to another account');
   return st;
 }
 

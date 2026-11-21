@@ -131,6 +131,22 @@ test('a link anywhere between the AddOns folder and the target is refused, and a
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('a folder under AddOns that belongs to another account is refused before anything is written', posixOnly, t => {
+  const dir = scratch('foreign-parent');
+  const addons = path.join(dir, 'game', 'Interface', 'AddOns');
+  const sig = path.join(addons, 'ClaudeWoW_Runtime', 'sig');
+  fs.mkdirSync(sig, { recursive: true });
+  const me = process.getuid();
+  t.mock.method(process, 'getuid', () => me + 1);
+  assert.throws(() => G.writeFile(path.join(sig, '001.wav'), 'payload'), { code: 'EUNSAFE', message: /belongs to another account/ });
+  assert.throws(() => G.ensureFile(path.join(sig, '002.wav'), 'payload'), { code: 'EUNSAFE' });
+  assert.throws(() => G.mkdir(path.join(sig, 'new')), { code: 'EUNSAFE' });
+  t.mock.restoreAll();
+  assert.deepEqual(fs.readdirSync(sig), []);
+  assert.equal(G.writeFile(path.join(sig, '001.wav'), 'payload'), true, 'our own folders still take the write');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test('a folder swapped for a link between the checks and the write is caught after it, and the written file is removed', posixOnly, t => {
   const dir = scratch('swapped-parent');
   const outside = path.join(dir, 'outside');

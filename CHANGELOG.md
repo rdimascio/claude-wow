@@ -11,7 +11,7 @@ All notable changes to this project are recorded here. The format follows [Keep 
 - An allowed rule from the game (Need, Allow & retry) is never written to `config.json`. It applies to that run. It is kept for later runs, in `state.json` under `grants`, only when the chat's last reply offered it.
 - Without `plugins.claude-code.folders`, a game chat, its `--add-dir` folders and the roll now stay inside the bridge's default folder and the `threads` folders. Before, an empty list allowed every folder. A live session is still limited only when the list is set.
 - The home folder (`~/.claude-wow`) is now made `0700` and `config.json` `0600` on macOS and Linux, by setup and at every bridge start. Before, they had the default `0755` and `0644`.
-- On macOS and Linux the bridge and setup refuse to write into the game folder through a linked folder anywhere between `Interface/AddOns` and the file. Before, only the file's own folder was checked. The check runs again after the write, and a file written through a folder swapped in the meantime is removed.
+- On macOS and Linux the bridge and setup refuse to write into the game folder through a linked folder, or a folder owned by another account, anywhere between `Interface/AddOns` and the file. Before, only the file's own folder was checked. The check runs again after the write, and a file written through a folder swapped in the meantime is removed.
 
 ### Changed
 
