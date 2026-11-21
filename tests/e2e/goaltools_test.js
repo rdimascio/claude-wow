@@ -47,6 +47,9 @@ test('an in-game ask run gets the wowgoals server for that run only; its calls w
     stale.file = path.join(sb.home, 'tmp', 'mcp', 'mcp-1-stale.json');
     fs.mkdirSync(path.dirname(stale.file), { recursive: true });
     fs.writeFileSync(stale.file, '{}');
+    const cfg = JSON.parse(fs.readFileSync(sb.config, 'utf8'));
+    cfg.agents.claude.allowedTools = [...cfg.agents.claude.allowedTools, 'Bash(node:*)'];
+    fs.writeFileSync(sb.config, JSON.stringify(cfg, null, 2));
   };
   await withGame({ plugin: 'ask', beforeLaunch }, async h => {
     assert.ok(!fs.existsSync(stale.file), 'a config file left by a crashed bridge is removed at startup');
@@ -92,7 +95,7 @@ test('an in-game ask run gets the wowgoals server for that run only; its calls w
       ...[...new Set([h.sb.home, fs.realpathSync(h.sb.home)])].map(dir => P.absolutePathRule('Read', path.join(dir, '**'))),
     ])
       assert.ok(denied.includes(rule), `${rule} is denied to an ask run that holds a grant`);
-    assert.ok(allowed.includes('Bash(node:*)'), 'the sandbox config allows node, so the Bash deny is what holds');
+    assert.ok(allowed.includes('Bash(node:*)'), 'the config allows node, so the Bash deny is what holds');
     const previous = runs[runs.length - 2].mcpConfig.mcpServers.wowgoals;
     assert.notEqual(previous.env[GM.TOKEN_ENV], server.env[GM.TOKEN_ENV], 'every run gets its own grant');
     const replay = await callServer(server, 'order_issue', { text: 'skin 20' });
