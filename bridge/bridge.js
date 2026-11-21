@@ -64,7 +64,6 @@ const DM = require('./datamcp');
 const GM = require('./goalsmcp');
 const FB = require('./feedback');
 const HO = require('./handoff');
-const FACTORY = require('./factory');
 const GD = require('./gamedata');
 const DSYNC = require('./datasync');
 const DAS = require('./dataautosync');
@@ -601,10 +600,6 @@ function shutdown(sig, exitCode) {
   try {
     runGrants.revokeAll();
   } catch {}
-  try {
-    factoryGrants.revokeAll();
-  } catch {}
-  factory.stop();
   forgetUnstartedWork();
   stopPlugins();
   if (roomClient) roomClient.stop();
@@ -620,7 +615,7 @@ function shutdown(sig, exitCode) {
   } catch {}
   const kids = [...running.values()]
     .map(r => r.child)
-    .concat(T.titleChildren(), factory.children(), contracts.children(), dataAutoSync.children())
+    .concat(T.titleChildren(), contracts.children(), dataAutoSync.children())
     .filter(Boolean);
   if (captureChild) kids.push(captureChild);
   const n = kids.filter(PR.alive).length;
@@ -637,7 +632,7 @@ function crash(kind, err) {
   } catch {}
   const kids = [...running.values()]
     .map(r => r.child)
-    .concat(T.titleChildren(), factory.children(), contracts.children(), dataAutoSync.children(), captureChild ? [captureChild] : [])
+    .concat(T.titleChildren(), contracts.children(), dataAutoSync.children(), captureChild ? [captureChild] : [])
     .filter(Boolean);
   for (const child of kids) {
     try {
@@ -804,7 +799,6 @@ function sharedSlotFields(urgent) {
     mcp: mcpSlotList(),
     contract: AC.slotField(contracts.current(), { codexConfig: CODEX_OWN_MCP.length > 0 }),
     home: os.homedir(),
-    skills: FACTORY.slotSkills(FACTORY.settings(pluginsCfg['claude-code'])),
     discord: !!discordHub,
     mirror: discordMirror().concat(roomMirror()),
     cwd: DEFAULT_CWD,
@@ -1606,25 +1600,7 @@ function admit(job) {
   if (shuttingDown || inFlight(job)) return;
   lastActivityAt = Date.now();
   if (holdForDeploy(job)) return;
-  if (answerStatusNow(job)) return;
   dispatchMessage(job);
-}
-
-const STATUS_COMMANDS = new Set(['runs', 'stop']);
-
-function answerStatusNow(job) {
-  const cmd = FACTORY.parseSlash(job.text);
-  if (!cmd || !STATUS_COMMANDS.has(cmd.name) || !running.has(chatKey(job))) return false;
-  const routed = registry.route(job, { fallback: DEFAULT_PLUGIN });
-  if (!routed.plugin || routed.plugin.id !== 'claude-code') return false;
-  const conf = FACTORY.settings(core.options('claude-code'));
-  const result = FACTORY.slashCommand(factory, job.text, { key: chatKey(job), job, cwd: job.cwd, conf, label: tagOf(job) });
-  if (!result) return false;
-  ackJob(job);
-  noteMessage(job, 'user', job.text);
-  log(`${tagOf(job)} /${cmd.name} answered while the chat is busy`);
-  finish(job, result.ok ? 'done' : 'error', result.text);
-  return true;
 }
 
 function agentSessionOf(job) {
@@ -1958,10 +1934,7 @@ const core = {
   },
   gameData: job => GR.openFor(HOME.data, contextTextFor(job)),
   get runGrants() {
-    return joinedGrants;
-  },
-  get factory() {
-    return factory;
+    return runGrants;
   },
   get logFile() {
     return LOG_FILE;
@@ -1990,7 +1963,7 @@ const core = {
   agentPids: () =>
     [...running.values()]
       .map(r => r.child)
-      .concat(T.titleChildren(), factory.children())
+      .concat(T.titleChildren())
       .filter(Boolean)
       .map(c => c.pid),
 };
@@ -2041,34 +2014,6 @@ const runGrants = GM.createRunGrants({
   character: () => runGrantCharacter(),
   log,
 });
-
-const factory = FACTORY.createFactory({
-  dir: path.join(HOME.dir, 'factory'),
-  log,
-  adopt: holdsLock,
-  command: base => A.resolveCommand('claude', base),
-  baseConfig: () => MC.scopeAllowed(A.agentConfig(cfg, 'claude'), MC.forClaude(USER_MCP)).agentCfg,
-  env: () => A.AGENTS.claude.env({ ...process.env }),
-  onDone: (run, ctx) => deliverFactoryRun(run, ctx),
-});
-
-const factoryGrants = GM.createRunGrants({
-  call: (tool, args, ctx) => factory.call(tool, args, ctx),
-  character: null,
-  tools: FACTORY.TOOL_NAMES,
-  serverName: FACTORY.SERVER_NAME,
-  toolsLabel: 'factory',
-  log,
-});
-
-const joinedGrants = GM.joinGrants([runGrants, factoryGrants]);
-const factoryChats = new Map();
-
-function deliverFactoryRun(run, ctx) {
-  if (!ctx || !ctx.job) return;
-  const job = factoryChats.get(ctx.key) || ctx.job;
-  lateReply(job, FACTORY.describe(run, Date.now()));
-}
 
 const voteBox = VOTES.createVotes({
   config: () => cfg.votes,
@@ -2462,7 +2407,7 @@ function gameFolders() {
 function neverOffered(denied, userMcp, allowed = gameFolders()) {
   const mcpBlocks = userMcp ? userMcp.blocks : () => false;
   const outside = rule => !!P.ruleFolder(rule) && !PJ.folderAllowed(P.ruleFolder(rule), allowed);
-  return rule => GM.isRunToolRule(rule) || FACTORY.isRunToolRule(rule) || GM.deniedBy(denied, rule) || mcpBlocks(rule) || outside(rule);
+  return rule => GM.isRunToolRule(rule) || GM.deniedBy(denied, rule) || mcpBlocks(rule) || outside(rule);
 }
 function inGameGrantable(rules, denied, userMcp) {
   const blocked = neverOffered(denied, userMcp);
@@ -2541,20 +2486,6 @@ function homeGuardRules() {
 
 function revokeRunGrant(job) {
   if (job && job.runGrantId && runGrants.revoke(job.runGrantId)) log(`${tagOf(job)} ${GM.SERVER_NAME} grant revoked before the run is ended`);
-  if (job && job.factoryGrantId && factoryGrants.revoke(job.factoryGrantId)) log(`${tagOf(job)} ${FACTORY.SERVER_NAME} grant revoked before the run is ended`);
-}
-
-const loggedNoFactory = new Set();
-function factorySocket(tag) {
-  const lp = livePlugin();
-  const socket = lp && typeof lp.runEndpoint === 'function' ? lp.runEndpoint() : '';
-  if (!socket && !loggedNoFactory.has(tag)) {
-    loggedNoFactory.add(tag);
-    log(
-      `${tag} ${FACTORY.SERVER_NAME}: the live socket is not listening (plugins.live.enabled, or --once), so this dispatcher run goes without the factory tools`,
-    );
-  }
-  return socket;
 }
 
 const loggedMcpDropped = new Set();
@@ -2612,9 +2543,7 @@ function runAgent(job, opts = {}) {
   const claudeRun = agentId === 'claude';
   const codexRun = agentId === 'codex';
   const runToolSocket = claudeRun && opts.runTools ? runToolsSocket(tag, job) : '';
-  const runDenied = [...inGameDeniedTools({ claudeRun, plugin, withRunTools: !!runToolSocket }), ...(Array.isArray(opts.deniedTools) ? opts.deniedTools : [])];
-  const factoryConf = claudeRun && opts.factory && opts.factory.enabled ? opts.factory : null;
-  const factoryToolSocket = factoryConf ? factorySocket(tag) : '';
+  const runDenied = inGameDeniedTools({ claudeRun, plugin, withRunTools: !!runToolSocket });
   const mcpPlan = MC.planRun({
     agentId,
     choice: chosen.mcp,
@@ -2660,7 +2589,6 @@ function runAgent(job, opts = {}) {
     ...grantOnce.rules,
     ...(dataServer ? dataServer.rules : []),
     ...(runToolSocket ? GM.RUN_RULES : []),
-    ...(factoryToolSocket ? FACTORY.RUN_RULES : []),
     ...(userMcp ? userMcp.allowRules : []),
   ];
   const scoped = MC.scopeAllowed(A.withPluginSettings(A.agentConfig(cfg, agentId), agentId, core.options(plugin.id)), userMcp);
@@ -2763,7 +2691,7 @@ function runAgent(job, opts = {}) {
   const system = P.systemPrompt(ctx, primer(), { tools: pluginTools, surfaces: plugin.surfaces, voice: plugin.voice });
   const systemShort = P.systemPrompt(ctx, '', { surfaces: plugin.surfaces, voice: plugin.voice });
   const promptNotes = [takeDevNote(job), autoDeploy ? autoDeploy.failureNote(cwd) : ''].filter(Boolean);
-  const prompt = P.messagePrompt([...promptNotes, job.text].join('\n\n'), ctx, { image, rules: opts.turnRules });
+  const prompt = P.messagePrompt([...promptNotes, job.text].join('\n\n'), ctx, { image });
   const promptFile = path.join(TMP_DIR, `prompt-${job.id}-${Date.now().toString(36)}.txt`);
   const input = agent.input({ prompt, system, systemShort, resume, cfg: acfg, images });
   if (input.promptFile !== undefined) {
@@ -2776,18 +2704,12 @@ function runAgent(job, opts = {}) {
   }
   const runGrant = runToolSocket ? runGrants.grant(tag) : null;
   const runServer = runGrant ? GM.launchConfig({ runId: runGrant.id, token: runGrant.token, socket: runToolSocket }).server : null;
-  const factoryGrant = factoryToolSocket ? factoryGrants.grant(tag, { key, job, cwd, conf: factoryConf, label: tag }) : null;
-  const factoryServer = factoryGrant
-    ? FACTORY.launchConfig({ runId: factoryGrant.id, token: factoryGrant.token, socket: factoryToolSocket, skills: factoryConf.skills }).server
-    : null;
-  if (factoryGrant) factoryChats.set(key, job);
   const mcpJson = codexRun
     ? ''
     : GM.mcpConfig({
         ...(userMcp ? userMcp.servers : {}),
         [DM.SERVER_NAME]: dataServer && dataServer.server,
         [GM.SERVER_NAME]: runServer,
-        [FACTORY.SERVER_NAME]: factoryServer,
       });
   const mcpConfigFile = mcpJson ? path.join(MCP_CONFIG_DIR, `mcp-${job.id}-${crypto.randomBytes(8).toString('hex')}.json`) : '';
   if (mcpConfigFile) {
@@ -2795,7 +2717,6 @@ function runAgent(job, opts = {}) {
       writePrivateFile(mcpConfigFile, mcpJson);
     } catch (e) {
       if (runGrant) runGrants.revoke(runGrant.id);
-      if (factoryGrant) factoryGrants.revoke(factoryGrant.id);
       if (input.promptFile !== undefined) {
         try {
           fs.unlinkSync(promptFile);
@@ -2806,7 +2727,6 @@ function runAgent(job, opts = {}) {
     }
   }
   if (runGrant) job.runGrantId = runGrant.id;
-  if (factoryGrant) job.factoryGrantId = factoryGrant.id;
   const claudePluginDir = claudeRun && opts.claudePlugin === true && !A.extraArgsHavePluginDir(acfg) ? claudePluginFolder(tag) : '';
   const args = [
     ...cmd.args,
@@ -2856,7 +2776,6 @@ function runAgent(job, opts = {}) {
     (acfg.addDirs || []).length && '+' + acfg.addDirs.length + ' dir(s)',
     dataServer && 'wowdata ' + dataServer.build + ' ' + dataServer.flavor,
     runGrant && GM.SERVER_NAME + ' for this run',
-    factoryGrant && FACTORY.SERVER_NAME + ' for this run',
     userMcp && userMcp.names.length && 'mcp ' + userMcp.names.join(' '),
     codexMcp.some(e => e.name !== DM.SERVER_NAME && !e.off && !e.own) &&
       'mcp ' +
@@ -2953,9 +2872,6 @@ function runAgent(job, opts = {}) {
     const goalsDown = runGrant && servers.find(s => s.name === GM.SERVER_NAME);
     if (goalsDown)
       notes.push(`The goal tools server (${GM.SERVER_NAME}) did not start (${goalsDown.status}), so no goal, order or campaign was changed by this run.`);
-    const factoryDown = factoryGrant && servers.find(s => s.name === FACTORY.SERVER_NAME);
-    if (factoryDown)
-      notes.push(`The factory tools server (${FACTORY.SERVER_NAME}) did not start (${factoryDown.status}), so no factory run was started by this message.`);
   };
   if (agent.stream === 'text') pushProgress(`${agent.name} is working (no live progress)`);
   if (input.note) notes.push(input.note);
@@ -3048,7 +2964,6 @@ function runAgent(job, opts = {}) {
     clearTimeout(timer);
     clearInterval(keepalive);
     if (runGrant) runGrants.revoke(runGrant.id);
-    if (factoryGrant) factoryGrants.revoke(factoryGrant.id);
     if (mcpConfigFile) {
       try {
         fs.unlinkSync(mcpConfigFile);
@@ -3890,8 +3805,7 @@ function bridgeIdleStatus() {
   if (holder) return { idle: false, reason: `a deploy (pid ${holder.pid}) is switching releases` };
   const busy = new Set([...running.keys(), ...queued.keys()]).size;
   if (busy) return { idle: false, reason: `${busy} message(s) running or queued` };
-  const factoryRuns = factory.children().length;
-  return factoryRuns ? { idle: false, reason: `${factoryRuns} factory run(s) going` } : fromState;
+  return fromState;
 }
 
 const gameCheck = UPD.cachedGameCheck(() => Promise.all(CLIENTS.map(c => CL.clientState(c.dir))));
@@ -3931,7 +3845,7 @@ function startAutoDeploy() {
   autoDeploy.start();
 }
 
-const MCP_RESERVED = [DM.SERVER_NAME, GM.SERVER_NAME, FACTORY.SERVER_NAME];
+const MCP_RESERVED = [DM.SERVER_NAME, GM.SERVER_NAME];
 const USER_MCP = MC.parse(cfg.mcp, { reserved: MCP_RESERVED, log, env: process.env });
 const CODEX_ALL_MCP = MC.codexOwnServers();
 const CODEX_OWN_MCP = USER_MCP ? CODEX_ALL_MCP.filter(n => USER_MCP.servers.some(s => s.name === n)) : [];

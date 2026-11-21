@@ -265,7 +265,6 @@ function idleProbe(l, ctx) {
     I.probeFor({
       stateFile: l.state,
       bridgeLockFile: l.bridgeLock,
-      runsFile: path.join(l.base, 'factory', 'runs.json'),
       readPid: () => SVC.readPid(SVC.dirs(ctx.platform)),
       alive: REL.pidAlive,
     })

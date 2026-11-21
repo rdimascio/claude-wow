@@ -39,7 +39,6 @@ const SCRIPTS = {
   data: 'bridge/datasync.js',
   'data-mcp': 'bridge/datamcp.js',
   'goals-mcp': 'bridge/goalsmcp.js',
-  'factory-mcp': 'bridge/factory.js',
   'local-agent': 'bridge/localagent.js',
   'contract-mcp': 'dev/contract-mcp.js',
 };

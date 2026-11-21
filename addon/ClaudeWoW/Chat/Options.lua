@@ -3,8 +3,8 @@ if not ns.Try then return end
 ns.files[#ns.files + 1] = "Chat\\Options.lua"
 
 local ClaudeWoW = ns.ClaudeWoW
-local run, ui, Q, Cli, Whisper = ns.run, ns.ui, ns.Q, ns.Cli, ns.Whisper
-local ToHex, Display, Trim, Contains, Try, TellPlayer = ns.ToHex, ns.Display, ns.Trim, ns.Contains, ns.Try, ns.TellPlayer
+local run, ui, Q, Cli = ns.run, ns.ui, ns.Q, ns.Cli
+local ToHex, Display, Trim, Contains, Try = ns.ToHex, ns.Display, ns.Trim, ns.Contains, ns.Try
 local LIVE_PLUGIN = ns.LIVE_PLUGIN
 local ActiveChat = ns.ActiveChat
 
@@ -215,112 +215,6 @@ end
 
 Cli.PROJECTS_MAX = 20
 Cli.NO_PROJECT = "No project"
-
-Cli.SKILL_BUILTINS = { "runs", "stop" }
-Cli.skillCommands = {}
-
-function Cli.IsCodingChat(c)
-	if not c then return false end
-	local plugin = Cli.ChatPlugin(c)
-	if plugin == "" then plugin = run.bridgePlugin or "" end
-	return plugin == "claude-code"
-end
-
-function Cli.SlashNames()
-	local names = {}
-	if #(run.bridgeSkills or {}) == 0 then return names end
-	for _, s in ipairs(Cli.SKILL_BUILTINS) do
-		table.insert(names, s)
-	end
-	for _, s in ipairs(run.bridgeSkills) do
-		if not Contains(names, s) then table.insert(names, s) end
-	end
-	return names
-end
-
-function Cli.SlashTaken(cmd)
-	for _, list in ipairs({ SlashCmdList or {}, SecureCmdList or {} }) do
-		for key in pairs(list) do
-			for i = 1, 20 do
-				local v = _G["SLASH_" .. key .. i]
-				if v == nil then break end
-				if type(v) == "string" and v:lower() == cmd then return true end
-			end
-		end
-	end
-	return false
-end
-
-function Cli.RunSkillCommand(name, msg, editBox)
-	if not ns.db then return end
-	if not Contains(Cli.SlashNames(), name) then
-		TellPlayer("/" .. name .. " is not a factory skill in this companion app right now.")
-		return
-	end
-	local chat = editBox and Whisper.ChatForBox(editBox) or nil
-	if not Cli.IsCodingChat(chat) then chat = ActiveChat() end
-	if not Cli.IsCodingChat(chat) then
-		TellPlayer("/" .. name .. " runs in a coding chat. Pick a project for this chat first (/claude --project <name>).")
-		return
-	end
-	if ns.db.activeChat ~= chat.id then ClaudeWoW.SwitchChat(chat.id) end
-	local args = Trim(tostring(msg or ""))
-	ClaudeWoW.Send("/" .. name .. (args ~= "" and (" " .. args) or ""))
-end
-
-function Cli.RegisterSkillCommand(name)
-	if Cli.skillCommands[name] ~= nil or type(SlashCmdList) ~= "table" then return end
-	local cmd = "/" .. name
-	if Cli.SlashTaken(cmd) then
-		Cli.skillCommands[name] = false
-		return
-	end
-	local key = "CLAUDEWOW_SKILL_" .. name:upper():gsub("[^%w]", "_")
-	_G["SLASH_" .. key .. "1"] = cmd
-	SlashCmdList[key] = function(msg, editBox) Cli.RunSkillCommand(name, msg, editBox) end
-	Cli.skillCommands[name] = true
-end
-
-function ClaudeWoW.ApplySkills(list)
-	local skills = {}
-	for _, s in ipairs(type(list) == "table" and list or {}) do
-		if type(s) == "string" and #s <= 64 and s:match("^[%l%d][%l%d:_%-]*$") then table.insert(skills, s) end
-	end
-	run.bridgeSkills = skills
-	for _, s in ipairs(Cli.SlashNames()) do
-		Cli.RegisterSkillCommand(s)
-	end
-end
-
-function Cli.CompleteSlash(box)
-	local typed = tostring(box:GetText() or ""):match("^/([%w:_%-]*)$")
-	local c = ActiveChat()
-	if not typed or not Cli.IsCodingChat(c) then return end
-	local names = Cli.SlashNames()
-	if #names == 0 then return end
-	typed = typed:lower()
-	local hits = {}
-	for _, n in ipairs(names) do
-		if n:sub(1, #typed) == typed then table.insert(hits, n) end
-	end
-	if #hits == 0 then
-		Cli.Out(c, "No command starts with /" .. typed .. ". Commands: /" .. table.concat(names, ", /"))
-		return
-	end
-	local prefix = hits[1]
-	for _, n in ipairs(hits) do
-		while n:sub(1, #prefix) ~= prefix do
-			prefix = prefix:sub(1, -2)
-		end
-	end
-	if #hits == 1 then prefix = prefix .. " " end
-	if #prefix > #typed then
-		box:SetText("/" .. prefix)
-		box:SetCursorPosition(#prefix + 1)
-	else
-		Cli.Out(c, "Commands: /" .. table.concat(hits, ", /"))
-	end
-end
 
 function Cli.ProjectOf(c)
 	if not c then return "" end

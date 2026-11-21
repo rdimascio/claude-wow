@@ -142,7 +142,7 @@ test('the first check records origin/main; each later commit starts one detached
     [REL.currentBinary(REL.layout(t.home)), sha, t.repo, path.join(t.home, AD.STATE_FILE)],
     'the deploy builds the commit the check saw',
   );
-  assert.match(call.args[1], /--timeout 7200/, 'it waits as long as a factory run may last');
+  assert.match(call.args[1], /--timeout 7200/, 'it waits up to two hours for the bridge to go idle');
   assert.equal(call.opts.detached, true, 'the deploy outlives the service restart it causes');
   assert.equal(call.opts.stdio[0], 'ignore');
   assert.deepEqual(t.saved(), { sha });

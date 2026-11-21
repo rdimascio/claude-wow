@@ -187,7 +187,6 @@ local RUN_FIELDS = {
 	bridgeProjects = true,
 	bridgeSeen = true,
 	bridgeSessions = true,
-	bridgeSkills = true,
 	bridgeVersion = true,
 	chatlogMisses = true,
 	chatlogPause = true,

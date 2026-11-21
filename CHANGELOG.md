@@ -23,6 +23,11 @@ All notable changes to this project are recorded here. The format follows [Keep 
 - While the agent works, its message shows one live line (time, step count and the newest step) instead of up to nine lines of steps. Hover the message to see every step the companion app sent, or click it to copy them. The step list opens above the message, and it also opens when the first step arrives while the mouse already rests on the message.
 - The chat window redraws only what changed: a message bubble, a chat-list row or a folder header whose inputs did not change keeps its text and height and is only re-anchored. No visible change.
 
+### Removed
+
+- The private job dispatcher for coding chats is gone, with its settings under `plugins.claude-code`, its per-run MCP server and its `/runs` and `/stop` commands. A coding chat is always a full agent session. Its old settings in `config.json` are ignored.
+- The addon no longer adds game slash commands or Tab completion for skills sent by the bridge.
+
 ### Fixed
 
 - The whisper tab's progress line no longer cuts a character such as ¦ in half when a step is long. It and the chat window now cut a long step the same way, at a word break where there is one.

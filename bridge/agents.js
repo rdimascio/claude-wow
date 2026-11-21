@@ -252,7 +252,7 @@ function extraArgsHavePluginDir(acfg) {
 
 function extraArgsPluginDirNote(acfg) {
   if (!extraArgsHavePluginDir(acfg)) return '';
-  return 'agents.claude.extraArgs has --plugin-dir, so every chat and factory Claude run loads that plugin, coding chats too; move it to plugins.ask.claudePlugin: true, which loads the claude-wow plugin into ask runs only.';
+  return 'agents.claude.extraArgs has --plugin-dir, so every chat Claude run loads that plugin, coding chats too; move it to plugins.ask.claudePlugin: true, which loads the claude-wow plugin into ask runs only.';
 }
 
 function claudeParser(opts = {}) {

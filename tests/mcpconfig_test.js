@@ -7,7 +7,7 @@ const A = require('../bridge/agents');
 const P = require('../bridge/protocol');
 const GM = require('../bridge/goalsmcp');
 
-const RESERVED = ['wowdata', 'wowgoals', 'wowfactory'];
+const RESERVED = ['wowdata', 'wowgoals'];
 const SECRET = 'ghp_value_that_must_never_leave_the_env';
 
 function parsed(raw, env = {}) {
@@ -160,7 +160,7 @@ test('a bad entry is skipped with one log line each and never stops the others',
     lines.every(l => /; this server is skipped$/.test(l)),
     lines.join('\n'),
   );
-  assert.match(lines[0], /^mcp\.servers\.wowdata: "wowdata" is a bridge server name \(wowdata, wowgoals, wowfactory\); this server is skipped$/);
+  assert.match(lines[0], /^mcp\.servers\.wowdata: "wowdata" is a bridge server name \(wowdata, wowgoals\); this server is skipped$/);
   assert.match(lines[1], /^mcp\.servers\.wowgoals: "wowgoals" is a bridge server name/);
   assert.match(lines[2], /^mcp\.servers\.two__parts: the name must be letters and digits, joined by single - or _/);
   assert.match(lines[8], /^mcp\.servers\.typo\.alow is not a key of a stdio server/);
@@ -580,7 +580,7 @@ test('mcp.allow: a discovered server keeps only its listed tools for Claude and 
   });
   assert.deepEqual(lines, [
     'mcp.allow.notion: "notion" is also in mcp.servers, so mcp.servers.notion.allow is used and this list is ignored',
-    'mcp.allow.wowdata: "wowdata" is a bridge server name (wowdata, wowgoals, wowfactory); it is ignored',
+    'mcp.allow.wowdata: "wowdata" is a bridge server name (wowdata, wowgoals); it is ignored',
     "mcp.allow.bad id: the id must be a server's tool prefix (letters, digits, - and _, at most 64 characters, no __, not starting with - or ending with _); it is ignored",
     'mcp.allow.broken has 3, which is not "*" or a tool name (letters, digits, - and _); it is ignored',
     'mcp.allow.odd names "grok", which is not one of claude, codex; it is ignored',

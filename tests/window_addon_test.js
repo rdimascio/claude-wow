@@ -992,11 +992,11 @@ test('a chat row shows one preview line, the last message time beside the title,
   vm.run(`date = function(fmt, t) if fmt == "%Y-%m-%d" then return t == time() and "today" or "before" end return fmt == "%b %d" and "Oct 02" or "18:01" end
     local h = ClaudeWoWDB.chats[2].history
     table.insert(h, { role = "user", text = "why is it down", t = time() - 90000 })
-    table.insert(h, { role = "assistant", agent = "claude", text = "Factory run done\\nsecond line", t = time() })
+    table.insert(h, { role = "assistant", agent = "claude", text = "Run done\\nsecond line", t = time() })
     table.insert(ClaudeWoWDB.chats[3].history, { role = "user", text = "route please", t = time() - 90000 })
     ClaudeWoW.Render()`);
   assert.equal(shownLines(2), 1, 'an idle chat shows one objective line: the preview');
-  assert.match(vm.evaluate(`${rowOf(2)}.objectives[1].text:GetText()`), /: Factory run done$/);
+  assert.match(vm.evaluate(`${rowOf(2)}.objectives[1].text:GetText()`), /: Run done$/);
   assert.equal(vm.evaluate(`${rowOf(2)}.when:GetText()`), '18:01', 'today shows the clock time');
   assert.equal(vm.evaluate(`${rowOf(3)}.when:GetText()`), 'Oct 02', 'an older day shows the date');
   assert.equal(vm.evaluate(`${rowOf(2)}.title.rel == ${rowOf(2)}.when`), 'true', 'the title truncates before the time');

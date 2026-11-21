@@ -349,7 +349,6 @@ local function BuildUI()
 		self:ClearFocus()
 		ClaudeWoW.Toggle(false)
 	end)
-	input:SetScript("OnTabPressed", function(self) Cli.CompleteSlash(self) end)
 	if plainInput then
 		input:SetScript("OnCursorChanged", ScrollingEdit_OnCursorChanged)
 		input:SetScript("OnTextChanged", function(self) ScrollingEdit_OnTextChanged(self, inScroll) end)

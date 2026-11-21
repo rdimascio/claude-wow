@@ -349,7 +349,7 @@ test('mcp.servers end to end: servers reach --mcp-config with ${VAR} only, stric
   const first = run();
   const out = first.stdout + first.stderr;
   assert.equal(first.status, 0, out);
-  assert.match(out, /mcp\.servers\.wowdata: "wowdata" is a bridge server name \(wowdata, wowgoals, wowfactory\); this server is skipped/, out);
+  assert.match(out, /mcp\.servers\.wowdata: "wowdata" is a bridge server name \(wowdata, wowgoals\); this server is skipped/, out);
   assert.match(out, /mcp: notion \(on by default\), github \(on by default\); strict: /, out);
   assert.match(out, /mcp\.strict: Claude runs stop loading at least these servers of your own: user:mobbin, and claude\.ai connectors/, out);
   assert.match(

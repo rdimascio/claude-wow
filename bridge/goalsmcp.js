@@ -184,29 +184,6 @@ function createRunGrants({ call, character = () => '', log = () => {}, tools = T
   };
 }
 
-function joinGrants(list) {
-  const owner = new WeakMap();
-  const holder = id => list.find(g => g.has(id)) || null;
-  return {
-    hello(msg, conn) {
-      const g = holder(msg && msg.run);
-      if (!g) return { why: 'no valid run grant' };
-      const r = g.hello(msg, conn);
-      if (r.run) owner.set(r.run, g);
-      return r;
-    },
-    detach(run, conn) {
-      const g = owner.get(run);
-      if (g) g.detach(run, conn);
-    },
-    onCall(run, msg) {
-      const g = owner.get(run);
-      if (g) return g.onCall(run, msg);
-      return Promise.resolve({ type: RESULT, call: msg && msg.call, ok: false, text: 'The run grant behind this connection is unknown.' });
-    },
-  };
-}
-
 function launchConfig({ runId, token, socket, runtime, script = SCRIPT, extraArgs = [] } = {}) {
   const R = require('./runtime');
   const [command, args] = R.scriptCommand(script, ['--socket', socket, '--run', runId, ...extraArgs], runtime);
@@ -423,7 +400,6 @@ module.exports = {
   deniedBy,
   toolSchemas,
   createRunGrants,
-  joinGrants,
   launchConfig,
   mcpConfig,
   createServer,
