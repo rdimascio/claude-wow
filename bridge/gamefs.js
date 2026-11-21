@@ -41,12 +41,9 @@ function partsBelowAddOns(dir) {
 // file anyway. Our folders under AddOns must stay 0777 (Battle.net error 2113),
 // so a mode check would refuse every write; a part owned by another account,
 // or a link, is refused instead. Node has no openat, so a part can still be
-// swapped between this walk and the write; the realpath check after the write
-// and the removal of what was written narrow that, they do not close it.
-function resolvesWhereExpected(dir, parts) {
-  const root = path.dirname(parts.at(-1));
-  return fs.realpathSync(dir) === path.join(fs.realpathSync(root), path.relative(root, path.resolve(dir)));
-}
+// swapped between this walk and the write; the same walk after the write, and
+// the removal of what was written, narrow that, they do not close it: a swap
+// and a swap back between the two walks goes unseen.
 
 function checkOwnParts(dir, parts) {
   const uid = process.getuid();
@@ -60,7 +57,6 @@ function checkOwnParts(dir, parts) {
 function realFolder(dir) {
   const parts = matchesGame() ? partsBelowAddOns(dir) : [];
   checkOwnParts(dir, parts.slice(1));
-  if (parts.length && !resolvesWhereExpected(dir, parts)) throw unsafe(dir, 'resolves outside the AddOns folder');
   const st = fs.lstatSync(dir);
   if (!st.isDirectory()) throw unsafe(dir, 'not a real folder');
   if (parts.length && st.uid !== process.getuid()) throw unsafe(dir, 'belongs to another account');
@@ -141,7 +137,8 @@ function renameOver(file, content) {
 
 function folderKept(dir, folderBefore) {
   try {
-    return sameEntry(realFolder(dir), folderBefore);
+    const st = fs.lstatSync(dir);
+    return st.isDirectory() && sameEntry(st, folderBefore);
   } catch {
     return false;
   }

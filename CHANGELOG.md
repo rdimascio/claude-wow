@@ -12,7 +12,7 @@ All notable changes to this project are recorded here. The format follows [Keep 
 - Without `plugins.claude-code.folders`, a game chat, its `--add-dir` folders and the roll now stay inside the bridge's default folder and the `threads` folders. Before, an empty list allowed every folder. A live session is still limited only when the list is set.
 - Discord sync stays off without `discord.publicKey`, and the bridge logs why. Before, a missing key fell back to 64 zeros.
 - The home folder (`~/.claude-wow`) is now made `0700` and `config.json` `0600` on macOS and Linux, by setup and at every bridge start. Before, they had the default `0755` and `0644`.
-- On macOS and Linux the bridge and setup refuse to write into the game folder through a linked folder, or a folder owned by another account, anywhere between `Interface/AddOns` and the file. Before, only the file's own folder was checked. The check runs again after the write, and a file written through a folder swapped in the meantime is removed.
+- On macOS and Linux the bridge and setup refuse to write into the game folder through a linked folder, or a folder owned by another account, anywhere between `Interface/AddOns` and the file. Before, only the file's own folder was checked. After the write the bridge checks the file's folder again and removes a file written through a folder swapped in the meantime. This narrows the race but does not close it: another local account can still rename a folder of ours inside the world-writable `AddOns` folder.
 
 ### Changed
 
