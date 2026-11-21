@@ -340,11 +340,11 @@ A coding chat can live in a Discord thread too. A message in the thread runs the
 
 | Key | Default | Meaning |
 |---|---|---|
-| `discord.enabled` | `false` | Turn Discord sync on. It also needs the three keys below and a bot token, or the bridge logs why it stays off. |
+| `discord.enabled` | `false` | Turn Discord sync on. It also needs the four keys below and a bot token, or the bridge logs why it stays off. |
 | `discord.applicationId` | `""` | The Discord application id of your bot. |
 | `discord.channelId` | `""` | The text channel the bot works in. A message there starts a new coding chat in its own thread; messages in a linked thread continue that chat. |
 | `discord.userIds` | `[]` | The Discord user ids that may run Claude. Required: anyone else, any bot and any webhook is ignored and logged by user id. |
-| `discord.publicKey` | `""` | Optional; only the forwarded Gateway path is used. |
+| `discord.publicKey` | `""` | Required: the application's public key (64 hex characters, on the Discord developer page). Without it Discord stays off and the bridge logs why. |
 
 The bot token comes from `CLAUDE_WOW_DISCORD_BOT_TOKEN`, else from `~/.claude-wow/discord.token` (make it mode 0600). It never goes in `config.json`. The bridge removes the variable from its own environment at start, and every agent run is denied `Read` on the token file. That does not stop a run allowed a shell command that reads files (`Bash(node:*)`, `Bash(python:*)`, `Bash(cat:*)`) from reading it; keep the server private and the user list short. The bot needs the Message Content intent and these permissions: Send Messages, Send Messages in Threads, Create Public Threads, Manage Threads, Read Message History.
 

@@ -13,6 +13,7 @@ const PROGRESS_EVERY_MS = 3000;
 const GATEWAY_MS = 6 * 60 * 60 * 1000;
 const RETRY_MS = [5000, 30000, 300000];
 const SNOWFLAKE = /^\d{5,25}$/;
+const PUBLIC_KEY = /^[0-9a-f]{64}$/i;
 const TOKEN_RE = /\{(?:item|spell|quest|skill|faction|map|npc|achievement):[^}]*\}/gi;
 const BODY_MAX = 1 << 20;
 
@@ -24,11 +25,12 @@ function settings(raw) {
   if (!SNOWFLAKE.test(String(d.applicationId || ''))) missing.push('discord.applicationId');
   if (!SNOWFLAKE.test(String(d.channelId || ''))) missing.push('discord.channelId');
   if (!userIds.length) missing.push('discord.userIds (at least one Discord user id)');
+  if (!PUBLIC_KEY.test(String(d.publicKey || ''))) missing.push('discord.publicKey (the 64 hex characters on the Discord application page)');
   if (missing.length) return { enabled: false, error: `Discord is off: set ${missing.join(', ')} in config.json.` };
   return {
     enabled: true,
     applicationId: String(d.applicationId),
-    publicKey: /^[0-9a-f]{64}$/i.test(String(d.publicKey || '')) ? String(d.publicKey) : '0'.repeat(64),
+    publicKey: String(d.publicKey),
     channelId: String(d.channelId),
     userIds,
     apiUrl: typeof d.apiUrl === 'string' && /^https?:\/\//.test(d.apiUrl) ? d.apiUrl.replace(/\/+$/, '') : API_BASE,
