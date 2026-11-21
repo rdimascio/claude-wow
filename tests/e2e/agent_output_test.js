@@ -30,7 +30,7 @@ test('an agent reply and its error output keep characters whose bytes arrive in 
 });
 
 test(
-  'state, transcripts, the log and run scratch files are private to the user, and older open ones are made private',
+  'the home folder, config, state, transcripts, the log and run scratch files are private to the user, and older open ones are made private',
   { skip: process.platform === 'win32' },
   async () => {
     let tmp = '';
@@ -38,7 +38,8 @@ test(
       tmp = path.join(sb.home, 'tmp');
       fs.mkdirSync(tmp, { recursive: true });
       fs.chmodSync(tmp, OPEN_DIR);
-      for (const file of [sb.state, sb.transcripts, sb.bridgeLog]) {
+      fs.chmodSync(sb.home, OPEN_DIR);
+      for (const file of [sb.config, sb.state, sb.transcripts, sb.bridgeLog]) {
         if (!fs.existsSync(file)) fs.writeFileSync(file, file.endsWith('.json') ? '{}' : '');
         fs.chmodSync(file, OPEN_FILE);
       }
@@ -54,7 +55,8 @@ test(
       assert.ok(pngs.length >= 1, "the run's screenshot is in tmp");
       for (const png of pngs) assert.equal(modeOf(png), PRIVATE_FILE, `${path.basename(png)} is private`);
       assert.equal(modeOf(tmp), PRIVATE_DIR, 'tmp is private');
-      for (const file of [h.sb.state, h.sb.transcripts, h.sb.bridgeLog]) assert.equal(modeOf(file), PRIVATE_FILE, `${path.basename(file)} is private`);
+      assert.equal(modeOf(h.sb.home), PRIVATE_DIR, 'the home folder is private');
+      for (const file of [h.sb.config, h.sb.state, h.sb.transcripts, h.sb.bridgeLog]) assert.equal(modeOf(file), PRIVATE_FILE, `${path.basename(file)} is private`);
       h.client.slash('/claude cancel');
       await h.bridge.waitForLine(/cancelled from the game; ending it/);
     });

@@ -256,7 +256,7 @@ function readJsonQuiet(file) {
 }
 
 function holdLock() {
-  fs.mkdirSync(HOME.dir, { recursive: true });
+  fs.mkdirSync(HOME.dir, { recursive: true, mode: PRIVATE_DIR_MODE });
   const mine = JSON.stringify({ pid: process.pid, started: new Date().toISOString(), startedAt: Date.now(), marker: SELF_MARKER });
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
@@ -288,8 +288,9 @@ function holdLock() {
   return false;
 }
 const holdsLock = !exitWhenIdle && holdLock();
-for (const privateFile of [STATE_FILE, HOME.transcripts, LOG_FILE]) restrictMode(privateFile, PRIVATE_FILE_MODE);
-for (const privateDir of [TMP_DIR, HOME.mapjobs, HOME.uijobs]) restrictMode(privateDir, PRIVATE_DIR_MODE);
+const OWN_HOME = HOME.source === 'legacy' ? [] : [HOME.dir];
+for (const privateFile of [CONFIG_FILE, STATE_FILE, HOME.transcripts, LOG_FILE]) restrictMode(privateFile, PRIVATE_FILE_MODE);
+for (const privateDir of [...OWN_HOME, TMP_DIR, HOME.mapjobs, HOME.uijobs]) restrictMode(privateDir, PRIVATE_DIR_MODE);
 
 const stateEarly = readJson(STATE_FILE, {});
 const chosen = P.chooseTransport(cap, stateEarly);

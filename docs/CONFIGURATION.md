@@ -387,6 +387,8 @@ A relative `/claude cd` path is resolved against that default. `~` expands to yo
 
 ## Where the bridge keeps its files
 
+On macOS and Linux the home folder is mode `0700` and `config.json`, `state.json`, `transcripts.json` and `bridge.log` are `0600`. Setup and every bridge start set these modes again on an install that has looser ones. The old `bridge/` home in a checkout keeps its folder mode.
+
 The bridge separates what it runs from what it remembers. The code can be replaced (`git pull`, `brew upgrade`, the installer run again) without touching any of the files below, which live in a home folder chosen in this order:
 
 1. `CLAUDE_WOW_HOME`, when set (a leading `~` expands).
