@@ -23,9 +23,43 @@ function unsafe(target, reason) {
   return Object.assign(new Error(`${target}: ${reason}`), { code: 'EUNSAFE' });
 }
 
+const ADDONS_ROOT = 'addons';
+
+function partsBelowAddOns(dir) {
+  const parts = [];
+  let current = path.resolve(dir);
+  for (;;) {
+    const parent = path.dirname(current);
+    if (parent === current) return [];
+    parts.push(current);
+    if (path.basename(parent).toLowerCase() === ADDONS_ROOT) return parts;
+    current = parent;
+  }
+}
+
+// Only another local account is a real attacker: the owner can edit every
+// file anyway. Our folders under AddOns must stay 0777 (Battle.net error 2113),
+// so a mode check would refuse every write; a part owned by another account,
+// or a link, is refused instead. Node has no openat, so a part can still be
+// swapped between this walk and the write; the same walk after the write, and
+// the removal of what was written, narrow that, they do not close it: a swap
+// and a swap back between the two walks goes unseen.
+
+function checkOwnParts(dir, parts) {
+  const uid = process.getuid();
+  for (const part of parts) {
+    const st = fs.lstatSync(part);
+    if (st.isSymbolicLink()) throw unsafe(dir, `${part} is a link`);
+    if (st.uid !== uid) throw unsafe(dir, `${part} belongs to another account`);
+  }
+}
+
 function realFolder(dir) {
+  const parts = matchesGame() ? partsBelowAddOns(dir) : [];
+  checkOwnParts(dir, parts.slice(1));
   const st = fs.lstatSync(dir);
   if (!st.isDirectory()) throw unsafe(dir, 'not a real folder');
+  if (parts.length && st.uid !== process.getuid()) throw unsafe(dir, 'belongs to another account');
   return st;
 }
 
@@ -101,15 +135,26 @@ function renameOver(file, content) {
   }
 }
 
-function checkFolderKept(dir, folderBefore) {
-  if (matchesGame() && !sameEntry(realFolder(dir), folderBefore)) throw unsafe(dir, 'folder was replaced during the write');
+function folderKept(dir, folderBefore) {
+  try {
+    const st = fs.lstatSync(dir);
+    return st.isDirectory() && sameEntry(st, folderBefore);
+  } catch {
+    return false;
+  }
+}
+
+function checkFolderKept(dir, folderBefore, written) {
+  if (!matchesGame() || folderKept(dir, folderBefore)) return;
+  remove(written);
+  throw unsafe(dir, 'folder was replaced during the write');
 }
 
 function replaceFile(file, content) {
   const dir = path.dirname(file);
   const folderBefore = realFolder(dir);
   renameOver(file, content);
-  checkFolderKept(dir, folderBefore);
+  checkFolderKept(dir, folderBefore, file);
 }
 
 function asBuffer(content) {
@@ -146,7 +191,7 @@ function writeFile(file, content) {
   const found = keepIfSame(file, wanted);
   if (found === 'same') return false;
   if (found !== 'missing' || !createIfMissing(file, wanted)) renameOver(file, wanted);
-  checkFolderKept(dir, folderBefore);
+  checkFolderKept(dir, folderBefore, file);
   return true;
 }
 
@@ -164,6 +209,8 @@ function missingAncestors(dir) {
 
 function mkdir(dir) {
   const created = missingAncestors(dir);
+  const existing = created.length ? path.dirname(created.at(-1)) : path.resolve(dir);
+  if (matchesGame() && partsBelowAddOns(existing).length) realFolder(existing);
   fs.mkdirSync(dir, { recursive: true });
   if (!matchesGame()) return;
   for (const d of created.toReversed()) openUpFolder(d);
@@ -184,7 +231,7 @@ function ensureFile(file, content) {
   if (fs.existsSync(file)) return false;
   const folderBefore = folderFor(file);
   if (!createIfMissing(file, content)) return false;
-  checkFolderKept(path.dirname(file), folderBefore);
+  checkFolderKept(path.dirname(file), folderBefore, file);
   return true;
 }
 

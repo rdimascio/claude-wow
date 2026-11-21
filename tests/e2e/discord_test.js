@@ -20,7 +20,7 @@ const msgId = () => String(820000000000000000n + BigInt(++msgSeq));
 
 async function setup(sb, fake) {
   const cfg = JSON.parse(fs.readFileSync(sb.config, 'utf8'));
-  cfg.discord = { enabled: true, applicationId: APP, channelId: CHANNEL, userIds: [OWNER], apiUrl: fake.url, gateway: false };
+  cfg.discord = { enabled: true, applicationId: APP, channelId: CHANNEL, userIds: [OWNER], publicKey: 'ab'.repeat(32), apiUrl: fake.url, gateway: false };
   fs.writeFileSync(sb.config, JSON.stringify(cfg, null, 2));
 }
 

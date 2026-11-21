@@ -106,6 +106,69 @@ test('a write into a folder that is a link is refused and leaves the linked fold
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('a link anywhere between the AddOns folder and the target is refused, and a linked AddOns folder itself is not', posixOnly, () => {
+  const dir = scratch('linked-parent');
+  const home = path.join(dir, 'home');
+  fs.mkdirSync(path.join(home, 'sig'), { recursive: true, mode: 0o700 });
+  const addons = path.join(dir, 'game', 'Interface', 'AddOns');
+  fs.mkdirSync(addons, { recursive: true });
+  fs.symlinkSync(home, path.join(addons, 'ClaudeWoW_Runtime'));
+  const target = path.join(addons, 'ClaudeWoW_Runtime', 'sig', '001.wav');
+  assert.throws(() => G.atomicWrite(target, 'payload'), { code: 'EUNSAFE', message: /ClaudeWoW_Runtime is a link/ });
+  assert.throws(() => G.writeFile(target, 'payload'), { code: 'EUNSAFE' });
+  assert.throws(() => G.ensureFile(target, 'payload'), { code: 'EUNSAFE' });
+  assert.throws(() => G.mkdir(path.join(addons, 'ClaudeWoW_Runtime', 'sig', 'new')), { code: 'EUNSAFE' });
+  assert.deepEqual(fs.readdirSync(path.join(home, 'sig')), []);
+  assert.equal(modeOf(path.join(home, 'sig')), 0o700);
+  const realAddons = path.join(dir, 'real-addons');
+  fs.mkdirSync(path.join(realAddons, 'ClaudeWoW_Runtime', 'sig'), { recursive: true });
+  const linkedAddons = path.join(dir, 'game2', 'Interface', 'AddOns');
+  fs.mkdirSync(path.dirname(linkedAddons), { recursive: true });
+  fs.symlinkSync(realAddons, linkedAddons);
+  assert.equal(G.writeFile(path.join(linkedAddons, 'ClaudeWoW_Runtime', 'sig', '001.wav'), 'payload'), true);
+  G.mkdir(path.join(linkedAddons, 'ClaudeWoW_S001'));
+  assert.ok(fs.statSync(path.join(realAddons, 'ClaudeWoW_S001')).isDirectory());
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('a folder under AddOns that belongs to another account is refused before anything is written', posixOnly, t => {
+  const dir = scratch('foreign-parent');
+  const addons = path.join(dir, 'game', 'Interface', 'AddOns');
+  const sig = path.join(addons, 'ClaudeWoW_Runtime', 'sig');
+  fs.mkdirSync(sig, { recursive: true });
+  const me = process.getuid();
+  t.mock.method(process, 'getuid', () => me + 1);
+  assert.throws(() => G.writeFile(path.join(sig, '001.wav'), 'payload'), { code: 'EUNSAFE', message: /belongs to another account/ });
+  assert.throws(() => G.ensureFile(path.join(sig, '002.wav'), 'payload'), { code: 'EUNSAFE' });
+  assert.throws(() => G.mkdir(path.join(sig, 'new')), { code: 'EUNSAFE' });
+  t.mock.restoreAll();
+  assert.deepEqual(fs.readdirSync(sig), []);
+  assert.equal(G.writeFile(path.join(sig, '001.wav'), 'payload'), true, 'our own folders still take the write');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('a folder swapped for a link between the checks and the write is caught after it, and the written file is removed', posixOnly, t => {
+  const dir = scratch('swapped-parent');
+  const outside = path.join(dir, 'outside');
+  fs.mkdirSync(path.join(outside, 'sig'), { recursive: true });
+  const addons = path.join(dir, 'game', 'Interface', 'AddOns');
+  const runtime = path.join(addons, 'ClaudeWoW_Runtime');
+  fs.mkdirSync(path.join(runtime, 'sig'), { recursive: true });
+  const target = path.join(runtime, 'sig', '001.wav');
+  const realOpen = fs.openSync;
+  t.mock.method(fs, 'openSync', (file, ...rest) => {
+    if (file === target && !fs.lstatSync(runtime).isSymbolicLink()) {
+      fs.renameSync(runtime, path.join(addons, 'moved'));
+      fs.symlinkSync(outside, runtime);
+    }
+    return realOpen(file, ...rest);
+  });
+  assert.throws(() => G.writeFile(target, 'payload'), { code: 'EUNSAFE', message: /replaced during the write/ });
+  assert.deepEqual(fs.readdirSync(path.join(outside, 'sig')), [], 'what landed outside is removed');
+  t.mock.restoreAll();
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test('the publish note gives the refusal reason for an unsafe folder and the setup hint only for a missing one', posixOnly, () => {
   const dir = scratch('publish-note');
   const home = path.join(dir, 'home');

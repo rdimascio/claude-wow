@@ -206,7 +206,7 @@ Right-clicking a chat in the chat list opens a small menu with **Rename...**, **
 | `/claude -n <name> [text]` | `claude -n` | name the new chat; with `-c` it renames the current one |
 | `/claude --model <model> [text]` | `claude --model` | the model for the chat (`opus`, `sonnet`, a full model name) |
 | `/claude --effort <level> [text]` | `claude --effort` | `low`, `medium`, `high`, `xhigh` or `max` |
-| `/claude --permission-mode <mode> [text]` | `claude --permission-mode` | `acceptEdits`, `auto`, `plan`, `manual`, `dontAsk` or `bypassPermissions` |
+| `/claude --permission-mode <mode> [text]` | `claude --permission-mode` | `acceptEdits`, `plan`, `manual` or `default`; `auto`, `dontAsk` and `bypassPermissions` only when `gamePermissionModes` in `config.json` lists them ([CONFIGURATION.md](docs/CONFIGURATION.md#permission-grants-from-the-game)) |
 | `/claude --add-dir <path> [text]` | `claude --add-dir` | one more folder the agent may use; repeat it for more |
 | `/claude --agent <name> [text]` | | which CLI runs the chat: `claude`, `codex`, `grok`, `agy`, `hermes` or `local` (a model on your own PC, see [docs/CONFIGURATION.md](docs/CONFIGURATION.md#the-local-agent)). A chat that changes agent starts a fresh session with it |
 | `/claude config [key] [value]` | `claude config` | the addon's settings (below); alone it lists them with their values, `/claude config all` adds the troubleshooting keys |
@@ -378,7 +378,7 @@ A widget runs only after you say yes. Each new widget, and each new version of o
 
 ### Permissions
 
-The agents run headless, so they can't ask you to approve a tool. Each agent's block in `~/.claude-wow/config.json` has a `permissionMode`, `acceptEdits` by default: file edits inside the project are auto-approved, `allowedTools` lists the commands it may run (`Bash(git:*)` is any command starting with `git`; the same rule syntax for every agent, translated for Grok), and `deniedTools` the ones it never may. What happens to anything else differs. Claude denies it. Codex has no allowlist: it runs commands in a sandbox that can write the project folder but not reach the network (unless `networkAccess` is on), and explains a blocked command in its reply. Grok's headless mode runs ordinary commands on its own and blocks the dangerous ones (deleting a project file, pushing) unless a rule allows them. With Claude and Grok the reply then grows an **Allow WebSearch, Bash(cargo:*) & retry** button: click it and a dialog shows the rules and what they cover; **Always Allow** adds them to that agent's list in your config permanently and the agent resumes where it stopped, **Cancel** changes nothing. The rule is a prefix (`Bash(rm:*)` allows any `rm`), so read the dialog before you accept. `bypassPermissions` gives any agent full autonomy; you decide. The mapping per agent, as measured against the real CLIs, is in [docs/AGENTS.md](docs/AGENTS.md).
+The agents run headless, so they can't ask you to approve a tool. Each agent's block in `~/.claude-wow/config.json` has a `permissionMode`, `acceptEdits` by default: file edits inside the project are auto-approved, `allowedTools` lists the commands it may run (`Bash(git:*)` is any command starting with `git`; the same rule syntax for every agent, translated for Grok), and `deniedTools` the ones it never may. What happens to anything else differs. Claude denies it. Codex has no allowlist: it runs commands in a sandbox that can write the project folder but not reach the network (unless `networkAccess` is on), and explains a blocked command in its reply. Grok's headless mode runs ordinary commands on its own and blocks the dangerous ones (deleting a project file, pushing) unless a rule allows them. With Claude and Grok the reply then grows an **Allow WebSearch, Bash(cargo:*) & retry** button: click it and a dialog shows the rules and what they cover; **Always Allow** keeps them for that agent in the bridge's `state.json` (never in `config.json`) and the agent resumes where it stopped, **Cancel** changes nothing. The rule is a prefix (`Bash(rm:*)` allows any `rm`), so read the dialog before you accept. `bypassPermissions` gives any agent full autonomy; you decide. The mapping per agent, as measured against the real CLIs, is in [docs/AGENTS.md](docs/AGENTS.md).
 
 #### Need, Greed or Pass
 
@@ -387,7 +387,7 @@ By default a denial does not show that button. It pops a frame in the style of t
 | Button | What it does |
 |---|---|
 | **Greed** (coin, the first button) | Allow for this one retry only: the companion app passes the rules to that run and saves nothing |
-| **Need** (dice) | Always allow: a dialog asks first, then the rules go into your config for good and the agent retries. Cancel puts the roll back |
+| **Need** (dice) | Always allow: a dialog asks first, then the bridge keeps the rules for that agent (in `state.json`) and the agent retries. Cancel puts the roll back |
 | **Pass** (X) | Deny: nothing is sent, the agent is not retried |
 
 Only a mouse click answers the roll; no key does. The buttons wake up half a second after the frame shows, so a click meant for something else does not answer it. In a chat attached to a running terminal session the roll shows Greed and Pass only, since nothing is saved there.

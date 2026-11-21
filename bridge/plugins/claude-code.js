@@ -56,7 +56,7 @@ const plugin = {
     }
     if (!fs.existsSync(cwd)) {
       core.log(`${core.tag(job)} cwd does not exist: ${cwd}`);
-      const sibs = allowed ? [] : siblingFolders(core.defaultCwd);
+      const sibs = PJ.foldersListed(options) ? [] : siblingFolders(core.defaultCwd);
       core.fail(
         job,
         `Folder does not exist: ${cwd}\n` +
