@@ -10,7 +10,7 @@ All notable changes to this project are recorded here. The format follows [Keep 
 - `/claude --permission-mode` no longer picks `auto`, `dontAsk` or `bypassPermissions` from the game unless `gamePermissionModes` in `config.json` lists the mode. The run uses the agent's own mode, the reply says so, and `bridge.log` gets one line.
 - An allowed rule from the game (Need, Allow & retry) is never written to `config.json`. It applies to that run. It is kept for later runs, in `state.json` under `grants`, only when the chat's last reply offered it.
 - Without `plugins.claude-code.folders`, a game chat, its `--add-dir` folders and the roll now stay inside the bridge's default folder and the `threads` folders. Before, an empty list allowed every folder. A live session is still limited only when the list is set.
-- On macOS and Linux the bridge and setup refuse to write into the game folder through a linked folder anywhere between `Interface/AddOns` and the file. Before, only the file's own folder was checked.
+- On macOS and Linux the bridge and setup refuse to write into the game folder through a linked folder anywhere between `Interface/AddOns` and the file. Before, only the file's own folder was checked. The check runs again after the write, and a file written through a folder swapped in the meantime is removed.
 
 ### Changed
 

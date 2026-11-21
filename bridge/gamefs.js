@@ -37,11 +37,21 @@ function partsBelowAddOns(dir) {
   }
 }
 
+// Node has no openat, so a part can still be swapped for a link between the
+// lstat walk and the write. The realpath check after the write catches that
+// and removes what was written. The game's own 0777 folders (Battle.net error
+// 2113) let any local user swap a part, not only the owner.
+function resolvesWhereExpected(dir, parts) {
+  const root = path.dirname(parts.at(-1));
+  return fs.realpathSync(dir) === path.join(fs.realpathSync(root), path.relative(root, path.resolve(dir)));
+}
+
 function realFolder(dir) {
-  const between = matchesGame() ? partsBelowAddOns(dir).slice(1) : [];
-  for (const part of between) {
+  const parts = matchesGame() ? partsBelowAddOns(dir) : [];
+  for (const part of parts.slice(1)) {
     if (fs.lstatSync(part).isSymbolicLink()) throw unsafe(dir, `${part} is a link`);
   }
+  if (parts.length && !resolvesWhereExpected(dir, parts)) throw unsafe(dir, 'resolves outside the AddOns folder');
   const st = fs.lstatSync(dir);
   if (!st.isDirectory()) throw unsafe(dir, 'not a real folder');
   return st;
@@ -119,15 +129,25 @@ function renameOver(file, content) {
   }
 }
 
-function checkFolderKept(dir, folderBefore) {
-  if (matchesGame() && !sameEntry(realFolder(dir), folderBefore)) throw unsafe(dir, 'folder was replaced during the write');
+function folderKept(dir, folderBefore) {
+  try {
+    return sameEntry(realFolder(dir), folderBefore);
+  } catch {
+    return false;
+  }
+}
+
+function checkFolderKept(dir, folderBefore, written) {
+  if (!matchesGame() || folderKept(dir, folderBefore)) return;
+  remove(written);
+  throw unsafe(dir, 'folder was replaced during the write');
 }
 
 function replaceFile(file, content) {
   const dir = path.dirname(file);
   const folderBefore = realFolder(dir);
   renameOver(file, content);
-  checkFolderKept(dir, folderBefore);
+  checkFolderKept(dir, folderBefore, file);
 }
 
 function asBuffer(content) {
@@ -164,7 +184,7 @@ function writeFile(file, content) {
   const found = keepIfSame(file, wanted);
   if (found === 'same') return false;
   if (found !== 'missing' || !createIfMissing(file, wanted)) renameOver(file, wanted);
-  checkFolderKept(dir, folderBefore);
+  checkFolderKept(dir, folderBefore, file);
   return true;
 }
 
@@ -204,7 +224,7 @@ function ensureFile(file, content) {
   if (fs.existsSync(file)) return false;
   const folderBefore = folderFor(file);
   if (!createIfMissing(file, content)) return false;
-  checkFolderKept(path.dirname(file), folderBefore);
+  checkFolderKept(path.dirname(file), folderBefore, file);
   return true;
 }
 

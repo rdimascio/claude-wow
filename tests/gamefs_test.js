@@ -131,6 +131,28 @@ test('a link anywhere between the AddOns folder and the target is refused, and a
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('a folder swapped for a link between the checks and the write is caught after it, and the written file is removed', posixOnly, t => {
+  const dir = scratch('swapped-parent');
+  const outside = path.join(dir, 'outside');
+  fs.mkdirSync(path.join(outside, 'sig'), { recursive: true });
+  const addons = path.join(dir, 'game', 'Interface', 'AddOns');
+  const runtime = path.join(addons, 'ClaudeWoW_Runtime');
+  fs.mkdirSync(path.join(runtime, 'sig'), { recursive: true });
+  const target = path.join(runtime, 'sig', '001.wav');
+  const realOpen = fs.openSync;
+  t.mock.method(fs, 'openSync', (file, ...rest) => {
+    if (file === target && !fs.lstatSync(runtime).isSymbolicLink()) {
+      fs.renameSync(runtime, path.join(addons, 'moved'));
+      fs.symlinkSync(outside, runtime);
+    }
+    return realOpen(file, ...rest);
+  });
+  assert.throws(() => G.writeFile(target, 'payload'), { code: 'EUNSAFE', message: /replaced during the write/ });
+  assert.deepEqual(fs.readdirSync(path.join(outside, 'sig')), [], 'what landed outside is removed');
+  t.mock.restoreAll();
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test('the publish note gives the refusal reason for an unsafe folder and the setup hint only for a missing one', posixOnly, () => {
   const dir = scratch('publish-note');
   const home = path.join(dir, 'home');
