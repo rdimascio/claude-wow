@@ -23,7 +23,25 @@ function unsafe(target, reason) {
   return Object.assign(new Error(`${target}: ${reason}`), { code: 'EUNSAFE' });
 }
 
+const ADDONS_ROOT = 'addons';
+
+function partsBelowAddOns(dir) {
+  const parts = [];
+  let current = path.resolve(dir);
+  for (;;) {
+    const parent = path.dirname(current);
+    if (parent === current) return [];
+    parts.push(current);
+    if (path.basename(parent).toLowerCase() === ADDONS_ROOT) return parts;
+    current = parent;
+  }
+}
+
 function realFolder(dir) {
+  const between = matchesGame() ? partsBelowAddOns(dir).slice(1) : [];
+  for (const part of between) {
+    if (fs.lstatSync(part).isSymbolicLink()) throw unsafe(dir, `${part} is a link`);
+  }
   const st = fs.lstatSync(dir);
   if (!st.isDirectory()) throw unsafe(dir, 'not a real folder');
   return st;
@@ -164,6 +182,8 @@ function missingAncestors(dir) {
 
 function mkdir(dir) {
   const created = missingAncestors(dir);
+  const existing = created.length ? path.dirname(created.at(-1)) : path.resolve(dir);
+  if (matchesGame() && partsBelowAddOns(existing).length) realFolder(existing);
   fs.mkdirSync(dir, { recursive: true });
   if (!matchesGame()) return;
   for (const d of created.toReversed()) openUpFolder(d);
