@@ -70,6 +70,7 @@ build.js, build/      the binaries: `bun build --compile`, one self-contained fi
 install.sh, install.ps1  the one-line installers (curl | sh, irm | iex): the binary (or Node + source), command, setup, service
 homebrew/             the Homebrew tap layout (Formula/claude-wow.rb) and why it is the secondary route
 dev/widget-audit.js   `npm run audit:widgets`: reads the names /claude dev globals saved and flags allowlist gaps
+dev/pack-check.js     `npm run pack:check`: every file `npm pack` would ship is tracked and not ignored; `npm publish` runs it with `--publish`, which also needs GitHub Actions and a clean checkout
 dev/render-bench.js   `node dev/render-bench.js [runs]`: a fixed session in the test VM; counts renders, bubble and list `SetText`, `GetStringHeight`, rows laid out, wall time
 tests/                see below
   lua/vm.js             the one fengari VM builder every addon test uses: reads the toc, passes the addon name and the shared namespace table to each file
