@@ -2030,7 +2030,7 @@ test('deleting the last chat after an attach drops the resume and the adopt bind
 
 const PICK_LIVE = '6624f327-7126-423e-a653-d7cf7a4e492b';
 const PICK_DEAF = 'f02436b8-8a5f-4c05-823e-bef25f88ff7b';
-const PICK_RESTART = `cd /Users/ryan/wow-ai && claude --resume ${PICK_DEAF} --dangerously-load-development-channels server:claude-wow`;
+const PICK_RESTART = `cd /Users/me/wow-ai && claude --resume ${PICK_DEAF} --dangerously-load-development-channels server:claude-wow`;
 
 function pickerVM() {
   const vm = whisperVM();
@@ -2040,12 +2040,12 @@ function pickerVM() {
       `{ id = "0000000${i.toString(16)}-0000-4000-8000-000000000000", name = "Old task ${i + 1}", cwd = "/srv/p${i}", agent = "claude", at = time() - ${(i + 2) * 86400} },`,
   ).join('\n');
   vm.run(
-    `ClaudeWoW.ApplyLive({ sessions = { "wow-ai (/Users/ryan/wow-ai)" }, start = "cd /repo && claude --dangerously-load-development-channels server:claude-wow" })`,
+    `ClaudeWoW.ApplyLive({ sessions = { "wow-ai (/Users/me/wow-ai)" }, start = "cd /repo && claude --dangerously-load-development-channels server:claude-wow" })`,
   );
   vm.run(`ClaudeWoW.ApplySessions({
-    { id = "${PICK_DEAF}", name = "wow-ai", title = "Refactor the bridge", cwd = "/Users/ryan/wow-ai", branch = "main", agent = "claude", at = time() - 2280, running = true, restart = "${PICK_RESTART}" },
-    { id = "${PICK_LIVE}", name = "wow-ai", title = "Fix the live picker", cwd = "/Users/ryan/wow-ai", branch = "fix/live-session-picker", agent = "claude", at = time() - 60, live = true, running = true },
-    { id = "${PICK_DEAF}", name = "wow-ai", title = "Refactor the bridge", cwd = "/Users/ryan/wow-ai", branch = "main", agent = "claude", at = time() - 2280, running = true, restart = "${PICK_RESTART}" },
+    { id = "${PICK_DEAF}", name = "wow-ai", title = "Refactor the bridge", cwd = "/Users/me/wow-ai", branch = "main", agent = "claude", at = time() - 2280, running = true, restart = "${PICK_RESTART}" },
+    { id = "${PICK_LIVE}", name = "wow-ai", title = "Fix the live picker", cwd = "/Users/me/wow-ai", branch = "fix/live-session-picker", agent = "claude", at = time() - 60, live = true, running = true },
+    { id = "${PICK_DEAF}", name = "wow-ai", title = "Refactor the bridge", cwd = "/Users/me/wow-ai", branch = "main", agent = "claude", at = time() - 2280, running = true, restart = "${PICK_RESTART}" },
     ${headless}
   }, time())`);
   return vm;
@@ -2157,7 +2157,7 @@ test('/claude -r on a session running without the channel: no live attach, the e
   assert.equal(vm.num('#ClaudeWoWDB.chats'), 2, 'the click resumes it headless in a chat of its own');
   assert.equal(activeField(vm, 'resumeId'), PICK_DEAF);
   assert.equal(activeField(vm, 'liveTarget'), null);
-  assert.equal(activeField(vm, 'cwd'), '/Users/ryan/wow-ai');
+  assert.equal(activeField(vm, 'cwd'), '/Users/me/wow-ai');
 });
 
 test('a live reply that arrives after the watchdog failed the message still lands in the chat, once', () => {
@@ -2812,31 +2812,31 @@ function connectIn(vm, cwd) {
 test('projects: a chat has none by default; --project, #name and none attach and detach one, and the wire carries the folder', () => {
   const vm = newVM();
   login(vm);
-  connectIn(vm, '/Users/me/every');
+  connectIn(vm, '/Users/me/shop');
   vm.run('ClaudeWoW.Send("best rogue race")');
   let rec = stripRecords(vm).find(r => r.text === 'best rogue race');
   assert.ok(!/plugin=claude-code/.test(rec.flags || ''), 'a general chat is not a coding session');
   assert.ok(!rec.cwd, 'and sends no folder');
   assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].cwd'), '');
 
-  vm.run('SlashCmdList.CLAUDE("--project every fix the build")');
+  vm.run('SlashCmdList.CLAUDE("--project shop fix the build")');
   rec = stripRecords(vm).find(r => r.text === 'fix the build');
-  assert.equal(rec.cwd, '/Users/me/every', 'a known project by its name');
+  assert.equal(rec.cwd, '/Users/me/shop', 'a known project by its name');
   assert.match(rec.flags, /plugin=claude-code/);
-  assert.equal(vm.evaluate('ClaudeWoWDB.settings.projects[1]'), '/Users/me/every', 'remembered for the dropdown');
+  assert.equal(vm.evaluate('ClaudeWoWDB.settings.projects[1]'), '/Users/me/shop', 'remembered for the dropdown');
 
   vm.run('SlashCmdList.CLAUDE("--project nope hi")');
   assert.match(
     vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history[#ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history].text'),
-    /Unknown project "nope"\. Known: every/,
+    /Unknown project "nope"\. Known: shop/,
   );
 
   vm.run('ClaudeWoW.NewChat()');
   assert.equal(vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].cwd'), '', 'a new chat from a project chat has no project');
-  vm.run('ClaudeWoW.Send("check the #every build")');
-  rec = stripRecords(vm).find(r => r.text === 'check the every build');
+  vm.run('ClaudeWoW.Send("check the #shop build")');
+  rec = stripRecords(vm).find(r => r.text === 'check the shop build');
   assert.ok(rec, 'the tag is sent as the plain name');
-  assert.equal(rec.cwd, '/Users/me/every', '#name attaches the project before the message goes out');
+  assert.equal(rec.cwd, '/Users/me/shop', '#name attaches the project before the message goes out');
 
   vm.run('ClaudeWoW.NewChat()');
   vm.run('ClaudeWoW.Send("price #42 and #fun")');
@@ -2850,18 +2850,18 @@ test('projects: a chat has none by default; --project, #name and none attach and
 test('projects: the bridge list adds recent projects with repo labels, and one folder spelled with ~ or a trailing slash is listed once', () => {
   const vm = newVM();
   login(vm);
-  vm.run('ClaudeWoWDB.settings.projects = { "~/code/every", "/Users/me/code/every/" }');
+  vm.run('ClaudeWoWDB.settings.projects = { "~/code/shop", "/Users/me/code/shop/" }');
   vm.run('STUB.RunTimers()');
   nextSlot(
     vm,
-    '{ now = time(), cwd = "/Users/me/code/every", home = "/Users/me", projects = { { path = "/Users/me/code/every", label = "every" }, { path = "/Users/me/wow-ai", label = "claude-wow" }, { path = "/Users/me/every-3", label = "every (every-3)" } }, replies = {} }',
+    '{ now = time(), cwd = "/Users/me/code/shop", home = "/Users/me", projects = { { path = "/Users/me/code/shop", label = "shop" }, { path = "/Users/me/wow-ai", label = "claude-wow" }, { path = "/Users/me/shop-3", label = "shop (shop-3)" } }, replies = {} }',
   );
   vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
   assert.equal(vm.evaluate('ClaudeWoW.IsConnected()'), 'true');
 
   vm.run('SlashCmdList.CLAUDE("--project nope hi")');
   const said = vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history[#ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history].text');
-  assert.match(said, /Known: every, claude-wow, every \(every-3\)\./, 'one every for both spellings, then the bridge list by label: ' + said);
+  assert.match(said, /Known: shop, claude-wow, shop \(shop-3\)\./, 'one shop for both spellings, then the bridge list by label: ' + said);
 
   vm.run('SlashCmdList.CLAUDE("--project claude-wow fix the build")');
   const rec = stripRecords(vm).find(r => r.text === 'fix the build');
@@ -2874,11 +2874,11 @@ test('projects: the bridge list adds recent projects with repo labels, and one f
 test('projects: without a bridge list the picker keeps folder names, and ~ stays as typed until the bridge names its home', () => {
   const vm = newVM();
   login(vm);
-  vm.run('ClaudeWoWDB.settings.projects = { "~/code/every", "/Users/me/wow-ai" }');
-  connectIn(vm, '/Users/me/code/every');
+  vm.run('ClaudeWoWDB.settings.projects = { "~/code/shop", "/Users/me/wow-ai" }');
+  connectIn(vm, '/Users/me/code/shop');
   vm.run('SlashCmdList.CLAUDE("--project nope hi")');
   const said = vm.evaluate('ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history[#ClaudeWoWDB.chats[#ClaudeWoWDB.chats].history].text');
-  assert.match(said, /Known: every, wow-ai, every\./, said);
+  assert.match(said, /Known: shop, wow-ai, shop\./, said);
 });
 
 test('the whisper tab and the game chat echo render coding replies the same way: fences skipped, code untouched, links short, cuts on word boundaries', () => {
@@ -3616,8 +3616,8 @@ test('help: the page lists every command of ClaudeWoW.HELP in its sections, comm
 test('/claude discord refuses when the bridge has no Discord, and in a general chat; on a coding chat it sends the link flag once', () => {
   const off = newVM();
   login(off);
-  connectIn(off, '/Users/me/every');
-  off.run('ClaudeWoWDB.chats[1].cwd = "/Users/me/every"; ClaudeWoWDB.chats[1].plugin = "claude-code"');
+  connectIn(off, '/Users/me/shop');
+  off.run('ClaudeWoWDB.chats[1].cwd = "/Users/me/shop"; ClaudeWoWDB.chats[1].plugin = "claude-code"');
   off.run('SlashCmdList.CLAUDE("discord")');
   assert.match(off.evaluate('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history].text'), /^Discord is not on in this companion app/);
   assert.ok(!stripRecords(off).some(r => /discord=link/.test(r.flags || '')));
@@ -3625,7 +3625,7 @@ test('/claude discord refuses when the bridge has no Discord, and in a general c
   const vm = newVM();
   login(vm);
   vm.run('STUB.RunTimers()');
-  nextSlot(vm, '{ now = time(), cwd = "/Users/me/every", discord = true, replies = {} }');
+  nextSlot(vm, '{ now = time(), cwd = "/Users/me/shop", discord = true, replies = {} }');
   vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
   assert.equal(vm.evaluate('ClaudeWoW.IsConnected()'), 'true');
   const last = () => vm.evaluate('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history].text');
@@ -3633,7 +3633,7 @@ test('/claude discord refuses when the bridge has no Discord, and in a general c
   vm.run('SlashCmdList.CLAUDE("discord")');
   assert.match(last(), /^Only a coding chat can live in Discord/);
 
-  vm.run('ClaudeWoWDB.chats[1].cwd = "/Users/me/every"; ClaudeWoWDB.chats[1].plugin = "claude-code"');
+  vm.run('ClaudeWoWDB.chats[1].cwd = "/Users/me/shop"; ClaudeWoWDB.chats[1].plugin = "claude-code"');
   vm.run('SlashCmdList.CLAUDE("discord")');
   const sent = stripRecords(vm).filter(r => /discord=link/.test(r.flags || ''));
   assert.equal(sent.length, 1);
@@ -3648,7 +3648,7 @@ test('Discord mirror: messages from a linked thread join the game chat once, in 
   vm.run('STUB.RunTimers()');
   nextSlot(
     vm,
-    `{ now = time(), cwd = "/Users/me/every", discord = true, mirror = {
+    `{ now = time(), cwd = "/Users/me/shop", discord = true, mirror = {
     { chat = "${chatId}", seq = 1, role = "user", text = "from my phone", agent = "", denied = {} },
     { chat = "${chatId}", seq = 2, role = "assistant", text = "done it", agent = "claude", denied = {} },
     { chat = "nochat", seq = 1, role = "user", text = "ignored", agent = "", denied = {} },
@@ -3682,8 +3682,8 @@ test('attaching a session from another chat that this client does not have keeps
   vm.run('STUB.RunTimers()');
   nextSlot(
     vm,
-    `{ now = time(), cwd = "/Users/me/every", plugins = { "ask", "claude-code" }, sessions = {
-    { id = "abcd1111-0000-4000-8000-000000000001", name = "From Discord", cwd = "/Users/me/every", agent = "claude", at = time() - 60, chat = "d0123456789" },
+    `{ now = time(), cwd = "/Users/me/shop", plugins = { "ask", "claude-code" }, sessions = {
+    { id = "abcd1111-0000-4000-8000-000000000001", name = "From Discord", cwd = "/Users/me/shop", agent = "claude", at = time() - 60, chat = "d0123456789" },
   }, replies = {} }`,
   );
   vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
@@ -3980,7 +3980,7 @@ test('while the open chat waits, Send stays in place but is disabled and a Stop 
   const vm = newVM();
   login(vm);
   vm.run('STUB.RunTimers()');
-  nextSlot(vm, '{ now = time(), cwd = "/Users/me/every", cancel = true, replies = {} }');
+  nextSlot(vm, '{ now = time(), cwd = "/Users/me/shop", cancel = true, replies = {} }');
   vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
   assert.equal(vm.evaluate('ClaudeWoW.IsConnected()'), 'true');
   vm.run('ClaudeWoW.Toggle()');
@@ -4017,7 +4017,7 @@ test('the effort button above Send shows the chat effort, sets it for this chat,
   const vm = newVM();
   login(vm);
   vm.run('STUB.RunTimers()');
-  nextSlot(vm, '{ now = time(), cwd = "/Users/me/every", replies = {} }');
+  nextSlot(vm, '{ now = time(), cwd = "/Users/me/shop", replies = {} }');
   vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
   vm.run('ClaudeWoW.Toggle()');
   const label = () => vm.evaluate('ClaudeWoW.UI.effort.text:GetText()');
