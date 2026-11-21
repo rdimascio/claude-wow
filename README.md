@@ -414,7 +414,7 @@ Your messages and the agent's replies go to the agent you picked (for example Cl
 
 To change your answer later, run `claude-wow setup --share-game-state yes` (or `no`), or set `"gameContext"` and `"telemetry": { "enabled": ... }` in `~/.claude-wow/config.json`, then restart the companion app. A `config.json` made before this question existed keeps sharing, as it did before.
 
-With sharing off, the addon still sends its game context to the companion app on your computer, which keeps it in `state.json` there. The companion app does not put it in any message and does not give in-game chats the goal tools. A live Claude Code session you connect yourself ([docs/LIVE-SESSION.md](docs/LIVE-SESSION.md)) still has its goal tools, which read your professions from the context. It does not ask the addon for the rest of the game state at all. `/claude config context off` in game also stops the addon from sending the context.
+With sharing off, the addon still sends its game context to the companion app on your computer, which keeps it in `state.json` there. The companion app does not put it in any message, and the goal, order and campaign features see no character, so they stay idle. It does not ask the addon for the rest of the game state at all. `/claude config context off` in game also stops the addon from sending the context.
 
 ## Configuration (`~/.claude-wow/config.json`)
 
