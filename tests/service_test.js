@@ -845,6 +845,7 @@ test('wowgpt --help prints the commands and exits 0 without starting the supervi
     const r = spawnSync(process.execPath, [path.join(__dirname, '..', 'bridge', 'supervisor.js'), flag], { encoding: 'utf8', env, timeout: 30000 });
     assert.equal(r.status, 0, flag + ': ' + r.stdout + r.stderr);
     assert.match(r.stdout, /^wowgpt setup \[\.\.\.\] {3}game-side install/m);
+    assert.match(r.stdout, /^wowgpt \[--project/m, 'the line the Homebrew formula test reads');
     assert.doesNotMatch(r.stdout + r.stderr, /bridge exited|config\.json/, `${flag}: no bridge started`);
   }
   assert.ok(!fs.existsSync(S.pidFile(S.dirs(process.platform, env, user))), 'no supervisor pid file');
