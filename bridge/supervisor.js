@@ -45,7 +45,7 @@ if (argv[0] === '--version' || argv[0] === '-v') {
   process.argv.splice(2, 1);
   require('../setup').main();
 } else if (argv[0] === 'setup') {
-  const r = spawnSync(...R.scriptCommand('setup', argv.slice(1)), { stdio: 'inherit' });
+  const r = spawnSync(...R.scriptCommand('setup', argv.slice(1)), { stdio: 'inherit', env: { ...process.env, WOWGPT_FROM_COMMAND: '1' } });
   process.exitCode = r.status === null ? 1 : r.status;
 } else if (argv[0] === 'bridge') {
   process.argv.splice(2, 1); // bridge.js reads its flags from process.argv

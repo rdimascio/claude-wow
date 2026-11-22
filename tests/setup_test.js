@@ -542,13 +542,13 @@ test('node setup.js after the rename: ~/.claude-wow and the old ask data folder 
   const dir = scratch('oldhome');
   const user = path.join(dir, 'user');
   const client = path.join(dir, 'client');
-  const project = path.join(dir, 'project');
-  fs.mkdirSync(project, { recursive: true });
   fakeClient(client, 'ClaudeWoW', { slots: 1 });
   const oldHome = path.join(user, '.claude-wow');
   fs.mkdirSync(path.join(oldHome, 'goals'), { recursive: true });
   const example = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'bridge', 'config.example.json'), 'utf8'));
-  fs.writeFileSync(path.join(oldHome, 'config.json'), JSON.stringify({ ...example, defaultCwd: project, clients: [{ dir: client, account: 'ACCT#1' }] }));
+  const oldProject = path.join(oldHome, 'work');
+  fs.mkdirSync(oldProject, { recursive: true });
+  fs.writeFileSync(path.join(oldHome, 'config.json'), JSON.stringify({ ...example, defaultCwd: oldProject, clients: [{ dir: client, account: 'ACCT#1' }] }));
   fs.writeFileSync(path.join(oldHome, 'state.json'), '{"sessions":{"bad3474c10":"sess-1"}}');
   fs.writeFileSync(path.join(oldHome, 'goals', 'g.json'), '[]');
   const oldAsk = path.join(ASK.dataDir('claude-wow', {}, user), 'ask');
@@ -557,13 +557,28 @@ test('node setup.js after the rename: ~/.claude-wow and the old ask data folder 
 
   const env = SB.isolatedEnv(user);
   for (const k of Object.keys(env)) if (/^(WOWGPT|CLAUDE_WOW)_/.test(k)) delete env[k];
-  const r = spawnSync(process.execPath, [path.join(__dirname, '..', 'setup.js'), '--wow', client, '--project', project], {
-    encoding: 'utf8',
-    env,
-    timeout: 120000,
-  });
+  const run = () =>
+    spawnSync(process.execPath, [path.join(__dirname, '..', 'setup.js'), '--wow', client, '--no-service'], {
+      encoding: 'utf8',
+      env,
+      timeout: 120000,
+    });
+  const r = run();
   assert.equal(r.status, 0, r.stdout + r.stderr);
   const newHome = path.join(user, '.wowgpt');
+  const esc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  assert.equal(
+    JSON.parse(fs.readFileSync(path.join(newHome, 'config.json'), 'utf8')).defaultCwd,
+    path.join(newHome, 'work'),
+    'the project moved with the home',
+  );
+  assert.match(r.stdout, new RegExp(`^migrate {2}: config\\.json: paths under ${esc(oldHome)} now point to ${esc(newHome)}$`, 'm'));
+  assert.match(r.stdout, new RegExp(`^old home : ${esc(oldHome)} is no longer used; you can remove it`, 'm'));
+  fs.writeFileSync(path.join(newHome, 'claude-mcp.json'), JSON.stringify({ command: path.join(oldHome, 'current', 'claude-wow') }));
+  const again = run();
+  assert.equal(again.status, 0, again.stdout + again.stderr);
+  assert.match(again.stdout, new RegExp(`^old home : ${esc(oldHome)} is still named in claude-mcp\\.json; keep it`, 'm'));
+  assert.doesNotMatch(again.stdout, /you can remove it/);
   assert.match(r.stdout, new RegExp('home {5}: ' + newHome.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.match(r.stdout, /migrate {2}: .*\.claude-wow copied to .*\.wowgpt/);
   assert.equal(fs.readFileSync(path.join(newHome, 'state.json'), 'utf8'), '{"sessions":{"bad3474c10":"sess-1"}}', 'the sessions come along');
