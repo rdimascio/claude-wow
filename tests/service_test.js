@@ -790,3 +790,18 @@ test('removeAllOld removes the claude-wow and the wow-ai launcher, and install a
   b.uninstall(d);
   assert.deepEqual(asked, ['io.claudewow.bridge', 'io.wowai.bridge', 'io.claudewow.bridge', 'io.wowai.bridge']);
 });
+
+test('wowgpt --help prints the commands and exits 0 without starting the supervisor or the bridge', () => {
+  const { spawnSync } = require('child_process');
+  const SB = require('../dev/sandbox');
+  const dir = scratch('help');
+  const user = path.join(dir, 'user');
+  const env = SB.isolatedEnv(user, { WOWGPT_HOME: path.join(dir, 'home') });
+  for (const flag of ['--help', '-h']) {
+    const r = spawnSync(process.execPath, [path.join(__dirname, '..', 'bridge', 'supervisor.js'), flag], { encoding: 'utf8', env, timeout: 30000 });
+    assert.equal(r.status, 0, flag + ': ' + r.stdout + r.stderr);
+    assert.match(r.stdout, /^wowgpt setup \[\.\.\.\] {3}game-side install/m);
+    assert.doesNotMatch(r.stdout + r.stderr, /bridge exited|config\.json/, `${flag}: no bridge started`);
+  }
+  assert.ok(!fs.existsSync(S.pidFile(S.dirs(process.platform, env, user))), 'no supervisor pid file');
+});
