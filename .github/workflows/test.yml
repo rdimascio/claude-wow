@@ -47,6 +47,7 @@ jobs:
       - run: npx oxlint --deny-warnings
       - run: npx oxfmt --check
       - run: node tests/order_check.js
+      - run: npm run pack:check
 
   unit:
     strategy:

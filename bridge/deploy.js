@@ -39,7 +39,7 @@ Releases live in <home>/releases/<version>-<sha>/claude-wow and <home>/current p
 (<home> is ~/.claude-wow, or CLAUDE_WOW_HOME). One deploy or rollback at a time (<home>/deploy.lock,
 for this machine only). The idle wait, the restart (claude-wow service restart) and setup for every
 enabled client in config.json run only when the service runs <home>/current/claude-wow and the release changes.
-See docs/MIGRATE-PROD-INSTALL.md.`;
+To point the service at the release, run <home>/current/claude-wow service install once.`;
 
 function parseArgs(argv) {
   const [cmd, ...rest] = argv;
@@ -246,7 +246,7 @@ function afterSwitch(l, ctx, flip) {
   else ctx.out(`current : ${flip.name}${flip.previous ? ` (previous ${flip.previous}; claude-wow dev rollback goes back)` : ''}`);
   if (!serviceRunsCurrent(l, ctx)) {
     ctx.out(`service : ${serviceDefinition(ctx)} does not run ${REL.currentBinary(l)}, so nothing was restarted and setup was not run.`);
-    ctx.out('          To run the service from this release, follow docs/MIGRATE-PROD-INSTALL.md.');
+    ctx.out(`          To run the service from this release, run: ${REL.currentBinary(l)} service install`);
     return 0;
   }
   const r = restartService(ctx);
@@ -265,7 +265,6 @@ function idleProbe(l, ctx) {
     I.probeFor({
       stateFile: l.state,
       bridgeLockFile: l.bridgeLock,
-      runsFile: path.join(l.base, 'factory', 'runs.json'),
       readPid: () => SVC.readPid(SVC.dirs(ctx.platform)),
       alive: REL.pidAlive,
     })

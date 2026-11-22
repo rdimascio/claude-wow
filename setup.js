@@ -5,7 +5,7 @@
 //   node setup.js [--wow "<client folder>"] [--project "<default work folder>"] [--account <name>]
 //
 // Finds the WoW: Forever client, copies the addon into Interface\AddOns, writes
-// bridge/config.json from the example (if missing), and builds the slot pool.
+// config.json in the home folder from the example (if missing), and builds the slot pool.
 // Re-running is safe: existing config and generated files are kept, except that
 // an explicit --project updates defaultCwd (that is the only way to correct it
 // without editing config.json by hand).
@@ -257,6 +257,58 @@ function entryFor(client, account) {
   return entry;
 }
 
+const SHARE_FLAG = 'share-game-state';
+const SHARE_QUESTION =
+  'Share your game state with the agent? This sends your character, zone, quests, money, bags and professions to the agent provider (for example Anthropic or OpenAI) with each message. [y/N] ';
+
+function yesNo(raw) {
+  const answer = String(raw === true ? 'yes' : raw || '')
+    .trim()
+    .toLowerCase();
+  if (['y', 'yes', 'on', 'true'].includes(answer)) return true;
+  if (['n', 'no', 'off', 'false', ''].includes(answer)) return false;
+  return null;
+}
+
+function readLineSync() {
+  const buf = Buffer.alloc(1);
+  let line = '';
+  while (true) {
+    let n = 0;
+    try {
+      n = fs.readSync(0, buf, 0, 1, null);
+    } catch {
+      return line;
+    }
+    if (n === 0 || buf[0] === 0x0a) return line;
+    line += String.fromCharCode(buf[0]);
+  }
+}
+
+function chooseShare({ flag, interactive, ask }) {
+  if (flag !== undefined) {
+    const picked = yesNo(flag);
+    if (picked === null) throw new Error(`--${SHARE_FLAG} takes yes or no, not "${flag}"`);
+    return picked;
+  }
+  if (!interactive) return false;
+  return yesNo(ask(SHARE_QUESTION)) === true;
+}
+
+function askOnTerminal(question) {
+  process.stdout.write(question);
+  return readLineSync();
+}
+
+function applyShare(cfg, share) {
+  cfg.gameContext = share;
+  cfg.telemetry = { ...(cfg.telemetry && typeof cfg.telemetry === 'object' ? cfg.telemetry : {}), enabled: share };
+}
+
+function sharesGameState(cfg) {
+  return cfg.gameContext !== false && !(cfg.telemetry && cfg.telemetry.enabled === false);
+}
+
 function noteOnce(notes, name) {
   if (!notes.includes(name)) notes.push(name);
 }
@@ -268,11 +320,17 @@ function loadConfig() {
     for (const k of CLI.LEGACY_KEYS) delete cfg[k];
     cfg.clients = [];
     cfg.defaultCwd = args.project ? resolveProject(args.project) : process.cwd();
+    applyShare(cfg, chooseShare({ flag: args[SHARE_FLAG], interactive: !!process.stdin.isTTY, ask: askOnTerminal }));
     return { cfg, notes: [], fresh: true };
   }
   const cfg = JSON.parse(fs.readFileSync(CONFIG, 'utf8'));
   const notes = upgradeConfig(cfg, example);
   for (const n of CLI.migrateConfig(cfg)) noteOnce(notes, n);
+  if (args[SHARE_FLAG] !== undefined) {
+    const before = JSON.stringify([cfg.gameContext, cfg.telemetry]);
+    applyShare(cfg, chooseShare({ flag: args[SHARE_FLAG], interactive: false, ask: askOnTerminal }));
+    if (JSON.stringify([cfg.gameContext, cfg.telemetry]) !== before) notes.push('gameContext, telemetry');
+  }
   if (args.project) {
     const want = resolveProject(args.project);
     if (cfg.defaultCwd !== want) {
@@ -474,6 +532,9 @@ function main() {
     const skipped = CLI.allClients(cfg).filter(c => !c.enabled);
     for (const c of skipped) console.log(`client   : ${c.dir} skipped ("enabled": false in config.json)`);
     saveConfig(cfg, notes, fresh);
+    console.log(
+      `privacy  : game state ${sharesGameState(cfg) ? 'is shared with the agent' : 'is not shared with the agent'} (change with --${SHARE_FLAG} yes|no, or gameContext and telemetry.enabled in config.json)`,
+    );
     console.log(`project  : ${cfg.defaultCwd}  (change with /claude-wow cd in game, or defaultCwd in config.json)`);
     // A defaultCwd that no longer exists (moved folder, or a bad --project from an
     // earlier run) makes every chat fail with "Folder does not exist" in game.
@@ -531,6 +592,10 @@ module.exports = {
   detectClients,
   findAccount,
   parseArgs,
+  chooseShare,
+  applyShare,
+  sharesGameState,
+  SHARE_QUESTION,
   transportReport,
   main,
 };

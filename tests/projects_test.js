@@ -19,9 +19,9 @@ function tree() {
     'wow-ai',
     '[core]\n\tbare = false\n[remote "upstream"]\n\turl = https://github.com/someone/wow-ai\n[remote "origin"]\n\turl = https://github.com/me/claude-wow.git\n',
   );
-  const every = repo('every-io/every', '[remote "origin"]\n\turl = git@github.com:every-io/every.git\n');
-  const worktree = path.join(home, 'every-3');
-  const wtGit = path.join(every, '.git', 'worktrees', 'every-3');
+  const shop = repo('acme/shop', '[remote "origin"]\n\turl = git@github.com:acme/shop.git\n');
+  const worktree = path.join(home, 'shop-3');
+  const wtGit = path.join(shop, '.git', 'worktrees', 'shop-3');
   fs.mkdirSync(wtGit, { recursive: true });
   fs.writeFileSync(path.join(wtGit, 'commondir'), '../..\n');
   fs.mkdirSync(worktree);
@@ -31,14 +31,14 @@ function tree() {
   fs.mkdirSync(path.join(root, 'tmpish'));
   const scratch = path.join(root, 'scratch');
   fs.mkdirSync(scratch);
-  return { root, home, wow, every, worktree, plain, scratch };
+  return { root, home, wow, shop, worktree, plain, scratch };
 }
 
 test('repo labels come from the origin remote, through a worktree to its main repo, else the folder name', () => {
   const t = tree();
   assert.equal(PJ.repoLabel(t.wow), 'claude-wow');
-  assert.equal(PJ.repoLabel(path.join(t.every)), 'every');
-  assert.equal(PJ.repoLabel(t.worktree), 'every');
+  assert.equal(PJ.repoLabel(path.join(t.shop)), 'shop');
+  assert.equal(PJ.repoLabel(t.worktree), 'shop');
   assert.equal(PJ.repoLabel(t.plain), 'notes');
   assert.equal(PJ.repoNameFromUrl('git@github.com:o/r.git'), 'r');
   assert.equal(PJ.repoNameFromUrl('https://github.com/o/r/'), 'r');
@@ -48,7 +48,7 @@ test('repo labels come from the origin remote, through a worktree to its main re
 test('known projects: the default first, then by recency; ~ and trailing slashes collapse; missing, temp, home and excluded folders are left out; equal labels are told apart', () => {
   const t = tree();
   const list = PJ.knownProjects({
-    defaultCwd: t.every,
+    defaultCwd: t.shop,
     chats: [
       { cwd: '~/wow-ai/', at: 300 },
       { cwd: path.join(t.home, 'gone'), at: 900 },
@@ -67,9 +67,9 @@ test('known projects: the default first, then by recency; ~ and trailing slashes
     now: 1,
   });
   assert.deepEqual(list, [
-    { path: t.every, label: 'every' },
+    { path: t.shop, label: 'shop' },
     { path: t.wow, label: 'claude-wow' },
-    { path: t.worktree, label: 'every (every-3)' },
+    { path: t.worktree, label: 'shop (shop-3)' },
     { path: t.plain, label: 'notes' },
   ]);
 });

@@ -90,7 +90,8 @@
     "strict": false,
     "servers": {}
   },
-  "gameContext": true,
+  "gameContext": false,
+  "telemetry": { "enabled": false },
   "primerFile": "docs/WOW-ADDON-PRIMER.md",
   "pollMs": 750,
   "progressWriteMs": 3000,

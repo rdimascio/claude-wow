@@ -2,7 +2,7 @@
 
 ## When the player is talking to you from inside the game
 
-You are in this case when your system prompt or channel instructions say the player is in World of Warcraft: an in-game chat ("talking to you from inside World of Warcraft"), a factory run ("started from an in-game World of Warcraft chat"), or a Claude Code session that gets messages from the game through the claude-wow channel. The player is then using the addon and bridge this repository builds, right now, to talk to you.
+You are in this case when your system prompt or channel instructions say the player is in World of Warcraft: an in-game chat ("talking to you from inside World of Warcraft") or a Claude Code session that gets messages from the game through the claude-wow channel. The player is then using the addon and bridge this repository builds, right now, to talk to you.
 
 - Replies are read in a small game window without Markdown: plain sentences, short.
 - After a change, the player's step is `/reload` in game, or a full game restart when the change adds or removes a file in an addon folder (the client indexes addon files only at launch). Say which one, or say that a bridge-only change needs nothing.

@@ -414,3 +414,60 @@ test('node setup.js on a single-client config from before clients[] moves it int
   assert.equal(cfg.defaultCwd, project);
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test('chooseShare: the flag decides; without it only a terminal is asked, a non-interactive install shares nothing, and only a yes shares', () => {
+  const never = () => assert.fail('nobody is asked');
+  assert.equal(S.chooseShare({ flag: 'yes', interactive: false, ask: never }), true);
+  assert.equal(S.chooseShare({ flag: true, interactive: false, ask: never }), true);
+  assert.equal(S.chooseShare({ flag: 'no', interactive: true, ask: never }), false);
+  assert.throws(() => S.chooseShare({ flag: 'maybe', interactive: false, ask: never }), /takes yes or no/);
+  assert.equal(S.chooseShare({ interactive: false, ask: never }), false);
+  const asked = [];
+  const answer = reply => q => {
+    asked.push(q);
+    return reply;
+  };
+  assert.equal(S.chooseShare({ interactive: true, ask: answer('y') }), true);
+  assert.equal(S.chooseShare({ interactive: true, ask: answer(' YES ') }), true);
+  assert.equal(S.chooseShare({ interactive: true, ask: answer('') }), false, 'Enter alone is no');
+  assert.equal(S.chooseShare({ interactive: true, ask: answer('sure') }), false, 'anything but yes is no');
+  assert.ok(asked.length === 4 && asked.every(q => q === S.SHARE_QUESTION));
+  assert.match(S.SHARE_QUESTION, /agent provider/);
+});
+
+test('node setup.js: a new config shares no game state unless told to, and an existing config keeps its value until the flag changes it', () => {
+  const { spawnSync } = require('child_process');
+  const dir = scratch('share');
+  const client = path.join(dir, 'client');
+  const home = path.join(dir, 'home');
+  fakeClient(client, 'WoWAI', { slots: 1 });
+  const run = (...extra) =>
+    spawnSync(process.execPath, [path.join(__dirname, '..', 'setup.js'), '--wow', client, '--project', dir, ...extra], {
+      encoding: 'utf8',
+      env: SB.isolatedEnv(path.join(path.dirname(home), 'user'), { CLAUDE_WOW_HOME: home }),
+      timeout: 120000,
+    });
+  const cfgFile = path.join(home, 'config.json');
+  const readCfg = () => JSON.parse(fs.readFileSync(cfgFile, 'utf8'));
+  let r = run();
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.deepEqual([readCfg().gameContext, readCfg().telemetry.enabled], [false, false]);
+  assert.match(r.stdout, /privacy {2}: game state is not shared with the agent/);
+
+  const old = readCfg();
+  delete old.gameContext;
+  delete old.telemetry;
+  fs.writeFileSync(cfgFile, JSON.stringify(old, null, 2));
+  r = run();
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.equal(readCfg().gameContext, undefined, 'a config from before the question keeps sharing as it did');
+  assert.match(r.stdout, /privacy {2}: game state is shared with the agent/);
+
+  r = run('--share-game-state', 'no');
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.deepEqual([readCfg().gameContext, readCfg().telemetry.enabled], [false, false]);
+  r = run('--share-game-state', 'yes');
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.deepEqual([readCfg().gameContext, readCfg().telemetry.enabled], [true, true]);
+  fs.rmSync(dir, { recursive: true, force: true });
+});

@@ -435,7 +435,7 @@ function protoRange(bridge) {
   return bridge.protoMin === bridge.protoMax ? String(bridge.protoMin) : `${bridge.protoMin} to ${bridge.protoMax}`;
 }
 
-const ADDON_UPDATE_HOW = 'update the addon in the CurseForge app or run claude-wow setup, then type /reload.';
+const ADDON_UPDATE_HOW = 'run claude-wow setup, then type /reload.';
 const BRIDGE_UPDATE_HOW = 'run brew upgrade claude-wow or the installer again, then claude-wow service restart.';
 
 function versionVerdict(addon, bridge = bridgeInfo()) {
@@ -804,8 +804,6 @@ const SITUATION_OPEN = '[In-game situation when this message was written, report
 const SITUATION_CLOSE = '[End of in-game situation]';
 function messagePrompt(text, ctx, opts) {
   const parts = [];
-  const rules = String((opts && opts.rules) || '').trim();
-  if (rules) parts.push(rules);
   const situation = String(ctx || '').trim();
   if (situation) parts.push(`${SITUATION_OPEN}\n${situation}\n${SITUATION_CLOSE}`);
   if (opts && opts.image) parts.push(visionHint(opts.image));
@@ -1323,9 +1321,6 @@ function luaTable(globalName, records, opts = {}) {
     lines.splice(lines.length - 1, 0, `\tcontract = { ${rows.join(', ')} },`);
   }
   if (opts.home) lines.splice(lines.length - 1, 0, `\thome = ${luaStr(opts.home)},`);
-  if (Array.isArray(opts.skills) && opts.skills.length) {
-    lines.splice(lines.length - 1, 0, `\tskills = { ${opts.skills.map(luaStr).join(', ')} },`);
-  }
   if (opts.discord === true) lines.splice(lines.length - 1, 0, '\tdiscord = true,');
   if (Array.isArray(opts.mirror) && opts.mirror.length) {
     const rows = opts.mirror

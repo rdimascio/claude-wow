@@ -189,3 +189,21 @@ test('a tool an ask run is denied never becomes a Need roll and is never saved',
     assert.ok(!/Grep|Bash\(cat/.test(fs.readFileSync(h.sb.config, 'utf8')), 'nothing denied is saved');
   });
 });
+
+test('with gameContext off the bridge keeps the game state from the agent: no situation in the prompt and no wowgoals server', async () => {
+  const beforeLaunch = async sb => {
+    const cfg = JSON.parse(fs.readFileSync(sb.config, 'utf8'));
+    cfg.gameContext = false;
+    fs.writeFileSync(sb.config, JSON.stringify(cfg, null, 2));
+  };
+  await withGame({ plugin: 'ask', beforeLaunch }, async h => {
+    await h.client.say('hello');
+    await h.bridge.waitForLine(/game context updated: Character: Testchar/);
+    await h.client.say('what now');
+    const run = h.agentCalls().at(-1);
+    assert.doesNotMatch(run.prompt, /In-game situation|Testchar/, 'no game context in the prompt');
+    assert.ok(!run.argv.join(' ').includes('Testchar'), 'nor in the system prompt');
+    await h.bridge.waitForLine(/wowgoals: gameContext is off in config\.json, so in-game runs go without the goal, order and campaign tools/);
+    assert.doesNotMatch(h.bridge.output, /\[wowgoals for this run\]/);
+  });
+});

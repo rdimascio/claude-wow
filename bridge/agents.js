@@ -18,6 +18,7 @@ const path = require('path');
 const PD = require('./progressdata');
 const { describeToolUse, ruleFor, baseName, classifyDenial, deniedAgain, denialNotes } = require('./protocol');
 const R = require('./runtime'); // which node runs a JavaScript launcher
+const H = require('./home');
 
 const PROGRESS_CHARS = 140;
 
@@ -252,7 +253,7 @@ function extraArgsHavePluginDir(acfg) {
 
 function extraArgsPluginDirNote(acfg) {
   if (!extraArgsHavePluginDir(acfg)) return '';
-  return 'agents.claude.extraArgs has --plugin-dir, so every chat and factory Claude run loads that plugin, coding chats too; move it to plugins.ask.claudePlugin: true, which loads the claude-wow plugin into ask runs only.';
+  return 'agents.claude.extraArgs has --plugin-dir, so every chat Claude run loads that plugin, coding chats too; move it to plugins.ask.claudePlugin: true, which loads the claude-wow plugin into ask runs only.';
 }
 
 function claudeParser(opts = {}) {
@@ -421,7 +422,7 @@ function codexParser() {
           if (line && !shown.has(item.id)) out.progress.push(line);
           if (item.type === 'command_execution' && item.status === 'declined') {
             out.notes.push(
-              `Codex was not allowed to run: ${firstLine(shellInner(item.command))}\nRaise "permissionMode" for codex in bridge/config.json (acceptEdits lets it edit the project, bypassPermissions lifts the sandbox) if it should have been.`,
+              `Codex was not allowed to run: ${firstLine(shellInner(item.command))}\nRaise "permissionMode" for codex in ${H.resolve().config} (acceptEdits lets it edit the project, bypassPermissions lifts the sandbox) if it should have been.`,
             );
           }
         }

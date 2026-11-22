@@ -306,7 +306,7 @@ function ClaudeWoW.Version.Verdict(b)
 				.. mine
 				.. ") is too old for the companion app ("
 				.. theirs
-				.. "). The companion app refuses messages until you update the addon: update the addon in the CurseForge app or run claude-wow setup, then type /reload."
+				.. "). The companion app refuses messages until you update the addon: run claude-wow setup, then type /reload."
 	end
 	if V.PROTO > b.protoMax then
 		return "update-bridge",
@@ -416,7 +416,6 @@ local function TryLoadSlot(why)
 		ClaudeWoW.ApplyLive(data.live)
 		ClaudeWoW.ApplySessions(data.sessions, data.now)
 		ClaudeWoW.ApplyProjects(data.projects, data.home)
-		ClaudeWoW.ApplySkills(data.skills)
 		run.bridgeDiscord = data.discord == true
 		ClaudeWoW.ApplyMirror(data.mirror)
 		ClaudeWoW.ApplyMcp(data.mcp)
@@ -534,7 +533,6 @@ ApplyInbox = function(inbox)
 	ClaudeWoW.ApplyLive(inbox.live)
 	ClaudeWoW.ApplySessions(inbox.sessions, inbox.now)
 	ClaudeWoW.ApplyProjects(inbox.projects, inbox.home)
-	ClaudeWoW.ApplySkills(inbox.skills)
 	run.bridgeDiscord = inbox.discord == true
 	ClaudeWoW.ApplyMirror(inbox.mirror)
 	ClaudeWoW.ApplyMcp((tonumber(inbox.now) or 0) >= time() - Q.INBOX_FRESH_SECONDS and inbox.mcp or nil)

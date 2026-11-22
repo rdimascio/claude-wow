@@ -315,7 +315,7 @@ test('options: the gear menu has an Options item that opens the Options page, in
 test('options: a Show button with stale row data does not approve the newer code, it refreshes and asks', () => {
   const vm = newVM(
     SETTINGS_API,
-    'ClaudeWoWWidgetDB = { set = { epoch = "e1", version = 1, items = { { name = "clock", title = "Clock", rev = "r2", source = "local ui = ..." } } } }',
+    'ClaudeWoWWidgetDB = { enabled = true, set = { epoch = "e1", version = 1, items = { { name = "clock", title = "Clock", rev = "r2", source = "local ui = ..." } } } }',
   );
   vm.run('ClaudeWoWWidgetsPanel.scripts.OnShow(ClaudeWoWWidgetsPanel)');
   const row = 'ClaudeWoWWidgetsPanel.rows[1]';
@@ -336,7 +336,7 @@ test('options: a Show button with stale row data does not approve the newer code
 test('options: a stale Show click does not unhide a widget the player hid', () => {
   const vm = newVM(
     SETTINGS_API,
-    'ClaudeWoWWidgetDB = { removed = { clock = "r2" }, set = { epoch = "e1", version = 1, items = { { name = "clock", title = "Clock", rev = "r2", source = "local ui = ..." } } } }',
+    'ClaudeWoWWidgetDB = { enabled = true, removed = { clock = "r2" }, set = { epoch = "e1", version = 1, items = { { name = "clock", title = "Clock", rev = "r2", source = "local ui = ..." } } } }',
   );
   vm.run(
     'ClaudeWoWWidgets.Sync({ epoch = "e1", version = 2, items = { { name = "clock", title = "Clock", rev = "r2", source = "local ui = ...\\nui.db.swapped = true" } } })',

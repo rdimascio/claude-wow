@@ -28,7 +28,12 @@ end
 
 local function WidgetArgument(rest)
 	local lower = rest:lower()
-	return lower == "" or lower == "list" or lower:match("^remove%s+%S+$") ~= nil or lower:match("^run%s+%S+$") ~= nil
+	return lower == ""
+		or lower == "list"
+		or lower:match("^remove%s+%S+$") ~= nil
+		or lower:match("^run%s+%S+$") ~= nil
+		or lower:match("^widgets%s+on$") ~= nil
+		or lower:match("^widgets%s+off$") ~= nil
 end
 ns.WidgetArgument = WidgetArgument
 

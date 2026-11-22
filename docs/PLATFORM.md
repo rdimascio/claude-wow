@@ -63,25 +63,7 @@ stays as an advanced setting that pins a chat by hand.
 | `claude-code` | Agent sessions in a folder. What the bridge does now. | Existing bridge |
 | `live` | A Claude Code session already open in a terminal, reached through a Claude Code channel ([LIVE-SESSION.md](LIVE-SESSION.md)). No agent run: the plugin forwards the message and waits for the session's `wow_reply`. | `bridge/plugins/live.js`, `bridge/channel.js` |
 | `dev` | Dev tools for the chat's folder: git status and diffs, `bridge.log`, the last run, tests, the doctor, Lua errors, and the feedback list ([IN-GAME-DEV.md](IN-GAME-DEV.md)). No agent run; addressed as `@dev <command>` (the addon sends it for `/claude dev`). | `bridge/plugins/dev.js`, `bridge/feedback.js` |
-| `factory` | The approval queue: drafts waiting on a stamp, judge holds, merge-ready PRs | `factory-inbox`, `factory-ledger` |
-| `studio` | The task board: what is in flight, what is blocked | `studio-board`, `studio-orchestrator` |
 | `vision` | Answers about what is on screen | New; see below |
-
-## Why the factory belongs in game
-
-`factory-inbox` is the one station that runs attended — it exists because some
-decisions need a person. That is a bad fit for a terminal you are not looking at,
-and a good fit for a whisper that flashes while you quest:
-
-```
-[factory] whispers: PR #17999 is merge-ready. approve / hold / look?
-```
-
-Answering in the tab runs the station. The queue is already a durable file, so the
-addon is a view over it, not a second source of truth.
-
-The same holds for `studio`: the board is already the state, and the in-game frame
-is one more reader of it.
 
 ## Vision
 
@@ -99,8 +81,6 @@ This is the one capability that has no equivalent outside the game.
 2. **Plugin seam** — extract the registry and routing from what is already there; move
    the coding path behind `claude-code` with no behaviour change.
 3. **`ask`** — the general plugin, so the product works for someone who does not code.
-4. **`factory`** — the approval queue as whisper prompts.
-5. **`studio`** — the board as an in-game frame.
 
 Steps 2 and 3 are what make it a product rather than a developer toy; step 1 is what
 makes it a demo.

@@ -12,7 +12,7 @@ const withGame = gameRunner(ROOT);
 const PLUGIN_DIR = path.join(REPO, 'assets', 'plugins', 'claude-wow');
 const BAD_VALUE_NOTE = 'plugins.ask.claudePlugin must be true or false; "yes" is ignored, so ask runs do not load the claude-wow Claude Code plugin.';
 const EXTRA_ARGS_NOTE =
-  'agents.claude.extraArgs has --plugin-dir, so every chat and factory Claude run loads that plugin, coding chats too; move it to plugins.ask.claudePlugin: true, which loads the claude-wow plugin into ask runs only.';
+  'agents.claude.extraArgs has --plugin-dir, so every chat Claude run loads that plugin, coding chats too; move it to plugins.ask.claudePlugin: true, which loads the claude-wow plugin into ask runs only.';
 
 const askFolder = name => path.join(ROOT, `ask-${name}`);
 const pluginsConfig = (dflt, claudePlugin = true, name = dflt) => ({ plugins: { default: dflt, ask: { cwd: askFolder(name), claudePlugin } } });
