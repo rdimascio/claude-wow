@@ -78,6 +78,22 @@ function runOnce(home, project, extra = []) {
   return { ...r, out: r.stdout + r.stderr };
 }
 
+test('a bridge started from the home folder keeps defaultCwd; one started in another folder takes that folder', () => {
+  const dir = scratch('startedhere');
+  const { home, project } = fakeInstall(dir);
+  const user = path.join(path.dirname(home), 'user');
+  const env = SB.isolatedEnv(user, { WOWGPT_HOME: home });
+  const elsewhere = path.join(dir, 'elsewhere');
+  fs.mkdirSync(elsewhere, { recursive: true });
+  const banner = cwd => {
+    const r = spawnSync(process.execPath, [BRIDGE, '--once'], { cwd, encoding: 'utf8', env, timeout: 60000 });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    return /^ {2}folder {3}: (.*) {2}\((.*?);/m.exec(r.stdout).slice(1);
+  };
+  assert.deepEqual(banner(user), [project, 'config.json'], 'the home folder is never the project');
+  assert.deepEqual(banner(elsewhere), [fs.realpathSync(elsewhere), 'started here']);
+});
+
 test('a new install starts on the screenshot transport; the addon reporting shot=missing makes the bridge fall back to pixels, say so, remember it and name it in the slot files', () => {
   const dir = scratch('fallback');
   const { home, addons, saved, project } = fakeInstall(dir);
