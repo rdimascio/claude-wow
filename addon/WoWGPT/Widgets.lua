@@ -1027,7 +1027,7 @@ function W.GlobalsCommand(arg)
 	if verb ~= "" then return "Usage: /wowgpt dev globals saves the names widgets can and cannot use; /wowgpt dev globals clear drops them." end
 	local dump = W.DumpGlobals()
 	return string.format(
-		"Saved %d of %d global names (%d a widget can use, %d it cannot) for client %s (%s). /reload writes them to disk; then run npm run audit:widgets in the claude-wow checkout. /wowgpt dev globals clear drops them.",
+		"Saved %d of %d global names (%d a widget can use, %d it cannot) for client %s (%s). /reload writes them to disk; then run npm run audit:widgets in the wowgpt checkout. /wowgpt dev globals clear drops them.",
 		dump.saved,
 		dump.total,
 		dump.admittedCount,

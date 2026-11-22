@@ -13,9 +13,10 @@
 //   claude-wow install-slots      install-slots.js alone (setup runs it for you)
 // The last two are how the compiled binary runs its own scripts (runtime.js:
 // there is no node to hand a script path to), and they work from a checkout too.
-// Under the service (CLAUDE_WOW_SERVICE=1) the bridge's output goes to a rotating
+// Under the service (WOWGPT_SERVICE=1) the bridge's output goes to a rotating
 // log file instead of a terminal, and a pid file lets `service status` find us.
 // bridge.log in the home folder, which bridge.js appends to on its own, is rotated here too.
+require('./legacyenv').adopt(); // CLAUDE_WOW_* from before the rename count as WOWGPT_*, before anything reads them
 const { spawn, spawnSync } = require('child_process');
 const R = require('./runtime');
 
@@ -103,7 +104,7 @@ if (argv[0] === '--version' || argv[0] === '-v') {
 function supervise() {
   const svc = require('./service');
   const UPD = require('./selfupdate');
-  const SERVICE = process.env.CLAUDE_WOW_SERVICE === '1';
+  const SERVICE = process.env.WOWGPT_SERVICE === '1';
   const dirs = svc.dirs();
   const BRIDGE_LOG = require('./home').resolve().log;
   svc.secureServiceLogs(dirs, { bridgeLog: BRIDGE_LOG });
@@ -118,7 +119,7 @@ function supervise() {
     const runtime = { ...R.DEFAULT, execPath: UPD.launchPath() };
     child = spawn(...R.scriptCommand('bridge', argv, runtime), {
       stdio: SERVICE ? ['ignore', 'pipe', 'pipe'] : 'inherit',
-      env: { ...process.env, CLAUDE_WOW_SUPERVISED: '1' },
+      env: { ...process.env, WOWGPT_SUPERVISED: '1' },
     });
     if (SERVICE) {
       child.stdout.on('data', d => out.write(d));

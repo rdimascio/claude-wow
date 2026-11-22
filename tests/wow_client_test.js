@@ -9,7 +9,7 @@ const P = require('../bridge/protocol');
 const { WowClient } = require('../dev/wow/client');
 const { gameRunner, withEra, ERA } = require('./e2e/helpers');
 
-const ROOT = path.join(os.tmpdir(), `claude-wow-client-test-${process.pid}`);
+const ROOT = path.join(os.tmpdir(), `wowgpt-client-test-${process.pid}`);
 const SHARED_NAME = 't1';
 let shared = null;
 

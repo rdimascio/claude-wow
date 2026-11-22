@@ -28,7 +28,7 @@ function fakeWago(seen, missing = new Set()) {
 }
 
 async function eraStore(name, missing) {
-  const dataDir = path.join(os.tmpdir(), `claude-wow-itemstats-${name}-${process.pid}-${Date.now().toString(36)}`, 'data');
+  const dataDir = path.join(os.tmpdir(), `wowgpt-itemstats-${name}-${process.pid}-${Date.now().toString(36)}`, 'data');
   const seen = [];
   const r = await D.sync({ dataDir, flavor: 'classic_era', fetch: fakeWago(seen, missing) });
   return { store: GD.openStore({ dataDir, clientBuild: ERA_CLIENT }), seen, r };

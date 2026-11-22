@@ -13,18 +13,49 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
+const DATA_NAME = 'wowgpt';
+const OLD_DATA_NAMES = Object.freeze(['claude-wow']); // the folder's name before the rename to WoWGPT
+const SCRATCH = 'ask';
+
 // Per-user application data, the usual place on each platform.
-function dataDir() {
-  const home = os.homedir();
-  if (process.platform === 'win32') return path.join(process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local'), 'claude-wow');
-  if (process.platform === 'darwin') return path.join(home, 'Library', 'Application Support', 'claude-wow');
-  return path.join(process.env.XDG_DATA_HOME || path.join(home, '.local', 'share'), 'claude-wow');
+function dataDir(name = DATA_NAME, env = process.env, home = os.homedir(), platform = process.platform) {
+  if (platform === 'win32') return path.join(env.LOCALAPPDATA || path.join(home, 'AppData', 'Local'), name);
+  if (platform === 'darwin') return path.join(home, 'Library', 'Application Support', name);
+  return path.join(env.XDG_DATA_HOME || path.join(home, '.local', 'share'), name);
+}
+
+function isDir(p) {
+  try {
+    return fs.statSync(p).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+// setup.js: the data folder by its old name is copied to the new one, once.
+// The old one is kept. Returns the folder copied from, or ''.
+function migrateOldData(env = process.env, home = os.homedir(), platform = process.platform) {
+  const dest = dataDir(DATA_NAME, env, home, platform);
+  if (fs.existsSync(dest)) return '';
+  const from = OLD_DATA_NAMES.map(name => dataDir(name, env, home, platform)).find(isDir);
+  if (!from) return '';
+  fs.cpSync(from, dest, { recursive: true, verbatimSymlinks: true });
+  return from;
 }
 
 // Where this plugin's runs happen: the configured folder, else <data>/ask.
 function scratchFolder(options) {
   const own = options && typeof options.cwd === 'string' ? options.cwd.trim() : '';
-  return own ? path.resolve(own) : path.join(dataDir(), 'ask');
+  return own ? path.resolve(own) : path.join(dataDir(), SCRATCH);
+}
+
+// An agent resumes a session only from the folder it started in, so a chat
+// whose session started in the old default scratch folder keeps running there
+// while that folder exists.
+function folderFor(options, sessionFolder, old = OLD_DATA_NAMES.map(name => path.join(dataDir(name), SCRATCH))) {
+  const own = options && typeof options.cwd === 'string' && options.cwd.trim();
+  if (!own && sessionFolder && old.includes(path.resolve(sessionFolder)) && isDir(sessionFolder)) return path.resolve(sessionFolder);
+  return scratchFolder(options);
 }
 
 function usesClaudePlugin(options) {
@@ -34,7 +65,7 @@ function usesClaudePlugin(options) {
 function configNote(options) {
   const v = options && options.claudePlugin;
   if (v === undefined || typeof v === 'boolean') return '';
-  return `plugins.ask.claudePlugin must be true or false; ${JSON.stringify(v)} is ignored, so ask runs do not load the claude-wow Claude Code plugin.`;
+  return `plugins.ask.claudePlugin must be true or false; ${JSON.stringify(v)} is ignored, so ask runs do not load the wowgpt Claude Code plugin.`;
 }
 
 const TOOLS = [
@@ -51,12 +82,16 @@ const plugin = {
   surfaces: ['map', 'macro', 'ui'],
   voice: 'player',
   scratchFolder,
+  folderFor,
+  dataDir,
+  migrateOldData,
+  OLD_DATA_NAMES,
   usesClaudePlugin,
   configNote,
   banner: options => `runs the chat's agent in ${scratchFolder(options)} (plugins.ask.cwd), no project`,
   handle(job, core) {
     const options = core.options('ask');
-    const cwd = scratchFolder(options);
+    const cwd = folderFor(options, core.sessionFolder(job));
     try {
       fs.mkdirSync(cwd, { recursive: true });
     } catch (e) {

@@ -306,7 +306,7 @@ function WoWGPT.Version.Verdict(b)
 				.. mine
 				.. ") is too old for the companion app ("
 				.. theirs
-				.. "). The companion app refuses messages until you update the addon: run claude-wow setup, then type /reload."
+				.. "). The companion app refuses messages until you update the addon: run wowgpt setup, then type /reload."
 	end
 	if V.PROTO > b.protoMax then
 		return "update-bridge",
@@ -314,7 +314,7 @@ function WoWGPT.Version.Verdict(b)
 				.. theirs
 				.. ") is too old for this addon ("
 				.. mine
-				.. "). It refuses messages until you update it: run brew upgrade claude-wow or the installer again, then claude-wow service restart."
+				.. "). It refuses messages until you update it: run brew upgrade wowgpt or the installer again, then wowgpt service restart."
 	end
 	if version == b.version then return "equal", "" end
 	local order = V.Compare(version, b.version)

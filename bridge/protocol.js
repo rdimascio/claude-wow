@@ -11,7 +11,7 @@ const MC = require('./mcpconfig');
 
 // The addon's name, as the game sees it: its folder under Interface/AddOns, its
 // .toc, its SavedVariables file (<ADDON>.lua) and the prefix of its globals.
-// The names it had before (wow-claude, then wow-ai, then claude-wow) are what
+// The names it had before (wow-claude, then wow-ai, then wowgpt) are what
 // setup.js migrates from and what an older config.json may still name.
 const ADDON = 'WoWGPT';
 const RUNTIME_ADDON = ADDON + '_Runtime';
@@ -435,8 +435,8 @@ function protoRange(bridge) {
   return bridge.protoMin === bridge.protoMax ? String(bridge.protoMin) : `${bridge.protoMin} to ${bridge.protoMax}`;
 }
 
-const ADDON_UPDATE_HOW = 'run claude-wow setup, then type /reload.';
-const BRIDGE_UPDATE_HOW = 'run brew upgrade claude-wow or the installer again, then claude-wow service restart.';
+const ADDON_UPDATE_HOW = 'run wowgpt setup, then type /reload.';
+const BRIDGE_UPDATE_HOW = 'run brew upgrade wowgpt or the installer again, then wowgpt service restart.';
 
 function versionVerdict(addon, bridge = bridgeInfo()) {
   const proto = Number.isInteger(addon && addon.proto) ? addon.proto : LEGACY_PROTO;
@@ -693,7 +693,7 @@ function withoutRules(rules, banned) {
 // the plugin's lines, and a message with nothing attached is exactly the text.
 const SUMMARY_MARKER = 'TL;DR:';
 const REPLY_FORMAT = [
-  'The user is talking to you from inside World of Warcraft through the claude-wow addon, usually while playing. They read your reply in a small window, or as one line in the game chat, often mid-fight. Markdown is not rendered.',
+  'The user is talking to you from inside World of Warcraft through the wowgpt addon, usually while playing. They read your reply in a small window, or as one line in the game chat, often mid-fight. Markdown is not rendered.',
   '',
   'Be SHORT. A good reply is one to three lines. Answer first, in the first line. No preamble, no restating the question, no summary of what you are about to say, no offers of further help unless you need a decision from them. Drop pleasantries. Prefer a concrete answer over a menu of options; if you must offer options, at most two.',
   '',
@@ -721,7 +721,7 @@ const LINK_HINT = [
 // How the agent draws on the world map (see "Map layers" below and docs/MAP.md).
 // Sent with the game context, since marks only make sense in a game chat.
 const MAP_HINT = [
-  "You can mark the player's world map. Either append commands to the file named by the CLAUDE_WOW_MAP_FILE environment variable (one JSON object per line) or, for a few marks, end the reply with a fenced block whose language tag is wowmap containing them. Commands:",
+  "You can mark the player's world map. Either append commands to the file named by the WOWGPT_MAP_FILE environment variable (one JSON object per line) or, for a few marks, end the reply with a fenced block whose language tag is wowmap containing them. Commands:",
   '{"op":"set","layer":"<name>","title":"<shown title>","ordered":true,"loop":false,"points":[{"m":<uiMapID>,"x":<0-100>,"y":<0-100>,"label":"<text>","kind":"quest"}]}  replaces that layer; "ordered" draws a numbered route with a navigator, "loop" closes it.',
   '{"op":"clear","layer":"<name>"} removes a layer; {"op":"clearall"} removes them all.',
   "x and y are map percent on the map with that uiMapID (the context gives the player's current one). kind is one of ore, herb, quest, turnin, kill, loot, object, explore, npc, trainer, vendor, dungeon, flight, poi. Only mark the map when asked for a route, marks or locations; say in the reply what you drew.",
@@ -742,7 +742,7 @@ const MACRO_HINT = [
 // attached, so a run without one is exactly what it was before.
 function visionHint(image) {
   const size = image && image.width && image.height ? ` (${image.width}x${image.height}, downscaled)` : '';
-  return `A screenshot of the player's screen, taken by the game the moment they sent this message, is attached to the message as an image${size}. It is what the player was looking at: the game world, their UI, any open windows, tooltips, quest text, and the Claude WoW chat window itself; the addon's data strip along the top edge has been cropped off. Use it when the question is about something on screen ("what is this item", "why is this boss killing me", "read this quest") and say what you see when it matters; ignore it when the task is unrelated.`;
+  return `A screenshot of the player's screen, taken by the game the moment they sent this message, is attached to the message as an image${size}. It is what the player was looking at: the game world, their UI, any open windows, tooltips, quest text, and the WoWGPT chat window itself; the addon's data strip along the top edge has been cropped off. Use it when the question is about something on screen ("what is this item", "why is this boss killing me", "read this quest") and say what you see when it matters; ignore it when the task is unrelated.`;
 }
 
 // What the situation block in a message is (the block itself is built by
@@ -800,7 +800,7 @@ function noteRules(state, key, hash) {
 // The per-message part: the situation block (when the addon sends a context),
 // the vision paragraph (when an image really is attached, opts.image), then the
 // player's text. Nothing attached = exactly the text.
-const SITUATION_OPEN = '[In-game situation when this message was written, reported by the claude-wow addon, not written by the player]';
+const SITUATION_OPEN = '[In-game situation when this message was written, reported by the wowgpt addon, not written by the player]';
 const SITUATION_CLOSE = '[End of in-game situation]';
 function messagePrompt(text, ctx, opts) {
   const parts = [];
@@ -1231,7 +1231,7 @@ function luaTable(globalName, records, opts = {}) {
   const plugins = Array.isArray(opts.plugins) ? opts.plugins : [];
   const transport = transportName(opts.transport) || DEFAULT_TRANSPORT;
   const lines = [
-    '-- Written by the claude-wow bridge (bridge/bridge.js). Do not edit by hand.',
+    '-- Written by the wowgpt bridge (bridge/bridge.js). Do not edit by hand.',
     `${globalName} = {`,
     `\tts = ${luaStr(new Date(now).toISOString())},`,
     `\tnow = ${Math.floor(now / 1000)},`,
@@ -1433,7 +1433,7 @@ function luaTable(globalName, records, opts = {}) {
 // ---------------------------------------------------------------------------
 //
 // The agent marks the in-game map by writing commands, one JSON object per line,
-// to the file named by CLAUDE_WOW_MAP_FILE in its environment (a tool of its own can
+// to the file named by WOWGPT_MAP_FILE in its environment (a tool of its own can
 // do that), or with a ```wowmap fenced block in its reply for a few hand-made marks.
 // The system prompt (MAP_HINT) tells it so.
 // The bridge owns the resulting layers (state.json) and ships the whole set,
@@ -1874,7 +1874,7 @@ const WIDGET_DENIED_PATTERNS = [
 ];
 
 const WIDGET_HINT = [
-  'When the player asks for a small UI element (a DPS meter, a timer bar for their buffs, a tracker), hand it over as a live widget: the addon loads it at once, without /reload, and keeps it across logins. End the reply with a fenced block whose language tag is wowui followed by the widget name (letters, digits, _ . -, at most 32) and optionally title="<shown title>"; the block holds the widget\'s Lua 5.1 source. Or append {"op":"set","name":"<name>","title":"<title>","source":"<lua>"} as one JSON line to the file named by the CLAUDE_WOW_UI_FILE environment variable.',
+  'When the player asks for a small UI element (a DPS meter, a timer bar for their buffs, a tracker), hand it over as a live widget: the addon loads it at once, without /reload, and keeps it across logins. End the reply with a fenced block whose language tag is wowui followed by the widget name (letters, digits, _ . -, at most 32) and optionally title="<shown title>"; the block holds the widget\'s Lua 5.1 source. Or append {"op":"set","name":"<name>","title":"<title>","source":"<lua>"} as one JSON line to the file named by the WOWGPT_UI_FILE environment variable.',
   `The source runs once as a function body: "local ui = ..." gives ui.name, ui.frame (a container frame: parent your frames to it, or pass no parent), ui.db (a table saved between sessions, e.g. for a position), and ui.print(text). Only display APIs exist in a widget: CreateFrame (frames get no global name; templates only ${WIDGET_TEMPLATES.join(', ')}), events, OnUpdate, C_Timer, Unit* functions, read-only getters such as GetTime and GetSpellCooldown, the Get/Is functions of C_ namespaces such as C_UnitAuras, GameTooltip, every font object such as GameFontNormal, GameTooltipText and Tooltip_Med (read-only), copies of RAID_CLASS_COLORS and Enum, and the Lua math, string and table libraries; UNIT_COMBAT gives damage and heals on a unit. UIParent is ui.frame, and Blizzard frames and every other global are nil. A widget never takes the keyboard (no EnableKeyboard, SetFocus or SetPropagateKeyboardInput(false)), and ui.frame covers the screen so it never takes the mouse: call EnableMouse on a child frame. The combat log (COMBAT_LOG_EVENT_UNFILTERED, CombatLogGetCurrentEventInfo) is for the Blizzard UI only in this client: registering it shows the player a blocked-action error, so a widget that names it is refused. Widgets are display-only: no sounds (PlaySound and PlaySoundFile are nil), no casting, targeting, movement, items, chat or addon messages, macros, bindings, CVars, loadstring/setfenv/debug/securecall, and no WoWGPT* globals; a widget that names any of these is refused. At most ${WIDGET_LIMITS.sourceBytes} bytes.`,
   'The same name replaces the widget. To remove one, write a wowui block with the name followed by the word remove and an empty body, or append {"op":"remove","name":"<name>"}. Explain outside the block what it shows; the player lists and removes widgets with /wowgpt config ui.',
 ];

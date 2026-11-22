@@ -136,7 +136,7 @@ test('readSideFile names the widget kind in its errors and tells a missing file 
 
 test('the system prompt explains widgets to a plugin with the ui surface, in a game chat', () => {
   const ui = { surfaces: ['map', 'macro', 'ui'] };
-  assert.match(P.systemPrompt('Character: Testchar', '', ui), /CLAUDE_WOW_UI_FILE/);
+  assert.match(P.systemPrompt('Character: Testchar', '', ui), /WOWGPT_UI_FILE/);
   assert.match(P.systemPrompt('Character: Testchar', '', ui), /wowui/);
   assert.match(P.systemPrompt('Character: Testchar', '', ui), /templates only BackdropTemplate, .*GameTooltipTemplate\)/);
   assert.doesNotMatch(P.systemPrompt('Character: Testchar', '', { surfaces: ['map', 'macro'] }), /wowui/);

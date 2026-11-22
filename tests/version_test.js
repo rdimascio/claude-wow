@@ -98,8 +98,8 @@ test('verdicts: equal, the older side by semver, different builds, either side o
     'unknown',
     'an addon from before the handshake speaks protocol 1',
   );
-  assert.match(P.versionVerdict({ version: '1.4.0', proto: 1 }, b).text, /: run claude-wow setup, then type \/reload\./);
-  assert.match(P.versionVerdict({ version: '1.4.0', proto: 4 }, b).text, /brew upgrade claude-wow.*claude-wow service restart/);
+  assert.match(P.versionVerdict({ version: '1.4.0', proto: 1 }, b).text, /: run wowgpt setup, then type \/reload\./);
+  assert.match(P.versionVerdict({ version: '1.4.0', proto: 4 }, b).text, /brew upgrade wowgpt.*wowgpt service restart/);
 });
 
 test('the addon says the same words as the bridge for every verdict', () => {
@@ -160,7 +160,7 @@ test('the hello record says when it changed, and keeps at most the newest sessio
 });
 
 test('service status and the doctor show both versions and the verdict of the last hello', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-wow-versions-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wowgpt-versions-'));
   try {
     const state = {};
     P.noteAddonVersion(state, { session: 's', addonVersion: '0.3.0', addonProto: 9 }, bridgeAt('0.4.0', 1, 1), Date.UTC(2026, 9, 2));
@@ -198,7 +198,7 @@ test('a bridge whose protocol range is above the addon: the addon is told to upd
   helloPoll(vm, bridgeAt(TOC_VERSION, P.PROTO + 1, P.PROTO + 1));
   slotPoll(vm, bridgeAt(TOC_VERSION, P.PROTO + 1, P.PROTO + 1));
   assert.equal(told(vm, 'is too old for the companion app'), 1);
-  assert.equal(told(vm, 'update the addon: run claude-wow setup, then type /reload.'), 1);
+  assert.equal(told(vm, 'update the addon: run wowgpt setup, then type /reload.'), 1);
 });
 
 const BUILD_A = 'aaaaaaaaaaaa';

@@ -171,7 +171,7 @@ test('/wowgpt config ui lists widgets, and free text starting with "ui" is still
   vm.run('STUB.prints = {}; SlashCmdList.WOWGPT("config ui")');
   assert.match(vm.evaluate('table.concat(STUB.prints, "\\n")'), /meter {2}meter title {2}\(running, \d+ bytes\)/);
   vm.run('STUB.prints = {}; WoWGPT.Send = function(text) SENT_TEXT = text end; SlashCmdList.WOWGPT("ui for my bags would be nice")');
-  assert.doesNotMatch(vm.evaluate('table.concat(STUB.prints, "\\n")'), /\[Claude WoW ui\]/);
+  assert.doesNotMatch(vm.evaluate('table.concat(STUB.prints, "\\n")'), /\[WoWGPT ui\]/);
   assert.equal(vm.evaluate('SENT_TEXT'), 'ui for my bags would be nice');
 });
 

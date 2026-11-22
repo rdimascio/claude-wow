@@ -8,7 +8,7 @@ const P = require('../../bridge/protocol');
 const { WowClient, luaQuote } = require('../../dev/wow/client');
 
 function makeRoot(label) {
-  return path.join(os.tmpdir(), `claude-wow-e2e-${label}-${process.pid}`);
+  return path.join(os.tmpdir(), `wowgpt-e2e-${label}-${process.pid}`);
 }
 
 function gameRunner(root) {

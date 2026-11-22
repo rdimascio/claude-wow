@@ -144,7 +144,7 @@ async function fetchFrom(fetchImpl, url, origin, maxBytes) {
   let res;
   try {
     res = await fetchImpl(url, {
-      headers: { 'user-agent': `claude-wow/${require('../package.json').version} (data sync)` },
+      headers: { 'user-agent': `wowgpt/${require('../package.json').version} (data sync)` },
       redirect: 'error',
       signal: AbortSignal.timeout(D.FETCH_TIMEOUT_MS),
     });

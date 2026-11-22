@@ -173,7 +173,7 @@ function WoWGPT.LiveStatus()
 	local live = run.bridgeLive
 	if not live then return { "Running Claude Code sessions: unknown until the companion app is heard from." } end
 	if #live.sessions == 0 then
-		local lines = { "No Claude Code session is running with the claude-wow channel. Start one in a terminal with:" }
+		local lines = { "No Claude Code session is running with the wowgpt channel. Start one in a terminal with:" }
 		if live.start ~= "" then table.insert(lines, live.start) end
 		table.insert(lines, "Then attach a chat to it: /wowgpt -r <name>")
 		return lines
@@ -769,7 +769,7 @@ function Cli.McpOffBlocked(c, s)
 	if not (e and e.off == false) then return nil end
 	if s and e.sources and not e.sources[s.src] then return nil end
 	if e.reason ~= "" then return e.reason end
-	return ChatAgentName(c) .. " failed the MCP off check in claude-wow agents check, so this companion app cannot turn a server off."
+	return ChatAgentName(c) .. " failed the MCP off check in wowgpt agents check, so this companion app cannot turn a server off."
 end
 
 function Cli.McpAllOffBlocked(c)
@@ -782,7 +782,7 @@ end
 function Cli.McpContractNote(c)
 	local e = Cli.McpContract(c)
 	if not e or e.checked then return nil end
-	return "Not checked on " .. Cli.CONTRACT_NAMES[ChatAgent(c)] .. (e.version ~= "" and (" " .. e.version) or "") .. ": run claude-wow agents check"
+	return "Not checked on " .. Cli.CONTRACT_NAMES[ChatAgent(c)] .. (e.version ~= "" and (" " .. e.version) or "") .. ": run wowgpt agents check"
 end
 
 function Cli.McpUnsupported(c)
@@ -834,7 +834,7 @@ end
 function Cli.McpMissing()
 	if not run.bridgeMcp then
 		if not WoWGPT.IsConnected() then return "not connected to the companion app yet." end
-		return "this companion app sends no MCP server list. Update the companion app (claude-wow update) and reconnect."
+		return "this companion app sends no MCP server list. Update the companion app (wowgpt update) and reconnect."
 	end
 	if #run.bridgeMcp == 0 then return "the companion app sees no MCP servers: none in your Claude or Codex setup, or in mcp.servers in its config.json." end
 end

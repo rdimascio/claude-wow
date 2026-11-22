@@ -90,7 +90,7 @@ test('slot file carries the session list for /wowgpt -r: running sessions flagge
 });
 
 test('slot file carries the picker fields (title, branch, running, restart) and the late-reply flags', () => {
-  const restart = 'cd /Users/me/wow-ai && claude --resume f02436b8-8a5f-4c05-823e-bef25f88ff7b --dangerously-load-development-channels server:claude-wow';
+  const restart = 'cd /Users/me/wow-ai && claude --resume f02436b8-8a5f-4c05-823e-bef25f88ff7b --dangerously-load-development-channels server:wowgpt';
   const sessions = [
     {
       id: 'f02436b8-8a5f-4c05-823e-bef25f88ff7b',

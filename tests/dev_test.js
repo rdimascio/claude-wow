@@ -151,7 +151,7 @@ test('capText cuts long replies on a line break and says how much it cut', () =>
 test('status reports the branch, changed files, commits and the PR checks', async t => {
   const { core, calls } = fakeCore(t);
   const run = scriptedRun([
-    ['git rev-parse', { out: '/repo/claude-wow\n' }],
+    ['git rev-parse', { out: '/repo/wowgpt\n' }],
     ['git status', { out: '## feat/x...origin/feat/x [ahead 1]\n M bridge/bridge.js\n?? new.js\n' }],
     ['git log', { out: 'abc123 fix it (2 hours ago)\n' }],
     [
@@ -170,7 +170,7 @@ test('status reports the branch, changed files, commits and the PR checks', asyn
   ]);
   await DEV.handleDev(job('status'), core, { run });
   const text = calls.replies[0];
-  assert.match(text, /^claude-wow: branch feat\/x, tracking origin\/feat\/x, ahead 1/);
+  assert.match(text, /^wowgpt: branch feat\/x, tracking origin\/feat\/x, ahead 1/);
   assert.match(text, /2 changed files/);
   assert.match(text, /abc123 fix it/);
   assert.match(text, /PR #12 draft: fix it\nhttps:\/\/github.com\/o\/r\/pull\/12\nchecks: 1 failed \(test\)/);

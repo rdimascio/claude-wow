@@ -229,7 +229,7 @@ async function connectServers(configFile, deps = {}) {
       const init = await client.request('initialize', {
         protocolVersion: MCP_PROTOCOL,
         capabilities: {},
-        clientInfo: { name: 'claude-wow-local', version: '1' },
+        clientInfo: { name: 'wowgpt-local', version: '1' },
       });
       client.notify('notifications/initialized', {});
       const listed = await client.request('tools/list', {});

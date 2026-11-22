@@ -86,7 +86,7 @@ test('parseMapFile reads one command per line', () => {
 });
 
 test('readSideFile takes the map file, deletes it, and reports a read error that is not a missing file', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-wow-mapside-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wowgpt-mapside-'));
   try {
     const file = path.join(dir, 'chat-1.jsonl');
     fs.writeFileSync(file, '{"op":"clearall"}\n{broken\n');

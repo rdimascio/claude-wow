@@ -193,7 +193,7 @@ function checkService(ctx) {
       fail(
         'The LaunchAgent plist is missing.',
         'Without it launchd does not start the bridge at login or restart it after a crash.',
-        'Run "claude-wow service install" from the checkout you want to serve.',
+        'Run "wowgpt service install" from the checkout you want to serve.',
       ),
     ]);
   }
@@ -202,7 +202,7 @@ function checkService(ctx) {
       fail(
         `The plist pins node at ${ctx.plist.node}, and that file is gone.`,
         'An nvm upgrade or uninstall removed that Node version; launchd cannot start the bridge at the next restart or login.',
-        'Run "claude-wow service install" again with the Node you use now.',
+        'Run "wowgpt service install" again with the Node you use now.',
       ),
     );
   }
@@ -211,14 +211,14 @@ function checkService(ctx) {
       fail(
         `The plist runs ${ctx.plist.script}, and that file is gone.`,
         'The checkout moved or was deleted; launchd restarts into a missing script in a loop.',
-        'Run "claude-wow service install" from the checkout you want to serve.',
+        'Run "wowgpt service install" from the checkout you want to serve.',
       ),
     );
   }
   const job = launchdJob(ctx);
   if (!job.loaded) {
     issues.push(
-      fail(`launchd has no job ${ctx.label} loaded.`, 'The plist exists but is not loaded, so nothing runs the bridge.', 'Run "claude-wow service start".'),
+      fail(`launchd has no job ${ctx.label} loaded.`, 'The plist exists but is not loaded, so nothing runs the bridge.', 'Run "wowgpt service start".'),
     );
     return finish('service', 'Service', 'installed, not loaded', issues);
   }
@@ -231,7 +231,7 @@ function checkService(ctx) {
       fail(
         `The supervisor (pid ${supervisorPid || 'unknown'}) is not running.`,
         `launchd state is "${job.state || 'unknown'}", last exit code ${job.lastExit || 'unknown'}; no process relays chat.`,
-        'Read the log with "claude-wow service logs", then run "claude-wow service restart".',
+        'Read the log with "wowgpt service logs", then run "wowgpt service restart".',
       ),
     );
   }
@@ -240,7 +240,7 @@ function checkService(ctx) {
       fail(
         `The bridge child (pid ${pidInfo.bridgePid || 'unknown'}) is not running.`,
         'The supervisor restarts bridge.js 3 s after each exit; a missing child means it is crash-looping or the pid file is stale.',
-        'Read the log with "claude-wow service logs -n 100" for the exit reason.',
+        'Read the log with "wowgpt service logs -n 100" for the exit reason.',
       ),
     );
   }
@@ -340,7 +340,7 @@ function checkDrift(ctx) {
         warn(
           `The bridge runs old code: it started ${formatClock(startedAt)}, and ${changed.length} bridge file(s) changed since: ${changed.slice(0, 4).join(', ')}${changed.length > 4 ? ', ...' : ''}.`,
           'Node loaded the files at start; edits and commits after that are not live until a restart.',
-          'Run "claude-wow service restart" when no chat is mid-run.',
+          'Run "wowgpt service restart" when no chat is mid-run.',
         ),
       );
     }
@@ -390,7 +390,7 @@ function checkLogs(ctx) {
       warn(
         'Neither the service log nor the home bridge.log exists.',
         'The bridge writes a line at every start; no log means it never started here.',
-        'Run "claude-wow service status".',
+        'Run "wowgpt service status".',
       ),
     ]);
   }
@@ -416,7 +416,7 @@ function checkLogs(ctx) {
       warn(
         `WoW is running and the bridge has logged nothing for ${quietFor === null ? 'ever' : Service.formatUptime(quietFor)}.`,
         'An idle chat logs nothing, but a message you sent that got no reply means the bridge does not see the strips.',
-        'Send a short message in game; if no "strip #" line appears, run "claude-wow service restart".',
+        'Send a short message in game; if no "strip #" line appears, run "wowgpt service restart".',
       ),
     );
   }
@@ -471,7 +471,7 @@ function signalsOf(ctx, client) {
       warn(
         `Old signal folder(s) sit in the shipped ${ADDON} folder: ${legacy.join(', ')}.`,
         `The signal files now live in ${RUNTIME_ADDON}; an addon update replaces the whole ${ADDON} folder.`,
-        'Run "npm run slots" or "claude-wow setup" (it removes them), then fully restart WoW.',
+        'Run "npm run slots" or "wowgpt setup" (it removes them), then fully restart WoW.',
       ),
     );
   }
@@ -517,7 +517,7 @@ function checkSignals(ctx) {
         warn(
           'config.json names no WoW client (no clients, no addonDir).',
           'The bridge cannot write reply slots or signal files without it.',
-          'Run "claude-wow setup".',
+          'Run "wowgpt setup".',
         ),
       ]),
     client => signalsOf(ctx, client),
@@ -666,7 +666,7 @@ function interfaceOf(ctx, addonDir) {
       fail(
         'WoWGPT.toc is missing or has no ## Interface line.',
         'WoW does not load an addon without a readable toc.',
-        'Run "claude-wow setup" to reinstall the addon.',
+        'Run "wowgpt setup" to reinstall the addon.',
       ),
     );
   if (!slot)
@@ -674,7 +674,7 @@ function interfaceOf(ctx, addonDir) {
       warn(
         'WoWGPT_S001.toc is missing or has no ## Interface line.',
         'Replies land in the slot addons; a missing slot 001 means the slots are not installed.',
-        'Run "npm run slots" or "claude-wow setup".',
+        'Run "npm run slots" or "wowgpt setup".',
       ),
     );
   const runtime = tocInterface(ctx.sys.readText(SIG.runtimeToc(addonDir)));
@@ -683,7 +683,7 @@ function interfaceOf(ctx, addonDir) {
       warn(
         `${RUNTIME_ADDON}.toc is missing or has no ## Interface line.`,
         'Without it the game never loads the Inbox.lua the bridge writes there (the reload path).',
-        'Run "npm run slots" or "claude-wow setup", then fully restart WoW.',
+        'Run "npm run slots" or "wowgpt setup", then fully restart WoW.',
       ),
     );
   if (main && runtime && !runtime.some(v => main.includes(v))) {
@@ -709,7 +709,7 @@ function interfaceOf(ctx, addonDir) {
       warn(
         `The client is ${client.version || ''} (interface ${client.interface}), WoWGPT.toc says ${main.join(',')}.`,
         'An out-of-date toc makes WoW mark the addon out of date and skip it unless "load out of date addons" is on.',
-        `Set tocInterface to ${client.interface} in config.json and run "claude-wow setup".`,
+        `Set tocInterface to ${client.interface} in config.json and run "wowgpt setup".`,
       ),
     );
   }
@@ -749,7 +749,7 @@ function permissionsOf(ctx, addonDir) {
       warn(
         `${locked.length} of ${checked} file(s) and folder(s) under the WoWGPT addon folders are not world-writable: ${rel.join(', ')}${locked.length > 3 ? ', ...' : ''}.`,
         'Blizzard installs every game file as 0777; Battle.net error 2113 (permissions check failure) blocks updates and marks the game not playable when one is not.',
-        'Run "claude-wow setup" (or "npm run slots"), which sets them to 0777, and restart the bridge on this version so new files are written 0777.',
+        'Run "wowgpt setup" (or "npm run slots"), which sets them to 0777, and restart the bridge on this version so new files are written 0777.',
       ),
     );
   }
@@ -852,7 +852,7 @@ function checkData(ctx) {
       fail(
         `${ctx.homePaths.config} does not parse: ${ctx.configJson.error}.`,
         'The bridge cannot start without its config.',
-        'Repair the JSON, or run "claude-wow setup".',
+        'Repair the JSON, or run "wowgpt setup".',
       ),
     );
   }
@@ -862,7 +862,7 @@ function checkData(ctx) {
     issues.push(
       warn(
         `Legacy ${legacy.join(', ')} still sit in ${legacyDir}.`,
-        'home.js falls back to that stale copy if ~/.claude-wow/config.json goes missing, and old sessions come back.',
+        'home.js falls back to that stale copy if ~/.wowgpt/config.json goes missing, and old sessions come back.',
         `Move them out of ${legacyDir} once ${ctx.homePaths.dir} is confirmed good.`,
       ),
     );
@@ -892,7 +892,7 @@ function checkVersions(ctx) {
         fail(
           v.text,
           'The addon and the bridge speak different protocols, so the bridge answers every message with an error.',
-          v.verdict === 'update-addon' ? 'Update the addon, then type /reload in the game.' : 'Update the bridge, then run "claude-wow service restart".',
+          v.verdict === 'update-addon' ? 'Update the addon, then type /reload in the game.' : 'Update the bridge, then run "wowgpt service restart".',
         ),
       );
   }
@@ -904,7 +904,7 @@ function checkClients(ctx) {
   const clients = CLI.clientsOf(ctx.config);
   if (!clients.length) {
     return finish('clients', 'Clients', 'none in config', [
-      warn('config.json names no WoW client.', 'The bridge has no game folder to write replies into or read messages from.', 'Run "claude-wow setup".'),
+      warn('config.json names no WoW client.', 'The bridge has no game folder to write replies into or read messages from.', 'Run "wowgpt setup".'),
     ]);
   }
   const issues = [];
@@ -917,7 +917,7 @@ function checkClients(ctx) {
         fail(
           `${c.label}: the client folder ${c.dir} is gone.`,
           'The bridge writes slots and reads strips there; nothing reaches that game.',
-          'Run "claude-wow setup" again, or set "enabled": false on that entry in config.json.',
+          'Run "wowgpt setup" again, or set "enabled": false on that entry in config.json.',
         ),
       );
       continue;
@@ -931,7 +931,7 @@ function checkClients(ctx) {
       warn(
         `The clients hold different addon builds: ${[...builds].map(([label, build]) => `${label} ${build}`).join(', ')}.`,
         'One client kept an older copy; on 2026-10-02 a stale copy crashed at login.',
-        'Run "claude-wow setup", which installs the same build into every client in config.json.',
+        'Run "wowgpt setup", which installs the same build into every client in config.json.',
       ),
     );
   }
@@ -940,7 +940,7 @@ function checkClients(ctx) {
       warn(
         `config.json has both "clients" and the old ${CLI.LEGACY_KEYS.filter(k => k in ctx.config).join(', ')}.`,
         'The bridge reads only "clients"; the old keys are ignored and can mislead.',
-        'Run "claude-wow setup", which removes them.',
+        'Run "wowgpt setup", which removes them.',
       ),
     );
   }
@@ -1040,7 +1040,7 @@ function checkCi(ctx) {
 function checkContract(ctx) {
   const file = path.join(ctx.homePaths.dir, CONTRACT_FILE);
   const text = ctx.sys.readText(file);
-  const rerun = 'Run "claude-wow agents check".';
+  const rerun = 'Run "wowgpt agents check".';
   if (text === null) {
     return finish('contract', 'Agent contract', 'not checked', [
       warn(
@@ -1068,7 +1068,7 @@ function checkContract(ctx) {
         warn(
           `${id} ${e.version || ''} failed ${failed.join(', ')} in the last agents check.`,
           'The bridge refuses the runs that rely on those behaviors (see docs/AGENTS.md).',
-          `Update ${id}, then run "claude-wow agents check" again.`,
+          `Update ${id}, then run "wowgpt agents check" again.`,
         ),
       );
     const real = typeof e.path === 'string' && e.path ? ctx.sys.realpath(e.path) : null;

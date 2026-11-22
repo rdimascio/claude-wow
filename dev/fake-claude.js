@@ -23,7 +23,7 @@ function directives(text) {
 }
 
 function stateDir() {
-  return process.env.CLAUDE_WOW_FAKE_STATE || path.join(process.cwd(), '.fake-claude');
+  return process.env.WOWGPT_FAKE_STATE || path.join(process.cwd(), '.fake-claude');
 }
 
 function loadSession(id) {
@@ -114,7 +114,7 @@ function backgroundAgent(session, agentReply, init) {
     message: {
       model: MODEL,
       role: 'assistant',
-      content: [{ type: 'tool_use', id: toolId, name: 'Agent', input: { subagent_type: 'claude-wow:wow-code', prompt: 'probe' } }],
+      content: [{ type: 'tool_use', id: toolId, name: 'Agent', input: { subagent_type: 'wowgpt:wow-code', prompt: 'probe' } }],
       usage: u,
     },
   });
@@ -124,7 +124,7 @@ function backgroundAgent(session, agentReply, init) {
       subtype: 'task_started',
       session_id: session.id,
       tool_use_id: toolId,
-      subagent_type: 'claude-wow:wow-code',
+      subagent_type: 'wowgpt:wow-code',
       is_backgrounded: false,
     });
     emit({
@@ -141,7 +141,7 @@ function backgroundAgent(session, agentReply, init) {
     session.total = addUsage(session.total, u);
     return subagentTotal(sub);
   }
-  emit({ type: 'system', subtype: 'task_started', session_id: session.id, tool_use_id: toolId, subagent_type: 'claude-wow:wow-code', is_backgrounded: true });
+  emit({ type: 'system', subtype: 'task_started', session_id: session.id, tool_use_id: toolId, subagent_type: 'wowgpt:wow-code', is_backgrounded: true });
   emit({
     type: 'user',
     session_id: session.id,
@@ -488,7 +488,7 @@ function lastUserLine(text) {
 async function main() {
   const argv = process.argv.slice(2);
   if (argv.includes('--version')) {
-    console.log('0.0.0 (claude-wow fake)');
+    console.log('0.0.0 (wowgpt fake)');
     return;
   }
   if (argv.includes('--no-session-persistence')) {
@@ -573,8 +573,8 @@ async function main() {
   }
   if (pause) await sleep(tools ? (pause * 1000) / (tools + 1) : pause * 1000);
   if (typeof d.hold === 'string') await holdUntilReleased(d.hold);
-  if (typeof d.map === 'string' && process.env.CLAUDE_WOW_MAP_FILE) {
-    fs.appendFileSync(process.env.CLAUDE_WOW_MAP_FILE, JSON.stringify({ op: 'set', layer: d.map, ordered: true, points: [{ m: 1413, x: 50, y: 40 }] }) + '\n');
+  if (typeof d.map === 'string' && process.env.WOWGPT_MAP_FILE) {
+    fs.appendFileSync(process.env.WOWGPT_MAP_FILE, JSON.stringify({ op: 'set', layer: d.map, ordered: true, points: [{ m: 1413, x: 50, y: 40 }] }) + '\n');
   }
 
   if (d['rate-limit']) {

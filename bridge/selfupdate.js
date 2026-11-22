@@ -50,7 +50,7 @@ function ownVersion() {
 }
 
 function apiBase(env = process.env) {
-  return String(env.CLAUDE_WOW_UPDATE_API || DEFAULT_API).replace(/\/+$/, '');
+  return String(env.WOWGPT_UPDATE_API || DEFAULT_API).replace(/\/+$/, '');
 }
 
 function parseSemver(v) {

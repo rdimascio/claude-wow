@@ -36,7 +36,7 @@ const HELP = `claude-wow dev <command>
   status                  The current and previous release, the releases on disk, and what the service runs.
 
 Releases live in <home>/releases/<version>-<sha>/wowgpt and <home>/current points at one
-(<home> is ~/.claude-wow, or CLAUDE_WOW_HOME). One deploy or rollback at a time (<home>/deploy.lock,
+(<home> is ~/.wowgpt, or WOWGPT_HOME). One deploy or rollback at a time (<home>/deploy.lock,
 for this machine only). The idle wait, the restart (claude-wow service restart) and setup for every
 enabled client in config.json run only when the service runs <home>/current/claude-wow and the release changes.
 To point the service at the release, run <home>/current/claude-wow service install once.`;

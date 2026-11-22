@@ -14,7 +14,7 @@ const H = require('../bridge/home');
 
 const SRC = path.join(__dirname, '..', 'bridge');
 const REAL_HOME = path.resolve(H.defaultDir());
-const S = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-wow-inject-'));
+const S = fs.mkdtempSync(path.join(os.tmpdir(), 'wowgpt-inject-'));
 const SANDBOX_HOME = path.join(S, 'home');
 process.on('exit', () => fs.rmSync(S, { recursive: true, force: true }));
 
@@ -28,9 +28,9 @@ function abort(why) {
   process.exit(1);
 }
 
-const env = { ...process.env, CLAUDE_WOW_HOME: SANDBOX_HOME };
+const env = { ...process.env, WOWGPT_HOME: SANDBOX_HOME };
 delete env.CLAUDECODE;
-delete env.CLAUDE_WOW_PROJECT;
+delete env.WOWGPT_PROJECT;
 delete env.WOW_AI_PROJECT;
 const resolvedHome = H.resolve(env).dir;
 if (resolvedHome !== path.resolve(SANDBOX_HOME)) abort(`the bridge home resolves to ${resolvedHome}, not the sandbox ${SANDBOX_HOME}`);
@@ -73,7 +73,7 @@ for (const p of configPaths) {
   if (!isInside(S, p) || isInside(REAL_HOME, p)) abort(`config path ${p} is outside the sandbox ${S}`);
 }
 fs.writeFileSync(path.join(SANDBOX_HOME, 'config.json'), JSON.stringify(cfg, null, 2));
-console.log(`sandbox: ${S} (CLAUDE_WOW_HOME=${SANDBOX_HOME})`);
+console.log(`sandbox: ${S} (WOWGPT_HOME=${SANDBOX_HOME})`);
 
 console.log(execFileSync(process.execPath, [path.join(SRC, 'install-slots.js')], { cwd: S, env, encoding: 'utf8' }).trim());
 

@@ -7,7 +7,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const SB = require('../dev/sandbox');
 
-const ROOT = path.join(os.tmpdir(), `claude-wow-fsbudget-test-${process.pid}`);
+const ROOT = path.join(os.tmpdir(), `wowgpt-fsbudget-test-${process.pid}`);
 const SCRIPT = path.join(SB.REPO, 'bridge', 'install-slots.js');
 const WINDOWS_FS_CALLS_PER_SLOT = 601;
 const FOLDER_WALK_FS_CALLS_PER_SLOT = 129;

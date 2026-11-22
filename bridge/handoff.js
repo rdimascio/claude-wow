@@ -365,7 +365,7 @@ function configuredClaudeDir(homeDir, env) {
 const OPTIONS = ['--stop', '--force', '--json'];
 
 const USAGE = [
-  'claude-wow handoff [folder] [--stop [--force]] [--json]',
+  'wowgpt handoff [folder] [--stop [--force]] [--json]',
   '',
   "Lists the Claude Code sessions running in the folder's repository (its worktrees too),",
   "with each one's last ask and answer, and saves the list in the home folder for the game.",

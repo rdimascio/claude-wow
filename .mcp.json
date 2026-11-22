@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "claude-wow": {
+    "wowgpt": {
       "command": "node",
       "args": ["bridge/channel.js"],
       "alwaysLoad": true

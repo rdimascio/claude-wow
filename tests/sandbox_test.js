@@ -6,15 +6,15 @@ const os = require('os');
 const path = require('path');
 const SB = require('../dev/sandbox');
 
-const ROOT = path.join(os.tmpdir(), `claude-wow-sandbox-test-${process.pid}`);
+const ROOT = path.join(os.tmpdir(), `wowgpt-sandbox-test-${process.pid}`);
 
 test('assertSafe refuses every live install path and anything that contains one', { skip: process.platform === 'win32' && 'POSIX paths' }, () => {
   const home = '/Users/someone';
   for (const p of [
-    '/Users/someone/.claude-wow',
-    '/Users/someone/.claude-wow/state.json',
-    '/Users/someone/Library/LaunchAgents/io.claudewow.bridge.plist',
-    '/Users/someone/Library/Logs/claude-wow/bridge.log',
+    '/Users/someone/.wowgpt',
+    '/Users/someone/.wowgpt/state.json',
+    '/Users/someone/Library/LaunchAgents/io.wowgpt.bridge.plist',
+    '/Users/someone/Library/Logs/wowgpt/bridge.log',
     '/Users/someone/.claude/projects/x.jsonl',
     '/Applications/World of Warcraft/_classic_beta_/WTF',
     '/Users/someone',
@@ -33,10 +33,7 @@ test('the live checkout named by the LaunchAgent is a forbidden root', { skip: p
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'sandbox-home-'));
   try {
     fs.mkdirSync(path.join(home, 'Library', 'LaunchAgents'), { recursive: true });
-    fs.writeFileSync(
-      path.join(home, 'Library', 'LaunchAgents', 'io.claudewow.bridge.plist'),
-      '<key>WorkingDirectory</key>\n<string>/srv/live-checkout</string>',
-    );
+    fs.writeFileSync(path.join(home, 'Library', 'LaunchAgents', 'io.wowgpt.bridge.plist'), '<key>WorkingDirectory</key>\n<string>/srv/live-checkout</string>');
     assert.deepEqual(SB.liveCheckouts(home), ['/srv/live-checkout']);
     assert.throws(() => SB.assertSafe('/srv/live-checkout/bridge', home), /refusing/);
   } finally {

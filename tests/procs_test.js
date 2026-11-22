@@ -34,7 +34,7 @@ async function until(fn, ms = 8000) {
   return fn();
 }
 function scratch(name) {
-  const dir = path.join(os.tmpdir(), `claude-wow-procs-${name}-${process.pid}-${Date.now().toString(36)}`);
+  const dir = path.join(os.tmpdir(), `wowgpt-procs-${name}-${process.pid}-${Date.now().toString(36)}`);
   fs.mkdirSync(dir, { recursive: true });
   return dir;
 }
@@ -224,7 +224,7 @@ test(
       }),
     );
     const bridge = spawn(process.execPath, [BRIDGE, '--inject', 'hang in there', '--project', project], {
-      env: SB.isolatedEnv(path.join(path.dirname(home), 'user'), { CLAUDE_WOW_HOME: home }),
+      env: SB.isolatedEnv(path.join(path.dirname(home), 'user'), { WOWGPT_HOME: home }),
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let out = '';

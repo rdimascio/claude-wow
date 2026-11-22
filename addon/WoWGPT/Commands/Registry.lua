@@ -631,9 +631,9 @@ local HELP_LAYOUT = {
 			{ "/wowgpt -c [text]", "Continue the current chat (--continue). Alone it points at its tab; with the tabs off, it opens the window on it." },
 			{
 				"/wowgpt -r [id|name|n] [text]",
-				"Resume a session (--resume). A Claude Code session started with the claude-wow channel gets the chat live; any other session is resumed headless in its project. Bare -r lists the sessions (live ones first, marked live, running not listening, or resume): click a row or give its number; -r more lists them all.",
+				"Resume a session (--resume). A Claude Code session started with the wowgpt channel gets the chat live; any other session is resumed headless in its project. Bare -r lists the sessions (live ones first, marked live, running not listening, or resume): click a row or give its number; -r more lists them all.",
 			},
-			{ "/wowgpt -r all", "Open one chat per session handed off with claude-wow handoff in a terminal; each resumes its session headless." },
+			{ "/wowgpt -r all", "Open one chat per session handed off with wowgpt handoff in a terminal; each resumes its session headless." },
 			{ "/wowgpt -n <name> [text]", "Name the new chat (--name). With -c it renames the current one." },
 		},
 	},

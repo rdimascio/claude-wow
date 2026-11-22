@@ -276,7 +276,7 @@ function main(argv = process.argv.slice(2), { out = console.log, err = console.e
   }
   const files = opts.files.length ? opts.files : savedFiles(env, home);
   if (!files.length) {
-    err('No SavedVariables file: pass one, or run claude-wow setup so config.json names the game client.');
+    err('No SavedVariables file: pass one, or run wowgpt setup so config.json names the game client.');
     return 2;
   }
   let found = 0;

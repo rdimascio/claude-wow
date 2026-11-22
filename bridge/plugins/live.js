@@ -671,7 +671,7 @@ function createLive(overrides = {}) {
     const info = sessionOf(s);
     const label = info.title || info.name;
     const lines = [
-      `The Claude Code session "${label}" is running, but it was not started with the claude-wow channel, so it cannot hear the game.`,
+      `The Claude Code session "${label}" is running, but it was not started with the wowgpt channel, so it cannot hear the game.`,
       'Restart it in its terminal with:',
       info.restart,
     ];

@@ -111,13 +111,13 @@ test('luaTable carries the project list with labels and the home folder, quoted 
   assert.ok(!/projects =|home =/.test(P.luaTable('X', [], {})), 'no fields unless given');
   const lua = P.luaTable('X', [], {
     projects: [
-      { path: '/Users/me/wow-ai', label: 'claude-wow' },
+      { path: '/Users/me/wow-ai', label: 'wowgpt' },
       { path: '', label: 'skip' },
       { path: 'C:\\src\\a "b"', label: '' },
     ],
     home: '/Users/me',
   });
-  assert.match(lua, /^\tprojects = \{ \{ path = "\/Users\/me\/wow-ai", label = "claude-wow" \}, \{ path = "C:\\\\src\\\\a \\"b\\"", label = "" \} \},$/m);
+  assert.match(lua, /^\tprojects = \{ \{ path = "\/Users\/me\/wow-ai", label = "wowgpt" \}, \{ path = "C:\\\\src\\\\a \\"b\\"", label = "" \} \},$/m);
   assert.match(lua, /^\thome = "\/Users\/me",$/m);
 });
 
@@ -125,7 +125,7 @@ test('systemPrompt always asks for the TL;DR block, and adds the game rules and 
   // Without a context the prompt is only the reply-format rule.
   for (const empty of ['', '  \n ', undefined]) {
     const s = P.systemPrompt(empty);
-    assert.ok(s.includes('claude-wow addon'));
+    assert.ok(s.includes('wowgpt addon'));
     assert.ok(s.includes('"TL;DR:"'), 'asks for the summary marker');
     assert.ok(!s.includes('in-game situation'), 'no game rules without a context');
     assert.ok(!s.includes('Reference for writing addons'), 'no primer section without a context');
@@ -133,8 +133,8 @@ test('systemPrompt always asks for the TL;DR block, and adds the game rules and 
   const ctx = 'Game: World of Warcraft: Forever\nCharacter: Testchar, level 23 Hunter\nPosition: 51.5, 30.4 (map 1413)';
   const s = P.systemPrompt(ctx);
   assert.ok(s.includes('"TL;DR:"'));
-  assert.ok(s.includes('CLAUDE_WOW_MAP_FILE') && s.includes('wowmap') && s.includes('"op":"set"'), 'explains how to mark the map');
-  assert.ok(!P.systemPrompt('').includes('CLAUDE_WOW_MAP_FILE'), 'map hint only with the game context');
+  assert.ok(s.includes('WOWGPT_MAP_FILE') && s.includes('wowmap') && s.includes('"op":"set"'), 'explains how to mark the map');
+  assert.ok(!P.systemPrompt('').includes('WOWGPT_MAP_FILE'), 'map hint only with the game context');
   assert.ok(s.includes('World of Warcraft: Forever is its own game'), 'a game chat is told Forever differs from the web databases');
   assert.ok(!P.systemPrompt('').includes('World of Warcraft: Forever is its own game'), 'and only a game chat');
   assert.match(
@@ -179,7 +179,7 @@ test('messagePrompt puts the situation and the vision paragraph before the text,
   const m = P.messagePrompt('where am I?', ctx);
   assert.ok(
     m.startsWith(
-      '[In-game situation when this message was written, reported by the claude-wow addon, not written by the player]\n' +
+      '[In-game situation when this message was written, reported by the wowgpt addon, not written by the player]\n' +
         ctx +
         '\n[End of in-game situation]\n\nwhere am I?',
     ),
@@ -643,7 +643,7 @@ test('titles: generateTitle runs the command and cleans its output, and gives up
 
 test('titles: generateTitle never rejects, a missing command and a timeout both resolve to no title', async () => {
   const T = require('../bridge/titles');
-  const missing = await T.generateTitle({ file: path.join(os.tmpdir(), 'claude-wow-no-such-command'), args: [], model: 'm', text: 't' });
+  const missing = await T.generateTitle({ file: path.join(os.tmpdir(), 'wowgpt-no-such-command'), args: [], model: 'm', text: 't' });
   assert.equal(missing, '');
   const slow = await T.generateTitle({ file: process.execPath, args: ['-e', 'setTimeout(() => {}, 20000)', '--'], model: 'm', text: 't', timeoutMs: 100 });
   assert.equal(slow, '');
@@ -720,11 +720,11 @@ test('bridge --help names the config file in the home folder, not bridge/config.
   const { spawnSync } = require('child_process');
   const fs = require('fs');
   const SB = require('../dev/sandbox');
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-wow-help-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wowgpt-help-'));
   const home = path.join(dir, 'home');
   const r = spawnSync(process.execPath, [path.join(__dirname, '..', 'bridge', 'bridge.js'), '--help'], {
     encoding: 'utf8',
-    env: SB.isolatedEnv(path.join(dir, 'user'), { CLAUDE_WOW_HOME: home }),
+    env: SB.isolatedEnv(path.join(dir, 'user'), { WOWGPT_HOME: home }),
     timeout: 30000,
   });
   assert.equal(r.status, 0, r.stdout + r.stderr);

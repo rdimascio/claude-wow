@@ -41,7 +41,7 @@ function ev(type, importance, data = {}) {
 }
 
 function tmpGoals(label) {
-  return fs.mkdtempSync(path.join(os.tmpdir(), `claude-wow-events-${label}-`));
+  return fs.mkdtempSync(path.join(os.tmpdir(), `wowgpt-events-${label}-`));
 }
 
 function appendEvents(file, events) {
@@ -208,14 +208,14 @@ test('the events command parses its options and refuses bad ones', () => {
   assert.match(EV.parseArgs(['--loud']).error, /unknown option --loud/);
 });
 
-test('claude-wow events without --follow prints the recent events at or above --min and exits', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-wow-events-cli-'));
+test('wowgpt events without --follow prints the recent events at or above --min and exits', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wowgpt-events-cli-'));
   try {
     fs.writeFileSync(path.join(dir, 'config.json'), '{}');
     appendEvents(path.join(dir, 'goals', 'Bone-Forever', TL.EVENTS_FILE), [ev('money', 1), ev('level_up', 3, { from: 20, to: 21 })]);
     const r = spawnSync(process.execPath, [SUPERVISOR, 'events', '--min', '3'], {
       encoding: 'utf8',
-      env: { ...process.env, CLAUDE_WOW_HOME: dir },
+      env: { ...process.env, WOWGPT_HOME: dir },
       timeout: 20000,
     });
     assert.equal(r.status, 0, r.stderr);
@@ -228,7 +228,7 @@ test('claude-wow events without --follow prints the recent events at or above --
     );
     const bad = spawnSync(process.execPath, [SUPERVISOR, 'events', '--min', '9'], {
       encoding: 'utf8',
-      env: { ...process.env, CLAUDE_WOW_HOME: dir },
+      env: { ...process.env, WOWGPT_HOME: dir },
       timeout: 20000,
     });
     assert.equal(bad.status, 2);

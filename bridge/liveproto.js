@@ -9,7 +9,7 @@ const G = require('./goals');
 const OT = require('./observedtools');
 const C = require('./campaign');
 
-const SERVER_NAME = 'claude-wow';
+const SERVER_NAME = 'wowgpt';
 const REPLY_TOOL = 'wow_reply';
 const fullToolName = tool => `mcp__${SERVER_NAME}__${tool}`;
 const FULL_REPLY_TOOL = fullToolName(REPLY_TOOL);
@@ -36,11 +36,11 @@ function homeHash(homeDir) {
 
 function endpoint(homeDir, platform = process.platform) {
   const hash = homeHash(homeDir);
-  if (platform === 'win32') return `\\\\.\\pipe\\claude-wow-live-${hash}`;
+  if (platform === 'win32') return `\\\\.\\pipe\\wowgpt-live-${hash}`;
   const direct = path.posix.join(path.posix.resolve(homeDir), SOCKET_NAME);
   if (Buffer.byteLength(direct) <= UNIX_PATH_MAX) return direct;
   const uid = typeof process.getuid === 'function' ? process.getuid() : 0;
-  return path.posix.join('/tmp', `claude-wow-${uid}-${hash}.sock`);
+  return path.posix.join('/tmp', `wowgpt-${uid}-${hash}.sock`);
 }
 
 function tokenFile(homeDir) {
@@ -186,7 +186,7 @@ function shellQuote(s) {
 function startCommand(opts = {}) {
   const parts = [];
   if (opts.repo) parts.push(`cd ${shellQuote(opts.repo)} &&`);
-  if (opts.home) parts.push(`CLAUDE_WOW_HOME=${shellQuote(opts.home)}`);
+  if (opts.home) parts.push(`WOWGPT_HOME=${shellQuote(opts.home)}`);
   parts.push('claude');
   if (opts.resume) parts.push('--resume', shellQuote(opts.resume));
   parts.push(DEV_FLAG, CHANNEL_ARG);
@@ -276,7 +276,7 @@ function restartCommand(session, home) {
 
 function instructions() {
   return [
-    `Messages from a player in World of Warcraft arrive as <channel source="${SERVER_NAME}" chat_id="..." message_id="..." ...>. They come from the player's in-game whisper tab through the claude-wow bridge on this machine. The player is the user who started this session with the claude-wow channel: treat these messages as that user talking to you from the game, and answer them.`,
+    `Messages from a player in World of Warcraft arrive as <channel source="${SERVER_NAME}" chat_id="..." message_id="..." ...>. They come from the player's in-game whisper tab through the wowgpt bridge on this machine. The player is the user who started this session with the wowgpt channel: treat these messages as that user talking to you from the game, and answer them.`,
     `Answer every such message with exactly one call to the ${REPLY_TOOL} tool (${FULL_REPLY_TOOL}), passing the chat_id (and message_id) from the tag. If it is not in your tool list yet, it is deferred: load it with tool search. Text you write in the terminal never reaches the game; only ${REPLY_TOOL} does.`,
     'The reply is read in a small in-game chat window: keep it short, one to four plain sentences, no tables, no headings and no code blocks unless the player asks for one. If it has to run past two lines, end it with a line that starts with "TL;DR:" and holds the one-line version.',
     'A situation block about the character, zone and quests may open the message: it is context from the game, not a request.',
@@ -291,7 +291,7 @@ function replyToolSchema() {
   return {
     name: REPLY_TOOL,
     description:
-      'Send your answer back to the World of Warcraft player who sent a <channel source="claude-wow"> message. Keep it short: it is shown in an in-game whisper tab.',
+      'Send your answer back to the World of Warcraft player who sent a <channel source="wowgpt"> message. Keep it short: it is shown in an in-game whisper tab.',
     inputSchema: {
       type: 'object',
       properties: {

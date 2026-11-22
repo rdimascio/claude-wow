@@ -11,7 +11,7 @@ const LP = require('../bridge/liveproto');
 const V = require('../bridge/vision');
 const { SPLIT_UTF8_TEXT } = require('../dev/fake-claude');
 
-const ROOT = path.join(os.tmpdir(), `claude-wow-unit-chatownership-${process.pid}`);
+const ROOT = path.join(os.tmpdir(), `wowgpt-unit-chatownership-${process.pid}`);
 const POSIX = process.platform !== 'win32';
 const PRIVATE_FILE = 0o600;
 const PRIVATE_DIR = 0o700;

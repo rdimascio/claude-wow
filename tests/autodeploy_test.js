@@ -105,14 +105,14 @@ test('eligible: only the macOS service that runs a complete dev-deploy release t
   const home = scratch('eligible');
   const plist = path.join(home, 'io.claudewow.bridge.plist');
   fs.writeFileSync(plist, `<string>${REL.currentBinary(REL.layout(home))}</string>`);
-  const service = { CLAUDE_WOW_SERVICE: '1', CLAUDE_WOW_SUPERVISED: '1' };
+  const service = { WOWGPT_SERVICE: '1', WOWGPT_SUPERVISED: '1' };
   const ok = (over = {}) => AD.eligible({ home, platform: 'darwin', compiled: true, env: service, definitionFile: plist, ...over });
   assert.match(ok().why, /does not run a release made by claude-wow dev deploy/, 'no current release');
   devRelease(home, '0.5.0-aaaaaaaaaaaa', { source: 'dev-deploy', sha: 'a'.repeat(40) });
   assert.deepEqual(ok(), { ok: true });
   assert.match(ok({ platform: 'linux' }).why, /macOS only/);
   assert.match(ok({ compiled: false }).why, /background service/);
-  assert.match(ok({ env: { CLAUDE_WOW_SUPERVISED: '1' } }).why, /background service/, 'a terminal supervisor is not the service');
+  assert.match(ok({ env: { WOWGPT_SUPERVISED: '1' } }).why, /background service/, 'a terminal supervisor is not the service');
   fs.writeFileSync(plist, '<string>/usr/local/bin/claude-wow</string>');
   assert.match(ok().why, /service definition does not run/, 'a service that runs another binary would not be restarted');
   fs.writeFileSync(plist, `<string>${REL.currentBinary(REL.layout(home))}</string>`);

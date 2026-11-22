@@ -1,6 +1,6 @@
 ---
 name: wow-code
-description: Writes World of Warcraft macros and addon Lua, and answers WoW API questions, for the player in an in-game Claude WoW chat. Give it the player's request, their class and the game (Forever or Classic Era) from the situation block. Its reply can hold fenced wowmacro blocks; copy each block into your reply verbatim, with the text around it.
+description: Writes World of Warcraft macros and addon Lua, and answers WoW API questions, for the player in an in-game WoWGPT chat. Give it the player's request, their class and the game (Forever or Classic Era) from the situation block. Its reply can hold fenced wowmacro blocks; copy each block into your reply verbatim, with the text around it.
 tools: WebSearch, WebFetch
 model: sonnet
 ---

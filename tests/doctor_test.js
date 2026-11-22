@@ -32,7 +32,7 @@ function makeWorld(name, options = {}) {
   const svFile = path.join(clientDir, 'WTF', 'Account', 'A', 'SavedVariables', 'WoWGPT.lua');
   const project = path.join(root, 'project');
   const dirs = Service.dirs('darwin', {}, home);
-  const clawHome = path.join(home, '.claude-wow');
+  const clawHome = path.join(home, '.wowgpt');
 
   if (options.node !== false) write(nodeBin, '');
   write(path.join(checkout, 'bridge', 'supervisor.js'), '');
@@ -171,9 +171,9 @@ function context(world, runOverrides = {}) {
 }
 
 test('read-only guard: only the whitelisted inspection commands pass', () => {
-  assert.ok(isReadOnlyCommand('launchctl', ['print', 'gui/501/io.claudewow.bridge']));
-  assert.ok(!isReadOnlyCommand('launchctl', ['kickstart', '-k', 'gui/501/io.claudewow.bridge']));
-  assert.ok(!isReadOnlyCommand('launchctl', ['bootout', 'gui/501/io.claudewow.bridge']));
+  assert.ok(isReadOnlyCommand('launchctl', ['print', 'gui/501/io.wowgpt.bridge']));
+  assert.ok(!isReadOnlyCommand('launchctl', ['kickstart', '-k', 'gui/501/io.wowgpt.bridge']));
+  assert.ok(!isReadOnlyCommand('launchctl', ['bootout', 'gui/501/io.wowgpt.bridge']));
   assert.ok(isReadOnlyCommand('git', ['-C', '/x', 'rev-parse', 'HEAD']));
   assert.ok(isReadOnlyCommand('git', ['-C', '/x', '--no-optional-locks', 'status', '--porcelain']));
   assert.ok(!isReadOnlyCommand('git', ['-C', '/x', 'checkout', 'main']));
@@ -396,7 +396,7 @@ test('permissions: a 0644 file under the addon folders warns with Battle.net err
   assert.match(r.summary, /1 not world-writable/);
   assert.match(r.problems[0].what, /1 of \d+ file\(s\) and folder\(s\).*presence[\\/]a[\\/]0001\.wav/);
   assert.match(r.problems[0].why, /Battle\.net error 2113/);
-  assert.match(r.problems[0].fix, /claude-wow setup/);
+  assert.match(r.problems[0].fix, /wowgpt setup/);
   const onWindows = C.checkPermissions({ ...context(world), sys: { ...context(world).sys, platform: 'win32' } });
   assert.equal(onWindows.status, 'ok');
 });
@@ -515,7 +515,7 @@ test('contract: a missing file, a failed row, a CLI replaced since the check (ev
   const missing = C.checkContract(context(makeWorld('contract-missing', { contract: false })));
   assert.equal(missing.status, 'warn');
   assert.match(missing.problems[0].what, /agent-contract\.json does not exist/);
-  assert.match(missing.problems[0].fix, /claude-wow agents check/);
+  assert.match(missing.problems[0].fix, /wowgpt agents check/);
   const world = makeWorld('contract-stale');
   const ok = C.checkContract(context(world));
   assert.equal(ok.status, 'ok', JSON.stringify(ok));

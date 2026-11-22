@@ -9,7 +9,7 @@ const { spawn } = require('child_process');
 const H = require('../dev/harness');
 const LP = require('../bridge/liveproto');
 
-const ROOT = path.join(os.tmpdir(), `claude-wow-unit-latereplies-${process.pid}`);
+const ROOT = path.join(os.tmpdir(), `wowgpt-unit-latereplies-${process.pid}`);
 const SESSION_NAME = 'latereplies';
 const SLOTS = 20;
 const SPEED = 8;

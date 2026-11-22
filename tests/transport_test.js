@@ -19,7 +19,7 @@ const AC = require('../bridge/agentcontract');
 const SB = require('../dev/sandbox');
 
 function scratch(name) {
-  const dir = path.join(os.tmpdir(), `claude-wow-transport-${name}-${process.pid}-${Date.now().toString(36)}`);
+  const dir = path.join(os.tmpdir(), `wowgpt-transport-${name}-${process.pid}-${Date.now().toString(36)}`);
   fs.mkdirSync(dir, { recursive: true });
   return dir;
 }
@@ -72,7 +72,7 @@ function outbox(id, text, shot) {
 function runOnce(home, project, extra = []) {
   const r = spawnSync(process.execPath, [BRIDGE, '--once', '--project', project, ...extra], {
     encoding: 'utf8',
-    env: SB.isolatedEnv(path.join(path.dirname(home), 'user'), { CLAUDE_WOW_HOME: home }),
+    env: SB.isolatedEnv(path.join(path.dirname(home), 'user'), { WOWGPT_HOME: home }),
     timeout: 60000,
   });
   return { ...r, out: r.stdout + r.stderr };
@@ -339,7 +339,7 @@ test('mcp.servers end to end: servers reach --mcp-config with ${VAR} only, stric
   };
   fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify(withMcp));
   fs.writeFileSync(saved, outbox(21, 'ping', ''));
-  const env = SB.isolatedEnv(userHome, { CLAUDE_WOW_HOME: home, GITHUB_TOKEN: secret });
+  const env = SB.isolatedEnv(userHome, { WOWGPT_HOME: home, GITHUB_TOKEN: secret });
   const run = () =>
     spawnSync(process.execPath, [BRIDGE, '--once', '--project', project], {
       encoding: 'utf8',
@@ -491,7 +491,7 @@ test('per-chat MCP end to end: discovered servers are listed, a chat turns one o
       saved,
       `WoWGPTDB = {\n["outbox"] = {\n["id"] = ${id},\n["session"] = "sess1",\n["chat"] = "chat1",\n["text"] = "${hex('ping')}",\n["cwd"] = "${hex(cwd)}",\n["opts"] = "${hex(`mcp=${choice}`)}",\n["t"] = 1,\n},\n}\n`,
     );
-  const env = SB.isolatedEnv(userHome, { CLAUDE_WOW_HOME: home });
+  const env = SB.isolatedEnv(userHome, { WOWGPT_HOME: home });
   const run = () => spawnSync(process.execPath, [BRIDGE, '--once', '--project', project], { encoding: 'utf8', env, timeout: 60000 });
 
   send(31, '+linear,-notion,-mobbin');
@@ -546,7 +546,7 @@ test('a C2 fail in agent-contract.json refuses a run whose mcp= choice turns a s
     `const a = process.argv.slice(2);\nrequire('fs').appendFileSync(${JSON.stringify(calls)}, JSON.stringify(a) + '\\n');\nif (a.includes('--version')) { console.log('2.1.290 (Claude Code)'); process.exit(0); }\nprocess.stdout.write(${JSON.stringify(JSON.stringify({ type: 'result', result: 'pong', session_id: 'sess-1' }) + '\n')});\n`,
   );
   const real = fs.realpathSync.native(cfg.agents.claude.path);
-  const reason = /Claude Code 2\.1\.290 failed C2 in claude-wow agents check, so it may still load an MCP server a chat turns off\./;
+  const reason = /Claude Code 2\.1\.290 failed C2 in wowgpt agents check, so it may still load an MCP server a chat turns off\./;
   fs.writeFileSync(
     path.join(home, 'agent-contract.json'),
     JSON.stringify({
@@ -565,7 +565,7 @@ test('a C2 fail in agent-contract.json refuses a run whose mcp= choice turns a s
       saved,
       `WoWGPTDB = {\n["outbox"] = {\n["id"] = ${id},\n["session"] = "sess1",\n["chat"] = "chat1",\n["text"] = "${hex('ping')}",\n["cwd"] = "",\n${opts ? `["opts"] = "${hex(opts)}",\n` : ''}${allow ? `["allow"] = "${hex(allow)}",\n` : ''}["t"] = 1,\n},\n}\n`,
     );
-  const env = SB.isolatedEnv(userHome, { CLAUDE_WOW_HOME: home });
+  const env = SB.isolatedEnv(userHome, { WOWGPT_HOME: home });
   const run = () => spawnSync(process.execPath, [BRIDGE, '--once', '--project', project], { encoding: 'utf8', env, timeout: 60000 });
   const agentRuns = () =>
     fs.existsSync(calls)
@@ -603,7 +603,7 @@ test('a C2 fail in agent-contract.json refuses a run whose mcp= choice turns a s
   send(43, 'mcp=-mobbin');
   const unchecked = run();
   const uOut = unchecked.stdout + unchecked.stderr;
-  assert.match(uOut, /contract: Claude Code at .* is not checked against the MCP behaviors the bridge relies on; run claude-wow agents check\./, uOut);
+  assert.match(uOut, /contract: Claude Code at .* is not checked against the MCP behaviors the bridge relies on; run wowgpt agents check\./, uOut);
   assert.match(uOut, /#43@sess1 done \(/, 'not checked turns nothing off');
   assert.equal(agentRuns().length, 2);
   assert.match(
@@ -649,7 +649,7 @@ test('Codex: an X2a fail refuses a run that turns its own server off, an X2b fai
       saved,
       `WoWGPTDB = {\n["outbox"] = {\n["id"] = ${id},\n["session"] = "sess1",\n["chat"] = "chat1",\n["text"] = "${hex('ping')}",\n["cwd"] = "",\n["agent"] = "codex",\n${opts ? `["opts"] = "${hex(opts)}",\n` : ''}["t"] = 1,\n},\n}\n`,
     );
-  const env = SB.isolatedEnv(path.join(dir, 'user'), { CLAUDE_WOW_HOME: home, CODEX_HOME: codexHome, MY_TOKEN: 't0ken' });
+  const env = SB.isolatedEnv(path.join(dir, 'user'), { WOWGPT_HOME: home, CODEX_HOME: codexHome, MY_TOKEN: 't0ken' });
   const runs = () =>
     fs.existsSync(calls)
       ? fs
@@ -667,7 +667,7 @@ test('Codex: an X2a fail refuses a run that turns its own server off, an X2b fai
 
   contract({ X1: 'pass', X2a: 'fail', X2b: 'pass' });
   let out = go(51, 'mcp=-mine');
-  assert.match(out, /#51@sess1 contract: Codex 0\.160\.1 failed X2a in claude-wow agents check, so it may still load an MCP server a chat turns off\./, out);
+  assert.match(out, /#51@sess1 contract: Codex 0\.160\.1 failed X2a in wowgpt agents check, so it may still load an MCP server a chat turns off\./, out);
   assert.equal(runs().length, 0, 'the agent never started');
   out = go(52, '');
   assert.match(out, /#52@sess1 done \(/, out);
@@ -676,7 +676,7 @@ test('Codex: an X2a fail refuses a run that turns its own server off, an X2b fai
 
   contract({ X1: 'pass', X2a: 'pass', X2b: 'fail' });
   out = go(53, '');
-  assert.match(out, /#53@sess1 contract: Codex 0\.160\.1 failed X2b in claude-wow agents check, so its shell may see an MCP server's secret\./, out);
+  assert.match(out, /#53@sess1 contract: Codex 0\.160\.1 failed X2b in wowgpt agents check, so its shell may see an MCP server's secret\./, out);
   assert.equal(runs().length, 1, 'the secret run never started');
   out = go(54, 'mcp=-secretsrv,-mine');
   assert.match(out, /#54@sess1 done \(/, out);

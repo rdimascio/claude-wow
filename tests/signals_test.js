@@ -10,7 +10,7 @@ const P = require('../bridge/protocol');
 const CLI = require('../bridge/clients');
 
 function scratch(name) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), `claude-wow-signals-${name}-`));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), `wowgpt-signals-${name}-`));
   const addons = path.join(dir, 'Interface', 'AddOns');
   fs.mkdirSync(path.join(addons, 'WoWGPT'), { recursive: true });
   return { dir, addons };
@@ -103,7 +103,7 @@ test('placeProbe keeps exactly one late-created probe file and refuses odd token
 
 function runInstallSlots(home) {
   return spawnSync(process.execPath, [path.join(__dirname, '..', 'bridge', 'install-slots.js')], {
-    env: { ...process.env, CLAUDE_WOW_HOME: home },
+    env: { ...process.env, WOWGPT_HOME: home },
     encoding: 'utf8',
   });
 }

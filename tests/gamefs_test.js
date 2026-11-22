@@ -11,7 +11,7 @@ const posixOnly = { skip: process.platform === 'win32' };
 const modeOf = file => fs.statSync(file).mode & 0o777;
 
 function scratch(name) {
-  return fs.mkdtempSync(path.join(os.tmpdir(), `claude-wow-gamefs-${name}-`));
+  return fs.mkdtempSync(path.join(os.tmpdir(), `wowgpt-gamefs-${name}-`));
 }
 
 function withUmask(mask, fn) {

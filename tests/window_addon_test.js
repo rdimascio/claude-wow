@@ -736,7 +736,7 @@ test('an empty chat shows a centered empty state with starters for its kind of c
   vm.run('WoWGPTDB.chats[#WoWGPTDB.chats].history = {}; WoWGPT.Render()');
   e = emptyState(vm);
   assert.equal(e.title, 'Not connected');
-  assert.ok(!/npm|claude-wow/.test(e.body), 'no commands or folder names: ' + e.body);
+  assert.ok(!/npm|wowgpt/.test(e.body), 'no commands or folder names: ' + e.body);
   assert.equal(starters(vm).length, 0, 'no starters while nothing can answer');
 
   vm.run('WoWGPTDB.chats[#WoWGPTDB.chats].history = {}; WoWGPT.IsConnected = function() return true end; WoWGPT.Render()');
@@ -1297,7 +1297,7 @@ test('a C2 fail in the bridge contract greys the off items and Turn all off in t
   vm.run(`WoWGPTDB.chats[#WoWGPTDB.chats].agent = "claude"; WoWGPT.ApplyMcp(${MCP_LIST}); WoWGPT.Render()`);
   const enabled = text =>
     vm.evaluate(`(function() for _, it in ipairs(STUB.menu.items) do if it.text == ${JSON.stringify(text)} then return it.enabled end end end)()`);
-  const reason = 'Claude Code 2.1.290 failed C2 in claude-wow agents check.';
+  const reason = 'Claude Code 2.1.290 failed C2 in wowgpt agents check.';
   vm.run(`WoWGPT.ApplyContract({ claude = { version = "2.1.290", checked = true, off = false, reason = "${reason}" } })`);
   vm.run('WoWGPTMcpButton.scripts.OnClick(WoWGPTMcpButton)');
   assert.equal(
@@ -1317,7 +1317,7 @@ test('a C2 fail in the bridge contract greys the off items and Turn all off in t
 
   vm.run('WoWGPT.ApplyContract({ claude = { version = "2.1.290", checked = false, off = true, reason = "" } })');
   vm.run('WoWGPTMcpButton.scripts.OnClick(WoWGPTMcpButton)');
-  assert.equal(menuItems(vm).split('|From config.json')[0], '|cff999999Not checked on Claude Code 2.1.290: run claude-wow agents check|r');
+  assert.equal(menuItems(vm).split('|From config.json')[0], '|cff999999Not checked on Claude Code 2.1.290: run wowgpt agents check|r');
   assert.equal(enabled('Turn all off'), 'true', 'not checked turns nothing off');
   vm.run('STUB.Pick("Turn all off")');
   assert.equal(vm.evaluate('WoWGPTDB.chats[#WoWGPTDB.chats].mcpAllOff'), 'true');
@@ -1334,7 +1334,7 @@ test('a Codex X2a fail greys only the sources the contract names: Codex servers 
   const enabled = text =>
     vm.evaluate(`(function() for _, it in ipairs(STUB.menu.items) do if it.text == ${JSON.stringify(text)} then return it.enabled end end end)()`);
   const last = () => vm.evaluate('WoWGPTDB.chats[#WoWGPTDB.chats].history[#WoWGPTDB.chats[#WoWGPTDB.chats].history].text');
-  const reason = 'Codex 0.160.1 failed X2a in claude-wow agents check.';
+  const reason = 'Codex 0.160.1 failed X2a in wowgpt agents check.';
   vm.run(`WoWGPT.ApplyContract({ codex = { version = "0.160.1", checked = true, off = false, reason = "${reason}", sources = { "codex", "bogus" } } })`);
   vm.run('WoWGPTMcpButton.scripts.OnClick(WoWGPTMcpButton)');
   assert.equal(enabled('mine  |cff999999not seen yet|r'), 'false', 'a server from config.toml cannot be turned off');

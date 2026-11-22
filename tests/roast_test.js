@@ -207,7 +207,7 @@ test('roast overlay: a run of plain words that is a name in the synced data is r
     assert.ok(
       logs.some(l =>
         l.endsWith(
-          '#15 roast: No game data is synced for this build yet (claude-wow data sync). Multi-word game names were checked only against the short built-in list.',
+          '#15 roast: No game data is synced for this build yet (wowgpt data sync). Multi-word game names were checked only against the short built-in list.',
         ),
       ),
       logs.join('\n'),
@@ -254,7 +254,7 @@ const IDIOM_ROASTS = [
 ];
 
 function realDataStores() {
-  const homeDir = process.env.CLAUDE_WOW_HOME;
+  const homeDir = process.env.WOWGPT_HOME;
   if (!homeDir) return [];
   const GDm = require('../bridge/gamedata');
   const dataDir = path.join(homeDir, 'data');
@@ -265,8 +265,7 @@ function realDataStores() {
 }
 
 const REAL_DATA = realDataStores();
-if (!REAL_DATA.length)
-  test('real synced data (opt-in, CLAUDE_WOW_HOME with data)', { skip: 'set CLAUDE_WOW_HOME to a home with synced data to run this' }, () => {});
+if (!REAL_DATA.length) test('real synced data (opt-in, WOWGPT_HOME with data)', { skip: 'set WOWGPT_HOME to a home with synced data to run this' }, () => {});
 for (const data of REAL_DATA) {
   test(`real synced ${data.flavor} data ${data.build}: ordinary and idiom roast lines show, known game phrases are refused`, () => {
     assert.equal(data.rowTrust, 'client-data');
@@ -458,7 +457,7 @@ test(
         }),
       );
       const bridge = spawn(process.execPath, [path.join(__dirname, '..', 'bridge', 'bridge.js'), '--inject', FIXTURES.gameRecap.recap, '--plugin', 'roast'], {
-        env: SB.isolatedEnv(path.join(path.dirname(home), 'user'), { CLAUDE_WOW_HOME: home }),
+        env: SB.isolatedEnv(path.join(path.dirname(home), 'user'), { WOWGPT_HOME: home }),
         stdio: ['ignore', 'pipe', 'pipe'],
       });
       let out = '';

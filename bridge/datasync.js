@@ -71,7 +71,7 @@ function assertFlavorBuild(flavorName, build) {
 }
 
 function syncCommand(flavorName) {
-  return flavorName === DEFAULT_FLAVOR ? 'claude-wow data sync' : `claude-wow data sync --flavor ${flavorName}`;
+  return flavorName === DEFAULT_FLAVOR ? 'wowgpt data sync' : `wowgpt data sync --flavor ${flavorName}`;
 }
 
 function buildFamily(build) {
@@ -653,7 +653,7 @@ async function readCappedBody(res, url, maxBytes) {
 async function fetchText(fetchImpl, url, { expect, filename, maxBytes = MAX_BODY_BYTES }) {
   try {
     const res = await fetchImpl(url, {
-      headers: { 'user-agent': `claude-wow/${require('../package.json').version} (data sync)` },
+      headers: { 'user-agent': `wowgpt/${require('../package.json').version} (data sync)` },
       redirect: 'error',
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
@@ -990,7 +990,7 @@ const FLAVOR_LINES = Object.entries(FLAVORS)
   )
   .join('\n');
 const SOURCES = Object.freeze(['client', 'community']);
-const USAGE = `claude-wow data sync [--flavor <name>] [--source client|community] [--build <a.b.c.d>] [--force]\n  Fetches one game's client tables from wago.tools into <CLAUDE_WOW_HOME>/data/<flavor>/<build>/.\n  The bridge uses the flavor that matches the client build the game reports, never another one.\n  --flavor  which game (default ${DEFAULT_FLAVOR}):\n${FLAVOR_LINES}\n  --build   a build other than the newest one in the flavor's default family; needed to switch build families\n  --source  client (default): the client tables above. community: Classic Era only, NPC names, spawns and quest titles and givers
+const USAGE = `wowgpt data sync [--flavor <name>] [--source client|community] [--build <a.b.c.d>] [--force]\n  Fetches one game's client tables from wago.tools into <WOWGPT_HOME>/data/<flavor>/<build>/.\n  The bridge uses the flavor that matches the client build the game reports, never another one.\n  --flavor  which game (default ${DEFAULT_FLAVOR}):\n${FLAVOR_LINES}\n  --build   a build other than the newest one in the flavor's default family; needed to switch build families\n  --source  client (default): the client tables above. community: Classic Era only, NPC names, spawns and quest titles and givers
             from the cMaNGOS classic-db dump (GPL-3.0, 1.12 community data) into data/classic_era/community/; needs client data synced first
   --force   fetch again when that build is already current, or go back to a build older than the current one\n`;
 
@@ -1052,7 +1052,7 @@ async function main(argv, deps = {}) {
     const community = result.manifest.flavor === C.FLAVOR ? C.readCommunity(C.communityRoot(home.data)) : null;
     if (community && (community.manifest.client || {}).placementHash !== C.placementHash(result.manifest))
       out(
-        `community data ${community.version} was built with other client data, so its positions are hidden until you run "claude-wow data sync --flavor classic_era --source community"\n`,
+        `community data ${community.version} was built with other client data, so its positions are hidden until you run "wowgpt data sync --flavor classic_era --source community"\n`,
       );
     return 0;
   } catch (e) {

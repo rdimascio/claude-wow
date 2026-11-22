@@ -38,7 +38,7 @@ const WINDOWS_SYSTEM_ENV = [
 
 const FAKE_AGENT = path.join(REPO, 'dev', 'fake-claude.js');
 
-const LIVE_PLIST = 'io.claudewow.bridge.plist';
+const LIVE_PLIST = 'io.wowgpt.bridge.plist';
 
 function liveCheckouts(home) {
   try {
@@ -52,9 +52,9 @@ function liveCheckouts(home) {
 
 function forbiddenRoots(home = os.homedir(), platform = process.platform) {
   const roots = [
-    path.join(home, '.claude-wow'),
+    path.join(home, '.wowgpt'),
     path.join(home, 'Library', 'LaunchAgents'),
-    path.join(home, 'Library', 'Logs', 'claude-wow'),
+    path.join(home, 'Library', 'Logs', 'wowgpt'),
     path.join(home, '.claude'),
     '/Applications/World of Warcraft',
     ...liveCheckouts(home),
@@ -220,9 +220,9 @@ function envFor(L, extra = {}) {
     env,
     homeEnv(L.user),
     {
-      CLAUDE_WOW_HOME: L.home,
-      CLAUDE_WOW_FAKE_STATE: L.agentState,
-      CLAUDE_WOW_SANDBOX: L.dir,
+      WOWGPT_HOME: L.home,
+      WOWGPT_FAKE_STATE: L.agentState,
+      WOWGPT_SANDBOX: L.dir,
     },
     extra,
   );

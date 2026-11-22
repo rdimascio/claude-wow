@@ -26,7 +26,7 @@ const ERA_HIDE = 511;
 const FOREVER_BLADE = 501;
 
 function scratch(name) {
-  const dir = path.join(os.tmpdir(), `claude-wow-era-${name}-${process.pid}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`);
+  const dir = path.join(os.tmpdir(), `wowgpt-era-${name}-${process.pid}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`);
   fs.mkdirSync(dir, { recursive: true });
   return dir;
 }

@@ -18,14 +18,14 @@ const CLAUDE = arg('--claude', 'claude');
 const KEEP = process.argv.includes('--keep');
 const PRIME = process.argv.includes('--prime');
 const PRIME_TEXT =
-  'My World of Warcraft client is attached to this session through the claude-wow channel. Answer each claude-wow channel message with the wow_reply tool. Reply OK.';
+  'My World of Warcraft client is attached to this session through the wowgpt channel. Answer each wowgpt channel message with the wow_reply tool. Reply OK.';
 const STEP_MS = Number(arg('--step-ms', '120000'));
 
 const REPO = path.join(__dirname, '..');
 const SRC = path.join(REPO, 'bridge');
 const REAL_HOME = path.resolve(H.defaultDir());
 fs.mkdirSync(BASE, { recursive: true });
-const S = fs.mkdtempSync(path.join(BASE, 'claude-wow-live-'));
+const S = fs.mkdtempSync(path.join(BASE, 'wowgpt-live-'));
 const SANDBOX_HOME = path.join(S, 'home');
 const TMUX = `cw-live-${process.pid}`;
 let bridge = null;
@@ -100,9 +100,9 @@ process.on('SIGINT', () => {
   process.exit(130);
 });
 
-const env = { ...process.env, CLAUDE_WOW_HOME: SANDBOX_HOME };
+const env = { ...process.env, WOWGPT_HOME: SANDBOX_HOME };
 delete env.CLAUDECODE;
-delete env.CLAUDE_WOW_PROJECT;
+delete env.WOWGPT_PROJECT;
 delete env.WOW_AI_PROJECT;
 const resolvedHome = H.resolve(env).dir;
 if (resolvedHome !== path.resolve(SANDBOX_HOME)) abort(`the bridge home resolves to ${resolvedHome}, not the sandbox ${SANDBOX_HOME}`);
@@ -143,7 +143,7 @@ fs.writeFileSync(
   JSON.stringify(
     {
       mcpServers: {
-        [LP.SERVER_NAME]: { command: process.execPath, args: [path.join(SRC, 'channel.js')], env: { CLAUDE_WOW_HOME: SANDBOX_HOME }, alwaysLoad: true },
+        [LP.SERVER_NAME]: { command: process.execPath, args: [path.join(SRC, 'channel.js')], env: { WOWGPT_HOME: SANDBOX_HOME }, alwaysLoad: true },
       },
     },
     null,
@@ -151,7 +151,7 @@ fs.writeFileSync(
   ),
 );
 fs.writeFileSync(path.join(PROJ, '.claude', 'settings.json'), JSON.stringify({ enableAllProjectMcpServers: true }, null, 2));
-console.log(`sandbox: ${S} (CLAUDE_WOW_HOME=${SANDBOX_HOME})`);
+console.log(`sandbox: ${S} (WOWGPT_HOME=${SANDBOX_HOME})`);
 console.log(
   execFileSync(process.execPath, [path.join(SRC, 'install-slots.js')], { cwd: S, env, encoding: 'utf8' })
     .trim()
@@ -249,7 +249,7 @@ async function main() {
   check(
     'no session: the chat says so and names the command',
     none.status === 'error' &&
-      /No live Claude Code session is connected\. Start one with:\n.*--dangerously-load-development-channels server:claude-wow/.test(none.text),
+      /No live Claude Code session is connected\. Start one with:\n.*--dangerously-load-development-channels server:wowgpt/.test(none.text),
     JSON.stringify(none.text),
   );
 

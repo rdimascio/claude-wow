@@ -584,7 +584,7 @@ function Cli.DevCommand(c, cmd, rest)
 	if not (run.bridgePlugins and Contains(run.bridgePlugins, Cli.DEV_PLUGIN)) then
 		Cli.Say(
 			c,
-			"The bridge has not said it has dev tools: it is older than this addon, or it has not answered since you logged in. Update it (claude-wow update), send any message, then try again."
+			"The bridge has not said it has dev tools: it is older than this addon, or it has not answered since you logged in. Update it (wowgpt update), send any message, then try again."
 		)
 		return
 	end

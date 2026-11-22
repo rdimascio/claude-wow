@@ -120,8 +120,8 @@ function buildRun(promptText, model, root, capUsd, resume = '') {
   const cmd = A.resolveCommand('claude', acfg);
   const args = [...cmd.args, ...agent.args({ cfg: acfg, resume, cwd: root, system, images: [], prompt })];
   const env = agent.env({ ...process.env });
-  env.CLAUDE_WOW_MAP_FILE = path.join(root, 'map.jsonl');
-  env.CLAUDE_WOW_UI_FILE = path.join(root, 'ui.jsonl');
+  env.WOWGPT_MAP_FILE = path.join(root, 'map.jsonl');
+  env.WOWGPT_UI_FILE = path.join(root, 'ui.jsonl');
   return { file: cmd.file, args, env, stdin: input.stdin, system, prompt, argv: redactedArgv(cmd.file, args), systemSha256: sha256(system) };
 }
 
@@ -297,7 +297,7 @@ async function main() {
   }
   const claudePath = realClaudePath();
   const meta = { claudePath, claudeVersion: claudeVersion(claudePath), ranAt: new Date().toISOString(), followUp: FOLLOW_UP };
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-wow-measure-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'wowgpt-measure-'));
   const cwds = {};
   for (const m of o.models) {
     cwds[m] = path.join(root, folderFor(m));

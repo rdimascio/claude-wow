@@ -12,7 +12,7 @@ const { createVM } = require('./lua/vm');
 const CHARACTER = 'Bone-Forever';
 
 function tmpDir(label) {
-  return fs.mkdtempSync(path.join(os.tmpdir(), `claude-wow-telemetry-${label}-`));
+  return fs.mkdtempSync(path.join(os.tmpdir(), `wowgpt-telemetry-${label}-`));
 }
 
 function record(sections) {

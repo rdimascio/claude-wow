@@ -370,7 +370,7 @@ async function doctor(ctx) {
   if (!PJ.folderAllowed(root, PJ.allowedFolders(core.options('claude-code'), core.defaultCwd)))
     return 'The repository root of this folder is not in plugins.claude-code.folders, so the doctor cannot run there.';
   const script = path.join(root, 'dev', 'doctor.js');
-  if (!fs.existsSync(script)) return `No dev/doctor.js in ${root}. The doctor runs from a claude-wow checkout: switch this chat to it with /wowgpt cd.`;
+  if (!fs.existsSync(script)) return `No dev/doctor.js in ${root}. The doctor runs from a wowgpt checkout: switch this chat to it with /wowgpt cd.`;
   core.progress(job, 'running the doctor');
   const r = await run(doctorNode(core), [script, '--json'], { cwd: root, timeoutMs: DOCTOR_TIMEOUT_MS, onTick: () => core.beat(job) });
   let report;

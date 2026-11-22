@@ -22,7 +22,7 @@ const FOREVER_BUILD = '1.60.1.200';
 const FOREVER_CLIENT = '1.60.1.70124';
 
 function scratch(name) {
-  const dir = path.join(os.tmpdir(), `claude-wow-community-${name}-${process.pid}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`);
+  const dir = path.join(os.tmpdir(), `wowgpt-community-${name}-${process.pid}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`);
   fs.mkdirSync(dir, { recursive: true });
   return dir;
 }
@@ -286,7 +286,7 @@ test('data sync --source community is Classic Era only and goes through the CLI'
   await D.sync({ dataDir: path.join(home, 'data'), flavor: 'classic_era', fetch: async url => fakeWago(url) });
   const out = [];
   const code = await D.main(['sync', '--flavor', 'classic_era', '--source', 'community'], {
-    env: { CLAUDE_WOW_HOME: home },
+    env: { WOWGPT_HOME: home },
     fetch: fakeGitHub().fetchImpl,
     out: s => out.push(s),
     err: s => out.push(s),
@@ -303,7 +303,7 @@ test('data sync --source community is Classic Era only and goes through the CLI'
   const again = [];
   assert.equal(
     await D.main(['sync', '--flavor', 'classic_era', '--force'], {
-      env: { CLAUDE_WOW_HOME: home },
+      env: { WOWGPT_HOME: home },
       fetch: changed,
       out: s => again.push(s),
       err: s => again.push(s),
@@ -313,7 +313,7 @@ test('data sync --source community is Classic Era only and goes through the CLI'
   );
   assert.match(
     again.join(''),
-    /community data z2815-[0-9a-f]{7} was built with other client data, so its positions are hidden until you run "claude-wow data sync --flavor classic_era --source community"/,
+    /community data z2815-[0-9a-f]{7} was built with other client data, so its positions are hidden until you run "wowgpt data sync --flavor classic_era --source community"/,
   );
 });
 
@@ -482,7 +482,7 @@ test('on Forever, missing or other Classic Era data hides every community positi
   fs.writeFileSync(manifestFile, JSON.stringify(manifest));
   fs.renameSync(path.join(dataDir, 'classic_era', 'current'), path.join(dataDir, 'classic_era', 'current.off'));
   const noEra = GD.openStore({ dataDir, clientBuild: FOREVER_CLIENT });
-  assert.match(call(noEra, 'wow_npc', { id: 7001 }).notes.join(' '), /Classic Era client tables are not synced, .*"claude-wow data sync --flavor classic_era"/);
+  assert.match(call(noEra, 'wow_npc', { id: 7001 }).notes.join(' '), /Classic Era client tables are not synced, .*"wowgpt data sync --flavor classic_era"/);
   fs.renameSync(path.join(dataDir, 'classic_era', 'current.off'), path.join(dataDir, 'classic_era', 'current'));
   const era = D.readCurrent(path.join(dataDir, 'classic_era'));
   const eraManifest = path.join(era.dir, 'manifest.json');

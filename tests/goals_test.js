@@ -309,7 +309,7 @@ test('order phrases: the built-in list refuses well-known ability and place name
 test('order tokens through the store the bridge builds: the injected home, its data and the context client build expand {item:501}', async () => {
   const dir = tmpDir('bridgegoals');
   try {
-    const home = require('../bridge/home').resolve({ CLAUDE_WOW_HOME: dir });
+    const home = require('../bridge/home').resolve({ WOWGPT_HOME: dir });
     const store = G.createBridgeGoals({
       home,
       context: () => ({ text: BONE_CONTEXT, at: NOW, receivedAt: Date.now() }),
@@ -371,11 +371,11 @@ test('order tokens: without synced data, or with data for another build or an un
     const none = GD.openStore({ dataDir: empty, clientBuild: '1.60.1.70124' });
     const tokenOrder = G.validateOrderText('Buy 2 {item:501}', NAMES, none);
     assert.equal(tokenOrder.ok, false);
-    assert.match(tokenOrder.text, /No game data is synced for this build yet \(claude-wow data sync\).*only names the game itself reported may appear/);
+    assert.match(tokenOrder.text, /No game data is synced for this build yet \(wowgpt data sync\).*only names the game itself reported may appear/);
     const word = G.validateOrderText('Buy 2 in Silverpine', NAMES, none);
     assert.match(
       word.text,
-      /"silverpine".*Tokens work only once game data is synced for the client's build \(claude-wow data sync, with --flavor classic_era for Classic Era\); until then only names the game reported may appear\./,
+      /"silverpine".*Tokens work only once game data is synced for the client's build \(wowgpt data sync, with --flavor classic_era for Classic Era\); until then only names the game reported may appear\./,
     );
     assert.deepEqual(
       G.validateOrderText('Raise Leatherworking to 150', NAMES, none),
@@ -502,22 +502,22 @@ test('MCP tool schemas: goal_set, goal_list, order_issue and the two vote tools;
   assert.match(G.toolSchemas()[2].description, /\{item:ID\}, \{skill:ID\}, \{faction:ID\} or \{map:ID,x,y\}/);
   assert.match(G.toolSchemas()[2].description, /never from memory or another game version/);
   assert.deepEqual(LP.GOAL_WRITE_TOOLS, [
-    'mcp__claude-wow__goal_set',
-    'mcp__claude-wow__order_issue',
-    'mcp__claude-wow__goal_vote_open',
-    'mcp__claude-wow__goal_vote_close',
-    'mcp__claude-wow__route_draw',
-    'mcp__claude-wow__campaign_start',
-    'mcp__claude-wow__campaign_end',
-    'mcp__claude-wow__beat_add',
-    'mcp__claude-wow__beat_trigger',
-    'mcp__claude-wow__narrate',
+    'mcp__wowgpt__goal_set',
+    'mcp__wowgpt__order_issue',
+    'mcp__wowgpt__goal_vote_open',
+    'mcp__wowgpt__goal_vote_close',
+    'mcp__wowgpt__route_draw',
+    'mcp__wowgpt__campaign_start',
+    'mcp__wowgpt__campaign_end',
+    'mcp__wowgpt__beat_add',
+    'mcp__wowgpt__beat_trigger',
+    'mcp__wowgpt__narrate',
   ]);
   const acfg = P.withRunDeniedRules({ allowedTools: ['WebSearch'], deniedTools: ['Bash(rm:*)'] }, LP.GOAL_WRITE_TOOLS);
   assert.deepEqual(acfg.deniedTools, ['Bash(rm:*)', ...LP.GOAL_WRITE_TOOLS]);
-  assert.deepEqual(P.withoutRules(['WebSearch', 'mcp__claude-wow__order_issue'], LP.GOAL_WRITE_TOOLS), ['WebSearch']);
-  assert.equal(P.absolutePathRule('Read', '/Users/me/.claude-wow/live.token'), 'Read(//Users/me/.claude-wow/live.token)');
-  assert.equal(P.absolutePathRule('Edit', 'C:\\Users\\me\\.claude-wow\\goals\\**'), 'Edit(//c/Users/me/.claude-wow/goals/**)');
+  assert.deepEqual(P.withoutRules(['WebSearch', 'mcp__wowgpt__order_issue'], LP.GOAL_WRITE_TOOLS), ['WebSearch']);
+  assert.equal(P.absolutePathRule('Read', '/Users/me/.wowgpt/live.token'), 'Read(//Users/me/.wowgpt/live.token)');
+  assert.equal(P.absolutePathRule('Edit', 'C:\\Users\\me\\.wowgpt\\goals\\**'), 'Edit(//c/Users/me/.wowgpt/goals/**)');
 });
 
 function hex(s) {
@@ -540,7 +540,7 @@ function fakeInstall(dir, { gameContext = false } = {}) {
   const argvFile = path.join(dir, 'argv.json');
   const agent = path.join(dir, 'fake-claude.js');
   const denials = [
-    { tool_name: 'mcp__claude-wow__order_issue', tool_use_id: 't1', tool_input: { text: 'x' } },
+    { tool_name: 'mcp__wowgpt__order_issue', tool_use_id: 't1', tool_input: { text: 'x' } },
     { tool_name: 'NotebookEdit', tool_use_id: 't2', tool_input: {} },
     { tool_name: 'mcp__wowgoals__campaign_start', tool_use_id: 't3', tool_input: {} },
     { tool_name: 'mcp__wowgoals__goal_vote_open', tool_use_id: 't4', tool_input: {} },
@@ -597,7 +597,7 @@ test(
       const run = () => {
         const r = spawnSync(process.execPath, [BRIDGE, '--once'], {
           encoding: 'utf8',
-          env: SB.isolatedEnv(path.join(path.dirname(home), 'user'), { CLAUDE_WOW_HOME: home }),
+          env: SB.isolatedEnv(path.join(path.dirname(home), 'user'), { WOWGPT_HOME: home }),
           timeout: 60000,
         });
         assert.equal(r.status, 0, r.stdout + r.stderr);
@@ -632,7 +632,7 @@ test(
     try {
       const { home, addons, saved, argvFile } = fakeInstall(dir);
       const allow = [
-        'mcp__claude-wow__order_issue',
+        'mcp__wowgpt__order_issue',
         'mcp__wowgoals__order_issue',
         'mcp__wowgoals',
         'WebFetch',
@@ -645,14 +645,14 @@ test(
         P.absolutePathRule('Read', path.join(home, 'state.json')),
         'LS',
       ].join('\x1F');
-      const allowOnce = ['mcp__claude-wow__goal_set', 'mcp__wowgoals__goal_set', 'mcp__wowgoals__narrate(x)', 'Glob', 'TodoWrite'].join('\x1F');
+      const allowOnce = ['mcp__wowgpt__goal_set', 'mcp__wowgoals__goal_set', 'mcp__wowgoals__narrate(x)', 'Glob', 'TodoWrite'].join('\x1F');
       fs.writeFileSync(
         saved,
         `WoWGPTDB = {\n["outbox"] = {\n["id"] = 7,\n["session"] = "sess1",\n["chat"] = "chat1",\n["text"] = "${hex('set my order')}",\n["cwd"] = "",\n["plugin"] = "ask",\n["allow"] = "${hex(allow)}",\n["allowOnce"] = "${hex(allowOnce)}",\n["t"] = 1,\n},\n}\n`,
       );
       const r = spawnSync(process.execPath, [BRIDGE, '--once'], {
         encoding: 'utf8',
-        env: SB.isolatedEnv(path.join(path.dirname(home), 'user'), { CLAUDE_WOW_HOME: home }),
+        env: SB.isolatedEnv(path.join(path.dirname(home), 'user'), { WOWGPT_HOME: home }),
         timeout: 60000,
       });
       const out = r.stdout + r.stderr;
@@ -730,7 +730,7 @@ function runPluginOnce(dir, { plugin, agent = '' }) {
   );
   const r = spawnSync(process.execPath, [BRIDGE, '--once'], {
     encoding: 'utf8',
-    env: SB.isolatedEnv(path.join(path.dirname(install.home), 'user'), { CLAUDE_WOW_HOME: install.home }),
+    env: SB.isolatedEnv(path.join(path.dirname(install.home), 'user'), { WOWGPT_HOME: install.home }),
     timeout: 60000,
   });
   const out = r.stdout + r.stderr;
@@ -928,7 +928,7 @@ test('slot field through the real bridge: the slot files carry the current order
     writeOutbox(saved, 7, BONE_CONTEXT);
     const r = spawnSync(process.execPath, [BRIDGE, '--once'], {
       encoding: 'utf8',
-      env: SB.isolatedEnv(path.join(path.dirname(home), 'user'), { CLAUDE_WOW_HOME: home }),
+      env: SB.isolatedEnv(path.join(path.dirname(home), 'user'), { WOWGPT_HOME: home }),
       timeout: 60000,
     });
     assert.equal(r.status, 0, r.stdout + r.stderr);
@@ -968,7 +968,7 @@ test(
       writeOutbox(saved, 7, BONE_CONTEXT);
       const r = spawnSync(process.execPath, [BRIDGE, '--once'], {
         encoding: 'utf8',
-        env: SB.isolatedEnv(path.join(path.dirname(home), 'user'), { CLAUDE_WOW_HOME: home }),
+        env: SB.isolatedEnv(path.join(path.dirname(home), 'user'), { WOWGPT_HOME: home }),
         timeout: 60000,
       });
       assert.equal(r.status, 0, r.stdout + r.stderr);
@@ -1012,7 +1012,7 @@ test(
       const run = () => {
         const r = spawnSync(process.execPath, [BRIDGE, '--once'], {
           encoding: 'utf8',
-          env: SB.isolatedEnv(path.join(path.dirname(home), 'user'), { CLAUDE_WOW_HOME: home }),
+          env: SB.isolatedEnv(path.join(path.dirname(home), 'user'), { WOWGPT_HOME: home }),
           timeout: 60000,
         });
         assert.equal(r.status, 0, r.stdout + r.stderr);
@@ -1134,7 +1134,7 @@ test("two clients on two characters: each slot file carries the map of its own c
     writeOutbox(a.saved, 7, BONE_CONTEXT, 'sessA', 'bone1');
     const r = spawnSync(process.execPath, [BRIDGE, '--once'], {
       encoding: 'utf8',
-      env: SB.isolatedEnv(path.join(path.dirname(a.home), 'user'), { CLAUDE_WOW_HOME: a.home }),
+      env: SB.isolatedEnv(path.join(path.dirname(a.home), 'user'), { WOWGPT_HOME: a.home }),
       timeout: 60000,
     });
     assert.equal(r.status, 0, r.stdout + r.stderr);

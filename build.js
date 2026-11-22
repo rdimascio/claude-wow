@@ -5,7 +5,7 @@
 // capture scripts, the addon, the config template and the primer embedded
 // (build/entry.js, bridge/assets.js). Nothing to install on the target
 // machine: no Node, no npm. The binary finds its config through
-// CLAUDE_WOW_HOME exactly as the checkout does.
+// WOWGPT_HOME exactly as the checkout does.
 //
 //   node build.js                       every target below into dist/
 //   node build.js --target bun-linux-x64 [--target ...]

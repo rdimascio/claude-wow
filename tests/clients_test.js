@@ -8,7 +8,7 @@ const CLI = require('../bridge/clients');
 const P = require('../bridge/protocol');
 const SIG = require('../bridge/signals');
 
-const ROOT = path.resolve(os.tmpdir(), 'claude-wow-clients-test');
+const ROOT = path.resolve(os.tmpdir(), 'wowgpt-clients-test');
 const FOREVER = path.join(ROOT, 'World of Warcraft', '_classic_beta_');
 const ERA = path.join(ROOT, 'World of Warcraft', '_classic_era_');
 const addonsOf = dir => path.join(dir, 'Interface', 'AddOns');
@@ -119,7 +119,7 @@ test('lastSpoke picks the client heard last, ignores dates no Date can hold, and
 });
 
 test('slotClients and describe name each client with its installed build, mark this one and the last speaker', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-wow-clients-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wowgpt-clients-'));
   try {
     const a = path.join(dir, '_classic_beta_');
     const b = path.join(dir, '_classic_era_');

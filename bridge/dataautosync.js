@@ -92,7 +92,7 @@ function runSync({ flavor, home, onChild = () => {}, env = process.env, timeoutM
     let child;
     try {
       const [file, args] = command || syncCommand(flavor, runtime);
-      child = PR.spawnChild(file, args, { env: { ...env, CLAUDE_WOW_HOME: home }, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+      child = PR.spawnChild(file, args, { env: { ...env, WOWGPT_HOME: home }, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
     } catch (e) {
       settle({ ok: false, message: e && e.message ? e.message : String(e) });
       return;

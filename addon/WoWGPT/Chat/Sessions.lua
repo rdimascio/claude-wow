@@ -302,7 +302,7 @@ end
 
 function Cli.NotListening(e, text)
 	local c = ActiveChat()
-	local lines = { Display(e.name) .. " is running in a terminal, but it was not started with the claude-wow channel, so it cannot hear the game." }
+	local lines = { Display(e.name) .. " is running in a terminal, but it was not started with the wowgpt channel, so it cannot hear the game." }
 	if (e.restart or "") ~= "" then
 		table.insert(lines, "Restart it in its terminal with:")
 		table.insert(lines, e.restart)
@@ -397,7 +397,7 @@ function Cli.ResumeAll()
 	if #opened + #busy + #already == 0 then
 		Cli.Say(
 			from,
-			"No sessions were handed off. In a terminal, run: claude-wow handoff <repository path> --stop. Then /wowgpt -r all again (the list can take a few seconds to reach the game)."
+			"No sessions were handed off. In a terminal, run: wowgpt handoff <repository path> --stop. Then /wowgpt -r all again (the list can take a few seconds to reach the game)."
 		)
 		return
 	end

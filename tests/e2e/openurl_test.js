@@ -68,7 +68,7 @@ const refused = (h, id, url) => openLine(h, id, escape(`open link refused (not a
 test('a click on a reply link reaches the bridge, which opens exactly that link with no shell and runs no agent; a refusal comes back to the copy box; a record for chat B carrying chat A link opens nothing', async () => {
   fs.mkdirSync(ROOT, { recursive: true });
   const opened = path.join(ROOT, 'opened.jsonl');
-  await withGame({ env: { CLAUDE_WOW_OPEN_LINKS_LOG: opened } }, async h => {
+  await withGame({ env: { WOWGPT_OPEN_LINKS_LOG: opened } }, async h => {
     const reply = await h.client.say(`[[reply The fix is in ${PR}.]]`);
     assert.match(reply.text, /pull\/7/);
     h.client.runLua(SPY);

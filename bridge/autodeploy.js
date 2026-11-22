@@ -32,7 +32,7 @@ function settings(cfg, defaultCwd) {
 
 function eligible({ home, platform = process.platform, compiled, env = process.env, definitionFile }) {
   if (platform !== 'darwin') return { ok: false, why: 'macOS only: on Linux systemd would stop the deploy with the service before setup runs' };
-  if (!compiled || env.CLAUDE_WOW_SERVICE !== '1') return { ok: false, why: 'it runs only in the background service (claude-wow service)' };
+  if (!compiled || env.WOWGPT_SERVICE !== '1') return { ok: false, why: 'it runs only in the background service (claude-wow service)' };
   const l = REL.layout(home);
   const name = REL.currentName(l);
   const info = name && REL.hasRelease(l, name) ? REL.releaseInfo(l, name) : null;

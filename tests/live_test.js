@@ -43,7 +43,7 @@ function fakeCore(home, extra = {}) {
     home,
     claudeDir: extra.claudeDir || '',
     timeoutMs: 60000,
-    liveStartCommand: 'claude --dangerously-load-development-channels server:claude-wow',
+    liveStartCommand: 'claude --dangerously-load-development-channels server:wowgpt',
     defaultCwd: extra.defaultCwd || home,
     options: () => extra.options || {},
     log: line => calls.log.push(line),
@@ -78,7 +78,7 @@ async function initialize(ch, out) {
   await until(() => out.lines.find(l => l.id === 1));
 }
 
-const LISTENING = 'claude --dangerously-load-development-channels server:claude-wow';
+const LISTENING = 'claude --dangerously-load-development-channels server:wowgpt';
 const DEAF = 'claude --dangerously-skip-permissions';
 
 async function rig(opts = {}) {
@@ -118,14 +118,14 @@ async function rig(opts = {}) {
 }
 
 test('endpoint: a socket in the home folder, /tmp when that path is too long, a named pipe on Windows', () => {
-  assert.equal(LP.endpoint('/home/me/.claude-wow', 'darwin'), '/home/me/.claude-wow/live.sock');
+  assert.equal(LP.endpoint('/home/me/.wowgpt', 'darwin'), '/home/me/.wowgpt/live.sock');
   const long = '/' + 'x'.repeat(120);
   const alt = LP.endpoint(long, 'linux');
-  assert.match(alt, /^\/tmp\/claude-wow-\d+-[0-9a-f]{12}\.sock$/);
+  assert.match(alt, /^\/tmp\/wowgpt-\d+-[0-9a-f]{12}\.sock$/);
   assert.ok(Buffer.byteLength(alt) <= LP.UNIX_PATH_MAX);
   assert.equal(LP.endpoint(long, 'linux'), alt, 'the same home always maps to the same socket');
   assert.notEqual(LP.endpoint(long + 'y', 'linux'), alt);
-  assert.match(LP.endpoint('C:\\Users\\me\\.claude-wow', 'win32'), /^\\\\\.\\pipe\\claude-wow-live-[0-9a-f]{12}$/);
+  assert.match(LP.endpoint('C:\\Users\\me\\.wowgpt', 'win32'), /^\\\\\.\\pipe\\wowgpt-live-[0-9a-f]{12}$/);
 });
 
 test('framing: newline-delimited JSON across chunk boundaries, garbage skipped, oversized lines dropped', () => {
@@ -213,7 +213,7 @@ test('channel server: initialize declares the channel and permission capabilitie
   const init = await until(() => out.lines.find(l => l.id === 1));
   assert.equal(init.result.protocolVersion, '2025-06-18', 'never negotiates a revision channels do not register on');
   assert.deepEqual(init.result.capabilities, { experimental: { 'claude/channel': {}, 'claude/channel/permission': {} }, tools: {} });
-  assert.equal(init.result.serverInfo.name, 'claude-wow');
+  assert.equal(init.result.serverInfo.name, 'wowgpt');
   assert.match(init.result.instructions, /wow_reply/);
   assert.match(init.result.instructions, /short/);
   assert.equal(pickProtocol('2024-11-05'), '2024-11-05');
@@ -371,7 +371,7 @@ test('goal tools: a connected session that is not listening on the channel is re
     r.ch.feed(JSON.stringify({ jsonrpc: '2.0', id: 30, method: 'tools/call', params: { name: 'order_issue', arguments: { text: 'skin 10' } } }) + '\n');
     const res = (await until(() => r.out.lines.find(l => l.id === 30))).result;
     assert.equal(res.isError, true);
-    assert.match(res.content[0].text, /only works in a session started with --dangerously-load-development-channels server:claude-wow/);
+    assert.match(res.content[0].text, /only works in a session started with --dangerously-load-development-channels server:wowgpt/);
     assert.deepEqual(calls, []);
   } finally {
     r.cleanup();
@@ -435,17 +435,17 @@ test('parentPid reads the real parent from ps', { skip: !POSIX }, async () => {
   assert.equal(await LP.parentPid(4242, { run: async () => '' }), null);
 });
 
-const PRINT_JOB = 'claude -p --output-format stream-json --dangerously-load-development-channels server:claude-wow';
+const PRINT_JOB = 'claude -p --output-format stream-json --dangerously-load-development-channels server:wowgpt';
 
-test('parentListens: only a parent that loads the claude-wow channel and is not a -p/--print job listens', async () => {
+test('parentListens: only a parent that loads the wowgpt channel and is not a -p/--print job listens', async () => {
   const cases = [
     [LISTENING, true],
-    ['claude --resume 6624f327 --channels=server:claude-wow', true],
+    ['claude --resume 6624f327 --channels=server:wowgpt', true],
     [DEAF, false],
     ['claude', false],
     [PRINT_JOB, false],
-    ['claude --print "hi" --dangerously-load-development-channels server:claude-wow', false],
-    ['claude --print=text --channels server:claude-wow', false],
+    ['claude --print "hi" --dangerously-load-development-channels server:wowgpt', false],
+    ['claude --print=text --channels server:wowgpt', false],
     ['node /opt/claude/cli.js -p --model haiku', false],
   ];
   for (const [line, want] of cases) {
@@ -459,7 +459,7 @@ test('parentListens: only a parent that loads the claude-wow channel and is not 
     assert.equal(got, want, line);
     assert.deepEqual(seen, [4242]);
   }
-  assert.equal(LP.isPrintMode('claude --dangerously-load-development-channels server:claude-wow'), false);
+  assert.equal(LP.isPrintMode('claude --dangerously-load-development-channels server:wowgpt'), false);
   assert.equal(LP.isPrintMode('claude --permission-mode plan -p'), true);
   assert.equal(LP.isPrintMode('claude --printer'), false);
   assert.equal(await parentListens(4242, { commandLine: async () => null }), true, 'an unreadable parent keeps the old behaviour; the bridge still checks it');
@@ -494,7 +494,7 @@ test('not listening: the channel lists no tools, declares no channel, sends no i
     const init = out.lines.find(l => l.id === 1);
     assert.deepEqual(init.result.capabilities, {});
     assert.equal(init.result.instructions, undefined);
-    assert.equal(init.result.serverInfo.name, 'claude-wow');
+    assert.equal(init.result.serverInfo.name, 'wowgpt');
     ch.feed(JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' }) + '\n');
     assert.deepEqual((await until(() => out.lines.find(l => l.id === 2))).result, { tools: [] });
     ch.feed(JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'ping' }) + '\n');
@@ -562,7 +562,7 @@ test('listening: a parent started with the channel gets the full server and conn
 test('channel.js started by a process without the channel flag answers MCP with an empty server', { timeout: 60000 }, async () => {
   const home = tmpHome();
   const child = require('child_process').spawn(process.execPath, [path.join(__dirname, '..', 'bridge', 'channel.js')], {
-    env: { ...process.env, CLAUDE_WOW_HOME: home },
+    env: { ...process.env, WOWGPT_HOME: home },
     stdio: ['pipe', 'pipe', 'pipe'],
   });
   const out = fakeStdout();
@@ -1087,23 +1087,23 @@ function claudeFixture(pid, id, cwd, lines = []) {
   return { dir, transcript };
 }
 
-test('listening detection: the Claude Code command line must load the claude-wow channel', { timeout: 60000 }, async () => {
+test('listening detection: the Claude Code command line must load the wowgpt channel', { timeout: 60000 }, async () => {
   const yes = [
-    'claude --dangerously-load-development-channels server:claude-wow',
-    'claude --resume 6624f327 --dangerously-load-development-channels server:claude-wow',
-    '/usr/local/bin/node /opt/claude/cli.js --dangerously-load-development-channels server:other server:claude-wow --model haiku',
-    'claude --dangerously-load-development-channels=server:claude-wow',
-    'claude --channels server:claude-wow',
-    'claude --channels=plugin:other@market,plugin:claude-wow@local',
-    '"C:\\Program Files\\claude\\claude.exe" --dangerously-load-development-channels server:claude-wow',
+    'claude --dangerously-load-development-channels server:wowgpt',
+    'claude --resume 6624f327 --dangerously-load-development-channels server:wowgpt',
+    '/usr/local/bin/node /opt/claude/cli.js --dangerously-load-development-channels server:other server:wowgpt --model haiku',
+    'claude --dangerously-load-development-channels=server:wowgpt',
+    'claude --channels server:wowgpt',
+    'claude --channels=plugin:other@market,plugin:wowgpt@local',
+    '"C:\\Program Files\\claude\\claude.exe" --dangerously-load-development-channels server:wowgpt',
   ];
   const no = [
     'claude --dangerously-skip-permissions',
     'claude',
     'claude --dangerously-load-development-channels server:other',
     'claude --dangerously-load-development-channels',
-    'claude --channels server:claude-wow-fork',
-    'claude --mcp-config claude-wow.json server:claude-wow',
+    'claude --channels server:wowgpt-fork',
+    'claude --mcp-config wowgpt.json server:wowgpt',
     '',
     null,
   ];
@@ -1114,9 +1114,9 @@ test('listening detection: the Claude Code command line must load the claude-wow
   const calls = [];
   const run = (file, args, timeout) => {
     calls.push([file, timeout, ...args]);
-    return 'claude --dangerously-load-development-channels server:claude-wow\n';
+    return 'claude --dangerously-load-development-channels server:wowgpt\n';
   };
-  assert.equal(await LP.commandLine(3421, { platform: 'darwin', run }), 'claude --dangerously-load-development-channels server:claude-wow');
+  assert.equal(await LP.commandLine(3421, { platform: 'darwin', run }), 'claude --dangerously-load-development-channels server:wowgpt');
   assert.deepEqual(calls[0], ['ps', 5000, '-ww', '-o', 'args=', '-p', '3421']);
   await LP.commandLine(3421, { platform: 'win32', run });
   assert.equal(calls[1][0], 'powershell.exe');
@@ -1135,7 +1135,7 @@ test('listening detection: the Claude Code command line must load the claude-wow
   assert.equal(await LP.commandLine(5, { run: async () => '' }), null);
   assert.equal(
     LP.restartCommand({ cwd: '/Users/me/wow ai', id: SESSION_A }, ''),
-    `cd '/Users/me/wow ai' && claude --resume ${SESSION_A} --dangerously-load-development-channels server:claude-wow`,
+    `cd '/Users/me/wow ai' && claude --resume ${SESSION_A} --dangerously-load-development-channels server:wowgpt`,
   );
   assert.match(String(await LP.commandLine(process.pid)), /node|bun/i, 'reads a real process on this machine');
 });
@@ -1149,9 +1149,9 @@ test('a session started without the channel is connected but never offered as li
     const [s] = r.live.sessions();
     assert.equal(s.listening, false);
     assert.equal(s.id, SESSION_A);
-    assert.equal(s.restart, `cd /work/proj && claude --resume ${SESSION_A} --dangerously-load-development-channels server:claude-wow`);
+    assert.equal(s.restart, `cd /work/proj && claude --resume ${SESSION_A} --dangerously-load-development-channels server:wowgpt`);
     assert.ok(
-      r.calls.log.some(l => l.includes('not listening (Claude Code pid 4242 was started without --dangerously-load-development-channels server:claude-wow)')),
+      r.calls.log.some(l => l.includes('not listening (Claude Code pid 4242 was started without --dangerously-load-development-channels server:wowgpt)')),
       r.calls.log.join('\n'),
     );
     for (const target of [SESSION_A, '6624f327', 'proj']) {
@@ -1162,9 +1162,9 @@ test('a session started without the channel is connected but never offered as li
       assert.equal(
         fail.text,
         [
-          'The Claude Code session "wow-ai-90" is running, but it was not started with the claude-wow channel, so it cannot hear the game.',
+          'The Claude Code session "wow-ai-90" is running, but it was not started with the wowgpt channel, so it cannot hear the game.',
           'Restart it in its terminal with:',
-          `cd /work/proj && claude --resume ${SESSION_A} --dangerously-load-development-channels server:claude-wow`,
+          `cd /work/proj && claude --resume ${SESSION_A} --dangerously-load-development-channels server:wowgpt`,
           'Or pick it in /wowgpt -r and click resume headless to continue it here without the terminal.',
         ].join('\n'),
       );
@@ -1333,7 +1333,7 @@ test('delivery watchdog: the message showing up in the session transcript counts
         type: 'user',
         message: {
           role: 'user',
-          content: '<channel source="claude-wow" chat_id="tok:c1" message_id="7" chat_name="Live">\nwhere is the flight master?\n</channel>',
+          content: '<channel source="wowgpt" chat_id="tok:c1" message_id="7" chat_name="Live">\nwhere is the flight master?\n</channel>',
         },
       }) + '\n',
     );
@@ -1395,5 +1395,5 @@ test('the live plugin is registered in the bridge and .mcp.json starts the chann
   const src = fs.readFileSync(path.join(__dirname, '..', 'bridge', 'bridge.js'), 'utf8');
   assert.match(src, /registry\.register\(require\('\.\/plugins\/live'\)\)/);
   const mcp = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '.mcp.json'), 'utf8'));
-  assert.deepEqual(mcp.mcpServers['claude-wow'], { command: 'node', args: ['bridge/channel.js'], alwaysLoad: true });
+  assert.deepEqual(mcp.mcpServers['wowgpt'], { command: 'node', args: ['bridge/channel.js'], alwaysLoad: true });
 });

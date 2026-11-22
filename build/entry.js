@@ -62,9 +62,9 @@ import captureMac from '../bridge/capture_mac.py' with { type: 'file' };
 import captureX11 from '../bridge/capture_x11.py' with { type: 'file' };
 import configExample from '../bridge/config.example.json' with { type: 'file' };
 import primer from '../docs/WOW-ADDON-PRIMER.md' with { type: 'file' };
-import pluginManifest from '../assets/plugins/claude-wow/.claude-plugin/plugin.json' with { type: 'file' };
-import pluginWowCode from '../assets/plugins/claude-wow/agents/wow-code.md' with { type: 'file' };
-import pluginWowPlanner from '../assets/plugins/claude-wow/agents/wow-planner.md' with { type: 'file' };
+import pluginManifest from '../assets/plugins/wowgpt/.claude-plugin/plugin.json' with { type: 'file' };
+import pluginWowCode from '../assets/plugins/wowgpt/agents/wow-code.md' with { type: 'file' };
+import pluginWowPlanner from '../assets/plugins/wowgpt/agents/wow-planner.md' with { type: 'file' };
 
 require('../bridge/assets').embed({
   'addon/WoWGPT/Core/Namespace.lua': addonCoreNamespace,
@@ -124,8 +124,8 @@ require('../bridge/assets').embed({
   'bridge/capture_x11.py': captureX11,
   'bridge/config.example.json': configExample,
   'docs/WOW-ADDON-PRIMER.md': primer,
-  'assets/plugins/claude-wow/.claude-plugin/plugin.json': pluginManifest,
-  'assets/plugins/claude-wow/agents/wow-code.md': pluginWowCode,
-  'assets/plugins/claude-wow/agents/wow-planner.md': pluginWowPlanner,
+  'assets/plugins/wowgpt/.claude-plugin/plugin.json': pluginManifest,
+  'assets/plugins/wowgpt/agents/wow-code.md': pluginWowCode,
+  'assets/plugins/wowgpt/agents/wow-planner.md': pluginWowPlanner,
 });
 require('../bridge/supervisor');

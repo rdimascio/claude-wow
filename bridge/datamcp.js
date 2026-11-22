@@ -22,7 +22,7 @@ const MAX_BOSS_DROPS = 15;
 const DEV_SPELL = /\((?:OLD|TEST|DND|NYI|PH|DEPRECATED)\)|\bQASpell\b|^zz/i;
 
 const noDataNote = store =>
-  `No game data is synced on this machine for this client, so nothing here is verified. The owner can run "${store.syncCommand || 'claude-wow data sync'}".`;
+  `No game data is synced on this machine for this client, so nothing here is verified. The owner can run "${store.syncCommand || 'wowgpt data sync'}".`;
 const NO_FLAVOR_NOTE = 'The client build does not say which game this is (Forever is 1.60.*, Classic Era is 1.15.*), so no game data is used.';
 const MISMATCH_NOTE = 'The cached data is for a different build family than the client. Treat these rows as unverified for this client.';
 const UNKNOWN_BUILD_NOTE =
@@ -311,21 +311,21 @@ function communityNotes(store) {
     const builtWith = (cs.manifest.client || {}).build || 'of an unknown build';
     if (cs.crossGame && !cs.madeWith)
       notes.push(
-        'The Classic Era client tables are not synced, so no map can be checked against this game and no community position is shown. The owner can run "claude-wow data sync --flavor classic_era", then "claude-wow data sync --flavor classic_era --source community".',
+        'The Classic Era client tables are not synced, so no map can be checked against this game and no community position is shown. The owner can run "wowgpt data sync --flavor classic_era", then "wowgpt data sync --flavor classic_era --source community".',
       );
     else if (cs.crossGame && cs.stale)
       notes.push(
-        `The community data was built with Classic Era client data ${builtWith}, not the Classic Era data synced now (${cs.madeWith}), so no community position is shown on this game. The owner can run "claude-wow data sync --flavor classic_era --source community".`,
+        `The community data was built with Classic Era client data ${builtWith}, not the Classic Era data synced now (${cs.madeWith}), so no community position is shown on this game. The owner can run "wowgpt data sync --flavor classic_era --source community".`,
       );
     else if (cs.stale)
       notes.push(
-        `The community spawn points were computed with client data ${builtWith}, not the client data synced now (${store.build || 'none'}), so their coordinates are left out. The owner can run "claude-wow data sync --flavor classic_era --source community".`,
+        `The community spawn points were computed with client data ${builtWith}, not the client data synced now (${store.build || 'none'}), so their coordinates are left out. The owner can run "wowgpt data sync --flavor classic_era --source community".`,
       );
     return notes;
   }
   if (['classic_era', 'forever'].includes(store.flavor))
     return [
-      'No community data for NPCs and quest givers is synced on this machine. The owner can run "claude-wow data sync --flavor classic_era --source community".',
+      'No community data for NPCs and quest givers is synced on this machine. The owner can run "wowgpt data sync --flavor classic_era --source community".',
     ];
   return ['There is no data for NPCs, quest titles or quest givers for this game.'];
 }
@@ -458,7 +458,7 @@ function itemCommunity(store, itemID) {
     return {
       notes: ['classic_era', 'forever'].includes(store.flavor)
         ? [
-            'No community loot data is synced on this machine, so who drops this item is not known here. The owner can run "claude-wow data sync --flavor classic_era --source community".',
+            'No community loot data is synced on this machine, so who drops this item is not known here. The owner can run "wowgpt data sync --flavor classic_era --source community".',
           ]
         : [],
     };
@@ -659,7 +659,7 @@ const TOOLS = [
   {
     name: 'wow_item',
     description:
-      'Look up an item by ID or by name in the client item table: name, quality, item level, required level, inventory type, sell and buy price in copper, the quest it starts, and (by ID) the profession recipes that use it as a reagent and its stats from the client tables: stats (primary stats, armor, resistances, and equip effects read as spellDamage, healing, attackPower, meleeHit and meleeCrit in percent, mp5, defense, weapon skills and similar), weapon (min, max, speed in seconds, dps), unread (equip, on-hit and other effects not read: never say an item lacks an effect while unread is not empty) and notCounted (use effects). stats.bonusArmor is the green armor bonus; weapon damage already includes the item quality modifier. unread kinds include restricted (needs a weapon type), shapeshift (needs a druid form), randomStats, shieldBlock and, on Classic Era, sourcesDisagree (the client stats differ from the wowsims Era item data). crossChecked is true when the wowsims Era item data had the item, false when it did not (the stats then come from the client alone), null off Classic Era. stats is null on Forever and until "claude-wow data sync --flavor classic_era" has fetched the stat tables: then the stats are unknown, not absent. By ID it also lists, from community loot tables (cMaNGOS, 1.12; trust "community-db", on Forever "community-db-unchecked-for-this-game"), who drops it (droppedBy), skinnedFrom, pickpocketedFrom, the chests, nodes and fishing holes that hold it (objects), fishedIn (zones), inContainers and disenchantedFrom, and for a container or a disenchantable item what it gives (contains, disenchantsInto). No chances, counts or vendors. Several items can share one name; a note then lists their IDs, and the name alone does not pick one.',
+      'Look up an item by ID or by name in the client item table: name, quality, item level, required level, inventory type, sell and buy price in copper, the quest it starts, and (by ID) the profession recipes that use it as a reagent and its stats from the client tables: stats (primary stats, armor, resistances, and equip effects read as spellDamage, healing, attackPower, meleeHit and meleeCrit in percent, mp5, defense, weapon skills and similar), weapon (min, max, speed in seconds, dps), unread (equip, on-hit and other effects not read: never say an item lacks an effect while unread is not empty) and notCounted (use effects). stats.bonusArmor is the green armor bonus; weapon damage already includes the item quality modifier. unread kinds include restricted (needs a weapon type), shapeshift (needs a druid form), randomStats, shieldBlock and, on Classic Era, sourcesDisagree (the client stats differ from the wowsims Era item data). crossChecked is true when the wowsims Era item data had the item, false when it did not (the stats then come from the client alone), null off Classic Era. stats is null on Forever and until "wowgpt data sync --flavor classic_era" has fetched the stat tables: then the stats are unknown, not absent. By ID it also lists, from community loot tables (cMaNGOS, 1.12; trust "community-db", on Forever "community-db-unchecked-for-this-game"), who drops it (droppedBy), skinnedFrom, pickpocketedFrom, the chests, nodes and fishing holes that hold it (objects), fishedIn (zones), inContainers and disenchantedFrom, and for a container or a disenchantable item what it gives (contains, disenchantsInto). No chances, counts or vendors. Several items can share one name; a note then lists their IDs, and the name alone does not pick one.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1144,7 +1144,7 @@ function launchConfig({ dataDir, clientBuild = '', flavor, runtime } = {}) {
 function main(argv, deps = {}) {
   const stdin = deps.stdin || process.stdin;
   const stdout = deps.stdout || process.stdout;
-  const log = deps.log || (line => process.stderr.write(`[claude-wow data-mcp] ${line}\n`));
+  const log = deps.log || (line => process.stderr.write(`[wowgpt data-mcp] ${line}\n`));
   let opts;
   try {
     opts = parseArgs(argv);

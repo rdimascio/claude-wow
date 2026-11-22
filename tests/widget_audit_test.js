@@ -172,7 +172,7 @@ test('main with no file reads every client in the bridge config, and says so whe
     fs.copyFileSync(FIXTURE, saved);
     const home = path.join(dir, 'home');
     fs.mkdirSync(home);
-    const env = { CLAUDE_WOW_HOME: home };
+    const env = { WOWGPT_HOME: home };
     const none = capture();
     assert.equal(A.main([], { ...none.io, env }), 2);
     assert.match(none.err[0], /No SavedVariables file/);
@@ -188,6 +188,6 @@ test('main with no file reads every client in the bridge config, and says so whe
 
 test('--help prints the usage and reads nothing', () => {
   const r = capture();
-  assert.equal(A.main(['--help'], { ...r.io, env: { CLAUDE_WOW_HOME: path.join(os.tmpdir(), 'widget-audit-none') } }), 0);
+  assert.equal(A.main(['--help'], { ...r.io, env: { WOWGPT_HOME: path.join(os.tmpdir(), 'widget-audit-none') } }), 0);
   assert.equal(r.out[0], A.USAGE);
 });

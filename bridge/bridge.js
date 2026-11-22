@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 'use strict';
-// Claude WoW bridge: the half of WoWGPT that lives outside the game.
+// WoWGPT bridge: the half of WoWGPT that lives outside the game.
 //
 //   OUT  the addon calls Screenshot() with its pixel strip up and we decode
 //        the file from the game's Screenshots folder -> one or more
@@ -30,10 +30,11 @@
 //   --project <dir>   default folder for chats that haven't picked one
 //
 // Like the agent CLIs themselves, the bridge works in the folder it was started
-// from: `cd my-project && claude-wow` makes my-project the default for every chat
+// from: `cd my-project && wowgpt` makes my-project the default for every chat
 // that hasn't chosen its own with /wowgpt cd. Started from inside this repo (npm
 // start), it falls back to defaultCwd in config.json.
 
+require('./legacyenv').adopt(); // CLAUDE_WOW_* from before the rename count as WOWGPT_*, before anything reads them
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
@@ -108,7 +109,7 @@ const AC = require('./agentcontract');
 
 const HERE = __dirname;
 // Config, state, transcripts, log and scratch live in the home folder (home.js:
-// CLAUDE_WOW_HOME, ~/.claude-wow, or bridge/ for an install from before it).
+// WOWGPT_HOME, ~/.wowgpt, or bridge/ for an install from before it).
 const HOME = H.resolve();
 const CONFIG_FILE = HOME.config;
 const STATE_FILE = HOME.state;
@@ -143,8 +144,8 @@ function writePrivateScratch(file, content) {
 const argv = process.argv.slice(2);
 if (argv.includes('--help') || argv.includes('-h')) {
   console.log(
-    'claude-wow [--project <dir>] [--once] [--inject "text" [--agent <id>] [--plugin <id>] [--image <png|tga>]]\n\n' +
-      'Runs the Claude WoW bridge. Chats without a folder of their own work in <dir>,\n' +
+    'wowgpt [--project <dir>] [--once] [--inject "text" [--agent <id>] [--plugin <id>] [--image <png|tga>]]\n\n' +
+      'Runs the WoWGPT bridge. Chats without a folder of their own work in <dir>,\n' +
       `or in the folder you started it from, or in defaultCwd from ${CONFIG_FILE}.\n` +
       '--image attaches a screenshot to an --inject run the way vision does in game.\n' +
       `Agents: ${A.agentIds().join(', ')} (the default is "agent" in ${CONFIG_FILE}; chats pick with /wowgpt --agent).\n` +
@@ -156,7 +157,7 @@ let cfg;
 try {
   cfg = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
 } catch (e) {
-  console.error(`Cannot read ${CONFIG_FILE} (${e.message}).\nRun "claude-wow setup" (node setup.js in the claude-wow folder) first.`);
+  console.error(`Cannot read ${CONFIG_FILE} (${e.message}).\nRun "wowgpt setup" (node setup.js in the wowgpt folder) first.`);
   process.exit(2); // the supervisor doesn't restart on 2
 }
 const once = argv.includes('--once');
@@ -199,8 +200,8 @@ function insideRepo(dir) {
   return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
 }
 const projectIdx = argv.indexOf('--project');
-// CLAUDE_WOW_PROJECT names the default folder; the old WOW_AI_PROJECT still counts.
-const PROJECT_ENV = process.env.CLAUDE_WOW_PROJECT || process.env.WOW_AI_PROJECT || '';
+// WOWGPT_PROJECT names the default folder; the old WOW_AI_PROJECT still counts.
+const PROJECT_ENV = process.env.WOWGPT_PROJECT || process.env.WOW_AI_PROJECT || '';
 const DEFAULT_CWD = path.resolve(
   projectIdx >= 0 && argv[projectIdx + 1]
     ? argv[projectIdx + 1]
@@ -214,8 +215,8 @@ const DEFAULT_CWD_SOURCE =
   projectIdx >= 0
     ? '--project'
     : PROJECT_ENV
-      ? process.env.CLAUDE_WOW_PROJECT
-        ? 'CLAUDE_WOW_PROJECT'
+      ? process.env.WOWGPT_PROJECT
+        ? 'WOWGPT_PROJECT'
         : 'WOW_AI_PROJECT'
       : !insideRepo(process.cwd())
         ? 'started here'
@@ -274,7 +275,7 @@ function holdLock() {
     }
     const held = readJsonQuiet(LOCK_FILE);
     if (held && held.pid !== process.pid && isSameProcess(held.pid, held.startedAt, held.marker)) {
-      const msg = `another bridge is already running on ${HOME.dir} (pid ${held.pid}, started ${held.started || 'at an unknown time'}). Two bridges would overwrite each other's state and race for the same screenshots. Stop it first ("claude-wow service stop", or end pid ${held.pid}).`;
+      const msg = `another bridge is already running on ${HOME.dir} (pid ${held.pid}, started ${held.started || 'at an unknown time'}). Two bridges would overwrite each other's state and race for the same screenshots. Stop it first ("wowgpt service stop", or end pid ${held.pid}).`;
       console.error(msg);
       log(msg);
       process.exit(3);
@@ -359,7 +360,7 @@ const dataAutoSync = DAS.createAutoSync({
 const TELEMETRY_ON = TL.telemetryEnabled(cfg.telemetry);
 const CONTEXT_ON = cfg.gameContext !== false;
 const sharedContext = () => (CONTEXT_ON ? state.context : null);
-const OPEN_LINKS_LOG = process.env.CLAUDE_WOW_OPEN_LINKS_LOG || '';
+const OPEN_LINKS_LOG = process.env.WOWGPT_OPEN_LINKS_LOG || '';
 const linkOpener = OU.createOpener({ enabled: cfg.openLinks !== false, log, ...(OPEN_LINKS_LOG ? { spawnFn: OU.recordingSpawn(OPEN_LINKS_LOG) } : {}) });
 const observed = OB.createObserved({ dir: HOME.goals, log });
 const telemetry = TL.createTelemetry({
@@ -589,7 +590,7 @@ function killTree(child) {
   PR.killTree(child, { graceMs: KILL_GRACE_MS, log });
 }
 
-// Ctrl+C, `claude-wow service stop`, a kill of this pid: end the agent runs
+// Ctrl+C, `wowgpt service stop`, a kill of this pid: end the agent runs
 // and the capture script first (they are in process groups of their own now,
 // so the terminal's Ctrl+C does not reach them by itself), then exit with the
 // signal's usual code; the supervisor restarts a bridge that went this way
@@ -2057,7 +2058,7 @@ const campaignStore = CAMPAIGN.createBridgeCampaigns({
 });
 
 function liveHomeArg() {
-  return HOME.source === 'CLAUDE_WOW_HOME' ? HOME.dir : '';
+  return HOME.source === 'WOWGPT_HOME' ? HOME.dir : '';
 }
 
 function liveStartCommand() {
@@ -2293,7 +2294,7 @@ function linkFromGame(job) {
         .join('\n')
     : '';
   discordHub
-    .createLink(job.name || (t && t.name) || 'claude-wow chat', recap)
+    .createLink(job.name || (t && t.name) || 'wowgpt chat', recap)
     .then(threadId => {
       (state.discordLinks = state.discordLinks || {})[job.chat] = { threadId, cwd: job.cwd || (t && t.cwd) || DEFAULT_CWD, createdAt: Date.now() };
       saveState();
@@ -2469,11 +2470,7 @@ function writePrivateFile(file, content) {
 }
 
 function homeDirs() {
-  let real = HOME.dir;
-  try {
-    real = fs.realpathSync(HOME.dir);
-  } catch {}
-  return [...new Set([HOME.dir, real])];
+  return H.guardedDirs(HOME.dir);
 }
 
 function homeGuardRules() {
@@ -2510,13 +2507,13 @@ function loggedMcpBlocks(tag, never, userMcp) {
     return blocked;
   };
 }
-const CLAUDE_PLUGIN_REL = 'assets/plugins/claude-wow';
+const CLAUDE_PLUGIN_REL = 'assets/plugins/wowgpt';
 
 function claudePluginFolder(tag) {
   try {
     return AS.dir(CLAUDE_PLUGIN_REL);
   } catch (e) {
-    log(`${tag} claude-wow plugin unavailable, the run goes on without it: ${e.message}`);
+    log(`${tag} wowgpt plugin unavailable, the run goes on without it: ${e.message}`);
     return '';
   }
 }
@@ -2757,7 +2754,7 @@ function runAgent(job, opts = {}) {
     try {
       makePrivateDir(MAP_DIR);
       fs.rmSync(mapFileFor(job), { force: true });
-      env.CLAUDE_WOW_MAP_FILE = mapFileFor(job);
+      env.WOWGPT_MAP_FILE = mapFileFor(job);
     } catch (e) {
       log(`${tag} map file unavailable: ${e.message}`);
     }
@@ -2766,7 +2763,7 @@ function runAgent(job, opts = {}) {
     try {
       makePrivateDir(WIDGET_DIR);
       fs.rmSync(widgetFileFor(job), { force: true });
-      env.CLAUDE_WOW_UI_FILE = widgetFileFor(job);
+      env.WOWGPT_UI_FILE = widgetFileFor(job);
     } catch (e) {
       log(`${tag} ui file unavailable: ${e.message}`);
     }
@@ -2787,7 +2784,7 @@ function runAgent(job, opts = {}) {
           .map(e => e.name)
           .join(' '),
     userMcp && userMcp.strict && 'strict mcp',
-    claudePluginDir && 'claude-wow plugin',
+    claudePluginDir && 'wowgpt plugin',
   ]
     .filter(Boolean)
     .join(', ');
@@ -3755,10 +3752,10 @@ function agentLine(id) {
 }
 
 function banner() {
-  console.log('Claude WoW bridge');
+  console.log('WoWGPT bridge');
   console.log(`  runtime  : ${R.describe()}`);
   console.log(
-    `  home     : ${HOME.dir}  (${HOME.source === 'legacy' ? 'the layout from before CLAUDE_WOW_HOME; run setup to move it to ' + H.defaultDir() : HOME.source}; config, state, transcripts, log)`,
+    `  home     : ${HOME.dir}  (${HOME.source === 'legacy' ? 'the layout from before WOWGPT_HOME; run setup to move it to ' + H.defaultDir() : HOME.source}; config, state, transcripts, log)`,
   );
   console.log(`  folder   : ${DEFAULT_CWD}  (${DEFAULT_CWD_SOURCE}; chats can override with /wowgpt cd)`);
   if (!CLIENTS.length) console.log('  clients  : NONE - config.json names no WoW client; run: node setup.js');
@@ -3825,7 +3822,7 @@ function startSelfUpdate() {
       lastActivityAt: () => lastActivityAt,
       gameRunning: gameCheck.get,
       restart: () => shutdown('update', UPD.UPDATE_EXIT_CODE),
-      supervised: process.env.CLAUDE_WOW_SUPERVISED === '1',
+      supervised: process.env.WOWGPT_SUPERVISED === '1',
     }).start();
   } catch (e) {
     log(`self-update: not started (${e && e.message ? e.message : e})`);

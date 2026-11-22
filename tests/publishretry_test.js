@@ -284,7 +284,7 @@ test('only the Windows sharing codes are transient, and only on Windows', () => 
 });
 
 test('the real atomicWrite retried after a locked rename keeps no temp files and lands the content', t => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-wow-publishretry-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wowgpt-publishretry-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const file = path.join(dir, 'Inbox.lua');
   fs.writeFileSync(file, 'old');

@@ -10,12 +10,13 @@
 // an explicit --project updates defaultCwd (that is the only way to correct it
 // without editing config.json by hand).
 //
-// An install of this project under one of its old names (claude-wow: the
+// An install of this project under one of its old names (wowgpt: the
 // ClaudeWoW addon, ClaudeWoW_S### slots, ClaudeWoW.lua saved data; before that
 // wow-ai and WoWAI, and wow-claude and WoWClaude) is migrated: the saved data is carried over so chats survive, the
 // old folders are removed so two addons don't fight over the slash commands and
 // /r, and config.json is brought up to date.
 
+require('./bridge/legacyenv').adopt(); // CLAUDE_WOW_* from before the rename count as WOWGPT_*, before anything reads them
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -23,13 +24,14 @@ const { spawnSync } = require('child_process');
 
 // Literal requires: the compiled binary bundles what it can see (runtime.js).
 const P = require('./bridge/protocol'); // the addon's name, and its old names
-const H = require('./bridge/home'); // CLAUDE_WOW_HOME: where config.json and the state live
+const H = require('./bridge/home'); // WOWGPT_HOME: where config.json and the state live
 const R = require('./bridge/runtime'); // node, bun, or the compiled binary
 const A = require('./bridge/agents'); // which agent CLIs this PC has
 const AS = require('./bridge/assets'); // the addon, the config template and the capture scripts, by path
 const G = require('./bridge/gamefs');
 const SIG = require('./bridge/signals');
 const CLI = require('./bridge/clients');
+const ASK = require('./bridge/plugins/ask'); // its data folder had the old name
 const ADDON_SRC = AS.dir('addon/' + P.ADDON);
 const EXAMPLE = AS.file('bridge/config.example.json');
 let CONFIG = H.resolve().config; // settled in main(), after the legacy layout has been migrated
@@ -540,10 +542,20 @@ function main() {
     if (args.project) args.project = resolveProject(args.project);
     // Config, state and transcripts from a checkout that kept them in bridge/ move
     // to the home folder first, so the config written below lands in one place.
+    const renamed = H.migrateOldHome();
+    const askData = ASK.migrateOldData();
+    if (askData) console.log(`migrate  : ${askData} copied to ${ASK.dataDir()} (the old folder is kept)`);
     const carried = H.migrateLegacy();
     const home = H.resolve();
     CONFIG = home.config;
-    console.log(`home     : ${home.dir}${home.source === 'CLAUDE_WOW_HOME' ? '  (CLAUDE_WOW_HOME)' : ''}`);
+    console.log(`home     : ${home.dir}${home.source === 'WOWGPT_HOME' ? '  (WOWGPT_HOME)' : ''}`);
+    if (renamed)
+      console.log(
+        `migrate  : ${renamed.from} copied to ${home.dir} (${renamed.copied.length} item(s); ${renamed.from} is kept, and its releases are not copied)`,
+      );
+    const oldHome = H.oldHomeDir();
+    if (oldHome && oldHome !== home.dir)
+      console.log(`old home : ${oldHome} is no longer used; remove it once this install works (it still holds your old config and tokens)`);
     if (carried.length)
       console.log(
         `migrate  : ${carried.join(', ')} copied from ${H.LEGACY_DIR} to ${home.dir}; the bridge reads them there from now on (the copies in bridge/ are no longer used)`,
@@ -602,7 +614,7 @@ function main() {
 Done. Next:
   1. Fully quit and relaunch each World of Warcraft client above that is running (it only discovers new addon folders at launch).
   2. Enable "WoWGPT" at the character select AddOns screen (the WoWGPT slot ### entries stay enabled).
-  3. Start the bridge:  ${R.compiled ? 'claude-wow' : 'npm start'}   (in this terminal${
+  3. Start the bridge:  ${R.compiled ? 'wowgpt' : 'npm start'}   (in this terminal${
     process.platform === 'win32'
       ? '; bridge\\start-window.cmd opens its own window'
       : transport === 'screenshot'

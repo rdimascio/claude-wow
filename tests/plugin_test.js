@@ -9,7 +9,7 @@ const DM = require('../bridge/datamcp');
 const P = require('../bridge/protocol');
 
 const ROOT = path.join(__dirname, '..');
-const PLUGIN_REL = 'assets/plugins/claude-wow';
+const PLUGIN_REL = 'assets/plugins/wowgpt';
 const PLUGIN = path.join(ROOT, PLUGIN_REL);
 const AGENTS_DIR = path.join(PLUGIN, 'agents');
 const WOWDATA_PREFIX = 'mcp__wowdata__';
@@ -62,10 +62,10 @@ function agentNamed(name) {
   return a;
 }
 
-test('the plugin manifest names claude-wow at the bridge version and the plugin holds agents only, with no MCP server or hook', () => {
+test('the plugin manifest names wowgpt at the bridge version and the plugin holds agents only, with no MCP server or hook', () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(PLUGIN, '.claude-plugin', 'plugin.json'), 'utf8'));
   const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
-  assert.equal(manifest.name, 'claude-wow');
+  assert.equal(manifest.name, 'wowgpt');
   assert.equal(manifest.version, pkg.version);
   for (const key of ['mcpServers', 'hooks', 'lspServers', 'commands']) assert.equal(manifest[key], undefined, `no ${key} in the manifest`);
   assert.deepEqual(fs.readdirSync(PLUGIN).sort(), ['.claude-plugin', 'agents']);

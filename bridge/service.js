@@ -13,7 +13,7 @@
 //   Linux    systemd      ~/.config/systemd/user/claude-wow-bridge.service (Restart=always)
 //   Windows  Startup folder launcher (hidden window); the supervisor does the crash restarts
 //
-// Under the service the supervisor runs with CLAUDE_WOW_SERVICE=1: it captures the
+// Under the service the supervisor runs with WOWGPT_SERVICE=1: it captures the
 // bridge's output into <logs>/bridge.log (rotated at 5 MB, 5 files kept) and
 // writes <run>/supervisor.pid so `status` can find it. Everything that builds a
 // file or parses a command's output is a pure function, tested in
@@ -163,7 +163,7 @@ const programArgs = ({ node, script }) => [node, script].filter(Boolean);
 // The user's PATH is baked in: launchd hands agents an almost empty one, and the
 // bridge finds the agent CLIs (claude, codex, ...) through it.
 function launchdPlist({ label = LABEL, node, script, cwd, logFile, env = {} }) {
-  const envRows = Object.entries({ CLAUDE_WOW_SERVICE: '1', ...env })
+  const envRows = Object.entries({ WOWGPT_SERVICE: '1', ...env })
     .filter(([, v]) => v !== undefined && v !== null && v !== '')
     .map(([k, v]) => `      <key>${xmlEscape(k)}</key>\n      <string>${xmlEscape(v)}</string>`)
     .join('\n');
@@ -206,7 +206,7 @@ ${envRows}
 // systemd --user: starts with the user's session, restarts on any exit.
 function systemdUnit({ node, script, cwd, env = {} }) {
   const q = s => `"${String(s).replace(/(["\\])/g, '\\$1')}"`;
-  const envRows = Object.entries({ CLAUDE_WOW_SERVICE: '1', ...env })
+  const envRows = Object.entries({ WOWGPT_SERVICE: '1', ...env })
     .filter(([, v]) => v !== undefined && v !== null && v !== '')
     .map(([k, v]) => `Environment=${q(`${k}=${v}`)}`)
     .join('\n');
@@ -234,7 +234,7 @@ function startupVbs({ node, script, cwd }) {
   const q = s => `"${String(s).replace(/"/g, '""')}"`;
   return `' Claude WoW bridge: started at login, no window. Written by "claude-wow service install"; remove with "claude-wow service uninstall".\r
 Set sh = CreateObject("WScript.Shell")\r
-sh.Environment("Process")("CLAUDE_WOW_SERVICE") = "1"\r
+sh.Environment("Process")("WOWGPT_SERVICE") = "1"\r
 sh.CurrentDirectory = ${q(cwd)}\r
 sh.Run ${q(
     programArgs({ node, script })
@@ -407,7 +407,7 @@ function agentEnv(execDir = process.execPath ? path.dirname(process.execPath) : 
   if (execDir && !env.PATH.split(path.delimiter).includes(execDir)) {
     env.PATH = execDir + path.delimiter + env.PATH;
   }
-  for (const k of ['HOME', 'DISPLAY', 'LANG', 'CLAUDE_WOW_HOME', 'CLAUDE_WOW_PROJECT', 'WOW_AI_PROJECT', 'CODEX_BIN', 'GROK_HOME'])
+  for (const k of ['HOME', 'DISPLAY', 'LANG', 'WOWGPT_HOME', 'WOWGPT_PROJECT', 'WOW_AI_PROJECT', 'CODEX_BIN', 'GROK_HOME'])
     if (process.env[k]) env[k] = process.env[k];
   return env;
 }
@@ -765,7 +765,7 @@ const win = {
       detached: true,
       stdio: 'ignore',
       windowsHide: true,
-      env: { ...process.env, CLAUDE_WOW_SERVICE: '1' },
+      env: { ...process.env, WOWGPT_SERVICE: '1' },
     });
   },
   stop(d) {

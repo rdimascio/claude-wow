@@ -85,8 +85,8 @@ function fakeSession(sb) {
       "child.on('exit', code => process.exit(code || 0));",
     ].join('\n'),
   );
-  const proc = spawn(process.execPath, [script, '--dangerously-load-development-channels', 'server:claude-wow'], {
-    env: { ...sb.env, CLAUDE_WOW_LIVE_NAME: SESSION_NAME },
+  const proc = spawn(process.execPath, [script, '--dangerously-load-development-channels', 'server:wowgpt'], {
+    env: { ...sb.env, WOWGPT_LIVE_NAME: SESSION_NAME },
     stdio: ['pipe', 'pipe', 'inherit'],
   });
   const replies = new Map();

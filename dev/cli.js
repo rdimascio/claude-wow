@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 'use strict';
+require('../bridge/legacyenv').adopt(); // CLAUDE_WOW_* from before the rename count as WOWGPT_*, before anything reads them
 const os = require('os');
 const fs = require('fs');
 const path = require('path');

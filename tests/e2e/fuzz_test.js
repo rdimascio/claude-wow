@@ -7,10 +7,10 @@ const { makeRoot, gameRunner, replyTo } = require('./helpers');
 
 const ROOT = makeRoot('fuzz');
 const withGame = gameRunner(ROOT);
-const SEED = (Number(process.env.CLAUDE_WOW_FUZZ_SEED) || Date.now() ^ (process.pid << 8)) >>> 0;
+const SEED = (Number(process.env.WOWGPT_FUZZ_SEED) || Date.now() ^ (process.pid << 8)) >>> 0;
 const PERIODIC_SWEEP_ONLY_MS = 5000;
 const UNREAD_BEFORE_STOP_MS = 3000;
-const EPISODES = Number(process.env.CLAUDE_WOW_FUZZ_EPISODES) || 8;
+const EPISODES = Number(process.env.WOWGPT_FUZZ_EPISODES) || 8;
 
 function mulberry32(seed) {
   let a = seed;
@@ -65,7 +65,7 @@ function episodePlan(f, n) {
   };
 }
 
-test(`seeded fuzz: random messages, directives, reloads, restarts and combat each end in exactly one reply (CLAUDE_WOW_FUZZ_SEED=${SEED})`, async () => {
+test(`seeded fuzz: random messages, directives, reloads, restarts and combat each end in exactly one reply (WOWGPT_FUZZ_SEED=${SEED})`, async () => {
   const f = fuzzer(SEED);
   const plans = Array.from({ length: EPISODES }, (_, n) => episodePlan(f, n));
   const reloadAt = f.int(0, EPISODES - 1);
@@ -116,7 +116,7 @@ test(`seeded fuzz: random messages, directives, reloads, restarts and combat eac
       assert.deepEqual(fresh(), [], 'no strip screenshot taken while the bridge ran is left behind');
     });
   } catch (e) {
-    const replay = `\nreplay: CLAUDE_WOW_FUZZ_SEED=${SEED} CLAUDE_WOW_FUZZ_EPISODES=${EPISODES} node --test tests/e2e/fuzz_test.js\nepisodes:\n${log.join('\n')}`;
+    const replay = `\nreplay: WOWGPT_FUZZ_SEED=${SEED} WOWGPT_FUZZ_EPISODES=${EPISODES} node --test tests/e2e/fuzz_test.js\nepisodes:\n${log.join('\n')}`;
     e.message += replay;
     if (typeof e.stack === 'string') e.stack += replay;
     throw e;

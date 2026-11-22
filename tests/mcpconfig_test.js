@@ -215,8 +215,8 @@ test('claudeOwnServers lists the user, local, project and enabled plugin servers
   const home = '/h';
   const cwd = '/proj';
   const files = {
-    [path.join(home, '.claude.json')]: { mcpServers: { mobbin: {}, 'claude-wow': {} }, projects: { [cwd]: { mcpServers: { localone: {} } } } },
-    [path.join(cwd, '.mcp.json')]: { mcpServers: { 'claude-wow': {} } },
+    [path.join(home, '.claude.json')]: { mcpServers: { mobbin: {}, wowgpt: {} }, projects: { [cwd]: { mcpServers: { localone: {} } } } },
+    [path.join(cwd, '.mcp.json')]: { mcpServers: { wowgpt: {} } },
     [path.join(home, '.claude', 'settings.json')]: { enabledPlugins: { 'playwright@official': true, 'off@official': false, 'local-off@official': true } },
     [path.join(cwd, '.claude', 'settings.json')]: { enabledPlugins: { 'proj@official': true } },
     [path.join(cwd, '.claude', 'settings.local.json')]: { enabledPlugins: { 'local-off@official': false } },
@@ -237,9 +237,9 @@ test('claudeOwnServers lists the user, local, project and enabled plugin servers
   const own = MC.claudeOwnServers({ home, configDir: '', cwd, read: f => files[f] || null });
   assert.deepEqual(own, [
     'user:mobbin',
-    'user:claude-wow',
+    'user:wowgpt',
     'local:localone',
-    'project:claude-wow',
+    'project:wowgpt',
     'plugin:playwright:playwright',
     'plugin:proj:fromfile',
     'plugin:proj:inline',
@@ -421,19 +421,19 @@ test('catalog: config servers first, then what Claude reported or its files list
     { name: 'removed-from-config', status: 'connected', source: 'dynamic' },
     { name: 'mobbin', status: 'connected', source: 'user' },
   ]);
-  MC.seedSeen(seen, ['user:mobbin', 'project:claude-wow', 'plugin:playwright:playwright']);
+  MC.seedSeen(seen, ['user:mobbin', 'project:wowgpt', 'plugin:playwright:playwright']);
   const list = MC.catalog({ mcp: parsed(SAMPLE).mcp, seen, codexOwn: ['mobbin', 'node_repl'], reserved: ['wowdata'] });
   assert.deepEqual(list, [
     { id: 'github', label: 'github', src: 'config', on: true, health: 'unknown' },
     { id: 'notion', label: 'notion', src: 'config', on: true, health: 'connected' },
     { id: 'linear', label: 'linear', src: 'config', on: true, health: 'unknown' },
     { id: 'quiet', label: 'quiet', src: 'config', on: false, health: 'unknown' },
-    { id: 'claude-wow', label: 'claude-wow', src: 'claude', on: true, health: 'unknown' },
     { id: 'plugin_engineering_google_calendar', label: 'google calendar (engineering)', src: 'plugin', on: true, health: 'failed' },
     { id: 'mobbin', label: 'mobbin', src: 'claude', on: true, health: 'connected' },
     { id: 'plugin_Notion_notion', label: 'Notion', src: 'plugin', on: true, health: 'needs-auth' },
     { id: 'plugin_playwright_playwright', label: 'playwright', src: 'plugin', on: true, health: 'unknown' },
     { id: 'claude_ai_Slack', label: 'Slack', src: 'claude.ai', on: true, health: 'connected' },
+    { id: 'wowgpt', label: 'wowgpt', src: 'claude', on: true, health: 'unknown' },
     { id: 'node_repl', label: 'node_repl', src: 'codex', on: true, health: 'unknown' },
   ]);
   const many = {};

@@ -17,7 +17,7 @@ const CLI = require('../bridge/clients');
 const SIG = require('../bridge/signals');
 
 function scratch(name) {
-  const dir = path.join(os.tmpdir(), `claude-wow-setup-${name}-${process.pid}-${Date.now().toString(36)}`);
+  const dir = path.join(os.tmpdir(), `wowgpt-setup-${name}-${process.pid}-${Date.now().toString(36)}`);
   fs.mkdirSync(dir, { recursive: true });
   return dir;
 }
@@ -97,7 +97,7 @@ test('migrateOldInstall: nothing to migrate is a no-op, and a client without an 
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-// The claude-wow layout: DB and WidgetDB in the account file, MapDB and
+// The wowgpt layout: DB and WidgetDB in the account file, MapDB and
 // CharDB in a file per character, under WTF/Account/<acct>/<realm>/<char>.
 function claudeWowClient(dir) {
   const { addons, saved } = fakeClient(dir, 'ClaudeWoW', { slots: 2 });
@@ -228,11 +228,11 @@ test('copyAddon refreshes only the shipped WoWGPT files and never writes or dele
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-// The whole installer against a fake client, with CLAUDE_WOW_HOME pointing at a
+// The whole installer against a fake client, with WOWGPT_HOME pointing at a
 // scratch folder so nothing on this machine is read or written: the old addon
 // with real-shaped saved data goes in, WoWGPT with the same chats comes out,
 // and the config lands in the home folder naming the new addon.
-test('node setup.js --wow <fake client>: migrates the chats, installs WoWGPT and its slots, writes the config to CLAUDE_WOW_HOME', () => {
+test('node setup.js --wow <fake client>: migrates the chats, installs WoWGPT and its slots, writes the config to WOWGPT_HOME', () => {
   const { spawnSync } = require('child_process');
   const dir = scratch('e2e');
   const client = path.join(dir, 'client');
@@ -242,7 +242,7 @@ test('node setup.js --wow <fake client>: migrates the chats, installs WoWGPT and
   const { addons, saved } = fakeClient(client, 'WoWAI', { slots: 5 });
   const r = spawnSync(process.execPath, [path.join(__dirname, '..', 'setup.js'), '--wow', client, '--project', project], {
     encoding: 'utf8',
-    env: SB.isolatedEnv(path.join(path.dirname(home), 'user'), { CLAUDE_WOW_HOME: home }),
+    env: SB.isolatedEnv(path.join(path.dirname(home), 'user'), { WOWGPT_HOME: home }),
     timeout: 120000,
   });
   assert.equal(r.status, 0, r.stdout + r.stderr);
@@ -294,7 +294,7 @@ test('node setup.js --wow <fake client>: migrates the chats, installs WoWGPT and
   assert.equal(resolved.inboxFile, path.join(addons, 'WoWGPT_Runtime', 'Inbox.lua'));
   assert.equal(resolved.savedVariablesFile, path.join(saved, 'WoWGPT.lua'));
   assert.equal(cfg.defaultCwd, project);
-  assert.ok(!fs.existsSync(path.join(home, 'state.json')), 'an explicit CLAUDE_WOW_HOME is not filled from this checkout');
+  assert.ok(!fs.existsSync(path.join(home, 'state.json')), 'an explicit WOWGPT_HOME is not filled from this checkout');
   // A new install is on the screenshot transport: python3 and the macOS
   // permissions are reported as the deprecated pixel fallback's business only.
   assert.equal(cfg.capture.mode, 'screenshot');
@@ -322,7 +322,7 @@ test('node setup.js --wow <fake client>: migrates the chats, installs WoWGPT and
   }
   const again = spawnSync(process.execPath, [path.join(__dirname, '..', 'setup.js'), '--wow', client], {
     encoding: 'utf8',
-    env: SB.isolatedEnv(path.join(path.dirname(home), 'user'), { CLAUDE_WOW_HOME: home }),
+    env: SB.isolatedEnv(path.join(path.dirname(home), 'user'), { WOWGPT_HOME: home }),
     timeout: 120000,
   });
   assert.equal(again.status, 0, again.stdout + again.stderr);
@@ -353,7 +353,7 @@ test('node setup.js --wow <fake client>: migrates the chats, installs WoWGPT and
   }
   const third = spawnSync(process.execPath, [path.join(__dirname, '..', 'setup.js'), '--wow', client], {
     encoding: 'utf8',
-    env: SB.isolatedEnv(path.join(path.dirname(home), 'user'), { CLAUDE_WOW_HOME: home }),
+    env: SB.isolatedEnv(path.join(path.dirname(home), 'user'), { WOWGPT_HOME: home }),
     timeout: 120000,
   });
   assert.equal(third.status, 0, third.stdout + third.stderr);
@@ -383,7 +383,7 @@ test('node setup.js --wow <another client> adds it next to the first one and ins
   const run = (...extra) =>
     spawnSync(process.execPath, [path.join(__dirname, '..', 'setup.js'), ...extra], {
       encoding: 'utf8',
-      env: SB.isolatedEnv(path.join(path.dirname(home), 'user'), { CLAUDE_WOW_HOME: home }),
+      env: SB.isolatedEnv(path.join(path.dirname(home), 'user'), { WOWGPT_HOME: home }),
       timeout: 120000,
     });
   const readCfg = () => JSON.parse(fs.readFileSync(path.join(home, 'config.json'), 'utf8'));
@@ -463,7 +463,7 @@ test('node setup.js on a single-client config from before clients[] moves it int
   fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify(old, null, 2) + '\n');
   const r = spawnSync(process.execPath, [path.join(__dirname, '..', 'setup.js'), '--wow', client], {
     encoding: 'utf8',
-    env: SB.isolatedEnv(path.join(path.dirname(home), 'user'), { CLAUDE_WOW_HOME: home }),
+    env: SB.isolatedEnv(path.join(path.dirname(home), 'user'), { WOWGPT_HOME: home }),
     timeout: 120000,
   });
   assert.equal(r.status, 0, r.stdout + r.stderr);
@@ -504,7 +504,7 @@ test('node setup.js: a new config shares no game state unless told to, and an ex
   const run = (...extra) =>
     spawnSync(process.execPath, [path.join(__dirname, '..', 'setup.js'), '--wow', client, '--project', dir, ...extra], {
       encoding: 'utf8',
-      env: SB.isolatedEnv(path.join(path.dirname(home), 'user'), { CLAUDE_WOW_HOME: home }),
+      env: SB.isolatedEnv(path.join(path.dirname(home), 'user'), { WOWGPT_HOME: home }),
       timeout: 120000,
     });
   const cfgFile = path.join(home, 'config.json');
@@ -529,5 +529,48 @@ test('node setup.js: a new config shares no game state unless told to, and an ex
   r = run('--share-game-state', 'yes');
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.deepEqual([readCfg().gameContext, readCfg().telemetry.enabled], [true, true]);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// The rename to WoWGPT on a machine that ran claude-wow: no home named in the
+// environment, ~/.claude-wow holds the config and the agents' sessions, and the
+// ask plugin's data folder has the old name. Setup copies both, keeps the old
+// ones, and the config it then reads and updates is the copy.
+test('node setup.js after the rename: ~/.claude-wow and the old ask data folder are copied to the new names, the originals kept', () => {
+  const { spawnSync } = require('child_process');
+  const ASK = require('../bridge/plugins/ask');
+  const dir = scratch('oldhome');
+  const user = path.join(dir, 'user');
+  const client = path.join(dir, 'client');
+  const project = path.join(dir, 'project');
+  fs.mkdirSync(project, { recursive: true });
+  fakeClient(client, 'ClaudeWoW', { slots: 1 });
+  const oldHome = path.join(user, '.claude-wow');
+  fs.mkdirSync(path.join(oldHome, 'goals'), { recursive: true });
+  const example = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'bridge', 'config.example.json'), 'utf8'));
+  fs.writeFileSync(path.join(oldHome, 'config.json'), JSON.stringify({ ...example, defaultCwd: project, clients: [{ dir: client, account: 'ACCT#1' }] }));
+  fs.writeFileSync(path.join(oldHome, 'state.json'), '{"sessions":{"bad3474c10":"sess-1"}}');
+  fs.writeFileSync(path.join(oldHome, 'goals', 'g.json'), '[]');
+  const oldAsk = path.join(ASK.dataDir('claude-wow', {}, user), 'ask');
+  fs.mkdirSync(oldAsk, { recursive: true });
+  fs.writeFileSync(path.join(oldAsk, 'kept.txt'), 'x');
+
+  const env = SB.isolatedEnv(user);
+  for (const k of Object.keys(env)) if (/^(WOWGPT|CLAUDE_WOW)_/.test(k)) delete env[k];
+  const r = spawnSync(process.execPath, [path.join(__dirname, '..', 'setup.js'), '--wow', client, '--project', project], {
+    encoding: 'utf8',
+    env,
+    timeout: 120000,
+  });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  const newHome = path.join(user, '.wowgpt');
+  assert.match(r.stdout, new RegExp('home {5}: ' + newHome.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.match(r.stdout, /migrate {2}: .*\.claude-wow copied to .*\.wowgpt/);
+  assert.equal(fs.readFileSync(path.join(newHome, 'state.json'), 'utf8'), '{"sessions":{"bad3474c10":"sess-1"}}', 'the sessions come along');
+  assert.ok(fs.existsSync(path.join(newHome, 'goals', 'g.json')));
+  assert.ok(JSON.parse(fs.readFileSync(path.join(newHome, 'config.json'), 'utf8')).clients.length >= 1);
+  assert.ok(fs.existsSync(path.join(oldHome, 'config.json')) && fs.existsSync(path.join(oldHome, 'state.json')), 'the old home is kept');
+  assert.equal(fs.readFileSync(path.join(ASK.dataDir('wowgpt', {}, user), 'ask', 'kept.txt'), 'utf8'), 'x', 'the ask data folder is copied');
+  assert.ok(fs.existsSync(path.join(oldAsk, 'kept.txt')), 'and kept');
   fs.rmSync(dir, { recursive: true, force: true });
 });

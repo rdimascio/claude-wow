@@ -2020,7 +2020,7 @@ test('deleting the last chat after an attach drops the resume and the adopt bind
 
 const PICK_LIVE = '6624f327-7126-423e-a653-d7cf7a4e492b';
 const PICK_DEAF = 'f02436b8-8a5f-4c05-823e-bef25f88ff7b';
-const PICK_RESTART = `cd /Users/me/wow-ai && claude --resume ${PICK_DEAF} --dangerously-load-development-channels server:claude-wow`;
+const PICK_RESTART = `cd /Users/me/wow-ai && claude --resume ${PICK_DEAF} --dangerously-load-development-channels server:wowgpt`;
 
 function pickerVM() {
   const vm = whisperVM();
@@ -2030,7 +2030,7 @@ function pickerVM() {
       `{ id = "0000000${i.toString(16)}-0000-4000-8000-000000000000", name = "Old task ${i + 1}", cwd = "/srv/p${i}", agent = "claude", at = time() - ${(i + 2) * 86400} },`,
   ).join('\n');
   vm.run(
-    `WoWGPT.ApplyLive({ sessions = { "wow-ai (/Users/me/wow-ai)" }, start = "cd /repo && claude --dangerously-load-development-channels server:claude-wow" })`,
+    `WoWGPT.ApplyLive({ sessions = { "wow-ai (/Users/me/wow-ai)" }, start = "cd /repo && claude --dangerously-load-development-channels server:wowgpt" })`,
   );
   vm.run(`WoWGPT.ApplySessions({
     { id = "${PICK_DEAF}", name = "wow-ai", title = "Refactor the bridge", cwd = "/Users/me/wow-ai", branch = "main", agent = "claude", at = time() - 2280, running = true, restart = "${PICK_RESTART}" },
@@ -2129,7 +2129,7 @@ test('/wowgpt -r on a session running without the channel: no live attach, the e
   assert.equal(
     notice,
     [
-      'Refactor the bridge is running in a terminal, but it was not started with the claude-wow channel, so it cannot hear the game.',
+      'Refactor the bridge is running in a terminal, but it was not started with the wowgpt channel, so it cannot hear the game.',
       'Restart it in its terminal with:',
       PICK_RESTART,
       'Or resume it headless here: click [resume headless] below.',
@@ -2325,12 +2325,12 @@ test('/wowgpt -r with no running session names the command that starts one, and 
   vm.run('STUB.RunTimers()');
   nextSlot(
     vm,
-    '{ now = time(), cwd = "", plugin = "ask", plugins = { "ask", "claude-code", "live" }, live = { sessions = {}, start = "cd /repo && claude --dangerously-load-development-channels server:claude-wow" }, sessions = {}, replies = {} }',
+    '{ now = time(), cwd = "", plugin = "ask", plugins = { "ask", "claude-code", "live" }, live = { sessions = {}, start = "cd /repo && claude --dangerously-load-development-channels server:wowgpt" }, sessions = {}, replies = {} }',
   );
   vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
   const last = () => vm.evaluate('WoWGPTDB.chats[1].history[#WoWGPTDB.chats[1].history].text');
   vm.run('SlashCmdList.WOWGPT("-r")');
-  assert.ok(last().endsWith('Start one with: cd /repo && claude --dangerously-load-development-channels server:claude-wow'), last());
+  assert.ok(last().endsWith('Start one with: cd /repo && claude --dangerously-load-development-channels server:wowgpt'), last());
   vm.run('WoWGPT.ApplySessions({ { id = "", name = "wow-ai", cwd = "/Users/me/wow-ai", agent = "claude", at = time(), live = true } }, time())');
   vm.run('SlashCmdList.WOWGPT("-r wow-ai")');
   assert.equal(vm.num('#WoWGPTDB.chats'), 2);
@@ -2841,21 +2841,21 @@ test('projects: the bridge list adds recent projects with repo labels, and one f
   vm.run('STUB.RunTimers()');
   nextSlot(
     vm,
-    '{ now = time(), cwd = "/Users/me/code/shop", home = "/Users/me", projects = { { path = "/Users/me/code/shop", label = "shop" }, { path = "/Users/me/wow-ai", label = "claude-wow" }, { path = "/Users/me/shop-3", label = "shop (shop-3)" } }, replies = {} }',
+    '{ now = time(), cwd = "/Users/me/code/shop", home = "/Users/me", projects = { { path = "/Users/me/code/shop", label = "shop" }, { path = "/Users/me/wow-ai", label = "wowgpt" }, { path = "/Users/me/shop-3", label = "shop (shop-3)" } }, replies = {} }',
   );
   vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
   assert.equal(vm.evaluate('WoWGPT.IsConnected()'), 'true');
 
   vm.run('SlashCmdList.WOWGPT("--project nope hi")');
   const said = vm.evaluate('WoWGPTDB.chats[#WoWGPTDB.chats].history[#WoWGPTDB.chats[#WoWGPTDB.chats].history].text');
-  assert.match(said, /Known: shop, claude-wow, shop \(shop-3\)\./, 'one shop for both spellings, then the bridge list by label: ' + said);
+  assert.match(said, /Known: shop, wowgpt, shop \(shop-3\)\./, 'one shop for both spellings, then the bridge list by label: ' + said);
 
-  vm.run('SlashCmdList.WOWGPT("--project claude-wow fix the build")');
+  vm.run('SlashCmdList.WOWGPT("--project wowgpt fix the build")');
   const rec = stripRecords(vm).find(r => r.text === 'fix the build');
   assert.equal(rec.cwd, '/Users/me/wow-ai', 'the repo label finds the folder');
   assert.equal(vm.num('#WoWGPTDB.chats[#WoWGPTDB.chats].history'), 1, 'the project note is not a transcript message: the header shows the project');
   assert.equal(vm.evaluate('WoWGPTDB.chats[#WoWGPTDB.chats].history[1].role'), 'user');
-  assert.match(vm.evaluate('table.concat(STUB.prints, "\\n")'), /project: claude-wow/, 'with whisper tabs off the project note goes to the game chat');
+  assert.match(vm.evaluate('table.concat(STUB.prints, "\\n")'), /project: wowgpt/, 'with whisper tabs off the project note goes to the game chat');
 });
 
 test('projects: without a bridge list the picker keeps folder names, and ~ stays as typed until the bridge names its home', () => {
@@ -3308,7 +3308,7 @@ test('dev commands: bare dev asks for help, wrong carries its note, bug needs te
   assert.match(lastLine(bare.vm), /Say what went wrong/);
 });
 
-test('Dev.lua keeps only Claude WoW errors, counts repeats, keeps 20, and still calls the previous handler', () => {
+test('Dev.lua keeps only WoWGPT errors, counts repeats, keeps 20, and still calls the previous handler', () => {
   const vm = newVM();
   login(vm);
   loadDev(vm);
@@ -3448,10 +3448,7 @@ test('/wowgpt -r all with no handed-off session says how to hand off', () => {
   login(vm);
   connect(vm);
   vm.run('SlashCmdList.WOWGPT("-r all")');
-  assert.match(
-    vm.evaluate('WoWGPTDB.chats[1].history[#WoWGPTDB.chats[1].history].text'),
-    /No sessions were handed off\. In a terminal, run: claude-wow handoff/,
-  );
+  assert.match(vm.evaluate('WoWGPTDB.chats[1].history[#WoWGPTDB.chats[1].history].text'), /No sessions were handed off\. In a terminal, run: wowgpt handoff/);
 });
 
 const SETTINGS_API = `

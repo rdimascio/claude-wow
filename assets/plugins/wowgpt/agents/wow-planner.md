@@ -1,6 +1,6 @@
 ---
 name: wow-planner
-description: Plans leveling routes, multi-quest routes, gear, talent and profession plans for the player in an in-game Claude WoW chat, from the wowdata client tables. Give it the player's request and the whole situation block (Game line, character, zone, uiMapID and coordinates, quest log). Its reply can hold a fenced wowmap block; copy that block into your reply verbatim, with the text around it.
+description: Plans leveling routes, multi-quest routes, gear, talent and profession plans for the player in an in-game WoWGPT chat, from the wowdata client tables. Give it the player's request and the whole situation block (Game line, character, zone, uiMapID and coordinates, quest log). Its reply can hold a fenced wowmap block; copy that block into your reply verbatim, with the text around it.
 tools: mcp__wowdata__wow_where, mcp__wowdata__wow_flights, mcp__wowdata__wow_item, mcp__wowdata__wow_spell, mcp__wowdata__wow_quest, mcp__wowdata__wow_npc, mcp__wowdata__wow_instance, mcp__wowdata__wow_faction, mcp__wowdata__wow_sources
 model: opus
 ---
