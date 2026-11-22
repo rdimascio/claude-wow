@@ -12,7 +12,7 @@ The project is now WoWGPT: the addon, the command, the home folder, the service 
   - copies `~/.claude-wow` to `~/.wowgpt` (its releases, locks, `tmp/` and the live socket stay behind) and the `ask` data folder (`Application Support/claude-wow` on macOS, `~/.local/share/claude-wow` on Linux, `%LOCALAPPDATA%\claude-wow` on Windows) to the `wowgpt` name. It copies, never moves: when the new install works, you can delete the old folders yourself. Setup says so. Old `ask` chats start fresh after the update: their agent session lived in the old folder, so the first message starts a new session in the new one, and the bridge logs one line for it.
   - installs the `WoWGPT` addon and removes the `ClaudeWoW` addon and its `ClaudeWoW_S###` slot folders. The saved data is copied, with its globals renamed (`ClaudeWoWDB`, `ClaudeWoWWidgetDB`, `ClaudeWoWMapDB`, `ClaudeWoWCharDB` become `WoWGPT*`), from the account file and from every character's file under `WTF/Account/<account>/<realm>/<character>/SavedVariables/`. The old files are kept.
 - [ ] Fully quit and restart the game: the client finds a new addon folder only at launch.
-- [ ] Run `wowgpt service install` once if you use the background service. It writes `io.wowgpt.bridge` (systemd: `wowgpt-bridge`; Windows: `WoWGPT bridge.vbs`) and removes `io.claudewow.bridge`, `claude-wow-bridge` and `Claude WoW bridge.vbs`, so two bridges never start at login.
+- [ ] Nothing to do for the background service: setup reinstalls it when it finds one under any name. It writes `io.wowgpt.bridge` (systemd: `wowgpt-bridge`; Windows: `WoWGPT bridge.vbs`) and removes `io.claudewow.bridge`, `claude-wow-bridge` and `Claude WoW bridge.vbs`, so two bridges never start at login.
 - [ ] Bind the workspace key again (Key Bindings, AddOns, "WoWGPT: open or close the workspace"). The binding has a new name, and the game does not carry the old one over.
 - [ ] Live sessions: start Claude Code with `claude --dangerously-load-development-channels server:wowgpt` (was `server:claude-wow`). In your Claude Code allow rules, `mcp__claude-wow__*` becomes `mcp__wowgpt__*` (for example `mcp__wowgpt__wow_reply`). The MCP server in `.mcp.json` is `wowgpt`, and the plugin folder is `assets/plugins/wowgpt`.
 - [ ] Rename your environment variables to `WOWGPT_*` when you like (`WOWGPT_HOME`, `WOWGPT_PROJECT`, ...). The old `CLAUDE_WOW_*` names still work when the new one is not set.
@@ -20,6 +20,10 @@ The project is now WoWGPT: the addon, the command, the home folder, the service 
 Kept so nothing breaks: `/wowgpt` is the main command, and `/claude` and the hidden `/claude-wow` still work. Links written before the rename (`addon:claudewow:...`) still click. The npm package is `wowgpt` with a `claude-wow` bin alias, the installer turns an old `claude-wow` command into a link to `wowgpt`, and this release also ships every binary as `claude-wow-<os>-<arch>` (in `SHA256SUMS` too) and prints a `claude-wow <version>` line on `--version`, so an installed `claude-wow` binary can update itself to WoWGPT. The GitHub repository and the Homebrew tap keep their names for now.
 
 ### Security
+
+- A new config no longer takes the folder setup runs in as the agents' project. From your home folder, that let every chat edit any file in it. The default is now `~/wowgpt`, made for it.
+- `--project` refuses your home folder and a disk root. Setup warns when an existing config names one, and keeps it.
+- A bridge started from your home folder or a disk root no longer takes that folder as the project. It uses `defaultCwd`.
 
 - A message from the game can no longer raise what the agent may do for good. Another addon can forge these messages, so the bridge now caps them.
 - `/claude --permission-mode` no longer picks `auto`, `dontAsk` or `bypassPermissions` from the game unless `gamePermissionModes` in `config.json` lists the mode. The run uses the agent's own mode, the reply says so, and `bridge.log` gets one line.
@@ -30,6 +34,15 @@ Kept so nothing breaks: `/wowgpt` is the main command, and `/claude` and the hid
 - On macOS and Linux the bridge and setup refuse to write into the game folder through a linked folder, or a folder owned by another account, anywhere between `Interface/AddOns` and the file. Before, only the file's own folder was checked. After the write the bridge checks the file's folder again and removes a file written through a folder swapped in the meantime. This narrows the race but does not close it: another local account can still rename a folder of ours inside the world-writable `AddOns` folder.
 
 ### Changed
+
+- The install is two commands: `brew install rdimascio/claude-wow/wowgpt` or `npm i -g wowgpt`, then `wowgpt setup`. The README and docs/INSTALL.md lead with them. The one-line installer is the third route.
+- Setup installs the background service. A service from an earlier install, under this name or an old one, is reinstalled without asking, so an update runs the new version. A fresh install asks, and Enter means yes. `--service` and `--no-service` decide without asking.
+- The installers pass that choice to setup and print no checklist of their own. They reinstall an existing service without asking. On Linux an active unit restarts, and on Windows the bridge starts again after the update.
+- The installer's PATH question takes Enter as yes. When the folder is still not on the PATH, the last lines give the command's full path.
+- When the default agent is not installed and exactly one other is, setup makes that one the default and says so. With no agent at all, setup says "not ready: install one agent" and installs no service. With Claude as the agent, it says to run `claude` once to log in.
+- Setup's last lines say `wowgpt`, or its full path when it is not on the PATH. Only `node setup.js` in a git checkout says `npm start`.
+- After it copies `~/.claude-wow`, setup points the paths in `config.json` and `state.json` that named it at `~/.wowgpt`. A chat whose agent session started in the old folder starts a new session there. Setup says you can remove the old home only when no settings file names it.
+- `/wowgpt chat <n>` and `/wowgpt mode pixel|reload` work as the in-game hints say, also with `/claude`. Before, only the hidden `/claude-wow` took them. A one-word message `chat`, `chats` or `mode` is now that command. `tests/fixtures/commands.json` was regenerated for this.
 
 - Live UI widgets are off until you turn them on with `/claude config ui widgets on`. A widget is Lua the agent writes and the game runs, so it is your choice; the README says what can go wrong. While they are off, a widget from the agent does not run and asks nothing. `widgets off` stops the running ones. If you already said yes to a widget, widgets stay on.
 - Sharing your game state with the agent is now opt-in. The first setup asks once, and the answer is no unless you type yes; a setup without a terminal answers no. It sets `gameContext` and `telemetry.enabled` in the new `config.json`. An existing `config.json` keeps its values. `claude-wow setup --share-game-state yes|no` changes it later. With `gameContext` off, in-game runs no longer get the goal tools, which read the game context. The README has a new section, "Privacy: what leaves your machine".
@@ -48,6 +61,10 @@ Kept so nothing breaks: `/wowgpt` is the main command, and `/claude` and the hid
 - The internal planning notes (`docs/plans`) and the release migration guide are no longer in the repository. `claude-wow dev deploy` now prints the one command that points the service at a release.
 
 ### Fixed
+
+- Setup stops with "Quit World of Warcraft, then run setup again" while a configured client runs. Before, it copied stale saved chats and removed signal folders under a live client. When it cannot tell, it warns and goes on.
+- `wowgpt --help` prints the commands and exits. Before, it then started the bridge.
+- The game-running check skips the process that asks, so `setup --wow <folder>/` never counts itself as the game.
 
 - The version mismatch message and the docs no longer tell you to update the addon from an addon manager. Update the addon with `claude-wow setup`, then `/reload`.
 - `claude-wow bridge --help` and the note after Codex is refused a command now name the real `config.json` in the home folder, not `bridge/config.json`.

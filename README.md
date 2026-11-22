@@ -68,7 +68,17 @@ You can skip this step. `wowgpt setup` (step 3) copies the addon that ships insi
 
 Setup always writes its own copy of the addon into `Interface/AddOns/WoWGPT`, so the addon and the bridge come from the same release. When they differ, the addon says once which side is older; update that side (see [Troubleshooting](#troubleshooting)).
 
-### 2. Install the bridge (one command)
+### 2. Install the bridge and run setup
+
+```sh
+brew install rdimascio/claude-wow/wowgpt     # macOS (Homebrew)
+npm i -g wowgpt                              # or: macOS, Linux or Windows with Node.js 22.2+
+wowgpt setup
+```
+
+Setup does the rest. It finds the game and stops with "Quit World of Warcraft, then run setup again" while a client runs. It installs the addon, picks the agent you have installed (or says "not ready: install one agent"), asks whether to share your game state, and installs the background service (Enter means yes; a service from an earlier install is reinstalled without asking). The agents get a project folder of their own, `~/wowgpt`; your home folder is never a project.
+
+Until the first stable release, Homebrew needs `--HEAD` (`brew install --HEAD rdimascio/claude-wow/wowgpt`), and the npm package is not published yet. Until then, use the one-line installer:
 
 macOS and Linux:
 
@@ -82,18 +92,9 @@ Windows (PowerShell):
 irm https://raw.githubusercontent.com/rdimascio/claude-wow/main/install.ps1 | iex
 ```
 
-macOS with Homebrew:
-
-```sh
-brew tap rdimascio/claude-wow
-brew install --HEAD wowgpt
-```
-
-Until the first stable release fills in the formula's checksums, only `--HEAD` works: it installs the checkout and runs it with Homebrew's node. After that release, `brew install wowgpt` installs the binary.
-
 The one-line installers download from the latest stable release (`releases/latest`). While no stable release has a binary, they fall back to the newest release, betas included. A pinned release is used as-is, with no fallback. To pin one release, name it: `sh -s -- --release v0.5.0-beta.1` after the `curl` command on macOS and Linux, or `$env:WOWGPT_RELEASE = "v0.5.0-beta.1"` before the PowerShell command.
 
-The installer downloads the `wowgpt` binary for your computer (macOS arm64 and x64, Linux x64, Windows x64), checks it against the release's `SHA256SUMS`, runs setup for you, and asks whether to run the bridge in the background. When there is no binary for your computer (another platform, or no release yet), it installs from source instead, and that needs Node.js 22.2 or newer. It never uses sudo, and you run it again to update. Homebrew installs only the binary: it cannot write into the game folder, so you must run step 3 yourself.
+The installer downloads the `wowgpt` binary for your computer (macOS arm64 and x64, Linux x64, Windows x64), checks it against the release's `SHA256SUMS`, and runs `wowgpt setup` for you. When there is no binary for your computer (another platform, or no release yet), it installs from source instead, and that needs Node.js 22.2 or newer. It never uses sudo, and you run it again to update.
 
 ### 3. Point it at your game
 
@@ -101,7 +102,7 @@ The installer downloads the `wowgpt` binary for your computer (macOS arm64 and x
 wowgpt setup --wow "<client folder>"
 ```
 
-The installer has already run setup once. Run it again with `--wow` when the installer could not find the game, when it picked the wrong game, or after a Homebrew install. If the bridge is already running as a service, run `wowgpt service restart` after setup: the bridge reads `config.json` only when it starts. The client folder is the one that holds the game for one version:
+Setup has already run once in step 2. Run it again with `--wow` when it could not find the game or picked the wrong game. It reinstalls the background service when there is one, which restarts the bridge, so the new `config.json` is read. The client folder is the one that holds the game for one version:
 
 | Game | macOS | Windows |
 |---|---|---|
@@ -120,7 +121,7 @@ Optional: fetch the game data that lets the agent check item, quest and zone IDs
 
 ### 5. Start the bridge and say hello
 
-If you said yes to the background service in step 2, the bridge is already running: check it with `wowgpt service status` and skip to the next paragraph. Only one bridge can run at a time, so do not start a second one in a terminal. Otherwise pick one:
+Setup's last lines say whether the bridge runs in the background. If it does, check it with `wowgpt service status` and skip to the next paragraph. Only one bridge can run at a time, so do not start a second one in a terminal. Otherwise pick one:
 
 ```
 wowgpt                    # the bridge in this terminal; Ctrl+C stops it
@@ -133,12 +134,12 @@ In game, type `/wowgpt hello`. This starts a new chat and sends "hello" to your 
 ### Updating
 
 - **Addon:** `wowgpt setup --wow "<client folder>"` installs the addon that ships with the bridge. Always repeat `--wow`: without it, setup searches again and picks `_classic_beta_` first, even if you play Classic Era.
-- **Bridge:** run the installer again, or `brew upgrade wowgpt`. Then run `wowgpt service restart` (or restart the bridge in its terminal).
+- **Bridge:** `brew upgrade wowgpt` or `npm i -g wowgpt`, then `wowgpt setup`; or run the installer again. Setup reinstalls the background service, so the bridge restarts on the new version (restart a bridge in a terminal by hand).
 - **In game:** if the update made a new addon folder, quit and start the game again. Otherwise `/reload` is usually enough. If setup or the addon asks for a full restart, do that.
 
 ### Other ways to install, and installing for development
 
-[docs/INSTALL.md](docs/INSTALL.md) has every route in detail: all the installer options (`--project`, `--service`, `--from-source`, `--release`), Homebrew `--HEAD`, the background service on each platform, and uninstalling. To run from a git checkout:
+[docs/INSTALL.md](docs/INSTALL.md) has every route in detail: Homebrew, npm, all the installer options (`--project`, `--service`, `--from-source`, `--release`), Homebrew `--HEAD`, the background service on each platform, and uninstalling. To run from a git checkout:
 
 ```sh
 git clone https://github.com/rdimascio/claude-wow
@@ -153,7 +154,7 @@ This needs Node.js 22.2 or newer, or Bun. Platform notes: [docs/INSTALL-WINDOWS.
 
 - Windows (NTFS), or Linux with the game under Wine (see [docs/INSTALL-LINUX.md](docs/INSTALL-LINUX.md)), or macOS with a native client. python3 only if you use the deprecated pixel-capture fallback off Windows; the default screenshot transport needs nothing
 - World of Warcraft: Forever (tested on 1.60.1.69913 and 1.60.1.69977, TOC 16001) or World of Warcraft Classic Era (1.15.9.70003, TOC 11509), **windowed or borderless** (exclusive fullscreen blocks screen capture). Game data for reference tokens is synced per game: `wowgpt data sync` for Forever, `wowgpt data sync --flavor classic_era` for Classic Era; the bridge uses the one that matches the client
-- Nothing else for the installer and the Homebrew route: the bridge ships as one self-contained binary (macOS arm64 and x64, Linux x64, Windows x64). From a checkout it runs on [Node.js](https://nodejs.org) 22.2 or newer, or on [Bun](https://bun.sh)
+- Nothing else for the installer and the Homebrew route (npm needs Node.js 22.2 or newer): the bridge ships as one self-contained binary (macOS arm64 and x64, Linux x64, Windows x64). From a checkout it runs on [Node.js](https://nodejs.org) 22.2 or newer, or on [Bun](https://bun.sh)
 - At least one agent CLI, installed and logged in:
   - [Claude Code](https://claude.com/claude-code): `claude --version` works, and you ran `claude` once to log in
   - [Codex](https://developers.openai.com/codex): `npm install -g @openai/codex`, then `codex` once to log in
@@ -177,7 +178,7 @@ This project was called wow-ai (and wow-claude before that): the addon was `WoWA
 
 ### `wowgpt`: start it from the project folder
 
-Like the agent CLIs themselves, the bridge works in the folder you start it from:
+Like the agent CLIs themselves, the bridge works in the folder you start it from (but never in your home folder or a disk root: started there, it uses `defaultCwd`):
 
 ```
 cd ~/code/realms

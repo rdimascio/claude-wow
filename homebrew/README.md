@@ -15,8 +15,7 @@ Then:
 ```sh
 brew tap rdimascio/claude-wow
 brew install --HEAD wowgpt   # the checkout, run with Homebrew's node
-wowgpt setup                 # game side: addon, config.json, slot pool
-wowgpt service install       # optional: background service
+wowgpt setup                 # game side: addon, config.json, slot pool, background service
 ```
 
 Until the first stable release fills in the formula's checksums, only `--HEAD`
@@ -43,8 +42,8 @@ The keg holds only code. The bridge keeps `config.json`, `state.json` (the agent
 session ids), `transcripts.json`, `bridge.log` and its scratch folders in a home
 folder outside the code: `WOWGPT_HOME` when set, else `~/.wowgpt`
 (`bridge/home.js`). `brew upgrade` or `brew reinstall` replaces the keg and touches
-none of that; `wowgpt service restart` afterwards picks up the new code, and
-`wowgpt setup` is only needed again when the addon itself changed.
+none of that; `wowgpt setup` afterwards reinstalls the background service, which restarts
+the bridge on the new code, and installs the addon that ships with it.
 
 ## Checking the formula locally
 
