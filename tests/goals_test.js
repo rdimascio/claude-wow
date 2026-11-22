@@ -699,7 +699,9 @@ test(
         'a roll never grants a wowgoals rule',
       );
       const config = JSON.parse(fs.readFileSync(path.join(home, 'config.json'), 'utf8'));
-      assert.deepEqual(config.agents.claude.allowedTools, ['WebSearch', 'WebFetch'], 'a Need click never persists a goal write tool');
+      assert.deepEqual(config.agents.claude.allowedTools, ['WebSearch'], 'a record never writes config.json');
+      const state = JSON.parse(fs.readFileSync(path.join(home, 'state.json'), 'utf8'));
+      assert.equal(state.grants, undefined, 'a rule no reply offered is never kept');
       const lua = fs.readFileSync(path.join(addons, 'ClaudeWoW_S001', 'Inbox.lua'), 'utf8');
       const deniedLine = (/^\s*denied = \{.*\},$/m.exec(lua) || [''])[0];
       assert.match(deniedLine, /"NotebookEdit"/, lua);

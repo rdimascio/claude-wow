@@ -2,7 +2,7 @@
 
 Everything the bridge reads: `config.json` in its home folder (`~/.claude-wow`, see [Where the bridge keeps its files](#where-the-bridge-keeps-its-files)), command-line flags, environment variables, and the files it writes there. `node setup.js` writes a working `config.json` from `bridge/config.example.json` (and brings an older one up to date); this page explains each key so you can tune it by hand.
 
-The bridge reads `config.json` once at start. Restart it after editing, except for an agent's `allowedTools`, which the **Allow & retry** button updates live.
+The bridge reads `config.json` once at start and never writes it while it runs. Restart it after editing.
 
 ## Paths
 
@@ -47,6 +47,7 @@ The bridge derives the rest from `dir`: `Interface/AddOns` (the addon, the 200 s
 
 | Key | Default | Meaning |
 |---|---|---|
+| `gamePermissionModes` | `[]` | The permission modes above `acceptEdits` that a chat may pick from the game (`/claude --permission-mode`): `auto`, `dontAsk`, `bypassPermissions`. `acceptEdits`, `default`, `manual` and `plan` need no entry. A mode the list does not name is ignored: the run uses the agent's own `permissionMode`, the reply says so and `bridge.log` gets one line per mode. `dontAsk` is on the list of modes above `acceptEdits` because Antigravity runs every mode other than `acceptEdits` and the read-only ones with `--dangerously-skip-permissions`. |
 | `agent` | `"claude"` | The agent for chats that have not picked one with `/claude -c --agent`. One of `claude`, `codex`, `grok`, `agy`, `hermes`, `local`; the bridge refuses to start on anything else. |
 | `agents.<id>` | one block per agent | That agent's settings, below. A missing block means the defaults. |
 
@@ -55,7 +56,7 @@ Keys under `agents.claude`, `agents.codex`, `agents.grok`, `agents.agy` and `age
 | Key | Default | Meaning |
 |---|---|---|
 | `permissionMode` | `"acceptEdits"` | `acceptEdits` auto-approves file edits inside the working folder; `bypassPermissions` approves everything; `default` approves nothing beyond what `allowedTools` names. Claude gets it as `--permission-mode`; for Codex it picks the sandbox (`read-only` / `workspace-write` / none); for Grok it becomes `--permission-mode dontAsk` plus allow rules, or `--always-approve` (headless Grok runs ordinary commands on its own and blocks dangerous ones unless a rule allows them; see [AGENTS.md](AGENTS.md)). |
-| `allowedTools` | git, npm, npx, node, python, pip, pytest, ls, dir, WebSearch, WebFetch | Rules in Claude Code's syntax: `Bash(git:*)` allows any command starting with `git`, `WebSearch` a tool. Passed to Claude as `--allowedTools`, translated to Grok's `--allow` globs, ignored by Codex. The **Allow & retry** button in game appends rules here permanently. |
+| `allowedTools` | git, pip, pytest, ls, dir, WebSearch, WebFetch | Rules in Claude Code's syntax: `Bash(git:*)` allows any command starting with `git`, `WebSearch` a tool. Passed to Claude as `--allowedTools`, translated to Grok's `--allow` globs, ignored by Codex. The default has no `Bash(node:*)`, `Bash(npx:*)`, `Bash(npm:*)` or `Bash(python:*)`: each runs any code, so add them yourself if you want them. A `config.json` written before this keeps its list. The in-game roll never writes here: **Need** keeps a rule in `state.json` (`grants`, see [Permission grants from the game](#permission-grants-from-the-game)). |
 | `deniedTools` | `[]` | Rules the agent may never use, same syntax. Claude: `--disallowedTools`; Grok: `--deny`, which wins over everything, `bypassPermissions` included; ignored by Codex. |
 | `model` | `""` | Passed to the CLI (`--model` / `-m`) when non-empty. Empty uses the CLI's default. |
 | `path` | `""` | Full path to the executable. Empty means: look in the installer's folder, then (for Codex) `CODEX_BIN`, then `PATH`, then npm's launcher. A `.js` path is run with the bridge's Node (from the binary: the `node` on the `PATH`, so an npm-installed CLI still works). |
@@ -168,7 +169,7 @@ Turn it on for `ask` chats:
 | `plugins.claude-code.factory.maxRunning` | `2` | How many skill runs may go at once; a dispatch past it is refused. |
 | `plugins.claude-code.factory.timeoutMs` | `7200000` | A skill run that takes longer is ended and reported failed. |
 | `plugins.claude-code.threads` | `[]` | Project folders whose coding chats are long-lived threads (relative to the bridge's folder, `~` allowed). A thread chat keeps its Claude session when the system prompt rules change (game context turned on or off, a release that edits the rules), so its first system prompt stays for good; `/claude reset` starts a fresh one. With the factory on, a chat that had a session before its folder was added keeps that session, with the dispatcher rules still in its old system prompt: send `/claude reset` in it once. While the live rules differ from the first turn's, every turn logs `system prompt rules changed (...): thread chat, the session is kept`. Folders are compared after links are resolved, so `/tmp/x` and `/private/tmp/x` match. With the factory on, its dispatcher rules and skill list go in each turn's prompt instead of the system prompt. |
-| `plugins.claude-code.folders` | `[]` | Folders a game chat may run in, for a game window that is streamed (relative to the bridge's folder, `~` allowed). When the list is not empty, nothing started from the game runs outside these folders, the bridge's default folder and the `threads` folders (or a folder inside one): a coding chat and `/claude cd` elsewhere are refused; `/dev status`, `diff`, `test` and `doctor` refuse a folder (or, for the doctor, a repository root) outside the list, while `help`, `log`, `errors`, `run` and the feedback commands still answer; a live session started in an outside folder gets no game message; the loot roll never offers an outside folder; extra folders (`addDirs`) are resolved against the chat's folder and left out when outside, with one bridge log line. The project list shows only allowed folders and the "folder does not exist" hint names none. Links are resolved first, so a link inside an allowed folder that points outside is refused. Not covered yet: the session picker, `/claude -r`, handoff and live listings, and project history the addon saved earlier can still show folder names. Empty means no limit. |
+| `plugins.claude-code.folders` | `[]` | More folders a game chat may run in (relative to the bridge's folder, `~` allowed). Records from the game are unauthenticated, so nothing started from the game runs outside these folders, the bridge's default folder and the `threads` folders (or a folder inside one): a coding chat and `/claude cd` elsewhere are refused; `/dev status`, `diff`, `test` and `doctor` refuse a folder (or, for the doctor, a repository root) outside the list, while `help`, `log`, `errors`, `run` and the feedback commands still answer; a live session started in an outside folder gets no game message (only when the list is not empty); the loot roll never offers an outside folder; extra folders (`addDirs`) are resolved against the chat's folder and left out when outside, with one bridge log line. The project list shows only allowed folders and the "folder does not exist" hint names none while the list is set (without it, the default folder's own subfolders). Links are resolved first, so a link inside an allowed folder that points outside is refused. Not covered yet: the session picker, `/claude -r`, handoff and live listings, and project history the addon saved earlier can still show folder names. Empty means only the bridge's default folder and the `threads` folders. In earlier releases empty meant no limit: add the folders you use from the game here. |
 
 | `plugins.live.enabled` | `true` | `false` keeps the bridge from opening the live-session socket (`live.sock` in the home folder). |
 | `plugins.live.waitMs` | `3000` | How long a message on a `live` chat waits for a Claude Code session to connect before the chat is told there is none. |
@@ -322,19 +323,30 @@ Environment: `CLAUDE_WOW_SERVICE=1` is set by the service definitions and tells 
 
 Exit codes: `0` normal, `1` the injected or one-shot job failed, `2` config missing, unreadable or naming an unknown agent, `75` stopped to run an installed update. The supervisor only restarts on codes other than `0` and `2`, and on `75` at once instead of after 3 s.
 
+## Permission grants from the game
+
+Records from the game are unauthenticated: another addon can write the same pixels, chat lines and saved variables. So a record can never raise what the bridge allows for good.
+
+- `allow=` rules (**Need** on the roll, **Allow & retry**) apply to that message's run. A rule is kept for later runs only when the last reply in the same chat offered it as a denial. Kept rules go in `state.json` under `grants.<agent>` (at most 200 per agent), never in `config.json`. Delete an entry there, with the bridge stopped, to take a grant back. Any other rule runs once, and `bridge.log` says `allowed for this run only (<agent>), not offered in this chat`.
+- `once=` rules (**Greed**) apply to that run only, as before.
+- `pm=` is capped by `gamePermissionModes`.
+- `dirs=` folders and a chat's folder must be inside the default folder, the `threads` folders or `plugins.claude-code.folders`.
+
+Rules an older bridge saved in `agents.<id>.allowedTools` stay there and still count.
+
 ## Discord sync
 
 A coding chat can live in a Discord thread too. A message in the thread runs the same Claude session as the game chat, and the reply and progress post to the thread. One owner, one private server.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `discord.enabled` | `false` | Turn Discord sync on. It also needs the three keys below and a bot token, or the bridge logs why it stays off. |
+| `discord.enabled` | `false` | Turn Discord sync on. It also needs the four keys below and a bot token, or the bridge logs why it stays off. |
 | `discord.applicationId` | `""` | The Discord application id of your bot. |
 | `discord.channelId` | `""` | The text channel the bot works in. A message there starts a new coding chat in its own thread; messages in a linked thread continue that chat. |
 | `discord.userIds` | `[]` | The Discord user ids that may run Claude. Required: anyone else, any bot and any webhook is ignored and logged by user id. |
-| `discord.publicKey` | `""` | Optional; only the forwarded Gateway path is used. |
+| `discord.publicKey` | `""` | Required: the application's public key (64 hex characters, on the Discord developer page). Without it Discord stays off and the bridge logs why. |
 
-The bot token comes from `CLAUDE_WOW_DISCORD_BOT_TOKEN`, else from `~/.claude-wow/discord.token` (make it mode 0600). It never goes in `config.json`. The bridge removes the variable from its own environment at start, and every agent run is denied `Read` on the token file. That does not stop a run allowed `Bash(node:*)` from reading it; keep the server private and the user list short. The bot needs the Message Content intent and these permissions: Send Messages, Send Messages in Threads, Create Public Threads, Manage Threads, Read Message History.
+The bot token comes from `CLAUDE_WOW_DISCORD_BOT_TOKEN`, else from `~/.claude-wow/discord.token` (make it mode 0600). It never goes in `config.json`. The bridge removes the variable from its own environment at start, and every agent run is denied `Read` on the token file. That does not stop a run allowed a shell command that reads files (`Bash(node:*)`, `Bash(python:*)`, `Bash(cat:*)`) from reading it; keep the server private and the user list short. The bot needs the Message Content intent and these permissions: Send Messages, Send Messages in Threads, Create Public Threads, Manage Threads, Read Message History.
 
 - The bridge holds the Discord Gateway connection itself and forwards its events to a local endpoint on `127.0.0.1` with a random port and path, written to `~/.claude-wow/discord-webhook.json` (0600). Each event must carry the bot token, or it is refused.
 - In Discord: a message in `discord.channelId` starts a chat in the bridge's default folder. Start it with `#name` to pick a project by its repo label (an unknown name starts nothing). A Discord-started chat shows in game in the `/claude -r` list.
@@ -375,6 +387,8 @@ A relative `/claude cd` path is resolved against that default. `~` expands to yo
 
 ## Where the bridge keeps its files
 
+On macOS and Linux the home folder is mode `0700` and `config.json`, `state.json`, `transcripts.json` and `bridge.log` are `0600`. Setup and every bridge start set these modes again on an install that has looser ones. The old `bridge/` home in a checkout keeps its folder mode.
+
 The bridge separates what it runs from what it remembers. The code can be replaced (`git pull`, `brew upgrade`, the installer run again) without touching any of the files below, which live in a home folder chosen in this order:
 
 1. `CLAUDE_WOW_HOME`, when set (a leading `~` expands).
@@ -387,7 +401,7 @@ The bridge's banner prints the folder it chose (`home :`). The one-line installe
 | File | Contents |
 |---|---|
 | `~/.claude-wow/config.json` | Your configuration. |
-| `~/.claude-wow/state.json` | Agent session ids per chat, the folder and the agent each session ran with, each session's context growth (`sessionUsage`: the tokens the next message carries, turns, the model's window, when it started, its runs at API list prices), handled message ids per addon session token, the presence ring and position (`presence`), the last signal self-test result the addon reported (`presenceTest`), the latest game context the addon sent (`context`), and the last automatic game data sync attempt per flavor (`dataSync`, one entry per flavor). Delete it to forget all sessions. |
+| `~/.claude-wow/state.json` | Agent session ids per chat, the folder and the agent each session ran with, each session's context growth (`sessionUsage`: the tokens the next message carries, turns, the model's window, when it started, its runs at API list prices), handled message ids per addon session token, the presence ring and position (`presence`), the last signal self-test result the addon reported (`presenceTest`), the latest game context the addon sent (`context`), the last automatic game data sync attempt per flavor (`dataSync`, one entry per flavor), the rules each chat's last reply offered (`offeredRules`) and the rules kept from **Need** per agent (`grants`). Delete it to forget all sessions. |
 | `~/.claude-wow/transcripts.json` | The last 200 messages of every chat, with the agent that wrote each reply, so the addon can recover its chats after the client wipes saved data. |
 | `~/.claude-wow/uijobs/` | One widget command file per running job (`CLAUDE_WOW_UI_FILE`), read and deleted when the job ends. The widgets themselves live in `state.json` (`widgets`). |
 | `~/.claude-wow/mapjobs/` | One map command file per running job (`CLAUDE_WOW_MAP_FILE`), read and deleted when the job ends. Map layers themselves live in `state.json` (`maps`, one set per character key). |

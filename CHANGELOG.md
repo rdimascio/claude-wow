@@ -4,8 +4,19 @@ All notable changes to this project are recorded here. The format follows [Keep 
 
 ## [Unreleased]
 
+### Security
+
+- A message from the game can no longer raise what the agent may do for good. Another addon can forge these messages, so the bridge now caps them.
+- `/claude --permission-mode` no longer picks `auto`, `dontAsk` or `bypassPermissions` from the game unless `gamePermissionModes` in `config.json` lists the mode. The run uses the agent's own mode, the reply says so, and `bridge.log` gets one line.
+- An allowed rule from the game (Need, Allow & retry) is never written to `config.json`. It applies to that run. It is kept for later runs, in `state.json` under `grants`, only when the chat's last reply offered it.
+- Without `plugins.claude-code.folders`, a game chat, its `--add-dir` folders and the roll now stay inside the bridge's default folder and the `threads` folders. Before, an empty list allowed every folder. A live session is still limited only when the list is set.
+- Discord sync stays off without `discord.publicKey`, and the bridge logs why. Before, a missing key fell back to 64 zeros.
+- The home folder (`~/.claude-wow`) is now made `0700` and `config.json` `0600` on macOS and Linux, by setup and at every bridge start. Before, they had the default `0755` and `0644`.
+- On macOS and Linux the bridge and setup refuse to write into the game folder through a linked folder, or a folder owned by another account, anywhere between `Interface/AddOns` and the file. Before, only the file's own folder was checked. After the write the bridge checks the file's folder again and removes a file written through a folder swapped in the meantime. This narrows the race but does not close it: another local account can still rename a folder of ours inside the world-writable `AddOns` folder.
+
 ### Changed
 
+- A new `config.json` no longer allows `Bash(node:*)`, `Bash(npx:*)`, `Bash(npm:*)` or `Bash(python:*)` for Claude and Grok. Each one runs any code. Add them to `allowedTools` yourself if you want them. An existing `config.json` keeps its list.
 - `claude-wow data sync` for Forever now follows the release client. Without `--build` it takes the newest `1.60.1` build of the wago.tools release product `wowf` (`1.60.1.70532` on 2026-10-22, the build the installed release client reports) and uses the beta product `wow_cn_beta` only when `wowf` lists no `1.60.1` build. The manifest's `product` names the product the build came from. `--help` and [docs/CONFIGURATION.md](docs/CONFIGURATION.md#game-data) say so.
 - The chat window is easier to read. Message text is 14 pt (was 13 pt) with a little more line spacing, the speaker label is 16 pt (was 18 pt), and the dim text used for notes and the working line is darker on the parchment (about 5.4:1 against the plain parchment color the window draws when the parchment art is missing, was about 4.0:1; contrast on the art itself was not measured). The fonts are Blizzard's `GameFontBlackMedium` and `Fancy16Font`, which the Classic Era and the current Blizzard UI code both define. The dark theme is unchanged: same padding, no extra line spacing.
 - Messages on the quest-page parchment no longer sit in boxes with the tooltip border and tint. They lie flat on the page again, like the quest log, with the same padding as before.

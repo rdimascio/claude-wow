@@ -26,6 +26,8 @@ const R = require('./runtime');
 const LEGACY_DIR = R.compiled ? '' : __dirname;
 const FILES = ['config.json', 'state.json', 'transcripts.json']; // what setup.js carries over
 const DIR_NAME = '.claude-wow';
+const PRIVATE_DIR_MODE = 0o700;
+const PRIVATE_FILE_MODE = 0o600;
 
 function expand(p, home) {
   return path.resolve(String(p).replace(/^~(?=[\\/]|$)/, home));
@@ -76,15 +78,16 @@ function migrateLegacy(env = process.env, home = os.homedir(), legacy = LEGACY_D
   if (env.CLAUDE_WOW_HOME) return [];
   const dflt = defaultDir(home);
   if (path.resolve(dflt) === path.resolve(legacy) || hasConfig(dflt) || !hasConfig(legacy)) return [];
-  fs.mkdirSync(dflt, { recursive: true });
+  fs.mkdirSync(dflt, { recursive: true, mode: PRIVATE_DIR_MODE });
   const copied = [];
   for (const f of FILES) {
     const from = path.join(legacy, f);
     if (!fs.existsSync(from)) continue;
     fs.copyFileSync(from, path.join(dflt, f));
+    if (process.platform !== 'win32') fs.chmodSync(path.join(dflt, f), PRIVATE_FILE_MODE);
     copied.push(f);
   }
   return copied;
 }
 
-module.exports = { LEGACY_DIR, FILES, DIR_NAME, defaultDir, hasConfig, resolve, migrateLegacy };
+module.exports = { LEGACY_DIR, FILES, DIR_NAME, PRIVATE_DIR_MODE, PRIVATE_FILE_MODE, defaultDir, hasConfig, resolve, migrateLegacy };

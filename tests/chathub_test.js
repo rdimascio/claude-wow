@@ -6,9 +6,9 @@ const os = require('os');
 const path = require('path');
 const DH = require('../bridge/chathub');
 
-const OK = { enabled: true, applicationId: '800000000000000001', channelId: '800000000000000002', userIds: ['800000000000000003'] };
+const OK = { enabled: true, applicationId: '800000000000000001', channelId: '800000000000000002', userIds: ['800000000000000003'], publicKey: 'ab'.repeat(32) };
 
-test('Discord stays off unless enabled with an application, a channel and at least one allowed user', () => {
+test('Discord stays off unless enabled with an application, a channel, a public key and at least one allowed user', () => {
   assert.deepEqual(DH.settings({}), { enabled: false });
   assert.deepEqual(DH.settings({ ...OK, enabled: 'yes' }), { enabled: false });
   const empty = DH.settings({ ...OK, userIds: [] });
@@ -16,6 +16,12 @@ test('Discord stays off unless enabled with an application, a channel and at lea
   assert.match(empty.error, /discord\.userIds/);
   assert.match(DH.settings({ ...OK, userIds: ['not-an-id'] }).error, /discord\.userIds/);
   assert.match(DH.settings({ ...OK, channelId: 'x' }).error, /discord\.channelId/);
+  for (const publicKey of [undefined, '', '0'.repeat(63), 'zz'.repeat(32)]) {
+    const off = DH.settings({ ...OK, publicKey });
+    assert.equal(off.enabled, false, String(publicKey));
+    assert.match(off.error, /discord\.publicKey/);
+  }
+  assert.equal(DH.settings(OK).publicKey, OK.publicKey);
   const on = DH.settings(OK);
   assert.equal(on.enabled, true);
   assert.equal(on.apiUrl, 'https://discord.com/api/v10');

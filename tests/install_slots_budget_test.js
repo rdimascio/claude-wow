@@ -9,7 +9,9 @@ const SB = require('../dev/sandbox');
 
 const ROOT = path.join(os.tmpdir(), `claude-wow-fsbudget-test-${process.pid}`);
 const SCRIPT = path.join(SB.REPO, 'bridge', 'install-slots.js');
-const FS_CALLS_PER_SLOT_BUDGET = 601;
+const WINDOWS_FS_CALLS_PER_SLOT = 601;
+const FOLDER_WALK_FS_CALLS_PER_SLOT = 129;
+const FS_CALLS_PER_SLOT_BUDGET = WINDOWS_FS_CALLS_PER_SLOT + (process.platform === 'win32' ? 0 : FOLDER_WALK_FS_CALLS_PER_SLOT);
 
 const COUNTER = `
 const fs = require('fs');

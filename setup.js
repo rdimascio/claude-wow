@@ -306,17 +306,28 @@ function refreshClient(cfg, client, notes) {
   return CLI.clientsOf(cfg).find(c => c.key === client.key);
 }
 
+function writePrivateConfig(cfg) {
+  fs.mkdirSync(path.dirname(CONFIG), { recursive: true, mode: H.PRIVATE_DIR_MODE });
+  fs.writeFileSync(CONFIG, JSON.stringify(cfg, null, 2) + '\n', { mode: H.PRIVATE_FILE_MODE });
+}
+
+function restrictConfig() {
+  if (process.platform === 'win32') return;
+  if (path.dirname(CONFIG) !== H.LEGACY_DIR) fs.chmodSync(path.dirname(CONFIG), H.PRIVATE_DIR_MODE);
+  fs.chmodSync(CONFIG, H.PRIVATE_FILE_MODE);
+}
+
 function saveConfig(cfg, notes, fresh) {
   if (fresh) {
-    fs.mkdirSync(path.dirname(CONFIG), { recursive: true });
-    fs.writeFileSync(CONFIG, JSON.stringify(cfg, null, 2) + '\n');
+    writePrivateConfig(cfg);
     console.log(`config   : wrote ${CONFIG}`);
   } else if (notes.length) {
-    fs.writeFileSync(CONFIG, JSON.stringify(cfg, null, 2) + '\n');
+    writePrivateConfig(cfg);
     console.log(`config   : ${CONFIG} updated (${notes.join(', ')}); everything else kept`);
   } else {
     console.log(`config   : ${CONFIG} already exists, keeping it`);
   }
+  restrictConfig();
 }
 
 // Warnings collected as we go, repeated at the end so they are not scrolled past.

@@ -82,6 +82,9 @@ test('/claude -r resumes a Claude Code session headless in its folder: from the 
       beforeLaunch: sb => {
         folder = path.join(sb.dir, 'elsewhere');
         seedClaudeStore(sb, folder);
+        const cfg = JSON.parse(fs.readFileSync(sb.config, 'utf8'));
+        cfg.plugins = { ...cfg.plugins, 'claude-code': { folders: [folder] } };
+        fs.writeFileSync(sb.config, JSON.stringify(cfg, null, 2));
       },
     },
     async h => {

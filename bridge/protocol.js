@@ -290,6 +290,18 @@ function permissionModeName(raw) {
   return PERMISSION_MODES.find(m => m.toLowerCase() === want) || '';
 }
 
+// Records from the game are unauthenticated, so a chat may pick a mode that
+// grants more than acceptEdits only when config.json lists it.
+const RECORD_PERMISSION_MODES = ['acceptEdits', 'default', 'manual', 'plan'];
+
+function recordPermissionMode(mode, optIn) {
+  const name = permissionModeName(mode);
+  if (!name) return '';
+  if (RECORD_PERMISSION_MODES.includes(name)) return name;
+  const allowed = (Array.isArray(optIn) ? optIn : []).map(permissionModeName);
+  return allowed.includes(name) ? name : '';
+}
+
 const PRESENCE_TEST_RESULTS = ['passed', 'failed'];
 const LATE_CREATE_RESULTS = ['seen', 'unseen'];
 
@@ -2063,7 +2075,9 @@ module.exports = {
   FILE_HASH_RE,
   parseFlags,
   PERMISSION_MODES,
+  RECORD_PERMISSION_MODES,
   permissionModeName,
+  recordPermissionMode,
   ADD_DIRS_MAX,
   LATE_IN_MAX,
   jobsFromStrip,

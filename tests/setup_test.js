@@ -238,6 +238,10 @@ test('node setup.js --wow <fake client>: migrates the chats, installs ClaudeWoW 
   // A new install is on the screenshot transport: python3 and the macOS
   // permissions are reported as the deprecated pixel fallback's business only.
   assert.equal(cfg.capture.mode, 'screenshot');
+  if (process.platform !== 'win32') {
+    assert.equal(fs.statSync(home).mode & 0o777, 0o700, 'a fresh home folder is private');
+    assert.equal(fs.statSync(path.join(home, 'config.json')).mode & 0o777, 0o600, 'a fresh config.json is private');
+  }
   assert.match(
     r.stdout,
     /^transport: screenshot \(the default\): the addon calls Screenshot\(\), the bridge reads the file; no screen capture, no permissions, no python$/m,
@@ -252,6 +256,10 @@ test('node setup.js --wow <fake client>: migrates the chats, installs ClaudeWoW 
   // and the transport named as deprecated.
   cfg.capture.mode = 'pixel';
   fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify(cfg, null, 2) + '\n');
+  if (process.platform !== 'win32') {
+    fs.chmodSync(home, 0o755);
+    fs.chmodSync(path.join(home, 'config.json'), 0o644);
+  }
   const again = spawnSync(process.execPath, [path.join(__dirname, '..', 'setup.js'), '--wow', client], {
     encoding: 'utf8',
     env: SB.isolatedEnv(path.join(path.dirname(home), 'user'), { CLAUDE_WOW_HOME: home }),
@@ -260,6 +268,10 @@ test('node setup.js --wow <fake client>: migrates the chats, installs ClaudeWoW 
   assert.equal(again.status, 0, again.stdout + again.stderr);
   assert.ok(!/migrate/.test(again.stdout), 'second run migrates nothing');
   assert.match(again.stdout, /already exists, keeping it/);
+  if (process.platform !== 'win32') {
+    assert.equal(fs.statSync(home).mode & 0o777, 0o700, 'an open home folder is made private');
+    assert.equal(fs.statSync(path.join(home, 'config.json')).mode & 0o777, 0o600, 'an open config.json is made private');
+  }
   if (process.platform !== 'win32') {
     assert.equal(fs.statSync(slotInbox).mode & 0o777, 0o777, 'the re-run repaired a 0644 slot file');
     assert.match(again.stdout, /^permissions: 1 of \d+ file\(s\) and folder\(s\) under the ClaudeWoW addon folders set to 0777/m);

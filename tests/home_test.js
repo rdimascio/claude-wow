@@ -82,6 +82,10 @@ test('migrateLegacy copies config, state and transcripts into ~/.claude-wow once
   assert.equal(fs.readFileSync(path.join(dflt, 'config.json'), 'utf8'), '{"addonDir":"/x"}');
   assert.equal(fs.readFileSync(path.join(dflt, 'state.json'), 'utf8'), '{"sessions":{"c1":{"id":"s1"}}}', 'the sessions came across');
   assert.ok(!fs.existsSync(path.join(dflt, 'bridge.log')));
+  if (process.platform !== 'win32') {
+    assert.equal(fs.statSync(dflt).mode & 0o777, 0o700, 'the new home is private');
+    for (const f of ['config.json', 'state.json']) assert.equal(fs.statSync(path.join(dflt, f)).mode & 0o777, 0o600, `${f} is private`);
+  }
   assert.ok(fs.existsSync(path.join(legacy, 'config.json')) && fs.existsSync(path.join(legacy, 'state.json')), 'originals stay');
   assert.equal(H.resolve({}, home, legacy).dir, dflt, 'from now on the default is the home');
 

@@ -115,7 +115,7 @@ test("the shipped coding plugin: a folder resolved against the bridge's, refused
   fs.rmSync(base, { recursive: true, force: true });
 });
 
-test('the coding plugin: with plugins.claude-code.folders set, a game chat runs only in those folders, the default and the thread folders', () => {
+test('the coding plugin: a game chat runs only in the default folder, the thread folders and plugins.claude-code.folders, with or without the list', () => {
   const code = require('../bridge/plugins/claude-code');
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'wowai-allow-'));
   const home = path.join(base, 'home');
@@ -143,8 +143,10 @@ test('the coding plugin: with plugins.claude-code.folders set, a game chat runs 
     [secret, limited, 'refused'],
     [path.join(allowed, 'escape'), limited, 'refused'],
     [path.join(allowed, '..', 'secret'), limited, 'refused'],
-    [secret, { threads: [thread] }, 'run'],
-    [secret, { folders: [] }, 'run'],
+    [secret, { threads: [thread] }, 'refused'],
+    [secret, { folders: [] }, 'refused'],
+    [secret, {}, 'refused'],
+    [path.join(home, 'peek'), {}, 'run'],
   ];
   for (const [cwd, options, want] of outcomes) {
     code.handle({ id: 1, cwd, text: 'hi' }, core(options));
