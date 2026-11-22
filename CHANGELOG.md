@@ -14,6 +14,7 @@ All notable changes to this project are recorded here. The format follows [Keep 
 
 ### Fixed
 
+- A message is no longer dropped when the game quits without saving its data. The addon then reuses old message ids under the same session token, and the companion app took those messages as repeats. Now an id counts as a repeat only when its chat and text also match. A true repeat now also fires the ack signal, so the addon no longer counts it as a late read and pauses the chat log for 10 minutes.
 - The whisper tab's progress line no longer cuts a character such as ¦ in half when a step is long. It and the chat window now cut a long step the same way, at a word break where there is one.
 
 ### Added

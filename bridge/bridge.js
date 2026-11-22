@@ -1514,8 +1514,7 @@ function submit(job) {
   if (job.shot) fallbackToPixel(job.shot, job); // even for a message already handled: the report stands
   noteSignalReport(job);
   if (alreadyHandled(job)) {
-    const r = rtOf(job.client);
-    if (r) r.acks = P.noteAck(r.acks, job);
+    ackJob(job);
     return;
   }
   noteAddonSession(job);

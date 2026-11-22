@@ -81,20 +81,43 @@ function sessKey(job) {
 
 // ---------------------------------------------------------------------------
 // Dedup: message ids restart whenever the addon's saved data is reset, so they
-// are only unique within the addon's session token.
+// are only unique within the addon's session token. A game that quits without
+// saving rolls the id back under the same token, so an id is a repeat only when
+// the chat and text match too.
 // ---------------------------------------------------------------------------
 
+const ANY_CONTENT = 1;
+
+// Kept on the job at its first check, because the bridge rewrites a job's text
+// (an @agent prefix, for one) before it marks the job handled.
+function contentPrint(job) {
+  if (job.intakePrint !== undefined) return job.intakePrint;
+  const print =
+    typeof job.text !== 'string'
+      ? ANY_CONTENT
+      : crypto
+          .createHash('sha256')
+          .update(`${job.chat || ''}\n${job.text}`)
+          .digest('hex')
+          .slice(0, 16);
+  job.intakePrint = print;
+  return print;
+}
+
 function alreadyHandled(state, job) {
+  const print = contentPrint(job);
   const key = job.session || '';
   const h = state.handled[key];
   if (!h) return key === '' && job.id <= state.lastId;
-  return !!h[job.id];
+  const seen = h[job.id];
+  if (!seen) return false;
+  return seen === ANY_CONTENT || print === ANY_CONTENT || seen === print;
 }
 
 function markHandled(state, job, now = Date.now()) {
   const key = job.session || '';
   const h = (state.handled[key] = state.handled[key] || {});
-  h[job.id] = 1;
+  h[job.id] = contentPrint(job);
   const ids = Object.keys(h);
   if (ids.length > 1000) for (const k of ids.slice(0, ids.length - 1000)) delete h[k];
   if (job.via !== 'discord') state.lastId = Math.max(state.lastId, job.id);
