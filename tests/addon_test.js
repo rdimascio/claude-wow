@@ -2435,6 +2435,28 @@ test('/claude-wow is a hidden alias for one release: the old verbs still work, t
   assert.equal(vm.num('STUB.serverSends'), 0);
 });
 
+test('the in-game hints work as typed: /wowgpt chat <n> switches chats and /wowgpt mode pixel sets the transport, through /wowgpt and /claude', () => {
+  const vm = whisperVM();
+  const firstId = vm.evaluate('WoWGPTDB.chats[1].id');
+  const chats = () => vm.num('#WoWGPTDB.chats');
+  vm.run('SlashCmdList.WOWGPT("new Realms")');
+  const before = chats();
+  assert.notEqual(vm.evaluate('WoWGPTDB.activeChat'), firstId);
+  for (const typed of ['/wowgpt chat 1', '/claude chats 1']) {
+    vm.run('WoWGPT.SwitchChat(WoWGPTDB.chats[2].id)');
+    typeIn(vm, 'ChatFrame1EditBox', typed);
+    assert.equal(vm.evaluate('WoWGPTDB.activeChat'), firstId, typed);
+  }
+  typeIn(vm, 'ChatFrame1EditBox', '/wowgpt mode pixel');
+  assert.equal(vm.evaluate('WoWGPTDB.settings.mode'), 'pixel');
+  typeIn(vm, 'ChatFrame1EditBox', '/claude mode reload');
+  assert.equal(vm.evaluate('WoWGPTDB.settings.mode'), 'reload');
+  assert.equal(chats(), before, 'no command above became a message in a new chat');
+  typeIn(vm, 'ChatFrame1EditBox', '/wowgpt chat about the raid tonight');
+  assert.equal(chats(), before + 1, 'text after chat that names no chat is still a message');
+  assert.equal(vm.num('STUB.serverSends'), 0);
+});
+
 // Context growth: the bridge reports, on every final reply, what the chat's next
 // message will carry (ctx), the turns in the session and the model's window.
 function growthLine(vm) {
