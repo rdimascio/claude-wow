@@ -46,6 +46,7 @@ function partsBelowAddOns(dir) {
 // and a swap back between the two walks goes unseen.
 
 function checkOwnParts(dir, parts) {
+  if (!parts.length) return;
   const uid = process.getuid();
   for (const part of parts) {
     const st = fs.lstatSync(part);

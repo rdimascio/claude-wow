@@ -131,6 +131,27 @@ test('a link anywhere between the AddOns folder and the target is refused, and a
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('on Windows, which has no uid, a write under AddOns skips the folder walk and lands', () => {
+  const dir = scratch('win32-walk');
+  const sig = path.join(dir, 'game', 'Interface', 'AddOns', 'ClaudeWoW_Runtime', 'sig');
+  fs.mkdirSync(sig, { recursive: true });
+  const platform = Object.getOwnPropertyDescriptor(process, 'platform');
+  const getuid = Object.getOwnPropertyDescriptor(process, 'getuid');
+  Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+  Object.defineProperty(process, 'getuid', { value: undefined, configurable: true, writable: true });
+  try {
+    assert.equal(G.writeFile(path.join(sig, '001.wav'), 'payload'), true);
+    assert.equal(G.ensureFile(path.join(sig, '002.wav'), 'payload'), true);
+    G.mkdir(path.join(sig, 'new'));
+  } finally {
+    Object.defineProperty(process, 'platform', platform);
+    if (getuid) Object.defineProperty(process, 'getuid', getuid);
+    else delete process.getuid;
+  }
+  assert.deepEqual(fs.readdirSync(sig).sort(), ['001.wav', '002.wav', 'new']);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test('a folder under AddOns that belongs to another account is refused before anything is written', posixOnly, t => {
   const dir = scratch('foreign-parent');
   const addons = path.join(dir, 'game', 'Interface', 'AddOns');
