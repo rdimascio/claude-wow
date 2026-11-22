@@ -500,6 +500,50 @@ test('systemd install makes the state folder and the service logs private', { sk
   assert.equal(modeOf(S.serviceLogFile(d) + '.3'), S.PRIVATE_FILE_MODE);
 });
 
+test('systemd install restarts a unit that was already running, so an upgrade runs the new binary; a stopped unit is only enabled', () => {
+  const dir = scratch('linuxreinstall');
+  const d = { logs: path.join(dir, 'state'), run: path.join(dir, 'state'), definition: path.join(dir, 'systemd', 'user', `${S.UNIT}.service`) };
+  for (const active of [true, false]) {
+    const calls = [];
+    const b = Object.assign(Object.create(S.backend('linux')), {
+      exec: (cmd, args) => {
+        calls.push(args.slice(1).join(' '));
+        return { ok: args[1] !== 'is-active' || active, status: 0, out: '' };
+      },
+      removeOld: () => false,
+    });
+    b.install(d);
+    const enabled = calls.indexOf(`enable --now ${S.UNIT}`);
+    assert.ok(enabled > calls.indexOf(`is-active ${S.UNIT}`), calls.join(', '));
+    assert.equal(calls.indexOf(`restart ${S.UNIT}`) > enabled, active, `${active ? 'running' : 'stopped'}: ${calls.join(', ')}`);
+  }
+});
+
+test('Windows install over a running bridge stops it and starts the new one', () => {
+  const record = { pid: 4242, bridgePid: 4243, started: STARTED, mode: 'service' };
+  const d = winDirs('win-reinstall', record);
+  const { b, state } = fakeWindows({ alivePids: [4242], processes: { 4242: SUPERVISOR } });
+  b.removeOld = () => false;
+  b.install(d);
+  assert.equal(state.kills.length, 1, 'the old supervisor is stopped');
+  assert.equal(state.launches.length, 1, 'and the bridge started again');
+  assert.ok(fs.existsSync(d.definition));
+});
+
+test('installedDefinitions finds the service under its name or any old name, and nothing on a clean machine', () => {
+  for (const platform of ['darwin', 'linux', 'win32']) {
+    const dir = scratch(`defs-${platform}`);
+    const env = { LOCALAPPDATA: path.join(dir, 'Local'), APPDATA: path.join(dir, 'Roaming') };
+    assert.deepEqual(S.installedDefinitions(platform, env, dir), [], platform);
+    for (const d of [S.dirs(platform, env, dir), ...S.oldDirs(platform, env, dir)]) {
+      fs.mkdirSync(path.dirname(d.definition), { recursive: true });
+      fs.writeFileSync(d.definition, 'x');
+      assert.deepEqual(S.installedDefinitions(platform, env, dir), [d.definition], `${platform}: ${d.definition}`);
+      fs.unlinkSync(d.definition);
+    }
+  }
+});
+
 test('install fails loudly when launchd will not load the agent, even if the legacy load exits 0', () => {
   const dir = scratch('macinstallfail');
   const d = { logs: path.join(dir, 'logs'), run: path.join(dir, 'run'), definition: path.join(dir, 'LaunchAgents', `${S.LABEL}.plist`) };
