@@ -1,16 +1,16 @@
 'use strict';
-// `claude-wow service`: the bridge as a per-user background service that starts at
+// `wowgpt service`: the bridge as a per-user background service that starts at
 // login and comes back after a crash, plus the log rotation the supervisor uses
 // in every mode (the bridge itself only appends to bridge/bridge.log).
 //
-//   claude-wow service install     write the service definition and start it
-//   claude-wow service uninstall   stop it and remove the definition
-//   claude-wow service start|stop|restart
-//   claude-wow service status      installed? running? pid, uptime, last log lines
-//   claude-wow service logs [-n N] [-f]
+//   wowgpt service install     write the service definition and start it
+//   wowgpt service uninstall   stop it and remove the definition
+//   wowgpt service start|stop|restart
+//   wowgpt service status      installed? running? pid, uptime, last log lines
+//   wowgpt service logs [-n N] [-f]
 //
-//   macOS    LaunchAgent  ~/Library/LaunchAgents/io.claudewow.bridge.plist (RunAtLoad + KeepAlive)
-//   Linux    systemd      ~/.config/systemd/user/claude-wow-bridge.service (Restart=always)
+//   macOS    LaunchAgent  ~/Library/LaunchAgents/io.wowgpt.bridge.plist (RunAtLoad + KeepAlive)
+//   Linux    systemd      ~/.config/systemd/user/wowgpt-bridge.service (Restart=always)
 //   Windows  Startup folder launcher (hidden window); the supervisor does the crash restarts
 //
 // Under the service the supervisor runs with WOWGPT_SERVICE=1: it captures the
@@ -31,13 +31,18 @@ const REL = require('./releases');
 const UPD = require('./selfupdate');
 const CLI = require('./clients');
 
-const LABEL = 'io.claudewow.bridge'; // launchd label
-const UNIT = 'claude-wow-bridge'; // systemd unit name
-// The service as the project's old name (wow-ai) installed it. `install` and
-// `uninstall` remove it, or two bridges would start at login and fight over
-// the slot files.
-const OLD_LABEL = 'io.wowai.bridge';
-const OLD_UNIT = 'wow-ai-bridge';
+const LABEL = 'io.wowgpt.bridge'; // launchd label
+const UNIT = 'wowgpt-bridge'; // systemd unit name
+// The service as the project's old names (claude-wow, then wow-ai) installed
+// it, newest first. `install` and `uninstall` remove each one, or two bridges
+// would start at login and fight over the slot files. folder: the name of its
+// run and log folders; launcher: its Windows Startup-folder file.
+const OLD_SERVICES = Object.freeze([
+  { label: 'io.claudewow.bridge', unit: 'claude-wow-bridge', folder: 'claude-wow', launcher: 'Claude WoW bridge.vbs' },
+  { label: 'io.wowai.bridge', unit: 'wow-ai-bridge', folder: 'wow-ai', launcher: 'WoW AI bridge.vbs' },
+]);
+const OLD_LABEL = OLD_SERVICES.map(s => s.label);
+const OLD_UNIT = OLD_SERVICES.map(s => s.unit);
 const LOG_MAX_BYTES = 5 * 1024 * 1024;
 const LOG_KEEP = 5;
 const LAUNCHD_LOG_KEEP = 1;
@@ -49,13 +54,13 @@ const COMMANDS = ['install', 'uninstall', 'start', 'stop', 'restart', 'status', 
 function dirs(platform = process.platform, env = process.env, home = os.homedir()) {
   if (platform === 'darwin') {
     return {
-      logs: path.join(home, 'Library', 'Logs', 'claude-wow'),
-      run: path.join(home, 'Library', 'Application Support', 'claude-wow'),
+      logs: path.join(home, 'Library', 'Logs', 'wowgpt'),
+      run: path.join(home, 'Library', 'Application Support', 'wowgpt'),
       definition: path.join(home, 'Library', 'LaunchAgents', `${LABEL}.plist`),
     };
   }
   if (platform === 'win32') {
-    const base = path.join(env.LOCALAPPDATA || path.join(home, 'AppData', 'Local'), 'claude-wow');
+    const base = path.join(env.LOCALAPPDATA || path.join(home, 'AppData', 'Local'), 'wowgpt');
     return {
       logs: path.join(base, 'logs'),
       run: base,
@@ -66,11 +71,11 @@ function dirs(platform = process.platform, env = process.env, home = os.homedir(
         'Start Menu',
         'Programs',
         'Startup',
-        'Claude WoW bridge.vbs',
+        'WoWGPT bridge.vbs',
       ),
     };
   }
-  const state = path.join(env.XDG_STATE_HOME || path.join(home, '.local', 'state'), 'claude-wow');
+  const state = path.join(env.XDG_STATE_HOME || path.join(home, '.local', 'state'), 'wowgpt');
   return {
     logs: state,
     run: state,
@@ -78,34 +83,31 @@ function dirs(platform = process.platform, env = process.env, home = os.homedir(
   };
 }
 
-// Where the old name's service kept its definition and pid file.
+// Where each old name's service kept its definition and pid file, newest first.
 function oldDirs(platform = process.platform, env = process.env, home = os.homedir()) {
-  if (platform === 'darwin') {
+  return OLD_SERVICES.map(old => {
+    if (platform === 'darwin')
+      return {
+        label: old.label,
+        definition: path.join(home, 'Library', 'LaunchAgents', `${old.label}.plist`),
+        run: path.join(home, 'Library', 'Application Support', old.folder),
+      };
+    if (platform === 'win32')
+      return {
+        run: path.join(env.LOCALAPPDATA || path.join(home, 'AppData', 'Local'), old.folder),
+        definition: path.join(env.APPDATA || path.join(home, 'AppData', 'Roaming'), 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup', old.launcher),
+      };
     return {
-      label: OLD_LABEL,
-      definition: path.join(home, 'Library', 'LaunchAgents', `${OLD_LABEL}.plist`),
-      run: path.join(home, 'Library', 'Application Support', 'wow-ai'),
+      unit: old.unit,
+      definition: path.join(env.XDG_CONFIG_HOME || path.join(home, '.config'), 'systemd', 'user', `${old.unit}.service`),
+      run: path.join(env.XDG_STATE_HOME || path.join(home, '.local', 'state'), old.folder),
     };
-  }
-  if (platform === 'win32') {
-    return {
-      run: path.join(env.LOCALAPPDATA || path.join(home, 'AppData', 'Local'), 'wow-ai'),
-      definition: path.join(
-        env.APPDATA || path.join(home, 'AppData', 'Roaming'),
-        'Microsoft',
-        'Windows',
-        'Start Menu',
-        'Programs',
-        'Startup',
-        'WoW AI bridge.vbs',
-      ),
-    };
-  }
-  return {
-    unit: OLD_UNIT,
-    definition: path.join(env.XDG_CONFIG_HOME || path.join(home, '.config'), 'systemd', 'user', `${OLD_UNIT}.service`),
-    run: path.join(env.XDG_STATE_HOME || path.join(home, '.local', 'state'), 'wow-ai'),
-  };
+  });
+}
+
+// removeOld for every old name; true when any was there.
+function removeAllOld(backendImpl, platform, dirs = oldDirs(platform)) {
+  return dirs.map(old => backendImpl.removeOld(old)).some(Boolean);
 }
 
 const serviceLogFile = d => path.join(d.logs, 'bridge.log');
@@ -132,7 +134,7 @@ function parseArgs(argv) {
   return { cmd, opts };
 }
 
-const HELP = `claude-wow service <command>
+const HELP = `wowgpt service <command>
 
   install     Run the bridge in the background, now and at every login.
   uninstall   Stop it and remove the background service.
@@ -143,10 +145,10 @@ const HELP = `claude-wow service <command>
   logs        Show the log (-n <lines>, default 50; -f to follow).
 
 macOS: a LaunchAgent (~/Library/LaunchAgents/${LABEL}.plist).
-An install by the project's old name (${OLD_LABEL}, ${OLD_UNIT}) is removed by install and uninstall.
+An install by one of the project's old names (${OLD_LABEL.join(', ')}; ${OLD_UNIT.join(', ')}) is removed by install and uninstall.
 Linux: a systemd --user unit (${UNIT}.service).
 Windows: a launcher in your Startup folder; the bridge runs without a window.
-Logs rotate at 5 MB, 5 files kept. Run "claude-wow setup" before installing.`;
+Logs rotate at 5 MB, 5 files kept. Run "wowgpt setup" before installing.`;
 
 // ---- the service definitions (pure) -----------------------------------------
 
@@ -211,7 +213,7 @@ function systemdUnit({ node, script, cwd, env = {} }) {
     .map(([k, v]) => `Environment=${q(`${k}=${v}`)}`)
     .join('\n');
   return `[Unit]
-Description=Claude WoW bridge
+Description=WoWGPT bridge
 After=default.target
 
 [Service]
@@ -232,7 +234,7 @@ WantedBy=default.target
 // the crash restarts itself, so nothing else watches it.
 function startupVbs({ node, script, cwd }) {
   const q = s => `"${String(s).replace(/"/g, '""')}"`;
-  return `' Claude WoW bridge: started at login, no window. Written by "claude-wow service install"; remove with "claude-wow service uninstall".\r
+  return `' WoWGPT bridge: started at login, no window. Written by "wowgpt service install"; remove with "wowgpt service uninstall".\r
 Set sh = CreateObject("WScript.Shell")\r
 sh.Environment("Process")("WOWGPT_SERVICE") = "1"\r
 sh.CurrentDirectory = ${q(cwd)}\r
@@ -447,7 +449,7 @@ function preflight(d, b = backend()) {
   const problems = [];
   const home = H.resolve();
   if (!fs.existsSync(home.config)) {
-    problems.push(`${home.config} is missing: run "claude-wow setup" (node setup.js) first, or the service would just restart in a loop.`);
+    problems.push(`${home.config} is missing: run "wowgpt setup" (node setup.js) first, or the service would just restart in a loop.`);
   }
   const p = readPid(d);
   const identity = p && p.mode === 'terminal' ? terminalIdentity(p, b) : 'gone';
@@ -513,7 +515,7 @@ const mac = {
   },
   // The agent the old name installed: unload it and drop its plist. Best effort;
   // a plist that is not loaded, or an old launchctl, must not stop the install.
-  removeOld(old = oldDirs('darwin')) {
+  removeOld(old) {
     if (!fs.existsSync(old.definition)) return false;
     let r = run('launchctl', ['bootout', `gui/${process.getuid()}/${old.label}`]);
     if (!r.ok) r = run('launchctl', ['unload', '-w', old.definition]);
@@ -529,18 +531,18 @@ const mac = {
     rotate(launchdLogFile(d), { maxBytes: 1024 * 1024, keep: LAUNCHD_LOG_KEEP });
     secureServiceLogs(d, { platform: 'darwin' });
     fs.closeSync(fs.openSync(launchdLogFile(d), 'a', PRIVATE_FILE_MODE));
-    this.removeOld();
+    removeAllOld(this, 'darwin');
     fs.writeFileSync(d.definition, definition('darwin', d));
     if (this.loaded()) {
       const out = this.bootout();
       if (!out.ok) throw new Error(`launchctl could not unload the running service: ${out.out.trim() || out.error}`);
-      if (!this.waitUnloaded()) throw new Error(`launchd still has ${LABEL} loaded after bootout; run "claude-wow service start" once it has stopped`);
+      if (!this.waitUnloaded()) throw new Error(`launchd still has ${LABEL} loaded after bootout; run "wowgpt service start" once it has stopped`);
     }
     const r = this.bootstrapLoaded(d);
     if (!r.ok) throw new Error(`launchctl could not load ${d.definition}: ${r.out.trim() || r.error}`);
   },
   uninstall(d) {
-    const old = this.removeOld();
+    const old = removeAllOld(this, 'darwin');
     if (fs.existsSync(d.definition)) {
       const r = this.bootout();
       if (!r.ok) throw new Error(`launchctl could not unload the service: ${r.out.trim()}`);
@@ -550,7 +552,7 @@ const mac = {
     return old;
   },
   start(d) {
-    if (!fs.existsSync(d.definition)) throw new Error('the service is not installed. Run: claude-wow service install');
+    if (!fs.existsSync(d.definition)) throw new Error('the service is not installed. Run: wowgpt service install');
     const r = this.loaded() ? this.exec('launchctl', ['kickstart', this.target()]) : this.bootstrap(d);
     if (!r.ok) throw new Error(`launchctl could not start the service: ${r.out.trim()}`);
   },
@@ -579,7 +581,7 @@ const linux = {
       throw new Error('systemctl was not found. Without systemd, start the bridge from your session startup with: ' + programArgs(program()).join(' '));
     return r;
   },
-  removeOld(old = oldDirs('linux')) {
+  removeOld(old) {
     if (!fs.existsSync(old.definition)) return false;
     try {
       this.sys(['disable', '--now', old.unit]);
@@ -596,14 +598,14 @@ const linux = {
     fs.mkdirSync(path.dirname(d.definition), { recursive: true });
     fs.mkdirSync(d.logs, { recursive: true });
     secureServiceLogs(d, { platform: 'linux' });
-    this.removeOld();
+    removeAllOld(this, 'linux');
     fs.writeFileSync(d.definition, definition('linux', d));
     this.sys(['daemon-reload']);
     const r = this.sys(['enable', '--now', UNIT]);
     if (!r.ok) throw new Error(`systemctl could not enable ${UNIT}: ${r.out.trim()}`);
   },
   uninstall(d) {
-    const old = this.removeOld();
+    const old = removeAllOld(this, 'linux');
     if (!fs.existsSync(d.definition)) return old;
     this.sys(['disable', '--now', UNIT]);
     fs.unlinkSync(d.definition);
@@ -611,7 +613,7 @@ const linux = {
     return true;
   },
   start(d) {
-    if (!fs.existsSync(d.definition)) throw new Error('the service is not installed. Run: claude-wow service install');
+    if (!fs.existsSync(d.definition)) throw new Error('the service is not installed. Run: wowgpt service install');
     const r = this.sys(['start', UNIT]);
     if (!r.ok) throw new Error(`systemctl could not start ${UNIT}: ${r.out.trim()}`);
   },
@@ -637,7 +639,7 @@ const linux = {
 
 // Windows -------------------------------------------------------------------
 const CLOCK_SLACK_MS = 1000;
-const SUPERVISOR_COMMAND = /supervisor\.js|claude-wow|wow-ai/i;
+const SUPERVISOR_COMMAND = /supervisor\.js|wowgpt|claude-wow|wow-ai/i;
 const POWERSHELL = 'powershell.exe';
 const POWERSHELL_ARGS = ['-NoProfile', '-NonInteractive', '-Command'];
 const IDENTITY_CHANGED_EXIT = 3;
@@ -727,7 +729,7 @@ const win = {
   },
   // The old name's launcher in the Startup folder, and the bridge it started if
   // its pid file says one is still running.
-  removeOld(old = oldDirs('win32')) {
+  removeOld(old) {
     const had = fs.existsSync(old.definition);
     if (had)
       try {
@@ -740,12 +742,12 @@ const win = {
     fs.mkdirSync(path.dirname(d.definition), { recursive: true });
     fs.mkdirSync(d.logs, { recursive: true });
     fs.mkdirSync(d.run, { recursive: true });
-    this.removeOld();
+    removeAllOld(this, 'win32');
     fs.writeFileSync(d.definition, definition('win32', d));
     this.start(d);
   },
   uninstall(d) {
-    const old = this.removeOld();
+    const old = removeAllOld(this, 'win32');
     const had = fs.existsSync(d.definition);
     this.stop(d);
     if (had) fs.unlinkSync(d.definition);
@@ -801,10 +803,10 @@ function clientLines(configFile, state) {
   try {
     cfg = JSON.parse(fs.readFileSync(configFile, 'utf8'));
   } catch {
-    return ['no config.json (claude-wow setup)'];
+    return ['no config.json (wowgpt setup)'];
   }
   const clients = CLI.clientsOf(cfg);
-  if (!clients.length) return ['none in config.json (claude-wow setup)'];
+  if (!clients.length) return ['none in config.json (wowgpt setup)'];
   return CLI.describe(clients, state);
 }
 
@@ -815,10 +817,10 @@ function status(d, platform = process.platform, out = console.log, stateFile = H
   const probe = installed ? b.probe(d, b.verify ? { record: p, identity } : null) : { loaded: false, pid: 0, state: '' };
   const supervisorAlive = !!(p && (identity ? identity === 'match' : alive(p.pid)));
   const bridgeAlive = !!(p && alive(p.bridgePid));
-  out(`claude-wow service (${b.kind})`);
-  out(`  installed : ${installed ? 'yes  ' + d.definition : 'no   (claude-wow service install)'}`);
+  out(`wowgpt service (${b.kind})`);
+  out(`  installed : ${installed ? 'yes  ' + d.definition : 'no   (wowgpt service install)'}`);
   if (installed && platform !== 'win32')
-    out(`  loaded    : ${probe.loaded ? 'yes' : 'no   (claude-wow service start)'}${probe.state ? '  [' + probe.state + ']' : ''}`);
+    out(`  loaded    : ${probe.loaded ? 'yes' : 'no   (wowgpt service start)'}${probe.state ? '  [' + probe.state + ']' : ''}`);
   if (supervisorAlive) {
     const where = p.mode === 'service' ? 'as the service' : 'in a terminal';
     out(
@@ -884,7 +886,7 @@ function logs(d, opts, out = console.log) {
 function main(argv, { platform = process.platform, out = console.log, err = console.error } = {}) {
   const { cmd, opts, error } = parseArgs(argv);
   if (error) {
-    err(`claude-wow service: ${error}\n`);
+    err(`wowgpt service: ${error}\n`);
     out(HELP);
     return 2;
   }
@@ -899,7 +901,7 @@ function main(argv, { platform = process.platform, out = console.log, err = cons
       case 'install': {
         const problems = preflight(d, b);
         if (problems.length) {
-          for (const p of problems) err(`claude-wow service: ${p}`);
+          for (const p of problems) err(`wowgpt service: ${p}`);
           return 1;
         }
         b.install(d);
@@ -916,7 +918,7 @@ function main(argv, { platform = process.platform, out = console.log, err = cons
               `note: capture.mode is "pixel" (deprecated). A background process cannot ask for Screen Recording; remove capture.mode from ${config} or set it to "screenshot" (no permissions needed), or run the bridge from a terminal instead.`,
             );
         }
-        out('re-run "claude-wow service install" after installing a new agent CLI or a new Node, so the service sees the new PATH.');
+        out('re-run "wowgpt service install" after installing a new agent CLI or a new Node, so the service sees the new PATH.');
         out('');
         return status(d, platform, out);
       }
@@ -931,7 +933,7 @@ function main(argv, { platform = process.platform, out = console.log, err = cons
         return status(d, platform, out);
       case 'stop':
         b.stop(d);
-        out('stopped (it starts again at the next login; "claude-wow service uninstall" to remove it)');
+        out('stopped (it starts again at the next login; "wowgpt service uninstall" to remove it)');
         return 0;
       case 'restart':
         b.restart(d);
@@ -946,7 +948,7 @@ function main(argv, { platform = process.platform, out = console.log, err = cons
         return 2;
     }
   } catch (e) {
-    err(`claude-wow service ${cmd}: ${e.message}`);
+    err(`wowgpt service ${cmd}: ${e.message}`);
     return 1;
   }
 }
@@ -955,6 +957,7 @@ module.exports = {
   LABEL,
   UNIT,
   OLD_LABEL,
+  OLD_SERVICES,
   OLD_UNIT,
   COMMANDS,
   LOG_MAX_BYTES,
@@ -962,6 +965,7 @@ module.exports = {
   HELP,
   dirs,
   oldDirs,
+  removeAllOld,
   backend,
   serviceLogFile,
   launchdLogFile,

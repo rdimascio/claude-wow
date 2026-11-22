@@ -95,7 +95,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     env:
-      CLAUDE_WOW_FUZZ_EPISODES: 10
+      WOWGPT_FUZZ_EPISODES: 10
       SHARDS: ${{ matrix.os == 'windows-latest' && 4 || 2 }}
       FILE_TIMEOUT_MS: ${{ matrix.os == 'windows-latest' && 400000 || 180000 }}
     steps:
@@ -118,7 +118,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     env:
-      CLAUDE_WOW_FUZZ_EPISODES: ${{ inputs.fuzz_episodes || '40' }}
+      WOWGPT_FUZZ_EPISODES: ${{ inputs.fuzz_episodes || '40' }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -142,10 +142,10 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - run: npm ci --omit=dev
       - run: bun build.js
-      - run: ./dist/claude-wow-linux-x64 service help
+      - run: ./dist/wowgpt-linux-x64 service help
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: claude-wow-binaries
+          name: wowgpt-binaries
           path: dist/
           if-no-files-found: error
 

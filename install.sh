@@ -1,5 +1,5 @@
 #!/bin/sh
-# Claude WoW installer for macOS and Linux. One line:
+# WoWGPT installer for macOS and Linux. One line:
 #
 #   curl -fsSL https://raw.githubusercontent.com/rdimascio/claude-wow/main/install.sh | sh
 #
@@ -11,46 +11,49 @@
 #   --project <folder>  the default folder the agents work in
 #   --service           install the background service without asking
 #   --no-service        don't install or ask
-#   --from-source       no prebuilt binary: clone the repo and run it with Node.js 22.2+ (or CLAUDE_WOW_SOURCE=1)
-#   --release <tag>     which release's binary (default latest, then the newest release of any kind; or CLAUDE_WOW_RELEASE); a named release never falls back
-#   --dir <folder>      where the source goes, from source (default ~/.claude-wow/app; or CLAUDE_WOW_DIR)
-#   --ref <branch|tag>  which version of the source, from source (default main; or CLAUDE_WOW_REF)
+#   --from-source       no prebuilt binary: clone the repo and run it with Node.js 22.2+ (or WOWGPT_SOURCE=1)
+#   --release <tag>     which release's binary (default latest, then the newest release of any kind; or WOWGPT_RELEASE); a named release never falls back
+#   --dir <folder>      where the source goes, from source (default ~/.wowgpt/app; or WOWGPT_DIR)
+#   --ref <branch|tag>  which version of the source, from source (default main; or WOWGPT_REF)
 #
 # What it does, in order, and it is safe to run again (an existing install is
 # updated, config.json and your chats are kept):
-#   1. downloads the claude-wow binary for this machine (macOS arm64 and x64,
+#   1. downloads the wowgpt binary for this machine (macOS arm64 and x64,
 #      Linux x64) from the project's GitHub releases into ~/.local/bin, checks
 #      it against the release's SHA256SUMS and runs it once. It is the bridge,
 #      setup and the service commands in one file with its runtime inside:
 #      nothing else to install, no Node.js. Where there is no binary (another
 #      platform, no release yet, --from-source) it installs from source instead:
-#      checks for Node.js 22.2+, clones the repo into ~/.claude-wow/app with git
+#      checks for Node.js 22.2+, clones the repo into ~/.wowgpt/app with git
 #      (or downloads the tarball; nothing to npm-install) and writes a
-#      `claude-wow` shim in ~/.local/bin that runs it with node
+#      `wowgpt` shim in ~/.local/bin that runs it with node
 #   2. runs the game-side setup (addon, config.json, slot pool); config, state
-#      and logs live in ~/.claude-wow (CLAUDE_WOW_HOME), outside the code
+#      and logs live in ~/.wowgpt (WOWGPT_HOME), outside the code
 #   3. offers to install the background service
 # An install by the project's old name (~/.wow-ai, the wow-ai command, the
 # io.wowai.bridge service) is carried over: its config and sessions are copied
-# to ~/.claude-wow, its service and command are removed, and setup migrates
-# the addon and your chats in the game folder.
+# to ~/.wowgpt, its service and command are removed, and setup migrates
+# the addon and your chats in the game folder. A claude-wow install (the name
+# before WoWGPT) is carried over by setup, which copies ~/.claude-wow; its
+# claude-wow command becomes a link to wowgpt, and the CLAUDE_WOW_* variables
+# below still count when the WOWGPT_* one is not set.
 # Never sudo. Any failure stops with a message saying what to do.
 
 set -eu
 
-REPO_URL=${CLAUDE_WOW_REPO:-https://github.com/rdimascio/claude-wow}
-REF=${CLAUDE_WOW_REF:-main}
-RELEASE=${CLAUDE_WOW_RELEASE:-latest}
-HOME_DIR=${CLAUDE_WOW_HOME:-$HOME/.claude-wow}
-DIR=${CLAUDE_WOW_DIR:-$HOME_DIR/app}
-BIN_DIR=${CLAUDE_WOW_BIN:-$HOME/.local/bin}
+REPO_URL=${WOWGPT_REPO:-${CLAUDE_WOW_REPO:-https://github.com/rdimascio/claude-wow}}
+REF=${WOWGPT_REF:-${CLAUDE_WOW_REF:-main}}
+RELEASE=${WOWGPT_RELEASE:-${CLAUDE_WOW_RELEASE:-latest}}
+HOME_DIR=${WOWGPT_HOME:-${CLAUDE_WOW_HOME:-$HOME/.wowgpt}}
+DIR=${WOWGPT_DIR:-${CLAUDE_WOW_DIR:-$HOME_DIR/app}}
+BIN_DIR=${WOWGPT_BIN:-${CLAUDE_WOW_BIN:-$HOME/.local/bin}}
 OLD_DIR=$HOME/.wow-ai
 MIN_NODE=22.2
-WOW=${CLAUDE_WOW_WOW:-}
-PROJECT=${CLAUDE_WOW_PROJECT:-}
+WOW=${WOWGPT_WOW:-${CLAUDE_WOW_WOW:-}}
+PROJECT=${WOWGPT_PROJECT:-${CLAUDE_WOW_PROJECT:-}}
 SERVICE=ask
-SOURCE=${CLAUDE_WOW_SOURCE:-}
-CMD=                 # the claude-wow command once it is in place: the binary, or the shim that runs the source with node
+SOURCE=${WOWGPT_SOURCE:-${CLAUDE_WOW_SOURCE:-}}
+CMD=                 # the wowgpt command once it is in place: the binary, or the shim that runs the source with node
 
 say()  { printf '%s\n' "$*"; }
 step() { printf '\n==> %s\n' "$*"; }
@@ -140,7 +143,7 @@ get_binary() {
   [ -n "$asset" ] || { say "no prebuilt binary for $(uname -s) $(uname -m)"; return 1; }
   command -v curl >/dev/null 2>&1 || { say "curl is not available"; return 1; }
   base=$(release_base)
-  tmp=$(mktemp -d 2>/dev/null || mktemp -d -t claude-wow)
+  tmp=$(mktemp -d 2>/dev/null || mktemp -d -t wowgpt)
   say "downloading $base/$asset"
   if ! curl -fsSL "$base/$asset" -o "$tmp/$asset" 2>/dev/null; then
     newest=
@@ -174,12 +177,12 @@ get_binary() {
     rm -rf "$tmp"
     fail "the downloaded binary does not run on this machine" "Run this again with --from-source to use Node.js instead."
   fi
-  mkdir -p "$BIN_DIR" || fail "cannot create $BIN_DIR" "Pick another folder with CLAUDE_WOW_BIN=<folder>."
+  mkdir -p "$BIN_DIR" || fail "cannot create $BIN_DIR" "Pick another folder with WOWGPT_BIN=<folder>."
   # mv, not cp: a bridge that is running the old binary keeps its file until it restarts.
-  mv -f "$tmp/$asset" "$BIN_DIR/claude-wow"
+  mv -f "$tmp/$asset" "$BIN_DIR/wowgpt"
   rm -rf "$tmp"
-  CMD=$BIN_DIR/claude-wow
-  say "claude-wow: $CMD ($("$CMD" --version 2>/dev/null || echo binary))"
+  CMD=$BIN_DIR/wowgpt
+  say "wowgpt: $CMD ($("$CMD" --version 2>/dev/null || echo binary))"
   return 0
 }
 
@@ -193,16 +196,16 @@ get_source() {
   say "node $NODE_VER ($NODE_BIN)"
   get_code
   [ -f "$DIR/setup.js" ] || fail "$DIR does not contain setup.js after the download" "Remove $DIR and run this again."
-  mkdir -p "$BIN_DIR" || fail "cannot create $BIN_DIR" "Pick another folder with CLAUDE_WOW_BIN=<folder>."
-  cat > "$BIN_DIR/claude-wow" <<EOF
+  mkdir -p "$BIN_DIR" || fail "cannot create $BIN_DIR" "Pick another folder with WOWGPT_BIN=<folder>."
+  cat > "$BIN_DIR/wowgpt" <<EOF
 #!/bin/sh
-# Claude WoW: written by install.sh. Runs the bridge from $DIR.
+# WoWGPT: written by install.sh. Runs the bridge from $DIR.
 NODE=\$(command -v node 2>/dev/null || echo "$NODE_BIN")
 exec "\$NODE" "$DIR/bridge/supervisor.js" "\$@"
 EOF
-  chmod +x "$BIN_DIR/claude-wow"
-  CMD=$BIN_DIR/claude-wow
-  say "claude-wow command: $CMD (runs $DIR with node)"
+  chmod +x "$BIN_DIR/wowgpt"
+  CMD=$BIN_DIR/wowgpt
+  say "wowgpt command: $CMD (runs $DIR with node)"
 }
 
 get_code() {
@@ -216,7 +219,7 @@ get_code() {
     return
   fi
   if [ -e "$DIR" ] && [ ! -f "$DIR/setup.js" ] && [ -n "$(ls -A "$DIR" 2>/dev/null)" ]; then
-    fail "$DIR exists and is not a claude-wow install" "Pick another folder with --dir <folder> (or CLAUDE_WOW_DIR), or move that one aside."
+    fail "$DIR exists and is not a wowgpt install" "Pick another folder with --dir <folder> (or WOWGPT_DIR), or move that one aside."
   fi
   if command -v git >/dev/null 2>&1 && [ ! -f "$DIR/setup.js" ]; then
     say "cloning $REPO_URL ($REF) into $DIR"
@@ -226,13 +229,13 @@ get_code() {
   # No git (or a previous tarball install to refresh): download the archive.
   command -v curl >/dev/null 2>&1 || fail "neither git nor curl is available" "Install git (macOS: xcode-select --install) and run this again."
   command -v tar >/dev/null 2>&1 || fail "tar is not available" "Install tar from your package manager and run this again."
-  tmp=$(mktemp -d 2>/dev/null || mktemp -d -t claude-wow)
+  tmp=$(mktemp -d 2>/dev/null || mktemp -d -t wowgpt)
   say "downloading $REPO_URL/archive/refs/heads/$REF.tar.gz"
   if ! curl -fsSL "$REPO_URL/archive/refs/heads/$REF.tar.gz" | tar -xz -C "$tmp" 2>/dev/null; then
     curl -fsSL "$REPO_URL/archive/refs/tags/$REF.tar.gz" | tar -xz -C "$tmp" || fail "download failed" "Check the network, or install git and run this again."
   fi
   src=$(find "$tmp" -mindepth 1 -maxdepth 1 -type d | head -n 1)
-  [ -f "$src/setup.js" ] || fail "the archive did not contain claude-wow" "Try again with git installed."
+  [ -f "$src/setup.js" ] || fail "the archive did not contain wowgpt" "Try again with git installed."
   mkdir -p "$DIR"
   # cp over the old files; config.json, state.json and transcripts.json are not in the archive, so they survive.
   cp -R "$src/." "$DIR/"
@@ -257,9 +260,19 @@ migrate_old_install() {
   fi
   if [ -f "$BIN_DIR/wow-ai" ] && grep -q "$OLD_DIR" "$BIN_DIR/wow-ai" 2>/dev/null; then
     rm -f "$BIN_DIR/wow-ai"
-    say "removed the old wow-ai command ($BIN_DIR/wow-ai); it is claude-wow from now on"
+    say "removed the old wow-ai command ($BIN_DIR/wow-ai); it is wowgpt from now on"
   fi
   say "the old code in $OLD_DIR is no longer used; delete it when you like"
+}
+
+# The claude-wow command this installer wrote before the rename to WoWGPT: a
+# link to wowgpt from now on, so scripts and habits that call it keep working.
+link_old_command() {
+  old=$BIN_DIR/claude-wow
+  [ -f "$old" ] && [ ! -L "$old" ] || return 0
+  grep -q claude-wow "$old" 2>/dev/null || return 0
+  ln -sf "$CMD" "$old" || return 0
+  say "$old now runs wowgpt (claude-wow is its old name)"
 }
 
 on_path() {
@@ -270,12 +283,12 @@ on_path() {
       line="export PATH=\"$BIN_DIR:\$PATH\""
       [ "${rc##*/}" = config.fish ] && line="fish_add_path $BIN_DIR"
       if [ -f "$rc" ] && grep -Fq "$BIN_DIR" "$rc" 2>/dev/null; then
-        say "$BIN_DIR is already in $rc; open a new terminal for the claude-wow command"
+        say "$BIN_DIR is already in $rc; open a new terminal for the wowgpt command"
       elif ask "$BIN_DIR is not on your PATH. Add it to $rc? [y/N] "; then
-        printf '\n# claude-wow\n%s\n' "$line" >> "$rc"
-        say "added to $rc; open a new terminal for the claude-wow command"
+        printf '\n# wowgpt\n%s\n' "$line" >> "$rc"
+        say "added to $rc; open a new terminal for the wowgpt command"
       else
-        say "to use the claude-wow command, add this to $rc:  $line"
+        say "to use the wowgpt command, add this to $rc:  $line"
       fi
       ;;
   esac
@@ -305,15 +318,16 @@ main() {
   if [ -n "$SOURCE" ]; then
     get_source
   elif [ "$RELEASE" != latest ] && [ -z "$(binary_asset)" ]; then
-    fail "no claude-wow binary exists for $(uname -s) $(uname -m), in release $RELEASE or any other; a pinned release never falls back to the source" \
+    fail "no wowgpt binary exists for $(uname -s) $(uname -m), in release $RELEASE or any other; a pinned release never falls back to the source" \
       "Run this again with --from-source to run $REF with Node.js."
   elif ! get_binary; then
-    [ "$RELEASE" = latest ] || fail "release $RELEASE has no claude-wow binary for this machine, or it could not be downloaded; a pinned release never falls back to another release or to the source" \
-      "Check that $REPO_URL/releases/tag/$RELEASE exists and has a binary for this machine, and check the network. Or drop --release (CLAUDE_WOW_RELEASE) for the newest release, or add --from-source to run $REF with Node.js."
+    [ "$RELEASE" = latest ] || fail "release $RELEASE has no wowgpt binary for this machine, or it could not be downloaded; a pinned release never falls back to another release or to the source" \
+      "Check that $REPO_URL/releases/tag/$RELEASE exists and has a binary for this machine, and check the network. Or drop --release (WOWGPT_RELEASE) for the newest release, or add --from-source to run $REF with Node.js."
     get_source
   fi
   on_path
   migrate_old_install
+  link_old_command
 
   step "2/3 Game-side setup (addon, config, slot pool)"
   set --
@@ -328,30 +342,30 @@ main() {
   fi
   if ! "$CMD" setup "$@"; then
     fail "the game-side setup did not finish (see above)" \
-      "The claude-wow command is installed. Fix what setup reported (usually: pass the client folder), then run:  claude-wow setup --wow \"<World of Warcraft/_classic_beta_>\""
+      "The wowgpt command is installed. Fix what setup reported (usually: pass the client folder), then run:  wowgpt setup --wow \"<World of Warcraft/_classic_beta_>\""
   fi
 
   step "3/3 Background service"
   if [ "$SERVICE" = no ]; then
-    say "skipped (install later with: claude-wow service install)"
+    say "skipped (install later with: wowgpt service install)"
   elif [ "$SERVICE" = yes ] || ask "Run the bridge in the background and start it at login? [y/N] "; then
-    "$CMD" service install || fail "the service did not install (see above)" "Everything else is in place; start the bridge by hand with: claude-wow"
+    "$CMD" service install || fail "the service did not install (see above)" "Everything else is in place; start the bridge by hand with: wowgpt"
   else
-    say "skipped (install later with: claude-wow service install; or start the bridge by hand with: claude-wow)"
+    say "skipped (install later with: wowgpt service install; or start the bridge by hand with: wowgpt)"
   fi
 
-  printf '\nInstalled. The claude-wow command works from any folder. Next:\n'
+  printf '\nInstalled. The wowgpt command works from any folder. Next:\n'
   say "  1. Fully quit and relaunch World of Warcraft (it only discovers new addon folders at launch)."
-  say "  2. Enable \"Claude WoW\" at the character-select AddOns screen."
+  say "  2. Enable \"WoWGPT\" at the character-select AddOns screen."
   if [ "$SERVICE" = no ]; then
-    say "  3. Start the bridge:  claude-wow        (or: claude-wow service install, to keep it running in the background)"
+    say "  3. Start the bridge:  wowgpt        (or: wowgpt service install, to keep it running in the background)"
   else
-    say "  3. Check the bridge:  claude-wow service status     (logs: claude-wow service logs)"
+    say "  3. Check the bridge:  wowgpt service status     (logs: wowgpt service logs)"
   fi
   say "  4. In game:  /wowgpt"
   say ""
-  if [ "$CMD" = "$BIN_DIR/claude-wow" ] && [ -z "$SOURCE" ] && [ ! -f "$DIR/setup.js" ]; then
-    say "Update later by running this installer again (it replaces the binary; then: claude-wow service restart)."
+  if [ "$CMD" = "$BIN_DIR/wowgpt" ] && [ -z "$SOURCE" ] && [ ! -f "$DIR/setup.js" ]; then
+    say "Update later by running this installer again (it replaces the binary; then: wowgpt service restart)."
   else
     say "Update later by running this installer again. Code: $DIR"
   fi

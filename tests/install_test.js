@@ -52,7 +52,7 @@ test('install.sh: the binary route names the release asset build.js produces for
   const src = fs.readFileSync(SH, 'utf8');
   assert.match(src, /releases\/latest\/download/, 'fetches from the GitHub release');
   assert.match(src, /SHA256SUMS/, 'checks the checksum');
-  assert.match(src, /mv -f "\$tmp\/\$asset" "\$BIN_DIR\/claude-wow"/, 'replaces the binary by rename, so a running bridge keeps its file');
+  assert.match(src, /mv -f "\$tmp\/\$asset" "\$BIN_DIR\/wowgpt"/, 'replaces the binary by rename, so a running bridge keeps its file');
   assert.match(src, /service help/, 'runs the download once before keeping it');
   assert.match(src, /get_source/, 'falls back to the source');
 });
@@ -74,18 +74,19 @@ const INSTALLER_TOOLS_WITHOUT_NODE = [
   'cp',
   'ls',
   'tr',
+  'ln',
 ];
 const NON_ROOT_ID = '#!/bin/sh\necho 1000\n';
 
 function fakeReleaseHost(newestTag, { machine } = {}) {
-  const asset = machine ? 'claude-wow-unsupported' : spawnSync('sh', [SH, '--binary-asset'], { encoding: 'utf8' }).stdout.trim();
-  const root = fs.mkdtempSync(path.join(require('os').tmpdir(), 'claude-wow-install-'));
+  const asset = machine ? 'wowgpt-unsupported' : spawnSync('sh', [SH, '--binary-asset'], { encoding: 'utf8' }).stdout.trim();
+  const root = fs.mkdtempSync(path.join(require('os').tmpdir(), 'wowgpt-install-'));
   const fakeBin = path.join(root, 'fake-bin');
   const files = path.join(root, 'files');
   const home = path.join(root, 'home');
   const binDir = path.join(root, 'bin');
   for (const d of [fakeBin, files, home, binDir]) fs.mkdirSync(d, { recursive: true });
-  const binary = '#!/bin/sh\necho "fake claude-wow $*"\n';
+  const binary = '#!/bin/sh\necho "fake wowgpt $*"\n';
   fs.writeFileSync(path.join(files, asset), binary);
   const sum = require('crypto').createHash('sha256').update(binary).digest('hex');
   fs.writeFileSync(path.join(files, 'SHA256SUMS'), `${sum}  ${asset}\n`);
@@ -123,8 +124,8 @@ function fakeReleaseHost(newestTag, { machine } = {}) {
     PATH: `${fakeBin}:${binDir}`,
     HOME: home,
     SHELL: '/bin/sh',
-    CLAUDE_WOW_BIN: binDir,
-    CLAUDE_WOW_REPO: 'https://github.com/rdimascio/claude-wow',
+    WOWGPT_BIN: binDir,
+    WOWGPT_REPO: 'https://github.com/rdimascio/claude-wow',
   };
   return { asset, root, binDir, log, env };
 }
@@ -141,7 +142,7 @@ test(
       assert.equal(r.status, 0, r.stdout + r.stderr);
       assert.match(r.stdout, /trying the newest release, v0\.5\.0-beta\.1/);
       assert.match(r.stdout, /checksum OK/);
-      assert.equal(fs.readFileSync(path.join(h.binDir, 'claude-wow'), 'utf8'), '#!/bin/sh\necho "fake claude-wow $*"\n');
+      assert.equal(fs.readFileSync(path.join(h.binDir, 'wowgpt'), 'utf8'), '#!/bin/sh\necho "fake wowgpt $*"\n');
       const urls = fs.readFileSync(h.log, 'utf8').trim().split('\n');
       assert.equal(urls[0], `https://github.com/rdimascio/claude-wow/releases/latest/download/${h.asset}`);
       assert.equal(urls[1], 'https://api.github.com/repos/rdimascio/claude-wow/releases?per_page=1');
@@ -172,14 +173,14 @@ test(
     for (const pin of [['--release', 'v0.4.0'], []]) {
       const pinned = fakeReleaseHost('v0.5.0-beta.1');
       try {
-        const env = pin.length ? pinned.env : { ...pinned.env, CLAUDE_WOW_RELEASE: 'v0.4.0' };
+        const env = pin.length ? pinned.env : { ...pinned.env, WOWGPT_RELEASE: 'v0.4.0' };
         const r = spawnSync('/bin/sh', [SH, '--no-service', ...pin], { encoding: 'utf8', env });
         assert.equal(r.status, 1, r.stdout + r.stderr);
-        assert.match(r.stderr, /install failed: release v0\.4\.0 has no claude-wow binary for this machine/);
+        assert.match(r.stderr, /install failed: release v0\.4\.0 has no wowgpt binary for this machine/);
         assert.match(r.stderr, /a pinned release never falls back/);
         assert.doesNotMatch(r.stdout, /installing from source/);
         assert.doesNotMatch(r.stderr, /Node\.js is not installed/);
-        assert.ok(!fs.existsSync(path.join(pinned.binDir, 'claude-wow')), 'nothing installed');
+        assert.ok(!fs.existsSync(path.join(pinned.binDir, 'wowgpt')), 'nothing installed');
         const urls = fs.readFileSync(pinned.log, 'utf8');
         assert.ok(!/api\.github\.com/.test(urls), 'no lookup of another release');
         assert.match(urls, /releases\/download\/v0\.4\.0\//);
@@ -209,7 +210,7 @@ test('install.sh: a pinned --release on a platform with no binary says so and po
   try {
     const r = spawnSync('/bin/sh', [SH, '--no-service', '--release', 'v0.5.0-beta.1'], { encoding: 'utf8', env: h.env });
     assert.equal(r.status, 1, r.stdout + r.stderr);
-    assert.match(r.stderr, /install failed: no claude-wow binary exists for Linux riscv64, in release v0\.5\.0-beta\.1 or any other/);
+    assert.match(r.stderr, /install failed: no wowgpt binary exists for Linux riscv64, in release v0\.5\.0-beta\.1 or any other/);
     assert.match(r.stderr, /-> Run this again with --from-source/);
     assert.doesNotMatch(r.stderr, /network/);
     assert.ok(!fs.existsSync(h.log), 'nothing downloaded');
@@ -252,8 +253,8 @@ test(
       /^switch \(Select-BridgeRoute \(\[bool\]\$FromSource\) \$Release \$env:PROCESSOR_ARCHITECTURE \{ Get-Binary \}\) \{$/m,
       'the installer takes the route the function picks',
     );
-    assert.match(src, /'no-binary-for-platform' \{ Fail "no claude-wow binary exists for .*-FromSource/);
-    assert.match(src, /'pinned-download-failed' \{ Fail "release \$Release has no claude-wow binary/);
+    assert.match(src, /'no-binary-for-platform' \{ Fail "no wowgpt binary exists for .*-FromSource/);
+    assert.match(src, /'pinned-download-failed' \{ Fail "release \$Release has no wowgpt binary/);
   },
 );
 
@@ -275,27 +276,53 @@ test('install.ps1 parses, and its Node gate matches the shell one', { skip: !pws
   assert.ok(!/RunAs|Start-Process .*-Verb/i.test(src), 'never elevates');
 });
 
-test('the installers put the code under the home folder, name the claude-wow command, and carry an old wow-ai install over', () => {
+test('the installers put the code under the home folder, name the wowgpt command, and carry an old wow-ai install over', () => {
   const sh = fs.readFileSync(SH, 'utf8');
-  assert.match(sh, /^DIR=\$\{CLAUDE_WOW_DIR:-\$HOME_DIR\/app\}$/m, 'code under ~/.claude-wow/app, state in ~/.claude-wow');
-  assert.match(sh, /^HOME_DIR=\$\{CLAUDE_WOW_HOME:-\$HOME\/\.claude-wow\}$/m);
-  assert.match(sh, /"\$BIN_DIR\/claude-wow"/);
+  assert.match(sh, /^DIR=\$\{WOWGPT_DIR:-\$\{CLAUDE_WOW_DIR:-\$HOME_DIR\/app\}\}$/m, 'code under ~/.wowgpt/app, state in ~/.wowgpt');
+  assert.match(sh, /^HOME_DIR=\$\{WOWGPT_HOME:-\$\{CLAUDE_WOW_HOME:-\$HOME\/\.wowgpt\}\}$/m);
+  assert.match(sh, /"\$BIN_DIR\/wowgpt"/);
   assert.ok(!/BIN_DIR\/wow-ai" <<EOF/.test(sh), 'no wow-ai shim is written');
   assert.match(sh, /migrate_old_install\(\)/);
   assert.match(sh, /for f in config\.json state\.json transcripts\.json/);
   assert.match(sh, /service uninstall/);
   assert.ok(!/WOW_AI_/.test(sh), 'no WOW_AI_* variable left');
   const ps = fs.readFileSync(PS1, 'utf8');
-  assert.match(ps, /'claude-wow\.cmd'/);
-  assert.match(ps, /'claude-wow\.exe'/, 'the binary route');
+  assert.match(ps, /'wowgpt\.cmd'/);
+  assert.match(ps, /'wowgpt\.exe'/, 'the binary route');
   assert.match(ps, /wowgpt-windows-x64\.exe/, 'the release asset build.js produces');
   assert.match(ps, /SHA256SUMS/);
   assert.match(ps, /Get-Source/, 'falls back to the source');
   assert.match(ps, /\$newest = if \(\$Release -eq 'latest'\) \{ Get-NewestReleaseTag \}/, 'only latest falls back to the newest release');
   assert.match(ps, /\/releases\?per_page=1"/, 'the newest release, pre-releases included');
   assert.doesNotMatch(ps + sh, /newest pre-release/, 'the fallback takes the newest release of any kind');
-  assert.match(ps, /Programs\\claude-wow'/);
+  assert.match(ps, /Programs\\wowgpt'/);
   assert.match(ps, /\$OldDir = Join-Path \$env:LOCALAPPDATA 'Programs\\wow-ai'/);
   assert.match(ps, /'config\.json', 'state\.json', 'transcripts\.json'/);
   assert.ok(!/WOW_AI_/.test(ps), 'no WOW_AI_* variable left');
 });
+
+// The rename to WoWGPT: an installer run with only the old CLAUDE_WOW_*
+// variables still finds its folders, and the claude-wow command it wrote
+// before becomes a link to wowgpt.
+test(
+  'install.sh after the rename: CLAUDE_WOW_BIN still counts, and the old claude-wow command now runs wowgpt',
+  { skip: !hasAsset && 'no prebuilt binary for this platform' },
+  () => {
+    const h = fakeReleaseHost('v0.5.0-beta.1');
+    try {
+      const env = { ...h.env, CLAUDE_WOW_BIN: h.binDir };
+      delete env.WOWGPT_BIN;
+      fs.writeFileSync(path.join(h.binDir, 'claude-wow'), '#!/bin/sh\necho "claude-wow 0.5.0"\n', { mode: 0o755 });
+      fs.writeFileSync(path.join(h.binDir, 'unrelated'), 'other\n');
+      const r = spawnSync('/bin/sh', [SH, '--no-service'], { encoding: 'utf8', env });
+      assert.equal(r.status, 0, r.stdout + r.stderr);
+      assert.ok(fs.existsSync(path.join(h.binDir, 'wowgpt')), 'the binary went into the folder the old variable names');
+      assert.ok(fs.lstatSync(path.join(h.binDir, 'claude-wow')).isSymbolicLink(), 'the old command is a link now');
+      assert.equal(fs.realpathSync(path.join(h.binDir, 'claude-wow')), fs.realpathSync(path.join(h.binDir, 'wowgpt')));
+      assert.match(r.stdout, /claude-wow now runs wowgpt/);
+      assert.equal(fs.readFileSync(path.join(h.binDir, 'unrelated'), 'utf8'), 'other\n');
+    } finally {
+      fs.rmSync(h.root, { recursive: true, force: true });
+    }
+  },
+);
