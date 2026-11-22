@@ -101,7 +101,7 @@ function Select-BridgeRoute([bool]$sourceWanted, [string]$release, [string]$arch
 
 # ---- 1. The bridge ----------------------------------------------------------
 function Get-Binary {
-  $asset = 'claude-wow-windows-x64.exe'
+  $asset = 'wowgpt-windows-x64.exe'
   $base = if ($Release -eq 'latest') { "$Repo/releases/latest/download" } else { "$Repo/releases/download/$Release" }
   $tmp = Join-Path $env:TEMP "claude-wow-$PID.exe"
   Write-Host "downloading $base/$asset"
@@ -184,7 +184,7 @@ Step '1/4 The bridge'
 switch (Select-BridgeRoute ([bool]$FromSource) $Release $env:PROCESSOR_ARCHITECTURE { Get-Binary }) {
   'source' { Get-Source }
   'no-binary-for-platform' { Fail "no claude-wow binary exists for $env:PROCESSOR_ARCHITECTURE Windows, in release $Release or any other; a pinned release never falls back to the source" "Run this again with -FromSource (or `$env:CLAUDE_WOW_SOURCE = `"1`") to run $Ref with Node.js." }
-  'pinned-download-failed' { Fail "release $Release has no claude-wow binary for this machine, or it could not be downloaded; a pinned release never falls back to another release or to the source" "Check that $Repo/releases/tag/$Release exists and has claude-wow-windows-x64.exe, and check the network. Or clear `$env:CLAUDE_WOW_RELEASE for the newest release, or set `$env:CLAUDE_WOW_SOURCE = `"1`" to run $Ref with Node.js." }
+  'pinned-download-failed' { Fail "release $Release has no claude-wow binary for this machine, or it could not be downloaded; a pinned release never falls back to another release or to the source" "Check that $Repo/releases/tag/$Release exists and has wowgpt-windows-x64.exe, and check the network. Or clear `$env:CLAUDE_WOW_RELEASE for the newest release, or set `$env:CLAUDE_WOW_SOURCE = `"1`" to run $Ref with Node.js." }
 }
 
 # ---- 2. The command on the PATH ---------------------------------------------

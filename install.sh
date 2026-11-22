@@ -75,9 +75,9 @@ os_name() { case "$(uname -s)" in Darwin) echo macOS ;; Linux) echo Linux ;; *) 
 # The release asset built for this machine (build.js names them), or nothing.
 binary_asset() {
   case "$(uname -s)-$(uname -m)" in
-    Darwin-arm64) echo claude-wow-darwin-arm64 ;;
-    Darwin-x86_64) echo claude-wow-darwin-x64 ;;
-    Linux-x86_64) echo claude-wow-linux-x64 ;;
+    Darwin-arm64) echo wowgpt-darwin-arm64 ;;
+    Darwin-x86_64) echo wowgpt-darwin-x64 ;;
+    Linux-x86_64) echo wowgpt-linux-x64 ;;
     *) echo "" ;;
   esac
 }

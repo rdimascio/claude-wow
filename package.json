@@ -1,5 +1,5 @@
 {
-  "name": "claude-wow",
+  "name": "wowgpt",
   "version": "0.5.0-beta.1",
   "type": "commonjs",
   "description": "Claude in World of Warcraft: chat with Claude Code and other local coding agents (Codex, Grok Build, Antigravity, Hermes) from inside World of Warcraft: Forever or Classic Era, with no UI reloads. Pixel strip out, load-on-demand slots in.",
@@ -12,7 +12,7 @@
   "keywords": [
     "world-of-warcraft",
     "wow-addon",
-    "claude-wow",
+    "wowgpt",
     "claude-code",
     "claude",
     "codex",
@@ -24,6 +24,7 @@
     "node": ">=22.2"
   },
   "bin": {
+    "wowgpt": "bridge/supervisor.js",
     "claude-wow": "bridge/supervisor.js"
   },
   "files": [

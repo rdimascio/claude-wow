@@ -3,7 +3,7 @@
 // file's path inside the binary; bridge/assets.js reads them from there and
 // writes them out where python and the game can see them. The list is
 // assets.FILES, one import per file (tests/assets_test.js keeps the two in
-// step). Then the supervisor, which is the claude-wow command. Bun only:
+// step). Then the supervisor, which is the wowgpt command. Bun only:
 // from a checkout, node runs bridge/supervisor.js directly.
 import addonCoreNamespace from '../addon/WoWGPT/Core/Namespace.lua' with { type: 'file' };
 import addonCoreLog from '../addon/WoWGPT/Core/Log.lua' with { type: 'file' };

@@ -24,7 +24,7 @@ function settings(cfg, defaultCwd) {
   const a = cfg && cfg.autoDeploy;
   if (a === undefined || a === null || a === false) return { enabled: false };
   if (typeof a !== 'object' || Array.isArray(a) || typeof a.repo !== 'string' || !a.repo.trim())
-    return { enabled: false, error: 'autoDeploy needs { "repo": "<path to the claude-wow checkout>" }' };
+    return { enabled: false, error: 'autoDeploy needs { "repo": "<path to the wowgpt checkout>" }' };
   const ref = a.ref === undefined ? DEFAULT_REF : String(a.ref).trim();
   if (!REF_RE.test(ref) || ref.includes('..')) return { enabled: false, error: `autoDeploy.ref "${ref.slice(0, 80)}" is not origin/<branch>` };
   return { enabled: true, repo: P.resolveCwd(a.repo.trim(), defaultCwd), ref };
@@ -32,11 +32,11 @@ function settings(cfg, defaultCwd) {
 
 function eligible({ home, platform = process.platform, compiled, env = process.env, definitionFile }) {
   if (platform !== 'darwin') return { ok: false, why: 'macOS only: on Linux systemd would stop the deploy with the service before setup runs' };
-  if (!compiled || env.WOWGPT_SERVICE !== '1') return { ok: false, why: 'it runs only in the background service (claude-wow service)' };
+  if (!compiled || env.WOWGPT_SERVICE !== '1') return { ok: false, why: 'it runs only in the background service (wowgpt service)' };
   const l = REL.layout(home);
   const name = REL.currentName(l);
   const info = name && REL.hasRelease(l, name) ? REL.releaseInfo(l, name) : null;
-  if (!info || info.source !== REL.SOURCE_DEV_DEPLOY) return { ok: false, why: 'the service does not run a release made by claude-wow dev deploy' };
+  if (!info || info.source !== REL.SOURCE_DEV_DEPLOY) return { ok: false, why: 'the service does not run a release made by wowgpt dev deploy' };
   if (!D.serviceRunsCurrent(l, { platform, definitionFile }))
     return { ok: false, why: `the service definition does not run ${REL.currentBinary(l)}, so a deploy would not restart it or run setup` };
   return { ok: true };
@@ -93,7 +93,7 @@ function createAutoDeploy({ conf, home, log, idle, run = git, spawn = nodeSpawn,
     let fd;
     try {
       fd = fs.openSync(logFile, 'a', 0o600);
-      const child = spawn('/bin/sh', ['-c', DEPLOY_SCRIPT, 'claude-wow-autodeploy', REL.currentBinary(l), sha, conf.repo, stateFile, key], {
+      const child = spawn('/bin/sh', ['-c', DEPLOY_SCRIPT, 'wowgpt-autodeploy', REL.currentBinary(l), sha, conf.repo, stateFile, key], {
         cwd: home,
         detached: true,
         stdio: ['ignore', fd, fd],
@@ -106,7 +106,7 @@ function createAutoDeploy({ conf, home, log, idle, run = git, spawn = nodeSpawn,
     } finally {
       if (fd !== undefined) fs.closeSync(fd);
     }
-    log(`auto-deploy: ${conf.ref} is at ${sha.slice(0, 12)}; started claude-wow dev deploy (output in ${logFile})`);
+    log(`auto-deploy: ${conf.ref} is at ${sha.slice(0, 12)}; started wowgpt dev deploy (output in ${logFile})`);
     return 'started';
   }
 
@@ -142,7 +142,7 @@ function createAutoDeploy({ conf, home, log, idle, run = git, spawn = nodeSpawn,
     const last = readState();
     if (!last.sha || !Number.isInteger(last.exit) || last.exit === 0 || last.reported) return '';
     writeState({ ...last, reported: true });
-    return `[claude-wow bridge] The automatic deploy of ${conf.ref} at ${String(last.sha).slice(0, 12)} did not complete (exit ${last.exit}), so that merge may be only partly live or not live at all. Tell the player in one line. The deploy output is in ${logFile}. The next merge to ${conf.ref} deploys again.`;
+    return `[wowgpt bridge] The automatic deploy of ${conf.ref} at ${String(last.sha).slice(0, 12)} did not complete (exit ${last.exit}), so that merge may be only partly live or not live at all. Tell the player in one line. The deploy output is in ${logFile}. The next merge to ${conf.ref} deploys again.`;
   }
 
   function start(timers = { setTimeout, setInterval }) {

@@ -147,16 +147,16 @@ jobs:
           bun-version: 1.4.2
       - run: npm ci --omit=dev
       - run: bun build.js
-      - run: ./dist/claude-wow-linux-x64 service help
-      - name: SHA256SUMS lists the four binaries and every sum matches
+      - run: ./dist/wowgpt-linux-x64 service help
+      - name: SHA256SUMS lists the four binaries, each also by its claude-wow name, and every sum matches
         working-directory: dist
         run: |
           cat SHA256SUMS
-          test "$(wc -l < SHA256SUMS)" -eq 4
+          test "$(wc -l < SHA256SUMS)" -eq 8
           sha256sum --check --strict SHA256SUMS
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: claude-wow-binaries
+          name: wowgpt-binaries
           path: dist/
           if-no-files-found: error
 
@@ -172,7 +172,7 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: claude-wow-binaries
+          name: wowgpt-binaries
           path: dist
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
@@ -181,7 +181,7 @@ jobs:
       - name: the downloaded binaries still match SHA256SUMS, and there is one addon zip
         run: |
           (cd dist && sha256sum --check --strict SHA256SUMS)
-          test "$(ls dist | wc -l)" -eq 5
+          test "$(ls dist | wc -l)" -eq 9
           test "$(ls addon-zip/*.zip | wc -l)" -eq 1
       - name: the release notes are the CHANGELOG section for this version
         run: |
@@ -189,14 +189,14 @@ jobs:
           awk -v heading="## [$version]" 'index($0, heading) == 1 { found = 1; next } found && /^## \[/ { exit } found { print }' CHANGELOG.md > release-notes.md
           cat release-notes.md
           grep -q '[^[:space:]]' release-notes.md
-      - name: create the GitHub release with the addon zip, the four binaries and SHA256SUMS
+      - name: create the GitHub release with the addon zip, the four binaries under both names and SHA256SUMS
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           version=${GITHUB_REF_NAME#v}
           prerelease_flag=
           case "$version" in *-*) prerelease_flag=--prerelease ;; esac
-          gh release create "$GITHUB_REF_NAME" --verify-tag --repo "$GITHUB_REPOSITORY" --title "Claude WoW $version" --notes-file release-notes.md $prerelease_flag addon-zip/*.zip dist/*
+          gh release create "$GITHUB_REF_NAME" --verify-tag --repo "$GITHUB_REPOSITORY" --title "WoWGPT $version" --notes-file release-notes.md $prerelease_flag addon-zip/*.zip dist/*
 
   addon-stores:
     needs: github-release

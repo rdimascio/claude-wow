@@ -34,7 +34,10 @@ const LIMITS = {
 const SEMVER =
   /^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 const HOMEBREW_PATH = /\/Cellar\/|\/opt\/homebrew\/|\/\.linuxbrew\//;
-const PROJECT_NAMES = ['claude-wow', 'wow-ai'];
+const PROJECT_NAMES = ['wowgpt', 'claude-wow', 'wow-ai'];
+// What --version starts with, newest first: a release from before the rename to
+// WoWGPT prints claude-wow.
+const VERSION_LINE = /^(?:wowgpt|claude-wow) (\S+)/m;
 const SKIP_FILE = 'update-skip.json';
 const STALE_DOWNLOAD_MS = 6 * HOUR_MS;
 const GAME_CHECK_MAX_AGE_MS = 15000;
@@ -87,10 +90,21 @@ function compareSemver(a, b) {
   return Math.sign(x.pre.length - y.pre.length);
 }
 
-function assetName(platform = process.platform, arch = process.arch) {
+function assetName(platform = process.platform, arch = process.arch, prefix = B.ASSET_PREFIX) {
   const osName = platform === 'win32' ? 'windows' : platform;
   const target = `bun-${osName}-${arch}`;
-  return B.TARGETS.includes(target) ? B.outName(target) : '';
+  return B.TARGETS.includes(target) ? B.outName(target, prefix) : '';
+}
+
+// This machine's asset in a release: the WoWGPT name, else the name from
+// before the rename (a release that ships only that one).
+function releaseAsset(release, platform, arch) {
+  for (const prefix of [B.ASSET_PREFIX, ...B.OLD_ASSET_PREFIXES]) {
+    const name = assetName(platform, arch, prefix);
+    const file = release.assets.find(a => a.name === name);
+    if (file) return { name, file };
+  }
+  return { name: assetName(platform, arch), file: null };
 }
 
 function realpathOf(p) {
@@ -141,7 +155,7 @@ function installKind({ compiled = R.compiled, execPath = process.execPath } = {}
   if (!compiled) return { kind: 'dev', why: 'running from source (node or bun and a checkout); update it with git pull or the installer' };
   const real = realpathOf(execPath);
   if (HOMEBREW_PATH.test(real.split(path.sep).join('/')))
-    return { kind: 'homebrew', binary: real, why: 'Homebrew installed this binary; update it with: brew upgrade claude-wow' };
+    return { kind: 'homebrew', binary: real, why: 'Homebrew installed this binary; update it with: brew upgrade wowgpt' };
   const repo = gitCheckoutAbove(real);
   if (repo) return { kind: 'dev', binary: real, why: `the binary is inside the git checkout ${repo}; rebuild it there` };
   const found = releasesLayout(real);
@@ -151,7 +165,7 @@ function installKind({ compiled = R.compiled, execPath = process.execPath } = {}
     return {
       kind: 'dev',
       binary: real,
-      why: `releases/${devName} is not a published release (its ${REL.RELEASE_INFO} has no source "${REL.SOURCE_RELEASE}" or "${REL.SOURCE_SELF_UPDATE}"); claude-wow dev deploy updates it`,
+      why: `releases/${devName} is not a published release (its ${REL.RELEASE_INFO} has no source "${REL.SOURCE_RELEASE}" or "${REL.SOURCE_SELF_UPDATE}"); wowgpt dev deploy updates it`,
     };
   return { kind: 'releases', binary: real, ...found };
 }
@@ -170,7 +184,7 @@ function httpError(status, url) {
 }
 
 function get(url, opts = {}) {
-  const { maxBytes, idleMs, headers = {}, onData, redirects = MAX_REDIRECTS, userAgent = `claude-wow/${ownVersion()}` } = opts;
+  const { maxBytes, idleMs, headers = {}, onData, redirects = MAX_REDIRECTS, userAgent = `wowgpt/${ownVersion()}` } = opts;
   const until = opts.until || Date.now() + opts.timeoutMs;
   return new Promise((resolve, reject) => {
     let u;
@@ -332,7 +346,7 @@ function probeBinary(file) {
         resolve({ ok: false, why: err.message.split('\n')[0] });
         return;
       }
-      const m = /claude-wow (\S+)/.exec(String(stdout || ''));
+      const m = VERSION_LINE.exec(String(stdout || ''));
       resolve(m ? { ok: true, version: m[1] } : { ok: false, why: 'it printed no version' });
     });
   });
@@ -384,7 +398,7 @@ function skippedNow(home, version, explicit) {
   if (explicit || !home) return '';
   const skip = readSkip(home);
   if (!skip || compareSemver(version, skip.version) > 0) return '';
-  return `${skip.version} is skipped${skip.reason ? ` (${skip.reason})` : ''}; a newer release or claude-wow update installs again`;
+  return `${skip.version} is skipped${skip.reason ? ` (${skip.reason})` : ''}; a newer release or wowgpt update installs again`;
 }
 
 function binaryLockFile(binary) {
@@ -405,7 +419,7 @@ async function installedSupersedes(binary, version, probe) {
 
 async function swapIn(install, tmp, version, sum, ctx = {}) {
   const { platform = process.platform, activate = REL.installAndActivate, home = '', explicit = false, probe = probeBinary } = ctx;
-  const command = `claude-wow update to ${version}`;
+  const command = `wowgpt update to ${version}`;
   if (install.kind === 'releases') {
     const l = install.layout;
     const lock = REL.acquireLock(l.lock, { command });
@@ -565,7 +579,7 @@ async function runUpdate(opts = {}) {
   } = opts;
   const current = effectiveVersion(version, readRecord(home));
   if (install.kind === 'dev') return { status: 'refused', current, message: `self-update is off: ${install.why}` };
-  const asset = assetName(platform, arch);
+  let asset = assetName(platform, arch);
   if (!asset && install.kind !== 'homebrew') return { status: 'failed', current, message: `no release binary is built for ${platform} ${arch}` };
   const dir = install.kind === 'releases' ? install.layout.releases : install.kind === 'binary' ? path.dirname(install.binary) : '';
   if (dir) pruneStaleDownloads(dir, alive ? { alive } : {});
@@ -574,26 +588,27 @@ async function runUpdate(opts = {}) {
   const failed = message => ({ status: 'failed', current, latest, message });
   const order = compareSemver(latest, current);
   if (order === null) return failed(`cannot compare ${latest} with this version ${current}`);
-  if (order <= 0) return { status: 'current', current, latest, message: `claude-wow ${current} is up to date (latest release ${latest})` };
+  if (order <= 0) return { status: 'current', current, latest, message: `wowgpt ${current} is up to date (latest release ${latest})` };
   const skip = explicit ? null : readSkip(home);
   if (skip && compareSemver(latest, skip.version) <= 0)
     return {
       status: 'skipped',
       current,
       latest,
-      message: `claude-wow ${latest} is out, but ${skip.version} is skipped${skip.reason ? ` (${skip.reason})` : ''}; a newer release or claude-wow update installs again`,
+      message: `wowgpt ${latest} is out, but ${skip.version} is skipped${skip.reason ? ` (${skip.reason})` : ''}; a newer release or wowgpt update installs again`,
     };
   if (install.kind === 'homebrew')
     return {
       status: 'homebrew',
       current,
       latest,
-      message: `claude-wow ${latest} is out (this is ${current}). Homebrew installed this one, so run: brew upgrade claude-wow`,
+      message: `wowgpt ${latest} is out (this is ${current}). Homebrew installed this one, so run: brew upgrade wowgpt`,
     };
-  if (checkOnly)
-    return { status: 'available', current, latest, message: `claude-wow ${latest} is out (this is ${current}); run claude-wow update to install it` };
-  const file = release.assets.find(a => a.name === asset);
+  if (checkOnly) return { status: 'available', current, latest, message: `wowgpt ${latest} is out (this is ${current}); run wowgpt update to install it` };
+  const found = releaseAsset(release, platform, arch);
+  const file = found.file;
   if (!file) return failed(`release ${release.tag} has no ${asset}; nothing was replaced`);
+  asset = found.name;
   const sumsFile = release.assets.find(a => a.name === SUMS_ASSET);
   if (!sumsFile) return failed(`release ${release.tag} has no ${SUMS_ASSET}, so ${asset} cannot be verified; nothing was replaced`);
   const want = parseSums((await get(sumsFile.url, limits.sums)).toString('utf8')).get(asset);
@@ -615,7 +630,7 @@ async function runUpdate(opts = {}) {
       current,
       latest,
       binary: swapped.binary,
-      message: `updated claude-wow ${current} to ${latest} (${swapped.binary})${pruneNote}`,
+      message: `updated wowgpt ${current} to ${latest} (${swapped.binary})${pruneNote}`,
     };
   } finally {
     rmQuiet(tmp);
@@ -829,7 +844,7 @@ function createUpdater(deps) {
     const removed = cleanupAside(install);
     if (removed) log(`self-update: removed ${removed} old binary copy(ies) left by the last update`);
     if (install.kind === 'dev') log(`self-update: off (${install.why})`);
-    else if (cfg.autoUpdate === false) log('self-update: the daily check is off (autoUpdate false in config.json); claude-wow update still works');
+    else if (cfg.autoUpdate === false) log('self-update: the daily check is off (autoUpdate false in config.json); wowgpt update still works');
     if (autoCheck) {
       const first = timers.setTimeout(checkTick, FIRST_CHECK_DELAY_MS);
       const every = timers.setInterval(checkTick, CHECK_TICK_MS);
@@ -853,17 +868,17 @@ function statusLine(rec) {
   return `${pending}last check ${formatAt(rec.attemptAt)}: ${rec.message || rec.status || '?'}`;
 }
 
-const HELP = `claude-wow update [--check]
+const HELP = `wowgpt update [--check]
 
-Checks the latest GitHub release of claude-wow and, when it is newer, downloads
+Checks the latest GitHub release of wowgpt and, when it is newer, downloads
 the binary for this machine and SHA256SUMS, verifies the checksum, runs it once
 (--version), and puts it in place of this one. A running bridge started by the
-supervisor (claude-wow, or the service) restarts on it once nothing is running
+supervisor (wowgpt, or the service) restarts on it once nothing is running
 and the game is closed or quiet (autoUpdateIdleSeconds, default ${DEFAULT_IDLE_SECONDS}).
 
   --check   only say whether a newer release is out
 
-Never downgrades. A Homebrew install is not touched: run brew upgrade claude-wow.
+Never downgrades. A Homebrew install is not touched: run brew upgrade wowgpt.
 A checkout (node or bun running the source) is never updated: use git pull.
 autoUpdate: false in config.json turns off the daily check, not this command.
 A version in update-skip.json (after dev rollback) is skipped by the daily
@@ -880,7 +895,7 @@ async function main(argv = [], deps = {}) {
       out(HELP);
       return 0;
     } else {
-      err(`claude-wow update: unknown option "${a}"`);
+      err(`wowgpt update: unknown option "${a}"`);
       out(HELP);
       return 2;
     }
@@ -888,14 +903,14 @@ async function main(argv = [], deps = {}) {
   const home = deps.home || H.resolve().dir;
   const outcome = await checkAndRecord({ ...deps, home, checkOnly, explicit: !checkOnly });
   if (outcome.status === 'failed') {
-    err(`claude-wow update: ${outcome.message}`);
+    err(`wowgpt update: ${outcome.message}`);
     return 1;
   }
   out(outcome.message);
   if (outcome.status === 'refused') return 3;
   if (outcome.status === 'updated')
     out(
-      'A bridge running under the supervisor or the service restarts on it by itself once nothing is running and the game is closed or quiet. A bridge started with "claude-wow bridge": restart it by hand.',
+      'A bridge running under the supervisor or the service restarts on it by itself once nothing is running and the game is closed or quiet. A bridge started with "wowgpt bridge": restart it by hand.',
     );
   return 0;
 }
@@ -930,6 +945,8 @@ module.exports = {
   normalizeVersion,
   compareSemver,
   assetName,
+  releaseAsset,
+  VERSION_LINE,
   installKind,
   launchPath,
   releasesLayout,

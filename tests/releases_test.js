@@ -2,6 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const REL = require('../bridge/releases');
 
@@ -266,7 +267,7 @@ test(
     fs.writeFileSync(path.join(half, REL.RELEASE_INFO), JSON.stringify({ name: '0.5.0-half' }));
     assert.equal(REL.hasRelease(l, '0.5.0-half'), false, 'nor with a release.json that does not say complete');
     assert.throws(() => REL.installRelease(l, { name: '0.5.0-half' }), /is not a finished release, so it is not reused/);
-    assert.throws(() => REL.activate(l, '0.5.0-half'), /has no claude-wow/);
+    assert.throws(() => REL.activate(l, '0.5.0-half'), /has no wowgpt/);
     const redone = REL.installRelease(l, { name: '0.5.0-half', binaryFile: fakeBinary(base, 'half') });
     assert.equal(redone.reused, false);
     assert.equal(fs.readFileSync(REL.releaseBinary(l, '0.5.0-half'), 'utf8'), 'half');
@@ -320,7 +321,7 @@ test('the flip: current is a symlink into releases, previous is recorded, the sa
     'no temp symlink left',
   );
 
-  assert.throws(() => REL.activate(l, '0.5.0-missing'), /has no claude-wow/);
+  assert.throws(() => REL.activate(l, '0.5.0-missing'), /has no wowgpt/);
   assert.equal(REL.currentName(l), '0.5.0-bbb', 'a failed flip leaves current alone');
   assert.throws(() => REL.activate(l, '../evil'), /not a usable release name/);
   assert.throws(() => REL.installRelease(l, { name: '0.5.0-bbb', binaryFile: fakeBinary(base, 'b2') }), /current release; it is not replaced in place/);
@@ -367,4 +368,23 @@ test('pruning keeps the newest releases and never removes the current or the pre
   fs.unlinkSync(l.current);
   assert.equal(REL.prune(l, 1).skipped, 'current does not point at a release');
   assert.equal(REL.listReleases(l).length, 5, 'without a known current nothing is removed');
+});
+
+// A release staged by a claude-wow binary holds a binary by that name: the
+// layout still finds it, and a new release is staged under the new name.
+test('a release from before the rename to WoWGPT: its claude-wow binary is the release binary and the current one', () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'wowgpt-rel-old-'));
+  const l = REL.layout(base);
+  const dir = path.join(l.releases, '0.5.0-old');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, REL.OLD_BINARIES[0]), 'old');
+  fs.writeFileSync(path.join(dir, 'release.json'), JSON.stringify({ name: '0.5.0-old', complete: true }));
+  assert.equal(REL.releaseBinary(l, '0.5.0-old'), path.join(dir, REL.OLD_BINARIES[0]));
+  if (process.platform !== 'win32') {
+    fs.symlinkSync(path.join('releases', '0.5.0-old'), l.current);
+    assert.equal(REL.currentBinary(l), path.join(l.current, REL.OLD_BINARIES[0]));
+  }
+  fs.writeFileSync(path.join(dir, REL.BINARY), 'new');
+  assert.equal(REL.releaseBinary(l, '0.5.0-old'), path.join(dir, REL.BINARY), 'the new name wins');
+  fs.rmSync(base, { recursive: true, force: true });
 });

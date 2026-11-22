@@ -46,7 +46,7 @@ test('build/entry.js embeds exactly assets.FILES, under the same names', () => {
 });
 
 test('with an embedded table, files are written out once, rewritten when they differ, and left alone when they match', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-wow-assets-'));
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'wowgpt-assets-'));
   try {
     // A stand-in for the binary's embedded copies: the checkout's files, from a folder of their own.
     const embeddedDir = path.join(tmp, 'embedded');
@@ -93,9 +93,9 @@ test('with an embedded table, files are written out once, rewritten when they di
 
 test('build.js names one binary per target, and the host target is this machine', () => {
   assert.deepEqual(B.TARGETS, ['bun-darwin-arm64', 'bun-darwin-x64', 'bun-linux-x64', 'bun-windows-x64']);
-  assert.equal(B.outName('bun-darwin-arm64'), 'claude-wow-darwin-arm64');
-  assert.equal(B.outName('bun-linux-x64'), 'claude-wow-linux-x64');
-  assert.equal(B.outName('bun-windows-x64'), 'claude-wow-windows-x64.exe');
+  assert.equal(B.outName('bun-darwin-arm64'), 'wowgpt-darwin-arm64');
+  assert.equal(B.outName('bun-linux-x64'), 'wowgpt-linux-x64');
+  assert.equal(B.outName('bun-windows-x64'), 'wowgpt-windows-x64.exe');
   assert.match(B.hostTarget(), /^bun-(darwin|linux|windows)-(arm64|x64)$/);
   assert.equal(B.main(['--target', 'bun-plan9-mips']), 2);
 });

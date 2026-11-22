@@ -47,7 +47,7 @@ test('publishProblems: publishing needs GitHub Actions and a clean checkout', ()
 });
 
 test('the files list packs no runtime file that a checkout used as the bridge home holds', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-wow-pack-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wowgpt-pack-'));
   try {
     fs.copyFileSync(path.join(ROOT, 'package.json'), path.join(dir, 'package.json'));
     for (const rel of [...RUNTIME_FILES, ...CODE_FILES]) {

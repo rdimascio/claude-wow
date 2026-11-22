@@ -103,24 +103,24 @@ test('settings: off unless autoDeploy names a repo, origin/<branch> refs only, f
 
 test('eligible: only the macOS service that runs a complete dev-deploy release through current', { skip: WINDOWS }, () => {
   const home = scratch('eligible');
-  const plist = path.join(home, 'io.claudewow.bridge.plist');
+  const plist = path.join(home, 'io.wowgpt.bridge.plist');
   fs.writeFileSync(plist, `<string>${REL.currentBinary(REL.layout(home))}</string>`);
   const service = { WOWGPT_SERVICE: '1', WOWGPT_SUPERVISED: '1' };
   const ok = (over = {}) => AD.eligible({ home, platform: 'darwin', compiled: true, env: service, definitionFile: plist, ...over });
-  assert.match(ok().why, /does not run a release made by claude-wow dev deploy/, 'no current release');
+  assert.match(ok().why, /does not run a release made by wowgpt dev deploy/, 'no current release');
   devRelease(home, '0.5.0-aaaaaaaaaaaa', { source: 'dev-deploy', sha: 'a'.repeat(40) });
   assert.deepEqual(ok(), { ok: true });
   assert.match(ok({ platform: 'linux' }).why, /macOS only/);
   assert.match(ok({ compiled: false }).why, /background service/);
   assert.match(ok({ env: { WOWGPT_SUPERVISED: '1' } }).why, /background service/, 'a terminal supervisor is not the service');
-  fs.writeFileSync(plist, '<string>/usr/local/bin/claude-wow</string>');
+  fs.writeFileSync(plist, '<string>/usr/local/bin/wowgpt</string>');
   assert.match(ok().why, /service definition does not run/, 'a service that runs another binary would not be restarted');
   fs.writeFileSync(plist, `<string>${REL.currentBinary(REL.layout(home))}</string>`);
   devRelease(home, '0.5.0', { source: 'self-update', version: '0.5.0' });
-  assert.match(ok().why, /does not run a release made by claude-wow dev deploy/, 'a published release is never turned into a dev deploy');
+  assert.match(ok().why, /does not run a release made by wowgpt dev deploy/, 'a published release is never turned into a dev deploy');
   devRelease(home, '0.5.1-bbbbbbbbbbbb', { source: 'dev-deploy', sha: 'b'.repeat(40) });
   fs.rmSync(REL.releaseBinary(REL.layout(home), '0.5.1-bbbbbbbbbbbb'));
-  assert.match(ok().why, /does not run a release made by claude-wow dev deploy/, 'a release without its binary');
+  assert.match(ok().why, /does not run a release made by wowgpt dev deploy/, 'a release without its binary');
 });
 
 test('the first check records origin/main; each later commit starts one detached deploy of that exact commit, remembered across restarts', async () => {
@@ -147,7 +147,7 @@ test('the first check records origin/main; each later commit starts one detached
   assert.equal(call.opts.stdio[0], 'ignore');
   assert.deepEqual(t.saved(), { sha });
   if (!WINDOWS) assert.equal(fs.statSync(path.join(t.home, AD.LOG_FILE)).mode & 0o777, 0o600);
-  assert.ok(t.logs.some(l => l.includes('started claude-wow dev deploy') && l.includes(sha.slice(0, 12))));
+  assert.ok(t.logs.some(l => l.includes('started wowgpt dev deploy') && l.includes(sha.slice(0, 12))));
 
   assert.equal(await t.ad.check(), 'seen', 'a commit is deployed at most once');
   const again = AD.createAutoDeploy({
@@ -252,7 +252,7 @@ test('the deploy script records its exit code, and a failure is told once in the
   assert.match(fs.readFileSync(path.join(t.home, AD.LOG_FILE), 'utf8'), new RegExp(`deploy dev deploy ${sha} --repo .* --timeout 7200`));
   assert.equal(t.ad.failureNote(t.home), '', 'another folder gets no note');
   const note = t.ad.failureNote(t.repo);
-  assert.match(note, new RegExp(`^\\[claude-wow bridge\\] The automatic deploy of origin/main at ${sha.slice(0, 12)} did not complete \\(exit 3\\)`));
+  assert.match(note, new RegExp(`^\\[wowgpt bridge\\] The automatic deploy of origin/main at ${sha.slice(0, 12)} did not complete \\(exit 3\\)`));
   assert.equal(t.ad.failureNote(t.repo), '', 'told once');
 });
 

@@ -288,7 +288,7 @@ test('the installers put the code under the home folder, name the claude-wow com
   const ps = fs.readFileSync(PS1, 'utf8');
   assert.match(ps, /'claude-wow\.cmd'/);
   assert.match(ps, /'claude-wow\.exe'/, 'the binary route');
-  assert.match(ps, /claude-wow-windows-x64\.exe/, 'the release asset build.js produces');
+  assert.match(ps, /wowgpt-windows-x64\.exe/, 'the release asset build.js produces');
   assert.match(ps, /SHA256SUMS/);
   assert.match(ps, /Get-Source/, 'falls back to the source');
   assert.match(ps, /\$newest = if \(\$Release -eq 'latest'\) \{ Get-NewestReleaseTag \}/, 'only latest falls back to the newest release');

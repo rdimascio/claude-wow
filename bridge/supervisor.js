@@ -3,26 +3,29 @@
 // Keeps bridge.js running: restarts it 3 s after any exit. Ctrl+C stops both:
 // the bridge ends its agent runs and the capture script on its own SIGINT/SIGTERM
 // (bridge.js, procs.js), and the supervisor waits for it before it goes.
-// This is also the `claude-wow` command (package.json "bin", and the compiled
+// This is also the `wowgpt` command (package.json "bin", and the compiled
 // binary's entry): arguments and the current folder pass straight through to
-// bridge.js, so `cd proj && claude-wow` makes proj the default folder for chats.
+// bridge.js, so `cd proj && wowgpt` makes proj the default folder for chats.
 // Subcommands handled here:
-//   claude-wow setup [...]        runs setup.js (the game-side install)
-//   claude-wow service <cmd>      the bridge as a background service (service.js)
-//   claude-wow bridge [...]       bridge.js alone, in this process, no restarts
-//   claude-wow install-slots      install-slots.js alone (setup runs it for you)
+//   wowgpt setup [...]        runs setup.js (the game-side install)
+//   wowgpt service <cmd>      the bridge as a background service (service.js)
+//   wowgpt bridge [...]       bridge.js alone, in this process, no restarts
+//   wowgpt install-slots      install-slots.js alone (setup runs it for you)
 // The last two are how the compiled binary runs its own scripts (runtime.js:
 // there is no node to hand a script path to), and they work from a checkout too.
 // Under the service (WOWGPT_SERVICE=1) the bridge's output goes to a rotating
 // log file instead of a terminal, and a pid file lets `service status` find us.
 // bridge.log in the home folder, which bridge.js appends to on its own, is rotated here too.
-require('./legacyenv').adopt(); // CLAUDE_WOW_* from before the rename count as WOWGPT_*, before anything reads them
+require('./legacyenv').adopt(); // WOWGPT_* from before the rename count as WOWGPT_*, before anything reads them
 const { spawn, spawnSync } = require('child_process');
 const R = require('./runtime');
 
 const argv = process.argv.slice(2);
 if (argv[0] === '--version' || argv[0] === '-v') {
-  console.log(`claude-wow ${require('../package.json').version} (${R.describe()})`);
+  const version = require('../package.json').version;
+  console.log(`wowgpt ${version} (${R.describe()})`);
+  // A claude-wow binary updating itself to this one reads only this line.
+  console.log(`claude-wow ${version}`);
 } else if (argv[0] === 'service') {
   process.exitCode = require('./service').main(argv.slice(1));
 } else if (argv[0] === 'dev') {
@@ -33,7 +36,7 @@ if (argv[0] === '--version' || argv[0] === '-v') {
         process.exitCode = code;
       },
       e => {
-        process.stderr.write(`claude-wow dev failed: ${e && e.message ? e.message : String(e)}\n`);
+        process.stderr.write(`wowgpt dev failed: ${e && e.message ? e.message : String(e)}\n`);
         process.exitCode = 1;
       },
     );
@@ -72,7 +75,7 @@ if (argv[0] === '--version' || argv[0] === '-v') {
         process.exitCode = code;
       },
       e => {
-        process.stderr.write(`claude-wow handoff failed: ${e && e.message ? e.message : String(e)}\n`);
+        process.stderr.write(`wowgpt handoff failed: ${e && e.message ? e.message : String(e)}\n`);
         process.exitCode = 1;
       },
     );
@@ -89,14 +92,14 @@ if (argv[0] === '--version' || argv[0] === '-v') {
         process.exitCode = code;
       },
       e => {
-        process.stderr.write(`claude-wow update failed: ${e && e.message ? e.message : String(e)}\n`);
+        process.stderr.write(`wowgpt update failed: ${e && e.message ? e.message : String(e)}\n`);
         process.exitCode = 1;
       },
     );
 } else {
   if (argv.includes('--help') || argv.includes('-h'))
     console.log(
-      'claude-wow setup [...]   game-side install (setup.js)\nclaude-wow service <cmd> background service (install, uninstall, start, stop, restart, status, logs)\nclaude-wow update [--check]  install the latest release binary now (the bridge also checks once a day)\nclaude-wow dev <cmd>    releases for a developer machine (deploy [ref|worktree], rollback, status)\nclaude-wow bridge [...]  the bridge alone in this process, without the restarts\nclaude-wow channel      the live-session channel server Claude Code starts (docs/LIVE-SESSION.md)\nclaude-wow data sync    fetch client tables from wago.tools into the home folder (--flavor forever or classic_era)\nclaude-wow data-mcp     the read-only wowdata MCP server the bridge gives ask runs\nclaude-wow goals-mcp    the per-run wowgoals MCP server the bridge gives ask runs\nclaude-wow agents check [--agent claude|codex]  probe the MCP behaviors the bridge relies on in the installed Claude Code and Codex, and write agent-contract.json\nclaude-wow contract-mcp  the stdio MCP fixture server agents check runs\nclaude-wow local-agent  the local agent: a chat answered by an OpenAI-compatible server such as llama-server\nclaude-wow handoff [folder] [--stop]  hand the Claude Code sessions running in a repository to the game (/wowgpt -r all)\nclaude-wow events [--follow] [--min N]  game events from the telemetry, one JSON line each\nclaude-wow report [--day [YYYY-MM-DD]]  a day of game events, orders and goal progress, from the goals folder\n',
+      'wowgpt setup [...]   game-side install (setup.js)\nwowgpt service <cmd> background service (install, uninstall, start, stop, restart, status, logs)\nwowgpt update [--check]  install the latest release binary now (the bridge also checks once a day)\nwowgpt dev <cmd>    releases for a developer machine (deploy [ref|worktree], rollback, status)\nwowgpt bridge [...]  the bridge alone in this process, without the restarts\nwowgpt channel      the live-session channel server Claude Code starts (docs/LIVE-SESSION.md)\nwowgpt data sync    fetch client tables from wago.tools into the home folder (--flavor forever or classic_era)\nwowgpt data-mcp     the read-only wowdata MCP server the bridge gives ask runs\nwowgpt goals-mcp    the per-run wowgoals MCP server the bridge gives ask runs\nwowgpt agents check [--agent claude|codex]  probe the MCP behaviors the bridge relies on in the installed Claude Code and Codex, and write agent-contract.json\nwowgpt contract-mcp  the stdio MCP fixture server agents check runs\nwowgpt local-agent  the local agent: a chat answered by an OpenAI-compatible server such as llama-server\nwowgpt handoff [folder] [--stop]  hand the Claude Code sessions running in a repository to the game (/wowgpt -r all)\nwowgpt events [--follow] [--min N]  game events from the telemetry, one JSON line each\nwowgpt report [--day [YYYY-MM-DD]]  a day of game events, orders and goal progress, from the goals folder\n',
     );
   supervise();
 }
@@ -136,7 +139,7 @@ function supervise() {
       child = null;
       if (stopping) return;
       if ((code === 2 || code === 3) && SERVICE) {
-        say(`\nbridge exited (${code}): ${code === 3 ? 'another bridge holds this home folder' : 'run "claude-wow setup"'}; retrying in 60 s`);
+        say(`\nbridge exited (${code}): ${code === 3 ? 'another bridge holds this home folder' : 'run "wowgpt setup"'}; retrying in 60 s`);
         setTimeout(start, 60000);
         return;
       }
