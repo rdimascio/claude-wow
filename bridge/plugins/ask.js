@@ -50,12 +50,11 @@ function scratchFolder(options) {
 }
 
 // An agent resumes a session only from the folder it started in, so a chat
-// whose session started in the old default scratch folder keeps running there
-// while that folder exists.
-function folderFor(options, sessionFolder, old = OLD_DATA_NAMES.map(name => path.join(dataDir(name), SCRATCH))) {
-  const own = options && typeof options.cwd === 'string' && options.cwd.trim();
-  if (!own && sessionFolder && old.includes(path.resolve(sessionFolder)) && isDir(sessionFolder)) return path.resolve(sessionFolder);
-  return scratchFolder(options);
+// whose session started in the old default scratch folder starts a new one in
+// the new folder. Returns the reason the bridge logs, or ''.
+function oldFolderSession(sessionFolder, old = OLD_DATA_NAMES.map(name => path.join(dataDir(name), SCRATCH))) {
+  if (!sessionFolder || !old.includes(path.resolve(sessionFolder))) return '';
+  return `the session lives in the old scratch folder ${sessionFolder}`;
 }
 
 function usesClaudePlugin(options) {
@@ -82,7 +81,7 @@ const plugin = {
   surfaces: ['map', 'macro', 'ui'],
   voice: 'player',
   scratchFolder,
-  folderFor,
+  oldFolderSession,
   dataDir,
   migrateOldData,
   OLD_DATA_NAMES,
@@ -91,7 +90,7 @@ const plugin = {
   banner: options => `runs the chat's agent in ${scratchFolder(options)} (plugins.ask.cwd), no project`,
   handle(job, core) {
     const options = core.options('ask');
-    const cwd = folderFor(options, core.sessionFolder(job));
+    const cwd = scratchFolder(options);
     try {
       fs.mkdirSync(cwd, { recursive: true });
     } catch (e) {
@@ -104,7 +103,13 @@ const plugin = {
     }
     // The chat's own folder, if it ever had one, is left alone: it is the coding
     // plugin's, and comes back with the chat if it is switched there.
-    core.runAgent(job, { cwd, gameData: true, runTools: true, claudePlugin: usesClaudePlugin(options) });
+    core.runAgent(job, {
+      cwd,
+      gameData: true,
+      runTools: true,
+      claudePlugin: usesClaudePlugin(options),
+      freshSession: () => oldFolderSession(core.sessionFolder(job)),
+    });
   },
 };
 

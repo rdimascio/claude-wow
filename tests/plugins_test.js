@@ -228,16 +228,20 @@ test('the shipped ask plugin: no folder semantics, a scratch folder of its own, 
     tag: j => '#' + j.id,
     defaultCwd: '/some/project',
     options: id => (id === 'ask' ? { cwd: scratch } : {}),
-    sessionFolder: () => '/elsewhere',
+    sessionFolder: () => sessionFolder,
     fail: (job, text) => calls.push({ fail: text }),
     runAgent: (job, opts) => calls.push({ run: opts, job }),
   };
   const job = { id: 1, cwd: 'realms', text: 'what drops it' };
+  let sessionFolder = '/elsewhere';
   p.handle(job, core);
   assert.equal(calls[0].run.cwd, scratch, 'runs in the scratch folder');
   assert.equal(calls[0].run.gameData, true, 'ask runs get the read-only wowdata server');
   assert.ok(fs.existsSync(scratch), 'created on demand');
-  assert.equal(calls[0].run.freshSession, undefined, "no folder-change rule: the session is the chat's whatever the folder");
+  assert.equal(calls[0].run.freshSession(), '', 'a session in the new folder resumes');
+  sessionFolder = path.join(ask.dataDir('claude-wow'), 'ask');
+  assert.match(calls[0].run.freshSession(), /^the session lives in the old scratch folder /, 'an old ask chat starts fresh, in the new folder');
+  assert.equal(calls[0].run.cwd, scratch);
   assert.equal(job.cwd, 'realms', "the chat's own folder is left as typed for the coding plugin");
   assert.match(p.banner({ cwd: scratch }), /scratch/);
   // A scratch folder that cannot be made is an error reply, not a crash.
@@ -303,11 +307,9 @@ test('ask: setup copies the old data folder to the new name once, and a chat who
   }
 
   const oldScratch = path.join(user, 'darwin', 'Library', 'Application Support', 'claude-wow', 'ask');
-  assert.equal(ask.folderFor({}, oldScratch, [oldScratch]), oldScratch, 'the session resumes where it started');
-  assert.equal(ask.folderFor({}, '', [oldScratch]), ask.scratchFolder({}), 'a new chat gets the new folder');
-  assert.equal(ask.folderFor({}, '/elsewhere', [oldScratch]), ask.scratchFolder({}), 'another folder is not kept');
-  assert.equal(ask.folderFor({ cwd: '/mine' }, oldScratch, [oldScratch]), path.resolve('/mine'), 'plugins.ask.cwd still wins');
-  fs.rmSync(oldScratch, { recursive: true, force: true });
-  assert.equal(ask.folderFor({}, oldScratch, [oldScratch]), ask.scratchFolder({}), 'a removed old folder is not kept');
+  assert.match(ask.oldFolderSession(oldScratch, [oldScratch]), /old scratch folder/, 'a session from the old folder starts fresh');
+  assert.equal(ask.oldFolderSession('', [oldScratch]), '', 'no session: nothing to say');
+  assert.equal(ask.oldFolderSession('/elsewhere', [oldScratch]), '', 'another folder is not this rule');
+  assert.ok(fs.existsSync(path.join(user, 'darwin', 'Library', 'Application Support', 'claude-wow', 'ask', 'notes.txt')), 'the old folder is never deleted');
   fs.rmSync(user, { recursive: true, force: true });
 });

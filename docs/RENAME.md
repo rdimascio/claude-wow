@@ -18,7 +18,7 @@ are renamed later, with the release.
 | Env vars | `CLAUDE_WOW_*` | `WOWGPT_*` | read when the new one is unset (`bridge/legacyenv.js`, the installers) |
 | MCP channel server, tools | `claude-wow`, `mcp__claude-wow__*` | `wowgpt`, `mcp__wowgpt__*` | no: restart the session with `server:wowgpt` |
 | Plugin folder | `assets/plugins/claude-wow` | `assets/plugins/wowgpt` | - |
-| `ask` data folder | `<app data>/claude-wow` | `<app data>/wowgpt` | setup copies it; a session that started there stays there |
+| `ask` data folder | `<app data>/claude-wow` | `<app data>/wowgpt` | setup copies it; a chat whose session started there starts a new session |
 | Service | `io.claudewow.bridge`, `claude-wow-bridge`, `Claude WoW bridge.vbs` | `io.wowgpt.bridge`, `wowgpt-bridge`, `WoWGPT bridge.vbs` | `service install` and `uninstall` remove every old one (`OLD_SERVICES`) |
 | Release assets, binary | `claude-wow-<os>-<arch>`, `claude-wow` | `wowgpt-<os>-<arch>`, `wowgpt` | for one release, build.js also writes the old asset names, `--version` prints a `claude-wow` line, self-update takes either name, and a release dir may hold `claude-wow` |
 | Homebrew formula | `claude-wow.rb`, `ClaudeWow` | `wowgpt.rb`, `Wowgpt` | tap unchanged |
