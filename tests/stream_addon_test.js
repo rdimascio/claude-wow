@@ -28,15 +28,15 @@ function GetQuestIndexForWatch(n) return STUB.watched[n] end
 function newVM(extraStub = LEGACY_QUEST_STUB) {
   const vm = createVM();
   vm.run(extraStub);
-  vm.loadAddon(['Codec.lua', 'Inbox.lua', 'ClaudeWoW.lua', 'Roast.lua', 'Stream.lua']);
+  vm.loadAddon(['Codec.lua', 'Inbox.lua', 'WoWGPT.lua', 'Roast.lua', 'Stream.lua']);
   return vm;
 }
 
 function decodeStrip(vm) {
-  if (vm.evaluate('ClaudeWoWStrip and ClaudeWoWStrip.shown') !== 'true') return null;
+  if (vm.evaluate('WoWGPTStrip and WoWGPTStrip.shown') !== 'true') return null;
   vm.run(`
     local parts = {}
-    for _, t in ipairs(ClaudeWoWStrip.textures) do
+    for _, t in ipairs(WoWGPTStrip.textures) do
       if t.shown and t.color then
         local c, r = math.floor(t.x / 4), math.floor(-t.y / 4)
         local v = (t.color[1] >= 0.5 and 4 or 0) + (t.color[2] >= 0.5 and 2 or 0) + (t.color[3] >= 0.5 and 1 or 0)
@@ -73,25 +73,25 @@ function streamJobs(vm) {
 }
 
 function nextSlot(vm, luaBody) {
-  vm.run(`STUB.onLoadAddOn = function(name) ClaudeWoW_SlotData = ${luaBody} end`);
+  vm.run(`STUB.onLoadAddOn = function(name) WoWGPT_SlotData = ${luaBody} end`);
 }
 
 function ready({ follow = false } = {}) {
   const vm = newVM();
-  vm.run(`ClaudeWoWDB = { stream = { follow = ${follow} } }`);
-  vm.run('STUB.FireEvent("ADDON_LOADED", "ClaudeWoW")');
+  vm.run(`WoWGPTDB = { stream = { follow = ${follow} } }`);
+  vm.run('STUB.FireEvent("ADDON_LOADED", "WoWGPT")');
   vm.run('STUB.FireEvent("PLAYER_LOGIN")');
   vm.run('STUB.RunTimers()');
   nextSlot(vm, '{ now = time(), cwd = "", plugin = "ask", plugins = { "ask", "claude-code", "roast", "stream" }, replies = {} }');
   vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
-  assert.equal(vm.evaluate('ClaudeWoW.IsConnected()'), 'true');
-  vm.run('function StreamChatForTest() for _, c in ipairs(ClaudeWoWDB.chats) do if c.id == ClaudeWoWDB.stream.chat then return c end end end');
+  assert.equal(vm.evaluate('WoWGPT.IsConnected()'), 'true');
+  vm.run('function StreamChatForTest() for _, c in ipairs(WoWGPTDB.chats) do if c.id == WoWGPTDB.stream.chat then return c end end end');
   vm.run('STUB.prints = {}');
   return vm;
 }
 
 function slash(vm, msg) {
-  vm.run(`SlashCmdList.CLAUDEWOWSTREAM(${JSON.stringify(msg)})`);
+  vm.run(`SlashCmdList.WOWGPTSTREAM(${JSON.stringify(msg)})`);
 }
 
 function pendingPayload(vm) {
@@ -149,12 +149,12 @@ test('stream: pane, quest text and follow commands build the right payloads, and
 
   slash(vm, 'quest Kill "Hogger" \\ bring back his claw');
   assert.deepEqual(JSON.parse(pendingPayload(vm).text), { action: 'quest', text: 'Kill "Hogger" \\ bring back his claw' });
-  assert.equal(vm.evaluate('ClaudeWoWDB.stream.follow'), 'false', 'a manual quest turns follow off');
+  assert.equal(vm.evaluate('WoWGPTDB.stream.follow'), 'false', 'a manual quest turns follow off');
   answer(vm, 'Quest set');
 
   slash(vm, 'follow on');
   assert.deepEqual(JSON.parse(pendingPayload(vm).text), { action: 'follow', on: true });
-  assert.equal(vm.evaluate('ClaudeWoWDB.stream.follow'), 'true');
+  assert.equal(vm.evaluate('WoWGPTDB.stream.follow'), 'true');
   answer(vm, 'Follow: on');
   const track = JSON.parse(pendingPayload(vm).text);
   assert.equal(track.action, 'track', 'follow on sends the current state right after');
@@ -162,7 +162,7 @@ test('stream: pane, quest text and follow commands build the right payloads, and
 
   slash(vm, 'follow off');
   assert.deepEqual(JSON.parse(pendingPayload(vm).text), { action: 'follow', on: false });
-  assert.equal(vm.evaluate('ClaudeWoWDB.stream.follow'), 'false');
+  assert.equal(vm.evaluate('WoWGPTDB.stream.follow'), 'false');
   answer(vm, '');
 
   slash(vm, 'quest auto');
@@ -176,8 +176,8 @@ test('stream: the track payload has the first watched quest, capped objectives a
   vm.run(
     `STUB.watched = { 3 }; STUB.questLog[3].title = string.rep("W", 100); STUB.questLog[3].objectives = { string.rep("o", 90), "b", "c", "d", "e", "f", "g" }; STUB.questLog[3].complete = true`,
   );
-  vm.run('ClaudeWoWDB.chats[1].name = "Raid prep"');
-  const track = JSON.parse(vm.evaluate('ClaudeWoWStream.TrackPayload()'));
+  vm.run('WoWGPTDB.chats[1].name = "Raid prep"');
+  const track = JSON.parse(vm.evaluate('WoWGPTStream.TrackPayload()'));
   assert.equal(track.action, 'track');
   assert.equal(track.quest.id, 33);
   assert.equal(track.quest.title, 'W'.repeat(80));
@@ -187,10 +187,10 @@ test('stream: the track payload has the first watched quest, capped objectives a
   assert.deepEqual(track.chat, { title: 'Raid prep' });
 
   vm.run('STUB.watched = {}');
-  assert.equal(JSON.parse(vm.evaluate('ClaudeWoWStream.TrackPayload()')).quest, null, 'no watched quest: null');
+  assert.equal(JSON.parse(vm.evaluate('WoWGPTStream.TrackPayload()')).quest, null, 'no watched quest: null');
   slash(vm, 'raid');
-  vm.run('ClaudeWoW.SwitchChat(StreamChatForTest().id)');
-  assert.equal(JSON.parse(vm.evaluate('ClaudeWoWStream.TrackPayload()')).chat, null, 'the stream chat itself never counts as the open chat');
+  vm.run('WoWGPT.SwitchChat(StreamChatForTest().id)');
+  assert.equal(JSON.parse(vm.evaluate('WoWGPTStream.TrackPayload()')).chat, null, 'the stream chat itself never counts as the open chat');
 });
 
 test('stream: the super-tracked quest wins over the watch list when the client has C_SuperTrack and C_QuestLog', () => {
@@ -207,9 +207,9 @@ test('stream: the super-tracked quest wins over the watch list when the client h
       GetQuestIDForQuestWatchIndex = function(n) return 7 end,
     }
   `);
-  assert.equal(JSON.parse(vm.evaluate('ClaudeWoWStream.TrackPayload()')).quest.title, 'Beware of Pips', 'the watch list without a super-tracked quest');
+  assert.equal(JSON.parse(vm.evaluate('WoWGPTStream.TrackPayload()')).quest.title, 'Beware of Pips', 'the watch list without a super-tracked quest');
   vm.run('STUB.super = 9');
-  const q = JSON.parse(vm.evaluate('ClaudeWoWStream.TrackPayload()')).quest;
+  const q = JSON.parse(vm.evaluate('WoWGPTStream.TrackPayload()')).quest;
   assert.deepEqual(q, { id: 9, title: 'A Swift Message', objectives: ['Pips found: 0/1'], complete: true });
 });
 
@@ -223,12 +223,12 @@ test('stream: follow sends a changed state once, drops duplicates, and throttles
 
   vm.run('STUB.FireEvent("QUEST_LOG_UPDATE"); STUB.FireEvent("QUEST_WATCH_UPDATE")');
   assert.equal(vm.evaluate('StreamChatForTest().pendingId'), null, 'the same state is not sent again');
-  assert.equal(vm.evaluate('ClaudeWoWStream.PendingTrack()'), null);
+  assert.equal(vm.evaluate('WoWGPTStream.PendingTrack()'), null);
 
   vm.run('STUB.watched = { 3 }; STUB.FireEvent("QUEST_WATCH_LIST_CHANGED")');
   assert.equal(vm.evaluate('StreamChatForTest().pendingId'), null, 'inside the 8 s window nothing goes out');
   vm.run('STUB.questLog[3].objectives[1] = "Diseased Timber Wolf slain: 4/8"; STUB.FireEvent("QUEST_LOG_UPDATE")');
-  assert.ok(vm.evaluate('ClaudeWoWStream.PendingTrack()').includes('4/8'), 'the latest state waits');
+  assert.ok(vm.evaluate('WoWGPTStream.PendingTrack()').includes('4/8'), 'the latest state waits');
 
   vm.run('STUB.now = STUB.now + 8; STUB.RunTimers()');
   const trailing = JSON.parse(pendingPayload(vm).text);
@@ -243,8 +243,8 @@ test('stream: follow off sends no track updates, and a disconnected bridge is a 
   const vm = ready({ follow: false });
   vm.run('STUB.watched = { 2 }; STUB.FireEvent("QUEST_LOG_UPDATE")');
   assert.equal(vm.evaluate('StreamChatForTest()'), null);
-  vm.run('ClaudeWoW.IsConnected = function() return false end');
+  vm.run('WoWGPT.IsConnected = function() return false end');
   slash(vm, 'code');
   assert.ok(printed(vm).includes('Not sent: the companion app is not connected.'));
-  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].draft'), null, 'nothing lands in an input box');
+  assert.equal(vm.evaluate('WoWGPTDB.chats[1].draft'), null, 'nothing lands in an input box');
 });

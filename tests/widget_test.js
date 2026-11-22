@@ -33,7 +33,7 @@ test("validateWidgetCommand refuses protected calls, secure templates and the ad
   assert.match(refused('local f = loadstring("return 1")'), /loadstring/);
   assert.match(refused('securecall("RunScript", "x = 1")'), /securecall/);
   assert.match(refused('CreateFrame("Button", nil, nil, "SecureActionButtonTemplate")'), /secure templates/);
-  assert.match(refused('ClaudeWoWDB.chats = nil'), /ClaudeWoWDB/);
+  assert.match(refused('WoWGPTDB.chats = nil'), /WoWGPTDB/);
   assert.match(refused('SlashCmdList.CLAUDEWOW("hello")'), /SlashCmdList/);
   assert.match(refused('f:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")'), /COMBAT_LOG_EVENT_UNFILTERED \(an event only the Blizzard UI may register\)/);
   assert.match(refused('local a, b = CombatLogGetCurrentEventInfo()'), /CombatLogGetCurrentEventInfo/);
@@ -136,7 +136,7 @@ test('readSideFile names the widget kind in its errors and tells a missing file 
 
 test('the system prompt explains widgets to a plugin with the ui surface, in a game chat', () => {
   const ui = { surfaces: ['map', 'macro', 'ui'] };
-  assert.match(P.systemPrompt('Character: Testchar', '', ui), /CLAUDE_WOW_UI_FILE/);
+  assert.match(P.systemPrompt('Character: Testchar', '', ui), /WOWGPT_UI_FILE/);
   assert.match(P.systemPrompt('Character: Testchar', '', ui), /wowui/);
   assert.match(P.systemPrompt('Character: Testchar', '', ui), /templates only BackdropTemplate, .*GameTooltipTemplate\)/);
   assert.doesNotMatch(P.systemPrompt('Character: Testchar', '', { surfaces: ['map', 'macro'] }), /wowui/);
@@ -144,7 +144,7 @@ test('the system prompt explains widgets to a plugin with the ui surface, in a g
 });
 
 test('the addon blocks the same names the bridge refuses', () => {
-  const src = fs.readFileSync(path.join(__dirname, '..', 'addon', 'ClaudeWoW', 'Widgets.lua'), 'utf8');
+  const src = fs.readFileSync(path.join(__dirname, '..', 'addon', 'WoWGPT', 'Widgets.lua'), 'utf8');
   const block = src.match(/local DENIED_NAMES = \{([\s\S]*?)\n\}/)[1];
   const luaNames = [...block.matchAll(/"([^"]+)"/g)].map(m => m[1]);
   assert.deepEqual([...luaNames].sort(), [...P.WIDGET_DENIED_NAMES].sort());

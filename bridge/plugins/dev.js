@@ -27,16 +27,16 @@ const ADDON_ERRORS_MARK = '\n--- addon errors ---\n';
 
 const HELP = [
   'Dev tools for the folder of this chat. Each one runs on the bridge PC and does not use the agent.',
-  '/claude dev status: branch, ahead and behind, changed files, recent commits, the open PR and its checks',
-  '/claude dev diff [path]: the uncommitted diff',
-  '/claude dev log [lines] [text]: the end of bridge.log, only lines with the text when given',
-  '/claude dev run: the last agent run in this chat (session, time, cost, tools, errors) and the command to resume it in a terminal',
-  '/claude dev test [args]: the test command (plugins.dev.testCommand, else npm test)',
-  '/claude dev doctor: the health check (dev/doctor.js in this folder)',
-  '/claude dev errors: Lua errors from the game log and the addon',
-  '/claude wrong [#reply] [note]: mark the last reply in this chat (or reply #n) as wrong',
-  '/claude bug <text>: report a bug with the addon state attached',
-  '/claude dev feedback [close <n> | fix <n>]: the open wrong-reply and bug reports',
+  '/wowgpt dev status: branch, ahead and behind, changed files, recent commits, the open PR and its checks',
+  '/wowgpt dev diff [path]: the uncommitted diff',
+  '/wowgpt dev log [lines] [text]: the end of bridge.log, only lines with the text when given',
+  '/wowgpt dev run: the last agent run in this chat (session, time, cost, tools, errors) and the command to resume it in a terminal',
+  '/wowgpt dev test [args]: the test command (plugins.dev.testCommand, else npm test)',
+  '/wowgpt dev doctor: the health check (dev/doctor.js in this folder)',
+  '/wowgpt dev errors: Lua errors from the game log and the addon',
+  '/wowgpt wrong [#reply] [note]: mark the last reply in this chat (or reply #n) as wrong',
+  '/wowgpt bug <text>: report a bug with the addon state attached',
+  '/wowgpt dev feedback [close <n> | fix <n>]: the open wrong-reply and bug reports',
   'The agent in this chat sees the output of the last dev command with your next message.',
 ].join('\n');
 
@@ -215,7 +215,7 @@ async function diff(ctx) {
   if (body.out.trim() && room > 200) {
     const cut = body.out.length > room;
     out.push(fence(cut ? body.out.slice(0, room).replace(/\n[^\n]*$/, '') : body.out, 'diff'));
-    if (cut) out.push(`The diff is cut at ${room} characters. Use /claude dev diff <path> for one file.`);
+    if (cut) out.push(`The diff is cut at ${room} characters. Use /wowgpt dev diff <path> for one file.`);
   }
   return out.join('\n');
 }
@@ -370,7 +370,7 @@ async function doctor(ctx) {
   if (!PJ.folderAllowed(root, PJ.allowedFolders(core.options('claude-code'), core.defaultCwd)))
     return 'The repository root of this folder is not in plugins.claude-code.folders, so the doctor cannot run there.';
   const script = path.join(root, 'dev', 'doctor.js');
-  if (!fs.existsSync(script)) return `No dev/doctor.js in ${root}. The doctor runs from a claude-wow checkout: switch this chat to it with /claude cd.`;
+  if (!fs.existsSync(script)) return `No dev/doctor.js in ${root}. The doctor runs from a wowgpt checkout: switch this chat to it with /wowgpt cd.`;
   core.progress(job, 'running the doctor');
   const r = await run(doctorNode(core), [script, '--json'], { cwd: root, timeoutMs: DOCTOR_TIMEOUT_MS, onTick: () => core.beat(job) });
   let report;
@@ -443,7 +443,7 @@ function feedback(ctx) {
   if (sub === 'close' || sub === 'fix') {
     const n = Number(args[1]);
     const item = Number.isInteger(n) ? store.get(n) : null;
-    if (!item) return `No feedback item ${args[1] || ''}. /claude dev feedback lists them.`;
+    if (!item) return `No feedback item ${args[1] || ''}. /wowgpt dev feedback lists them.`;
     if (sub === 'close') {
       store.close(n, args.slice(2).join(' '));
       return `Closed #${n}.`;
@@ -453,7 +453,7 @@ function feedback(ctx) {
     return `${FB.describe(item, { full: true })}\n\nThe agent in this chat gets this report with your next message. Say what to do, for example: fix it.`;
   }
   const open = store.list({ status: sub === 'all' ? '' : 'open' });
-  if (!open.length) return sub === 'all' ? 'No feedback yet.' : 'No open feedback. /claude dev feedback all shows the closed ones too.';
+  if (!open.length) return sub === 'all' ? 'No feedback yet.' : 'No open feedback. /wowgpt dev feedback all shows the closed ones too.';
   const shown = open.slice(-15);
   return [
     `${open.length} ${sub === 'all' ? '' : 'open '}item${open.length === 1 ? '' : 's'}${open.length > shown.length ? `, the last ${shown.length}` : ''}:`,
@@ -486,12 +486,12 @@ function wrong(ctx) {
     reply: turn.reply || '',
     note,
   });
-  return `Marked as wrong: #${item.n}${note ? '' : ' (add a note with /claude wrong <what was wrong>)'}. It is in ${core.feedback.file}; /claude dev feedback lists it.`;
+  return `Marked as wrong: #${item.n}${note ? '' : ' (add a note with /wowgpt wrong <what was wrong>)'}. It is in ${core.feedback.file}; /wowgpt dev feedback lists it.`;
 }
 
 function bug(ctx) {
   const { core, job, rest, addonErrors } = ctx;
-  if (!rest && !addonErrors) return 'Say what went wrong: /claude bug <text>.';
+  if (!rest && !addonErrors) return 'Say what went wrong: /wowgpt bug <text>.';
   const turn = core.lastTurn(job, null);
   const item = core.feedback.add({
     kind: 'bug',
@@ -507,7 +507,7 @@ function bug(ctx) {
     note: rest,
     addon: addonErrors,
   });
-  return `Bug #${item.n} saved in ${core.feedback.file}. /claude dev feedback fix ${item.n} hands it to the agent in a chat for this repository.`;
+  return `Bug #${item.n} saved in ${core.feedback.file}. /wowgpt dev feedback fix ${item.n} hands it to the agent in a chat for this repository.`;
 }
 
 const COMMANDS = {
@@ -529,7 +529,7 @@ const IN_FOLDER = new Set(['status', 'diff', 'test', 'doctor']);
 const NOTED = new Set(['status', 'diff', 'log', 'run', 'test', 'doctor', 'errors']);
 
 function noteFor(command, rest, reply) {
-  return capText(`[Output of "/claude dev ${command}${rest ? ' ' + rest : ''}" that the player ran in this chat just before this message]\n${reply}`, NOTE_MAX);
+  return capText(`[Output of "/wowgpt dev ${command}${rest ? ' ' + rest : ''}" that the player ran in this chat just before this message]\n${reply}`, NOTE_MAX);
 }
 
 async function handleDev(job, core, deps = {}) {
@@ -588,7 +588,7 @@ const plugin = {
   surfaces: [],
   achievements: false,
   sessionless: true,
-  banner: () => "git status, diffs, logs, tests, doctor, Lua errors and feedback for the chat's folder (/claude dev help)",
+  banner: () => "git status, diffs, logs, tests, doctor, Lua errors and feedback for the chat's folder (/wowgpt dev help)",
   handle: (job, core) => handleDev(job, core),
 };
 

@@ -65,7 +65,7 @@ Settings = {
 const COUNTS = `
 function OUTPUT_COUNTS()
   local history = 0
-  for _, c in ipairs(ClaudeWoWDB.chats) do history = history + #c.history end
+  for _, c in ipairs(WoWGPTDB.chats) do history = history + #c.history end
   local lines = 0
   for _, name in ipairs(CHAT_FRAMES or {}) do
     local f = _G[name]
@@ -76,8 +76,8 @@ function OUTPUT_COUNTS()
     "prints=" .. #STUB.prints,
     "lines=" .. lines,
     "tabs=" .. tostring(STUB.tempWindows or 0),
-    "chats=" .. #ClaudeWoWDB.chats,
-    "window=" .. tostring(ClaudeWoWFrame.shown),
+    "chats=" .. #WoWGPTDB.chats,
+    "window=" .. tostring(WoWGPTFrame.shown),
   }, " ")
 end
 `;
@@ -96,43 +96,43 @@ function newVM({ prelude = SETTINGS_API, dock = true, saved = '' } = {}) {
 
 function connect(vm) {
   vm.run('STUB.RunTimers()');
-  vm.run('STUB.onLoadAddOn = function() ClaudeWoW_SlotData = { now = time(), cwd = "", agent = "claude", agents = { "claude" }, replies = {} } end');
+  vm.run('STUB.onLoadAddOn = function() WoWGPT_SlotData = { now = time(), cwd = "", agent = "claude", agents = { "claude" }, replies = {} } end');
   vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
   vm.run('STUB.RunTimers()');
 }
 
 const OPTION_KEYS = vm =>
-  vm.evaluate('(function() local t = {} for _, o in ipairs(ClaudeWoWHelp.Options()) do t[#t + 1] = o.key end return table.concat(t, ",") end)()').split(',');
+  vm.evaluate('(function() local t = {} for _, o in ipairs(WoWGPTHelp.Options()) do t[#t + 1] = o.key end return table.concat(t, ",") end)()').split(',');
 
-const optionExpr = key => `(function() for _, o in ipairs(ClaudeWoWHelp.OPTIONS) do if o.key == "${key}" then return o end end end)()`;
+const optionExpr = key => `(function() for _, o in ipairs(WoWGPTHelp.OPTIONS) do if o.key == "${key}" then return o end end end)()`;
 
 function otherValue(vm, key) {
   const o = optionExpr(key);
-  if (vm.evaluate(`${o}.choices == nil`) === 'true') return { lua: `not ClaudeWoWHelp.OptionValue(${o})` };
+  if (vm.evaluate(`${o}.choices == nil`) === 'true') return { lua: `not WoWGPTHelp.OptionValue(${o})` };
   return {
-    lua: `(function() local cur = ClaudeWoWHelp.OptionValue(${o}) for _, c in ipairs(${o}.choices()) do if c[1] ~= cur then return c[1] end end end)()`,
+    lua: `(function() local cur = WoWGPTHelp.OptionValue(${o}) for _, c in ipairs(${o}.choices()) do if c[1] ~= cur then return c[1] end end end)()`,
   };
 }
 
 function setQuietly(vm, key) {
   const o = optionExpr(key);
-  vm.run(`WANT = ${otherValue(vm, key).lua}; BEFORE = ClaudeWoWHelp.OptionValue(${o}); REJECTED = ClaudeWoWHelp.SetOption(${o}, WANT)`);
+  vm.run(`WANT = ${otherValue(vm, key).lua}; BEFORE = WoWGPTHelp.OptionValue(${o}); REJECTED = WoWGPTHelp.SetOption(${o}, WANT)`);
   return {
     before: vm.evaluate('BEFORE'),
     want: vm.evaluate('WANT'),
-    after: vm.evaluate(`ClaudeWoWHelp.OptionValue(${o})`),
+    after: vm.evaluate(`WoWGPTHelp.OptionValue(${o})`),
     rejected: vm.evaluate('REJECTED'),
   };
 }
 
 const WHISPER_READY =
-  'ClaudeWoWDB.settings.whisper = true; ClaudeWoWDB.settings.whisperChoice = "on"; table.insert(ClaudeWoWDB.chats[1].history, { role = "user", text = "earlier", t = time() }); STUB.now = STUB.now + 20; STUB.Tick()';
+  'WoWGPTDB.settings.whisper = true; WoWGPTDB.settings.whisperChoice = "on"; table.insert(WoWGPTDB.chats[1].history, { role = "user", text = "earlier", t = time() }); STUB.now = STUB.now + 20; STUB.Tick()';
 
 const SCENARIOS = [
   { name: 'whisper tabs on, window closed', setup: vm => vm.run(WHISPER_READY) },
-  { name: 'whisper tabs off, window closed', setup: vm => vm.run('ClaudeWoWDB.settings.whisper = false') },
-  { name: 'whisper tabs off, window open', setup: vm => vm.run('ClaudeWoWDB.settings.whisper = false; ClaudeWoW.Toggle(true)') },
-  { name: 'whisper tabs on, window open', setup: vm => vm.run(`${WHISPER_READY}; ClaudeWoW.Toggle(true)`) },
+  { name: 'whisper tabs off, window closed', setup: vm => vm.run('WoWGPTDB.settings.whisper = false') },
+  { name: 'whisper tabs off, window open', setup: vm => vm.run('WoWGPTDB.settings.whisper = false; WoWGPT.Toggle(true)') },
+  { name: 'whisper tabs on, window open', setup: vm => vm.run(`${WHISPER_READY}; WoWGPT.Toggle(true)`) },
 ];
 
 for (const scenario of SCENARIOS) {
@@ -160,13 +160,13 @@ test('settings quiet path: the proxy setting a Settings checkbox writes goes thr
   const vm = newVM();
   connect(vm);
   const counts = vm.evaluate('OUTPUT_COUNTS()');
-  vm.run('STUB.settings.proxies.CLAUDEWOW_OPTION_ROLL:SetValue(false)');
-  vm.run('STUB.settings.proxies.CLAUDEWOW_OPTION_ECHO:SetValue("off")');
-  vm.run('STUB.settings.proxies.CLAUDEWOW_OPTION_WHISPER:SetValue(false)');
-  vm.run('STUB.settings.proxies.CLAUDEWOW_OPTION_WHISPER:SetValue(true)');
-  assert.equal(vm.evaluate('ClaudeWoW.LootRollEnabled()'), 'false');
-  assert.equal(vm.evaluate('ClaudeWoWDB.settings.echo'), 'off');
-  assert.equal(vm.evaluate('ClaudeWoWDB.settings.whisperChoice'), 'on');
+  vm.run('STUB.settings.proxies.WOWGPT_OPTION_ROLL:SetValue(false)');
+  vm.run('STUB.settings.proxies.WOWGPT_OPTION_ECHO:SetValue("off")');
+  vm.run('STUB.settings.proxies.WOWGPT_OPTION_WHISPER:SetValue(false)');
+  vm.run('STUB.settings.proxies.WOWGPT_OPTION_WHISPER:SetValue(true)');
+  assert.equal(vm.evaluate('WoWGPT.LootRollEnabled()'), 'false');
+  assert.equal(vm.evaluate('WoWGPTDB.settings.echo'), 'off');
+  assert.equal(vm.evaluate('WoWGPTDB.settings.whisperChoice'), 'on');
   assert.equal(vm.evaluate('OUTPUT_COUNTS()'), counts);
 });
 
@@ -174,41 +174,41 @@ test('settings quiet path: a rejection comes back as a return value and writes n
   const vm = newVM();
   connect(vm);
   const counts = vm.evaluate('OUTPUT_COUNTS()');
-  assert.match(vm.evaluate('ClaudeWoW.Config("nosuch on", { quiet = true })'), /^No setting "nosuch"/);
-  assert.match(vm.evaluate('ClaudeWoW.Config("roll maybe", { quiet = true })'), /^roll does not take "maybe"/);
-  assert.equal(vm.evaluate('ClaudeWoW.Config("roll off", { quiet = true })'), null);
-  assert.match(vm.evaluate(`ClaudeWoWHelp.SetOption(${optionExpr('dim')}, "5")`), /^ui does not take "dim 5"/, 'the Options page gets the rejection back');
+  assert.match(vm.evaluate('WoWGPT.Config("nosuch on", { quiet = true })'), /^No setting "nosuch"/);
+  assert.match(vm.evaluate('WoWGPT.Config("roll maybe", { quiet = true })'), /^roll does not take "maybe"/);
+  assert.equal(vm.evaluate('WoWGPT.Config("roll off", { quiet = true })'), null);
+  assert.match(vm.evaluate(`WoWGPTHelp.SetOption(${optionExpr('dim')}, "5")`), /^ui does not take "dim 5"/, 'the Options page gets the rejection back');
   assert.equal(vm.evaluate('OUTPUT_COUNTS()'), counts);
-  assert.equal(vm.evaluate('ClaudeWoW.LootRollEnabled()'), 'false');
+  assert.equal(vm.evaluate('WoWGPT.LootRollEnabled()'), 'false');
 });
 
 test('settings quiet path: the quiet context ends with the call, so the next typed command talks again', () => {
   const vm = newVM();
   connect(vm);
-  vm.run('ClaudeWoW.Config("echo short", { quiet = true })');
-  assert.equal(vm.evaluate('ClaudeWoW.Config("nosuch", { quiet = true }) ~= nil'), 'true');
-  const before = vm.evaluate('#ClaudeWoWDB.chats[1].history');
-  vm.run('ClaudeWoW.Config("echo full")');
-  assert.equal(Number(vm.evaluate('#ClaudeWoWDB.chats[1].history')), Number(before) + 1);
-  vm.run('ClaudeWoWVoice.Command = function() error("boom") end');
-  assert.equal(vm.evaluate('pcall(ClaudeWoW.Config, "voice race", { quiet = true })'), 'false');
-  vm.run('SlashCmdList.CLAUDE("errors")');
-  assert.equal(Number(vm.evaluate('#ClaudeWoWDB.chats[1].history')), Number(before) + 2, 'an error inside a quiet call does not leave the addon quiet');
+  vm.run('WoWGPT.Config("echo short", { quiet = true })');
+  assert.equal(vm.evaluate('WoWGPT.Config("nosuch", { quiet = true }) ~= nil'), 'true');
+  const before = vm.evaluate('#WoWGPTDB.chats[1].history');
+  vm.run('WoWGPT.Config("echo full")');
+  assert.equal(Number(vm.evaluate('#WoWGPTDB.chats[1].history')), Number(before) + 1);
+  vm.run('WoWGPTVoice.Command = function() error("boom") end');
+  assert.equal(vm.evaluate('pcall(WoWGPT.Config, "voice race", { quiet = true })'), 'false');
+  vm.run('SlashCmdList.WOWGPT("errors")');
+  assert.equal(Number(vm.evaluate('#WoWGPTDB.chats[1].history')), Number(before) + 2, 'an error inside a quiet call does not leave the addon quiet');
 });
 
 test('settings quiet path: a module that did not load is a silent no-op from Settings and a line when typed', () => {
   const vm = newVM({ dock: false });
   connect(vm);
-  vm.run('ClaudeWoWRoast, ClaudeWoWOrders = nil, nil');
+  vm.run('WoWGPTRoast, WoWGPTOrders = nil, nil');
   const counts = vm.evaluate('OUTPUT_COUNTS()');
-  assert.equal(vm.evaluate('ClaudeWoW.Config("roast on", { quiet = true })'), null);
-  assert.equal(vm.evaluate('ClaudeWoW.Config("orders off", { quiet = true })'), null);
+  assert.equal(vm.evaluate('WoWGPT.Config("roast on", { quiet = true })'), null);
+  assert.equal(vm.evaluate('WoWGPT.Config("orders off", { quiet = true })'), null);
   assert.equal(vm.evaluate('OUTPUT_COUNTS()'), counts);
-  vm.run('ClaudeWoW.Config("roast on")');
+  vm.run('WoWGPT.Config("roast on")');
   assert.match(vm.evaluate('STUB.prints[#STUB.prints]'), /the roast module did not load/);
 });
 
-test('settings quiet path: typed /claude config stays verbose for every Options key', () => {
+test('settings quiet path: typed /wowgpt config stays verbose for every Options key', () => {
   const typed = {
     whisper: 'config ui whisper off',
     dim: 'config ui dim 60',
@@ -229,7 +229,7 @@ test('settings quiet path: typed /claude config stays verbose for every Options 
     const vm = newVM({ dock: false });
     connect(vm);
     const counts = vm.evaluate('OUTPUT_COUNTS()');
-    vm.run(`SlashCmdList.CLAUDE(${JSON.stringify(cmd)})`);
+    vm.run(`SlashCmdList.WOWGPT(${JSON.stringify(cmd)})`);
     assert.notEqual(vm.evaluate('OUTPUT_COUNTS()'), counts, `${key}: typed config answers`);
   }
 });
@@ -238,21 +238,18 @@ test('settings quiet path: voice lines and tests stay silent when quiet, and tal
   const vm = newVM({ dock: false });
   connect(vm);
   const counts = vm.evaluate('OUTPUT_COUNTS()');
-  vm.run('ClaudeWoWVoice.Command("lines", { quiet = true }); ClaudeWoWVoice.Command("test done", { quiet = true })');
+  vm.run('WoWGPTVoice.Command("lines", { quiet = true }); WoWGPTVoice.Command("test done", { quiet = true })');
   assert.equal(vm.evaluate('OUTPUT_COUNTS()'), counts);
-  vm.run('ClaudeWoWVoice.Command("lines")');
+  vm.run('WoWGPTVoice.Command("lines")');
   assert.notEqual(vm.evaluate('OUTPUT_COUNTS()'), counts);
 });
 
 test('settings: Options is the top-level vertical category, Commands and tips and Widgets are canvas subcategories', () => {
   const vm = newVM();
-  assert.equal(
-    vm.evaluate('table.concat(STUB.settings.order, ",")'),
-    'vertical Azeroth Companion,canvas sub Commands and tips,canvas sub Widgets,addon Azeroth Companion',
-  );
+  assert.equal(vm.evaluate('table.concat(STUB.settings.order, ",")'), 'vertical WoWGPT,canvas sub Commands and tips,canvas sub Widgets,addon WoWGPT');
   assert.equal(vm.evaluate('STUB.settings.categories[1].kind'), 'vertical');
   assert.equal(vm.evaluate('STUB.settings.categories[1].parent'), null);
-  assert.equal(vm.evaluate('STUB.settings.categories[2].frame == ClaudeWoWHelpPanel'), 'true');
+  assert.equal(vm.evaluate('STUB.settings.categories[2].frame == WoWGPTHelpPanel'), 'true');
   assert.equal(vm.evaluate('STUB.settings.categories[2].parent == STUB.settings.categories[1]'), 'true');
   assert.equal(vm.evaluate('STUB.settings.categories[3].parent == STUB.settings.categories[1]'), 'true');
   assert.equal(vm.evaluate('#STUB.settings.controls'), '14');
@@ -263,26 +260,26 @@ test('settings: Options is the top-level vertical category, Commands and tips an
     'true',
     'every control is on the top-level page',
   );
-  vm.run('ClaudeWoW.ShowOptions(); ClaudeWoW.ShowHelp()');
+  vm.run('WoWGPT.ShowOptions(); WoWGPT.ShowHelp()');
   assert.equal(vm.evaluate('table.concat(STUB.settings.opened, ",")'), '41,45');
-  vm.run('ClaudeWoWMinimapButton.scripts.OnClick(ClaudeWoWMinimapButton, "RightButton")');
+  vm.run('WoWGPTMinimapButton.scripts.OnClick(WoWGPTMinimapButton, "RightButton")');
   assert.equal(vm.evaluate('STUB.settings.opened[3]'), '41', 'the minimap right-click opens the top-level Options page');
 });
 
 test('settings: a client with a canvas category but no vertical layout puts an Options canvas on top and keeps the help page under it', () => {
   const vm = newVM({ prelude: SETTINGS_API + '\nSettings.RegisterVerticalLayoutCategory = nil' });
-  assert.equal(vm.evaluate('table.concat(STUB.settings.order, ",")'), 'canvas Azeroth Companion,canvas sub Commands and tips,addon Azeroth Companion');
-  assert.equal(vm.evaluate('STUB.settings.categories[1].frame == ClaudeWoWOptionsPanel'), 'true');
-  assert.equal(vm.evaluate('#ClaudeWoWOptionsPanel.controls'), '14');
-  vm.run('ClaudeWoW.ShowOptions(); ClaudeWoW.ShowHelp()');
+  assert.equal(vm.evaluate('table.concat(STUB.settings.order, ",")'), 'canvas WoWGPT,canvas sub Commands and tips,addon WoWGPT');
+  assert.equal(vm.evaluate('STUB.settings.categories[1].frame == WoWGPTOptionsPanel'), 'true');
+  assert.equal(vm.evaluate('#WoWGPTOptionsPanel.controls'), '14');
+  vm.run('WoWGPT.ShowOptions(); WoWGPT.ShowHelp()');
   assert.equal(vm.evaluate('table.concat(STUB.settings.opened, ",")'), '40,45');
 });
 
 test('settings: without a subcategory API the help page opens in its own window, Options in Settings', () => {
   const vm = newVM({ prelude: SETTINGS_API + '\nSettings.RegisterCanvasLayoutSubcategory = nil' });
-  vm.run('ClaudeWoW.ShowOptions(); ClaudeWoW.ShowHelp()');
+  vm.run('WoWGPT.ShowOptions(); WoWGPT.ShowHelp()');
   assert.equal(vm.evaluate('table.concat(STUB.settings.opened, ",")'), '41');
-  assert.equal(vm.evaluate('ClaudeWoWHelpWindow.shown'), 'true');
+  assert.equal(vm.evaluate('WoWGPTHelpWindow.shown'), 'true');
 });
 
 test('settings: Interface Options lists Options on top and the help page under it', () => {
@@ -290,20 +287,20 @@ test('settings: Interface Options lists Options on top and the help page under i
     prelude:
       'STUB.legacy, STUB.legacyOpened = {}, {}; function InterfaceOptions_AddCategory(p) table.insert(STUB.legacy, p) end; function InterfaceOptionsFrame_OpenToCategory(p) table.insert(STUB.legacyOpened, p) end',
   });
-  assert.equal(vm.evaluate('STUB.legacy[1] == ClaudeWoWOptionsPanel'), 'true');
-  assert.equal(vm.evaluate('ClaudeWoWOptionsPanel.parent'), null);
-  assert.equal(vm.evaluate('STUB.legacy[2] == ClaudeWoWHelpPanel'), 'true');
-  assert.equal(vm.evaluate('ClaudeWoWHelpPanel.parent'), 'Azeroth Companion');
-  vm.run('ClaudeWoW.ShowHelp()');
-  assert.equal(vm.evaluate('STUB.legacyOpened[1] == ClaudeWoWHelpPanel'), 'true');
-  vm.run('STUB.legacyOpened = {}; ClaudeWoW.ShowOptions()');
-  assert.equal(vm.evaluate('STUB.legacyOpened[1] == ClaudeWoWOptionsPanel'), 'true');
+  assert.equal(vm.evaluate('STUB.legacy[1] == WoWGPTOptionsPanel'), 'true');
+  assert.equal(vm.evaluate('WoWGPTOptionsPanel.parent'), null);
+  assert.equal(vm.evaluate('STUB.legacy[2] == WoWGPTHelpPanel'), 'true');
+  assert.equal(vm.evaluate('WoWGPTHelpPanel.parent'), 'WoWGPT');
+  vm.run('WoWGPT.ShowHelp()');
+  assert.equal(vm.evaluate('STUB.legacyOpened[1] == WoWGPTHelpPanel'), 'true');
+  vm.run('STUB.legacyOpened = {}; WoWGPT.ShowOptions()');
+  assert.equal(vm.evaluate('STUB.legacyOpened[1] == WoWGPTOptionsPanel'), 'true');
 });
 
 const helpRows = vm =>
   JSON.parse(
     vm.evaluate(
-      '(function() local t = {} for _, s in ipairs(ClaudeWoW.HELP) do for _, r in ipairs(s.rows or {}) do t[#t + 1] = string.format("[%q,%q,%q]", s.title, r[1], r[2]) end for _, n in ipairs(s.notes or {}) do t[#t + 1] = string.format("[%q,%q,%q]", s.title, "", n) end end return "[" .. table.concat(t, ",") .. "]" end)()',
+      '(function() local t = {} for _, s in ipairs(WoWGPT.HELP) do for _, r in ipairs(s.rows or {}) do t[#t + 1] = string.format("[%q,%q,%q]", s.title, r[1], r[2]) end for _, n in ipairs(s.notes or {}) do t[#t + 1] = string.format("[%q,%q,%q]", s.title, "", n) end end return "[" .. table.concat(t, ",") .. "]" end)()',
     ),
   );
 
@@ -313,7 +310,7 @@ test('help rows: player commands first, transport rows only in a last More secti
   const titles = [...new Set(rows.map(r => r[0]))];
   assert.equal(titles[titles.length - 1], 'More');
   assert.ok(!titles.includes('Troubleshooting'));
-  for (const cmd of ['/claude resend', '/claude slots', '/claude diag [copy]', '/claude probe [chatlog|asyncfile]']) {
+  for (const cmd of ['/wowgpt resend', '/wowgpt slots', '/wowgpt diag [copy]', '/wowgpt probe [chatlog|asyncfile]']) {
     const row = rows.find(r => r[1] === cmd);
     assert.ok(row, cmd);
     assert.equal(row[0], 'More', cmd);
@@ -322,31 +319,31 @@ test('help rows: player commands first, transport rows only in a last More secti
   for (const r of rows) {
     if (/\/claude config \[key\] \[value\]/.test(r[1])) continue;
     assert.doesNotMatch(r[2], /bridge/i, r[1]);
-    if (r[1].startsWith('/claude --add-dir')) continue;
+    if (r[1].startsWith('/wowgpt --add-dir')) continue;
     assert.doesNotMatch(r[1] + ' ' + r[2], /folder/i, r[1]);
   }
-  assert.ok(rows.some(r => r[1] === '/claude cd <project path>'));
+  assert.ok(rows.some(r => r[1] === '/wowgpt cd <project path>'));
 });
 
-test('help: one roll wording in Options, /claude config and the roll command', () => {
+test('help: one roll wording in Options, /wowgpt config and the roll command', () => {
   const vm = newVM({ dock: false });
   connect(vm);
-  const wording = vm.evaluate('ClaudeWoW.ROLL_HELP');
+  const wording = vm.evaluate('WoWGPT.ROLL_HELP');
   assert.match(wording, /^A command that needs your OK opens a Greed, Need or Pass roll\./);
-  assert.equal(vm.evaluate('STUB.settings.proxies.CLAUDEWOW_OPTION_ROLL ~= nil'), 'true');
+  assert.equal(vm.evaluate('STUB.settings.proxies.WOWGPT_OPTION_ROLL ~= nil'), 'true');
   assert.equal(vm.evaluate(`${optionExpr('roll')}.tooltip`), wording);
-  vm.run('SlashCmdList.CLAUDE("config")');
-  assert.ok(vm.evaluate('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history].text').includes('roll = on  -  on|off: ' + wording));
-  vm.run('STUB.prints = {}; SlashCmdList.CLAUDE("config roll off")');
+  vm.run('SlashCmdList.WOWGPT("config")');
+  assert.ok(vm.evaluate('WoWGPTDB.chats[1].history[#WoWGPTDB.chats[1].history].text').includes('roll = on  -  on|off: ' + wording));
+  vm.run('STUB.prints = {}; SlashCmdList.WOWGPT("config roll off")');
   assert.ok(vm.evaluate('table.concat(STUB.prints, "\\n")').includes('Ask with a roll window is off. ' + wording));
 });
 
 test('help: the config list points at the top-level Options page and keeps bridge out of player keys', () => {
   const vm = newVM({ dock: false });
   connect(vm);
-  vm.run('SlashCmdList.CLAUDE("config")');
-  const list = vm.evaluate('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history].text');
-  assert.match(list, /The game's Options window has the same settings: AddOns, Azeroth Companion\.\n/);
+  vm.run('SlashCmdList.WOWGPT("config")');
+  const list = vm.evaluate('WoWGPTDB.chats[1].history[#WoWGPTDB.chats[1].history].text');
+  assert.match(list, /The game's Options window has the same settings: AddOns, WoWGPT\.\n/);
   for (const line of list.split('\n').filter(l => /  -  /.test(l) && !l.startsWith('bind'))) assert.doesNotMatch(line, /bridge/i, line);
 });
 
@@ -385,23 +382,23 @@ test('module text: player strings say companion app, never bridge, and project, 
   }
 });
 
-const SINKS = new Set(['print', 'AddHistory', 'Finish', 'TellPlayer', 'Cli.Out', 'Cli.Say', 'Cli.Note', 'Cli.Reject', 'ClaudeWoW.Print']);
+const SINKS = new Set(['print', 'AddHistory', 'Finish', 'TellPlayer', 'Cli.Out', 'Cli.Say', 'Cli.Note', 'Cli.Reject', 'WoWGPT.Print']);
 const DEV_FUNCTIONS = new Set([
   'Cli.DevCommand',
   'Cli.Diag',
-  'ClaudeWoW.ChatLog.Status',
+  'WoWGPT.ChatLog.Status',
   'PollPresence',
   'Presence.Check',
   'Presence.Scheme',
-  'ClaudeWoW.Version.ClientsStatus',
-  'ClaudeWoW.Version.Status',
+  'WoWGPT.Version.ClientsStatus',
+  'WoWGPT.Version.Status',
 ]);
 const DEV_VERBS = new Set(['diag', 'probe', 'dev', 'wrong', 'bug', 'mode', 'signal', 'auto', 'longchat']);
 const ALLOWED_LITERALS = [
   'update-bridge',
   'bridge-older',
   'bridge',
-  'CLAUDEWOW_FOLDER',
+  'WOWGPT_FOLDER',
   'the bridge read the last message only from the screenshot retry',
   "the companion app's folder",
   'Project for this chat\\n\\nType a full path, a path that starts with ~, or a folder name inside %s.',
@@ -409,7 +406,7 @@ const ALLOWED_LITERALS = [
   '. Extra folders for this chat: ',
   ' folders), so it is added for this retry only',
   'Add the folder for this retry only.',
-  'Add the folder always, for this chat, like /claude --add-dir, and retry.',
+  'Add the folder always, for this chat, like /wowgpt --add-dir, and retry.',
   "outside this chat's folders:%s*$",
   'One more folder the agent may use.',
   ' --add-dir folders.',
@@ -466,11 +463,11 @@ function addonLiterals(file) {
   return out;
 }
 
-const CORE_FILES = () => tocFiles().filter((f, i, files) => (f.includes('/') && i < files.indexOf('ClaudeWoW.lua')) || f === 'ClaudeWoW.lua');
+const CORE_FILES = () => tocFiles().filter((f, i, files) => (f.includes('/') && i < files.indexOf('WoWGPT.lua')) || f === 'WoWGPT.lua');
 
 const coreLiterals = () => CORE_FILES().flatMap(addonLiterals);
 
-test('module text: every literal in ClaudeWoW.lua and the Core and Transport files says companion app and project, except the diag, log and developer functions and listed protocol words', () => {
+test('module text: every literal in WoWGPT.lua and the Core and Transport files says companion app and project, except the diag, log and developer functions and listed protocol words', () => {
   const found = coreLiterals();
   assert.ok(found.length > 2000, `the scan sees every literal (${found.length})`);
   assert.ok(
@@ -497,7 +494,7 @@ test('module text: every literal in ClaudeWoW.lua and the Core and Transport fil
 });
 
 test('module text: the allowlists still hold bridge words, so it is the allowlist and not a blind scan that passes them', () => {
-  const src = fs.readFileSync(path.join(ADDON, 'ClaudeWoW.lua'), 'utf8');
+  const src = fs.readFileSync(path.join(ADDON, 'WoWGPT.lua'), 'utf8');
   assert.ok(/The bridge has not said it has dev tools/.test(src));
   assert.ok(/bridge default, /.test(fs.readFileSync(path.join(ADDON, 'Commands', 'Diag.lua'), 'utf8')));
   const found = coreLiterals();
@@ -513,45 +510,45 @@ test('module text: the allowlists still hold bridge words, so it is the allowlis
 test('module text: cd, agent, discord, restore and a failed run read in companion app words', () => {
   const vm = newVM({ dock: false });
   connect(vm);
-  const last = () => vm.evaluate('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history].text');
-  vm.run('ClaudeWoWDB.chats[1].cwd = ""; SlashCmdList.CLAUDE("cd")');
-  assert.match(last(), /^Project is the companion app's default: .* \(\/claude cd <path>, or right-click the chat and pick Project\.\.\., to change\)$/);
-  vm.run('SlashCmdList.CLAUDE("--agent nope")');
+  const last = () => vm.evaluate('WoWGPTDB.chats[1].history[#WoWGPTDB.chats[1].history].text');
+  vm.run('WoWGPTDB.chats[1].cwd = ""; SlashCmdList.WOWGPT("cd")');
+  assert.match(last(), /^Project is the companion app's default: .* \(\/wowgpt cd <path>, or right-click the chat and pick Project\.\.\., to change\)$/);
+  vm.run('SlashCmdList.WOWGPT("--agent nope")');
   assert.match(last(), /Unknown agent "nope"\. The companion app knows: /);
-  vm.run('SlashCmdList.CLAUDE("discord")');
+  vm.run('SlashCmdList.WOWGPT("discord")');
   assert.doesNotMatch(last(), /bridge/i);
 });
 
 test('settings widgets page: Show and Remove change the widget and write nothing', () => {
   const vm = newVM({
     saved:
-      'ClaudeWoWWidgetDB = { approved = { meter = { rev = "r1", source = "local ui = ..." } }, set = { epoch = "e1", version = 1, items = { { name = "meter", title = "DPS meter", rev = "r1", source = "local ui = ..." }, { name = "clock", title = "Clock", rev = "r2", source = "local ui = ..." } } } }',
+      'WoWGPTWidgetDB = { approved = { meter = { rev = "r1", source = "local ui = ..." } }, set = { epoch = "e1", version = 1, items = { { name = "meter", title = "DPS meter", rev = "r1", source = "local ui = ..." }, { name = "clock", title = "Clock", rev = "r2", source = "local ui = ..." } } } }',
   });
   connect(vm);
-  vm.run('ClaudeWoWWidgetsPanel.scripts.OnShow(ClaudeWoWWidgetsPanel)');
-  const row = i => `ClaudeWoWWidgetsPanel.rows[${i}]`;
+  vm.run('WoWGPTWidgetsPanel.scripts.OnShow(WoWGPTWidgetsPanel)');
+  const row = i => `WoWGPTWidgetsPanel.rows[${i}]`;
   const counts = vm.evaluate('OUTPUT_COUNTS()');
   vm.run(`${row(1)}.button.scripts.OnClick(${row(1)}.button)`);
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("meter")'), 'removed');
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("meter")'), 'removed');
   vm.run(`${row(2)}.button.scripts.OnClick(${row(2)}.button)`);
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("clock")'), 'running');
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("clock")'), 'running');
   vm.run(`${row(1)}.button.scripts.OnClick(${row(1)}.button)`);
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("meter")'), 'running');
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("meter")'), 'running');
   assert.equal(vm.evaluate('OUTPUT_COUNTS()'), counts, 'no history, chat, tab or print');
-  vm.run('SlashCmdList.CLAUDE("config ui remove clock")');
+  vm.run('SlashCmdList.WOWGPT("config ui remove clock")');
   assert.notEqual(vm.evaluate('OUTPUT_COUNTS()'), counts, 'the typed command still answers');
   const typed = vm.evaluate('OUTPUT_COUNTS()');
-  vm.run('ClaudeWoWWidgets.Remove("nosuch", { quiet = true })');
+  vm.run('WoWGPTWidgets.Remove("nosuch", { quiet = true })');
   assert.equal(vm.evaluate('OUTPUT_COUNTS()'), typed, 'an unknown name is silent from Settings');
 });
 
 test('module text: the changed lines read as the player sees them', () => {
   const vm = newVM({ dock: false });
   connect(vm);
-  vm.run('STUB.prints = {}; SlashCmdList.CLAUDE("config telemetry off")');
+  vm.run('STUB.prints = {}; SlashCmdList.WOWGPT("config telemetry off")');
   assert.ok(vm.evaluate('table.concat(STUB.prints, "\\n")').includes('the companion app gets no game state'));
-  vm.run('STUB.prints = {}; SlashCmdList.CLAUDE("config telemetry on")');
+  vm.run('STUB.prints = {}; SlashCmdList.WOWGPT("config telemetry on")');
   assert.ok(vm.evaluate('table.concat(STUB.prints, "\\n")').includes('go to the companion app.'));
-  vm.run('STUB.prints = {}; SlashCmdList.CLAUDE("config voice")');
+  vm.run('STUB.prints = {}; SlashCmdList.WOWGPT("config voice")');
   assert.ok(vm.evaluate('table.concat(STUB.prints, "\\n")').includes('the companion app picked the message up'));
 });

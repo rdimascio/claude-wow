@@ -46,18 +46,18 @@ test('/dm next from the real addon fires the waiting beat in the bridge, runs no
     await h.bridge.waitForLine(/game context updated: Character: Testchar/);
     const file = seedCampaign(h.sb.home);
     await h.client.say('read the slots');
-    await h.client.waitFor(() => h.client.luaValue('ClaudeWoWDM.view and ClaudeWoWDM.view.manual') === 'true', {
+    await h.client.waitFor(() => h.client.luaValue('WoWGPTDM.view and WoWGPTDM.view.manual') === 'true', {
       timeoutMs: 45000,
       label: 'the dm field with manual = true',
     });
     const calls = h.agentCalls().length;
     const mark = h.bridge.output.length;
-    h.client.runLua('SlashCmdList.CLAUDEWOWDM("next")');
+    h.client.runLua('SlashCmdList.WOWGPTDM("next")');
     await h.bridge.waitForLine(/\/dm next for Testchar-TestRealm: beat b1 fired/, { from: mark });
-    await h.client.waitFor(
-      () => h.client.luaValue('ClaudeWoWDMFrame and ClaudeWoWDMFrame:IsShown() and ClaudeWoWDMFrame.beatTitle:GetText()') === 'A story begins',
-      { timeoutMs: 45000, label: 'the DM frame with the first beat' },
-    );
+    await h.client.waitFor(() => h.client.luaValue('WoWGPTDMFrame and WoWGPTDMFrame:IsShown() and WoWGPTDMFrame.beatTitle:GetText()') === 'A story begins', {
+      timeoutMs: 45000,
+      label: 'the DM frame with the first beat',
+    });
     assert.equal(h.agentCalls().length, calls, 'the record never reached an agent');
     const doc = JSON.parse(fs.readFileSync(file, 'utf8'));
     assert.equal(doc.campaign.current, 'b1');
@@ -72,7 +72,7 @@ test('/dm next from the real addon fires the waiting beat in the bridge, runs no
       .map(l => JSON.parse(l));
     assert.ok(events.some(e => e.type === C.BEAT_EVENT && e.importance === 3));
     assert.doesNotMatch(h.bridge.output.slice(mark), /\[ask\]|runs claude/, 'no agent run started for the record');
-    h.client.runLua('SlashCmdList.CLAUDEWOWDM("next")');
+    h.client.runLua('SlashCmdList.WOWGPTDM("next")');
     assert.match(h.client.prints().join('\n'), /starts on its own/, 'the zone beat does not wait for /dm next');
 
     const zoneMark = h.bridge.output.length;
@@ -80,7 +80,7 @@ test('/dm next from the real addon fires the waiting beat in the bridge, runs no
     await h.client.say('where am I');
     await h.bridge.waitForLine(/campaign: beat b2 fired by zone for Testchar-TestRealm/, { from: zoneMark, timeoutMs: 45000 });
     await h.client.say('and now');
-    await h.client.waitFor(() => h.client.luaValue('ClaudeWoWDMFrame.beatTitle:GetText()') === 'The quiet road', {
+    await h.client.waitFor(() => h.client.luaValue('WoWGPTDMFrame.beatTitle:GetText()') === 'The quiet road', {
       timeoutMs: 45000,
       label: 'the zone beat on the next slot read',
     });

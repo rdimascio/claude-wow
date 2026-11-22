@@ -30,9 +30,9 @@ function newVM(savedVariables = '') {
   vm.loadAddon();
   vm.login();
   vm.run('STUB.RunTimers()');
-  vm.run('STUB.onLoadAddOn = function(name) ClaudeWoW_SlotData = { now = time(), cwd = "", replies = {} } end');
+  vm.run('STUB.onLoadAddOn = function(name) WoWGPT_SlotData = { now = time(), cwd = "", replies = {} } end');
   vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
-  assert.equal(vm.evaluate('ClaudeWoW.IsConnected()'), 'true');
+  assert.equal(vm.evaluate('WoWGPT.IsConnected()'), 'true');
   vm.run('VOICE.played = {}; STUB.played = {}');
   return vm;
 }
@@ -40,13 +40,13 @@ function newVM(savedVariables = '') {
 test('loading every file in .toc order and logging in registers no event the client blocks, with default settings or with roast on', () => {
   const defaults = newVM();
   assert.equal(defaults.num('#STUB.actionBlocked'), 0, defaults.evaluate('table.concat(STUB.actionBlocked, "; ")'));
-  defaults.run('SlashCmdList.CLAUDE("config roast on")');
+  defaults.run('SlashCmdList.WOWGPT("config roast on")');
   defaults.run('STUB.FireEvent("UNIT_COMBAT", "player", "WOUND", "", 40, 1); STUB.FireEvent("PLAYER_DEAD")');
-  defaults.run('SlashCmdList.CLAUDE("config roast off")');
+  defaults.run('SlashCmdList.WOWGPT("config roast off")');
   assert.equal(defaults.num('#STUB.actionBlocked'), 0, defaults.evaluate('table.concat(STUB.actionBlocked, "; ")'));
 
-  const roastOn = newVM('ClaudeWoWDB = { roast = { on = true } }');
-  assert.equal(roastOn.evaluate('ClaudeWoWRoast.Listening()'), 'true');
+  const roastOn = newVM('WoWGPTDB = { roast = { on = true } }');
+  assert.equal(roastOn.evaluate('WoWGPTRoast.Listening()'), 'true');
   roastOn.run('STUB.FireEvent("PLAYER_ENTERING_WORLD"); STUB.FireEvent("UNIT_COMBAT", "player", "WOUND", "CRITICAL", 90, 4); STUB.FireEvent("PLAYER_DEAD")');
   assert.equal(roastOn.num('#STUB.actionBlocked'), 0, roastOn.evaluate('table.concat(STUB.actionBlocked, "; ")'));
 });

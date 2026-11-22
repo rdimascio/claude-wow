@@ -1,0 +1,5 @@
+<Bindings>
+	<Binding name="WOWGPT_WORKSPACE" category="ADDONS">
+		if WoWGPT and WoWGPT.ToggleWorkspace then WoWGPT.ToggleWorkspace() end
+	</Binding>
+</Bindings>

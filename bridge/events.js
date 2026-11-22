@@ -16,7 +16,7 @@ const RECENT_LINES = 50;
 const READ_CHUNK_MAX = 1024 * 1024;
 
 const USAGE = [
-  'claude-wow events [--follow] [--min N] [--character Name-Realm]',
+  'wowgpt events [--follow] [--min N] [--character Name-Realm]',
   '  --follow     wait for new game events and print one JSON line per event',
   '  --min N      only events of importance N or more (1 money and loot, 2 watched items, zone, bags full, 3 level up, death, new recipe, a watched item target reached (goal_complete))',
   '  --character  the character folder under the goals folder (default: the one written to last)',

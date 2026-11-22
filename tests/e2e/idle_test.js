@@ -17,7 +17,7 @@ test('a message waiting in the queue is in state.json, so a deploy waits for it;
     const first = h.client.lastSeq() + 1;
     h.client.send('first [[hang]]');
     await h.client.waitFor(() => Object.keys(h.state().inflight || {}).length === 1, { label: 'the first run in flight' });
-    h.client.runLua('ClaudeWoW.NewChat("Two")');
+    h.client.runLua('WoWGPT.NewChat("Two")');
     const second = h.client.lastSeq() + 1;
     h.client.send('second [[hang]]');
     await h.bridge.waitForLine(new RegExp(`#${second}@\\S+ queued \\(1 running\\)`));
@@ -28,7 +28,7 @@ test('a message waiting in the queue is in state.json, so a deploy waits for it;
     assert.equal(queueOnly.idle, false, 'the queue alone keeps the bridge busy');
     assert.match(queueOnly.reason, new RegExp(`waiting in the queue \\((#\\d+, )*#${second}(, #\\d+)*\\)`));
 
-    h.client.slash('/claude cancel');
+    h.client.slash('/wowgpt cancel');
     await h.bridge.waitForLine(new RegExp(`#${second}@\\S+ cancelled from the game before it started`));
     await h.client.waitFor(() => !(h.state().queued || []).some(j => j.id === second), { label: 'the queue entry gone from state.json' });
     assert.deepEqual(

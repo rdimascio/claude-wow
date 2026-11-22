@@ -8,7 +8,7 @@
 //
 //   - process.execPath is the bridge itself, not an interpreter. "Run
 //     bridge.js with this node" becomes "run this binary with a subcommand"
-//     (claude-wow bridge, claude-wow setup, claude-wow install-slots; the
+//     (wowgpt bridge, wowgpt setup, wowgpt install-slots; the
 //     supervisor maps them back), and a JavaScript launcher an agent CLI ships
 //     (npm's codex.js) needs a real node found on the PATH.
 //   - the sources are inside the binary: __dirname names the folder they were
@@ -85,7 +85,7 @@ function node(r = DEFAULT, env = process.env, platform = process.platform) {
 
 // One line for the banner and the logs.
 function describe(r = DEFAULT, versions = process.versions) {
-  if (r.compiled) return `claude-wow binary (bun ${versions.bun})`;
+  if (r.compiled) return `wowgpt binary (bun ${versions.bun})`;
   return versions.bun ? `bun ${versions.bun}` : `node ${versions.node}`;
 }
 

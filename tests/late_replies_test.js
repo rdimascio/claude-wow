@@ -9,7 +9,7 @@ const { spawn } = require('child_process');
 const H = require('../dev/harness');
 const LP = require('../bridge/liveproto');
 
-const ROOT = path.join(os.tmpdir(), `claude-wow-unit-latereplies-${process.pid}`);
+const ROOT = path.join(os.tmpdir(), `wowgpt-unit-latereplies-${process.pid}`);
 const SESSION_NAME = 'latereplies';
 const SLOTS = 20;
 const SPEED = 8;
@@ -114,7 +114,7 @@ test("after a permission roll times out, the session's answer reaches an idle ad
   const config = { plugins: { default: 'claude-code', live: { pickupMs: 0, permissionTimeoutMs: PERMISSION_TIMEOUT_MS } } };
   await withGame({ client: { speed: SPEED }, speed: SPEED, config }, async h => {
     await h.client.connect();
-    h.client.runLua('ClaudeWoWDB.settings.lootRoll = false');
+    h.client.runLua('WoWGPTDB.settings.lootRoll = false');
     const session = await connectLiveSession(h);
     try {
       const chatId = `${h.client.db().session}:${h.client.activeChat().id}`;

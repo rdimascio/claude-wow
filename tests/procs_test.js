@@ -34,7 +34,7 @@ async function until(fn, ms = 8000) {
   return fn();
 }
 function scratch(name) {
-  const dir = path.join(os.tmpdir(), `claude-wow-procs-${name}-${process.pid}-${Date.now().toString(36)}`);
+  const dir = path.join(os.tmpdir(), `wowgpt-procs-${name}-${process.pid}-${Date.now().toString(36)}`);
   fs.mkdirSync(dir, { recursive: true });
   return dir;
 }
@@ -199,7 +199,7 @@ test(
     const home = path.join(dir, 'home');
     const addons = path.join(dir, 'client', 'Interface', 'AddOns');
     const project = path.join(dir, 'project');
-    for (const d of ['sig', 'ack', 'act', 'presence']) fs.mkdirSync(path.join(addons, 'ClaudeWoW_Runtime', d), { recursive: true });
+    for (const d of ['sig', 'ack', 'act', 'presence']) fs.mkdirSync(path.join(addons, 'WoWGPT_Runtime', d), { recursive: true });
     fs.mkdirSync(project, { recursive: true });
     fs.mkdirSync(home, { recursive: true });
     const pidsFile = path.join(dir, 'pids.json');
@@ -209,8 +209,8 @@ test(
       path.join(home, 'config.json'),
       JSON.stringify({
         addonDir: addons,
-        savedVariablesFile: path.join(dir, 'ClaudeWoW.lua'),
-        inboxFile: path.join(addons, 'ClaudeWoW_Runtime', 'Inbox.lua'),
+        savedVariablesFile: path.join(dir, 'WoWGPT.lua'),
+        inboxFile: path.join(addons, 'WoWGPT_Runtime', 'Inbox.lua'),
         defaultCwd: project,
         slots: 1,
         agent: 'claude',
@@ -224,7 +224,7 @@ test(
       }),
     );
     const bridge = spawn(process.execPath, [BRIDGE, '--inject', 'hang in there', '--project', project], {
-      env: SB.isolatedEnv(path.join(path.dirname(home), 'user'), { CLAUDE_WOW_HOME: home }),
+      env: SB.isolatedEnv(path.join(path.dirname(home), 'user'), { WOWGPT_HOME: home }),
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let out = '';
@@ -251,7 +251,7 @@ test(
       // The run's own 'close' handler had its turn before the exit: the chat was told.
       assert.match(out, /#1 error \(101 chars, no summary\)/, out);
       assert.match(
-        fs.readFileSync(path.join(addons, 'ClaudeWoW_Runtime', 'Inbox.lua'), 'utf8'),
+        fs.readFileSync(path.join(addons, 'WoWGPT_Runtime', 'Inbox.lua'), 'utf8'),
         /status = "error",\n\t\t\ttext = "The companion app was stopped while Claude was still working\. Send the message again once it is back\.",/,
       );
       assert.ok(await until(() => !pidAlive(pids.pid)), 'the agent is dead');

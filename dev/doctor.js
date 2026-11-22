@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 'use strict';
+require('../bridge/legacyenv').adopt(); // CLAUDE_WOW_* from before the rename count as WOWGPT_*, before anything reads them
 const { createSystem } = require('./doctor/system');
 const { gather } = require('./doctor/context');
 const { runChecks } = require('./doctor/checks');
@@ -18,7 +19,7 @@ function verdictLine(results, ctx) {
   const warnings = results.filter(r => r.status === 'warn').length;
   const status = overallStatus(results);
   const headline = status === 'ok' ? 'HEALTHY' : status === 'warn' ? 'DEGRADED' : 'BROKEN';
-  return `claude-wow doctor: ${headline}, ${failures} failure(s), ${warnings} warning(s), ${results.length} checks (checkout ${ctx.checkout || 'unknown'}, home ${ctx.homePaths.dir})`;
+  return `wowgpt doctor: ${headline}, ${failures} failure(s), ${warnings} warning(s), ${results.length} checks (checkout ${ctx.checkout || 'unknown'}, home ${ctx.homePaths.dir})`;
 }
 
 function formatText(results, ctx) {

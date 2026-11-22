@@ -6,7 +6,7 @@ const os = require('os');
 const path = require('path');
 const A = require('../dev/widget-audit');
 
-const FIXTURE = path.join(__dirname, 'fixtures', 'widget-audit', 'ClaudeWoW.lua');
+const FIXTURE = path.join(__dirname, 'fixtures', 'widget-audit', 'WoWGPT.lua');
 
 function capture() {
   const out = [];
@@ -36,14 +36,14 @@ test('parseDump reads the globals the addon saved, past other tables and a quote
 test('parseDump reads the unindented CRLF layout the headless dev client writes', () => {
   const text = [
     '',
-    'ClaudeWoWDB = {',
+    'WoWGPTDB = {',
     '["chats"] = {',
     '{',
     '["id"] = 1,',
     '},',
     '},',
     '}',
-    'ClaudeWoWWidgetDB = {',
+    'WoWGPTWidgetDB = {',
     '["globals"] = {',
     '["admitted"] = {',
     '"GetTime",',
@@ -66,11 +66,11 @@ test('parseDump reads the unindented CRLF layout the headless dev client writes'
 
 test('parseDump returns null with no widget table or no globals, and throws on a broken table', () => {
   assert.equal(A.parseDump(''), null);
-  assert.equal(A.parseDump('ClaudeWoWDB = {\n}\n'), null);
-  assert.equal(A.parseDump('ClaudeWoWWidgetDB = {\n\t["removed"] = {\n\t},\n}\n'), null);
-  assert.equal(A.parseDump('ClaudeWoWWidgetDB = {\n\t["globals"] = "x",\n}\n'), null);
-  assert.equal(A.parseDump('ClaudeWoWWidgetDB = {\n\t["globals"] = {\n\t},\n'), null);
-  assert.throws(() => A.parseDump('ClaudeWoWWidgetDB = {\n\t["globals"] = {{{\n}\n'), /cannot parse ClaudeWoWWidgetDB/);
+  assert.equal(A.parseDump('WoWGPTDB = {\n}\n'), null);
+  assert.equal(A.parseDump('WoWGPTWidgetDB = {\n\t["removed"] = {\n\t},\n}\n'), null);
+  assert.equal(A.parseDump('WoWGPTWidgetDB = {\n\t["globals"] = "x",\n}\n'), null);
+  assert.equal(A.parseDump('WoWGPTWidgetDB = {\n\t["globals"] = {\n\t},\n'), null);
+  assert.throws(() => A.parseDump('WoWGPTWidgetDB = {\n\t["globals"] = {{{\n}\n'), /cannot parse WoWGPTWidgetDB/);
 });
 
 test('the audit flags admitted writers and refused getters', () => {
@@ -99,7 +99,7 @@ test('verbs come from the member after a C_ namespace or a Unit prefix', () => {
 test('the text report names the client and lists each section', () => {
   const report = A.audit(A.parseDump(fs.readFileSync(FIXTURE, 'utf8')));
   const text = A.formatReport(report, FIXTURE);
-  assert.match(text, /^widget allowlist audit: .*ClaudeWoW\.lua$/m);
+  assert.match(text, /^widget allowlist audit: .*WoWGPT\.lua$/m);
   assert.match(text, /^client 1\.15\.9 \(64000\), interface 11509, dumped 2026-09-21T/m);
   assert.match(text, /^11 of 11 names saved: 6 a widget can use, 5 it cannot$/m);
   assert.doesNotMatch(text, /was cut/);
@@ -149,15 +149,15 @@ test('main exits 2 with a hint when a file is missing, has no dump, or cannot be
   const dir = tempDir();
   try {
     const empty = path.join(dir, 'empty.lua');
-    fs.writeFileSync(empty, 'ClaudeWoWWidgetDB = {\n}\n');
+    fs.writeFileSync(empty, 'WoWGPTWidgetDB = {\n}\n');
     const broken = path.join(dir, 'broken.lua');
-    fs.writeFileSync(broken, 'ClaudeWoWWidgetDB = {\n\t["globals"] = {{{\n}\n');
+    fs.writeFileSync(broken, 'WoWGPTWidgetDB = {\n\t["globals"] = {{{\n}\n');
     const r = capture();
     assert.equal(A.main([path.join(dir, 'missing.lua'), empty, broken], r.io), 2);
     assert.equal(r.out.length, 0);
     assert.match(r.err[0], /missing\.lua: cannot read \(ENOENT\)/);
-    assert.match(r.err[1], /empty\.lua: no saved global names\. Type \/claude dev globals in game, then \/reload\./);
-    assert.match(r.err[2], /broken\.lua: cannot parse ClaudeWoWWidgetDB/);
+    assert.match(r.err[1], /empty\.lua: no saved global names\. Type \/wowgpt dev globals in game, then \/reload\./);
+    assert.match(r.err[2], /broken\.lua: cannot parse WoWGPTWidgetDB/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -167,12 +167,12 @@ test('main with no file reads every client in the bridge config, and says so whe
   const dir = tempDir();
   try {
     const game = path.join(dir, 'World of Warcraft', '_classic_era_');
-    const saved = path.join(game, 'WTF', 'Account', 'ACC', 'SavedVariables', 'ClaudeWoW.lua');
+    const saved = path.join(game, 'WTF', 'Account', 'ACC', 'SavedVariables', 'WoWGPT.lua');
     fs.mkdirSync(path.dirname(saved), { recursive: true });
     fs.copyFileSync(FIXTURE, saved);
     const home = path.join(dir, 'home');
     fs.mkdirSync(home);
-    const env = { CLAUDE_WOW_HOME: home };
+    const env = { WOWGPT_HOME: home };
     const none = capture();
     assert.equal(A.main([], { ...none.io, env }), 2);
     assert.match(none.err[0], /No SavedVariables file/);
@@ -188,6 +188,6 @@ test('main with no file reads every client in the bridge config, and says so whe
 
 test('--help prints the usage and reads nothing', () => {
   const r = capture();
-  assert.equal(A.main(['--help'], { ...r.io, env: { CLAUDE_WOW_HOME: path.join(os.tmpdir(), 'widget-audit-none') } }), 0);
+  assert.equal(A.main(['--help'], { ...r.io, env: { WOWGPT_HOME: path.join(os.tmpdir(), 'widget-audit-none') } }), 0);
   assert.equal(r.out[0], A.USAGE);
 });

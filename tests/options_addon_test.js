@@ -97,11 +97,11 @@ function newVM(prelude = SETTINGS_API, savedVariables = '') {
   return vm;
 }
 
-const proxy = key => `STUB.settings.proxies.CLAUDEWOW_OPTION_${key.toUpperCase()}`;
+const proxy = key => `STUB.settings.proxies.WOWGPT_OPTION_${key.toUpperCase()}`;
 const configLine = (vm, key) => {
-  vm.run('SlashCmdList.CLAUDE("config all")');
+  vm.run('SlashCmdList.WOWGPT("config all")');
   const list = vm.evaluate(
-    '(function() for _, c in ipairs(ClaudeWoWDB.chats) do if c.id == ClaudeWoWDB.activeChat then return c.history[#c.history].text end end end)()',
+    '(function() for _, c in ipairs(WoWGPTDB.chats) do if c.id == WoWGPTDB.activeChat then return c.history[#c.history].text end end end)()',
   );
   return list.split('\n').find(l => l.startsWith(key + ' = ') || l.startsWith(key + '  -  '));
 };
@@ -110,15 +110,12 @@ const PLAYER_KEYS = ['whisper', 'dim', 'dodge', 'autohide', 'minimap', 'echo', '
 
 test('options: an Options page of proxy settings and a Widgets page sit under the addon category, registered before it is listed', () => {
   const vm = newVM();
-  assert.equal(
-    vm.evaluate('table.concat(STUB.settings.order, ",")'),
-    'vertical Azeroth Companion,canvas Commands and tips,canvas Widgets,addon Azeroth Companion',
-  );
+  assert.equal(vm.evaluate('table.concat(STUB.settings.order, ",")'), 'vertical WoWGPT,canvas Commands and tips,canvas Widgets,addon WoWGPT');
   assert.equal(vm.evaluate('STUB.settings.categories[2].parent == STUB.settings.categories[1]'), 'true');
   assert.equal(vm.evaluate('STUB.settings.categories[3].parent == STUB.settings.categories[1]'), 'true');
-  assert.equal(vm.evaluate('STUB.settings.categories[3].frame == ClaudeWoWWidgetsPanel'), 'true');
+  assert.equal(vm.evaluate('STUB.settings.categories[3].frame == WoWGPTWidgetsPanel'), 'true');
   const keys = vm.evaluate(
-    '(function() local t = {} for _, c in ipairs(STUB.settings.controls) do t[#t + 1] = c.setting.variable:sub(18):lower() .. ":" .. c.kind end return table.concat(t, ",") end)()',
+    '(function() local t = {} for _, c in ipairs(STUB.settings.controls) do t[#t + 1] = c.setting.variable:sub(#"WOWGPT_OPTION_" + 1):lower() .. ":" .. c.kind end return table.concat(t, ",") end)()',
   );
   assert.equal(
     keys,
@@ -129,12 +126,12 @@ test('options: an Options page of proxy settings and a Widgets page sit under th
   for (const dev of ['signal', 'mode', 'auto', 'longchat', 'plugin', 'probe', 'diag'])
     assert.equal(vm.evaluate(proxy(dev)), null, `${dev} stays off the Options page`);
   const voice = vm.evaluate(
-    '(function() for _, c in ipairs(STUB.settings.controls) do if c.setting.variable == "CLAUDEWOW_OPTION_VOICE" then local t = {} for _, o in ipairs(c.options()) do t[#t + 1] = o.value .. "=" .. o.label end return table.concat(t, ",") end end end)()',
+    '(function() for _, c in ipairs(STUB.settings.controls) do if c.setting.variable == "WOWGPT_OPTION_VOICE" then local t = {} for _, o in ipairs(c.options()) do t[#t + 1] = o.value .. "=" .. o.label end return table.concat(t, ",") end end end)()',
   );
   assert.equal(voice, 'race=Your race,peasant=Peasant,peon=Peon,off=Off');
 });
 
-test('options: each control calls the /claude config handler, takes effect at once, and agrees with /claude config both ways', () => {
+test('options: each control calls the /wowgpt config handler, takes effect at once, and agrees with /wowgpt config both ways', () => {
   const vm = newVM();
   const set = (key, value) => vm.run(`${proxy(key)}:SetValue(${JSON.stringify(value)})`);
   const get = key => vm.evaluate(`${proxy(key)}:GetValue()`);
@@ -142,55 +139,55 @@ test('options: each control calls the /claude config handler, takes effect at on
   assert.equal(get('whisper'), 'false');
   set('whisper', true);
   set('whisper', false);
-  assert.equal(vm.evaluate('ClaudeWoWDB.settings.whisperChoice'), 'off', 'went through Cli.SetWhisper');
+  assert.equal(vm.evaluate('WoWGPTDB.settings.whisperChoice'), 'off', 'went through Cli.SetWhisper');
   assert.match(configLine(vm, 'whisper'), /^whisper = off/);
 
-  vm.run('APPLIED = 0; local apply = ClaudeWoWWindow.Apply; ClaudeWoWWindow.Apply = function(...) APPLIED = APPLIED + 1; return apply(...) end');
+  vm.run('APPLIED = 0; local apply = WoWGPTWindow.Apply; WoWGPTWindow.Apply = function(...) APPLIED = APPLIED + 1; return apply(...) end');
   set('dodge', false);
   set('autohide', false);
   set('dim', '60');
   assert.equal(vm.evaluate('APPLIED'), '3', 'Cli.Ui re-applies the window each time');
-  assert.equal(vm.evaluate('ClaudeWoWDB.settings.dim'), '0.6');
+  assert.equal(vm.evaluate('WoWGPTDB.settings.dim'), '0.6');
   assert.match(configLine(vm, 'ui'), /^ui = whisper off, dim 60%, dodge off, autohide off/);
   set('dim', 'off');
-  assert.equal(vm.evaluate('ClaudeWoWDB.settings.dim'), '1');
+  assert.equal(vm.evaluate('WoWGPTDB.settings.dim'), '1');
 
   set('echo', 'short');
   assert.match(configLine(vm, 'echo'), /^echo = short/);
-  vm.run('SlashCmdList.CLAUDE("config echo 900")');
+  vm.run('SlashCmdList.WOWGPT("config echo 900")');
   assert.equal(get('echo'), '900');
   const echoChoices = vm.evaluate(
-    '(function() for _, c in ipairs(STUB.settings.controls) do if c.setting.variable == "CLAUDEWOW_OPTION_ECHO" then return c.options()[1].label end end end)()',
+    '(function() for _, c in ipairs(STUB.settings.controls) do if c.setting.variable == "WOWGPT_OPTION_ECHO" then return c.options()[1].label end end end)()',
   );
   assert.equal(echoChoices, '900 characters', 'a number set by command still shows in the dropdown');
 
   set('voice', 'peon');
-  assert.equal(vm.evaluate('ClaudeWoWDB.voice.pack'), 'peon');
+  assert.equal(vm.evaluate('WoWGPTDB.voice.pack'), 'peon');
   assert.match(configLine(vm, 'voice'), /^voice = peon/);
 
-  assert.equal(vm.evaluate('ClaudeWoWRoast.Listening()'), 'false');
+  assert.equal(vm.evaluate('WoWGPTRoast.Listening()'), 'false');
   set('roast', true);
-  assert.equal(vm.evaluate('ClaudeWoWRoast.Listening()'), 'true', 'the roast handler registers its events');
+  assert.equal(vm.evaluate('WoWGPTRoast.Listening()'), 'true', 'the roast handler registers its events');
   assert.match(configLine(vm, 'roast'), /^roast = on/);
 
   set('roll', false);
-  assert.equal(vm.evaluate('ClaudeWoW.LootRollEnabled()'), 'false');
+  assert.equal(vm.evaluate('WoWGPT.LootRollEnabled()'), 'false');
   set('achievements', false);
-  assert.equal(vm.evaluate('ClaudeWoWAchievements.ToastsOn()'), 'false');
+  assert.equal(vm.evaluate('WoWGPTAchievements.ToastsOn()'), 'false');
   set('orders', false);
-  assert.equal(vm.evaluate('ClaudeWoWOrders.IsOn()'), 'false');
+  assert.equal(vm.evaluate('WoWGPTOrders.IsOn()'), 'false');
   set('telemetry', false);
-  assert.equal(vm.evaluate('ClaudeWoWTelemetry.IsOn()'), 'false');
+  assert.equal(vm.evaluate('WoWGPTTelemetry.IsOn()'), 'false');
   assert.match(configLine(vm, 'telemetry'), /^telemetry = off/);
   set('ore', true);
-  assert.equal(vm.evaluate('ClaudeWoWMapDB.nodes.ore'), 'true');
+  assert.equal(vm.evaluate('WoWGPTMapDB.nodes.ore'), 'true');
   assert.equal(get('herb'), 'false');
 
-  vm.run('SlashCmdList.CLAUDE("config telemetry on")');
-  vm.run('SlashCmdList.CLAUDE("config ui dodge on")');
-  vm.run('SlashCmdList.CLAUDE("config roll on")');
-  vm.run('SlashCmdList.CLAUDE("config map herb on")');
-  vm.run('SlashCmdList.CLAUDE("config voice off")');
+  vm.run('SlashCmdList.WOWGPT("config telemetry on")');
+  vm.run('SlashCmdList.WOWGPT("config ui dodge on")');
+  vm.run('SlashCmdList.WOWGPT("config roll on")');
+  vm.run('SlashCmdList.WOWGPT("config map herb on")');
+  vm.run('SlashCmdList.WOWGPT("config voice off")');
   assert.equal(get('telemetry'), 'true');
   assert.equal(get('dodge'), 'true');
   assert.equal(get('roll'), 'true');
@@ -200,11 +197,11 @@ test('options: each control calls the /claude config handler, takes effect at on
 
 test('options: a value that does not change calls no handler', () => {
   const vm = newVM();
-  vm.run('CALLS = 0; local config = ClaudeWoW.Config; ClaudeWoW.Config = function(...) CALLS = CALLS + 1; return config(...) end');
+  vm.run('CALLS = 0; local config = WoWGPT.Config; WoWGPT.Config = function(...) CALLS = CALLS + 1; return config(...) end');
   vm.run(`${proxy('whisper')}:SetValue(false)`);
-  vm.run('ClaudeWoWHelp.SetOption(ClaudeWoWHelp.OPTIONS[1], false)');
+  vm.run('WoWGPTHelp.SetOption(WoWGPTHelp.OPTIONS[1], false)');
   assert.equal(vm.evaluate('CALLS'), '0');
-  vm.run('ClaudeWoWHelp.SetOption(ClaudeWoWHelp.OPTIONS[1], true)');
+  vm.run('WoWGPTHelp.SetOption(WoWGPTHelp.OPTIONS[1], true)');
   assert.equal(vm.evaluate('CALLS'), '1');
 });
 
@@ -225,50 +222,50 @@ test('options: what the page sets is in SavedVariables, so it is the same after 
     herb: true,
   };
   for (const [key, value] of Object.entries(values)) vm.run(`${proxy(key)}:SetValue(${JSON.stringify(value)})`);
-  const saved = `ClaudeWoWDB = ${vm.evaluate('SERIALIZE(ClaudeWoWDB)')}\nClaudeWoWMapDB = ${vm.evaluate('SERIALIZE(ClaudeWoWMapDB)')}`;
+  const saved = `WoWGPTDB = ${vm.evaluate('SERIALIZE(WoWGPTDB)')}\nWoWGPTMapDB = ${vm.evaluate('SERIALIZE(WoWGPTMapDB)')}`;
   const again = newVM(SETTINGS_API, saved);
   for (const [key, value] of Object.entries(values)) assert.equal(again.evaluate(`${proxy(key)}:GetValue()`), String(value), key);
-  assert.equal(again.evaluate('ClaudeWoWRoast.Listening()'), 'true');
+  assert.equal(again.evaluate('WoWGPTRoast.Listening()'), 'true');
 });
 
 test('options: without the Settings API, an Options panel under the help page works with plain controls and lists widgets', () => {
   const vm = newVM(LEGACY_API);
   assert.equal(vm.evaluate('#STUB.legacy'), '2');
-  assert.equal(vm.evaluate('STUB.legacy[1] == ClaudeWoWOptionsPanel'), 'true');
-  assert.equal(vm.evaluate('ClaudeWoWHelpPanel.parent'), 'Azeroth Companion');
-  const control = key => `(function() for _, c in ipairs(ClaudeWoWOptionsPanel.controls) do if c.option.key == "${key}" then return c end end end)()`;
-  assert.equal(vm.evaluate('#ClaudeWoWOptionsPanel.controls'), String(PLAYER_KEYS.length));
+  assert.equal(vm.evaluate('STUB.legacy[1] == WoWGPTOptionsPanel'), 'true');
+  assert.equal(vm.evaluate('WoWGPTHelpPanel.parent'), 'WoWGPT');
+  const control = key => `(function() for _, c in ipairs(WoWGPTOptionsPanel.controls) do if c.option.key == "${key}" then return c end end end)()`;
+  assert.equal(vm.evaluate('#WoWGPTOptionsPanel.controls'), String(PLAYER_KEYS.length));
   assert.equal(vm.evaluate(`${control('telemetry')}.label.text`), 'Share game state with the agent');
   assert.equal(vm.evaluate(`${control('telemetry')}.template`), 'UICheckButtonTemplate');
   vm.run(`${control('telemetry')}.scripts.OnClick(${control('telemetry')})`);
-  assert.equal(vm.evaluate('ClaudeWoWTelemetry.IsOn()'), 'false');
+  assert.equal(vm.evaluate('WoWGPTTelemetry.IsOn()'), 'false');
   vm.run(`${control('echo')}.scripts.OnClick(${control('echo')})`);
-  assert.equal(vm.evaluate('ClaudeWoWDB.settings.echo'), 'short');
+  assert.equal(vm.evaluate('WoWGPTDB.settings.echo'), 'short');
   assert.equal(vm.evaluate(`${control('echo')}.text`), 'Replies in the game chat: Short');
-  vm.run('SlashCmdList.CLAUDE("config echo off"); ClaudeWoWOptionsPanel.scripts.OnShow(ClaudeWoWOptionsPanel)');
-  assert.equal(vm.evaluate(`${control('echo')}.text`), 'Replies in the game chat: Off', 'the panel shows what /claude config set');
-  assert.equal(vm.evaluate('ClaudeWoWOptionsPanel.empty.shown'), 'true');
+  vm.run('SlashCmdList.WOWGPT("config echo off"); WoWGPTOptionsPanel.scripts.OnShow(WoWGPTOptionsPanel)');
+  assert.equal(vm.evaluate(`${control('echo')}.text`), 'Replies in the game chat: Off', 'the panel shows what /wowgpt config set');
+  assert.equal(vm.evaluate('WoWGPTOptionsPanel.empty.shown'), 'true');
 });
 
 test('options: the Widgets page lists the agent widgets with Remove and Show buttons that use the widget commands', () => {
   const vm = newVM(
     SETTINGS_API,
-    'ClaudeWoWWidgetDB = { approved = { meter = { rev = "r1", source = "local ui = ..." } }, set = { epoch = "e1", version = 1, items = { { name = "meter", title = "DPS meter", rev = "r1", source = "local ui = ..." }, { name = "clock", title = "Clock", rev = "r2", source = "local ui = ..." } } } }',
+    'WoWGPTWidgetDB = { approved = { meter = { rev = "r1", source = "local ui = ..." } }, set = { epoch = "e1", version = 1, items = { { name = "meter", title = "DPS meter", rev = "r1", source = "local ui = ..." }, { name = "clock", title = "Clock", rev = "r2", source = "local ui = ..." } } } }',
   );
-  vm.run('ClaudeWoWWidgetsPanel.scripts.OnShow(ClaudeWoWWidgetsPanel)');
-  const row = i => `ClaudeWoWWidgetsPanel.rows[${i}]`;
-  assert.equal(vm.evaluate('ClaudeWoWWidgetsPanel.empty.shown'), 'false');
+  vm.run('WoWGPTWidgetsPanel.scripts.OnShow(WoWGPTWidgetsPanel)');
+  const row = i => `WoWGPTWidgetsPanel.rows[${i}]`;
+  assert.equal(vm.evaluate('WoWGPTWidgetsPanel.empty.shown'), 'false');
   assert.equal(vm.evaluate(`${row(1)}.text.text`), 'DPS meter  (shown)');
   assert.equal(vm.evaluate(`${row(1)}.button.text`), 'Remove');
   assert.equal(vm.evaluate(`${row(2)}.text.text`), 'Clock  (waiting for your OK)');
   assert.equal(vm.evaluate(`${row(2)}.button.text`), 'Show');
   vm.run(`${row(1)}.button.scripts.OnClick(${row(1)}.button)`);
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("meter")'), 'removed');
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("meter")'), 'removed');
   assert.equal(vm.evaluate(`${row(1)}.text.text`), 'DPS meter  (hidden)');
   assert.equal(vm.evaluate(`${row(1)}.button.text`), 'Show');
   vm.run(`${row(2)}.button.scripts.OnClick(${row(2)}.button)`);
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("clock")'), 'running');
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.approved.clock.rev'), 'r2');
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("clock")'), 'running');
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.approved.clock.rev'), 'r2');
 });
 
 const NATIVE_TEMPLATES = `
@@ -293,8 +290,8 @@ const NATIVE_TEMPLATES = `
   end`;
 
 const pickGear = (vm, label) =>
-  vm.run(`ClaudeWoWChatSettings.scripts.OnClick(ClaudeWoWChatSettings)
-    for _, r in ipairs(ClaudeWoWChatMenu.rows) do if r.shown and r.label.text == "${label}" then r.scripts.OnClick(r) end end`);
+  vm.run(`WoWGPTChatSettings.scripts.OnClick(WoWGPTChatSettings)
+    for _, r in ipairs(WoWGPTChatMenu.rows) do if r.shown and r.label.text == "${label}" then r.scripts.OnClick(r) end end`);
 
 test('options: the gear menu has an Options item that opens the Options page, in Settings, in Interface Options, or the help window', () => {
   const vm = newVM(NATIVE_TEMPLATES + SETTINGS_API);
@@ -305,44 +302,44 @@ test('options: the gear menu has an Options item that opens the Options page, in
 
   const legacy = newVM(NATIVE_TEMPLATES + LEGACY_API);
   pickGear(legacy, 'Options');
-  assert.equal(legacy.evaluate('STUB.legacyOpened[1] == ClaudeWoWOptionsPanel'), 'true');
+  assert.equal(legacy.evaluate('STUB.legacyOpened[1] == WoWGPTOptionsPanel'), 'true');
 
   const bare = newVM(NATIVE_TEMPLATES);
   pickGear(bare, 'Options');
-  assert.equal(bare.evaluate('ClaudeWoWHelpWindow.shown'), 'true', 'no options API: the help window with the /claude config commands');
+  assert.equal(bare.evaluate('WoWGPTHelpWindow.shown'), 'true', 'no options API: the help window with the /wowgpt config commands');
 });
 
 test('options: a Show button with stale row data does not approve the newer code, it refreshes and asks', () => {
   const vm = newVM(
     SETTINGS_API,
-    'ClaudeWoWWidgetDB = { enabled = true, set = { epoch = "e1", version = 1, items = { { name = "clock", title = "Clock", rev = "r2", source = "local ui = ..." } } } }',
+    'WoWGPTWidgetDB = { enabled = true, set = { epoch = "e1", version = 1, items = { { name = "clock", title = "Clock", rev = "r2", source = "local ui = ..." } } } }',
   );
-  vm.run('ClaudeWoWWidgetsPanel.scripts.OnShow(ClaudeWoWWidgetsPanel)');
-  const row = 'ClaudeWoWWidgetsPanel.rows[1]';
+  vm.run('WoWGPTWidgetsPanel.scripts.OnShow(WoWGPTWidgetsPanel)');
+  const row = 'WoWGPTWidgetsPanel.rows[1]';
   assert.equal(vm.evaluate(`${row}.button.text`), 'Show');
   vm.run(
-    'ClaudeWoWWidgets.Sync({ epoch = "e1", version = 2, items = { { name = "clock", title = "Clock", rev = "r2", source = "local ui = ...\\nui.db.swapped = true" } } })',
+    'WoWGPTWidgets.Sync({ epoch = "e1", version = 2, items = { { name = "clock", title = "Clock", rev = "r2", source = "local ui = ...\\nui.db.swapped = true" } } })',
   );
   vm.run(`${row}.data = { name = "clock", title = "Clock", rev = "r2", source = "local ui = ...", status = "waiting" }`);
   vm.run(`${row}.button.scripts.OnClick(${row}.button)`);
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("clock")'), 'waiting');
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.clock and ClaudeWoWWidgetDB.data.clock.swapped'), null);
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.approved.clock'), null);
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("clock")'), 'waiting');
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.data.clock and WoWGPTWidgetDB.data.clock.swapped'), null);
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.approved.clock'), null);
   assert.equal(vm.evaluate(`${row}.data.source`), 'local ui = ...\nui.db.swapped = true', 'the row shows the current code after the click');
   vm.run(`${row}.button.scripts.OnClick(${row}.button)`);
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.clock and ClaudeWoWWidgetDB.data.clock.swapped'), 'true', 'a click on the fresh row approves that code');
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.data.clock and WoWGPTWidgetDB.data.clock.swapped'), 'true', 'a click on the fresh row approves that code');
 });
 
 test('options: a stale Show click does not unhide a widget the player hid', () => {
   const vm = newVM(
     SETTINGS_API,
-    'ClaudeWoWWidgetDB = { enabled = true, removed = { clock = "r2" }, set = { epoch = "e1", version = 1, items = { { name = "clock", title = "Clock", rev = "r2", source = "local ui = ..." } } } }',
+    'WoWGPTWidgetDB = { enabled = true, removed = { clock = "r2" }, set = { epoch = "e1", version = 1, items = { { name = "clock", title = "Clock", rev = "r2", source = "local ui = ..." } } } }',
   );
   vm.run(
-    'ClaudeWoWWidgets.Sync({ epoch = "e1", version = 2, items = { { name = "clock", title = "Clock", rev = "r2", source = "local ui = ...\\nui.db.swapped = true" } } })',
+    'WoWGPTWidgets.Sync({ epoch = "e1", version = 2, items = { { name = "clock", title = "Clock", rev = "r2", source = "local ui = ...\\nui.db.swapped = true" } } })',
   );
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("clock")'), 'removed');
-  vm.run('ClaudeWoWWidgets.Show({ name = "clock", rev = "r2", source = "local ui = ..." })');
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("clock")'), 'removed');
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.removed.clock'), 'r2');
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("clock")'), 'removed');
+  vm.run('WoWGPTWidgets.Show({ name = "clock", rev = "r2", source = "local ui = ..." })');
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("clock")'), 'removed');
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.removed.clock'), 'r2');
 });

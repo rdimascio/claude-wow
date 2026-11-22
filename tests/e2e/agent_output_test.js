@@ -46,7 +46,7 @@ test(
     };
     await withGame({ beforeLaunch }, async h => {
       await h.client.connect();
-      h.client.runLua('ClaudeWoW.Send("what do you see [[hang]]", nil, { vision = true })');
+      h.client.runLua('WoWGPT.Send("what do you see [[hang]]", nil, { vision = true })');
       await h.client.waitFor(() => h.agentCalls().some(c => c.images === 1), { label: 'the vision run to start' });
       const pngs = fs
         .readdirSync(tmp)
@@ -58,7 +58,7 @@ test(
       assert.equal(modeOf(h.sb.home), PRIVATE_DIR, 'the home folder is private');
       for (const file of [h.sb.config, h.sb.state, h.sb.transcripts, h.sb.bridgeLog])
         assert.equal(modeOf(file), PRIVATE_FILE, `${path.basename(file)} is private`);
-      h.client.slash('/claude cancel');
+      h.client.slash('/wowgpt cancel');
       await h.bridge.waitForLine(/cancelled from the game; ending it/);
     });
   },

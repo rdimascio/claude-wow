@@ -37,6 +37,11 @@ test('the bot token is taken from the environment and removed from it, else read
   assert.equal(DH.takeToken(env, home), '');
   fs.writeFileSync(path.join(home, DH.TOKEN_FILE), 'from-file\n', { mode: 0o600 });
   assert.equal(DH.takeToken({}, home), 'from-file');
+  // The name from before the rename to WoWGPT: read, and removed with the new one.
+  const old = { CLAUDE_WOW_DISCORD_BOT_TOKEN: 'old', WOWGPT_DISCORD_BOT_TOKEN: 'old', PATH: '/bin' };
+  assert.equal(DH.takeToken(old, home), 'old');
+  assert.deepEqual(Object.keys(old), ['PATH'], 'no agent run sees the token under either name');
+  assert.equal(DH.takeToken({ CLAUDE_WOW_DISCORD_BOT_TOKEN: ' only-old ' }, home), 'only-old');
   fs.rmSync(home, { recursive: true, force: true });
 });
 

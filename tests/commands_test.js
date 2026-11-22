@@ -9,20 +9,20 @@ const { dumpCommands } = require('./lua/commands');
 const FIXTURE = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'commands.json'), 'utf8'));
 
 const NON_VERB_ROWS = [
-  '/claude <text>',
-  '/claude -c [text]',
-  '/claude -r [id|name|n] [text]',
-  '/claude -r all',
-  '/claude -n <name> [text]',
-  '/claude --model <model> [text]',
-  '/claude --effort <level> [text]',
-  '/claude --project <name|path|none> [text]',
-  '/claude --permission-mode <mode>',
-  '/claude --add-dir <path> [text]',
-  '/claude --agent <name> [text]',
+  '/wowgpt <text>',
+  '/wowgpt -c [text]',
+  '/wowgpt -r [id|name|n] [text]',
+  '/wowgpt -r all',
+  '/wowgpt -n <name> [text]',
+  '/wowgpt --model <model> [text]',
+  '/wowgpt --effort <level> [text]',
+  '/wowgpt --project <name|path|none> [text]',
+  '/wowgpt --permission-mode <mode>',
+  '/wowgpt --add-dir <path> [text]',
+  '/wowgpt --agent <name> [text]',
   '/r <text>',
   '/w <agent> <text>',
-  '/claude config [key] [value]',
+  '/wowgpt config [key] [value]',
 ];
 
 function newVM() {
@@ -38,7 +38,7 @@ test('the registry derives the help page, the verb tables, the config keys and e
   assert.deepEqual(dumpCommands(newVM()), FIXTURE);
 });
 
-test('every verb /claude, /claude-wow or /claude config accepts has an argument checker and a runner, and every module verb has its subcommands and module', () => {
+test('every verb /wowgpt, /wowgpt or /wowgpt config accepts has an argument checker and a runner, and every module verb has its subcommands and module', () => {
   const vm = newVM();
   vm.run(
     `local ns = ...
@@ -96,9 +96,9 @@ test('the old table names still resolve for Help.lua, the Options page and the d
     `local ns = ...
     local Cli = ns.Cli
     OLD_NAMES = table.concat({
-      tostring(type(ns.ClaudeWoW.HELP)), tostring(type(Cli.CLAUDE_VERBS)), tostring(type(Cli.CONFIG_KEYS)), tostring(type(Cli.CONFIG_HELP)),
+      tostring(type(ns.WoWGPT.HELP)), tostring(type(Cli.CLAUDE_VERBS)), tostring(type(Cli.CONFIG_KEYS)), tostring(type(Cli.CONFIG_HELP)),
       tostring(type(Cli.CONFIG_DEV)), tostring(type(Cli.CONFIG_RETIRED)), tostring(type(Cli.CONFIG_ALIASES)), tostring(type(Cli.MODULE_SUBCOMMANDS)),
-      tostring(type(Cli.MODULE_COMMANDS)), tostring(type(ns.ClaudeWoW.ParseCli)), tostring(type(ns.ClaudeWoW.RunCli)), tostring(type(ns.ClaudeWoW.Config)),
+      tostring(type(Cli.MODULE_COMMANDS)), tostring(type(ns.WoWGPT.ParseCli)), tostring(type(ns.WoWGPT.RunCli)), tostring(type(ns.WoWGPT.Config)),
       tostring(type(ns.RunCommand)), tostring(type(Cli.IsCommand)),
     }, ",")`,
     { ns: true },

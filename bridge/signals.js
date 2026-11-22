@@ -15,7 +15,7 @@ const PROBE_FILE = /^probe-[0-9a-z]{4,16}\.wav$/;
 const LEGACY_PRESENCE_FILE = /^\d{4}\.wav$/i;
 const RUNTIME_FOLDERS = Object.freeze(['ack', 'sig', 'act', 'ctl', 'presence']);
 const RETIRED_CTL_FILES = Object.freeze(['absent.wav', 'empty.wav']);
-const INBOX_PLACEHOLDER = 'ClaudeWoW_Inbox = ClaudeWoW_Inbox or { id = 0, replies = {} }\n';
+const INBOX_PLACEHOLDER = 'WoWGPT_Inbox = WoWGPT_Inbox or { id = 0, replies = {} }\n';
 const RESTART_NOTE = `the signal files moved from ${ADDON} to ${RUNTIME_ADDON}: fully quit and relaunch WoW once so the game sees them`;
 
 const runtimeRoot = addonDir => path.join(addonDir, RUNTIME_ADDON);
@@ -163,8 +163,8 @@ function clearProbes(addonDir, keep = '') {
 function runtimeTocText(tocInterface = TOC_INTERFACE) {
   return [
     '## Interface: ' + tocInterface,
-    '## Title: Azeroth Companion runtime',
-    '## Notes: Files the Azeroth Companion bridge writes while it runs. Leave it enabled.',
+    '## Title: WoWGPT runtime',
+    '## Notes: Files the WoWGPT bridge writes while it runs. Leave it enabled.',
     '## Dependencies: ' + ADDON,
     '',
     'Inbox.lua',

@@ -35,7 +35,7 @@ function luaRecap(events) {
 test('a death is roasted end to end, and the sandbox bridge never tells the real stream overlay', async () => {
   await withGame({}, async h => {
     await h.client.connect();
-    h.client.slash('/claude config roast on');
+    h.client.slash('/wowgpt config roast on');
     const f = FIXTURES.gameRecap;
     h.client.runLua(`STUB.deathRecap = ${luaRecap(f.deathRecap)}; STUB.deathRecapMaxHealth = ${f.maxHealth}`);
     h.client.runLua('DEV.Fire("PLAYER_DEAD")');

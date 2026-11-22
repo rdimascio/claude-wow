@@ -17,7 +17,7 @@ function Methods.SetAllPoints(self) end
 function newVM(clientApi = CLIENT_LOG_API) {
   const vm = createVM({ stub: false });
   vm.run(fs.readFileSync(path.join(__dirname, 'wow_stub.lua'), 'utf8') + clientApi, { chunk: 'tests/wow_stub.lua' });
-  vm.loadAddon(['Codec.lua', 'Inbox.lua', 'ClaudeWoW.lua']);
+  vm.loadAddon(['Codec.lua', 'Inbox.lua', 'WoWGPT.lua']);
   vm.login();
   return vm;
 }
@@ -31,23 +31,23 @@ function sentLines(vm) {
 
 test('the probe filter hides only the lines marked H from the chat frame', () => {
   const vm = newVM();
-  vm.run('SlashCmdList.CLAUDE("probe chatlog 1024")');
+  vm.run('SlashCmdList.WOWGPT("probe chatlog 1024")');
   assert.equal(vm.evaluate('FILTERS[#FILTERS].event'), 'CHAT_MSG_SYSTEM');
   assert.equal(vm.evaluate('FILTERS[#FILTERS].fn(nil, "CHAT_MSG_SYSTEM", "CWLOG17 H 00002 zz")'), 'true');
   assert.equal(vm.evaluate('FILTERS[#FILTERS].fn(nil, "CHAT_MSG_SYSTEM", "CWLOG17 V 00001 zz")'), 'false');
   assert.equal(vm.evaluate('FILTERS[#FILTERS].fn(nil, "CHAT_MSG_SYSTEM", "You feel rested.")'), 'false');
   const filters = Number(vm.evaluate('#FILTERS'));
-  vm.run('SlashCmdList.CLAUDE("probe chatlog 1024")');
+  vm.run('SlashCmdList.WOWGPT("probe chatlog 1024")');
   assert.equal(Number(vm.evaluate('#FILTERS')), filters, 'a second run adds no second filter');
 });
 
 test('a client without SendSystemMessage gets a line saying so and no error', () => {
   const vm = newVM(CLIENT_LOG_API + 'SendSystemMessage = nil\n');
-  vm.run('SlashCmdList.CLAUDE("probe chatlog")');
+  vm.run('SlashCmdList.WOWGPT("probe chatlog")');
   assert.equal(vm.evaluate('LOGGING'), 'false');
 });
 
-test('/claude probe asyncfile requests and releases the probe texture ids, then the two bursts', () => {
+test('/wowgpt probe asyncfile requests and releases the probe texture ids, then the two bursts', () => {
   const vm = newVM(
     CLIENT_LOG_API +
       `
@@ -59,7 +59,7 @@ test('/claude probe asyncfile requests and releases the probe texture ids, then 
   `,
   );
   vm.run('REQUESTED = {}');
-  vm.run('SlashCmdList.CLAUDE("probe asyncfile")');
+  vm.run('SlashCmdList.WOWGPT("probe asyncfile")');
   vm.run('STUB.RunTimers()');
   const n = Number(vm.evaluate('#REQUESTED'));
   const ids = [];
@@ -74,7 +74,7 @@ test('/claude probe asyncfile requests and releases the probe texture ids, then 
 
 test('the watcher reads probe lines out of chat log growth, across a flush that splits a line', () => {
   const vm = newVM();
-  vm.run('SlashCmdList.CLAUDE("probe chatlog 4096")');
+  vm.run('SlashCmdList.WOWGPT("probe chatlog 4096")');
   const file = sentLines(vm)
     .map(l => '9/30 19:00:00.000  ' + l + '\r\n')
     .join('');

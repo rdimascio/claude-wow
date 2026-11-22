@@ -9,7 +9,7 @@ const { assertSafe } = require('../sandbox');
 const REPO = path.resolve(__dirname, '..', '..');
 const STUB = path.join(REPO, 'tests', 'wow_stub.lua');
 const PRELUDE = path.join(__dirname, 'prelude.lua');
-const MAIN_ADDON = 'ClaudeWoW';
+const MAIN_ADDON = 'WoWGPT';
 const QUIET_NOT_LOADED = ['DISABLED', 'INTERFACE_VERSION'];
 
 function luaQuote(s) {
@@ -453,13 +453,13 @@ class WowClient {
   }
 
   send(text) {
-    this.runLua(`ClaudeWoW.Send(${luaQuote(text)})`);
+    this.runLua(`WoWGPT.Send(${luaQuote(text)})`);
   }
 
   slash(line) {
     const m = /^\/(\S+)\s*(.*)$/.exec(String(line).trim());
     if (!m) throw new Error(`not a slash command: ${line}`);
-    const key = m[1].toLowerCase() === 'claude' ? 'CLAUDE' : 'CLAUDEWOW';
+    const key = ['wowgpt', 'claude'].includes(m[1].toLowerCase()) ? 'WOWGPT' : 'CLAUDEWOW';
     this.runLua(`SlashCmdList.${key}(${luaQuote(m[2])})`);
   }
 
@@ -501,7 +501,7 @@ class WowClient {
 
   tabFor(chatId) {
     return this.luaValue(
-      `(function() for _, n in ipairs(CHAT_FRAMES or {}) do local f = _G[n]; if f.claudewowChatId == ${luaQuote(chatId)} and f.inUse ~= false then return n end end end)()`,
+      `(function() for _, n in ipairs(CHAT_FRAMES or {}) do local f = _G[n]; if f.wowgptChatId == ${luaQuote(chatId)} and f.inUse ~= false then return n end end end)()`,
     );
   }
 
@@ -525,7 +525,7 @@ class WowClient {
 
   windowRect() {
     return this.json(
-      '{ left = ClaudeWoWFrame:GetLeft(), top = ClaudeWoWFrame:GetTop(), right = ClaudeWoWFrame:GetRight(), bottom = ClaudeWoWFrame:GetBottom(), shown = ClaudeWoWFrame:IsShown(), alpha = ClaudeWoWFrame:GetAlpha() }',
+      '{ left = WoWGPTFrame:GetLeft(), top = WoWGPTFrame:GetTop(), right = WoWGPTFrame:GetRight(), bottom = WoWGPTFrame:GetBottom(), shown = WoWGPTFrame:IsShown(), alpha = WoWGPTFrame:GetAlpha() }',
     );
   }
 
@@ -549,25 +549,23 @@ class WowClient {
   }
 
   db() {
-    return this.json('ClaudeWoWDB');
+    return this.json('WoWGPTDB');
   }
 
   activeChat() {
-    return this.json(
-      '(function() for _, c in ipairs(ClaudeWoWDB.chats) do if c.id == ClaudeWoWDB.activeChat then return c end end return ClaudeWoWDB.chats[1] end)()',
-    );
+    return this.json('(function() for _, c in ipairs(WoWGPTDB.chats) do if c.id == WoWGPTDB.activeChat then return c end end return WoWGPTDB.chats[1] end)()');
   }
 
   connected() {
-    return this.luaValue('ClaudeWoW.IsConnected()') === 'true';
+    return this.luaValue('WoWGPT.IsConnected()') === 'true';
   }
 
   lastSeq() {
-    return Number(this.luaValue('ClaudeWoWDB.lastSeq'));
+    return Number(this.luaValue('WoWGPTDB.lastSeq'));
   }
 
   diag() {
-    this.slash('/claude diag');
+    this.slash('/wowgpt diag');
     const history = (this.activeChat() || {}).history || [];
     const last = history.findLast(m => m.role === 'system' && /^Diagnostics:/.test(m.text || ''));
     return last ? last.text : '';

@@ -13,23 +13,23 @@ function boot({ native = true, fonts = true } = {}) {
   vm.loadAddon();
   vm.login();
   vm.run('NS = ...', { ns: true });
-  vm.run('ClaudeWoW.Toggle(true)');
+  vm.run('WoWGPT.Toggle(true)');
   vm.run(
-    'STUB.RunTimers(); STUB.onLoadAddOn = function() ClaudeWoW_SlotData = { now = time(), cwd = "", replies = {} } end; STUB.now = STUB.now + 6; STUB.Tick()',
+    'STUB.RunTimers(); STUB.onLoadAddOn = function() WoWGPT_SlotData = { now = time(), cwd = "", replies = {} } end; STUB.now = STUB.now + 6; STUB.Tick()',
   );
   return vm;
 }
 
 const reply = fields =>
-  `STUB.onLoadAddOn = function() local c for _, ch in ipairs(ClaudeWoWDB.chats) do if ch.id == ClaudeWoWDB.activeChat then c = ch end end ClaudeWoW_SlotData = { now = time(), cwd = "", replies = { { chat = c.id, id = c.pendingId, ${fields} } } } end; STUB.now = STUB.now + 6; STUB.Tick()`;
+  `STUB.onLoadAddOn = function() local c for _, ch in ipairs(WoWGPTDB.chats) do if ch.id == WoWGPTDB.activeChat then c = ch end end WoWGPT_SlotData = { now = time(), cwd = "", replies = { { chat = c.id, id = c.pendingId, ${fields} } } } end; STUB.now = STUB.now + 6; STUB.Tick()`;
 
-const LAST = '(function() local last for _, b in ipairs(ClaudeWoW.UI.bubbles) do if b.shown then last = b end end return last end)()';
+const LAST = '(function() local last for _, b in ipairs(WoWGPT.UI.bubbles) do if b.shown then last = b end end return last end)()';
 const steps = (from, to) => Array.from({ length: to - from + 1 }, (_, i) => `Step ${from + i}`).join('\\n');
 const tipLines = vm => vm.evaluate('table.concat(GameTooltip.lines or {}, "\\n")');
 
 test('a running reply shows one live line with the newest step, and every step the bridge sent is behind hover and click', () => {
   const vm = boot();
-  vm.run('ClaudeWoW.Send("find the bug")');
+  vm.run('WoWGPT.Send("find the bug")');
   vm.run(reply(`status = "working", text = "${steps(1, 8)}", steps = 8`));
   const body = vm.evaluate(`${LAST}.body:GetText()`);
   assert.ok(body.startsWith('Working '), body);
@@ -65,7 +65,7 @@ test('a running reply shows one live line with the newest step, and every step t
 
 test('the live line cuts a long step and keeps a pipe from becoming an escape; a run with no step yet shows no tooltip', () => {
   const vm = boot();
-  vm.run('ClaudeWoW.Send("go")');
+  vm.run('WoWGPT.Send("go")');
   const before = vm.evaluate(`${LAST}.body:GetText()`);
   assert.ok(before.startsWith('Working '), before);
   assert.ok(!before.includes(' - '), 'no step yet: ' + before);
@@ -84,10 +84,10 @@ test('the live line cuts a long step and keeps a pipe from becoming an escape; a
 test('on the parchment a message bubble lies flat on the page with no backdrop edge', () => {
   const vm = boot();
   const seed =
-    'local c = ClaudeWoWDB.chats[1]; ClaudeWoW.SwitchChat(c.id); c.history = { { role = "user", t = 1, text = "hi" }, { role = "assistant", t = 2, text = "hello" } }; ClaudeWoW.Render()';
+    'local c = WoWGPTDB.chats[1]; WoWGPT.SwitchChat(c.id); c.history = { { role = "user", t = 1, text = "hi" }, { role = "assistant", t = 2, text = "hello" } }; WoWGPT.Render()';
   vm.run(seed);
-  assert.notEqual(vm.evaluate('ClaudeWoW.UI.parchment'), null);
-  const bubble = i => `ClaudeWoW.UI.bubbles[${i}]`;
+  assert.notEqual(vm.evaluate('WoWGPT.UI.parchment'), null);
+  const bubble = i => `WoWGPT.UI.bubbles[${i}]`;
   for (const i of [1, 2]) {
     assert.equal(vm.evaluate(`${bubble(i)}.template`), null, `bubble ${i} has no backdrop template`);
     assert.equal(vm.evaluate(`${bubble(i)}.backdrop`), null, `bubble ${i} has no backdrop edge`);
@@ -97,24 +97,24 @@ test('on the parchment a message bubble lies flat on the page with no backdrop e
 
   const dark = boot({ native: false });
   dark.run(seed);
-  assert.equal(dark.evaluate('ClaudeWoW.UI.parchment'), null);
+  assert.equal(dark.evaluate('WoWGPT.UI.parchment'), null);
   assert.equal(dark.evaluate(`${bubble(1)}.backdrop`), null, 'the dark theme draws no box');
   assert.equal(dark.evaluate(`${bubble(1)}.accent.shown`), 'true', 'and keeps its accent bar');
 });
 
 test('message text uses a 14 pt Blizzard font with line spacing, with fallbacks when the font object is missing', () => {
   const vm = boot();
-  vm.run('local c = ClaudeWoWDB.chats[1]; c.history = { { role = "assistant", t = 2, text = "hello" } }; ClaudeWoW.Render()');
-  assert.equal(vm.evaluate('ClaudeWoW.UI.bubbles[1].bodyFont'), 'GameFontBlackMedium');
-  assert.equal(vm.num('ClaudeWoW.UI.bubbles[1].body.spacing'), 2);
+  vm.run('local c = WoWGPTDB.chats[1]; c.history = { { role = "assistant", t = 2, text = "hello" } }; WoWGPT.Render()');
+  assert.equal(vm.evaluate('WoWGPT.UI.bubbles[1].bodyFont'), 'GameFontBlackMedium');
+  assert.equal(vm.num('WoWGPT.UI.bubbles[1].body.spacing'), 2);
   const plain = boot({ fonts: false });
-  plain.run('local c = ClaudeWoWDB.chats[1]; c.history = { { role = "assistant", t = 2, text = "hello" } }; ClaudeWoW.Render()');
-  assert.equal(plain.evaluate('ClaudeWoW.UI.bubbles[1].bodyFont'), 'ChatFontNormal', 'falls back when neither Blizzard font exists');
+  plain.run('local c = WoWGPTDB.chats[1]; c.history = { { role = "assistant", t = 2, text = "hello" } }; WoWGPT.Render()');
+  assert.equal(plain.evaluate('WoWGPT.UI.bubbles[1].bodyFont'), 'ChatFontNormal', 'falls back when neither Blizzard font exists');
   const quest = boot({ fonts: false });
   quest.run(
-    'QuestFont = {}; ClaudeWoW.UI.bubbles = {}; local c = ClaudeWoWDB.chats[1]; c.history = { { role = "assistant", t = 2, text = "hello" } }; ClaudeWoW.Render()',
+    'QuestFont = {}; WoWGPT.UI.bubbles = {}; local c = WoWGPTDB.chats[1]; c.history = { { role = "assistant", t = 2, text = "hello" } }; WoWGPT.Render()',
   );
-  assert.equal(quest.evaluate('ClaudeWoW.UI.bubbles[1].bodyFont'), 'QuestFont', 'falls back to the quest font first');
+  assert.equal(quest.evaluate('WoWGPT.UI.bubbles[1].bodyFont'), 'QuestFont', 'falls back to the quest font first');
 });
 
 test('parchment ink meets 4.5:1 contrast against the parchment fallback color', () => {

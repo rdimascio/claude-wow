@@ -253,7 +253,7 @@ function extraArgsHavePluginDir(acfg) {
 
 function extraArgsPluginDirNote(acfg) {
   if (!extraArgsHavePluginDir(acfg)) return '';
-  return 'agents.claude.extraArgs has --plugin-dir, so every chat Claude run loads that plugin, coding chats too; move it to plugins.ask.claudePlugin: true, which loads the claude-wow plugin into ask runs only.';
+  return 'agents.claude.extraArgs has --plugin-dir, so every chat Claude run loads that plugin, coding chats too; move it to plugins.ask.claudePlugin: true, which loads the wowgpt plugin into ask runs only.';
 }
 
 function claudeParser(opts = {}) {
@@ -681,7 +681,7 @@ function hermesParser() {
 // marked as context, in full for a new session and as the short version
 // without the primer on a resumed one (the primer is already in the thread).
 function contextBlock(text) {
-  return `[Context from the Claude WoW bridge, not written by the user]\n${text}\n[End of context]\n\n`;
+  return `[Context from the WoWGPT bridge, not written by the user]\n${text}\n[End of context]\n\n`;
 }
 
 // Images (vision): bridge.js hands each run `images`, a list of

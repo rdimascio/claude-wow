@@ -4,7 +4,7 @@
 // which is how a client without Screenshot() reaches a bridge that is not
 // watching the screen), the bridge falls back to the pixel capture at once,
 // says so in the log, remembers it in state.json, and names it in the slot
-// files (the addon's /claude-wow diag shows the note) and in its banner at the
+// files (the addon's /wowgpt diag shows the note) and in its banner at the
 // next start; an explicit capture.mode always wins over that memory.
 'use strict';
 const test = require('node:test');
@@ -19,25 +19,25 @@ const AC = require('../bridge/agentcontract');
 const SB = require('../dev/sandbox');
 
 function scratch(name) {
-  const dir = path.join(os.tmpdir(), `claude-wow-transport-${name}-${process.pid}-${Date.now().toString(36)}`);
+  const dir = path.join(os.tmpdir(), `wowgpt-transport-${name}-${process.pid}-${Date.now().toString(36)}`);
   fs.mkdirSync(dir, { recursive: true });
   return dir;
 }
 
 // A home folder with a config that points every game-side path into the same
 // scratch tree: the addon folder with its signal folders and one installed slot
-// (the bridge writes slot files only when ClaudeWoW_S001/Inbox.lua exists), the
+// (the bridge writes slot files only when WoWGPT_S001/Inbox.lua exists), the
 // SavedVariables file, a project folder, and an agent that answers at once.
 function fakeInstall(dir, capture = {}) {
   const home = path.join(dir, 'home');
   const client = path.join(dir, 'client');
   const addons = path.join(client, 'Interface', 'AddOns');
   const project = path.join(dir, 'project');
-  for (const d of ['sig', 'ack', 'act', 'presence']) fs.mkdirSync(path.join(addons, 'ClaudeWoW_Runtime', d), { recursive: true });
-  fs.mkdirSync(path.join(addons, 'ClaudeWoW'), { recursive: true });
-  fs.writeFileSync(path.join(addons, 'ClaudeWoW', 'ClaudeWoW.toc'), '## Interface: 16001\n');
-  fs.mkdirSync(path.join(addons, 'ClaudeWoW_S001'), { recursive: true });
-  fs.writeFileSync(path.join(addons, 'ClaudeWoW_S001', 'Inbox.lua'), 'ClaudeWoW_SlotData = nil\n');
+  for (const d of ['sig', 'ack', 'act', 'presence']) fs.mkdirSync(path.join(addons, 'WoWGPT_Runtime', d), { recursive: true });
+  fs.mkdirSync(path.join(addons, 'WoWGPT'), { recursive: true });
+  fs.writeFileSync(path.join(addons, 'WoWGPT', 'WoWGPT.toc'), '## Interface: 16001\n');
+  fs.mkdirSync(path.join(addons, 'WoWGPT_S001'), { recursive: true });
+  fs.writeFileSync(path.join(addons, 'WoWGPT_S001', 'Inbox.lua'), 'WoWGPT_SlotData = nil\n');
   fs.mkdirSync(path.join(client, 'Screenshots'), { recursive: true });
   const savedDir = path.join(client, 'WTF', 'Account', 'ACCT', 'SavedVariables');
   fs.mkdirSync(savedDir, { recursive: true });
@@ -47,8 +47,8 @@ function fakeInstall(dir, capture = {}) {
   fs.writeFileSync(agent, "process.stdout.write(JSON.stringify({ type: 'result', result: 'pong', session_id: 'sess-1' }) + '\\n');\n");
   const cfg = {
     addonDir: addons,
-    savedVariablesFile: path.join(savedDir, 'ClaudeWoW.lua'),
-    inboxFile: path.join(addons, 'ClaudeWoW_Runtime', 'Inbox.lua'),
+    savedVariablesFile: path.join(savedDir, 'WoWGPT.lua'),
+    inboxFile: path.join(addons, 'WoWGPT_Runtime', 'Inbox.lua'),
     defaultCwd: project,
     slots: 1,
     agent: 'claude',
@@ -66,13 +66,13 @@ function fakeInstall(dir, capture = {}) {
 // here from an addon on the screenshot transport in a client without Screenshot().
 function outbox(id, text, shot) {
   const hex = s => Buffer.from(s, 'utf8').toString('hex');
-  return `ClaudeWoWDB = {\n["outbox"] = {\n["id"] = ${id},\n["session"] = "sess1",\n["chat"] = "chat1",\n["text"] = "${hex(text)}",\n["cwd"] = "",\n${shot ? `["shot"] = "${shot}",\n` : ''}["t"] = 1,\n},\n}\n`;
+  return `WoWGPTDB = {\n["outbox"] = {\n["id"] = ${id},\n["session"] = "sess1",\n["chat"] = "chat1",\n["text"] = "${hex(text)}",\n["cwd"] = "",\n${shot ? `["shot"] = "${shot}",\n` : ''}["t"] = 1,\n},\n}\n`;
 }
 
 function runOnce(home, project, extra = []) {
   const r = spawnSync(process.execPath, [BRIDGE, '--once', '--project', project, ...extra], {
     encoding: 'utf8',
-    env: SB.isolatedEnv(path.join(path.dirname(home), 'user'), { CLAUDE_WOW_HOME: home }),
+    env: SB.isolatedEnv(path.join(path.dirname(home), 'user'), { WOWGPT_HOME: home }),
     timeout: 60000,
   });
   return { ...r, out: r.stdout + r.stderr };
@@ -103,8 +103,8 @@ test('a new install starts on the screenshot transport; the addon reporting shot
   assert.equal(state.transportFallback.reason, 'missing');
   assert.equal(state.transportFallback.session, 'sess1');
   assert.ok(Date.now() - state.transportFallback.at < 60000);
-  // The slot files and Inbox.lua say pixel, with the note the addon shows in /claude-wow diag.
-  for (const f of [path.join(addons, 'ClaudeWoW_S001', 'Inbox.lua'), path.join(addons, 'ClaudeWoW_Runtime', 'Inbox.lua')]) {
+  // The slot files and Inbox.lua say pixel, with the note the addon shows in /wowgpt diag.
+  for (const f of [path.join(addons, 'WoWGPT_S001', 'Inbox.lua'), path.join(addons, 'WoWGPT_Runtime', 'Inbox.lua')]) {
     const lua = fs.readFileSync(f, 'utf8');
     assert.match(lua, /^\ttransport = "pixel",$/m, f);
     assert.match(
@@ -126,7 +126,7 @@ test('a new install starts on the screenshot transport; the addon reporting shot
     again.out,
   );
   assert.match(again.out, /nothing pending/);
-  assert.match(fs.readFileSync(path.join(addons, 'ClaudeWoW_S001', 'Inbox.lua'), 'utf8'), /^\ttransportNote = /m, 'the note stays in the slot files');
+  assert.match(fs.readFileSync(path.join(addons, 'WoWGPT_S001', 'Inbox.lua'), 'utf8'), /^\ttransportNote = /m, 'the note stays in the slot files');
 
   // The same report again is not news: nothing switches, nothing is logged about it.
   fs.writeFileSync(saved, outbox(8, 'ping again', 'missing'));
@@ -146,7 +146,7 @@ test('a new install starts on the screenshot transport; the addon reporting shot
   assert.equal(explicit.status, 0, explicit.out);
   assert.match(explicit.out, /^ {2}capture {2}: screenshot transport \(capture\.mode in config\.json\): /m, explicit.out);
   assert.match(explicit.out, /#10@sess1 done \(/, explicit.out);
-  const back = fs.readFileSync(path.join(addons, 'ClaudeWoW_S001', 'Inbox.lua'), 'utf8');
+  const back = fs.readFileSync(path.join(addons, 'WoWGPT_S001', 'Inbox.lua'), 'utf8');
   assert.match(back, /^\ttransport = "screenshot",$/m, back);
   assert.ok(!/transportNote/.test(back), 'no note on the transport the config chose');
   // ...and falls back again, this run, when the addon still cannot shoot; the config is named as the reason it will keep trying.
@@ -155,7 +155,7 @@ test('a new install starts on the screenshot transport; the addon reporting shot
   assert.equal(retry.status, 0, retry.out);
   assert.match(retry.out, /#11@sess1 TRANSPORT FALLBACK: the addon reports shot=failed: the game client reported SCREENSHOT_FAILED on every try\./, retry.out);
   assert.match(
-    fs.readFileSync(path.join(addons, 'ClaudeWoW_S001', 'Inbox.lua'), 'utf8'),
+    fs.readFileSync(path.join(addons, 'WoWGPT_S001', 'Inbox.lua'), 'utf8'),
     /^\ttransportNote = "pixel transport, fallen back to since .* because the game client reported SCREENSHOT_FAILED on every try; /m,
   );
   assert.match(
@@ -176,7 +176,7 @@ test('a new install starts on the screenshot transport; the addon reporting shot
     /^ {2}capture {2}: pixel transport, DEPRECATED \(capture\.mode in config\.json; kept only until Screenshot\(\) is confirmed on Windows and Linux\/Wine\): /m,
     pixel.out,
   );
-  assert.ok(!/transportNote/.test(fs.readFileSync(path.join(addons, 'ClaudeWoW_S001', 'Inbox.lua'), 'utf8')), 'no note when the pixel transport was chosen');
+  assert.ok(!/transportNote/.test(fs.readFileSync(path.join(addons, 'WoWGPT_S001', 'Inbox.lua'), 'utf8')), 'no note when the pixel transport was chosen');
   // A bad mode is refused with the file name, exit 2 (the supervisor does not loop on it).
   cfg.capture.mode = 'gif';
   fs.writeFileSync(cfgFile, JSON.stringify(cfg));
@@ -230,7 +230,7 @@ function mcpAgent(file, record, result) {
 
 function outboxWithAllow(id, text, rules) {
   const hex = s => Buffer.from(s, 'utf8').toString('hex');
-  return `ClaudeWoWDB = {\n["outbox"] = {\n["id"] = ${id},\n["session"] = "sess1",\n["chat"] = "chat1",\n["text"] = "${hex(text)}",\n["cwd"] = "",\n["allow"] = "${hex(rules.join('\x1F'))}",\n["t"] = 1,\n},\n}\n`;
+  return `WoWGPTDB = {\n["outbox"] = {\n["id"] = ${id},\n["session"] = "sess1",\n["chat"] = "chat1",\n["text"] = "${hex(text)}",\n["cwd"] = "",\n["allow"] = "${hex(rules.join('\x1F'))}",\n["t"] = 1,\n},\n}\n`;
 }
 
 test('an absent mcp key and an empty mcp block give the same argv and the same MCP config', () => {
@@ -291,7 +291,7 @@ test('a spawned bridge reads Claude and Codex state only from the test home: the
     r.out,
   );
   assert.match(r.out, /mcp\.servers\.codexcanary: ~\/\.codex\/config\.toml has a server of the same name/, r.out);
-  const inbox = fs.readFileSync(path.join(cfg.addonDir, 'ClaudeWoW_S001', 'Inbox.lua'), 'utf8');
+  const inbox = fs.readFileSync(path.join(cfg.addonDir, 'WoWGPT_S001', 'Inbox.lua'), 'utf8');
   const field = name => (new RegExp(`^\\t${name} = (.*)$`, 'm').exec(inbox) || [])[1] || '';
   assert.equal(field('home'), `"${env.HOME.replace(/\\/g, '\\\\')}",`, inbox);
   const sessions = inbox.slice(inbox.indexOf('\tsessions = {'), inbox.indexOf('\tprojects = {'));
@@ -339,7 +339,7 @@ test('mcp.servers end to end: servers reach --mcp-config with ${VAR} only, stric
   };
   fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify(withMcp));
   fs.writeFileSync(saved, outbox(21, 'ping', ''));
-  const env = SB.isolatedEnv(userHome, { CLAUDE_WOW_HOME: home, GITHUB_TOKEN: secret });
+  const env = SB.isolatedEnv(userHome, { WOWGPT_HOME: home, GITHUB_TOKEN: secret });
   const run = () =>
     spawnSync(process.execPath, [BRIDGE, '--once', '--project', project], {
       encoding: 'utf8',
@@ -372,7 +372,7 @@ test('mcp.servers end to end: servers reach --mcp-config with ${VAR} only, stric
     notion: { type: 'http', url: 'https://mcp.notion.com/mcp' },
     github: { type: 'stdio', command: 'npx', args: ['-y', 'server-github'], env: { GITHUB_TOKEN: '${GITHUB_TOKEN}' } },
   });
-  const inbox = fs.readFileSync(path.join(cfg.addonDir, 'ClaudeWoW_S001', 'Inbox.lua'), 'utf8');
+  const inbox = fs.readFileSync(path.join(cfg.addonDir, 'WoWGPT_S001', 'Inbox.lua'), 'utf8');
   assert.match(inbox, /denied = \{ "mcp__slack__post" \},/, inbox);
   assert.ok(!inbox.includes('mcp__notion__create_page'), inbox);
 
@@ -440,7 +440,7 @@ test('mcp.allow end to end: a discovered server keeps only allowed rules for its
   assert.ok(!allowed.includes('mcp__claude_ai_Slack') && !allowed.includes('mcp__claude_ai_Slack__slack_send_message'), allowed.join(' '));
   assert.ok(!allowed.includes('mcp__notion'), 'the mcp.allow list for a config server is ignored');
   assert.ok(argv.slice(argv.indexOf('--disallowedTools')).includes('mcp__claude_ai_Slack__slack_send_message'));
-  const inbox = fs.readFileSync(path.join(cfg.addonDir, 'ClaudeWoW_S001', 'Inbox.lua'), 'utf8');
+  const inbox = fs.readFileSync(path.join(cfg.addonDir, 'WoWGPT_S001', 'Inbox.lua'), 'utf8');
   assert.match(inbox, /denied = \{ "mcp__mobbin__search" \},/, inbox);
   fs.rmSync(dir, { recursive: true, force: true });
 });
@@ -489,9 +489,9 @@ test('per-chat MCP end to end: discovered servers are listed, a chat turns one o
   const send = (id, choice, cwd = '') =>
     fs.writeFileSync(
       saved,
-      `ClaudeWoWDB = {\n["outbox"] = {\n["id"] = ${id},\n["session"] = "sess1",\n["chat"] = "chat1",\n["text"] = "${hex('ping')}",\n["cwd"] = "${hex(cwd)}",\n["opts"] = "${hex(`mcp=${choice}`)}",\n["t"] = 1,\n},\n}\n`,
+      `WoWGPTDB = {\n["outbox"] = {\n["id"] = ${id},\n["session"] = "sess1",\n["chat"] = "chat1",\n["text"] = "${hex('ping')}",\n["cwd"] = "${hex(cwd)}",\n["opts"] = "${hex(`mcp=${choice}`)}",\n["t"] = 1,\n},\n}\n`,
     );
-  const env = SB.isolatedEnv(userHome, { CLAUDE_WOW_HOME: home });
+  const env = SB.isolatedEnv(userHome, { WOWGPT_HOME: home });
   const run = () => spawnSync(process.execPath, [BRIDGE, '--once', '--project', project], { encoding: 'utf8', env, timeout: 60000 });
 
   send(31, '+linear,-notion,-mobbin');
@@ -504,7 +504,7 @@ test('per-chat MCP end to end: discovered servers are listed, a chat turns one o
   const denied = argv.slice(argv.indexOf('--disallowedTools') + 1);
   assert.ok(denied.includes('mcp__notion') && denied.includes('mcp__mobbin'), 'the config server and the discovered one the chat left off are denied');
   assert.ok(!denied.includes('mcp__claude_ai_Slack'), 'untouched: not denied');
-  const slot = fs.readFileSync(path.join(addons, 'ClaudeWoW_S001', 'Inbox.lua'), 'utf8');
+  const slot = fs.readFileSync(path.join(addons, 'WoWGPT_S001', 'Inbox.lua'), 'utf8');
   assert.match(
     slot,
     /^\tmcp = \{ \{ id = "notion", label = "notion", src = "config", on = true, health = "unknown" \}, \{ id = "linear", label = "linear", src = "config", on = false, health = "needs-auth" \}, \{ id = "mobbin", label = "mobbin", src = "claude", on = true, health = "connected" \}, \{ id = "claude_ai_Slack", label = "Slack", src = "claude\.ai", on = true, health = "connected" \} \},$/m,
@@ -546,7 +546,7 @@ test('a C2 fail in agent-contract.json refuses a run whose mcp= choice turns a s
     `const a = process.argv.slice(2);\nrequire('fs').appendFileSync(${JSON.stringify(calls)}, JSON.stringify(a) + '\\n');\nif (a.includes('--version')) { console.log('2.1.290 (Claude Code)'); process.exit(0); }\nprocess.stdout.write(${JSON.stringify(JSON.stringify({ type: 'result', result: 'pong', session_id: 'sess-1' }) + '\n')});\n`,
   );
   const real = fs.realpathSync.native(cfg.agents.claude.path);
-  const reason = /Claude Code 2\.1\.290 failed C2 in claude-wow agents check, so it may still load an MCP server a chat turns off\./;
+  const reason = /Claude Code 2\.1\.290 failed C2 in wowgpt agents check, so it may still load an MCP server a chat turns off\./;
   fs.writeFileSync(
     path.join(home, 'agent-contract.json'),
     JSON.stringify({
@@ -563,9 +563,9 @@ test('a C2 fail in agent-contract.json refuses a run whose mcp= choice turns a s
   const send = (id, opts, allow = '') =>
     fs.writeFileSync(
       saved,
-      `ClaudeWoWDB = {\n["outbox"] = {\n["id"] = ${id},\n["session"] = "sess1",\n["chat"] = "chat1",\n["text"] = "${hex('ping')}",\n["cwd"] = "",\n${opts ? `["opts"] = "${hex(opts)}",\n` : ''}${allow ? `["allow"] = "${hex(allow)}",\n` : ''}["t"] = 1,\n},\n}\n`,
+      `WoWGPTDB = {\n["outbox"] = {\n["id"] = ${id},\n["session"] = "sess1",\n["chat"] = "chat1",\n["text"] = "${hex('ping')}",\n["cwd"] = "",\n${opts ? `["opts"] = "${hex(opts)}",\n` : ''}${allow ? `["allow"] = "${hex(allow)}",\n` : ''}["t"] = 1,\n},\n}\n`,
     );
-  const env = SB.isolatedEnv(userHome, { CLAUDE_WOW_HOME: home });
+  const env = SB.isolatedEnv(userHome, { WOWGPT_HOME: home });
   const run = () => spawnSync(process.execPath, [BRIDGE, '--once', '--project', project], { encoding: 'utf8', env, timeout: 60000 });
   const agentRuns = () =>
     fs.existsSync(calls)
@@ -590,7 +590,7 @@ test('a C2 fail in agent-contract.json refuses a run whose mcp= choice turns a s
   );
   const transcript = fs.readFileSync(path.join(home, 'transcripts.json'), 'utf8');
   assert.match(transcript, reason, transcript);
-  const slot = fs.readFileSync(path.join(addons, 'ClaudeWoW_S001', 'Inbox.lua'), 'utf8');
+  const slot = fs.readFileSync(path.join(addons, 'WoWGPT_S001', 'Inbox.lua'), 'utf8');
   assert.match(slot, /^\tcontract = \{ claude = \{ version = "2\.1\.290", checked = true, off = false, reason = "Claude Code 2\.1\.290 failed C2 /m, slot);
 
   send(42, '');
@@ -603,11 +603,11 @@ test('a C2 fail in agent-contract.json refuses a run whose mcp= choice turns a s
   send(43, 'mcp=-mobbin');
   const unchecked = run();
   const uOut = unchecked.stdout + unchecked.stderr;
-  assert.match(uOut, /contract: Claude Code at .* is not checked against the MCP behaviors the bridge relies on; run claude-wow agents check\./, uOut);
+  assert.match(uOut, /contract: Claude Code at .* is not checked against the MCP behaviors the bridge relies on; run wowgpt agents check\./, uOut);
   assert.match(uOut, /#43@sess1 done \(/, 'not checked turns nothing off');
   assert.equal(agentRuns().length, 2);
   assert.match(
-    fs.readFileSync(path.join(addons, 'ClaudeWoW_S001', 'Inbox.lua'), 'utf8'),
+    fs.readFileSync(path.join(addons, 'WoWGPT_S001', 'Inbox.lua'), 'utf8'),
     /^\tcontract = \{ claude = \{ version = "[0-9.]*", checked = false, off = true, reason = "", sources = \{ "config", "claude", "claude\.ai", "plugin" \} \}(, | \},$)/m,
   );
   fs.rmSync(dir, { recursive: true, force: true });
@@ -647,9 +647,9 @@ test('Codex: an X2a fail refuses a run that turns its own server off, an X2b fai
   const send = (id, opts) =>
     fs.writeFileSync(
       saved,
-      `ClaudeWoWDB = {\n["outbox"] = {\n["id"] = ${id},\n["session"] = "sess1",\n["chat"] = "chat1",\n["text"] = "${hex('ping')}",\n["cwd"] = "",\n["agent"] = "codex",\n${opts ? `["opts"] = "${hex(opts)}",\n` : ''}["t"] = 1,\n},\n}\n`,
+      `WoWGPTDB = {\n["outbox"] = {\n["id"] = ${id},\n["session"] = "sess1",\n["chat"] = "chat1",\n["text"] = "${hex('ping')}",\n["cwd"] = "",\n["agent"] = "codex",\n${opts ? `["opts"] = "${hex(opts)}",\n` : ''}["t"] = 1,\n},\n}\n`,
     );
-  const env = SB.isolatedEnv(path.join(dir, 'user'), { CLAUDE_WOW_HOME: home, CODEX_HOME: codexHome, MY_TOKEN: 't0ken' });
+  const env = SB.isolatedEnv(path.join(dir, 'user'), { WOWGPT_HOME: home, CODEX_HOME: codexHome, MY_TOKEN: 't0ken' });
   const runs = () =>
     fs.existsSync(calls)
       ? fs
@@ -667,7 +667,7 @@ test('Codex: an X2a fail refuses a run that turns its own server off, an X2b fai
 
   contract({ X1: 'pass', X2a: 'fail', X2b: 'pass' });
   let out = go(51, 'mcp=-mine');
-  assert.match(out, /#51@sess1 contract: Codex 0\.160\.1 failed X2a in claude-wow agents check, so it may still load an MCP server a chat turns off\./, out);
+  assert.match(out, /#51@sess1 contract: Codex 0\.160\.1 failed X2a in wowgpt agents check, so it may still load an MCP server a chat turns off\./, out);
   assert.equal(runs().length, 0, 'the agent never started');
   out = go(52, '');
   assert.match(out, /#52@sess1 done \(/, out);
@@ -676,7 +676,7 @@ test('Codex: an X2a fail refuses a run that turns its own server off, an X2b fai
 
   contract({ X1: 'pass', X2a: 'pass', X2b: 'fail' });
   out = go(53, '');
-  assert.match(out, /#53@sess1 contract: Codex 0\.160\.1 failed X2b in claude-wow agents check, so its shell may see an MCP server's secret\./, out);
+  assert.match(out, /#53@sess1 contract: Codex 0\.160\.1 failed X2b in wowgpt agents check, so its shell may see an MCP server's secret\./, out);
   assert.equal(runs().length, 1, 'the secret run never started');
   out = go(54, 'mcp=-secretsrv,-mine');
   assert.match(out, /#54@sess1 done \(/, out);
@@ -689,7 +689,7 @@ test('Codex: an X2a fail refuses a run that turns its own server off, an X2b fai
   assert.match(out, /#55@sess1 done \(/, 'X2a does not refuse turning off a config.json server, which Codex never gets');
   assert.equal(runs().length, 3);
   assert.match(
-    fs.readFileSync(path.join(addons, 'ClaudeWoW_S001', 'Inbox.lua'), 'utf8'),
+    fs.readFileSync(path.join(addons, 'WoWGPT_S001', 'Inbox.lua'), 'utf8'),
     /^\tcontract = \{.*codex = \{ version = "0\.160\.1", checked = true, off = false, reason = "Codex 0\.160\.1 failed X2a [^"]*", sources = \{ "codex" \} \}/m,
   );
   fs.rmSync(dir, { recursive: true, force: true });

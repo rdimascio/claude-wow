@@ -7,7 +7,7 @@ const path = require('path');
 const PJ = require('../bridge/projects');
 
 function tree() {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'claude-wow-projects-')));
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'wowgpt-projects-')));
   const home = path.join(root, 'home');
   const repo = (rel, config) => {
     const dir = path.join(home, rel);
@@ -17,7 +17,7 @@ function tree() {
   };
   const wow = repo(
     'wow-ai',
-    '[core]\n\tbare = false\n[remote "upstream"]\n\turl = https://github.com/someone/wow-ai\n[remote "origin"]\n\turl = https://github.com/me/claude-wow.git\n',
+    '[core]\n\tbare = false\n[remote "upstream"]\n\turl = https://github.com/someone/wow-ai\n[remote "origin"]\n\turl = https://github.com/me/wowgpt.git\n',
   );
   const shop = repo('acme/shop', '[remote "origin"]\n\turl = git@github.com:acme/shop.git\n');
   const worktree = path.join(home, 'shop-3');
@@ -36,7 +36,7 @@ function tree() {
 
 test('repo labels come from the origin remote, through a worktree to its main repo, else the folder name', () => {
   const t = tree();
-  assert.equal(PJ.repoLabel(t.wow), 'claude-wow');
+  assert.equal(PJ.repoLabel(t.wow), 'wowgpt');
   assert.equal(PJ.repoLabel(path.join(t.shop)), 'shop');
   assert.equal(PJ.repoLabel(t.worktree), 'shop');
   assert.equal(PJ.repoLabel(t.plain), 'notes');
@@ -68,7 +68,7 @@ test('known projects: the default first, then by recency; ~ and trailing slashes
   });
   assert.deepEqual(list, [
     { path: t.shop, label: 'shop' },
-    { path: t.wow, label: 'claude-wow' },
+    { path: t.wow, label: 'wowgpt' },
     { path: t.worktree, label: 'shop (shop-3)' },
     { path: t.plain, label: 'notes' },
   ]);

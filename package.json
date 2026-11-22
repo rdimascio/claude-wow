@@ -1,5 +1,5 @@
 {
-  "name": "claude-wow",
+  "name": "wowgpt",
   "version": "0.5.0-beta.1",
   "type": "commonjs",
   "description": "Claude in World of Warcraft: chat with Claude Code and other local coding agents (Codex, Grok Build, Antigravity, Hermes) from inside World of Warcraft: Forever or Classic Era, with no UI reloads. Pixel strip out, load-on-demand slots in.",
@@ -12,7 +12,7 @@
   "keywords": [
     "world-of-warcraft",
     "wow-addon",
-    "claude-wow",
+    "wowgpt",
     "claude-code",
     "claude",
     "codex",
@@ -24,6 +24,7 @@
     "node": ">=22.2"
   },
   "bin": {
+    "wowgpt": "bridge/supervisor.js",
     "claude-wow": "bridge/supervisor.js"
   },
   "files": [
@@ -40,12 +41,12 @@
     "bridge/simweights.json",
     "bridge/start-window.cmd",
     "bridge/start.ps1",
-    "addon/ClaudeWoW/**/*.lua",
-    "addon/ClaudeWoW/ClaudeWoW.toc",
-    "addon/ClaudeWoW/Bindings.xml",
-    "addon/ClaudeWoW/*.tga",
-    "assets/plugins/claude-wow/.claude-plugin/plugin.json",
-    "assets/plugins/claude-wow/agents/*.md",
+    "addon/WoWGPT/**/*.lua",
+    "addon/WoWGPT/WoWGPT.toc",
+    "addon/WoWGPT/Bindings.xml",
+    "addon/WoWGPT/*.tga",
+    "assets/plugins/wowgpt/.claude-plugin/plugin.json",
+    "assets/plugins/wowgpt/agents/*.md",
     "setup.js",
     "build.js",
     "dev/contract-mcp.js",
@@ -72,8 +73,8 @@
     "pack:check": "node dev/pack-check.js",
     "prepublishOnly": "node dev/pack-check.js --publish",
     "lint": "oxlint --deny-warnings && oxfmt --check",
-    "lint:lua": "luacheck addon/ClaudeWoW && stylua --check addon/ClaudeWoW",
-    "format": "oxfmt && oxlint --fix && stylua addon/ClaudeWoW",
+    "lint:lua": "luacheck addon/WoWGPT && stylua --check addon/WoWGPT",
+    "format": "oxfmt && oxlint --fix && stylua addon/WoWGPT",
     "test": "node tests/unit.js",
     "test:bun": "bun tests/unit.js",
     "test:coverage": "node tests/unit.js --experimental-test-coverage --test-coverage-include=bridge/** --test-coverage-include=setup.js --test-coverage-include=build.js --test-coverage-lines=90 --test-coverage-branches=82.5 --test-coverage-functions=89",

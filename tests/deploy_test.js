@@ -54,7 +54,7 @@ function harness(
     runsCurrent = true,
     platform = 'darwin',
     probe,
-    setupOut = 'addon    : 18 file(s)\nDone. Next:\n  1. Fully quit and relaunch World of Warcraft (it only discovers new addon folders at launch).\n  4. In game:  /claude',
+    setupOut = 'addon    : 18 file(s)\nDone. Next:\n  1. Fully quit and relaunch World of Warcraft (it only discovers new addon folders at launch).\n  4. In game:  /wowgpt',
     failRestart = false,
     loaded = true,
   } = {},
@@ -66,7 +66,7 @@ function harness(
   const otherClient = path.join(root, 'World of Warcraft', '_classic_beta_');
   const disabledClient = path.join(root, 'World of Warcraft', '_retail_');
   fs.writeFileSync(l.config, JSON.stringify({ clients: [{ dir: client }, { dir: otherClient }, { dir: disabledClient, enabled: false }] }));
-  const definitionFile = path.join(root, 'io.claudewow.bridge.plist');
+  const definitionFile = path.join(root, 'io.wowgpt.bridge.plist');
   fs.writeFileSync(
     definitionFile,
     runsCurrent
@@ -125,7 +125,7 @@ function harness(
     build: (src, outDir) => {
       builds.push(src);
       assert.ok(fs.existsSync(path.join(src, 'marker.txt')), 'the build sees the source tree');
-      const file = path.join(outDir, 'claude-wow-darwin-arm64');
+      const file = path.join(outDir, 'wowgpt-darwin-arm64');
       fs.writeFileSync(file, `binary of ${fs.readFileSync(path.join(src, 'marker.txt'), 'utf8')}`);
       return file;
     },
@@ -180,7 +180,7 @@ test(
     assert.ok(h.out.includes('in game : 1. Fully quit and relaunch World of Warcraft (it only discovers new addon folders at launch).'), h.out.join('\n'));
     assert.ok(!fs.existsSync(h.l.lock), 'the lock is released');
     assert.deepEqual(
-      fs.readdirSync(root).filter(f => f.startsWith('claude-wow-')),
+      fs.readdirSync(root).filter(f => f.startsWith('wowgpt-')),
       [],
       'no temporary build or source folder is left',
     );
@@ -227,7 +227,7 @@ test(
     assert.match(text, new RegExp(`current  : ${first}\\n`));
     assert.match(text, new RegExp(`previous : ${second}\\n`));
     assert.match(text, new RegExp(`release  : ${first}  \\(current\\)`));
-    assert.match(text, /service  : runs .*current.claude-wow/);
+    assert.match(text, /service  : runs .*current.wowgpt/);
     assert.match(text, /bridge   : busy \(1 agent run\(s\) in flight \(#2\)\)/);
   },
 );
@@ -347,7 +347,7 @@ test('a loaded agent whose kickstart -k fails: the deploy fails with the launchc
   const h = harness(root, { failRestart: true, loaded: true });
   assert.equal(await D.main(['deploy', 'HEAD', '--repo', repo], h.ctx), 1);
   assert.match(h.err.join('\n'), /did not restart: launchctl could not restart the service: Could not find service/);
-  assert.match(h.err.join('\n'), /current points at 0\.5\.0-[0-9a-f]{12}; restart it with: claude-wow service restart/);
+  assert.match(h.err.join('\n'), /current points at 0\.5\.0-[0-9a-f]{12}; restart it with: wowgpt service restart/);
   assert.deepEqual(h.events, [KICKSTART], 'kickstart -k was tried once, no bootstrap, no setup');
   assert.ok(!fs.existsSync(h.l.lock));
 });
@@ -393,7 +393,7 @@ test('a deploy or rollback whose lock was taken over while it waited switches no
   const quiet = harness(root, { runsCurrent: false });
   quiet.ctx.build = (src, outDir) => {
     fs.writeFileSync(l.lock, JSON.stringify({ ...REL.readLock(l.lock), token: 'thief' }));
-    const file = path.join(outDir, 'claude-wow-darwin-arm64');
+    const file = path.join(outDir, 'wowgpt-darwin-arm64');
     fs.writeFileSync(file, 'three');
     return file;
   };
@@ -416,7 +416,7 @@ test(
         code,
         lock: fs.existsSync(h.l.lock),
         worktrees: worktrees(repo),
-        temp: fs.readdirSync(root).filter(f => f.startsWith('claude-wow-')).length,
+        temp: fs.readdirSync(root).filter(f => f.startsWith('wowgpt-')).length,
       });
       throw new Error('exited');
     };
@@ -433,7 +433,7 @@ test(
     assert.ok(!fs.existsSync(h.l.lock), 'the lock is released');
     assert.equal(worktrees(repo), 1, 'the temporary worktree is removed');
     assert.deepEqual(
-      fs.readdirSync(root).filter(f => f.startsWith('claude-wow-')),
+      fs.readdirSync(root).filter(f => f.startsWith('wowgpt-')),
       [],
       'no temporary build or source folder is left',
     );
@@ -653,14 +653,14 @@ test('a build installs the runtime dependencies first when the source folder has
   const calls = [];
   const run = (cmd, args, opts) => {
     calls.push({ cmd: path.basename(cmd), args, cwd: opts && opts.cwd });
-    if (args.some(a => String(a).endsWith('build.js'))) fs.writeFileSync(path.join(out, 'claude-wow-test'), '');
+    if (args.some(a => String(a).endsWith('build.js'))) fs.writeFileSync(path.join(out, 'wowgpt-test'), '');
     return { ok: true, out: '' };
   };
   D.bunBuild(src, out, run);
   assert.match(calls[0].cmd, /^npm(\.cmd)?$/);
   assert.deepEqual(calls[0].args, ['ci', '--omit=dev']);
   assert.equal(calls[0].cwd, src);
-  fs.rmSync(path.join(out, 'claude-wow-test'));
+  fs.rmSync(path.join(out, 'wowgpt-test'));
   fs.mkdirSync(path.join(src, 'node_modules'));
   calls.length = 0;
   D.bunBuild(src, out, run);

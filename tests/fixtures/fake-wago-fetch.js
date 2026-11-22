@@ -4,10 +4,10 @@ const path = require('path');
 
 const FIXTURES = path.join(__dirname, 'wago');
 const WAGO = 'https://wago.tools';
-const REQUEST_LOG = process.env.CLAUDE_WOW_FAKE_WAGO_LOG || '';
-const HANG_BUILDS = new Set(String(process.env.CLAUDE_WOW_FAKE_WAGO_HANG || '').split(',').filter(Boolean));
-const MISSING_BUILDS = new Set(String(process.env.CLAUDE_WOW_FAKE_WAGO_MISSING || '').split(',').filter(Boolean));
-const BUILDS_FILE = process.env.CLAUDE_WOW_FAKE_WAGO_BUILDS || path.join(FIXTURES, 'builds.json');
+const REQUEST_LOG = process.env.WOWGPT_FAKE_WAGO_LOG || '';
+const HANG_BUILDS = new Set(String(process.env.WOWGPT_FAKE_WAGO_HANG || '').split(',').filter(Boolean));
+const MISSING_BUILDS = new Set(String(process.env.WOWGPT_FAKE_WAGO_MISSING || '').split(',').filter(Boolean));
+const BUILDS_FILE = process.env.WOWGPT_FAKE_WAGO_BUILDS || path.join(FIXTURES, 'builds.json');
 const realFetch = globalThis.fetch;
 
 if (REQUEST_LOG) fs.appendFileSync(REQUEST_LOG, `argv ${JSON.stringify(process.argv.slice(2))}\n`);

@@ -111,7 +111,7 @@ test('Codex: exec --json in the chat folder, sandbox from permissionMode, resume
   // for a new session and as the short version on a resumed one.
   const fresh = A.AGENTS.codex.input({ prompt: 'fix it', system: 'FULL', systemShort: 'SHORT', resume: '' });
   assert.equal(fresh.stdin, A.contextBlock('FULL') + 'fix it');
-  assert.ok(fresh.stdin.startsWith('[Context from the Claude WoW bridge'));
+  assert.ok(fresh.stdin.startsWith('[Context from the WoWGPT bridge'));
   assert.equal(A.AGENTS.codex.input({ prompt: 'fix it', system: 'FULL', systemShort: 'SHORT', resume: 't' }).stdin, A.contextBlock('SHORT') + 'fix it');
   assert.equal(A.AGENTS.codex.input({ prompt: 'fix it', system: '', systemShort: '', resume: '' }).stdin, 'fix it');
   assert.deepEqual(A.AGENTS.codex.args({ cfg: {}, resume: '', cwd: 'x', images: ['a.png', 'b.png'] }).slice(-5), ['-i', 'a.png', '-i', 'b.png', '-']);
@@ -798,7 +798,7 @@ test("a subagent's events leave the run's own usage, model and window alone, and
     parent_tool_use_id: null,
     message: {
       model: 'claude-haiku-4-5-20251001',
-      content: [{ type: 'tool_use', id: 'toolu_agent', name: 'Agent', input: { subagent_type: 'claude-wow:wow-planner' } }],
+      content: [{ type: 'tool_use', id: 'toolu_agent', name: 'Agent', input: { subagent_type: 'wowgpt:wow-planner' } }],
       usage: { input_tokens: 10, cache_read_input_tokens: 20000, cache_creation_input_tokens: 8000, output_tokens: 50 },
     },
   });
@@ -969,7 +969,7 @@ test('the other agents report no context size: their streams carry none the brid
   assert.equal(A.hermesParser().finish({ stdout: 'ok', stderr: '', code: 0 }).usage, undefined);
 });
 
-test('per-chat settings from /claude flags: each agent gets the ones it has, in its own spelling, and the rest are named as ignored', () => {
+test('per-chat settings from /wowgpt flags: each agent gets the ones it has, in its own spelling, and the rest are named as ignored', () => {
   const chosen = { model: 'opus', effort: 'high', permissionMode: 'plan', addDirs: ['/srv/extra', '-x'] };
   const argsFor = id => {
     const cfg = A.withChatSettings({ permissionMode: 'acceptEdits', model: 'from-config' }, id, chosen);

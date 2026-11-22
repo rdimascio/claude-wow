@@ -30,7 +30,7 @@ function githubApi({ token, fetchImpl = fetch, base = 'https://api.github.com' }
         accept: 'application/vnd.github+json',
         authorization: `Bearer ${token}`,
         'x-github-api-version': '2022-11-28',
-        'user-agent': 'claude-wow-release-gate',
+        'user-agent': 'wowgpt-release-gate',
       },
     });
     if (res.status === 404) return null;

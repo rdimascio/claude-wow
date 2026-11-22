@@ -131,7 +131,7 @@ function createExpander(store) {
 }
 
 function syncHint(store) {
-  return (store && store.syncCommand) || 'claude-wow data sync';
+  return (store && store.syncCommand) || 'wowgpt data sync';
 }
 
 function noDataText(store) {
@@ -191,7 +191,7 @@ function errorsText(errors, store) {
 }
 
 function tokenHint() {
-  return `Name a game thing with a reference token instead (${TOKEN_FORMS}), using an ID from the wowdata tools; the bridge writes the real name. Tokens work only once game data is synced for the client's build (claude-wow data sync, with --flavor classic_era for Classic Era); until then only names the game reported may appear.`;
+  return `Name a game thing with a reference token instead (${TOKEN_FORMS}), using an ID from the wowdata tools; the bridge writes the real name. Tokens work only once game data is synced for the client's build (wowgpt data sync, with --flavor classic_era for Classic Era); until then only names the game reported may appear.`;
 }
 
 function gluedText(token) {

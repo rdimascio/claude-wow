@@ -24,7 +24,7 @@ const EVENT_FIELDS = Object.freeze({
 const NULLABLE_FIELDS = Object.freeze({ skill: ['from'] });
 
 const USAGE = [
-  'claude-wow report [--day [YYYY-MM-DD]] [--character Name-Realm]',
+  'wowgpt report [--day [YYYY-MM-DD]] [--character Name-Realm]',
   '  --day        the local calendar day to report (default: today)',
   '  --character  the character folder under the goals folder (default: the one with the newest events)',
   'Reads only snapshot.json, events.jsonl (and events.1.jsonl) and goals.json. Game things are shown by ID, never by name.',

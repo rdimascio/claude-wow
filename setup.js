@@ -10,12 +10,13 @@
 // an explicit --project updates defaultCwd (that is the only way to correct it
 // without editing config.json by hand).
 //
-// An install of this project under one of its old names (wow-ai: the WoWAI
-// addon, WoWAI_S### slots, WoWAI.lua saved data; before that wow-claude and
-// WoWClaude) is migrated: the saved data is carried over so chats survive, the
+// An install of this project under one of its old names (wowgpt: the
+// ClaudeWoW addon, ClaudeWoW_S### slots, ClaudeWoW.lua saved data; before that
+// wow-ai and WoWAI, and wow-claude and WoWClaude) is migrated: the saved data is carried over so chats survive, the
 // old folders are removed so two addons don't fight over the slash commands and
 // /r, and config.json is brought up to date.
 
+require('./bridge/legacyenv').adopt(); // CLAUDE_WOW_* from before the rename count as WOWGPT_*, before anything reads them
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -23,13 +24,14 @@ const { spawnSync } = require('child_process');
 
 // Literal requires: the compiled binary bundles what it can see (runtime.js).
 const P = require('./bridge/protocol'); // the addon's name, and its old names
-const H = require('./bridge/home'); // CLAUDE_WOW_HOME: where config.json and the state live
+const H = require('./bridge/home'); // WOWGPT_HOME: where config.json and the state live
 const R = require('./bridge/runtime'); // node, bun, or the compiled binary
 const A = require('./bridge/agents'); // which agent CLIs this PC has
 const AS = require('./bridge/assets'); // the addon, the config template and the capture scripts, by path
 const G = require('./bridge/gamefs');
 const SIG = require('./bridge/signals');
 const CLI = require('./bridge/clients');
+const ASK = require('./bridge/plugins/ask'); // its data folder had the old name
 const ADDON_SRC = AS.dir('addon/' + P.ADDON);
 const EXAMPLE = AS.file('bridge/config.example.json');
 let CONFIG = H.resolve().config; // settled in main(), after the legacy layout has been migrated
@@ -155,23 +157,53 @@ function findAccount(client, { wanted = '', current = '', strict = true } = {}) 
 // the old one would still answer /r and the shift-click hook. The old saved
 // file is left where it is; nothing here deletes saved data. Agent sessions
 // are keyed by chat id in the bridge's state.json, so they follow the chats.
+// The addon's SavedVariables globals are <ADDON><suffix>: DB and WidgetDB in
+// the account file, MapDB and CharDB in each character's file (the .toc's
+// SavedVariables and SavedVariablesPerCharacter lines).
+const SAVED_GLOBAL_SUFFIXES = ['DB', 'WidgetDB', 'MapDB', 'CharDB'];
+
 function migrateSavedData(oldName, oldSaved, newSaved) {
   let src = fs.readFileSync(oldSaved, 'utf8');
-  for (const g of ['DB', 'MapDB']) src = src.replace(new RegExp('^' + oldName + g + '(\\s*=)', 'm'), P.ADDON + g + '$1');
+  for (const g of SAVED_GLOBAL_SUFFIXES) src = src.replace(new RegExp('^' + oldName + g + '(\\s*=)', 'gm'), P.ADDON + g + '$1');
   G.writeFile(newSaved, src);
 }
 
-function migrateOldInstall(client, account) {
-  const addons = path.join(client, 'Interface', 'AddOns');
-  const savedDir = path.join(client, 'WTF', 'Account', account, 'SavedVariables');
+function isDir(p) {
+  try {
+    return fs.statSync(p).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+// WTF/Account/<account>/<realm>/<character>/SavedVariables: one per character
+// that has logged in on this account.
+function characterSavedDirs(accountDir) {
+  const dirs = [];
+  for (const realm of isDir(accountDir) ? listDir(accountDir) : []) {
+    if (realm === 'SavedVariables' || !isDir(path.join(accountDir, realm))) continue;
+    for (const character of listDir(path.join(accountDir, realm))) {
+      const saved = path.join(accountDir, realm, character, 'SavedVariables');
+      if (isDir(saved)) dirs.push(saved);
+    }
+  }
+  return dirs;
+}
+
+// One SavedVariables folder: the newest old name's file becomes the new one,
+// unless the new one is already there (the game has written it since).
+function migrateSavedDir(savedDir, label) {
   const newSaved = path.join(savedDir, P.ADDON + '.lua');
   for (const old of P.OLD_ADDONS) {
-    // newest first: WoWAI.lua wins over WoWClaude.lua when both exist
     const oldSaved = path.join(savedDir, old + '.lua');
-    if (fs.existsSync(oldSaved) && !fs.existsSync(newSaved)) {
-      migrateSavedData(old, oldSaved, newSaved);
-      console.log(`migrate  : chats and settings copied from ${path.basename(oldSaved)} to ${path.basename(newSaved)} (${path.basename(oldSaved)} is kept)`);
-    }
+    if (!fs.existsSync(oldSaved) || fs.existsSync(newSaved)) continue;
+    migrateSavedData(old, oldSaved, newSaved);
+    console.log(`migrate  : ${label} copied from ${path.basename(oldSaved)} to ${path.basename(newSaved)} (${path.basename(oldSaved)} is kept)`);
+  }
+}
+
+function removeOldAddonFolders(addons) {
+  for (const old of P.OLD_ADDONS) {
     let removed = 0;
     for (const name of fs.existsSync(addons) ? fs.readdirSync(addons) : []) {
       if (name === old || new RegExp('^' + old + '_S\\d{3}$').test(name)) {
@@ -181,6 +213,16 @@ function migrateOldInstall(client, account) {
     }
     if (removed) console.log(`migrate  : removed the old ${old} addon and slot folders (${removed} folder(s))`);
   }
+}
+
+function migrateOldInstall(client, account) {
+  const accountDir = path.join(client, 'WTF', 'Account', account);
+  migrateSavedDir(path.join(accountDir, 'SavedVariables'), 'chats and settings');
+  for (const dir of characterSavedDirs(accountDir)) {
+    const character = path.relative(accountDir, path.dirname(dir)).split(path.sep).join('/');
+    migrateSavedDir(dir, `map and character data of ${character}`);
+  }
+  removeOldAddonFolders(path.join(client, 'Interface', 'AddOns'));
 }
 
 function copyAddon(client) {
@@ -500,10 +542,20 @@ function main() {
     if (args.project) args.project = resolveProject(args.project);
     // Config, state and transcripts from a checkout that kept them in bridge/ move
     // to the home folder first, so the config written below lands in one place.
+    const renamed = H.migrateOldHome();
+    const askData = ASK.migrateOldData();
+    if (askData) console.log(`migrate  : ${askData} copied to ${ASK.dataDir()} (the old folder is kept)`);
     const carried = H.migrateLegacy();
     const home = H.resolve();
     CONFIG = home.config;
-    console.log(`home     : ${home.dir}${home.source === 'CLAUDE_WOW_HOME' ? '  (CLAUDE_WOW_HOME)' : ''}`);
+    console.log(`home     : ${home.dir}${home.source === 'WOWGPT_HOME' ? '  (WOWGPT_HOME)' : ''}`);
+    if (renamed)
+      console.log(
+        `migrate  : ${renamed.from} copied to ${home.dir} (${renamed.copied.length} item(s); ${renamed.from} is kept, and its releases are not copied)`,
+      );
+    const oldHome = H.oldHomeDir();
+    if (oldHome && oldHome !== home.dir)
+      console.log(`old home : ${oldHome} is no longer used; remove it once this install works (it still holds your old config and tokens)`);
     if (carried.length)
       console.log(
         `migrate  : ${carried.join(', ')} copied from ${H.LEGACY_DIR} to ${home.dir}; the bridge reads them there from now on (the copies in bridge/ are no longer used)`,
@@ -527,7 +579,7 @@ function main() {
         );
       }
       const { dest, copied, build } = copyAddon(client.dir);
-      console.log(`addon    : ${tag}${copied} file(s) -> ${dest} (build ${build}, /claude diag shows it)`);
+      console.log(`addon    : ${tag}${copied} file(s) -> ${dest} (build ${build}, /wowgpt diag shows it)`);
     }
     const skipped = CLI.allClients(cfg).filter(c => !c.enabled);
     for (const c of skipped) console.log(`client   : ${c.dir} skipped ("enabled": false in config.json)`);
@@ -535,7 +587,7 @@ function main() {
     console.log(
       `privacy  : game state ${sharesGameState(cfg) ? 'is shared with the agent' : 'is not shared with the agent'} (change with --${SHARE_FLAG} yes|no, or gameContext and telemetry.enabled in config.json)`,
     );
-    console.log(`project  : ${cfg.defaultCwd}  (change with /claude-wow cd in game, or defaultCwd in config.json)`);
+    console.log(`project  : ${cfg.defaultCwd}  (change with /wowgpt cd in game, or defaultCwd in config.json)`);
     // A defaultCwd that no longer exists (moved folder, or a bad --project from an
     // earlier run) makes every chat fail with "Folder does not exist" in game.
     if (!fs.existsSync(cfg.defaultCwd)) {
@@ -544,7 +596,7 @@ function main() {
         'Every chat that has not picked its own folder will fail. Fix it with: node setup.js --project "<folder>"',
       );
     }
-    console.log(`agent    : ${cfg.agent} by default (change with /claude-wow agent in game, or "agent" in config.json)`);
+    console.log(`agent    : ${cfg.agent} by default (per chat with /wowgpt --agent <id> in game, or "agent" in config.json)`);
     console.log(agentReport(cfg));
     const transport = transportReport(cfg);
     pythonReport(cfg, transport);
@@ -561,8 +613,8 @@ function main() {
     console.log(`
 Done. Next:
   1. Fully quit and relaunch each World of Warcraft client above that is running (it only discovers new addon folders at launch).
-  2. Enable "Azeroth Companion" at the character select AddOns screen (the Azeroth Companion slot ### entries stay enabled).
-  3. Start the bridge:  ${R.compiled ? 'claude-wow' : 'npm start'}   (in this terminal${
+  2. Enable "WoWGPT" at the character select AddOns screen (the WoWGPT slot ### entries stay enabled).
+  3. Start the bridge:  ${R.compiled ? 'wowgpt' : 'npm start'}   (in this terminal${
     process.platform === 'win32'
       ? '; bridge\\start-window.cmd opens its own window'
       : transport === 'screenshot'
@@ -571,7 +623,7 @@ Done. Next:
           ? '; keep the game windowed or borderless, and check the capture with: npm run probe:mac'
           : '; keep the game borderless/windowed and check the capture with: npm run probe'
   })
-  4. In game:  /claude
+  4. In game:  /wowgpt
 `);
   } catch (e) {
     console.error('setup failed:', e.message);
@@ -585,6 +637,7 @@ if (require.main === module) main();
 module.exports = {
   migrateOldInstall,
   migrateSavedData,
+  characterSavedDirs,
   copyAddon,
   upgradeConfig,
   entryFor,

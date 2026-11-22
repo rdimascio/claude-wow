@@ -7,7 +7,7 @@ const path = require('path');
 const FS = require('../bridge/fsutil');
 
 function scratch(t) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-wow-fsutil-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wowgpt-fsutil-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   return dir;
 }

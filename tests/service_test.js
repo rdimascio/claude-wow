@@ -1,4 +1,4 @@
-// bridge/service.js, the `claude-wow service` command: the service definitions it
+// bridge/service.js, the `wowgpt service` command: the service definitions it
 // writes (LaunchAgent plist, systemd unit, Windows Startup launcher), its
 // argument parsing, the log rotation the supervisor runs, the pid file, and the
 // bits that read launchctl back. Nothing here talks to launchd or systemd.
@@ -31,25 +31,41 @@ test('argument parsing: the seven commands, -n and -f, and errors for anything e
 test('per-user folders per platform, none of them under /usr or Program Files', () => {
   const home = '/Users/p';
   const mac = S.dirs('darwin', {}, home);
-  assert.equal(mac.definition, path.join(home, 'Library', 'LaunchAgents', 'io.claudewow.bridge.plist'));
-  assert.equal(mac.logs, path.join(home, 'Library', 'Logs', 'claude-wow'));
+  assert.equal(mac.definition, path.join(home, 'Library', 'LaunchAgents', 'io.wowgpt.bridge.plist'));
+  assert.equal(mac.logs, path.join(home, 'Library', 'Logs', 'wowgpt'));
   const lin = S.dirs('linux', {}, '/home/p');
-  assert.equal(lin.definition, path.join('/home/p', '.config', 'systemd', 'user', 'claude-wow-bridge.service'));
-  assert.equal(lin.logs, path.join('/home/p', '.local', 'state', 'claude-wow'));
+  assert.equal(lin.definition, path.join('/home/p', '.config', 'systemd', 'user', 'wowgpt-bridge.service'));
+  assert.equal(lin.logs, path.join('/home/p', '.local', 'state', 'wowgpt'));
   const xdg = S.dirs('linux', { XDG_STATE_HOME: '/st', XDG_CONFIG_HOME: '/cf' }, '/home/p');
-  assert.equal(xdg.logs, path.join('/st', 'claude-wow'));
-  assert.equal(xdg.definition, path.join('/cf', 'systemd', 'user', 'claude-wow-bridge.service'));
+  assert.equal(xdg.logs, path.join('/st', 'wowgpt'));
+  assert.equal(xdg.definition, path.join('/cf', 'systemd', 'user', 'wowgpt-bridge.service'));
   const win = S.dirs('win32', { LOCALAPPDATA: 'C:\\U\\p\\AppData\\Local', APPDATA: 'C:\\U\\p\\AppData\\Roaming' }, 'C:\\U\\p');
-  assert.ok(win.definition.includes('Startup') && win.definition.endsWith('Claude WoW bridge.vbs'));
-  // The old name's service, which install and uninstall remove.
-  assert.equal(S.oldDirs('darwin', {}, home).definition, path.join(home, 'Library', 'LaunchAgents', 'io.wowai.bridge.plist'));
-  assert.equal(S.oldDirs('darwin', {}, home).label, 'io.wowai.bridge');
-  assert.equal(S.oldDirs('linux', { XDG_CONFIG_HOME: '/cf' }, '/home/p').definition, path.join('/cf', 'systemd', 'user', 'wow-ai-bridge.service'));
-  assert.equal(S.oldDirs('linux', {}, '/home/p').unit, 'wow-ai-bridge');
-  assert.ok(S.oldDirs('win32', { APPDATA: 'C:\\U\\p\\AppData\\Roaming' }, 'C:\\U\\p').definition.endsWith('WoW AI bridge.vbs'));
-  assert.notEqual(S.oldDirs('darwin', {}, home).definition, mac.definition);
-  assert.notEqual(S.oldDirs('linux', {}, '/home/p').definition, lin.definition);
-  assert.notEqual(S.oldDirs('win32', { APPDATA: 'C:\\U\\p\\AppData\\Roaming' }, 'C:\\U\\p').definition, win.definition);
+  assert.ok(win.definition.includes('Startup') && win.definition.endsWith('WoWGPT bridge.vbs'));
+  // The old names' services, newest first, which install and uninstall remove.
+  assert.deepEqual(S.OLD_LABEL, ['io.claudewow.bridge', 'io.wowai.bridge']);
+  assert.deepEqual(
+    S.oldDirs('darwin', {}, home).map(o => [o.label, o.definition, o.run]),
+    [
+      [
+        'io.claudewow.bridge',
+        path.join(home, 'Library', 'LaunchAgents', 'io.claudewow.bridge.plist'),
+        path.join(home, 'Library', 'Application Support', 'claude-wow'),
+      ],
+      ['io.wowai.bridge', path.join(home, 'Library', 'LaunchAgents', 'io.wowai.bridge.plist'), path.join(home, 'Library', 'Application Support', 'wow-ai')],
+    ],
+  );
+  assert.deepEqual(
+    S.oldDirs('linux', { XDG_CONFIG_HOME: '/cf' }, '/home/p').map(o => [o.unit, o.definition]),
+    [
+      ['claude-wow-bridge', path.join('/cf', 'systemd', 'user', 'claude-wow-bridge.service')],
+      ['wow-ai-bridge', path.join('/cf', 'systemd', 'user', 'wow-ai-bridge.service')],
+    ],
+  );
+  const oldWin = S.oldDirs('win32', { APPDATA: 'C:\\U\\p\\AppData\\Roaming' }, 'C:\\U\\p').map(o => o.definition);
+  assert.ok(oldWin[0].endsWith('Claude WoW bridge.vbs') && oldWin[1].endsWith('WoW AI bridge.vbs'), oldWin.join(' '));
+  for (const o of S.oldDirs('darwin', {}, home)) assert.notEqual(o.definition, mac.definition);
+  for (const o of S.oldDirs('linux', {}, '/home/p')) assert.notEqual(o.definition, lin.definition);
+  for (const d of oldWin) assert.notEqual(d, win.definition);
   assert.ok(win.logs.startsWith('C:\\U\\p\\AppData\\Local'));
   assert.equal(S.pidFile(mac), path.join(mac.run, 'supervisor.pid'));
   assert.equal(S.serviceLogFile(mac), path.join(mac.logs, 'bridge.log'));
@@ -192,9 +208,9 @@ test('pid file: written, read back, only its owner clears it, liveness check', (
 });
 
 test('launchctl print is read for the pid and state; uptime and log tails format sensibly', () => {
-  const text = `gui/501/io.claudewow.bridge = {
+  const text = `gui/501/io.wowgpt.bridge = {
 \tactive count = 1
-\tpath = /Users/p/Library/LaunchAgents/io.claudewow.bridge.plist
+\tpath = /Users/p/Library/LaunchAgents/io.wowgpt.bridge.plist
 \tstate = running
 \tprogram = /opt/homebrew/bin/node
 \tpid = 4242
@@ -228,7 +244,7 @@ test('status on a clean machine says not installed / not running and exits 3; he
   const dir = scratch('status');
   fs.writeFileSync(path.join(dir, 'bridge.log'), '');
   const code = S.status(
-    { run: dir, logs: dir, definition: path.join(dir, 'io.claudewow.bridge.plist') },
+    { run: dir, logs: dir, definition: path.join(dir, 'io.wowgpt.bridge.plist') },
     'darwin',
     l => lines.push(l),
     path.join(dir, 'state.json'),
@@ -247,18 +263,18 @@ test('status on a clean machine says not installed / not running and exits 3; he
 });
 
 test('install refuses without a config.json rather than looping a broken service', () => {
-  // An empty CLAUDE_WOW_HOME: no config there, whatever this machine has elsewhere.
+  // An empty WOWGPT_HOME: no config there, whatever this machine has elsewhere.
   const home = scratch('nohome');
-  const saved = process.env.CLAUDE_WOW_HOME;
-  process.env.CLAUDE_WOW_HOME = home;
+  const saved = process.env.WOWGPT_HOME;
+  process.env.WOWGPT_HOME = home;
   try {
     const errs = [];
     assert.equal(S.main(['install'], { out: () => {}, err: l => errs.push(l) }), 1);
     assert.match(errs.join('\n'), /config\.json is missing/);
     assert.ok(errs.join('\n').includes(path.join(home, 'config.json')), 'names the file it looked for');
   } finally {
-    if (saved === undefined) delete process.env.CLAUDE_WOW_HOME;
-    else process.env.CLAUDE_WOW_HOME = saved;
+    if (saved === undefined) delete process.env.WOWGPT_HOME;
+    else process.env.WOWGPT_HOME = saved;
   }
 });
 
@@ -284,20 +300,20 @@ test("the old name's service is removed: its definition goes, its pid file is ho
   // Every backend has it, and install and uninstall call it before touching the new definition.
   for (const p of ['darwin', 'linux', 'win32']) assert.equal(typeof S.backend(p).removeOld, 'function', p);
   const src = fs.readFileSync(path.join(__dirname, '..', 'bridge', 'service.js'), 'utf8');
-  assert.equal((src.match(/this\.removeOld\(\)/g) || []).length, 6, 'three backends, install and uninstall each');
+  assert.equal((src.match(/removeAllOld\(this, '(darwin|linux|win32)'\)/g) || []).length, 6, 'three backends, install and uninstall each');
 });
 
 test('the definition runs node + supervisor.js from a checkout, and the binary alone from the home folder when the bridge is one', () => {
   const R = require('../bridge/runtime');
-  const checkout = { compiled: false, execPath: '/opt/homebrew/bin/node', root: '/Users/p/claude-wow' };
-  const binary = { compiled: true, execPath: '/Users/p/.local/bin/claude-wow', root: '/build/machine/claude-wow' };
+  const checkout = { compiled: false, execPath: '/opt/homebrew/bin/node', root: '/Users/p/wowgpt' };
+  const binary = { compiled: true, execPath: '/Users/p/.local/bin/wowgpt', root: '/build/machine/wowgpt' };
   assert.deepEqual(S.program(checkout), {
     node: '/opt/homebrew/bin/node',
-    script: path.join('/Users/p/claude-wow', 'bridge', 'supervisor.js'),
-    cwd: '/Users/p/claude-wow',
+    script: path.join('/Users/p/wowgpt', 'bridge', 'supervisor.js'),
+    cwd: '/Users/p/wowgpt',
   });
   const b = S.program(binary);
-  assert.equal(b.node, '/Users/p/.local/bin/claude-wow');
+  assert.equal(b.node, '/Users/p/.local/bin/wowgpt');
   assert.equal(b.script, '', 'no script: the binary is the supervisor');
   assert.equal(b.cwd, require('../bridge/home').resolve().dir, 'the home folder, which bridge.js treats like the repo');
   assert.equal(S.program().node, process.execPath);
@@ -305,35 +321,35 @@ test('the definition runs node + supervisor.js from a checkout, and the binary a
 
   const d = S.dirs('darwin', {}, '/Users/p');
   const plist = S.definition('darwin', d, binary);
-  assert.match(plist, /<key>ProgramArguments<\/key>\s*<array>\s*<string>\/Users\/p\/\.local\/bin\/claude-wow<\/string>\s*<\/array>/, 'one argument, no script');
+  assert.match(plist, /<key>ProgramArguments<\/key>\s*<array>\s*<string>\/Users\/p\/\.local\/bin\/wowgpt<\/string>\s*<\/array>/, 'one argument, no script');
   assert.ok(!/supervisor\.js/.test(plist));
   assert.match(
     S.definition('darwin', d, checkout),
-    /<string>\/opt\/homebrew\/bin\/node<\/string>\s*<string>[\\/]Users[\\/]p[\\/]claude-wow[\\/]bridge[\\/]supervisor\.js<\/string>/,
+    /<string>\/opt\/homebrew\/bin\/node<\/string>\s*<string>[\\/]Users[\\/]p[\\/]wowgpt[\\/]bridge[\\/]supervisor\.js<\/string>/,
   );
-  assert.match(S.definition('linux', S.dirs('linux', {}, '/home/p'), binary), /^ExecStart="\/Users\/p\/\.local\/bin\/claude-wow"$/m);
+  assert.match(S.definition('linux', S.dirs('linux', {}, '/home/p'), binary), /^ExecStart="\/Users\/p\/\.local\/bin\/wowgpt"$/m);
   assert.match(
-    S.definition('win32', S.dirs('win32', {}, 'C:\\Users\\p'), { ...binary, execPath: 'C:\\Users\\p\\bin\\claude-wow.exe' }),
-    /sh\.Run """C:\\Users\\p\\bin\\claude-wow\.exe""", 0, False/,
+    S.definition('win32', S.dirs('win32', {}, 'C:\\Users\\p'), { ...binary, execPath: 'C:\\Users\\p\\bin\\wowgpt.exe' }),
+    /sh\.Run """C:\\Users\\p\\bin\\wowgpt\.exe""", 0, False/,
   );
   assert.match(S.launchdPlist({ node: '/n', script: '', cwd: '/c', logFile: '/l' }), /<array>\s*<string>\/n<\/string>\s*<\/array>/);
   assert.match(S.systemdUnit({ node: '/n', script: '', cwd: '/c' }), /^ExecStart="\/n"$/m);
 });
 
-test('a binary installed under <home>/releases makes a service that runs <home>/current/claude-wow, with no node and no release path in it', () => {
+test('a binary installed under <home>/releases makes a service that runs <home>/current/wowgpt, with no node and no release path in it', () => {
   const REL = require('../bridge/releases');
   const home = scratch('release-program');
   const l = REL.layout(home);
   fs.mkdirSync(REL.releaseDir(l, '0.5.0-abc'), { recursive: true });
   fs.writeFileSync(REL.releaseBinary(l, '0.5.0-abc'), 'bin');
-  const fromRelease = { compiled: true, execPath: REL.releaseBinary(l, '0.5.0-abc'), root: '/build/machine/claude-wow' };
+  const fromRelease = { compiled: true, execPath: REL.releaseBinary(l, '0.5.0-abc'), root: '/build/machine/wowgpt' };
   const want = { node: REL.currentBinary(l), script: '', cwd: home };
   assert.deepEqual(S.program(fromRelease, home), want);
   if (process.platform !== 'win32') {
     fs.symlinkSync(path.join('releases', '0.5.0-abc'), l.current);
     assert.deepEqual(S.program({ ...fromRelease, execPath: REL.currentBinary(l) }, home), want, 'run through the current symlink');
   }
-  const elsewhere = { compiled: true, execPath: path.join(home, 'bin', 'claude-wow'), root: '/x' };
+  const elsewhere = { compiled: true, execPath: path.join(home, 'bin', 'wowgpt'), root: '/x' };
   assert.equal(S.program(elsewhere, home).node, elsewhere.execPath, 'a binary outside releases keeps its own path');
   assert.equal(
     S.program({ compiled: false, execPath: REL.releaseBinary(l, '0.5.0-abc'), root: '/repo' }, home).script,
@@ -358,8 +374,8 @@ test('status names every client in config.json with its installed build and whic
   const dir = scratch('status-clients');
   const forever = path.join(dir, '_classic_beta_');
   const era = path.join(dir, '_classic_era_');
-  fs.mkdirSync(path.join(era, 'Interface', 'AddOns', 'ClaudeWoW'), { recursive: true });
-  fs.writeFileSync(path.join(era, 'Interface', 'AddOns', 'ClaudeWoW', 'ClaudeWoW.toc'), '## Version: 1.2.3\n## X-Build: abcdefabcdef\n');
+  fs.mkdirSync(path.join(era, 'Interface', 'AddOns', 'WoWGPT'), { recursive: true });
+  fs.writeFileSync(path.join(era, 'Interface', 'AddOns', 'WoWGPT', 'WoWGPT.toc'), '## Version: 1.2.3\n## X-Build: abcdefabcdef\n');
   fs.writeFileSync(path.join(dir, 'config.json'), JSON.stringify({ clients: [{ dir: forever }, { dir: era }] }));
   fs.writeFileSync(path.join(dir, 'state.json'), JSON.stringify({ clients: { [CLI.keyOf(era)]: { heard: Date.now() - 60000 } } }));
   const lines = [];
@@ -383,7 +399,7 @@ test('status names every client in config.json with its installed build and whic
     path.join(dir, 'state.json'),
     path.join(dir, 'missing.json'),
   );
-  assert.ok(none.includes('  clients   : no config.json (claude-wow setup)'));
+  assert.ok(none.includes('  clients   : no config.json (wowgpt setup)'));
 });
 
 function fakeLaunchd({ teardownPolls = 3, bootstrapBroken = false, bootstrapRaces = false } = {}) {
@@ -398,7 +414,7 @@ function fakeLaunchd({ teardownPolls = 3, bootstrapBroken = false, bootstrapRace
         state.tearingDown--;
         return { ok: true, status: 0, out: 'state = exiting\n' };
       }
-      return { ok: false, status: 113, out: 'Could not find service "io.claudewow.bridge" in domain for port\n' };
+      return { ok: false, status: 113, out: 'Could not find service "io.wowgpt.bridge" in domain for port\n' };
     }
     if (sub === 'bootout') {
       state.loaded = false;
@@ -438,7 +454,7 @@ test('install over a loaded LaunchAgent waits for bootout to finish, then ends l
   assert.equal(state.loaded, true, `the agent is loaded after install (calls: ${state.calls.join(' ')})`);
   assert.ok(state.calls.indexOf('bootout') < state.calls.indexOf('bootstrap'));
   assert.ok(!state.calls.includes('load'), 'no bootstrap ran while launchd was still tearing the old job down');
-  assert.match(fs.readFileSync(d.definition, 'utf8'), /<key>Label<\/key>\s*<string>io\.claudewow\.bridge<\/string>/);
+  assert.match(fs.readFileSync(d.definition, 'utf8'), /<key>Label<\/key>\s*<string>io\.wowgpt\.bridge<\/string>/);
 });
 
 test('install makes the log folder and launchd.log private before launchd opens it, and repairs a public one', { skip: !POSIX }, () => {
@@ -521,7 +537,7 @@ function fakeWindows({ alivePids = [], processes = {}, queryFails = false, killS
 
 function winDirs(name, record) {
   const dir = scratch(name);
-  const d = { run: dir, logs: dir, definition: path.join(dir, 'Startup', 'Claude WoW bridge.vbs') };
+  const d = { run: dir, logs: dir, definition: path.join(dir, 'Startup', 'WoWGPT bridge.vbs') };
   if (record) fs.writeFileSync(S.pidFile(d), JSON.stringify(record));
   return d;
 }
@@ -631,7 +647,7 @@ test('Windows identity parsing: empty output is gone, junk is unknown, a match n
   assert.deepEqual(S.parseWinProcess('{"created":5,"command":null}'), { state: 'found', created: 5, command: '' });
   const record = { pid: 1, started: STARTED };
   assert.equal(S.supervisorIdentity(record, { state: 'found', ...SUPERVISOR }), 'match');
-  assert.equal(S.supervisorIdentity(record, { state: 'found', created: STARTED, command: 'C:\\Users\\p\\bin\\claude-wow.exe' }), 'match');
+  assert.equal(S.supervisorIdentity(record, { state: 'found', created: STARTED, command: 'C:\\Users\\p\\bin\\wowgpt.exe' }), 'match');
   assert.equal(S.supervisorIdentity(record, { state: 'found', created: STARTED, command: 'C:\\n\\node.exe C:\\other\\server.js' }), 'stale');
   assert.equal(S.supervisorIdentity(record, { state: 'found', created: STARTED + S.CLOCK_SLACK_MS + 1, command: SUPERVISOR.command }), 'stale');
   assert.equal(S.supervisorIdentity({ pid: 1 }, { state: 'found', ...SUPERVISOR }), 'unknown');
@@ -751,4 +767,26 @@ test('Windows orphaned agent run: only a process created before the run started 
   const broken = fakeWindows({ alivePids: [5150], processes: { 5150: agent }, killStatus: 1 });
   assert.equal(S.endWinAgentRun(run, broken.b.exec), 'failed');
   assert.equal(S.endWinAgentRun({ pid: '5150; Stop-Computer', startedAt: STARTED, marker: 'x' }, b.exec), 'gone');
+});
+
+// The rename to WoWGPT: install removes the claude-wow service as well as the
+// wow-ai one, so the old bridge stops starting at login.
+test('removeAllOld removes the claude-wow and the wow-ai launcher, and install and uninstall ask for both old labels', () => {
+  const dir = scratch('oldboth');
+  const dirs = S.oldDirs('win32', { LOCALAPPDATA: path.join(dir, 'Local'), APPDATA: path.join(dir, 'Roaming') }, dir);
+  assert.equal(S.removeAllOld(S.backend('win32'), 'win32', dirs), false, 'nothing to remove');
+  for (const d of dirs) {
+    fs.mkdirSync(path.dirname(d.definition), { recursive: true });
+    fs.writeFileSync(d.definition, "' old launcher\r\n");
+  }
+  assert.equal(S.removeAllOld(S.backend('win32'), 'win32', dirs), true);
+  for (const d of dirs) assert.ok(!fs.existsSync(d.definition), `${path.basename(d.definition)} is gone`);
+
+  const asked = [];
+  const { b } = fakeLaunchd({});
+  b.removeOld = old => (asked.push(old.label), false);
+  const d = { logs: path.join(dir, 'logs'), run: path.join(dir, 'run'), definition: path.join(dir, 'LaunchAgents', `${S.LABEL}.plist`) };
+  b.install(d);
+  b.uninstall(d);
+  assert.deepEqual(asked, ['io.claudewow.bridge', 'io.wowai.bridge', 'io.claudewow.bridge', 'io.wowai.bridge']);
 });

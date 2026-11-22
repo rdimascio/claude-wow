@@ -4,7 +4,9 @@ const fs = require('fs');
 const http = require('http');
 const path = require('path');
 
-const TOKEN_ENV = 'CLAUDE_WOW_DISCORD_BOT_TOKEN';
+const LE = require('./legacyenv');
+const TOKEN_SUFFIX = 'DISCORD_BOT_TOKEN';
+const TOKEN_ENV = LE.PREFIX + TOKEN_SUFFIX;
 const TOKEN_FILE = 'discord.token';
 const WEBHOOK_FILE = 'discord-webhook.json';
 const API_BASE = 'https://discord.com/api/v10';
@@ -38,9 +40,12 @@ function settings(raw) {
   };
 }
 
+// The token under its old CLAUDE_WOW_* name counts too, and goes as well, so
+// no agent run inherits it under either name.
 function takeToken(env, home) {
-  const fromEnv = typeof env[TOKEN_ENV] === 'string' ? env[TOKEN_ENV].trim() : '';
-  delete env[TOKEN_ENV];
+  const value = LE.read(env, TOKEN_SUFFIX);
+  const fromEnv = typeof value === 'string' ? value.trim() : '';
+  for (const prefix of [LE.PREFIX, ...LE.OLD_PREFIXES]) delete env[prefix + TOKEN_SUFFIX];
   if (fromEnv) return fromEnv;
   try {
     return fs.readFileSync(path.join(home, TOKEN_FILE), 'utf8').trim();
@@ -184,7 +189,7 @@ function createChatHub({ config, token, home, log = () => {}, links, onNewChat, 
       respondToChannelIds: [config.channelId],
       logger,
     });
-    bot = new Chat({ userName: 'claude-wow', adapters: { discord }, state: createMemoryState(), logger });
+    bot = new Chat({ userName: 'wowgpt', adapters: { discord }, state: createMemoryState(), logger });
     bot.onNewMention(onIncoming);
     bot.onSubscribedMessage(onIncoming);
     await bot.initialize();
@@ -211,7 +216,7 @@ function createChatHub({ config, token, home, log = () => {}, links, onNewChat, 
   async function createLink(name, recap) {
     const channel = await rest('GET', `/channels/${config.channelId}`);
     const opener = await rest('POST', `/channels/${config.channelId}/messages`, { content: clean(`Chat linked from the game: ${name}`).slice(0, CHUNK_MAX) });
-    const made = await rest('POST', `/channels/${config.channelId}/messages/${opener.id}/threads`, { name: clean(name).slice(0, 90) || 'claude-wow chat' });
+    const made = await rest('POST', `/channels/${config.channelId}/messages/${opener.id}/threads`, { name: clean(name).slice(0, 90) || 'wowgpt chat' });
     const threadId = discord.encodeThreadId({ guildId: channel.guild_id, channelId: config.channelId, threadId: made.id });
     await bot.thread(threadId).subscribe();
     if (recap) await post(threadId, recap);

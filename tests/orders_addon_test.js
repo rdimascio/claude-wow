@@ -5,8 +5,8 @@ const fs = require('fs');
 const path = require('path');
 const { createVM } = require('./lua/vm');
 
-const ADDON = path.join(__dirname, '..', 'addon', 'ClaudeWoW');
-const ADDON_FILES = ['Codec.lua', 'Inbox.lua', 'ClaudeWoW.lua', 'Orders.lua'];
+const ADDON = path.join(__dirname, '..', 'addon', 'WoWGPT');
+const ADDON_FILES = ['Codec.lua', 'Inbox.lua', 'WoWGPT.lua', 'Orders.lua'];
 const CHAR = 'Testchar-TestRealm';
 
 const STATUSBAR_STUB = `
@@ -33,13 +33,13 @@ end
 
 const SPIES = `
 STUB.syncs, STUB.printed = 0, {}
-local plainSync = ClaudeWoWOrders.Sync
-ClaudeWoWOrders.Sync = function(...)
+local plainSync = WoWGPTOrders.Sync
+WoWGPTOrders.Sync = function(...)
   STUB.syncs = STUB.syncs + 1
   return plainSync(...)
 end
-local plainPrint = ClaudeWoW.Print
-ClaudeWoW.Print = function(msg, tag)
+local plainPrint = WoWGPT.Print
+WoWGPT.Print = function(msg, tag)
   table.insert(STUB.printed, msg)
   return plainPrint(msg, tag)
 end
@@ -83,7 +83,7 @@ function newVM({ prelude = '', beforeLogin = '' } = {}) {
   if (prelude) vm.run(prelude);
   vm.loadAddon(ADDON_FILES);
   vm.run(SPIES);
-  vm.run('STUB.FireEvent("ADDON_LOADED", "ClaudeWoW")');
+  vm.run('STUB.FireEvent("ADDON_LOADED", "WoWGPT")');
   if (beforeLogin) vm.run(beforeLogin);
   vm.run('STUB.FireEvent("PLAYER_LOGIN")');
   vm.run('STUB.RunTimers()');
@@ -93,7 +93,7 @@ function newVM({ prelude = '', beforeLogin = '' } = {}) {
 function nextSlot(vm, goalsLua, repliesLua = '', nowLua = 'time()') {
   const goals = goalsLua ? `, goals = ${goalsLua}` : '';
   vm.run(
-    `STUB.onLoadAddOn = function(name) ClaudeWoW_SlotData = { now = ${nowLua}, cwd = "", plugin = "ask", plugins = { "ask" }, replies = { ${repliesLua} }${goals} } end`,
+    `STUB.onLoadAddOn = function(name) WoWGPT_SlotData = { now = ${nowLua}, cwd = "", plugin = "ask", plugins = { "ask" }, replies = { ${repliesLua} }${goals} } end`,
   );
 }
 
@@ -105,7 +105,7 @@ const ORDER_GOALS = (rev, text = 'Craft until Leatherworking hits 125', pct = 71
   `{ rev = ${rev}, char = "${char}", order = { id = "o_${rev}", text = "${text}", pct = ${pct} }, goals = { { title = "Skinning 225", pct = 83 }, { title = "Cooking 75", pct = 14 } } }`;
 
 function shownBars(vm) {
-  return vm.num('(function() local n = 0 for _, b in ipairs(ClaudeWoWOrdersCard.bars) do if b.shown then n = n + 1 end end return n end)()');
+  return vm.num('(function() local n = 0 for _, b in ipairs(WoWGPTOrdersCard.bars) do if b.shown then n = n + 1 end end return n end)()');
 }
 
 function scenario(vm, slots) {
@@ -116,18 +116,16 @@ function scenario(vm, slots) {
 }
 
 function pending(vm) {
-  vm.run(
-    'PENDING_CHAT, PENDING_ID = nil, nil; for _, c in ipairs(ClaudeWoWDB.chats) do if c.pendingId then PENDING_CHAT, PENDING_ID = c.id, c.pendingId end end',
-  );
+  vm.run('PENDING_CHAT, PENDING_ID = nil, nil; for _, c in ipairs(WoWGPTDB.chats) do if c.pendingId then PENDING_CHAT, PENDING_ID = c.id, c.pendingId end end');
   return { chat: vm.evaluate('PENDING_CHAT'), id: vm.evaluate('PENDING_ID') };
 }
 
 function cardShown(vm) {
-  return vm.evaluate('ClaudeWoWOrdersCard ~= nil and ClaudeWoWOrdersCard.shown == true') === 'true';
+  return vm.evaluate('WoWGPTOrdersCard ~= nil and WoWGPTOrdersCard.shown == true') === 'true';
 }
 
 function sendAndRead(vm, goalsLua, text) {
-  vm.run(`ClaudeWoW.Send("${text}")`);
+  vm.run(`WoWGPT.Send("${text}")`);
   const p = pending(vm);
   nextSlot(vm, goalsLua, `{ chat = "${p.chat}", id = ${p.id}, status = "done", text = "ok", agent = "", plugin = "ask" }`);
   tick(vm);
@@ -150,8 +148,8 @@ test('orders card: a draw error that keeps failing is said once across vehicle a
   }
   assert.equal(cardShown(vm), false);
   assert.equal(drawErrorsSaid(vm), 1);
-  vm.run('SlashCmdList.CLAUDE("orders on")');
-  assert.equal(drawErrorsSaid(vm), 2, 'an explicit /claude orders on says the error again');
+  vm.run('SlashCmdList.WOWGPT("orders on")');
+  assert.equal(drawErrorsSaid(vm), 2, 'an explicit /wowgpt orders on says the error again');
 });
 
 test('orders card: a build that fails after the card frame exists never builds a second frame', () => {
@@ -160,8 +158,8 @@ test('orders card: a build that fails after the card frame exists never builds a
 STUB.cardFrames, STUB.failInside = 0, true
 local plainCreateFrame = CreateFrame
 function CreateFrame(kind, name, parent, ...)
-  if name == "ClaudeWoWOrdersCard" then STUB.cardFrames = STUB.cardFrames + 1 end
-  if STUB.failInside and parent ~= nil and parent == _G.ClaudeWoWOrdersCard then error("no parts today") end
+  if name == "WoWGPTOrdersCard" then STUB.cardFrames = STUB.cardFrames + 1 end
+  if STUB.failInside and parent ~= nil and parent == _G.WoWGPTOrdersCard then error("no parts today") end
   return plainCreateFrame(kind, name, parent, ...)
 end`,
   });
@@ -172,12 +170,12 @@ end`,
   assert.equal(vm.num('STUB.cardFrames'), 1, 'one named frame for the whole session');
   assert.equal(cardShown(vm), false);
   assert.equal(drawErrorsSaid(vm), 1, 'the build error, said once, not a new error per read');
-  assert.match(vm.evaluate('ClaudeWoWOrders.debug.lastError'), /no parts today/);
+  assert.match(vm.evaluate('WoWGPTOrders.debug.lastError'), /no parts today/);
 });
 
 test('orders card: an old slot file left by a stopped bridge never brings back an order Inbox.lua already hid', () => {
   const old = ORDER_GOALS(3, 'Rest');
-  const vm = newVM({ beforeLogin: `ClaudeWoW_Inbox = { now = time() - 3600, replies = {}, goals = ${old} }` });
+  const vm = newVM({ beforeLogin: `WoWGPT_Inbox = { now = time() - 3600, replies = {}, goals = ${old} }` });
   assert.equal(cardShown(vm), false);
   nextSlot(vm, old, '', 'time() - 3600');
   tick(vm, 9);
@@ -185,32 +183,32 @@ test('orders card: an old slot file left by a stopped bridge never brings back a
   assert.equal(cardShown(vm), false);
 });
 
-test('orders card: /claude orders off hides it and keeps it hidden through new data, on brings it back; settings stay two booleans', () => {
+test('orders card: /wowgpt orders off hides it and keeps it hidden through new data, on brings it back; settings stay two booleans', () => {
   const vm = newVM();
   scenario(vm, [ORDER_GOALS(5)]);
-  vm.run('SlashCmdList.CLAUDE("orders off")');
-  assert.equal(vm.evaluate('ClaudeWoWDB.settings.ordersCard'), 'false');
+  vm.run('SlashCmdList.WOWGPT("orders off")');
+  assert.equal(vm.evaluate('WoWGPTDB.settings.ordersCard'), 'false');
   assert.equal(cardShown(vm), false);
-  vm.run('ClaudeWoW.Send("next")');
+  vm.run('WoWGPT.Send("next")');
   scenario(vm, [ORDER_GOALS(6, 'Skin 30 more')]);
   assert.equal(cardShown(vm), false, 'off stays off when a new order arrives');
-  vm.run('SlashCmdList.CLAUDE("config orders on")');
+  vm.run('SlashCmdList.WOWGPT("config orders on")');
   assert.equal(cardShown(vm), true);
-  assert.equal(vm.evaluate('ClaudeWoWOrdersCard.orderText.text'), 'Skin 30 more', 'the latest order, kept while hidden');
-  vm.run('ClaudeWoWOrders.Toggle()');
+  assert.equal(vm.evaluate('WoWGPTOrdersCard.orderText.text'), 'Skin 30 more', 'the latest order, kept while hidden');
+  vm.run('WoWGPTOrders.Toggle()');
   assert.equal(cardShown(vm), false, 'the gear menu checkbox toggles the same setting');
-  vm.run('ClaudeWoWOrders.Toggle()');
-  vm.run('ClaudeWoWOrdersCard.header.MinimizeButton.scripts.OnClick(ClaudeWoWOrdersCard.header.MinimizeButton)');
-  assert.equal(vm.evaluate('ClaudeWoWDB.settings.ordersCollapsed'), 'true');
+  vm.run('WoWGPTOrders.Toggle()');
+  vm.run('WoWGPTOrdersCard.header.MinimizeButton.scripts.OnClick(WoWGPTOrdersCard.header.MinimizeButton)');
+  assert.equal(vm.evaluate('WoWGPTDB.settings.ordersCollapsed'), 'true');
   assert.equal(shownBars(vm), 0, 'collapsed: only the header');
-  assert.equal(vm.num('ClaudeWoWOrdersCard.height'), 26);
-  assert.equal(vm.evaluate('ClaudeWoWOrders.debug.buttonArt'), 'ui-questtrackerbutton-secondary-expand');
-  vm.run('ClaudeWoWOrdersCard.header.MinimizeButton.scripts.OnClick(ClaudeWoWOrdersCard.header.MinimizeButton)');
-  assert.equal(vm.evaluate('ClaudeWoWOrders.debug.buttonArt'), 'ui-questtrackerbutton-secondary-collapse');
+  assert.equal(vm.num('WoWGPTOrdersCard.height'), 26);
+  assert.equal(vm.evaluate('WoWGPTOrders.debug.buttonArt'), 'ui-questtrackerbutton-secondary-expand');
+  vm.run('WoWGPTOrdersCard.header.MinimizeButton.scripts.OnClick(WoWGPTOrdersCard.header.MinimizeButton)');
+  assert.equal(vm.evaluate('WoWGPTOrders.debug.buttonArt'), 'ui-questtrackerbutton-secondary-collapse');
   assert.equal(shownBars(vm), 3);
-  assert.equal(vm.evaluate('ClaudeWoWDB.orders'), null);
+  assert.equal(vm.evaluate('WoWGPTDB.orders'), null);
   vm.run(
-    'RESULT = 0; for k, v in pairs(ClaudeWoWDB.settings) do if tostring(k):find("^orders") then RESULT = RESULT + 1; assert(type(v) == "boolean", k) end end',
+    'RESULT = 0; for k, v in pairs(WoWGPTDB.settings) do if tostring(k):find("^orders") then RESULT = RESULT + 1; assert(type(v) == "boolean", k) end end',
   );
   assert.equal(vm.num('RESULT'), 2, 'ordersCard and ordersCollapsed, nothing else');
 });
@@ -218,17 +216,17 @@ test('orders card: /claude orders off hides it and keeps it hidden through new d
 test('orders card: follows the quest tracker as it shows, hides and changes size', () => {
   const vm = newVM({ prelude: TRACKER_STUB });
   scenario(vm, [ORDER_GOALS(5)]);
-  assert.equal(vm.evaluate('ClaudeWoWOrders.debug.anchoredTo'), 'tracker');
-  assert.equal(vm.evaluate('ClaudeWoWOrdersCard.rel == ObjectiveTrackerFrame.NineSlice'), 'true');
-  assert.equal(vm.evaluate('ClaudeWoWOrdersCard.relPoint'), 'BOTTOMLEFT');
+  assert.equal(vm.evaluate('WoWGPTOrders.debug.anchoredTo'), 'tracker');
+  assert.equal(vm.evaluate('WoWGPTOrdersCard.rel == ObjectiveTrackerFrame.NineSlice'), 'true');
+  assert.equal(vm.evaluate('WoWGPTOrdersCard.relPoint'), 'BOTTOMLEFT');
   vm.run('ObjectiveTrackerFrame:Hide()');
-  assert.equal(vm.evaluate('ClaudeWoWOrders.debug.anchoredTo'), 'tracker-top', 'the tracker hid (no quests): the card takes its place');
-  assert.equal(vm.evaluate('ClaudeWoWOrdersCard.rel == ObjectiveTrackerFrame'), 'true');
+  assert.equal(vm.evaluate('WoWGPTOrders.debug.anchoredTo'), 'tracker-top', 'the tracker hid (no quests): the card takes its place');
+  assert.equal(vm.evaluate('WoWGPTOrdersCard.rel == ObjectiveTrackerFrame'), 'true');
   vm.run('ObjectiveTrackerFrame:Show()');
-  assert.equal(vm.evaluate('ClaudeWoWOrders.debug.anchoredTo'), 'tracker');
+  assert.equal(vm.evaluate('WoWGPTOrders.debug.anchoredTo'), 'tracker');
   vm.run('ObjectiveTrackerFrame.NineSlice:Hide(); for _, fn in ipairs(ObjectiveTrackerFrame.hooks.OnSizeChanged or {}) do fn(ObjectiveTrackerFrame) end');
-  assert.equal(vm.evaluate('ClaudeWoWOrders.debug.anchoredTo'), 'tracker-top', 'a size change re-anchors');
-  vm.run('ClaudeWoWOrders.Refresh(); ClaudeWoWOrders.ToggleCollapsed(); ClaudeWoWOrders.ToggleCollapsed()');
+  assert.equal(vm.evaluate('WoWGPTOrders.debug.anchoredTo'), 'tracker-top', 'a size change re-anchors');
+  vm.run('WoWGPTOrders.Refresh(); WoWGPTOrders.ToggleCollapsed(); WoWGPTOrders.ToggleCollapsed()');
   for (const script of ['OnShow', 'OnHide', 'OnSizeChanged']) {
     assert.equal(vm.num(`#ObjectiveTrackerFrame.hooks.${script}`), 1, `${script} hooked once, with HookScript, however often the card redraws`);
   }
@@ -237,26 +235,26 @@ test('orders card: follows the quest tracker as it shows, hides and changes size
 test('orders card: Blizzard templates when the client has them, plain frames when a template is missing or incomplete', () => {
   const native = newVM({ prelude: NATIVE_TEMPLATES_STUB });
   scenario(native, [ORDER_GOALS(5)]);
-  assert.equal(native.evaluate('ClaudeWoWOrders.debug.native.header'), 'true');
-  assert.equal(native.evaluate('ClaudeWoWOrders.debug.native.bar'), 'true');
-  assert.equal(native.evaluate('ClaudeWoWOrdersCard.header.template'), 'ObjectiveTrackerModuleHeaderTemplate');
-  assert.equal(native.evaluate('ClaudeWoWOrdersCard.bars[1].template'), 'ObjectiveTrackerProgressBarTemplate');
-  assert.equal(native.evaluate('ClaudeWoWOrdersCard.header.Text.text'), 'Orders');
-  assert.equal(native.evaluate('ClaudeWoWOrdersCard.bars[1].Bar.Label.text'), '71%');
-  native.run('RESULT = 0; for _, b in ipairs(ClaudeWoWOrdersCard.bars) do if b.Bar.mouseEnabled ~= false then RESULT = RESULT + 1 end end');
+  assert.equal(native.evaluate('WoWGPTOrders.debug.native.header'), 'true');
+  assert.equal(native.evaluate('WoWGPTOrders.debug.native.bar'), 'true');
+  assert.equal(native.evaluate('WoWGPTOrdersCard.header.template'), 'ObjectiveTrackerModuleHeaderTemplate');
+  assert.equal(native.evaluate('WoWGPTOrdersCard.bars[1].template'), 'ObjectiveTrackerProgressBarTemplate');
+  assert.equal(native.evaluate('WoWGPTOrdersCard.header.Text.text'), 'Orders');
+  assert.equal(native.evaluate('WoWGPTOrdersCard.bars[1].Bar.Label.text'), '71%');
+  native.run('RESULT = 0; for _, b in ipairs(WoWGPTOrdersCard.bars) do if b.Bar.mouseEnabled ~= false then RESULT = RESULT + 1 end end');
   assert.equal(native.num('RESULT'), 0, 'the template bar takes the mouse; every one is turned off');
   const broken = newVM({ prelude: NATIVE_TEMPLATES_STUB + '\nSTUB.brokenTemplates = true' });
   scenario(broken, [ORDER_GOALS(5)]);
-  assert.equal(broken.evaluate('ClaudeWoWOrders.debug.native.header'), 'false');
-  assert.equal(broken.evaluate('ClaudeWoWOrders.debug.native.bar'), 'false');
+  assert.equal(broken.evaluate('WoWGPTOrders.debug.native.header'), 'false');
+  assert.equal(broken.evaluate('WoWGPTOrders.debug.native.bar'), 'false');
   assert.equal(cardShown(broken), true);
-  assert.equal(broken.evaluate('ClaudeWoWOrdersCard.bars[1].Bar.Label.text'), '71%');
+  assert.equal(broken.evaluate('WoWGPTOrdersCard.bars[1].Bar.Label.text'), '71%');
   const plain = newVM();
   scenario(plain, [ORDER_GOALS(5)]);
-  assert.equal(plain.evaluate('ClaudeWoWOrders.debug.native.header'), 'false', 'no C_XMLUtil: plain frames');
+  assert.equal(plain.evaluate('WoWGPTOrders.debug.native.header'), 'false', 'no C_XMLUtil: plain frames');
   const noAtlas = newVM({ prelude: 'C_Texture.GetAtlasExists = function() return false end' });
   scenario(noAtlas, [ORDER_GOALS(5)]);
-  assert.equal(noAtlas.evaluate('ClaudeWoWOrders.debug.buttonArt'), 'Interface\\Buttons\\UI-MinusButton-Up', 'a missing atlas falls back to a file');
+  assert.equal(noAtlas.evaluate('WoWGPTOrders.debug.buttonArt'), 'Interface\\Buttons\\UI-MinusButton-Up', 'a missing atlas falls back to a file');
 });
 
 test('orders card: the module sends nothing and automates nothing', () => {
@@ -281,7 +279,7 @@ test('orders card: the module sends nothing and automates nothing', () => {
   const vm = newVM();
   const before = vm.num('#STUB.chatSent');
   scenario(vm, [ORDER_GOALS(5)]);
-  vm.run('SlashCmdList.CLAUDE("orders off"); SlashCmdList.CLAUDE("orders on")');
+  vm.run('SlashCmdList.WOWGPT("orders off"); SlashCmdList.WOWGPT("orders on")');
   assert.equal(vm.num('#STUB.chatSent'), before);
 });
 
@@ -321,45 +319,45 @@ test('orders card on Classic Era: follows QuestWatchFrame with its fonts, colors
     `{ rev = 5, char = "${CHAR}", order = { id = "o_5", text = "Craft until Leatherworking hits 125", pct = 71 }, goals = { { title = "Skinning 225", pct = 83 }, { title = "Cooking 75", pct = 100 } } }`,
   ]);
   assert.equal(cardShown(vm), true);
-  assert.equal(vm.evaluate('ClaudeWoWOrders.debug.style'), 'watch');
-  assert.equal(vm.evaluate('ClaudeWoWOrders.debug.anchoredTo'), 'watch');
-  assert.equal(vm.evaluate('ClaudeWoWOrdersCard.rel == QuestWatchFrame'), 'true');
+  assert.equal(vm.evaluate('WoWGPTOrders.debug.style'), 'watch');
+  assert.equal(vm.evaluate('WoWGPTOrders.debug.anchoredTo'), 'watch');
+  assert.equal(vm.evaluate('WoWGPTOrdersCard.rel == QuestWatchFrame'), 'true');
   assert.deepEqual(
-    [vm.evaluate('ClaudeWoWOrdersCard.point'), vm.evaluate('ClaudeWoWOrdersCard.relPoint'), vm.num('ClaudeWoWOrdersCard.y')],
+    [vm.evaluate('WoWGPTOrdersCard.point'), vm.evaluate('WoWGPTOrdersCard.relPoint'), vm.num('WoWGPTOrdersCard.y')],
     ['TOPLEFT', 'BOTTOMLEFT', -4],
   );
-  assert.deepEqual([vm.evaluate('ClaudeWoWOrdersCard.header.Text.text'), vm.evaluate('ClaudeWoWOrdersCard.header.Text.font')], ['Orders', 'GameFontNormal']);
+  assert.deepEqual([vm.evaluate('WoWGPTOrdersCard.header.Text.text'), vm.evaluate('WoWGPTOrdersCard.header.Text.font')], ['Orders', 'GameFontNormal']);
   const line = expr => [vm.evaluate(`${expr}.text`), vm.evaluate(`${expr}.font`), vm.evaluate(`${expr}.textColor`)];
   assert.deepEqual(
-    line('ClaudeWoWOrdersCard.orderText'),
+    line('WoWGPTOrdersCard.orderText'),
     ['Craft until Leatherworking hits 125', 'GameFontHighlight', '0.75,0.61,0.00'],
     'the order is a watched quest title',
   );
-  assert.deepEqual(line('ClaudeWoWOrdersCard.pctLine'), [' - 71%', 'GameFontHighlight', '0.80,0.80,0.80']);
-  assert.deepEqual(line('ClaudeWoWOrdersCard.goalLines[1]'), [' - Skinning 225: 83%', 'GameFontHighlight', '0.80,0.80,0.80']);
+  assert.deepEqual(line('WoWGPTOrdersCard.pctLine'), [' - 71%', 'GameFontHighlight', '0.80,0.80,0.80']);
+  assert.deepEqual(line('WoWGPTOrdersCard.goalLines[1]'), [' - Skinning 225: 83%', 'GameFontHighlight', '0.80,0.80,0.80']);
   assert.deepEqual(
-    line('ClaudeWoWOrdersCard.goalLines[2]'),
+    line('WoWGPTOrdersCard.goalLines[2]'),
     [' - Cooking 75: 100%', 'GameFontHighlight', '1.00,1.00,1.00'],
     'a finished line is bright, as a finished objective is',
   );
-  assert.equal(vm.num('#ClaudeWoWOrdersCard.bars'), 0, 'the Era watch list has no progress bars');
+  assert.equal(vm.num('#WoWGPTOrdersCard.bars'), 0, 'the Era watch list has no progress bars');
   vm.run(
-    'RESULT = 0; local mine = {}; for _, a in pairs(ClaudeWoWOrders.ATLAS) do mine[a] = true end; for _, a in ipairs(STUB.atlasAsked) do if mine[a] then RESULT = RESULT + 1 end end',
+    'RESULT = 0; local mine = {}; for _, a in pairs(WoWGPTOrders.ATLAS) do mine[a] = true end; for _, a in ipairs(STUB.atlasAsked) do if mine[a] then RESULT = RESULT + 1 end end',
   );
   assert.equal(vm.num('RESULT'), 0, 'no tracker atlas lookup: Era answers yes for atlases it draws green');
   vm.run('RESULT = 0; for _, t in ipairs(STUB.templatesAsked) do if t:find("^ObjectiveTracker") then RESULT = RESULT + 1 end end');
   assert.equal(vm.num('RESULT'), 0, 'no ObjectiveTracker template lookup');
-  assert.equal(vm.evaluate('ClaudeWoWOrdersCard.header.MinimizeButton.normalFile'), 'Interface\\Buttons\\UI-MinusButton-Up');
-  assert.equal(vm.evaluate('ClaudeWoWOrdersCard.header.MinimizeButton.highlightFile'), 'Interface\\Buttons\\UI-PlusButton-Hilight');
+  assert.equal(vm.evaluate('WoWGPTOrdersCard.header.MinimizeButton.normalFile'), 'Interface\\Buttons\\UI-MinusButton-Up');
+  assert.equal(vm.evaluate('WoWGPTOrdersCard.header.MinimizeButton.highlightFile'), 'Interface\\Buttons\\UI-PlusButton-Hilight');
 
   vm.run('QuestWatchFrame:Hide()');
-  assert.equal(vm.evaluate('ClaudeWoWOrders.debug.anchoredTo'), 'watch-top', 'no watched quests: the card takes the watch list spot');
+  assert.equal(vm.evaluate('WoWGPTOrders.debug.anchoredTo'), 'watch-top', 'no watched quests: the card takes the watch list spot');
   vm.run('QuestWatchFrame:Show()');
-  assert.equal(vm.evaluate('ClaudeWoWOrders.debug.anchoredTo'), 'watch');
-  vm.run('ClaudeWoWOrders.ToggleCollapsed()');
-  assert.equal(vm.evaluate('ClaudeWoWOrdersCard.header.MinimizeButton.normalFile'), 'Interface\\Buttons\\UI-PlusButton-Up');
-  assert.equal(vm.num('ClaudeWoWOrdersCard.height'), 16);
-  assert.equal(vm.evaluate('ClaudeWoWOrdersCard.orderText.shown'), 'false');
-  vm.run('ClaudeWoWOrders.ToggleCollapsed()');
+  assert.equal(vm.evaluate('WoWGPTOrders.debug.anchoredTo'), 'watch');
+  vm.run('WoWGPTOrders.ToggleCollapsed()');
+  assert.equal(vm.evaluate('WoWGPTOrdersCard.header.MinimizeButton.normalFile'), 'Interface\\Buttons\\UI-PlusButton-Up');
+  assert.equal(vm.num('WoWGPTOrdersCard.height'), 16);
+  assert.equal(vm.evaluate('WoWGPTOrdersCard.orderText.shown'), 'false');
+  vm.run('WoWGPTOrders.ToggleCollapsed()');
   for (const script of ['OnShow', 'OnHide', 'OnSizeChanged']) assert.equal(vm.num(`#QuestWatchFrame.hooks.${script}`), 1, `${script} hooked once`);
 });

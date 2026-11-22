@@ -19,7 +19,7 @@ function fakeSource(name, extra = {}) {
   fs.writeFileSync(builds, JSON.stringify({ wow_cn_beta: [OLD, NEW].map(version => ({ product: 'wow_cn_beta', version })) }));
   return {
     requests,
-    env: { NODE_OPTIONS: `--require ${JSON.stringify(PRELOAD)}`, CLAUDE_WOW_FAKE_WAGO_LOG: requests, CLAUDE_WOW_FAKE_WAGO_BUILDS: builds, ...extra },
+    env: { NODE_OPTIONS: `--require ${JSON.stringify(PRELOAD)}`, WOWGPT_FAKE_WAGO_LOG: requests, WOWGPT_FAKE_WAGO_BUILDS: builds, ...extra },
   };
 }
 
@@ -65,7 +65,7 @@ test('a client on a newer build starts one background sync from the source, and 
 });
 
 test('with a non-boolean autoSync (ignored, logged once), a build the source does not have yet fails once, keeps the old data, and a restart does not try again', async () => {
-  const source = fakeSource('missing', { CLAUDE_WOW_FAKE_WAGO_MISSING: NEW });
+  const source = fakeSource('missing', { WOWGPT_FAKE_WAGO_MISSING: NEW });
   const opts = { plugin: 'ask', client: NEW_CLIENT, config: { data: { autoSync: 'yes' } }, env: source.env, beforeLaunch: oldData };
   await withGame(opts, async h => {
     await h.bridge.waitForLine(/data sync: forever failed \(.*HTTP 404\); the data in use stays, next try after /, {
@@ -83,7 +83,7 @@ test('with a non-boolean autoSync (ignored, logged once), a build the source doe
 });
 
 test('stopping the bridge ends a sync that is still running', async () => {
-  const source = fakeSource('hang', { CLAUDE_WOW_FAKE_WAGO_HANG: NEW });
+  const source = fakeSource('hang', { WOWGPT_FAKE_WAGO_HANG: NEW });
   const opts = { client: NEW_CLIENT, config: { data: { autoSync: true } }, env: source.env, beforeLaunch: oldData };
   await withGame(opts, async h => {
     await h.bridge.waitForLine(/data sync: client 1\.60\.1\.70245 has forever data/, { from: 0, timeoutMs: 30000 });

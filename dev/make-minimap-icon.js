@@ -25,7 +25,7 @@ const TGA_DESCRIPTOR_TOP_LEFT_8_ALPHA = 0x28;
 const PREVIEW_SCALE = 4;
 const PREVIEW_BACKDROP = [0x1c, 0x1a, 0x18];
 
-const OUT_TGA = path.join(__dirname, '..', 'addon', 'ClaudeWoW', 'MinimapIcon.tga');
+const OUT_TGA = path.join(__dirname, '..', 'addon', 'WoWGPT', 'MinimapIcon.tga');
 
 function rays() {
   return RAY_LENGTHS.map((share, i) => {

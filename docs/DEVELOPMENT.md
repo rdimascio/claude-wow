@@ -8,7 +8,7 @@ a live install.
 
 | Command | What it does |
 |---|---|
-| `npm run dev` | Starts a sandbox, a real bridge, and a headless game client. Type messages; watch replies. `:help` lists the console commands. On an existing sandbox it copies the current `addon/ClaudeWoW` and re-runs install-slots first, and keeps SavedVariables, transcripts, config and the sandbox project. |
+| `npm run dev` | Starts a sandbox, a real bridge, and a headless game client. Type messages; watch replies. `:help` lists the console commands. On an existing sandbox it copies the current `addon/WoWGPT` and re-runs install-slots first, and keeps SavedVariables, transcripts, config and the sandbox project. |
 | `npm run dev -- --fresh` | The same, from a clean sandbox. |
 | `npm run dev -- --speed 8` | The game clock runs 8× faster, so the addon's 40 s retries and 120 s give-ups happen in seconds. |
 | `npm run dev -- --real-agent` | Uses your real `claude` CLI in the sandbox project, with your real `HOME` so it can log in. It uses your plan quota and writes its session files to `~/.claude`. |
@@ -23,7 +23,7 @@ a live install.
 dev/wow/client.js ── the real addon Lua (fengari) ──► PNG screenshot ──► Screenshots/
         ▲                                                                   │
         │ LoadAddOn reads slot files, PlaySoundFile checks .wav files       ▼
-AddOns/ClaudeWoW_S###/Inbox.lua ◄── bridge/bridge.js (a real process) ◄── decode
+AddOns/WoWGPT_S###/Inbox.lua ◄── bridge/bridge.js (a real process) ◄── decode
                                             │
                                             ▼
                                    dev/fake-claude.js (stream-json)
@@ -35,10 +35,10 @@ AddOns/ClaudeWoW_S###/Inbox.lua ◄── bridge/bridge.js (a real process) ◄�
   the 200 slots go in through the real `bridge/install-slots.js`.
 - **Safety**: a sandbox name is letters, digits, `.`, `-` and `_` only, and
   its folder must be inside the sandbox root. `assertSafe` refuses any path
-  that overlaps `~/.claude-wow`, `~/.claude`, `~/Library/LaunchAgents`,
-  `~/Library/Logs/claude-wow`, the game folder, or the checkout the live
-  LaunchAgent runs. The bridge runs with `HOME` and `CLAUDE_WOW_HOME` set to
-  the sandbox and without `CLAUDE_WOW_SERVICE` (except `--real-agent`, above).
+  that overlaps `~/.wowgpt`, `~/.claude`, `~/Library/LaunchAgents`,
+  `~/Library/Logs/wowgpt`, the game folder, or the checkout the live
+  LaunchAgent runs. The bridge runs with `HOME` and `WOWGPT_HOME` set to
+  the sandbox and without `WOWGPT_SERVICE` (except `--real-agent`, above).
 - **Game client** (`dev/wow/client.js`, `dev/wow/prelude.lua`): runs the
   addon's files in the order of its `.toc`, loads SavedVariables before
   `ADDON_LOADED`, and runs frames, timers and tickers on a real (or scaled)
@@ -50,8 +50,8 @@ AddOns/ClaudeWoW_S###/Inbox.lua ◄── bridge/bridge.js (a real process) ◄�
     `INTERFACE_VERSION` like the client. It loads each addon listed in
     `## Dependencies`, `## RequiredDeps` or another `## Dep...` line first; a
     dependency that is missing, disabled or fails to load stops the addon
-    with `DEP_` and that reason (`DEP_DISABLED` for `ClaudeWoW_Runtime` and the
-    slots when `ClaudeWoW` is disabled). Addon folders are indexed at launch,
+    with `DEP_` and that reason (`DEP_DISABLED` for `WoWGPT_Runtime` and the
+    slots when `WoWGPT` is disabled). Addon folders are indexed at launch,
     not at `/reload`.
   - Alt+Z (`:hide`) hides `UIParent`, so the strip and its `OnUpdate` stop.
   - `PlaySoundFile` is true only when the `.wav` file exists now and existed
@@ -60,7 +60,7 @@ AddOns/ClaudeWoW_S###/Inbox.lua ◄── bridge/bridge.js (a real process) ◄�
     reads as missing, as it does in the real client. `LoadAddOn` and the
     addon's own `.toc` files use the same snapshot: a `.lua` file created
     after launch is not loaded, even after `/reload`, while a launch-time
-    file that the bridge rewrites reads its new contents. `ClaudeWoW` itself
+    file that the bridge rewrites reads its new contents. `WoWGPT` itself
     goes through the `DISABLED` and `INTERFACE_VERSION` checks; when it does
     not load, its SavedVariables are neither read nor written. Client option
     `deletionVisible: false` makes a deleted launch-time file still read as
@@ -76,7 +76,7 @@ AddOns/ClaudeWoW_S###/Inbox.lua ◄── bridge/bridge.js (a real process) ◄�
 |---|---|
 | `[[sleep 5]]` | Answers after 5 s. |
 | `[[hold go]]` | Does not answer until the file `go` exists in `<sandbox>/agent` (`h.sb.agentState`), after any sleep. Use it to keep a run going until the test has seen what must happen during it. |
-| `[[map skins]]` | Appends a one-point route named `skins` to the run's `CLAUDE_WOW_MAP_FILE`, after any sleep. |
+| `[[map skins]]` | Appends a one-point route named `skins` to the run's `WOWGPT_MAP_FILE`, after any sleep. |
 | `[[tools 3]]` | Emits 3 tool calls first (heartbeats in game). |
 | `[[hang]]` | Never answers. |
 | `[[crash]]` | Exits after start with no result. |

@@ -18,7 +18,7 @@
 // Windows has no process groups; `taskkill /T /F` kills the tree and is final.
 //
 // The bridge's own SIGINT/SIGTERM handler (bridge.js) runs killTree on every
-// child it has, so Ctrl+C and `claude-wow service stop` strand nothing either.
+// child it has, so Ctrl+C and `wowgpt service stop` strand nothing either.
 // Detached children are not in the terminal's foreground group any more, so
 // that forwarding is not a nicety: without it Ctrl+C would not reach them at all.
 

@@ -56,7 +56,7 @@ function gather(sys) {
   const plist = parsePlist(plistText);
   const checkout = checkoutOf(plist);
   const serviceEnv = plist ? plist.env : {};
-  const homeEnv = serviceEnv.CLAUDE_WOW_HOME ? { CLAUDE_WOW_HOME: serviceEnv.CLAUDE_WOW_HOME } : {};
+  const homeEnv = serviceEnv.WOWGPT_HOME ? { WOWGPT_HOME: serviceEnv.WOWGPT_HOME } : {};
   const legacyDir = checkout ? path.join(checkout, 'bridge') : '';
   const homePaths = H.resolve(homeEnv, sys.home, legacyDir);
   const configJson = parseJson(sys.readText(homePaths.config));

@@ -1,3 +1,50 @@
+# Rename: claude-wow -> WoWGPT
+
+**Status: code done** (branch `chore/rename-wowgpt`, one commit per surface: addon,
+bridge, package/CLI, service/install, docs). The GitHub repo and the Homebrew tap
+are renamed later, with the release.
+
+| Surface | Old | New | The old name still works |
+|---|---|---|---|
+| Product name (`.toc` Title, installers, prompts) | Azeroth Companion, Claude WoW | WoWGPT | - |
+| Addon folder, `.toc`, Lua prefix, frames | `ClaudeWoW` | `WoWGPT` | setup migrates |
+| Slot pool, runtime folder | `ClaudeWoW_S###`, `ClaudeWoW_Runtime` | `WoWGPT_S###`, `WoWGPT_Runtime` | setup removes the old ones |
+| SavedVariables | `ClaudeWoWDB`, `ClaudeWoWWidgetDB`, `ClaudeWoWMapDB`, `ClaudeWoWCharDB` | `WoWGPT*` | setup copies account and character files |
+| Slash commands | `/claude` (main), `/claude-wow` (hidden) | `/wowgpt` (main) | both kept |
+| Key binding | `CLAUDEWOW_WORKSPACE` | `WOWGPT_WORKSPACE` | no: bind again |
+| Hyperlinks | `addon:claudewow:` | `addon:wowgpt:` | old links still click |
+| npm package and bin | `claude-wow` | `wowgpt` | `claude-wow` bin alias |
+| Home | `~/.claude-wow` | `~/.wowgpt` | read until setup copies it; agents are denied reads of it while it exists |
+| Env vars | `CLAUDE_WOW_*` | `WOWGPT_*` | read when the new one is unset (`bridge/legacyenv.js`, the installers) |
+| MCP channel server, tools | `claude-wow`, `mcp__claude-wow__*` | `wowgpt`, `mcp__wowgpt__*` | no: restart the session with `server:wowgpt` |
+| Plugin folder | `assets/plugins/claude-wow` | `assets/plugins/wowgpt` | - |
+| `ask` data folder | `<app data>/claude-wow` | `<app data>/wowgpt` | setup copies it; a chat whose session started there starts a new session |
+| Service | `io.claudewow.bridge`, `claude-wow-bridge`, `Claude WoW bridge.vbs` | `io.wowgpt.bridge`, `wowgpt-bridge`, `WoWGPT bridge.vbs` | `service install` and `uninstall` remove every old one (`OLD_SERVICES`) |
+| Release assets, binary | `claude-wow-<os>-<arch>`, `claude-wow` | `wowgpt-<os>-<arch>`, `wowgpt` | for one release, build.js also writes the old asset names, `--version` prints a `claude-wow` line, self-update takes either name, and a release dir may hold `claude-wow` |
+| Homebrew formula | `claude-wow.rb`, `ClaudeWow` | `wowgpt.rb`, `Wowgpt` | tap unchanged |
+
+Wire values kept: none embeds the old name except the old link prefixes the addon
+still parses. The slot globals (`WoWGPT_Inbox`, `WoWGPT_SlotData`), the runtime
+folder and the live socket path changed on both sides together, so the addon and
+the bridge of this branch must ship together (setup installs both).
+
+Remove after one release: `build.js` `OLD_ASSET_PREFIXES` and the `claude-wow`
+`--version` line in `bridge/supervisor.js`.
+
+## Left for the repo rename
+
+GitHub redirects the old URLs, so these keep working until they change:
+
+- `bridge/selfupdate.js` `DEFAULT_API` (still `rdimascio/wow-ai`, from the rename before this one)
+- `package.json` `repository.url`
+- `install.sh` and `install.ps1`: `REPO_URL` / `$Repo` defaults and the one-liner URLs in their headers
+- `homebrew/Formula/wowgpt.rb`: `homepage`, the release `url`s, the `head` URL, the `brew tap` line; the tap repo `homebrew-claude-wow` becomes `homebrew-wowgpt`
+- `homebrew/README.md`
+- `README.md`, `CONTRIBUTING.md`, `docs/INSTALL.md`, `docs/INSTALL-LINUX.md`, `docs/INSTALL-WINDOWS.md`, `docs/listing.md`: the one-liners, `git clone` and `cd claude-wow`
+- `tests/install_test.js` and `tests/release_gate_test.js`: the URLs they expect
+
+---
+
 # Rename: wow-ai -> claude-wow
 
 **Status: done** (branch `macos-ci-and-setup-checks`, one commit per surface: addon,

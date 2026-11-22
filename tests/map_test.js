@@ -86,7 +86,7 @@ test('parseMapFile reads one command per line', () => {
 });
 
 test('readSideFile takes the map file, deletes it, and reports a read error that is not a missing file', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-wow-mapside-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wowgpt-mapside-'));
   try {
     const file = path.join(dir, 'chat-1.jsonl');
     fs.writeFileSync(file, '{"op":"clearall"}\n{broken\n');
@@ -126,11 +126,11 @@ test('slot files carry the map as a Lua table the addon can read', () => {
       points: [pt(48.92, 41.61, { label: '1. accept "Wolves"\\ ok', kind: 'quest' }), pt(40.6, 82.3, { kind: 'explore' })],
     },
   ]);
-  const src = P.luaTable('ClaudeWoW_SlotData', [], { now: 1, cwd: '/x', map });
+  const src = P.luaTable('WoWGPT_SlotData', [], { now: 1, cwd: '/x', map });
   const got = runLua(
     src,
     `(function(m) local l = m.layers[1]; local p = l.points[1]
-    return table.concat({ m.epoch, m.version, l.name, l.title, tostring(l.ordered), #l.points, p[1], p[2], p[3], p[4], p[5], l.points[2][5] }, "|") end)(ClaudeWoW_SlotData.map)`,
+    return table.concat({ m.epoch, m.version, l.name, l.title, tostring(l.ordered), #l.points, p[1], p[2], p[3], p[4], p[5], l.points[2][5] }, "|") end)(WoWGPT_SlotData.map)`,
   );
   assert.equal(got, 'ep0ch|1|quests|Route "one"|true|2|1429|48.92|41.61|1. accept "Wolves"\\ ok|quest|explore');
   assert.ok(!P.luaTable('X', [], { now: 1 }).includes('map ='));

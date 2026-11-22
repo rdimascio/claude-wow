@@ -26,6 +26,7 @@ class BridgeProcess {
     if (this.child) return this;
     const script = this.supervised ? SUPERVISOR : BRIDGE;
     const env = Object.assign({}, this.sb.env);
+    delete env.WOWGPT_SERVICE;
     delete env.CLAUDE_WOW_SERVICE;
     const child = spawn(process.execPath, [script], { cwd: SB.REPO, env, stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' });
     const out = fs.createWriteStream(this.outFile, { flags: 'a' });
@@ -152,7 +153,7 @@ async function start(name, opts = {}) {
     transcripts: () => readJson(sb.transcripts, {}),
     agentCalls: () => agentCalls(sb),
     screenshots: () => fs.readdirSync(sb.screenshots),
-    async close({ keep = !!process.env.CLAUDE_WOW_KEEP_SANDBOX } = {}) {
+    async close({ keep = !!process.env.WOWGPT_KEEP_SANDBOX } = {}) {
       client.stop();
       await bridge.stop();
       if (!keep && !opts.keep) fs.rmSync(SB.assertSafe(sb.dir), { recursive: true, force: true });

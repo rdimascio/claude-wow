@@ -66,9 +66,9 @@ test('parseArgs takes the first word as the command and defaults to help', () =>
 });
 
 test('splitAddonErrors cuts the addon block off the command text', () => {
-  assert.deepEqual(DEV.splitAddonErrors('the map is blank\n--- addon errors ---\nx2 ClaudeWoW.lua:9: boom'), {
+  assert.deepEqual(DEV.splitAddonErrors('the map is blank\n--- addon errors ---\nx2 WoWGPT.lua:9: boom'), {
     rest: 'the map is blank',
-    addon: 'x2 ClaudeWoW.lua:9: boom',
+    addon: 'x2 WoWGPT.lua:9: boom',
   });
   assert.deepEqual(DEV.splitAddonErrors('plain'), { rest: 'plain', addon: '' });
 });
@@ -132,8 +132,8 @@ test('testSummary pulls the node --test totals and the failing tests', () => {
 test('luaErrors finds [E][Lua] entries in General.log with their stack lines', () => {
   const log = [
     '10/1 21:00:00.000  [N][Lua] LimitedLuaResources: Reset Timer',
-    '10/1 21:00:01.000  [E][Lua] Lua Error: Interface/AddOns/ClaudeWoW/ClaudeWoW.lua:12: boom',
-    '[string "@Interface/AddOns/ClaudeWoW/ClaudeWoW.lua"]:12: in function <x>',
+    '10/1 21:00:01.000  [E][Lua] Lua Error: Interface/AddOns/WoWGPT/WoWGPT.lua:12: boom',
+    '[string "@Interface/AddOns/WoWGPT/WoWGPT.lua"]:12: in function <x>',
     '10/1 21:00:02.000  [N][Console] next',
   ].join('\n');
   const found = DEV.luaErrors(log);
@@ -151,7 +151,7 @@ test('capText cuts long replies on a line break and says how much it cut', () =>
 test('status reports the branch, changed files, commits and the PR checks', async t => {
   const { core, calls } = fakeCore(t);
   const run = scriptedRun([
-    ['git rev-parse', { out: '/repo/claude-wow\n' }],
+    ['git rev-parse', { out: '/repo/wowgpt\n' }],
     ['git status', { out: '## feat/x...origin/feat/x [ahead 1]\n M bridge/bridge.js\n?? new.js\n' }],
     ['git log', { out: 'abc123 fix it (2 hours ago)\n' }],
     [
@@ -170,11 +170,11 @@ test('status reports the branch, changed files, commits and the PR checks', asyn
   ]);
   await DEV.handleDev(job('status'), core, { run });
   const text = calls.replies[0];
-  assert.match(text, /^claude-wow: branch feat\/x, tracking origin\/feat\/x, ahead 1/);
+  assert.match(text, /^wowgpt: branch feat\/x, tracking origin\/feat\/x, ahead 1/);
   assert.match(text, /2 changed files/);
   assert.match(text, /abc123 fix it/);
   assert.match(text, /PR #12 draft: fix it\nhttps:\/\/github.com\/o\/r\/pull\/12\nchecks: 1 failed \(test\)/);
-  assert.match(calls.notes[0], /^\[Output of "\/claude dev status"/);
+  assert.match(calls.notes[0], /^\[Output of "\/wowgpt dev status"/);
 });
 
 test('status outside a repository and without git says so', async t => {
@@ -306,13 +306,13 @@ test('test with no test command says how to set one', async t => {
 test('errors reads General.log and the addon block', async t => {
   const dir = tmpDir(t);
   fs.mkdirSync(path.join(dir, 'Logs'));
-  fs.writeFileSync(path.join(dir, 'Logs', 'General.log'), '10/1 21:00:01.000  [E][Lua] Lua Error: Interface/AddOns/ClaudeWoW/Map.lua:3: nil\n');
+  fs.writeFileSync(path.join(dir, 'Logs', 'General.log'), '10/1 21:00:01.000  [E][Lua] Lua Error: Interface/AddOns/WoWGPT/Map.lua:3: nil\n');
   const { core, calls } = fakeCore(t, { client: { dir } });
-  await DEV.handleDev(job('errors\n--- addon errors ---\nx2 ClaudeWoW/UI/Window.lua:5: oops'), core, {});
+  await DEV.handleDev(job('errors\n--- addon errors ---\nx2 WoWGPT/UI/Window.lua:5: oops'), core, {});
   const text = calls.replies.pop();
   assert.match(text, /1 Lua error in General.log/);
   assert.match(text, /Map.lua:3: nil/);
-  assert.match(text, /From the addon, this UI session:\n```\nx2 ClaudeWoW\/UI\/Window.lua:5: oops/);
+  assert.match(text, /From the addon, this UI session:\n```\nx2 WoWGPT\/UI\/Window.lua:5: oops/);
 });
 
 test('wrong stores the last reply with its prompt and note; bug stores the addon state', async t => {

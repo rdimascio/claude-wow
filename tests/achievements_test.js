@@ -146,7 +146,7 @@ function value(node) {
 test('the slot file carries recent toasts and the earned list, and reads back as Lua', () => {
   const state = {};
   ACH.evaluate(state, { chat: 'k', status: 'done', now: FRIDAY_NOON, commands: [ran('git push --force', ' + a1b2c3d...e4f5a6b main -> main')] });
-  const src = P.luaTable('ClaudeWoW_SlotData', [], { now: FRIDAY_NOON, achievementsLua: ACH.luaAchievements(state) });
+  const src = P.luaTable('WoWGPT_SlotData', [], { now: FRIDAY_NOON, achievementsLua: ACH.luaAchievements(state) });
   const ast = luaparse.parse(src, { luaVersion: '5.1' });
   const slot = value(ast.body.find(n => n.type === 'AssignmentStatement').init[0]);
   const a = slot.achievements;

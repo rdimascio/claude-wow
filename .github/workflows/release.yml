@@ -49,9 +49,9 @@ jobs:
       - name: package.json, the toc, the addon's Version.SEMVER and the tag name one version
         run: |
           pkg=$(node -p "require('./package.json').version")
-          toc=$(sed -n 's/^## Version: *//p' addon/ClaudeWoW/ClaudeWoW.toc | tr -d '\r')
-          lua=$(sed -n 's/^ClaudeWoW\.Version = {.*SEMVER = "\([^"]*\)".*/\1/p' addon/ClaudeWoW/Transport/Slots.lua)
-          echo "package.json $pkg, ClaudeWoW.toc $toc, Transport/Slots.lua Version.SEMVER $lua"
+          toc=$(sed -n 's/^## Version: *//p' addon/WoWGPT/WoWGPT.toc | tr -d '\r')
+          lua=$(sed -n 's/^WoWGPT\.Version = {.*SEMVER = "\([^"]*\)".*/\1/p' addon/WoWGPT/Transport/Slots.lua)
+          echo "package.json $pkg, WoWGPT.toc $toc, Transport/Slots.lua Version.SEMVER $lua"
           test "$pkg" = "$toc"
           test "$pkg" = "$lua"
           if [ "$GITHUB_REF_TYPE" = tag ]; then
@@ -73,18 +73,18 @@ jobs:
             echo "::error file=CHANGELOG.md::The '## [$pkg]' section of CHANGELOG.md is empty, so the GitHub release would have no notes. Move the [Unreleased] entries under it and tag again."
             status=1
           fi
-          if ! grep -Eq '^## X-Curse-Project-ID: *[0-9]+' addon/ClaudeWoW/ClaudeWoW.toc; then
-            echo "::error file=addon/ClaudeWoW/ClaudeWoW.toc::ClaudeWoW.toc has no '## X-Curse-Project-ID: <id>' line, so the packager would skip CurseForge and the run would still pass. Add the project ID and tag again."
+          if ! grep -Eq '^## X-Curse-Project-ID: *[0-9]+' addon/WoWGPT/WoWGPT.toc; then
+            echo "::error file=addon/WoWGPT/WoWGPT.toc::WoWGPT.toc has no '## X-Curse-Project-ID: <id>' line, so the packager would skip CurseForge and the run would still pass. Add the project ID and tag again."
             status=1
           fi
           if [ "$HAS_CF_API_TOKEN" != true ]; then
             echo "::error::The CF_API_TOKEN secret is not set, so the packager would skip CurseForge. Add it in the repository settings and tag again."
             status=1
           fi
-          if ! grep -Eq '^## X-Wago-ID: *[A-Za-z0-9]+' addon/ClaudeWoW/ClaudeWoW.toc; then
-            echo "::warning file=addon/ClaudeWoW/ClaudeWoW.toc::ClaudeWoW.toc has no '## X-Wago-ID' line; this release does not go to Wago."
+          if ! grep -Eq '^## X-Wago-ID: *[A-Za-z0-9]+' addon/WoWGPT/WoWGPT.toc; then
+            echo "::warning file=addon/WoWGPT/WoWGPT.toc::WoWGPT.toc has no '## X-Wago-ID' line; this release does not go to Wago."
           elif [ "$HAS_WAGO_API_TOKEN" != true ]; then
-            echo "::error::ClaudeWoW.toc has a '## X-Wago-ID' line but the WAGO_API_TOKEN secret is not set, so the packager would skip Wago. Add it in the repository settings and tag again."
+            echo "::error::WoWGPT.toc has a '## X-Wago-ID' line but the WAGO_API_TOKEN secret is not set, so the packager would skip Wago. Add it in the repository settings and tag again."
             status=1
           fi
           exit "$status"
@@ -102,31 +102,31 @@ jobs:
       - uses: BigWigsMods/packager@e50a250f8705041e40f2fa1ddcb280a686d65aa0 # v2
         with:
           args: -d
-      - name: the zip holds only the ClaudeWoW folder, with its toc
+      - name: the zip holds only the WoWGPT folder, with its toc
         run: |
           zip=$(ls .release/*.zip)
           unzip -Z1 "$zip" | tee files.txt
-          test -z "$(grep -v '^ClaudeWoW/' files.txt)"
-          grep -qx 'ClaudeWoW/ClaudeWoW.toc' files.txt
-          grep -qx 'ClaudeWoW/Core/Namespace.lua' files.txt
-          grep -qx 'ClaudeWoW/Core/Log.lua' files.txt
-          grep -qx 'ClaudeWoW/Core/State.lua' files.txt
-          grep -qx 'ClaudeWoW/Transport/Strip.lua' files.txt
-          grep -qx 'ClaudeWoW/Transport/Tick.lua' files.txt
-          grep -qx 'ClaudeWoW/Chat/Context.lua' files.txt
-          grep -qx 'ClaudeWoW/Chat/Grants.lua' files.txt
-          grep -qx 'ClaudeWoW/Chat/Options.lua' files.txt
-          grep -qx 'ClaudeWoW/Chat/Sessions.lua' files.txt
-          grep -qx 'ClaudeWoW/Whisper/Tabs.lua' files.txt
-          grep -qx 'ClaudeWoW/Whisper/Intercept.lua' files.txt
-          grep -qx 'ClaudeWoW/UI/Markdown.lua' files.txt
-          grep -qx 'ClaudeWoW/UI/Window.lua' files.txt
-          grep -qx 'ClaudeWoW/Commands/Diag.lua' files.txt
-          grep -qx 'ClaudeWoW/Commands/Registry.lua' files.txt
-          grep -qx 'ClaudeWoW/Commands/Claude.lua' files.txt
-          grep -qx 'ClaudeWoW/Commands/Config.lua' files.txt
-          grep -qx 'ClaudeWoW/Boot.lua' files.txt
-          test -z "$(grep -E '^ClaudeWoW/(assets|bridge|build|dev|docs|homebrew|tests)/' files.txt)"
+          test -z "$(grep -v '^WoWGPT/' files.txt)"
+          grep -qx 'WoWGPT/WoWGPT.toc' files.txt
+          grep -qx 'WoWGPT/Core/Namespace.lua' files.txt
+          grep -qx 'WoWGPT/Core/Log.lua' files.txt
+          grep -qx 'WoWGPT/Core/State.lua' files.txt
+          grep -qx 'WoWGPT/Transport/Strip.lua' files.txt
+          grep -qx 'WoWGPT/Transport/Tick.lua' files.txt
+          grep -qx 'WoWGPT/Chat/Context.lua' files.txt
+          grep -qx 'WoWGPT/Chat/Grants.lua' files.txt
+          grep -qx 'WoWGPT/Chat/Options.lua' files.txt
+          grep -qx 'WoWGPT/Chat/Sessions.lua' files.txt
+          grep -qx 'WoWGPT/Whisper/Tabs.lua' files.txt
+          grep -qx 'WoWGPT/Whisper/Intercept.lua' files.txt
+          grep -qx 'WoWGPT/UI/Markdown.lua' files.txt
+          grep -qx 'WoWGPT/UI/Window.lua' files.txt
+          grep -qx 'WoWGPT/Commands/Diag.lua' files.txt
+          grep -qx 'WoWGPT/Commands/Registry.lua' files.txt
+          grep -qx 'WoWGPT/Commands/Claude.lua' files.txt
+          grep -qx 'WoWGPT/Commands/Config.lua' files.txt
+          grep -qx 'WoWGPT/Boot.lua' files.txt
+          test -z "$(grep -E '^WoWGPT/(assets|bridge|build|dev|docs|homebrew|tests)/' files.txt)"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: addon-zip
@@ -147,16 +147,16 @@ jobs:
           bun-version: 1.4.2
       - run: npm ci --omit=dev
       - run: bun build.js
-      - run: ./dist/claude-wow-linux-x64 service help
-      - name: SHA256SUMS lists the four binaries and every sum matches
+      - run: ./dist/wowgpt-linux-x64 service help
+      - name: SHA256SUMS lists the four binaries, each also by its claude-wow name, and every sum matches
         working-directory: dist
         run: |
           cat SHA256SUMS
-          test "$(wc -l < SHA256SUMS)" -eq 4
+          test "$(wc -l < SHA256SUMS)" -eq 8
           sha256sum --check --strict SHA256SUMS
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: claude-wow-binaries
+          name: wowgpt-binaries
           path: dist/
           if-no-files-found: error
 
@@ -172,7 +172,7 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: claude-wow-binaries
+          name: wowgpt-binaries
           path: dist
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
@@ -181,7 +181,7 @@ jobs:
       - name: the downloaded binaries still match SHA256SUMS, and there is one addon zip
         run: |
           (cd dist && sha256sum --check --strict SHA256SUMS)
-          test "$(ls dist | wc -l)" -eq 5
+          test "$(ls dist | wc -l)" -eq 9
           test "$(ls addon-zip/*.zip | wc -l)" -eq 1
       - name: the release notes are the CHANGELOG section for this version
         run: |
@@ -189,14 +189,14 @@ jobs:
           awk -v heading="## [$version]" 'index($0, heading) == 1 { found = 1; next } found && /^## \[/ { exit } found { print }' CHANGELOG.md > release-notes.md
           cat release-notes.md
           grep -q '[^[:space:]]' release-notes.md
-      - name: create the GitHub release with the addon zip, the four binaries and SHA256SUMS
+      - name: create the GitHub release with the addon zip, the four binaries under both names and SHA256SUMS
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           version=${GITHUB_REF_NAME#v}
           prerelease_flag=
           case "$version" in *-*) prerelease_flag=--prerelease ;; esac
-          gh release create "$GITHUB_REF_NAME" --verify-tag --repo "$GITHUB_REPOSITORY" --title "Claude WoW $version" --notes-file release-notes.md $prerelease_flag addon-zip/*.zip dist/*
+          gh release create "$GITHUB_REF_NAME" --verify-tag --repo "$GITHUB_REPOSITORY" --title "WoWGPT $version" --notes-file release-notes.md $prerelease_flag addon-zip/*.zip dist/*
 
   addon-stores:
     needs: github-release

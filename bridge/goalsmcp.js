@@ -12,11 +12,11 @@ const SCRIPT = 'goals-mcp';
 const HELLO = 'run_hello';
 const CALL = 'run_call';
 const RESULT = 'run_result';
-const TOKEN_ENV = 'CLAUDE_WOW_RUN_TOKEN';
+const TOKEN_ENV = 'WOWGPT_RUN_TOKEN';
 const RUN_ID_RE = /^[0-9a-f]{32}$/;
 const PROTOCOL_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'];
 const CALL_TIMEOUT_MS = 15000;
-const DROPPED_TEXT = 'The connection to the claude-wow bridge closed, so the goal tools are off for the rest of this run; the call did nothing.';
+const DROPPED_TEXT = 'The connection to the wowgpt bridge closed, so the goal tools are off for the rest of this run; the call did nothing.';
 
 const ALL_TOOL_NAMES = Object.freeze([...G.TOOL_NAMES, ...OT.TOOL_NAMES, ...C.TOOL_NAMES]);
 const LIVE_SESSION_ONLY = Object.freeze([G.TOOL.voteOpen, G.TOOL.voteClose]);
@@ -29,7 +29,7 @@ const FILE_SEARCH_TOOLS = Object.freeze(['Grep', 'Glob', 'LS', 'NotebookRead']);
 const DENIED_WITHOUT_TOOLS = Object.freeze([SERVER_RULE]);
 
 const INSTRUCTIONS = [
-  "Goals, the current order, campaigns, narration and map routes for the player's character. The claude-wow bridge writes them for this in-game chat run only; the grant ends when the run ends.",
+  "Goals, the current order, campaigns, narration and map routes for the player's character. The wowgpt bridge writes them for this in-game chat run only; the grant ends when the run ends.",
   'Name every zone, NPC, item or quest only with a reference token ({item:ID}, {skill:ID}, {faction:ID}, {map:ID,x,y}) whose ID comes from the wowdata tools, never from memory. The bridge expands each token to the real name and refuses unknown IDs and any game name typed as plain text; the error names the word.',
   'Twitch votes are not here: they belong to the live Claude Code session.',
 ].join('\n');
@@ -284,7 +284,7 @@ function createServer(opts) {
     if (!granted()) return false;
     if (open()) return true;
     dropped = true;
-    log(`cannot reach the claude-wow bridge socket (missing or not private); the ${toolsLabel} tools are off for this run`);
+    log(`cannot reach the wowgpt bridge socket (missing or not private); the ${toolsLabel} tools are off for this run`);
     return false;
   }
 
@@ -293,11 +293,11 @@ function createServer(opts) {
     if (dropped) return Promise.resolve({ ok: false, text: offText });
     const id = nextCall++;
     return new Promise(resolve => {
-      const timer = setTimeout(() => settle(id, { ok: false, text: `The claude-wow bridge did not answer ${tool} in time.` }), timeoutMs);
+      const timer = setTimeout(() => settle(id, { ok: false, text: `The wowgpt bridge did not answer ${tool} in time.` }), timeoutMs);
       if (timer.unref) timer.unref();
       calls.set(id, { resolve, timer, tool, args, sent: false });
       if (!open()) {
-        settle(id, { ok: false, text: `The claude-wow bridge socket is missing or not private, so ${tool} did nothing.` });
+        settle(id, { ok: false, text: `The wowgpt bridge socket is missing or not private, so ${tool} did nothing.` });
         return;
       }
       if (verified) flush();
@@ -360,7 +360,7 @@ function main(argv, deps = {}) {
   const stdin = deps.stdin || process.stdin;
   const stdout = deps.stdout || process.stdout;
   const env = deps.env || process.env;
-  const log = deps.log || (line => process.stderr.write(`[claude-wow goals-mcp] ${line}\n`));
+  const log = deps.log || (line => process.stderr.write(`[wowgpt goals-mcp] ${line}\n`));
   let opts;
   try {
     opts = parseArgs(argv);

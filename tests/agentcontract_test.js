@@ -11,7 +11,7 @@ const P = require('../bridge/protocol');
 const R = require('../bridge/runtime');
 const FIX = require('../dev/contract-mcp');
 
-const scratch = name => fs.mkdtempSync(path.join(os.tmpdir(), `claude-wow-contract-${name}-`));
+const scratch = name => fs.mkdtempSync(path.join(os.tmpdir(), `wowgpt-contract-${name}-`));
 const CLAUDE_ROWS = { C1: 'pass', C2: 'pass', C2u: 'unchecked', C3: 'pass', C4: 'pass' };
 
 function claudeInit(tools, servers = [{ name: AC.PROBE_SERVER, status: 'connected', source: 'dynamic' }]) {
@@ -124,7 +124,7 @@ test('the tracker matches an entry on realpath, mtime, ctime, inode and size; an
   }
   assert.equal(w.calls.length, 5, 'each replaced binary is asked for its version again');
   assert.equal(w.logs.length, 4);
-  assert.match(w.logs[0], /^contract: Claude Code at \/real\/claude is not checked .*run claude-wow agents check\. Only a measured fail turns anything off\.$/);
+  assert.match(w.logs[0], /^contract: Claude Code at \/real\/claude is not checked .*run wowgpt agents check\. Only a measured fail turns anything off\.$/);
   w.tracker.status('claude', cmdClaude);
   assert.equal(w.logs.length, 4, 'said once per binary');
   assert.deepEqual(w.tracker.children(), []);
@@ -202,7 +202,7 @@ test('a C2 fail gives the slot field { claude: { off: false, reason } } and refu
   assert.equal(field.claude.version, '1.0.0');
   assert.match(
     field.claude.reason,
-    /^Claude Code 1\.0\.0 failed C2 in claude-wow agents check, .*use \/claude mcp default, or update Claude Code and run claude-wow agents check again\.$/,
+    /^Claude Code 1\.0\.0 failed C2 in wowgpt agents check, .*use \/wowgpt mcp default, or update Claude Code and run wowgpt agents check again\.$/,
   );
   assert.equal(AC.refusal(failed, { off: true }), field.claude.reason);
   assert.equal(AC.refusal(failed, { off: false, secrets: true }), '', 'a run that turns nothing off is not refused');
@@ -220,10 +220,10 @@ test('a C2 fail gives the slot field { claude: { off: false, reason } } and refu
 
 test('Codex: an X2a fail refuses a run that turns a server off, an X2b fail refuses a run that passes a secret', () => {
   const x2a = status('codex', { X1: 'pass', X2a: 'fail', X2b: 'pass' });
-  assert.match(AC.refusal(x2a, { off: true }), /^Codex 1\.0\.0 failed X2a in claude-wow agents check/);
+  assert.match(AC.refusal(x2a, { off: true }), /^Codex 1\.0\.0 failed X2a in wowgpt agents check/);
   assert.equal(AC.refusal(x2a, { secrets: true }), '');
   const x2b = status('codex', { X1: 'pass', X2a: 'pass', X2b: 'fail' });
-  assert.match(AC.refusal(x2b, { secrets: true }), /^Codex 1\.0\.0 failed X2b in claude-wow agents check, so its shell may see an MCP server's secret\./);
+  assert.match(AC.refusal(x2b, { secrets: true }), /^Codex 1\.0\.0 failed X2b in wowgpt agents check, so its shell may see an MCP server's secret\./);
   assert.equal(AC.refusal(x2b, { off: true }), '');
   assert.equal(AC.slotField({ codex: x2b }).codex.off, true, 'X2b does not grey the menu');
   assert.deepEqual(AC.slotField({ codex: x2a }).codex.sources, ['codex'], 'X2a covers only the servers from config.toml');
@@ -235,7 +235,7 @@ test('Codex: an X2a fail refuses a run that turns a server off, an X2b fail refu
 });
 
 test('the slot file carries the contract field for the addon, and an empty one when nothing is known', () => {
-  const lua = P.luaTable('ClaudeWoW_SlotData', [], {
+  const lua = P.luaTable('WoWGPT_SlotData', [], {
     contract: {
       claude: { version: '2.1.290', checked: true, off: false, reason: 'say "no"' },
       codex: { version: '', checked: false, off: true, reason: '', sources: ['codex', 'nope', 'config'] },
@@ -639,7 +639,7 @@ test('agents check: help, a missing or unknown --agent and an unknown option nev
     w.lines.length = 0;
     assert.equal(await AC.check(argv, w.deps), code, argv.join(' '));
     if (said) assert.equal(w.lines[0], said);
-    assert.match(w.lines.at(-1), /^claude-wow agents check/);
+    assert.match(w.lines.at(-1), /^wowgpt agents check/);
   }
   fs.rmSync(w.dir, { recursive: true, force: true });
 });

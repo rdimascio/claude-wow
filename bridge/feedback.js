@@ -115,9 +115,9 @@ function describe(item, { full = false } = {}) {
 
 function fixBrief(item) {
   return [
-    `[Feedback item #${item.n} from ${FILE_NAME} in the claude-wow home folder, handed to you by the player]`,
+    `[Feedback item #${item.n} from ${FILE_NAME} in the wowgpt home folder, handed to you by the player]`,
     item.kind === 'bug'
-      ? 'The player reported this bug in the claude-wow bridge or addon.'
+      ? 'The player reported this bug in the wowgpt bridge or addon.'
       : 'The player marked this reply as wrong. Find out why the bridge, the addon or the prompt produced it, and fix the cause in this repository.',
     describe(item, { full: true }),
   ].join('\n');

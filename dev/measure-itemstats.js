@@ -4,7 +4,7 @@ const path = require('path');
 const GD = require('../bridge/gamedata');
 const IS = require('../bridge/itemstats');
 
-const dataDir = process.argv[2] || path.join(require('os').homedir(), '.claude-wow', 'data');
+const dataDir = process.argv[2] || path.join(require('os').homedir(), '.wowgpt', 'data');
 const store = GD.openStore({ dataDir, flavor: 'classic_era' });
 if (!IS.available(store)) {
   console.error(`no item stat tables in ${dataDir}; run ${store.syncCommand}`);

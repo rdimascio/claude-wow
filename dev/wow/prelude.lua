@@ -149,7 +149,7 @@ function SendSystemMessage(text)
 end
 
 function DEV.StripCells()
-	local s = _G.ClaudeWoWStrip
+	local s = _G.WoWGPTStrip
 	if not s or not DEV.Visible(s) then return "" end
 	local out = {}
 	for _, t in ipairs(s.textures or {}) do

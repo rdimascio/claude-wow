@@ -7,7 +7,9 @@ const crypto = require('crypto');
 const H = require('./home');
 const FS = require('./fsutil');
 
-const BINARY = process.platform === 'win32' ? 'claude-wow.exe' : 'claude-wow';
+const BINARY = process.platform === 'win32' ? 'wowgpt.exe' : 'wowgpt';
+// The binary's name in a release staged before the rename to WoWGPT.
+const OLD_BINARIES = Object.freeze([process.platform === 'win32' ? 'claude-wow.exe' : 'claude-wow']);
 const RELEASES_DIR = 'releases';
 const KEEP_RELEASES = 5;
 const NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$/;
@@ -35,8 +37,13 @@ function layout(base = H.resolve().dir) {
 }
 
 const releaseDir = (l, name) => path.join(l.releases, name);
-const releaseBinary = (l, name) => path.join(releaseDir(l, name), BINARY);
-const currentBinary = l => path.join(l.current, BINARY);
+function binaryIn(dir) {
+  const own = path.join(dir, BINARY);
+  if (isFile(own)) return own;
+  return OLD_BINARIES.map(b => path.join(dir, b)).find(isFile) || own;
+}
+const releaseBinary = (l, name) => binaryIn(releaseDir(l, name));
+const currentBinary = l => binaryIn(l.current);
 
 function isFile(p) {
   try {
@@ -491,6 +498,7 @@ function releaseLock(file, token) {
 
 module.exports = {
   BINARY,
+  OLD_BINARIES,
   RELEASES_DIR,
   KEEP_RELEASES,
   LOCK_MAX_AGE_MS,

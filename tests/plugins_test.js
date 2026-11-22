@@ -218,7 +218,7 @@ test('the shipped ask plugin: no folder semantics, a scratch folder of its own, 
   // The scratch folder: configured, else per-user application data; never the chat's folder.
   assert.equal(ask.scratchFolder({ cwd: '/x/y' }), path.resolve('/x/y'));
   const dflt = ask.scratchFolder({});
-  assert.ok(dflt.endsWith(path.join('claude-wow', 'ask')), dflt);
+  assert.ok(dflt.endsWith(path.join('wowgpt', 'ask')), dflt);
   assert.ok(dflt.startsWith(os.homedir()) || /LOCALAPPDATA|XDG/.test(dflt) || path.isAbsolute(dflt), dflt);
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'wowai-ask-'));
   const scratch = path.join(base, 'scratch');
@@ -228,16 +228,20 @@ test('the shipped ask plugin: no folder semantics, a scratch folder of its own, 
     tag: j => '#' + j.id,
     defaultCwd: '/some/project',
     options: id => (id === 'ask' ? { cwd: scratch } : {}),
-    sessionFolder: () => '/elsewhere',
+    sessionFolder: () => sessionFolder,
     fail: (job, text) => calls.push({ fail: text }),
     runAgent: (job, opts) => calls.push({ run: opts, job }),
   };
   const job = { id: 1, cwd: 'realms', text: 'what drops it' };
+  let sessionFolder = '/elsewhere';
   p.handle(job, core);
   assert.equal(calls[0].run.cwd, scratch, 'runs in the scratch folder');
   assert.equal(calls[0].run.gameData, true, 'ask runs get the read-only wowdata server');
   assert.ok(fs.existsSync(scratch), 'created on demand');
-  assert.equal(calls[0].run.freshSession, undefined, "no folder-change rule: the session is the chat's whatever the folder");
+  assert.equal(calls[0].run.freshSession(), '', 'a session in the new folder resumes');
+  sessionFolder = path.join(ask.dataDir('claude-wow'), 'ask');
+  assert.match(calls[0].run.freshSession(), /^the session lives in the old scratch folder /, 'an old ask chat starts fresh, in the new folder');
+  assert.equal(calls[0].run.cwd, scratch);
   assert.equal(job.cwd, 'realms', "the chat's own folder is left as typed for the coding plugin");
   assert.match(p.banner({ cwd: scratch }), /scratch/);
   // A scratch folder that cannot be made is an error reply, not a crash.
@@ -248,14 +252,21 @@ test('the shipped ask plugin: no folder semantics, a scratch folder of its own, 
   fs.rmSync(base, { recursive: true, force: true });
 });
 
-test('plugins.ask.claudePlugin: only a boolean true asks for the claude-wow plugin, and any other value gets an ignored note', () => {
+test('plugins.ask.claudePlugin: only a boolean true asks for the wowgpt plugin, and any other value gets an ignored note', () => {
   const ask = require('../bridge/plugins/ask');
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'wowai-askplugin-'));
   const runFor = options => {
     const calls = [];
     ask.handle(
       { id: 1, text: 'x' },
-      { log: noop, tag: j => '#' + j.id, options: () => ({ cwd: base, ...options }), fail: noop, runAgent: (job, opts) => calls.push(opts) },
+      {
+        log: noop,
+        tag: j => '#' + j.id,
+        options: () => ({ cwd: base, ...options }),
+        sessionFolder: () => '',
+        fail: noop,
+        runAgent: (job, opts) => calls.push(opts),
+      },
     );
     assert.equal(calls.length, 1);
     return calls[0].claudePlugin;
@@ -269,8 +280,36 @@ test('plugins.ask.claudePlugin: only a boolean true asks for the claude-wow plug
   assert.equal(ask.configNote({ claudePlugin: false }), '');
   assert.equal(
     ask.configNote({ claudePlugin: 'yes' }),
-    'plugins.ask.claudePlugin must be true or false; "yes" is ignored, so ask runs do not load the claude-wow Claude Code plugin.',
+    'plugins.ask.claudePlugin must be true or false; "yes" is ignored, so ask runs do not load the wowgpt Claude Code plugin.',
   );
   assert.match(ask.configNote({ claudePlugin: 1 }), /; 1 is ignored/);
   fs.rmSync(base, { recursive: true, force: true });
+});
+
+// The rename to WoWGPT: the data folder had the old name.
+test('ask: setup copies the old data folder to the new name once, and a chat whose session started in the old scratch folder stays there', () => {
+  const ask = require('../bridge/plugins/ask');
+  const user = fs.mkdtempSync(path.join(os.tmpdir(), 'wowgpt-askdata-'));
+  for (const platform of ['darwin', 'linux', 'win32']) {
+    const env = platform === 'win32' ? { LOCALAPPDATA: path.join(user, platform, 'Local') } : {};
+    const home = path.join(user, platform);
+    assert.equal(ask.migrateOldData(env, home, platform), '', `${platform}: no old folder, nothing to do`);
+    const old = ask.dataDir('claude-wow', env, home, platform);
+    fs.mkdirSync(path.join(old, 'ask'), { recursive: true });
+    fs.writeFileSync(path.join(old, 'ask', 'notes.txt'), 'kept');
+    assert.equal(ask.migrateOldData(env, home, platform), old, platform);
+    const dest = ask.dataDir('wowgpt', env, home, platform);
+    assert.equal(fs.readFileSync(path.join(dest, 'ask', 'notes.txt'), 'utf8'), 'kept');
+    assert.ok(fs.existsSync(path.join(old, 'ask', 'notes.txt')), 'the old folder is kept');
+    fs.writeFileSync(path.join(old, 'ask', 'notes.txt'), 'changed later');
+    assert.equal(ask.migrateOldData(env, home, platform), '', 'only once');
+    assert.equal(fs.readFileSync(path.join(dest, 'ask', 'notes.txt'), 'utf8'), 'kept');
+  }
+
+  const oldScratch = path.join(user, 'darwin', 'Library', 'Application Support', 'claude-wow', 'ask');
+  assert.match(ask.oldFolderSession(oldScratch, [oldScratch]), /old scratch folder/, 'a session from the old folder starts fresh');
+  assert.equal(ask.oldFolderSession('', [oldScratch]), '', 'no session: nothing to say');
+  assert.equal(ask.oldFolderSession('/elsewhere', [oldScratch]), '', 'another folder is not this rule');
+  assert.ok(fs.existsSync(path.join(user, 'darwin', 'Library', 'Application Support', 'claude-wow', 'ask', 'notes.txt')), 'the old folder is never deleted');
+  fs.rmSync(user, { recursive: true, force: true });
 });

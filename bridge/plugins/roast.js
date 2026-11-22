@@ -249,7 +249,7 @@ const plugin = {
   achievements: false,
   match: job => !!job && job.kind === KIND,
   scratchFolder,
-  banner: options => `roasts your deaths (/claude config roast on), runs in ${scratchFolder(options)} (plugins.roast.cwd)`,
+  banner: options => `roasts your deaths (/wowgpt config roast on), runs in ${scratchFolder(options)} (plugins.roast.cwd)`,
   handle(job, core) {
     const cwd = scratchFolder(core.options('roast'));
     try {

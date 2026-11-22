@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 'use strict';
-// Builds the claude-wow binaries: one self-contained file per platform, the
+// Builds the wowgpt binaries: one self-contained file per platform, the
 // bridge, setup and the service commands with Bun's runtime inside, plus the
 // capture scripts, the addon, the config template and the primer embedded
 // (build/entry.js, bridge/assets.js). Nothing to install on the target
 // machine: no Node, no npm. The binary finds its config through
-// CLAUDE_WOW_HOME exactly as the checkout does.
+// WOWGPT_HOME exactly as the checkout does.
 //
 //   node build.js                       every target below into dist/
 //   node build.js --target bun-linux-x64 [--target ...]
@@ -15,8 +15,11 @@
 // Needs bun (https://bun.sh; `curl -fsSL https://bun.sh/install | bash`, no
 // sudo). Cross-compiling downloads the target's runtime once (~30 MB each).
 // dist/SHA256SUMS lists the checksums install.sh verifies. Names:
-// claude-wow-<darwin|linux|windows>-<arm64|x64>[.exe], the release assets
-// install.sh, install.ps1 and the Homebrew formula fetch.
+// wowgpt-<darwin|linux|windows>-<arm64|x64>[.exe], the release assets
+// install.sh, install.ps1 and the Homebrew formula fetch. Each binary is also
+// written as claude-wow-<os>-<arch>[.exe], the name before the rename to
+// WoWGPT: an installed claude-wow binary updates itself only to an asset by
+// that name, and an older `dev deploy` picks up only that name from --host.
 
 const fs = require('fs');
 const os = require('os');
@@ -33,9 +36,12 @@ function hostTarget() {
   return `bun-${os_}-${arch}`;
 }
 
-function outName(target) {
+const ASSET_PREFIX = 'wowgpt';
+const OLD_ASSET_PREFIXES = Object.freeze(['claude-wow']);
+
+function outName(target, prefix = ASSET_PREFIX) {
   const [, os_, arch] = target.split('-');
-  return `claude-wow-${os_}-${arch}${os_ === 'windows' ? '.exe' : ''}`;
+  return `${prefix}-${os_}-${arch}${os_ === 'windows' ? '.exe' : ''}`;
 }
 
 function findBun() {
@@ -81,7 +87,7 @@ function main(argv) {
   const version = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version;
   const bunVersion = (spawnSync(bun, ['--version'], { encoding: 'utf8', windowsHide: true }).stdout || '').trim();
   fs.mkdirSync(out, { recursive: true });
-  console.log(`claude-wow ${version}, bun ${bunVersion} -> ${out}`);
+  console.log(`wowgpt ${version}, bun ${bunVersion} -> ${out}`);
   const sums = [];
   for (const target of targets) {
     const file = path.join(out, outName(target));
@@ -95,6 +101,11 @@ function main(argv) {
     const sum = crypto.createHash('sha256').update(buf).digest('hex');
     sums.push(`${sum}  ${path.basename(file)}`);
     console.log(`  ${path.basename(file).padEnd(28)} ${(buf.length / 1048576).toFixed(1)} MB  ${sum.slice(0, 12)}`);
+    for (const prefix of OLD_ASSET_PREFIXES) {
+      const copy = path.join(out, outName(target, prefix));
+      fs.copyFileSync(file, copy);
+      sums.push(`${sum}  ${path.basename(copy)}`);
+    }
   }
   fs.writeFileSync(path.join(out, 'SHA256SUMS'), sums.join('\n') + '\n');
   // The binary for this machine, if one was built: prove it starts.
@@ -112,4 +123,4 @@ function main(argv) {
 }
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
-module.exports = { TARGETS, hostTarget, outName, main };
+module.exports = { TARGETS, hostTarget, outName, ASSET_PREFIX, OLD_ASSET_PREFIXES, main };

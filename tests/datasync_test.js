@@ -11,7 +11,7 @@ const BUILD = '1.60.1.200';
 const FIXED_NOW = Date.parse('2026-09-30T12:00:00Z');
 
 function scratch(name) {
-  const dir = path.join(os.tmpdir(), `claude-wow-data-${name}-${process.pid}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`);
+  const dir = path.join(os.tmpdir(), `wowgpt-data-${name}-${process.pid}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`);
   fs.mkdirSync(dir, { recursive: true });
   return dir;
 }
@@ -120,7 +120,7 @@ test('a bad build string stops the sync before any fetch or folder', async () =>
   const out = [];
   const err = [];
   const code = await D.main(['sync', '--build', '../etc'], {
-    env: { CLAUDE_WOW_HOME: scratch('badbuild-main') },
+    env: { WOWGPT_HOME: scratch('badbuild-main') },
     fetch: wago.fetchImpl,
     out: s => out.push(s),
     err: s => err.push(s),
@@ -129,7 +129,7 @@ test('a bad build string stops the sync before any fetch or folder', async () =>
   assert.match(err.join(''), /bad build string/);
   assert.equal(
     await D.main(['sync', '--flavor=retail'], {
-      env: { CLAUDE_WOW_HOME: scratch('badflag-main') },
+      env: { WOWGPT_HOME: scratch('badflag-main') },
       fetch: wago.fetchImpl,
       out: s => out.push(s),
       err: s => err.push(s),
@@ -407,12 +407,12 @@ test('the current pointer is ignored when it is not a build string or has no man
   assert.equal(D.readCurrent(root).build, BUILD);
 });
 
-test('claude-wow data sync writes under CLAUDE_WOW_HOME/data and reports counts', async () => {
+test('wowgpt data sync writes under WOWGPT_HOME/data and reports counts', async () => {
   const home = scratch('main');
   const wago = fakeWago();
   const out = [];
   const code = await D.main(['sync'], {
-    env: { CLAUDE_WOW_HOME: home },
+    env: { WOWGPT_HOME: home },
     fetch: wago.fetchImpl,
     now: () => FIXED_NOW,
     out: s => out.push(s),
@@ -424,7 +424,7 @@ test('claude-wow data sync writes under CLAUDE_WOW_HOME/data and reports counts'
 
   const usage = [];
   assert.equal(await D.main(['nope'], { out: s => usage.push(s), err: s => usage.push(s) }), 2);
-  assert.match(usage.join(''), /claude-wow data sync/);
+  assert.match(usage.join(''), /wowgpt data sync/);
 });
 
 test('an unexpected error in the sync is one line and exit 1, never a rejection', async () => {
@@ -436,7 +436,7 @@ test('an unexpected error in the sync is one line and exit 1, never a rejection'
     },
   });
   const code = await D.main(['sync', '--build', BUILD], {
-    env: { CLAUDE_WOW_HOME: scratch('main-crash') },
+    env: { WOWGPT_HOME: scratch('main-crash') },
     fetch: brokenFetch,
     out: () => {},
     err: s => err.push(s),
@@ -446,7 +446,7 @@ test('an unexpected error in the sync is one line and exit 1, never a rejection'
   assert.match(err[0], /^data sync failed: .*headers exploded\n$/);
 
   const throwingLog = await D.main(['sync', '--build', BUILD], {
-    env: { CLAUDE_WOW_HOME: scratch('main-crash2') },
+    env: { WOWGPT_HOME: scratch('main-crash2') },
     fetch: fakeWago().fetchImpl,
     out: () => {
       throw new RangeError('stdout closed');

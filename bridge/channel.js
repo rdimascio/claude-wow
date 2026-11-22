@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 
+require('./legacyenv').adopt(); // CLAUDE_WOW_* from before the rename count as WOWGPT_*, before anything reads them
 const net = require('net');
 const path = require('path');
 const LP = require('./liveproto');
@@ -88,7 +89,7 @@ function createChannel(opts) {
   }
 
   listeningKnown.then(on => {
-    if (!on) log('the parent Claude Code process does not load the claude-wow channel; staying idle');
+    if (!on) log('the parent Claude Code process does not load the wowgpt channel; staying idle');
     maybeReady();
   });
 
@@ -122,7 +123,7 @@ function createChannel(opts) {
     if (!verified) {
       if (msg.type === 'welcome' && LP.sameProof(msg.proof, LP.proof(LP.readToken(home), 'bridge', myNonce))) {
         verified = true;
-        log(`connected to the claude-wow bridge as "${name}"`);
+        log(`connected to the wowgpt bridge as "${name}"`);
         return;
       }
       if (msg.type === 'reject') log(`the bridge refused this session: ${msg.reason || 'no reason given'}`);
@@ -188,9 +189,9 @@ function createChannel(opts) {
     s.on('error', () => {});
     s.on('close', () => {
       if (sock === s) sock = null;
-      if (verified) log('lost the claude-wow bridge; reconnecting');
+      if (verified) log('lost the wowgpt bridge; reconnecting');
       verified = false;
-      failCalls('The claude-wow bridge is not connected, so the reply was not delivered.');
+      failCalls('The wowgpt bridge is not connected, so the reply was not delivered.');
       scheduleRetry();
     });
   }
@@ -219,8 +220,8 @@ function createChannel(opts) {
     return askBridge(
       { type: 'reply', chat_id: chatId, message_id: String((args && args.message_id) || ''), text },
       {
-        timeout: 'The claude-wow bridge did not confirm the reply in time.',
-        offline: 'The claude-wow bridge is not connected, so the reply was not delivered. Is the bridge running?',
+        timeout: 'The wowgpt bridge did not confirm the reply in time.',
+        offline: 'The wowgpt bridge is not connected, so the reply was not delivered. Is the bridge running?',
       },
     );
   }
@@ -229,8 +230,8 @@ function createChannel(opts) {
     return askBridge(
       { type: 'goal_call', tool, args: args && typeof args === 'object' ? args : {} },
       {
-        timeout: `The claude-wow bridge did not answer ${tool} in time.`,
-        offline: `The claude-wow bridge is not connected, so ${tool} did nothing. Is the bridge running?`,
+        timeout: `The wowgpt bridge did not answer ${tool} in time.`,
+        offline: `The wowgpt bridge is not connected, so ${tool} did nothing. Is the bridge running?`,
       },
     );
   }
@@ -348,14 +349,14 @@ function createChannel(opts) {
 function main() {
   const H = require('./home');
   const home = H.resolve().dir;
-  const name = process.env.CLAUDE_WOW_LIVE_NAME || path.basename(process.cwd()) || 'claude';
+  const name = process.env.WOWGPT_LIVE_NAME || path.basename(process.cwd()) || 'claude';
   const ch = createChannel({
     stdout: process.stdout,
     home,
     name,
     cwd: process.cwd(),
     listening: parentListens(process.ppid),
-    log: line => process.stderr.write(`[claude-wow channel] ${line}\n`),
+    log: line => process.stderr.write(`[wowgpt channel] ${line}\n`),
   });
   process.stdin.on('data', ch.feed);
   process.stdin.on('end', () => {

@@ -1,5 +1,5 @@
 -- A minimal stand-in for the WoW addon environment, enough to load and drive
--- ClaudeWoW.lua outside the game (see addon_test.js). Frames are plain tables:
+-- WoWGPT.lua outside the game (see addon_test.js). Frames are plain tables:
 -- capitalized names that aren't listed below resolve to a no-op method, so any
 -- SetFoo/EnableBar call is accepted; lowercase names are ordinary fields.
 --
@@ -371,7 +371,7 @@ C_AddOns = {
 }
 C_Texture = { GetAtlasExists = function() return true end }
 function PlaySound() end
-STUB.signalRoot = "ClaudeWoW_Runtime"
+STUB.signalRoot = "WoWGPT_Runtime"
 function STUB.RingFile(rel, folder, max)
 	local k = tonumber(rel:match("^" .. folder .. "\\[ab]\\(%d%d%d%d)%.wav$"))
 	return k ~= nil and k >= 1 and k <= max
@@ -680,7 +680,7 @@ function STUB.ChatEditBox(name, frame, chatType, tellTarget)
 	return eb
 end
 
--- The character, for the game context (ClaudeWoW.GameContext).
+-- The character, for the game context (WoWGPT.GameContext).
 function GetBuildInfo() return "1.60.1", "69913", "Sep 1 2026", 16001, "", " " end
 function UnitName(unit) if unit == "player" then return "Testchar" end end
 function GetRealmName() return "Test Realm" end

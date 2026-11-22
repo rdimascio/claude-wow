@@ -71,10 +71,10 @@ test('in-game runs get goals, orders, campaigns and routes, never the vote tools
   assert.deepEqual([...GM.FILE_SEARCH_TOOLS], ['Grep', 'Glob', 'LS', 'NotebookRead']);
   for (const rule of ['Bash(cat:*)', 'Bash', ' Bash(node -e x) ', 'Grep', 'Grep(path=/x)']) assert.ok(GM.deniedBy(['Bash', 'Grep'], rule), rule);
   for (const rule of ['WebFetch', 'Read(//x)', 'Bashful']) assert.ok(!GM.deniedBy(['Bash', 'Grep'], rule), rule);
-  assert.ok(GM.deniedBy(['Read(//h/.claude-wow/**)'], 'Read(//h/.claude-wow/live.token)'));
-  assert.ok(GM.deniedBy(['Read(//h/.claude-wow/**)'], 'Read(//h/.claude-wow/**)'));
-  assert.ok(!GM.deniedBy(['Read(//h/.claude-wow/**)'], 'Read(//h/.claude-wowx/a)'));
-  assert.ok(!GM.deniedBy(['Read(//h/.claude-wow/**)'], 'Edit(//h/.claude-wow/a)'));
+  assert.ok(GM.deniedBy(['Read(//h/.wowgpt/**)'], 'Read(//h/.wowgpt/live.token)'));
+  assert.ok(GM.deniedBy(['Read(//h/.wowgpt/**)'], 'Read(//h/.wowgpt/**)'));
+  assert.ok(!GM.deniedBy(['Read(//h/.wowgpt/**)'], 'Read(//h/.wowgptx/a)'));
+  assert.ok(!GM.deniedBy(['Read(//h/.wowgpt/**)'], 'Edit(//h/.wowgpt/a)'));
   const winDeny = ['Read(//c/Users/RUNNER~1/AppData/Local/Temp/cw/home/**)'];
   for (const rule of [
     'Read(C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\cw\\home/state.json)',
@@ -95,19 +95,19 @@ test('in-game runs get goals, orders, campaigns and routes, never the vote tools
 });
 
 test("launch config: the bridge's own command, the run id in the server args, the token only in the server env (the bridge writes it to a private file, never to argv), alwaysLoad", () => {
-  const checkout = { compiled: false, execPath: '/usr/local/bin/node', root: '/opt/claude-wow' };
+  const checkout = { compiled: false, execPath: '/usr/local/bin/node', root: '/opt/wowgpt' };
   const runId = 'a'.repeat(32);
   const launch = GM.launchConfig({ runId, token: 'secret-token', socket: '/h/live.sock', runtime: checkout });
   assert.deepEqual(launch, {
     server: {
       type: 'stdio',
       command: '/usr/local/bin/node',
-      args: [path.join('/opt/claude-wow', 'bridge', 'goalsmcp.js'), '--socket', '/h/live.sock', '--run', runId],
-      env: { CLAUDE_WOW_RUN_TOKEN: 'secret-token' },
+      args: [path.join('/opt/wowgpt', 'bridge', 'goalsmcp.js'), '--socket', '/h/live.sock', '--run', runId],
+      env: { WOWGPT_RUN_TOKEN: 'secret-token' },
       alwaysLoad: true,
     },
   });
-  const binary = { compiled: true, execPath: '/home/p/.local/bin/claude-wow', root: '/$bunfs/root' };
+  const binary = { compiled: true, execPath: '/home/p/.local/bin/wowgpt', root: '/$bunfs/root' };
   assert.deepEqual(GM.launchConfig({ runId, token: 't', socket: '/s', runtime: binary }).server.args, ['goals-mcp', '--socket', '/s', '--run', runId]);
   assert.equal(GM.mcpConfig({ wowdata: null, wowgoals: null }), '');
   assert.deepEqual(JSON.parse(GM.mcpConfig({ wowdata: { type: 'stdio', command: 'd' }, wowgoals: launch.server })), {

@@ -14,7 +14,7 @@ const H = require('../bridge/home');
 
 const SRC = path.join(__dirname, '..', 'bridge');
 const REAL_HOME = path.resolve(H.defaultDir());
-const S = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-wow-inject-'));
+const S = fs.mkdtempSync(path.join(os.tmpdir(), 'wowgpt-inject-'));
 const SANDBOX_HOME = path.join(S, 'home');
 process.on('exit', () => fs.rmSync(S, { recursive: true, force: true }));
 
@@ -28,9 +28,9 @@ function abort(why) {
   process.exit(1);
 }
 
-const env = { ...process.env, CLAUDE_WOW_HOME: SANDBOX_HOME };
+const env = { ...process.env, WOWGPT_HOME: SANDBOX_HOME };
 delete env.CLAUDECODE;
-delete env.CLAUDE_WOW_PROJECT;
+delete env.WOWGPT_PROJECT;
 delete env.WOW_AI_PROJECT;
 const resolvedHome = H.resolve(env).dir;
 if (resolvedHome !== path.resolve(SANDBOX_HOME)) abort(`the bridge home resolves to ${resolvedHome}, not the sandbox ${SANDBOX_HOME}`);
@@ -38,18 +38,18 @@ if (isInside(REAL_HOME, resolvedHome) || isInside(resolvedHome, REAL_HOME)) abor
 if (isInside(REAL_HOME, S)) abort(`the sandbox ${S} is inside the real ${REAL_HOME}`);
 
 const ADDONS = path.join(S, 'wow', 'Interface', 'AddOns');
-fs.mkdirSync(path.join(ADDONS, 'ClaudeWoW'), { recursive: true });
+fs.mkdirSync(path.join(ADDONS, 'WoWGPT'), { recursive: true });
 fs.mkdirSync(path.join(S, 'proj'), { recursive: true });
 fs.mkdirSync(SANDBOX_HOME, { recursive: true });
 const agentIdx = process.argv.indexOf('--agent');
 const agent = agentIdx >= 0 ? process.argv[agentIdx + 1] : 'claude';
 const pluginIdx = process.argv.indexOf('--plugin');
 const plugins = pluginIdx >= 0 ? [process.argv[pluginIdx + 1]] : ['claude-code', 'ask'];
-fs.writeFileSync(path.join(ADDONS, 'ClaudeWoW', 'ClaudeWoW.toc'), '## Interface: 16001\n');
+fs.writeFileSync(path.join(ADDONS, 'WoWGPT', 'WoWGPT.toc'), '## Interface: 16001\n');
 
 const cfg = JSON.parse(fs.readFileSync(path.join(SRC, 'config.example.json'), 'utf8'));
 cfg.addonDir = ADDONS;
-cfg.inboxFile = path.join(ADDONS, 'ClaudeWoW_Runtime', 'Inbox.lua');
+cfg.inboxFile = path.join(ADDONS, 'WoWGPT_Runtime', 'Inbox.lua');
 cfg.savedVariablesFile = path.join(S, 'wow', 'WTF', 'nope.lua');
 cfg.defaultCwd = path.join(S, 'proj');
 cfg.capture = { ...cfg.capture, enabled: false, screenshotDir: path.join(S, 'wow', 'Screenshots') };
@@ -73,7 +73,7 @@ for (const p of configPaths) {
   if (!isInside(S, p) || isInside(REAL_HOME, p)) abort(`config path ${p} is outside the sandbox ${S}`);
 }
 fs.writeFileSync(path.join(SANDBOX_HOME, 'config.json'), JSON.stringify(cfg, null, 2));
-console.log(`sandbox: ${S} (CLAUDE_WOW_HOME=${SANDBOX_HOME})`);
+console.log(`sandbox: ${S} (WOWGPT_HOME=${SANDBOX_HOME})`);
 
 console.log(execFileSync(process.execPath, [path.join(SRC, 'install-slots.js')], { cwd: S, env, encoding: 'utf8' }).trim());
 
@@ -101,7 +101,7 @@ const pong = text => /^PONG\b/.test(String(text || ''));
 // A signal is a valid .wav; "off" is no file at all.
 const size = f => {
   try {
-    return fs.statSync(path.join(ADDONS, 'ClaudeWoW_Runtime', f)).size;
+    return fs.statSync(path.join(ADDONS, 'WoWGPT_Runtime', f)).size;
   } catch {
     return -1;
   }
@@ -137,7 +137,7 @@ for (const plugin of plugins) {
   if (!ran) console.log(`BAD: expected "[${plugin}] ... starting in ${where}" in the log`);
   ok = ok && ran;
   for (let i = 1; i <= 5; i++) {
-    const d = readLua(path.join(ADDONS, 'ClaudeWoW_S00' + i, 'Inbox.lua'), 'ClaudeWoW_SlotData');
+    const d = readLua(path.join(ADDONS, 'WoWGPT_S00' + i, 'Inbox.lua'), 'WoWGPT_SlotData');
     const rec = (d.replies || [])[0] || {};
     const good =
       d.replies && d.replies.length === 1 && Number(rec.id) === n && rec.status === 'done' && pong(rec.text) && rec.agent === agent && rec.plugin === plugin;
@@ -146,7 +146,7 @@ for (const plugin of plugins) {
       `slot ${i}: replies=${(d.replies || []).length} id=${rec.id} status=${rec.status} agent=${rec.agent} plugin=${rec.plugin} text=${JSON.stringify(rec.text)} ${good ? 'ok' : 'BAD'}`,
     );
   }
-  const inbox = readLua(cfg.inboxFile, 'ClaudeWoW_Inbox');
+  const inbox = readLua(cfg.inboxFile, 'WoWGPT_Inbox');
   const ir = (inbox.replies || [])[0] || {};
   console.log(`Inbox.lua: id=${ir.id} status=${ir.status} plugin=${inbox.plugin} plugins=${JSON.stringify(inbox.plugins)} text=${JSON.stringify(ir.text)}`);
   ok = ok && pong(ir.text) && inbox.plugin === 'ask';

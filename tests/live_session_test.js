@@ -18,14 +18,14 @@ const CLAUDE = arg('--claude', 'claude');
 const KEEP = process.argv.includes('--keep');
 const PRIME = process.argv.includes('--prime');
 const PRIME_TEXT =
-  'My World of Warcraft client is attached to this session through the claude-wow channel. Answer each claude-wow channel message with the wow_reply tool. Reply OK.';
+  'My World of Warcraft client is attached to this session through the wowgpt channel. Answer each wowgpt channel message with the wow_reply tool. Reply OK.';
 const STEP_MS = Number(arg('--step-ms', '120000'));
 
 const REPO = path.join(__dirname, '..');
 const SRC = path.join(REPO, 'bridge');
 const REAL_HOME = path.resolve(H.defaultDir());
 fs.mkdirSync(BASE, { recursive: true });
-const S = fs.mkdtempSync(path.join(BASE, 'claude-wow-live-'));
+const S = fs.mkdtempSync(path.join(BASE, 'wowgpt-live-'));
 const SANDBOX_HOME = path.join(S, 'home');
 const TMUX = `cw-live-${process.pid}`;
 let bridge = null;
@@ -80,7 +80,7 @@ function cleanup() {
         fs.copyFileSync(path.join(S, 'bridge-stdout.txt'), path.join(EVIDENCE, 'bridge-stdout.txt'));
       } catch {}
       try {
-        fs.copyFileSync(path.join(ADDONS, 'ClaudeWoW_S001', 'Inbox.lua'), path.join(EVIDENCE, 'slot-S001-Inbox.lua'));
+        fs.copyFileSync(path.join(ADDONS, 'WoWGPT_S001', 'Inbox.lua'), path.join(EVIDENCE, 'slot-S001-Inbox.lua'));
       } catch {}
     } catch (e) {
       console.error(`evidence: ${e.message}`);
@@ -100,9 +100,9 @@ process.on('SIGINT', () => {
   process.exit(130);
 });
 
-const env = { ...process.env, CLAUDE_WOW_HOME: SANDBOX_HOME };
+const env = { ...process.env, WOWGPT_HOME: SANDBOX_HOME };
 delete env.CLAUDECODE;
-delete env.CLAUDE_WOW_PROJECT;
+delete env.WOWGPT_PROJECT;
 delete env.WOW_AI_PROJECT;
 const resolvedHome = H.resolve(env).dir;
 if (resolvedHome !== path.resolve(SANDBOX_HOME)) abort(`the bridge home resolves to ${resolvedHome}, not the sandbox ${SANDBOX_HOME}`);
@@ -112,16 +112,16 @@ if (spawnSync('tmux', ['-V']).status !== 0) abort('tmux is not installed');
 
 const ADDONS = path.join(S, 'wow', 'Interface', 'AddOns');
 const PROJ = path.join(S, 'proj');
-const SAVED = path.join(S, 'wow', 'WTF', 'ClaudeWoW.lua');
-fs.mkdirSync(path.join(ADDONS, 'ClaudeWoW'), { recursive: true });
+const SAVED = path.join(S, 'wow', 'WTF', 'WoWGPT.lua');
+fs.mkdirSync(path.join(ADDONS, 'WoWGPT'), { recursive: true });
 fs.mkdirSync(path.dirname(SAVED), { recursive: true });
 fs.mkdirSync(path.join(PROJ, '.claude'), { recursive: true });
 fs.mkdirSync(SANDBOX_HOME, { recursive: true });
-fs.writeFileSync(path.join(ADDONS, 'ClaudeWoW', 'ClaudeWoW.toc'), '## Interface: 16001\n');
+fs.writeFileSync(path.join(ADDONS, 'WoWGPT', 'WoWGPT.toc'), '## Interface: 16001\n');
 
 const cfg = JSON.parse(fs.readFileSync(path.join(SRC, 'config.example.json'), 'utf8'));
 cfg.addonDir = ADDONS;
-cfg.inboxFile = path.join(ADDONS, 'ClaudeWoW_Runtime', 'Inbox.lua');
+cfg.inboxFile = path.join(ADDONS, 'WoWGPT_Runtime', 'Inbox.lua');
 cfg.savedVariablesFile = SAVED;
 cfg.defaultCwd = PROJ;
 cfg.capture = { ...cfg.capture, enabled: false, screenshotDir: path.join(S, 'wow', 'Screenshots') };
@@ -143,7 +143,7 @@ fs.writeFileSync(
   JSON.stringify(
     {
       mcpServers: {
-        [LP.SERVER_NAME]: { command: process.execPath, args: [path.join(SRC, 'channel.js')], env: { CLAUDE_WOW_HOME: SANDBOX_HOME }, alwaysLoad: true },
+        [LP.SERVER_NAME]: { command: process.execPath, args: [path.join(SRC, 'channel.js')], env: { WOWGPT_HOME: SANDBOX_HOME }, alwaysLoad: true },
       },
     },
     null,
@@ -151,7 +151,7 @@ fs.writeFileSync(
   ),
 );
 fs.writeFileSync(path.join(PROJ, '.claude', 'settings.json'), JSON.stringify({ enableAllProjectMcpServers: true }, null, 2));
-console.log(`sandbox: ${S} (CLAUDE_WOW_HOME=${SANDBOX_HOME})`);
+console.log(`sandbox: ${S} (WOWGPT_HOME=${SANDBOX_HOME})`);
 console.log(
   execFileSync(process.execPath, [path.join(SRC, 'install-slots.js')], { cwd: S, env, encoding: 'utf8' })
     .trim()
@@ -159,9 +159,9 @@ console.log(
 );
 
 function readSlot() {
-  const src = fs.readFileSync(path.join(ADDONS, 'ClaudeWoW_S001', 'Inbox.lua'), 'utf8');
+  const src = fs.readFileSync(path.join(ADDONS, 'WoWGPT_S001', 'Inbox.lua'), 'utf8');
   const ast = luaparse.parse(src, { luaVersion: '5.1' });
-  const assign = ast.body.find(n => n.type === 'AssignmentStatement' && n.variables[0].name === 'ClaudeWoW_SlotData');
+  const assign = ast.body.find(n => n.type === 'AssignmentStatement' && n.variables[0].name === 'WoWGPT_SlotData');
   const val = v =>
     v.type === 'StringLiteral'
       ? JSON.parse(v.raw.replace(/\\\n/g, '\\n'))
@@ -199,7 +199,7 @@ function send(id, text, once) {
     `["ctx"] = "${hex('Character: Thrall, level 12 Orc Shaman\nZone: Durotar (Razor Hill) 52.1, 43.0')}"`,
   ];
   if (once) fields.push(`["allowOnce"] = "${hex(once)}"`);
-  fs.writeFileSync(SAVED, `ClaudeWoWDB = {\n\t["outbox"] = {\n\t\t${fields.join(',\n\t\t')},\n\t},\n}\n`);
+  fs.writeFileSync(SAVED, `WoWGPTDB = {\n\t["outbox"] = {\n\t\t${fields.join(',\n\t\t')},\n\t},\n}\n`);
   console.log(`\n>>> injected #${id}${once ? ` (allowOnce ${once})` : ''}: ${JSON.stringify(text)}`);
 }
 
@@ -249,7 +249,7 @@ async function main() {
   check(
     'no session: the chat says so and names the command',
     none.status === 'error' &&
-      /No live Claude Code session is connected\. Start one with:\n.*--dangerously-load-development-channels server:claude-wow/.test(none.text),
+      /No live Claude Code session is connected\. Start one with:\n.*--dangerously-load-development-channels server:wowgpt/.test(none.text),
     JSON.stringify(none.text),
   );
 

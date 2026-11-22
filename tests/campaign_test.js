@@ -116,7 +116,7 @@ function rig(opts = {}) {
 const beat = (title, narration, trigger) => ({ title, narration, trigger });
 
 function slotTable(lua) {
-  const ast = luaparse.parse(`ClaudeWoW_SlotData = {\n${lua}\n}`, { luaVersion: '5.1' });
+  const ast = luaparse.parse(`WoWGPT_SlotData = {\n${lua}\n}`, { luaVersion: '5.1' });
   return ast.body[0].init[0].fields[0].value;
 }
 
@@ -173,10 +173,7 @@ test('triggers: zone and quest IDs must be in the synced data; level, death and 
   assert.equal(C.checkTrigger({ type: 'manual' }, null).ok, true);
   assert.equal(C.checkTrigger({ type: 'reach' }, null).ok, false, 'no trigger type the telemetry does not report');
   const era = GD.openStore({ dataDir: DATA, clientBuild: '1.15.9.70003' });
-  assert.match(
-    C.checkTrigger({ type: 'zone', mapID: 9101 }, era).text,
-    /No game data is synced for this build yet \(claude-wow data sync --flavor classic_era\)/,
-  );
+  assert.match(C.checkTrigger({ type: 'zone', mapID: 9101 }, era).text, /No game data is synced for this build yet \(wowgpt data sync --flavor classic_era\)/);
   assert.match(C.checkTrigger({ type: 'zone', mapID: 9101 }, null).text, /No game data is synced/);
 });
 
@@ -597,7 +594,7 @@ test('tools: five campaign tools on the live session; every one is denied to in-
     C.toolSchemas().map(t => t.name),
     ['campaign_start', 'campaign_end', 'beat_add', 'beat_trigger', 'narrate'],
   );
-  for (const tool of C.TOOL_NAMES) assert.ok(LP.GOAL_WRITE_TOOLS.includes(`mcp__claude-wow__${tool}`), tool);
+  for (const tool of C.TOOL_NAMES) assert.ok(LP.GOAL_WRITE_TOOLS.includes(`mcp__wowgpt__${tool}`), tool);
   const out = [];
   const ch = createChannel({ stdout: { write: s => out.push(JSON.parse(s)) }, home: tmpDir('home'), listening: true });
   ch.handle({ jsonrpc: '2.0', id: 1, method: 'tools/list' });
@@ -634,7 +631,7 @@ test('Classic Era: a campaign starts and narrates against the Era data for an Er
   try {
     const refused = await foreverOnly.store.call('campaign_start', args);
     assert.equal(refused.ok, false);
-    assert.match(refused.text, /No game data is synced for this build yet \(claude-wow data sync --flavor classic_era\)/);
+    assert.match(refused.text, /No game data is synced for this build yet \(wowgpt data sync --flavor classic_era\)/);
     assert.equal(fs.existsSync(foreverOnly.file), false, 'nothing was saved');
   } finally {
     foreverOnly.cleanup();

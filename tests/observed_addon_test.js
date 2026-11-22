@@ -48,14 +48,14 @@ function newVM({ extra = '', saved = '' } = {}) {
   const vm = createVM();
   vm.run(GAME_STUB + extra);
   if (saved) vm.run(saved);
-  vm.loadAddon(['Codec.lua', 'Inbox.lua', 'ClaudeWoW.lua', 'Telemetry.lua', 'Observed.lua']);
+  vm.loadAddon(['Codec.lua', 'Inbox.lua', 'WoWGPT.lua', 'Telemetry.lua', 'Observed.lua']);
   return vm;
 }
 
 function decodeStrip(vm) {
   vm.run(`
     local parts = {}
-    for _, t in ipairs(ClaudeWoWStrip.textures) do
+    for _, t in ipairs(WoWGPTStrip.textures) do
       if t.shown and t.color then
         local c, r = math.floor(t.x / 4), math.floor(-t.y / 4)
         local v = (t.color[1] >= 0.5 and 4 or 0) + (t.color[2] >= 0.5 and 2 or 0) + (t.color[3] >= 0.5 and 1 or 0)
@@ -85,8 +85,8 @@ function decodeStrip(vm) {
 }
 
 function shoot(vm) {
-  if (vm.evaluate('ClaudeWoWStrip and ClaudeWoWStrip.shown') !== 'true') return null;
-  for (let i = 0; i < 2; i++) vm.run('local f = ClaudeWoWStrip; if f.shown and f.scripts.OnUpdate then f.scripts.OnUpdate(f, 0.016) end');
+  if (vm.evaluate('WoWGPTStrip and WoWGPTStrip.shown') !== 'true') return null;
+  for (let i = 0; i < 2; i++) vm.run('local f = WoWGPTStrip; if f.shown and f.scripts.OnUpdate then f.scripts.OnUpdate(f, 0.016) end');
   const frame = decodeStrip(vm);
   vm.run('STUB.FireEvent("SCREENSHOT_SUCCEEDED")');
   return P.jobsFromStrip(frame.id, frame.text);
@@ -107,10 +107,10 @@ const GS_OBSERVED = `{ v = 1, watch = { items = {}, factions = {} }, chars = {},
 
 function ready({ gs = GS_OBSERVED, extra, saved } = {}) {
   const vm = newVM({ extra, saved });
-  vm.run('STUB.FireEvent("ADDON_LOADED", "ClaudeWoW"); STUB.FireEvent("PLAYER_LOGIN")');
+  vm.run('STUB.FireEvent("ADDON_LOADED", "WoWGPT"); STUB.FireEvent("PLAYER_LOGIN")');
   vm.run('STUB.RunTimers()');
   vm.run(
-    `STUB.onLoadAddOn = function(name) ClaudeWoW_SlotData = { now = time(), cwd = "", transport = "screenshot", strip = { on = 255, off = 0 }, gs = ${gs}, replies = {} } end`,
+    `STUB.onLoadAddOn = function(name) WoWGPT_SlotData = { now = time(), cwd = "", transport = "screenshot", strip = { on = 255, off = 0 }, gs = ${gs}, replies = {} } end`,
   );
   tick(vm, 6);
   shoot(vm);
@@ -324,7 +324,7 @@ function playerSearch(vm, rows, total) {
 
 function results(vm, rows, total) {
   vm.run(`STUB.auctions = ${auctionList(rows)}; STUB.auctionTotal = ${total === undefined ? 'nil' : total}; STUB.FireEvent("AUCTION_ITEM_LIST_UPDATE")`);
-  return vm.evaluate('ClaudeWoWObserved.debug.ah');
+  return vm.evaluate('WoWGPTObserved.debug.ah');
 }
 
 function eraQuotes(vm) {
@@ -335,7 +335,7 @@ function eraQuotes(vm) {
 test("Classic Era: a search sent while queries are throttled arms nothing, so another addon's result in flight is not stored", () => {
   const vm = eraAuctionHouse();
   vm.run('QueryAuctionItems("addon scan"); STUB.canSend = false; AuctionFrameBrowse_Search()');
-  assert.equal(vm.evaluate('ClaudeWoWObserved.debug.ah'), 'the search was throttled');
+  assert.equal(vm.evaluate('WoWGPTObserved.debug.ah'), 'the search was throttled');
   assert.equal(results(vm, [{ id: 2589, count: 1, buyout: 7 }]), 'no player search waiting');
   vm.run('STUB.canSend = true');
   assert.equal(playerSearch(vm, [{ id: 2589, count: 1, buyout: 40 }]), 'read 1 items from 1 auctions');
@@ -347,24 +347,24 @@ test('Classic Era: a search call that sends no query of its own (the token page)
     extra: 'function DequoteString() return nil end\nfunction AuctionFrameBrowse_Search() DequoteString(BrowseName:GetText()) end',
   });
   noQuery.run('QueryAuctionItems("addon scan"); AuctionFrameBrowse_Search()');
-  assert.equal(noQuery.evaluate('ClaudeWoWObserved.debug.ah'), 'the search sent no query of its own');
+  assert.equal(noQuery.evaluate('WoWGPTObserved.debug.ah'), 'the search sent no query of its own');
   assert.equal(results(noQuery, [{ id: 2589, count: 1, buyout: 7 }]), 'no player search waiting');
   const twice = eraAuctionHouse({
     extra:
       'function DequoteString() return nil end\nfunction AuctionFrameBrowse_Search() DequoteString(BrowseName:GetText()); QueryAuctionItems("cloth"); QueryAuctionItems("addon scan") end',
   });
   twice.run('AuctionFrameBrowse_Search()');
-  assert.equal(twice.evaluate('ClaudeWoWObserved.debug.ah'), 'the search sent no query of its own');
+  assert.equal(twice.evaluate('WoWGPTObserved.debug.ah'), 'the search sent no query of its own');
   assert.equal(results(twice, [{ id: 2589, count: 1, buyout: 7 }]), 'no player search waiting');
   const token = eraAuctionHouse({ extra: 'function DequoteString() return nil end\nfunction AuctionFrameBrowse_Search() end' });
   token.run('QueryAuctionItems("addon scan"); AuctionFrameBrowse_Search()');
-  assert.equal(token.evaluate('ClaudeWoWObserved.debug.ah'), 'the search sent no query of its own', 'the token page calls neither DequoteString nor a query');
+  assert.equal(token.evaluate('WoWGPTObserved.debug.ah'), 'the search sent no query of its own', 'the token page calls neither DequoteString nor a query');
   const stale = eraAuctionHouse({ extra: 'function DequoteString() return nil end\nfunction AuctionFrameBrowse_Search() QueryAuctionItems("cloth") end' });
   stale.run('DequoteString("cloth")');
   tick(stale, 1);
   stale.run('AuctionFrameBrowse_Search()');
   assert.equal(
-    stale.evaluate('ClaudeWoWObserved.debug.ah'),
+    stale.evaluate('WoWGPTObserved.debug.ah'),
     'the search sent no query of its own',
     'a DequoteString call from an earlier frame does not vouch for this query',
   );
@@ -377,9 +377,9 @@ test("Classic Era: a bid or buyout while the player's search still waits for its
   assert.equal(results(vm, [{ id: 2589, count: 1, buyout: 40, noLink: true }]), 'a row has no item info yet');
   vm.run('PlaceAuctionBid("list", 1, 40)');
   assert.equal(vm.evaluate('STUB.bids'), '1', 'the hook kept the real bid call');
-  assert.equal(vm.evaluate('ClaudeWoWObserved.debug.ah'), 'a bid or buyout was placed');
+  assert.equal(vm.evaluate('WoWGPTObserved.debug.ah'), 'a bid or buyout was placed');
   assert.equal(results(vm, [{ id: 2589, count: 1, buyout: 60 }]), 'no player search waiting');
-  assert.equal(vm.evaluate('ClaudeWoWObserved.Sections().ah'), null);
+  assert.equal(vm.evaluate('WoWGPTObserved.Sections().ah'), null);
 });
 
 test('Classic Era: closing the auction house or reading while telemetry is off drops a waiting search', () => {
@@ -387,11 +387,11 @@ test('Classic Era: closing the auction house or reading while telemetry is off d
   closed.run('AuctionFrameBrowse_Search(); STUB.FireEvent("AUCTION_HOUSE_CLOSED")');
   assert.equal(results(closed, [{ id: 2589, count: 1, buyout: 40 }]), 'no player search waiting');
   const off = eraAuctionHouse();
-  off.run('AuctionFrameBrowse_Search(); SlashCmdList.CLAUDE("config telemetry off")');
+  off.run('AuctionFrameBrowse_Search(); SlashCmdList.WOWGPT("config telemetry off")');
   assert.equal(results(off, [{ id: 2589, count: 1, buyout: 40 }]), 'telemetry is not collecting');
-  off.run('SlashCmdList.CLAUDE("config telemetry on")');
+  off.run('SlashCmdList.WOWGPT("config telemetry on")');
   assert.equal(results(off, [{ id: 2589, count: 1, buyout: 40 }]), 'no player search waiting', 'the search was spent while off');
-  assert.equal(off.evaluate('ClaudeWoWObserved.Sections().ah'), null);
+  assert.equal(off.evaluate('WoWGPTObserved.Sections().ah'), null);
 });
 
 test('Classic Era factions: standing from GetFactionInfoByID, and a row for another faction is never reported', () => {

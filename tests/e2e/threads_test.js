@@ -19,7 +19,7 @@ async function twoTurnsAcrossARulesChange(h) {
   const first = h.agentCalls().at(-1);
   assert.equal(first.resume, null, 'the first turn starts a session');
   assert.match(first.prompt, /In-game situation/);
-  h.client.slash('/claude config context off');
+  h.client.slash('/wowgpt config context off');
   await h.client.say('second turn without game context');
   const second = h.agentCalls().at(-1);
   assert.doesNotMatch(second.prompt, /In-game situation/, 'the game context turned off, which changes the system prompt rules');

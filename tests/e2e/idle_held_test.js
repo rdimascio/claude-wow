@@ -15,7 +15,7 @@ test('a held message cancelled from the game never runs when the deploy ends', a
     const id = h.client.lastSeq() + 1;
     h.client.send('cancel me while held [[tag held-cancel]]');
     await h.bridge.waitForLine(new RegExp(`#${id}@\\S+ held: a deploy`));
-    h.client.slash('/claude cancel');
+    h.client.slash('/wowgpt cancel');
     await h.bridge.waitForLine(new RegExp(`#${id}@\\S+ cancelled from the game while it was held for a deploy`));
     assert.ok(!(h.state().held || []).some(e => e.job.id === id), 'gone from state.json too');
     const mark = h.bridge.output.length;
@@ -40,10 +40,10 @@ test('a strip retried in the gap after the deploy ends runs the held message onc
     h.client.send('retried in the gap [[hang]]');
     await h.bridge.waitForLine(new RegExp(`#${id}@\\S+ held: a deploy`));
     fs.rmSync(lockFile);
-    h.client.slash('/claude resend');
+    h.client.slash('/wowgpt resend');
     await h.client.waitFor(() => Object.values(h.state().inflight || {}).some(r => r.id === id), { label: 'the retried message running' });
     assert.ok(!(h.state().held || []).some(e => e.job.id === id), 'the message that started is no longer held in state.json');
-    h.client.slash('/claude cancel');
+    h.client.slash('/wowgpt cancel');
     await h.bridge.waitForLine(new RegExp(`#${id}@\\S+ cancelled from the game; ending it`));
     await h.client.waitFor(() => !Object.values(h.state().inflight || {}).some(r => r.id === id), { label: 'the run ended' });
     assert.doesNotMatch(h.bridge.output, new RegExp(`#${id}@\\S+ cancelled from the game while it was held`));

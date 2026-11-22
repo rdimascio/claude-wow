@@ -1,55 +1,62 @@
-# Claude WoW installer for Windows. One line, in PowerShell:
+# WoWGPT installer for Windows. One line, in PowerShell:
 #
 #   irm https://raw.githubusercontent.com/rdimascio/claude-wow/main/install.ps1 | iex
 #
 # Options come from the environment, since `iex` takes no parameters:
 #
-#   $env:CLAUDE_WOW_WOW = "D:\Games\World of Warcraft\_classic_beta_"   # the client folder (found automatically in the usual places)
-#   $env:CLAUDE_WOW_PROJECT = "C:\code\my-game"                          # the default folder the agents work in
-#   $env:CLAUDE_WOW_SERVICE = "yes"  (or "no")                           # start at login without asking (or never ask)
-#   $env:CLAUDE_WOW_SOURCE = "1"     no prebuilt binary: clone the repo and run it with Node.js 22.2+
-#   $env:CLAUDE_WOW_RELEASE = "..."  which release's binary (default latest, then the newest release of any kind; a named release never falls back)
-#   $env:CLAUDE_WOW_DIR = "..."      where it goes, default $env:LOCALAPPDATA\Programs\claude-wow
-#   $env:CLAUDE_WOW_REF = "..."      which version of the source, from source (default main)
+#   $env:WOWGPT_WOW = "D:\Games\World of Warcraft\_classic_beta_"   # the client folder (found automatically in the usual places)
+#   $env:WOWGPT_PROJECT = "C:\code\my-game"                          # the default folder the agents work in
+#   $env:WOWGPT_SERVICE = "yes"  (or "no")                           # start at login without asking (or never ask)
+#   $env:WOWGPT_SOURCE = "1"     no prebuilt binary: clone the repo and run it with Node.js 22.2+
+#   $env:WOWGPT_RELEASE = "..."  which release's binary (default latest, then the newest release of any kind; a named release never falls back)
+#   $env:WOWGPT_DIR = "..."      where it goes, default $env:LOCALAPPDATA\Programs\wowgpt
+#   $env:WOWGPT_REF = "..."      which version of the source, from source (default main)
 #
 # Or download it and run:  .\install.ps1 -Wow "..." -Project "..." -Service [-FromSource]
 #
 # What it does, in order, and it is safe to run again (an existing install is
 # updated, config.json and your chats are kept):
-#   1. downloads the claude-wow binary for Windows x64 from the project's GitHub
-#      releases into %LocalAppData%\Programs\claude-wow\bin, checks it against
+#   1. downloads the wowgpt binary for Windows x64 from the project's GitHub
+#      releases into %LocalAppData%\Programs\wowgpt\bin, checks it against
 #      the release's SHA256SUMS and runs it once. It is the bridge, setup and
 #      the service commands in one file with its runtime inside: nothing else
 #      to install, no Node.js. Where there is no binary (no release yet, another
-#      architecture, CLAUDE_WOW_SOURCE=1) it installs from source instead, unless
-#      CLAUDE_WOW_RELEASE names a release, which stops with a message:
+#      architecture, WOWGPT_SOURCE=1) it installs from source instead, unless
+#      WOWGPT_RELEASE names a release, which stops with a message:
 #      checks for Node.js 22.2+, clones the repo with git (or downloads the zip;
-#      nothing to npm-install) and writes a claude-wow.cmd that runs it with node
+#      nothing to npm-install) and writes a wowgpt.cmd that runs it with node
 #   2. puts that folder on your user PATH (no admin rights)
 #   3. runs the game-side setup (addon, config.json, slot pool); config, state
-#      and logs live in ~\.claude-wow (CLAUDE_WOW_HOME), outside the code
+#      and logs live in ~\.wowgpt (WOWGPT_HOME), outside the code
 #   4. offers to start the bridge at login (a launcher in your Startup folder)
 # An install by the project's old name (Programs\wow-ai, the wow-ai command,
 # the "WoW AI bridge" launcher) is carried over: its config and sessions are
-# copied to ~\.claude-wow, its launcher is removed, and setup migrates the
+# copied to ~\.wowgpt, its launcher is removed, and setup migrates the
 # addon and your chats in the game folder.
 # Never asks for administrator rights. Any failure stops with a message saying what to do.
 
 [CmdletBinding()]
 param(
-  [string]$Wow = $env:CLAUDE_WOW_WOW,
-  [string]$Project = $env:CLAUDE_WOW_PROJECT,
+  [string]$Wow = (@($env:WOWGPT_WOW, $env:CLAUDE_WOW_WOW) -ne $null)[0],
+  [string]$Project = (@($env:WOWGPT_PROJECT, $env:CLAUDE_WOW_PROJECT) -ne $null)[0],
   [switch]$Service,
   [switch]$NoService,
   [switch]$FromSource,
-  [string]$Release = $(if ($env:CLAUDE_WOW_RELEASE) { $env:CLAUDE_WOW_RELEASE } else { 'latest' }),
-  [string]$Dir = $(if ($env:CLAUDE_WOW_DIR) { $env:CLAUDE_WOW_DIR } else { Join-Path $env:LOCALAPPDATA 'Programs\claude-wow' }),
-  [string]$Ref = $(if ($env:CLAUDE_WOW_REF) { $env:CLAUDE_WOW_REF } else { 'main' }),
-  [string]$Repo = $(if ($env:CLAUDE_WOW_REPO) { $env:CLAUDE_WOW_REPO } else { 'https://github.com/rdimascio/claude-wow' })
+  [string]$Release = $(if ((@($env:WOWGPT_RELEASE, $env:CLAUDE_WOW_RELEASE) -ne $null)[0]) { (@($env:WOWGPT_RELEASE, $env:CLAUDE_WOW_RELEASE) -ne $null)[0] } else { 'latest' }),
+  [string]$Dir = $(if ((@($env:WOWGPT_DIR, $env:CLAUDE_WOW_DIR) -ne $null)[0]) { (@($env:WOWGPT_DIR, $env:CLAUDE_WOW_DIR) -ne $null)[0] } else { Join-Path $env:LOCALAPPDATA 'Programs\wowgpt' }),
+  [string]$Ref = $(if ((@($env:WOWGPT_REF, $env:CLAUDE_WOW_REF) -ne $null)[0]) { (@($env:WOWGPT_REF, $env:CLAUDE_WOW_REF) -ne $null)[0] } else { 'main' }),
+  [string]$Repo = $(if ((@($env:WOWGPT_REPO, $env:CLAUDE_WOW_REPO) -ne $null)[0]) { (@($env:WOWGPT_REPO, $env:CLAUDE_WOW_REPO) -ne $null)[0] } else { 'https://github.com/rdimascio/claude-wow' })
 )
-$HomeDir = $(if ($env:CLAUDE_WOW_HOME) { $env:CLAUDE_WOW_HOME } else { Join-Path $HOME '.claude-wow' })
+# The CLAUDE_WOW_* variables from before the rename to WoWGPT still count
+# when the WOWGPT_* one is not set.
+Get-ChildItem Env: | Where-Object { $_.Name -like 'CLAUDE_WOW_*' } | ForEach-Object {
+  $newName = 'WOWGPT_' + $_.Name.Substring('CLAUDE_WOW_'.Length)
+  if (-not (Test-Path "Env:$newName")) { Set-Item "Env:$newName" $_.Value }
+}
+$HomeDir = $(if ($env:WOWGPT_HOME) { $env:WOWGPT_HOME } else { Join-Path $HOME '.wowgpt' })
 $OldDir = Join-Path $env:LOCALAPPDATA 'Programs\wow-ai'
-if ($env:CLAUDE_WOW_SOURCE -eq '1') { $FromSource = $true }
+$OldClaudeWowDir = Join-Path $env:LOCALAPPDATA 'Programs\claude-wow' # before the rename to WoWGPT
+if ($env:WOWGPT_SOURCE -eq '1') { $FromSource = $true }
 
 $ErrorActionPreference = 'Stop'
 $MinNode = [version]'22.2'
@@ -61,8 +68,8 @@ function Fail($what, $fix) {
   exit 1
 }
 function Ask($q) {
-  if ($env:CLAUDE_WOW_SERVICE -eq 'yes') { return $true }
-  if ($env:CLAUDE_WOW_SERVICE -eq 'no' -or -not [Environment]::UserInteractive) { return $false }
+  if ($env:WOWGPT_SERVICE -eq 'yes') { return $true }
+  if ($env:WOWGPT_SERVICE -eq 'no' -or -not [Environment]::UserInteractive) { return $false }
   $a = Read-Host $q
   return $a -match '^(y|yes)$'
 }
@@ -82,8 +89,8 @@ function Get-NewestReleaseTag {
 
 $binDir = Join-Path $Dir 'bin'
 New-Item -ItemType Directory -Force $binDir | Out-Null
-$exe = Join-Path $binDir 'claude-wow.exe'
-$cmdShim = Join-Path $binDir 'claude-wow.cmd'
+$exe = Join-Path $binDir 'wowgpt.exe'
+$cmdShim = Join-Path $binDir 'wowgpt.cmd'
 $script:Cmd = $null
 
 function Select-BridgeRoute([bool]$sourceWanted, [string]$release, [string]$arch, [scriptblock]$tryBinary) {
@@ -101,9 +108,9 @@ function Select-BridgeRoute([bool]$sourceWanted, [string]$release, [string]$arch
 
 # ---- 1. The bridge ----------------------------------------------------------
 function Get-Binary {
-  $asset = 'claude-wow-windows-x64.exe'
+  $asset = 'wowgpt-windows-x64.exe'
   $base = if ($Release -eq 'latest') { "$Repo/releases/latest/download" } else { "$Repo/releases/download/$Release" }
-  $tmp = Join-Path $env:TEMP "claude-wow-$PID.exe"
+  $tmp = Join-Path $env:TEMP "wowgpt-$PID.exe"
   Write-Host "downloading $base/$asset"
   try { Invoke-WebRequest -UseBasicParsing "$base/$asset" -OutFile $tmp }
   catch {
@@ -120,7 +127,7 @@ function Get-Binary {
     $line = ($sums -split "`n") | Where-Object { $_ -match "\s$([regex]::Escape($asset))\s*$" } | Select-Object -First 1
     $want = if ($line) { ($line -split '\s+')[0].ToLower() } else { '' }
     $have = (Get-FileHash $tmp -Algorithm SHA256).Hash.ToLower()
-    if (-not $want -or $want -ne $have) { Remove-Item -Force $tmp; Fail "the downloaded $asset does not match the release's SHA256SUMS" 'Run this again; if it keeps failing, install from source with -FromSource (or $env:CLAUDE_WOW_SOURCE = "1").' }
+    if (-not $want -or $want -ne $have) { Remove-Item -Force $tmp; Fail "the downloaded $asset does not match the release's SHA256SUMS" 'Run this again; if it keeps failing, install from source with -FromSource (or $env:WOWGPT_SOURCE = "1").' }
     Write-Host 'checksum OK'
   } else { Write-Host 'warning: the release has no SHA256SUMS, so the download was not verified' }
   & $tmp service help *> $null
@@ -130,7 +137,7 @@ function Get-Binary {
   Move-Item -Force $tmp $exe
   if (Test-Path $cmdShim) { Remove-Item -Force $cmdShim } # the source route's shim from an earlier install
   $script:Cmd = $exe
-  Write-Host "claude-wow: $exe ($(& $exe --version 2>$null))"
+  Write-Host "wowgpt: $exe ($(& $exe --version 2>$null))"
   return $true
 }
 
@@ -148,25 +155,25 @@ function Get-Source {
     & git -C $Dir pull --ff-only --quiet 2>$null
     if ($LASTEXITCODE -ne 0) { Write-Host "warning: could not fast-forward $Dir (local changes or no network); keeping what is there" -ForegroundColor Yellow } else { Write-Host "up to date with $Ref" }
   } elseif ((Test-Path $Dir) -and -not (Test-Path (Join-Path $Dir 'setup.js')) -and (Get-ChildItem $Dir -Force -Exclude bin | Select-Object -First 1)) {
-    Fail "$Dir exists and is not a claude-wow install" 'Pick another folder with $env:CLAUDE_WOW_DIR, or move that one aside.'
+    Fail "$Dir exists and is not a wowgpt install" 'Pick another folder with $env:WOWGPT_DIR, or move that one aside.'
   } elseif ($git -and -not (Test-Path (Join-Path $Dir 'setup.js'))) {
     Write-Host "cloning $Repo ($Ref) into $Dir"
-    $tmpClone = Join-Path $env:TEMP "claude-wow-clone-$PID"
+    $tmpClone = Join-Path $env:TEMP "wowgpt-clone-$PID"
     & git clone --quiet --depth 1 --branch $Ref $Repo $tmpClone
     if ($LASTEXITCODE -ne 0) { Fail 'git clone failed' "Check the network and that $Repo is reachable, then run this again." }
     Copy-Item -Recurse -Force (Join-Path $tmpClone '*') $Dir
     Copy-Item -Recurse -Force (Join-Path $tmpClone '.git') $Dir
     Remove-Item -Recurse -Force $tmpClone
   } else {
-    $zip = Join-Path $env:TEMP 'claude-wow.zip'
-    $tmp = Join-Path $env:TEMP "claude-wow-unzip-$PID"
+    $zip = Join-Path $env:TEMP 'wowgpt.zip'
+    $tmp = Join-Path $env:TEMP "wowgpt-unzip-$PID"
     Write-Host "downloading $Repo/archive/refs/heads/$Ref.zip"
     try { Invoke-WebRequest -UseBasicParsing "$Repo/archive/refs/heads/$Ref.zip" -OutFile $zip }
     catch { try { Invoke-WebRequest -UseBasicParsing "$Repo/archive/refs/tags/$Ref.zip" -OutFile $zip } catch { Fail 'download failed' 'Check the network, or install git (https://git-scm.com) and run this again.' } }
     if (Test-Path $tmp) { Remove-Item -Recurse -Force $tmp }
     Expand-Archive $zip $tmp
     $src = Get-ChildItem $tmp -Directory | Select-Object -First 1
-    if (-not (Test-Path (Join-Path $src.FullName 'setup.js'))) { Fail 'the archive did not contain claude-wow' 'Try again with git installed.' }
+    if (-not (Test-Path (Join-Path $src.FullName 'setup.js'))) { Fail 'the archive did not contain wowgpt' 'Try again with git installed.' }
     # Copy over the old files; config.json, state.json and transcripts.json are not in the archive, so they survive.
     Copy-Item -Recurse -Force (Join-Path $src.FullName '*') $Dir
     Remove-Item -Recurse -Force $tmp, $zip
@@ -177,22 +184,22 @@ function Get-Source {
   Set-Content -Path $cmdShim -Value "@echo off`r`nnode `"%~dp0..\bridge\supervisor.js`" %*`r`n" -Encoding ASCII
   if (Test-Path $exe) { & $exe service stop *> $null; Remove-Item -Force $exe } # the binary from an earlier install; .cmd is the command now
   $script:Cmd = $cmdShim
-  Write-Host "claude-wow command: $cmdShim (runs $Dir with node)"
+  Write-Host "wowgpt command: $cmdShim (runs $Dir with node)"
 }
 
 Step '1/4 The bridge'
 switch (Select-BridgeRoute ([bool]$FromSource) $Release $env:PROCESSOR_ARCHITECTURE { Get-Binary }) {
   'source' { Get-Source }
-  'no-binary-for-platform' { Fail "no claude-wow binary exists for $env:PROCESSOR_ARCHITECTURE Windows, in release $Release or any other; a pinned release never falls back to the source" "Run this again with -FromSource (or `$env:CLAUDE_WOW_SOURCE = `"1`") to run $Ref with Node.js." }
-  'pinned-download-failed' { Fail "release $Release has no claude-wow binary for this machine, or it could not be downloaded; a pinned release never falls back to another release or to the source" "Check that $Repo/releases/tag/$Release exists and has claude-wow-windows-x64.exe, and check the network. Or clear `$env:CLAUDE_WOW_RELEASE for the newest release, or set `$env:CLAUDE_WOW_SOURCE = `"1`" to run $Ref with Node.js." }
+  'no-binary-for-platform' { Fail "no wowgpt binary exists for $env:PROCESSOR_ARCHITECTURE Windows, in release $Release or any other; a pinned release never falls back to the source" "Run this again with -FromSource (or `$env:WOWGPT_SOURCE = `"1`") to run $Ref with Node.js." }
+  'pinned-download-failed' { Fail "release $Release has no wowgpt binary for this machine, or it could not be downloaded; a pinned release never falls back to another release or to the source" "Check that $Repo/releases/tag/$Release exists and has wowgpt-windows-x64.exe, and check the network. Or clear `$env:WOWGPT_RELEASE for the newest release, or set `$env:WOWGPT_SOURCE = `"1`" to run $Ref with Node.js." }
 }
 
 # ---- 2. The command on the PATH ---------------------------------------------
-Step '2/4 The claude-wow command'
+Step '2/4 The wowgpt command'
 $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
 if (-not (($userPath -split ';') -contains $binDir)) {
   [Environment]::SetEnvironmentVariable('Path', (@($userPath, $binDir) -ne '' -join ';'), 'User')
-  Write-Host "added $binDir to your user PATH; open a new terminal for the claude-wow command"
+  Write-Host "added $binDir to your user PATH; open a new terminal for the wowgpt command"
 } else { Write-Host "$binDir is on your user PATH" }
 if (-not (($env:Path -split ';') -contains $binDir)) { $env:Path = "$env:Path;$binDir" }
 
@@ -208,14 +215,16 @@ if ((Test-Path (Join-Path $OldDir 'bridge\config.json')) -and -not (Test-Path (J
   Write-Host "carried config.json, state.json and transcripts.json over from $OldDir\bridge to $HomeDir"
   & $Cmd service uninstall | Out-Null
 }
-if (Test-Path $OldDir) {
-  $oldBin = Join-Path $OldDir 'bin'
+# A claude-wow install: setup copies its home; its bin folder leaves the PATH too.
+foreach ($old in @($OldDir, $OldClaudeWowDir)) {
+  if (-not (Test-Path $old)) { continue }
+  $oldBin = Join-Path $old 'bin'
   $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
   if (($userPath -split ';') -contains $oldBin) {
     [Environment]::SetEnvironmentVariable('Path', ((($userPath -split ';') | Where-Object { $_ -ne $oldBin }) -join ';'), 'User')
-    Write-Host "removed $oldBin from your user PATH; the command is claude-wow from now on"
+    Write-Host "removed $oldBin from your user PATH; the command is wowgpt from now on"
   }
-  Write-Host "the old code in $OldDir is no longer used; delete it when you like"
+  Write-Host "the old code in $old is no longer used; delete it when you like"
 }
 
 # ---- 3. Game-side setup -----------------------------------------------------
@@ -225,23 +234,23 @@ if ($Wow) { $setupArgs += @('--wow', $Wow) }
 if ($Project) { $setupArgs += @('--project', $Project) }
 & $Cmd setup @setupArgs
 if ($LASTEXITCODE -ne 0) {
-  Fail 'the game-side setup did not finish (see above)' 'The claude-wow command is installed. Fix what setup reported (usually: the client folder), then run:  claude-wow setup --wow "D:\path\to\World of Warcraft\_classic_beta_"'
+  Fail 'the game-side setup did not finish (see above)' 'The wowgpt command is installed. Fix what setup reported (usually: the client folder), then run:  wowgpt setup --wow "D:\path\to\World of Warcraft\_classic_beta_"'
 }
 
 # ---- 4. Start at login ------------------------------------------------------
 Step '4/4 Background service'
 $installService = $false
-if ($NoService -or $env:CLAUDE_WOW_SERVICE -eq 'no') { Write-Host 'skipped (install later with: claude-wow service install)' }
+if ($NoService -or $env:WOWGPT_SERVICE -eq 'no') { Write-Host 'skipped (install later with: wowgpt service install)' }
 elseif ($Service -or (Ask 'Run the bridge in the background and start it at login? [y/N]')) {
   & $Cmd service install
-  if ($LASTEXITCODE -ne 0) { Fail 'the service did not install (see above)' 'Everything else is in place; start the bridge by hand with: claude-wow' }
+  if ($LASTEXITCODE -ne 0) { Fail 'the service did not install (see above)' 'Everything else is in place; start the bridge by hand with: wowgpt' }
   $installService = $true
-} else { Write-Host 'skipped (install later with: claude-wow service install; or start the bridge by hand with: claude-wow)' }
+} else { Write-Host 'skipped (install later with: wowgpt service install; or start the bridge by hand with: wowgpt)' }
 
-Write-Host "`nInstalled. The claude-wow command works from any folder. Next:" -ForegroundColor Green
+Write-Host "`nInstalled. The wowgpt command works from any folder. Next:" -ForegroundColor Green
 Write-Host '  1. Fully quit and relaunch World of Warcraft (it only discovers new addon folders at launch).'
-Write-Host '  2. Enable "Claude WoW" at the character-select AddOns screen.'
-if ($installService) { Write-Host '  3. Check the bridge:  claude-wow service status     (logs: claude-wow service logs)' }
-else { Write-Host '  3. Start the bridge:  claude-wow        (or: claude-wow service install, to keep it running in the background)' }
-Write-Host '  4. In game:  /claude'
+Write-Host '  2. Enable "WoWGPT" at the character-select AddOns screen.'
+if ($installService) { Write-Host '  3. Check the bridge:  wowgpt service status     (logs: wowgpt service logs)' }
+else { Write-Host '  3. Start the bridge:  wowgpt        (or: wowgpt service install, to keep it running in the background)' }
+Write-Host '  4. In game:  /wowgpt'
 Write-Host "`nUpdate later by running this installer again. Folder: $Dir"

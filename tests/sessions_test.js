@@ -12,7 +12,7 @@ const C1 = 'abcd1111-0000-4000-8000-000000000001';
 const C2 = 'abcd2222-0000-4000-8000-000000000002';
 
 function fakeClaudeDir() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-wow-sessions-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wowgpt-sessions-'));
   const put = (cwd, id, lines) => {
     const p = path.join(dir, 'projects', SS.projectSlug(cwd));
     fs.mkdirSync(p, { recursive: true });
@@ -149,7 +149,7 @@ test('a reference resolves by exact id, exact name, id prefix, then name prefix;
   assert.deepEqual(SS.resolveResume('6624', { own: list }).session.id, A);
   const amb = SS.resolveResume('abcd', { own: list });
   assert.match(amb.error, /^"abcd" matches 2 sessions:\nabcd1111  First abcd  \/srv\/one\nabcd2222  Second abcd  \/srv\/two\nUse more of the id\.$/);
-  assert.match(SS.resolveResume('zzzz', { own: list }).error, /No session matches "zzzz"\. \/claude -r lists the recent ones\./);
+  assert.match(SS.resolveResume('zzzz', { own: list }).error, /No session matches "zzzz"\. \/wowgpt -r lists the recent ones\./);
   let asked = '';
   const found = SS.resolveResume('f024', {
     own: list,
@@ -176,7 +176,7 @@ test('a session without a title is named by its first prompt, from the history o
       [
         { type: 'user', isMeta: true, message: { role: 'user', content: 'meta' } },
         { type: 'user', message: { role: 'user', content: '<command-name>/clear</command-name>' } },
-        { type: 'user', message: { role: 'user', content: '<channel source="claude-wow" chat_id="x">hey</channel>' } },
+        { type: 'user', message: { role: 'user', content: '<channel source="wowgpt" chat_id="x">hey</channel>' } },
         {
           type: 'user',
           message: {
@@ -198,7 +198,7 @@ test('a session without a title is named by its first prompt, from the history o
 });
 
 test('git branch of a session folder: a checkout, a subfolder, a worktree, a detached head, no repository', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-wow-git-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'wowgpt-git-'));
   try {
     const repo = path.join(root, 'repo');
     fs.mkdirSync(path.join(repo, '.git'), { recursive: true });

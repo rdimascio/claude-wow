@@ -59,23 +59,23 @@ test('the ask plugin runs on its own model and effort from plugins.ask.agents, a
   };
   await withGame({ plugin: 'ask', beforeLaunch }, async h => {
     await h.client.connect();
-    h.client.runLua('if not (ClaudeWoW.UI and ClaudeWoW.UI.effort) then ClaudeWoW.Toggle() end; ClaudeWoW.Render()');
-    const meter = () => h.client.luaValue('ClaudeWoW.UI.effort.text:GetText()');
+    h.client.runLua('if not (WoWGPT.UI and WoWGPT.UI.effort) then WoWGPT.Toggle() end; WoWGPT.Render()');
+    const meter = () => h.client.luaValue('WoWGPT.UI.effort.text:GetText()');
     await h.client.waitFor(() => meter() === '|cffffffffmedium|r', { timeoutMs: 20000, label: 'the effort meter to show what the ask plugin passes' });
     await h.client.say('best race for a rogue');
     let call = h.agentCalls().at(-1);
     assert.equal(flagAfter(call.argv, '--model'), 'claude-sonnet-5-5');
     assert.equal(flagAfter(call.argv, '--effort'), 'medium', 'the run got the value the meter showed');
-    await slash(h, '/claude -c --model opus[1m] --effort max plan the whole route');
+    await slash(h, '/wowgpt -c --model opus[1m] --effort max plan the whole route');
     call = h.agentCalls().at(-1);
     assert.equal(flagAfter(call.argv, '--model'), 'opus[1m]');
     assert.equal(flagAfter(call.argv, '--effort'), 'max');
-    h.client.runLua('ClaudeWoW.Render()');
+    h.client.runLua('WoWGPT.Render()');
     assert.equal(meter(), '|cffffffffmax|r', 'the chat flag shows on the meter too');
   });
 });
 
-test('/claude -r resumes a Claude Code session headless in its folder: from the list by prefix, by an id only the bridge can find, and refuses one it cannot', async () => {
+test('/wowgpt -r resumes a Claude Code session headless in its folder: from the list by prefix, by an id only the bridge can find, and refuses one it cannot', async () => {
   let folder = '';
   await withGame(
     {
@@ -89,25 +89,25 @@ test('/claude -r resumes a Claude Code session headless in its folder: from the 
     },
     async h => {
       await h.client.connect();
-      const r = await slash(h, '/claude -r f024 carry on');
+      const r = await slash(h, '/wowgpt -r f024 carry on');
       assert.match(r.text, /echo \(turn 5\): carry on/, 'the agent continued the old session');
       const call = h.agentCalls().at(-1);
       assert.equal(call.resume, OLD);
       assert.equal(fs.realpathSync(call.cwd), fs.realpathSync(folder), "the run happens in the session's folder");
       assert.equal(h.client.activeChat().cwd, folder);
-      await slash(h, '/claude -c and again');
+      await slash(h, '/wowgpt -c and again');
       assert.equal(h.agentCalls().at(-1).resume, OLD, 'later turns keep the adopted session');
 
-      const found = await slash(h, `/claude -r ${UNLISTED.slice(0, 8)} hello there`);
+      const found = await slash(h, `/wowgpt -r ${UNLISTED.slice(0, 8)} hello there`);
       assert.match(found.text, /hello there/);
       assert.equal(h.agentCalls().at(-1).resume, UNLISTED, 'an id the list did not have is looked up by the bridge');
       assert.equal(h.client.activeChat().cwd, folder, 'and the chat learns its folder from the reply');
 
       const calls = h.agentCalls().length;
-      const none = await slash(h, '/claude -r deadbeef nope');
+      const none = await slash(h, '/wowgpt -r deadbeef nope');
       assert.equal(none.role, 'system');
       assert.match(none.text, /No session matches "deadbeef"/);
-      const twins = await slash(h, '/claude -r abcdef12 hi');
+      const twins = await slash(h, '/wowgpt -r abcdef12 hi');
       assert.equal(twins.role, 'system');
       assert.match(twins.text, /"abcdef12" matches 2 sessions:\nabcdef12  [^\n]*\nabcdef12  [^\n]*\nUse more of the id\./);
       assert.equal(h.agentCalls().length, calls, 'no agent ran for either');

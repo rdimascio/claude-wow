@@ -14,7 +14,7 @@ Ask the agent for a small UI element (*"give me a DPS meter"*, *"a timer bar for
    ```
    ````
 
-   Or its tools append one JSON object per line to the file in `CLAUDE_WOW_UI_FILE` (set for every run of a plugin with the `ui` surface, in `~/.claude-wow/uijobs/`):
+   Or its tools append one JSON object per line to the file in `WOWGPT_UI_FILE` (set for every run of a plugin with the `ui` surface, in `~/.wowgpt/uijobs/`):
 
    ```json
    {"op":"set","name":"dps","title":"DPS meter","source":"local ui = ...\n..."}
@@ -39,7 +39,7 @@ The source is the body of a function. `local ui = ...` gives:
 
 ## Two checks
 
-- **Bridge deny-list.** `validateWidgetCommand` refuses a source that names a protected or outward action anywhere in its text: casting, using actions and items, macros (`CastSpellByName`, `UseAction`, `RunMacro`, `RunMacroText`, ...), targeting and movement (`TargetUnit`, `AssistUnit`, `MoveForwardStart`, ...), chat and addon messages (`SendChatMessage`, `SendAddonMessage`, `BNSendWhisper`), groups, trade, mail, bindings, CVars, `ReloadUI`, `LoadAddOn`, `SlashCmdList`, `hooksecurefunc`, `securecall`, `loadstring`/`setfenv`/`getfenv`/`rawget`/`debug`, any `Secure...Template`, any `ClaudeWoW*` global, and the events only the Blizzard UI may register. The list is `WIDGET_DENIED_NAMES` in `bridge/protocol.js`. It is a fast first refusal with a clear message, not the boundary: a name built at run time (`"Cast" .. "Spell"`) passes it.
+- **Bridge deny-list.** `validateWidgetCommand` refuses a source that names a protected or outward action anywhere in its text: casting, using actions and items, macros (`CastSpellByName`, `UseAction`, `RunMacro`, `RunMacroText`, ...), targeting and movement (`TargetUnit`, `AssistUnit`, `MoveForwardStart`, ...), chat and addon messages (`SendChatMessage`, `SendAddonMessage`, `BNSendWhisper`), groups, trade, mail, bindings, CVars, `ReloadUI`, `LoadAddOn`, `SlashCmdList`, `hooksecurefunc`, `securecall`, `loadstring`/`setfenv`/`getfenv`/`rawget`/`debug`, any `Secure...Template`, any `WoWGPT*` global, and the events only the Blizzard UI may register. The list is `WIDGET_DENIED_NAMES` in `bridge/protocol.js`. It is a fast first refusal with a clear message, not the boundary: a name built at run time (`"Cast" .. "Spell"`) passes it.
 - **Addon allowlist and membrane.** `Widgets.lua` is the boundary. Each widget runs with its own environment. A global resolves only when it is on the allowlist below; every other global is `nil`. The names on the deny-list resolve to a function that raises "is not allowed in a widget" (a test keeps `DENIED_NAMES` in `Widgets.lua` equal to `WIDGET_DENIED_NAMES`). Every frame, region and game object the widget touches is a proxy (the membrane), so a widget never holds a Blizzard frame or a real frame of its own.
 
 ## What a widget can use
@@ -77,7 +77,7 @@ The source is the body of a function. `local ui = ...` gives:
 |---|---|
 | Every global not on the allowlist | it is `nil`: Blizzard frames (`DEFAULT_CHAT_FRAME`, `Minimap`, `PlayerFrame`, ...), `SlashCmdList`, `securecall`, `RunScript`, getters outside `GAME_FUNCTIONS`, and so on |
 | A name on the deny-list | the bridge refuses the source; at run time the name raises "is not allowed in a widget" |
-| `ClaudeWoW*` globals | `nil` (the bridge also refuses a source that names one) |
+| `WoWGPT*` globals | `nil` (the bridge also refuses a source that names one) |
 | Other frame types (`MovieFrame`, ...) and templates (any `Secure*`, `ChatFrameEditBoxTemplate`, ...) | `CreateFrame` raises an error |
 | A parent that is not `ui.frame` or the widget's own frame | `CreateFrame` and `SetParent` raise an error |
 | `SetScrollChild` with a frame the widget did not make, or with `ui.frame` | raises an error |
@@ -95,7 +95,7 @@ The first sandbox gave a widget every global except a deny-list. The allowlist c
 - **No global names.** `CreateFrame("Frame", "MyMeter")` makes a frame with no name, and `MyMeter` stays `nil`. Keep the frame in a local.
 - **`UIParent` is `ui.frame`.** `SetPoint("CENTER", UIParent)` anchors to the widget's container, which covers the screen, so the layout is the same.
 - **No `GameTooltip` anchoring or capture.** `GameTooltip` is a proxy with display methods only, so `f:SetPoint("BOTTOMRIGHT", GameTooltip)` never passes the real tooltip to the frame, and `SetScrollChild(GameTooltip)` or `SetParent` on it raise an error. `GameTooltip:GetParent`, `SetScript` and the other frame methods are `nil`. The tooltip still shows lines for a widget button through `SetOwner`. What the real client does with the proxy as an anchor was not measured; expect an error or no anchor.
-- **Only listed getters.** A `Get*` or `Is*` global outside `GAME_FUNCTIONS` is `nil`, and a `C_` function that is not a getter raises an error. `/claude dev globals` and `npm run audit:widgets` (below) list what the real client has that the allowlist misses.
+- **Only listed getters.** A `Get*` or `Is*` global outside `GAME_FUNCTIONS` is `nil`, and a `C_` function that is not a getter raises an error. `/wowgpt dev globals` and `npm run audit:widgets` (below) list what the real client has that the allowlist misses.
 - **No keyboard, no mouse on the container.** A widget that turned on the keyboard or the mouse on `ui.frame` now fails at that call.
 - **Copied tables.** `RAID_CLASS_COLORS` and the other data tables are copies; a change stays in the widget.
 
@@ -103,30 +103,30 @@ The first sandbox gave a widget every global except a deny-list. The allowlist c
 
 The allowlist was written from the API docs and the test stub. To check it against the client you play:
 
-1. In game: `/claude dev globals`. The addon walks `_G` once and saves into `ClaudeWoWWidgetDB.globals` the sorted names of global functions named `Unit*`, `Get*`, `Is*`, `Has*` and `Can*`, every function on the allowlist, every function key of every `C_*` namespace (as `C_Name.Function`), and every global font object. Each name goes in `admitted` (a widget can use it) or `refused`, decided by the same functions the sandbox uses. It keeps at most 6,000 names, admitted first, and saves the client version, build, interface, time and the full counts. It prints how many it saved. It reads only; it calls nothing it finds. This command runs in the addon and does not need the bridge.
+1. In game: `/wowgpt dev globals`. The addon walks `_G` once and saves into `WoWGPTWidgetDB.globals` the sorted names of global functions named `Unit*`, `Get*`, `Is*`, `Has*` and `Can*`, every function on the allowlist, every function key of every `C_*` namespace (as `C_Name.Function`), and every global font object. Each name goes in `admitted` (a widget can use it) or `refused`, decided by the same functions the sandbox uses. It keeps at most 6,000 names, admitted first, and saves the client version, build, interface, time and the full counts. It prints how many it saved. It reads only; it calls nothing it finds. This command runs in the addon and does not need the bridge.
 2. `/reload` (or log out), so the game writes the account SavedVariables file.
-3. In the claude-wow checkout: `npm run audit:widgets`. It reads `ClaudeWoW.lua` in the SavedVariables folder of every client in `config.json` (or the files you name: `npm run audit:widgets -- <path>`), and lists:
+3. In the wowgpt checkout: `npm run audit:widgets`. It reads `WoWGPT.lua` in the SavedVariables folder of every client in `config.json` (or the files you name: `npm run audit:widgets -- <path>`), and lists:
    - admitted names whose first word is a writer or action verb (`Set`, `Send`, `Cast`, `Use`, `Play`, `Select`, ...): check each one;
    - refused names whose first word is a getter verb (`Get`, `Is`, `Has`, `Can`, ...), and refused `Unit*` readers: candidates to add to `GAME_FUNCTIONS`.
 
    Each list shows 60 names; `--all` shows every name, `--json` prints the report as JSON. The verb is the first word of the function name, after the `C_` namespace or the `Unit` prefix. It exits 2 when no file holds a dump.
-4. `/claude dev globals clear` drops the saved names.
+4. `/wowgpt dev globals clear` drops the saved names.
 
 ## Errors
 
-The first run is in a `pcall`, and so are the widget's script handlers (`SetScript`, `HookScript`) and timer callbacks. On an error, the addon stops the widget (hides its frames, unregisters their events and the handlers it put on `ui.frame`, cancels its tickers) and writes the error to the game chat and to the chat window. An error value that cannot be turned into text still stops the widget. `/claude config ui run <name>` tries again.
+The first run is in a `pcall`, and so are the widget's script handlers (`SetScript`, `HookScript`) and timer callbacks. On an error, the addon stops the widget (hides its frames, unregisters their events and the handlers it put on `ui.frame`, cancels its tickers) and writes the error to the game chat and to the chat window. An error value that cannot be turned into text still stops the widget. `/wowgpt config ui run <name>` tries again.
 
 ## In game
 
 | Command | Does |
 |---|---|
-| `/claude config ui` or `/claude config ui list` | list the widgets: running, waiting for your OK, removed, or failed with the error (bare, it also shows the tab and window settings) |
-| `/claude config ui remove <name>` | stop a widget and keep it off after login. It comes back only when the agent sends a new version |
-| `/claude config ui run <name>` | start a widget again (after an error or a remove), or say yes to one that waits |
-| `/claude dev globals [clear]` | save (or drop) the names the widget allowlist admits and refuses on this client, for `npm run audit:widgets` |
+| `/wowgpt config ui` or `/wowgpt config ui list` | list the widgets: running, waiting for your OK, removed, or failed with the error (bare, it also shows the tab and window settings) |
+| `/wowgpt config ui remove <name>` | stop a widget and keep it off after login. It comes back only when the agent sends a new version |
+| `/wowgpt config ui run <name>` | start a widget again (after an error or a remove), or say yes to one that waits |
+| `/wowgpt dev globals [clear]` | save (or drop) the names the widget allowlist admits and refuses on this client, for `npm run audit:widgets` |
 
-Widgets are off until the player turns them on with `/claude config ui widgets on` (`ClaudeWoWWidgetDB.enabled`). While they are off, `W.Start` and `W.PromptNext` do nothing, `run` and **Show** refuse, a new set from the bridge only says that widgets are off, and `W.Status` is `off`. `widgets off` stops every running widget. A saved `ClaudeWoWWidgetDB` from before the switch existed starts with widgets on when it already holds an approved widget, else off.
+Widgets are off until the player turns them on with `/wowgpt config ui widgets on` (`WoWGPTWidgetDB.enabled`). While they are off, `W.Start` and `W.PromptNext` do nothing, `run` and **Show** refuse, a new set from the bridge only says that widgets are off, and `W.Status` is `off`. `widgets off` stops every running widget. A saved `WoWGPTWidgetDB` from before the switch existed starts with widgets on when it already holds an approved widget, else off.
 
-A widget runs only after the player says yes to that revision. `W.Start` refuses any revision that is not in `ClaudeWoWWidgetDB.approved[name]`, on both paths: a sync from the bridge (`W.Sync`) and the saved set at login (`W.Apply`). Each waiting widget opens one `CLAUDEWOW_WIDGET` popup at a time ("Show the agent's '<title>' widget?", the title through `Display`). **Show** stores `approved[name] = rev` and starts it; **Not Now** stores `removed[name] = rev`, as `remove` does. Both re-check that the revision is still current and was not removed. Escape is no answer: the widget waits and is asked again at the next login. When the popup system refuses (`StaticPopup_Show` returns nil, or cancels it), the widget stays queued and nothing is recorded. The **Widgets** page in the game's AddOns settings lists the widgets with **Remove** and **Show** buttons.
+A widget runs only after the player says yes to that revision. `W.Start` refuses any revision that is not in `WoWGPTWidgetDB.approved[name]`, on both paths: a sync from the bridge (`W.Sync`) and the saved set at login (`W.Apply`). Each waiting widget opens one `WOWGPT_WIDGET` popup at a time ("Show the agent's '<title>' widget?", the title through `Display`). **Show** stores `approved[name] = rev` and starts it; **Not Now** stores `removed[name] = rev`, as `remove` does. Both re-check that the revision is still current and was not removed. Escape is no answer: the widget waits and is asked again at the next login. When the popup system refuses (`StaticPopup_Show` returns nil, or cancels it), the widget stays queued and nothing is recorded. The **Widgets** page in the game's AddOns settings lists the widgets with **Remove** and **Show** buttons.
 
-Widgets live in `ClaudeWoWWidgetDB` and approved ones start again at login, in the same sandbox. To delete a widget on the bridge too, ask the agent ("remove the DPS meter").
+Widgets live in `WoWGPTWidgetDB` and approved ones start again at login, in the same sandbox. To delete a widget on the bridge too, ask the agent ("remove the DPS meter").

@@ -365,11 +365,11 @@ function configuredClaudeDir(homeDir, env) {
 const OPTIONS = ['--stop', '--force', '--json'];
 
 const USAGE = [
-  'claude-wow handoff [folder] [--stop [--force]] [--json]',
+  'wowgpt handoff [folder] [--stop [--force]] [--json]',
   '',
   "Lists the Claude Code sessions running in the folder's repository (its worktrees too),",
   "with each one's last ask and answer, and saves the list in the home folder for the game.",
-  'In game, /claude -r all then opens one chat per session that is no longer running.',
+  'In game, /wowgpt -r all then opens one chat per session that is no longer running.',
   'Running it again adds to the list saved in the last 24 hours.',
   '',
   '  --stop   end the idle sessions (SIGTERM) after saving the list. A busy session, one whose',
@@ -420,11 +420,11 @@ async function main(
   out(`\nSaved to ${file}.`);
   const live = handoff.sessions.filter(s => s.pid && fresh.sessions.some(f => f.id === s.id));
   if (!live.length) {
-    if (handoff.sessions.length) out('In game: /claude -r all');
+    if (handoff.sessions.length) out('In game: /wowgpt -r all');
     return 0;
   }
   if (!argv.includes('--stop')) {
-    out('Quit these sessions (or run this again with --stop), then in game: /claude -r all. A session still running is not opened in game.');
+    out('Quit these sessions (or run this again with --stop), then in game: /wowgpt -r all. A session still running is not opened in game.');
     return 0;
   }
   const force = argv.includes('--force');
@@ -449,7 +449,7 @@ async function main(
   for (const line of skipped) out(`Not stopped: ${line}`);
   if (left.length) out(`Still running after SIGTERM (pid ${left.join(', ')}): quit them in their terminals.`);
   if (live.some(s => s.self)) out('This session was not stopped. Quit it when you are done here.');
-  out('In game: /claude -r all. Sessions still running are not opened there until they end.');
+  out('In game: /wowgpt -r all. Sessions still running are not opened there until they end.');
   return left.length || skipped.length ? 1 : 0;
 }
 

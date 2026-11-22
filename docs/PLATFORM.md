@@ -1,6 +1,6 @@
-# claude-wow as a platform: core + plugins
+# wowgpt as a platform: core + plugins
 
-Today claude-wow is one thing: a chat window wired to a coding agent. The goal is two
+Today wowgpt is one thing: a chat window wired to a coding agent. The goal is two
 things — a general in-game AI client that stands on its own, and coding work as one
 plugin among several.
 
@@ -29,7 +29,7 @@ surfaces           which of the core's surfaces its replies may use: "map", "mac
 searchesFiles      optional, false by default; true keeps Grep, Glob, LS and NotebookRead
                    for its Claude runs (only `claude-code` sets it). Every other plugin's
                    Claude runs get those four tools denied. Every plugin's Claude runs are
-                   denied `Read` of the bridge home (`~/.claude-wow/**`, by its real path too)
+                   denied `Read` of the bridge home (`~/.wowgpt/**`, by its real path too)
 handle(msg, core)  what to actually do; `core` lends it the agent runner, the
                    bridge's folder and the chat's session
 finished(msg, outcome, core)
@@ -40,7 +40,7 @@ finished(msg, outcome, core)
 ```
 
 A chat is bound to a plugin the way it is bound to an agent today (a `plugin=`
-flag on the record). `@claude …` or `/claude …` at the start of a message
+flag on the record). `@claude …` or `/wowgpt …` at the start of a message
 addresses the coding plugin whatever the chat is bound to; a bare message goes to
 whichever plugin the chat is bound to, defaulting to the general one. Chats from
 before the split stay bound to the coding plugin. The agent CLIs (`agents.js`)
@@ -48,11 +48,11 @@ are the core's model runner, shared by every plugin: `ask` runs the same CLI as
 `claude-code`, in a scratch folder instead of a project.
 
 Players never have to name a plugin. The addon picks one from the chat: a chat
-attached to a running session with `/claude -r` is `live`, a chat with a folder
-(`/claude cd`) is `claude-code`, and any other chat goes to the bridge's default
-(`ask`). `/claude -r` also decides between `live` and a headless resume: a session
+attached to a running session with `/wowgpt -r` is `live`, a chat with a folder
+(`/wowgpt cd`) is `claude-code`, and any other chat goes to the bridge's default
+(`ask`). `/wowgpt -r` also decides between `live` and a headless resume: a session
 that is connected over the channel gets the chat live, any other one is resumed
-with `--resume` in its folder by `claude-code`. `/claude config plugin <name>`
+with `--resume` in its folder by `claude-code`. `/wowgpt config plugin <name>`
 stays as an advanced setting that pins a chat by hand.
 
 ## The plugins
@@ -62,7 +62,7 @@ stays as an advanced setting that pins a chat by hand.
 | `ask` | General AI chat. Game questions, quest research, map routes, macros. The default. | Core behaviour today, minus the coding assumptions |
 | `claude-code` | Agent sessions in a folder. What the bridge does now. | Existing bridge |
 | `live` | A Claude Code session already open in a terminal, reached through a Claude Code channel ([LIVE-SESSION.md](LIVE-SESSION.md)). No agent run: the plugin forwards the message and waits for the session's `wow_reply`. | `bridge/plugins/live.js`, `bridge/channel.js` |
-| `dev` | Dev tools for the chat's folder: git status and diffs, `bridge.log`, the last run, tests, the doctor, Lua errors, and the feedback list ([IN-GAME-DEV.md](IN-GAME-DEV.md)). No agent run; addressed as `@dev <command>` (the addon sends it for `/claude dev`). | `bridge/plugins/dev.js`, `bridge/feedback.js` |
+| `dev` | Dev tools for the chat's folder: git status and diffs, `bridge.log`, the last run, tests, the doctor, Lua errors, and the feedback list ([IN-GAME-DEV.md](IN-GAME-DEV.md)). No agent run; addressed as `@dev <command>` (the addon sends it for `/wowgpt dev`). | `bridge/plugins/dev.js`, `bridge/feedback.js` |
 | `vision` | Answers about what is on screen | New; see below |
 
 ## Vision

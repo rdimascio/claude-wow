@@ -50,12 +50,14 @@ test('slot file round-trips replies, denied rules, cwd, agents and a restore bun
       },
     ],
   };
-  const lua = P.luaTable(
-    'ClaudeWoW_SlotData',
-    [{ chat: 'c9', id: 3, status: 'done', text: 'ok\ttab', denied: ['WebSearch', 'Bash(cargo:*)'], agent: 'grok' }],
-    { cwd: 'C:\\proj', restore, now: 1700000000123, agent: 'claude', agents: ['claude', 'codex', 'grok'] },
-  );
-  const d = readSlot(lua, 'ClaudeWoW_SlotData');
+  const lua = P.luaTable('WoWGPT_SlotData', [{ chat: 'c9', id: 3, status: 'done', text: 'ok\ttab', denied: ['WebSearch', 'Bash(cargo:*)'], agent: 'grok' }], {
+    cwd: 'C:\\proj',
+    restore,
+    now: 1700000000123,
+    agent: 'claude',
+    agents: ['claude', 'codex', 'grok'],
+  });
+  const d = readSlot(lua, 'WoWGPT_SlotData');
   assert.equal(d.now, 1700000000);
   assert.equal(d.cwd, 'C:\\proj');
   assert.equal(d.agent, 'claude');
@@ -72,23 +74,23 @@ test('slot file round-trips replies, denied rules, cwd, agents and a restore bun
   assert.equal(d.restore.chats[0].messages[1].agent, 'codex');
 });
 
-test('slot file carries the session list for /claude -r: running sessions flagged live, a chat id when the bridge made it', () => {
+test('slot file carries the session list for /wowgpt -r: running sessions flagged live, a chat id when the bridge made it', () => {
   const sessions = [
     { id: '6624f327-7126-423e-a653-d7cf7a4e492b', name: 'wow-ai "main"', cwd: '/Users/me/wow-ai', agent: 'claude', at: 1790000000, live: true },
     { id: 'thread-9', name: 'Quests', cwd: '', agent: 'codex', plugin: 'ask', chat: 'c2', at: 1789990000.7 },
   ];
-  const t = readSlot(P.luaTable('ClaudeWoW_SlotData', [], { sessions }), 'ClaudeWoW_SlotData');
+  const t = readSlot(P.luaTable('WoWGPT_SlotData', [], { sessions }), 'WoWGPT_SlotData');
   assert.deepEqual(t.sessions, [
     { id: '6624f327-7126-423e-a653-d7cf7a4e492b', name: 'wow-ai "main"', cwd: '/Users/me/wow-ai', agent: 'claude', at: 1790000000, live: true },
     { id: 'thread-9', name: 'Quests', cwd: '', agent: 'codex', at: 1789990000, plugin: 'ask', chat: 'c2' },
   ]);
-  const empty = readSlot(P.luaTable('ClaudeWoW_SlotData', [], { sessions: [] }), 'ClaudeWoW_SlotData');
+  const empty = readSlot(P.luaTable('WoWGPT_SlotData', [], { sessions: [] }), 'WoWGPT_SlotData');
   assert.deepEqual(empty.sessions, {});
-  assert.equal(readSlot(P.luaTable('ClaudeWoW_SlotData', [], {}), 'ClaudeWoW_SlotData').sessions, undefined, 'no list, no key');
+  assert.equal(readSlot(P.luaTable('WoWGPT_SlotData', [], {}), 'WoWGPT_SlotData').sessions, undefined, 'no list, no key');
 });
 
 test('slot file carries the picker fields (title, branch, running, restart) and the late-reply flags', () => {
-  const restart = 'cd /Users/me/wow-ai && claude --resume f02436b8-8a5f-4c05-823e-bef25f88ff7b --dangerously-load-development-channels server:claude-wow';
+  const restart = 'cd /Users/me/wow-ai && claude --resume f02436b8-8a5f-4c05-823e-bef25f88ff7b --dangerously-load-development-channels server:wowgpt';
   const sessions = [
     {
       id: 'f02436b8-8a5f-4c05-823e-bef25f88ff7b',
@@ -107,7 +109,7 @@ test('slot file carries the picker fields (title, branch, running, restart) and 
     { chat: 'c1', id: 159, status: 'done', text: 'late hi', late: true },
     { chat: 'c2', id: 3, status: 'done', text: 'plain' },
   ];
-  const t = readSlot(P.luaTable('ClaudeWoW_SlotData', records, { sessions }), 'ClaudeWoW_SlotData');
+  const t = readSlot(P.luaTable('WoWGPT_SlotData', records, { sessions }), 'WoWGPT_SlotData');
   assert.deepEqual(t.sessions, [
     {
       id: sessions[0].id,
@@ -152,7 +154,7 @@ test('slot file carries lateSeq only on a late record and lateIn only on a lateO
     [{ ...prompt({ lateIn: 120 }), lateOk: false }, 'lateIn', undefined],
   ];
   for (const [record, field, want] of cases) {
-    const t = readSlot(P.luaTable('ClaudeWoW_SlotData', [record]), 'ClaudeWoW_SlotData');
+    const t = readSlot(P.luaTable('WoWGPT_SlotData', [record]), 'WoWGPT_SlotData');
     assert.equal(t.replies[0][field], want, `${field} for ${JSON.stringify(record)}`);
   }
 });

@@ -18,7 +18,7 @@ const OLD = Buffer.from('OLD BINARY');
 const NEW = Buffer.from('NEW BINARY 9.9.9');
 
 function tmpDir(label) {
-  return fs.mkdtempSync(path.join(os.tmpdir(), `claude-wow-update-${label}-`));
+  return fs.mkdtempSync(path.join(os.tmpdir(), `wowgpt-update-${label}-`));
 }
 
 function sha(buf) {
@@ -48,8 +48,16 @@ function serve(handler) {
   });
 }
 
-function releaseServer({ tag = 'v9.9.9', body = NEW, sums, omitAsset = false, omitSums = false, chunked = false } = {}) {
-  const sumsText = sums !== undefined ? sums : `${sha(body)}  ${ASSET}\n${sha(Buffer.from('other'))}  claude-wow-darwin-arm64\n`;
+function releaseServer({
+  tag = 'v9.9.9',
+  body = NEW,
+  sums,
+  omitAsset = false,
+  omitSums = false,
+  chunked = false,
+  asset: ASSET = UPD.assetName(PLATFORM, ARCH),
+} = {}) {
+  const sumsText = sums !== undefined ? sums : `${sha(body)}  ${ASSET}\n${sha(Buffer.from('other'))}  wowgpt-darwin-arm64\n`;
   return serve((req, res, server) => {
     const base = `http://127.0.0.1:${server.address().port}`;
     if (req.url === '/repos/x/releases/latest') {
@@ -83,7 +91,7 @@ function setup(label) {
   const bin = path.join(dir, 'bin');
   fs.mkdirSync(home);
   fs.mkdirSync(bin);
-  const binary = path.join(bin, POSIX ? 'claude-wow' : 'claude-wow.exe');
+  const binary = path.join(bin, POSIX ? 'wowgpt' : 'wowgpt.exe');
   fs.writeFileSync(binary, OLD, { mode: 0o755 });
   return { dir, home, bin, binary, install: { kind: 'binary', binary } };
 }
@@ -137,15 +145,15 @@ test('the asset name is the one build.js gives each target, and none for an unbu
 
 test('install kind: source, a Homebrew keg, a git checkout and a dev deploy are refused; a plain binary and a release are not', () => {
   assert.equal(UPD.installKind({ compiled: false, execPath: process.execPath }).kind, 'dev');
-  assert.equal(UPD.installKind({ compiled: true, execPath: '/opt/homebrew/Cellar/claude-wow/0.5.0/bin/claude-wow' }).kind, 'homebrew');
-  assert.equal(UPD.installKind({ compiled: true, execPath: '/usr/local/Cellar/claude-wow/0.5.0/bin/claude-wow' }).kind, 'homebrew');
-  assert.equal(UPD.installKind({ compiled: true, execPath: '/home/linuxbrew/.linuxbrew/bin/claude-wow' }).kind, 'homebrew');
+  assert.equal(UPD.installKind({ compiled: true, execPath: '/opt/homebrew/Cellar/wowgpt/0.5.0/bin/wowgpt' }).kind, 'homebrew');
+  assert.equal(UPD.installKind({ compiled: true, execPath: '/usr/local/Cellar/wowgpt/0.5.0/bin/wowgpt' }).kind, 'homebrew');
+  assert.equal(UPD.installKind({ compiled: true, execPath: '/home/linuxbrew/.linuxbrew/bin/wowgpt' }).kind, 'homebrew');
   const repo = tmpDir('repo');
   fs.mkdirSync(path.join(repo, '.git'));
   fs.mkdirSync(path.join(repo, 'dist'));
-  fs.writeFileSync(path.join(repo, 'package.json'), JSON.stringify({ name: 'claude-wow' }));
-  fs.writeFileSync(path.join(repo, 'dist', 'claude-wow'), OLD);
-  const inRepo = UPD.installKind({ compiled: true, execPath: path.join(repo, 'dist', 'claude-wow') });
+  fs.writeFileSync(path.join(repo, 'package.json'), JSON.stringify({ name: 'wowgpt' }));
+  fs.writeFileSync(path.join(repo, 'dist', 'wowgpt'), OLD);
+  const inRepo = UPD.installKind({ compiled: true, execPath: path.join(repo, 'dist', 'wowgpt') });
   assert.equal(inRepo.kind, 'dev');
   assert.match(inRepo.why, /git checkout/);
   for (const [label, files] of [
@@ -156,9 +164,9 @@ test('install kind: source, a Homebrew keg, a git checkout and a dev deploy are 
     fs.mkdirSync(path.join(home, '.git'));
     for (const [f, text] of Object.entries(files)) fs.writeFileSync(path.join(home, f), text);
     fs.mkdirSync(path.join(home, '.local', 'bin'), { recursive: true });
-    fs.writeFileSync(path.join(home, '.local', 'bin', 'claude-wow'), OLD);
+    fs.writeFileSync(path.join(home, '.local', 'bin', 'wowgpt'), OLD);
     assert.equal(
-      UPD.installKind({ compiled: true, execPath: path.join(home, '.local', 'bin', 'claude-wow') }).kind,
+      UPD.installKind({ compiled: true, execPath: path.join(home, '.local', 'bin', 'wowgpt') }).kind,
       'binary',
       `${label}: a git repo above the binary that is not this project does not turn updates off`,
     );
@@ -217,7 +225,7 @@ test("a release without this platform's asset, without SHA256SUMS, or without a 
   for (const [label, cfg, re] of [
     ['noasset', { omitAsset: true }, new RegExp(`has no ${ASSET.replace('.', '\\.')}`)],
     ['nosums', { omitSums: true }, /has no SHA256SUMS/],
-    ['noline', { sums: `${sha(NEW)}  claude-wow-darwin-arm64\n` }, /no line for/],
+    ['noline', { sums: `${sha(NEW)}  wowgpt-darwin-arm64\n` }, /no line for/],
   ]) {
     const t = setup(label);
     const srv = await releaseServer(cfg);
@@ -242,10 +250,10 @@ test('a Homebrew keg is never swapped: it says brew upgrade and downloads nothin
   const t = setup('brew');
   const srv = await releaseServer();
   try {
-    const install = UPD.installKind({ compiled: true, execPath: '/opt/homebrew/Cellar/claude-wow/1.0.0/bin/claude-wow' });
+    const install = UPD.installKind({ compiled: true, execPath: '/opt/homebrew/Cellar/wowgpt/1.0.0/bin/wowgpt' });
     const out = await UPD.checkAndRecord(opts(t, srv, { install }));
     assert.equal(out.status, 'homebrew');
-    assert.match(out.message, /brew upgrade claude-wow/);
+    assert.match(out.message, /brew upgrade wowgpt/);
     assert.deepEqual(srv.downloads(), []);
     untouched(t);
   } finally {
@@ -292,7 +300,7 @@ test('the real probe runs the downloaded file and reads its version', { skip: !P
     ['9.9.8', 'failed'],
   ]) {
     const t = setup('realprobe');
-    const body = Buffer.from(`#!/bin/sh\necho "claude-wow ${printed} (fake)"\n`);
+    const body = Buffer.from(`#!/bin/sh\necho "wowgpt ${printed} (fake)"\n`);
     const srv = await releaseServer({ body });
     try {
       const out = await UPD.checkAndRecord(opts(t, srv, { probe: UPD.probeBinary }));
@@ -401,7 +409,7 @@ test(
       });
       assert.equal(out.status, 'updated', out.message);
       assert.equal(REL.currentName(l), '9.9.9');
-      assert.equal(REL.previousName(l), '1.0.0', 'claude-wow dev rollback can go back');
+      assert.equal(REL.previousName(l), '1.0.0', 'wowgpt dev rollback can go back');
       assert.deepEqual(fs.readFileSync(REL.releaseBinary(l, '9.9.9')), NEW);
       assert.equal(REL.releaseInfo(l, '9.9.9').source, REL.SOURCE_SELF_UPDATE);
       assert.equal(REL.releaseInfo(l, '9.9.9').sha256, sha(NEW));
@@ -526,7 +534,7 @@ test('plain binary: the swap takes a lock next to the binary and checks the inst
     assert.equal(out.status, 'skipped', out.message);
     assert.match(out.message, /10\.0\.0/);
     untouched(t);
-    const other = REL.acquireLock(UPD.binaryLockFile(t.binary), { command: 'claude-wow update to 9.9.9', pid: process.pid });
+    const other = REL.acquireLock(UPD.binaryLockFile(t.binary), { command: 'wowgpt update to 9.9.9', pid: process.pid });
     try {
       const busy = await UPD.checkAndRecord(opts(t, srv));
       assert.equal(busy.status, 'failed', busy.message);
@@ -593,7 +601,7 @@ test('a partial download left by a dead process, or one older than the limit, is
   }
 });
 
-test('a skipped version (after dev rollback) is not reinstalled by the daily check until a newer one is out; claude-wow update installs it and lifts the skip', async () => {
+test('a skipped version (after dev rollback) is not reinstalled by the daily check until a newer one is out; wowgpt update installs it and lifts the skip', async () => {
   const t = setup('skip');
   UPD.skipVersion(t.home, '9.9.9', 'dev rollback from releases/9.9.9');
   assert.deepEqual(UPD.readSkip(t.home).version, '9.9.9');
@@ -711,7 +719,7 @@ test('autoUpdate false: no daily check is scheduled or run, the restart gate sti
     cfg: { autoUpdate: false },
     log: l => logs.push(l),
     version: '1.0.0',
-    install: { kind: 'binary', binary: '/x/claude-wow' },
+    install: { kind: 'binary', binary: '/x/wowgpt' },
     check: async () => {
       checks++;
       return { message: 'x' };
@@ -730,7 +738,7 @@ test('autoUpdate false: no daily check is scheduled or run, the restart gate sti
     home,
     cfg: {},
     version: '1.0.0',
-    install: { kind: 'binary', binary: '/x/claude-wow' },
+    install: { kind: 'binary', binary: '/x/wowgpt' },
     check: async () => {
       checks++;
       return { message: 'checked' };
@@ -904,7 +912,7 @@ test('at start: a bridge on the new version clears pendingRestart; one still on 
   fs.rmSync(home, { recursive: true, force: true });
 });
 
-test('claude-wow update: --check only reports, the plain command installs, unknown options are usage errors', async () => {
+test('wowgpt update: --check only reports, the plain command installs, unknown options are usage errors', async () => {
   const t = setup('cli');
   const srv = await releaseServer();
   const lines = [];
@@ -912,10 +920,10 @@ test('claude-wow update: --check only reports, the plain command installs, unkno
   const deps = { ...opts(t, srv), out: l => lines.push(l), err: l => errs.push(l) };
   try {
     assert.equal(await UPD.main(['--check'], deps), 0);
-    assert.match(lines.join('\n'), /9\.9\.9 is out \(this is 1\.0\.0\); run claude-wow update/);
+    assert.match(lines.join('\n'), /9\.9\.9 is out \(this is 1\.0\.0\); run wowgpt update/);
     untouched(t);
     assert.equal(await UPD.main([], deps), 0);
-    assert.match(lines.join('\n'), /updated claude-wow 1\.0\.0 to 9\.9\.9/);
+    assert.match(lines.join('\n'), /updated wowgpt 1\.0\.0 to 9\.9\.9/);
     assert.deepEqual(fs.readFileSync(t.binary), NEW);
     assert.equal(await UPD.main(['--now'], deps), 2);
     assert.match(errs.join('\n'), /unknown option "--now"/);
@@ -924,4 +932,59 @@ test('claude-wow update: --check only reports, the plain command installs, unkno
     await srv.close();
     fs.rmSync(t.dir, { recursive: true, force: true });
   }
+});
+
+// The rename to WoWGPT: the first WoWGPT release ships every binary under its
+// claude-wow name too, and either side reads the other's --version line.
+test(
+  'self-update from the old asset name: a release with only claude-wow-<os>-<arch> installs, verified against its SHA256SUMS line',
+  { skip: !POSIX },
+  async () => {
+    const old = UPD.assetName(PLATFORM, ARCH, 'claude-wow');
+    assert.equal(old, 'claude-wow-linux-x64');
+    const t = setup('oldasset');
+    const body = Buffer.from('#!/bin/sh\necho "claude-wow 9.9.9 (fake)"\n');
+    const srv = await releaseServer({ body, asset: old });
+    try {
+      const out = await UPD.checkAndRecord(opts(t, srv, { probe: UPD.probeBinary }));
+      assert.equal(out.status, 'updated', out.message);
+      assert.deepEqual(fs.readFileSync(t.binary), body);
+      assert.ok(srv.downloads().includes(`/files/${old}`), 'the old name was downloaded');
+    } finally {
+      await srv.close();
+      fs.rmSync(t.dir, { recursive: true, force: true });
+    }
+  },
+);
+
+test('the new name wins when a release has both, and build.js writes both with one sum each', () => {
+  const B = require('../build');
+  const both = {
+    assets: [
+      { name: 'claude-wow-linux-x64', url: 'o' },
+      { name: 'wowgpt-linux-x64', url: 'n' },
+    ],
+  };
+  assert.deepEqual(UPD.releaseAsset(both, 'linux', 'x64'), { name: 'wowgpt-linux-x64', file: both.assets[1] });
+  assert.equal(UPD.releaseAsset({ assets: [] }, 'linux', 'x64').file, null);
+  assert.deepEqual(B.OLD_ASSET_PREFIXES, ['claude-wow']);
+  assert.equal(B.outName('bun-windows-x64', 'claude-wow'), 'claude-wow-windows-x64.exe');
+  const src = fs.readFileSync(path.join(__dirname, '..', 'build.js'), 'utf8');
+  assert.match(
+    src,
+    /for \(const prefix of OLD_ASSET_PREFIXES\) \{[\s\S]*?fs\.copyFileSync\(file, copy\);\s*sums\.push/,
+    'each old-name copy gets its SHA256SUMS line',
+  );
+});
+
+test('--version prints a line an installed claude-wow binary accepts, and this one accepts both names', () => {
+  const { spawnSync } = require('child_process');
+  const r = spawnSync(process.execPath, [path.join(__dirname, '..', 'bridge', 'supervisor.js'), '--version'], { encoding: 'utf8' });
+  const version = require('../package.json').version;
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(r.stdout.startsWith(`wowgpt ${version} `), r.stdout);
+  const oldProbe = /claude-wow (\S+)/;
+  assert.equal(oldProbe.exec(r.stdout)[1], version, 'the probe of a claude-wow binary reads this version');
+  assert.equal(UPD.VERSION_LINE.exec('claude-wow 1.2.3 (bun)')[1], '1.2.3');
+  assert.equal(UPD.VERSION_LINE.exec(r.stdout)[1], version);
 });

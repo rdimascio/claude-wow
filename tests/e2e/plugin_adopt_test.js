@@ -75,24 +75,24 @@ function assertAskRun(call, folder, resume) {
 async function pickFromList(h, id) {
   const row = await h.client.waitFor(
     () => {
-      h.client.slash('/claude -r more');
+      h.client.slash('/wowgpt -r more');
       const last = (h.client.activeChat().history || []).at(-1);
       return ((last && last.picker) || []).find(r => r.entry && r.entry.id === id);
     },
     { timeoutMs: 20000, everyMs: 500, label: `session ${id} in the picker` },
   );
   h.client.runLua(
-    `(function() local c; for _, x in ipairs(ClaudeWoWDB.chats) do if x.id == ClaudeWoWDB.activeChat then c = x end end; local m = c.history[#c.history]; for _, r in ipairs(m.picker) do if r.entry and r.entry.id == ${luaQuote(id)} then ClaudeWoW.PickRow(r) return end end end)()`,
+    `(function() local c; for _, x in ipairs(WoWGPTDB.chats) do if x.id == WoWGPTDB.activeChat then c = x end end; local m = c.history[#c.history]; for _, r in ipairs(m.picker) do if r.entry and r.entry.id == ${luaQuote(id)} then WoWGPT.PickRow(r) return end end end)()`,
   );
   await h.client.waitFor(() => h.client.activeChat().resumeId === id, { label: 'the picked session attached' });
   return row.entry;
 }
 
-test('/claude -r on an ask session an --inject run made resumes it as an ask run, with the plugin, and the next message keeps it', async () => {
+test('/wowgpt -r on an ask session an --inject run made resumes it as an ask run, with the plugin, and the next message keeps it', async () => {
   let id = '';
   await withGame({ config: config('resume'), beforeLaunch: sb => (id = injectSession(sb, 'ask', askFolder('resume'))) }, async h => {
     await h.client.connect();
-    const r = await slash(h, `/claude -r ${id.slice(0, 8)} carry on [[reply carried on]]`);
+    const r = await slash(h, `/wowgpt -r ${id.slice(0, 8)} carry on [[reply carried on]]`);
     assert.equal(r.text, 'carried on');
     assertAskRun(h.agentCalls().at(-1), askFolder('resume'), id);
     assert.equal(h.client.activeChat().plugin, 'ask', 'the chat carries the plugin of the session it holds');
@@ -104,7 +104,7 @@ test('/claude -r on an ask session an --inject run made resumes it as an ask run
   });
 });
 
-test('a second --inject on the same slot leaves the first session its plugin, so /claude -r still resumes it as an ask run', async () => {
+test('a second --inject on the same slot leaves the first session its plugin, so /wowgpt -r still resumes it as an ask run', async () => {
   let ask = '';
   let code = '';
   const beforeLaunch = sb => {
@@ -115,7 +115,7 @@ test('a second --inject on the same slot leaves the first session its plugin, so
     assert.notEqual(code, ask, 'the second --inject made a new session on the same slot');
     assert.equal(h.state().sessions[INJECT_KEY], code);
     await h.client.connect();
-    const r = await slash(h, `/claude -r ${ask.slice(0, 8)} carry on [[reply carried on]]`);
+    const r = await slash(h, `/wowgpt -r ${ask.slice(0, 8)} carry on [[reply carried on]]`);
     assert.equal(r.text, 'carried on');
     assertAskRun(h.agentCalls().at(-1), askFolder('twice'), ask);
   });
@@ -124,7 +124,7 @@ test('a second --inject on the same slot leaves the first session its plugin, so
 test('@ask on a terminal session the bridge has no record of starts a new ask session, and the chat stays an ask chat', async () => {
   await withGame({ config: config('terminal'), beforeLaunch: sb => seedProjectSession(sb, TERMINAL, sb.project) }, async h => {
     await h.client.connect();
-    const r = await slash(h, `/claude -r ${TERMINAL.slice(0, 8)} @ask where do I train [[reply in the city]]`);
+    const r = await slash(h, `/wowgpt -r ${TERMINAL.slice(0, 8)} @ask where do I train [[reply in the city]]`);
     assert.equal(r.text, 'in the city');
     const first = h.agentCalls().at(-1);
     assert.equal(first.resume, null, 'a session with no record is a coding session, never resumed as an ask run');
@@ -157,11 +157,11 @@ test('an ask session picked from the Claude Code history list attaches as an ask
   });
 });
 
-test('/claude -r on a coding session from --inject, addressed to ask, starts a new ask session instead of resuming it', async () => {
+test('/wowgpt -r on a coding session from --inject, addressed to ask, starts a new ask session instead of resuming it', async () => {
   let id = '';
   await withGame({ config: config('switch'), beforeLaunch: sb => (id = injectSession(sb, 'claude-code', sb.project)) }, async h => {
     await h.client.connect();
-    const r = await slash(h, `/claude -r ${id.slice(0, 8)} @ask where do I train [[reply in the city]]`);
+    const r = await slash(h, `/wowgpt -r ${id.slice(0, 8)} @ask where do I train [[reply in the city]]`);
     assert.equal(r.text, 'in the city');
     const call = h.agentCalls().at(-1);
     assert.equal(fs.realpathSync(call.cwd), fs.realpathSync(askFolder('switch')), 'an ask run');

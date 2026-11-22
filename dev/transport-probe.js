@@ -188,7 +188,7 @@ function main() {
   const o = parseArgs(process.argv.slice(2));
   if (o.help) {
     console.log(
-      'node dev/transport-probe.js [--logs <client Logs folder>] [--out <report.json>] [--minutes <n>] [--settle <seconds>]\nWatches WoWChatLog.txt and AsyncFile.log for the lines /claude probe writes, then prints a verdict.',
+      'node dev/transport-probe.js [--logs <client Logs folder>] [--out <report.json>] [--minutes <n>] [--settle <seconds>]\nWatches WoWChatLog.txt and AsyncFile.log for the lines /wowgpt probe writes, then prints a verdict.',
     );
     return;
   }

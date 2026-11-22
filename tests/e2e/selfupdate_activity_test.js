@@ -26,7 +26,7 @@ function gsRecord(session, seq) {
 function writeGsShot(h, payload, n) {
   const cells = h.client
     .luaValue(
-      `(function() local c = ClaudeWoW_Codec.Encode(0, ${luaQuote(payload)}, 1); local t = {}; for i = 1, #c do t[i] = c[i] end; return table.concat(t, ",") end)()`,
+      `(function() local c = WoWGPT_Codec.Encode(0, ${luaQuote(payload)}, 1); local t = {}; for i = 1, #c do t[i] = c[i] end; return table.concat(t, ",") end)()`,
     )
     .split(',')
     .map(Number);
@@ -86,8 +86,8 @@ function fakeLiveSession(sb, name) {
       "child.on('exit', code => process.exit(code || 0));",
     ].join('\n'),
   );
-  const proc = spawn(process.execPath, [script, '--dangerously-load-development-channels', 'server:claude-wow'], {
-    env: { ...sb.env, CLAUDE_WOW_LIVE_NAME: name },
+  const proc = spawn(process.execPath, [script, '--dangerously-load-development-channels', 'server:wowgpt'], {
+    env: { ...sb.env, WOWGPT_LIVE_NAME: name },
     stdio: ['pipe', 'pipe', 'inherit'],
   });
   const lines = [];
@@ -126,7 +126,7 @@ test(
         session.send({ method: 'notifications/initialized' });
         session.send({ id: 2, method: 'tools/list' });
         await h.bridge.waitForLine(/session "late-e2e" connected.*, listening/, { timeoutMs: 30000 });
-        h.client.slash('/claude config plugin live');
+        h.client.slash('/wowgpt config plugin live');
         h.client.send('are you there');
         const note = await h.client.waitFor(() => session.lines.find(m => m.method === 'notifications/claude/channel'), {
           timeoutMs: 30000,

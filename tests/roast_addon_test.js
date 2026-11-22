@@ -19,15 +19,15 @@ function issecretvalue(v) return v == STUB.SECRET end
 function newVM() {
   const vm = createVM();
   vm.run(ROAST_STUB);
-  vm.loadAddon(['Codec.lua', 'Inbox.lua', 'ClaudeWoW.lua', 'Roast.lua']);
+  vm.loadAddon(['Codec.lua', 'Inbox.lua', 'WoWGPT.lua', 'Roast.lua']);
   return vm;
 }
 
 function decodeStrip(vm) {
-  if (vm.evaluate('ClaudeWoWStrip and ClaudeWoWStrip.shown') !== 'true') return null;
+  if (vm.evaluate('WoWGPTStrip and WoWGPTStrip.shown') !== 'true') return null;
   vm.run(`
     local parts = {}
-    for _, t in ipairs(ClaudeWoWStrip.textures) do
+    for _, t in ipairs(WoWGPTStrip.textures) do
       if t.shown and t.color then
         local c, r = math.floor(t.x / 4), math.floor(-t.y / 4)
         local v = (t.color[1] >= 0.5 and 4 or 0) + (t.color[2] >= 0.5 and 2 or 0) + (t.color[3] >= 0.5 and 1 or 0)
@@ -64,11 +64,11 @@ function stripJobs(vm) {
 }
 
 function nextSlot(vm, luaBody) {
-  vm.run(`STUB.onLoadAddOn = function(name) ClaudeWoW_SlotData = ${luaBody} end`);
+  vm.run(`STUB.onLoadAddOn = function(name) WoWGPT_SlotData = ${luaBody} end`);
 }
 
 function login(vm) {
-  vm.run('STUB.FireEvent("ADDON_LOADED", "ClaudeWoW")');
+  vm.run('STUB.FireEvent("ADDON_LOADED", "WoWGPT")');
   vm.run('STUB.FireEvent("PLAYER_LOGIN")');
 }
 
@@ -76,7 +76,7 @@ function connect(vm) {
   vm.run('STUB.RunTimers()');
   nextSlot(vm, '{ now = time(), cwd = "", plugin = "ask", plugins = { "ask", "claude-code", "roast" }, replies = {} }');
   vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
-  assert.equal(vm.evaluate('ClaudeWoW.IsConnected()'), 'true');
+  assert.equal(vm.evaluate('WoWGPT.IsConnected()'), 'true');
 }
 
 function luaArgs(values) {
@@ -112,7 +112,7 @@ function hoggerRecap(vm, stamp = 500) {
 }
 
 function withRoastChatHelper(vm) {
-  vm.run('function ClaudeWoW_RoastChatForTest() for _, c in ipairs(ClaudeWoWDB.chats) do if c.id == ClaudeWoWDB.roast.chat then return c end end end');
+  vm.run('function WoWGPT_RoastChatForTest() for _, c in ipairs(WoWGPTDB.chats) do if c.id == WoWGPTDB.roast.chat then return c end end end');
 }
 
 function ready({ on = true } = {}) {
@@ -121,7 +121,7 @@ function ready({ on = true } = {}) {
   connect(vm);
   withRoastChatHelper(vm);
   vm.run('STUB.prints = {}');
-  if (on) vm.run('SlashCmdList.CLAUDE("config roast on")');
+  if (on) vm.run('SlashCmdList.WOWGPT("config roast on")');
   return vm;
 }
 
@@ -133,54 +133,54 @@ function registered(vm, event) {
 
 test('roast: off by default, the slash command turns it on and off and says so, and nothing is registered, recorded or sent while off', () => {
   const vm = ready({ on: false });
-  assert.equal(vm.evaluate('ClaudeWoWDB.roast.on'), 'false', 'off by default');
+  assert.equal(vm.evaluate('WoWGPTDB.roast.on'), 'false', 'off by default');
   assert.equal(registered(vm, 'PLAYER_DEAD'), null, 'no death event while off');
   assert.equal(registered(vm, 'UNIT_COMBAT'), null, 'no combat event while off');
   hit(vm, { amount: 40 });
-  assert.equal(vm.num('#ClaudeWoWRoast.Hits()'), 0, 'no hits kept while off');
+  assert.equal(vm.num('#WoWGPTRoast.Hits()'), 0, 'no hits kept while off');
   hoggerRecap(vm);
-  vm.run('ClaudeWoWRoast.OnDeath(STUB.now, time())');
-  assert.equal(vm.num('#ClaudeWoWDB.chats'), 1, 'no roast chat while off');
+  vm.run('WoWGPTRoast.OnDeath(STUB.now, time())');
+  assert.equal(vm.num('#WoWGPTDB.chats'), 1, 'no roast chat while off');
   assert.ok(!stripJobs(vm).some(j => j.kind), 'no roast record on the strip');
 
-  vm.run('SlashCmdList.CLAUDE("config roast")');
+  vm.run('SlashCmdList.WOWGPT("config roast")');
   assert.ok(vm.evaluate('STUB.prints[#STUB.prints]').includes('Death roast is OFF'), vm.evaluate('STUB.prints[#STUB.prints]'));
-  vm.run('SlashCmdList.CLAUDE("config roast on")');
-  assert.equal(vm.evaluate('ClaudeWoWDB.roast.on'), 'true');
+  vm.run('SlashCmdList.WOWGPT("config roast on")');
+  assert.equal(vm.evaluate('WoWGPTDB.roast.on'), 'true');
   assert.ok(vm.evaluate('STUB.prints[#STUB.prints]').includes('Death roast is ON'));
   assert.equal(registered(vm, 'PLAYER_DEAD'), 'all');
   assert.equal(registered(vm, 'UNIT_COMBAT'), 'player', 'combat events for the player only');
-  vm.run('SlashCmdList.CLAUDE("config roast off")');
-  assert.equal(vm.evaluate('ClaudeWoWDB.roast.on'), 'false');
+  vm.run('SlashCmdList.WOWGPT("config roast off")');
+  assert.equal(vm.evaluate('WoWGPTDB.roast.on'), 'false');
   assert.equal(registered(vm, 'PLAYER_DEAD'), null, 'unregistered when turned off');
   assert.equal(registered(vm, 'UNIT_COMBAT'), null);
   assert.equal(vm.num('#STUB.actionBlocked'), 0, 'nothing the client blocks');
 
-  vm.run('SlashCmdList.CLAUDE("roast the lich king for me please")');
+  vm.run('SlashCmdList.WOWGPT("roast the lich king for me please")');
   assert.ok(
     stripJobs(vm).some(j => j.text === 'roast the lich king for me please'),
     'free text starting with "roast" is a message',
   );
-  vm.run('ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[1].id); SlashCmdList.CLAUDE("config")');
-  assert.ok(vm.evaluate('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history].text').includes('\nroast = off  -  on|off'));
+  vm.run('WoWGPT.SwitchChat(WoWGPTDB.chats[1].id); SlashCmdList.WOWGPT("config")');
+  assert.ok(vm.evaluate('WoWGPTDB.chats[1].history[#WoWGPTDB.chats[1].history].text').includes('\nroast = off  -  on|off'));
 });
 
 test('roast: the same death recap is never sent twice, and hidden or secret fields read as unknown', () => {
   const vm = ready();
   hoggerRecap(vm, 600);
-  assert.ok(vm.evaluate('ClaudeWoWRoast.ReadRecap(STUB.now)'), 'first read');
-  assert.equal(vm.evaluate('ClaudeWoWRoast.ReadRecap(STUB.now)'), null, 'a recap already used is stale');
+  assert.ok(vm.evaluate('WoWGPTRoast.ReadRecap(STUB.now)'), 'first read');
+  assert.equal(vm.evaluate('WoWGPTRoast.ReadRecap(STUB.now)'), null, 'a recap already used is stale');
   deathRecap(vm, [
     { timestamp: 700, event: 'SPELL_DAMAGE', spellName: 'Shadow Bolt', sourceName: 'SECRET', amount: 'SECRET' },
     { timestamp: 699, event: 'ENVIRONMENTAL_DAMAGE', environmentalType: 'FALLING', amount: 180, overkill: 60 },
     { timestamp: 698, event: 'SPELL_DAMAGE', spellName: 'Backstab', sourceName: 'Defias Pathstalker', hideCaster: true, amount: 20 },
   ]);
-  const recap = vm.evaluate('ClaudeWoWRoast.BuildRecap(STUB.now, ClaudeWoWRoast.ReadRecap(STUB.now))');
+  const recap = vm.evaluate('WoWGPTRoast.BuildRecap(STUB.now, WoWGPTRoast.ReadRecap(STUB.now))');
   assert.ok(recap.includes('something unseen: Backstab 20'), recap);
   assert.ok(recap.includes('the environment: Falling 180, overkill 60'), recap);
   assert.ok(recap.includes('something unseen: Shadow Bolt 0 <- killing blow'), recap);
   vm.run('STUB.deathRecap = { { timestamp = STUB.SECRET, amount = 3 } }');
-  assert.equal(vm.evaluate('ClaudeWoWRoast.ReadRecap(STUB.now)'), null, 'a recap with no readable time is not used');
+  assert.equal(vm.evaluate('WoWGPTRoast.ReadRecap(STUB.now)'), null, 'a recap with no readable time is not used');
 });
 
 test('roast: without a death recap, the last 10 s of UNIT_COMBAT hits on the player plus the target at death', () => {
@@ -197,8 +197,8 @@ test('roast: without a death recap, the last 10 s of UNIT_COMBAT hits on the pla
   vm.run('STUB.now = STUB.now + 2.5');
   hit(vm, { amount: 52, school: 36 });
   vm.run('STUB.now = STUB.now + 0.2');
-  assert.equal(vm.num('#ClaudeWoWRoast.Hits()'), 3, 'the first hit fell out of the window; heals, misses and hits on others never count');
-  const recap = vm.evaluate('ClaudeWoWRoast.BuildRecap(STUB.now, ClaudeWoWRoast.ReadRecap(STUB.now))');
+  assert.equal(vm.num('#WoWGPTRoast.Hits()'), 3, 'the first hit fell out of the window; heals, misses and hits on others never count');
+  const recap = vm.evaluate('WoWGPTRoast.BuildRecap(STUB.now, WoWGPTRoast.ReadRecap(STUB.now))');
   const lines = recap.split('\n');
   assert.equal(lines[1], 'Hits taken in the last 10 s, oldest first (the game does not say who dealt them):');
   assert.equal(lines[2], '-5.7s Physical 45');
@@ -210,7 +210,7 @@ test('roast: without a death recap, the last 10 s of UNIT_COMBAT hits on the pla
 
 test('roast: a long recap is capped to the budget and keeps the killing blow; a death with nothing seen still gets a recap', () => {
   const vm = ready();
-  vm.run('ClaudeWoWRoast.MAX_BYTES = 420');
+  vm.run('WoWGPTRoast.MAX_BYTES = 420');
   const events = [{ timestamp: 1003.1, event: 'SWING_DAMAGE', sourceName: 'Edwin VanCleef', amount: 300, overkill: 250 }];
   for (let i = 29; i >= 0; i--)
     events.push({
@@ -221,13 +221,13 @@ test('roast: a long recap is capped to the budget and keeps the killing blow; a 
       amount: 10 + i,
     });
   deathRecap(vm, events);
-  const recap = vm.evaluate('ClaudeWoWRoast.BuildRecap(STUB.now, ClaudeWoWRoast.ReadRecap(STUB.now))');
+  const recap = vm.evaluate('WoWGPTRoast.BuildRecap(STUB.now, WoWGPTRoast.ReadRecap(STUB.now))');
   assert.ok(Buffer.byteLength(recap) <= 420, `${Buffer.byteLength(recap)} bytes`);
   assert.ok(/\(\d+ earlier hits left out\)/.test(recap), recap);
   assert.ok(recap.includes('Edwin VanCleef: Melee 300, overkill 250 <- killing blow'), recap);
   assert.ok(recap.includes('from 31 sources'), 'the total still counts every hit in the recap');
-  vm.run('ClaudeWoWRoast.MAX_BYTES = 900; ClaudeWoWRoast.Reset(); STUB.deathRecap = nil');
-  const empty = vm.evaluate('ClaudeWoWRoast.BuildRecap(STUB.now, ClaudeWoWRoast.ReadRecap(STUB.now))');
+  vm.run('WoWGPTRoast.MAX_BYTES = 900; WoWGPTRoast.Reset(); STUB.deathRecap = nil');
+  const empty = vm.evaluate('WoWGPTRoast.BuildRecap(STUB.now, WoWGPTRoast.ReadRecap(STUB.now))');
   assert.ok(empty.startsWith('Death recap: a level 23'), empty);
   assert.ok(empty.includes('No damage seen in the last 10 s'), empty);
   assert.ok(empty.endsWith('At death you had no target.'), empty);

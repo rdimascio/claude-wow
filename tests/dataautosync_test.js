@@ -24,7 +24,7 @@ function fakeWagoCommand(flavor) {
 }
 
 function scratch(name) {
-  const dir = path.join(os.tmpdir(), `claude-wow-autosync-${name}-${process.pid}-${Math.random().toString(36).slice(2, 8)}`);
+  const dir = path.join(os.tmpdir(), `wowgpt-autosync-${name}-${process.pid}-${Math.random().toString(36).slice(2, 8)}`);
   fs.mkdirSync(dir, { recursive: true });
   return dir;
 }
@@ -503,8 +503,8 @@ test('syncCommand: the checkout runs datasync.js with this runtime; the binary r
   const [file, args] = DAS.syncCommand('forever');
   assert.equal(file, process.execPath);
   assert.deepEqual(args, [path.join(REPO, 'bridge', 'datasync.js'), 'sync', '--flavor', 'forever']);
-  assert.deepEqual(DAS.syncCommand('classic_era', { compiled: true, execPath: '/bin/claude-wow', root: '/x' }), [
-    '/bin/claude-wow',
+  assert.deepEqual(DAS.syncCommand('classic_era', { compiled: true, execPath: '/bin/wowgpt', root: '/x' }), [
+    '/bin/wowgpt',
     ['data', 'sync', '--flavor', 'classic_era'],
   ]);
   assert.throws(() => DAS.syncCommand('--build'), D.SyncError);
@@ -513,7 +513,7 @@ test('syncCommand: the checkout runs datasync.js with this runtime; the binary r
 test('datasync.js runs as a script: help exits 0 without fetching', () => {
   const r = spawnSync(process.execPath, [path.join(REPO, 'bridge', 'datasync.js'), '--help'], { encoding: 'utf8' });
   assert.equal(r.status, 0);
-  assert.match(r.stdout, /^claude-wow data sync/);
+  assert.match(r.stdout, /^wowgpt data sync/);
   const bad = spawnSync(process.execPath, [path.join(REPO, 'bridge', 'datasync.js'), 'sync', '--bogus'], { encoding: 'utf8' });
   assert.equal(bad.status, 2);
 });
@@ -531,9 +531,9 @@ test('runSync: a real data sync child against a fake source switches the data, i
     command: fakeWagoCommand('forever'),
     env: {
       ...process.env,
-      CLAUDE_WOW_HOME: '/nowhere',
-      CLAUDE_WOW_FAKE_WAGO_LOG: requests,
-      CLAUDE_WOW_FAKE_WAGO_BUILDS: buildsFile({ wow_cn_beta: [OLD, NEW] }),
+      WOWGPT_HOME: '/nowhere',
+      WOWGPT_FAKE_WAGO_LOG: requests,
+      WOWGPT_FAKE_WAGO_BUILDS: buildsFile({ wow_cn_beta: [OLD, NEW] }),
     },
   });
   assert.equal(result.ok, true, result.message);
@@ -552,8 +552,8 @@ test('a forged client build reaches the real data sync child only as a trigger: 
   await D.sync({ dataDir, build: OLD, fetch: fixtureFetch });
   const env = {
     ...process.env,
-    CLAUDE_WOW_FAKE_WAGO_LOG: requests,
-    CLAUDE_WOW_FAKE_WAGO_BUILDS: buildsFile({ wow_cn_beta: [OLD, NEW] }),
+    WOWGPT_FAKE_WAGO_LOG: requests,
+    WOWGPT_FAKE_WAGO_BUILDS: buildsFile({ wow_cn_beta: [OLD, NEW] }),
   };
   const state = {};
   const sync = DAS.createAutoSync({
@@ -589,8 +589,8 @@ test('runSync: a build the source does not have fails and leaves the old build c
     command: fakeWagoCommand('forever'),
     env: {
       ...process.env,
-      CLAUDE_WOW_FAKE_WAGO_MISSING: NEW,
-      CLAUDE_WOW_FAKE_WAGO_BUILDS: buildsFile({ wow_cn_beta: [OLD, NEW] }),
+      WOWGPT_FAKE_WAGO_MISSING: NEW,
+      WOWGPT_FAKE_WAGO_BUILDS: buildsFile({ wow_cn_beta: [OLD, NEW] }),
     },
   });
   assert.equal(result.ok, false);
@@ -655,11 +655,11 @@ test('runSync: a child that hangs is killed after the timeout; a command that ca
   assert.match(missing.message, /ENOENT|Executable not found/);
   const silent = await DAS.runSync({ home: scratch('home'), command: [process.execPath, ['-e', 'process.exit(5)']] });
   assert.deepEqual(silent, { ok: false, code: 5, message: 'exit code 5' });
-  const where = await DAS.runSync({ home: '/the/home', command: [process.execPath, ['-e', 'console.log(process.env.CLAUDE_WOW_HOME)']] });
+  const where = await DAS.runSync({ home: '/the/home', command: [process.execPath, ['-e', 'console.log(process.env.WOWGPT_HOME)']] });
   assert.deepEqual(where, { ok: true, code: 0, message: '/the/home' });
 });
 
 test.after(() => {
   for (const name of fs.readdirSync(os.tmpdir()))
-    if (name.startsWith(`claude-wow-autosync-`) && name.includes(`-${process.pid}-`)) fs.rmSync(path.join(os.tmpdir(), name), { recursive: true, force: true });
+    if (name.startsWith(`wowgpt-autosync-`) && name.includes(`-${process.pid}-`)) fs.rmSync(path.join(os.tmpdir(), name), { recursive: true, force: true });
 });

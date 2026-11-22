@@ -191,7 +191,7 @@ function createTracker({
     if (!s.checked && !said.has(base.key)) {
       said.add(base.key);
       log(
-        `contract: ${agentName(agentId)} at ${base.identity.realpath} is not checked against the MCP behaviors the bridge relies on; run claude-wow agents check. Only a measured fail turns anything off.`,
+        `contract: ${agentName(agentId)} at ${base.identity.realpath} is not checked against the MCP behaviors the bridge relies on; run wowgpt agents check. Only a measured fail turns anything off.`,
       );
     }
     return s;
@@ -233,14 +233,14 @@ function offReason(s) {
   const failed = failedRows(s, OFF_ROWS[s && s.agent]);
   if (!failed.length) return '';
   const name = agentName(s.agent);
-  return `${name} ${s.version} failed ${failed.join(' and ')} in claude-wow agents check, so it may still load an MCP server a chat turns off. The bridge does not run a chat that turns a server off: use /claude mcp default, or update ${name} and run claude-wow agents check again.`;
+  return `${name} ${s.version} failed ${failed.join(' and ')} in wowgpt agents check, so it may still load an MCP server a chat turns off. The bridge does not run a chat that turns a server off: use /wowgpt mcp default, or update ${name} and run wowgpt agents check again.`;
 }
 
 function secretReason(s) {
   const failed = failedRows(s, SECRET_ROWS[s && s.agent]);
   if (!failed.length) return '';
   const name = agentName(s.agent);
-  return `${name} ${s.version} failed ${failed.join(' and ')} in claude-wow agents check, so its shell may see an MCP server's secret. The bridge does not run a ${name} chat with a server that takes a secret: turn that server off for this chat, or update ${name} and run claude-wow agents check again.`;
+  return `${name} ${s.version} failed ${failed.join(' and ')} in wowgpt agents check, so its shell may see an MCP server's secret. The bridge does not run a ${name} chat with a server that takes a secret: turn that server off for this chat, or update ${name} and run wowgpt agents check again.`;
 }
 
 function refusal(s, { off = false, secrets = false } = {}) {
@@ -528,7 +528,7 @@ function writeContract(file, id, entry, readText) {
   FS.atomicWrite(file, JSON.stringify(all, null, 2) + '\n');
 }
 
-const USAGE = 'claude-wow agents check [--agent claude|codex]   probe the MCP behaviors the bridge relies on, with one short run per check';
+const USAGE = 'wowgpt agents check [--agent claude|codex]   probe the MCP behaviors the bridge relies on, with one short run per check';
 const EXIT = { ok: 0, failed: 1, usage: 2, unchecked: 3, interrupted: 130 };
 
 function parseCheckArgs(argv) {
@@ -609,7 +609,7 @@ async function check(argv = [], deps = {}) {
       const ver = await version(cmd, { env: agentEnv, onChild: track });
       if (interrupted) break;
       out(`${id}: ${agentName(id)} ${ver || '(version unknown)'} at ${identity.realpath}`);
-      const dir = fs.mkdtempSync(path.join(deps.tmpDir || os.tmpdir(), `claude-wow-contract-${id}-`));
+      const dir = fs.mkdtempSync(path.join(deps.tmpDir || os.tmpdir(), `wowgpt-contract-${id}-`));
       let r;
       try {
         r = await probes[id]({ cmd, env: agentEnv, dir, run, fixture: deps.fixture, own: deps.codexOwn });
@@ -651,7 +651,7 @@ function main(argv) {
       process.exitCode = code;
     },
     e => {
-      process.stderr.write(`claude-wow agents check failed: ${e && e.message ? e.message : String(e)}\n`);
+      process.stderr.write(`wowgpt agents check failed: ${e && e.message ? e.message : String(e)}\n`);
       process.exitCode = 1;
     },
   );

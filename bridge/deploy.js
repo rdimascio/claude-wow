@@ -21,7 +21,7 @@ const LOCK_AGE_LEFT_FOR_BUILD_AND_SETUP_MS = 60 * 60 * 1000;
 const MAX_TIMEOUT_MS = REL.LOCK_MAX_AGE_MS - LOCK_AGE_LEFT_FOR_BUILD_AND_SETUP_MS;
 const PATH_FORM = /^\.\.?([\\/]|$)/;
 
-const HELP = `claude-wow dev <command>
+const HELP = `wowgpt dev <command>
 
   deploy [ref|worktree]   Build this bridge with bun build.js --host and make it the running release.
                           ref: a git ref in the checkout (default ${DEFAULT_REF}; run git fetch first),
@@ -35,11 +35,11 @@ const HELP = `claude-wow dev <command>
     --timeout <seconds>
   status                  The current and previous release, the releases on disk, and what the service runs.
 
-Releases live in <home>/releases/<version>-<sha>/claude-wow and <home>/current points at one
-(<home> is ~/.claude-wow, or CLAUDE_WOW_HOME). One deploy or rollback at a time (<home>/deploy.lock,
-for this machine only). The idle wait, the restart (claude-wow service restart) and setup for every
-enabled client in config.json run only when the service runs <home>/current/claude-wow and the release changes.
-To point the service at the release, run <home>/current/claude-wow service install once.`;
+Releases live in <home>/releases/<version>-<sha>/wowgpt and <home>/current points at one
+(<home> is ~/.wowgpt, or WOWGPT_HOME). One deploy or rollback at a time (<home>/deploy.lock,
+for this machine only). The idle wait, the restart (wowgpt service restart) and setup for every
+enabled client in config.json run only when the service runs <home>/current/wowgpt and the release changes.
+To point the service at the release, run <home>/current/wowgpt service install once.`;
 
 function parseArgs(argv) {
   const [cmd, ...rest] = argv;
@@ -101,7 +101,7 @@ function bunBuild(srcDir, outDir, run) {
   }
   const r = run(bun, [path.join(srcDir, 'build.js'), '--host', '--out', outDir], { cwd: srcDir, env: { ...process.env, BUN: bun } });
   if (!r.ok) throw new Error(`bun build.js --host failed in ${srcDir}${r.error ? ` (${r.error.message})` : ''}:\n${tail(r.out)}`);
-  const built = fs.readdirSync(outDir).filter(f => f.startsWith('claude-wow-'));
+  const built = fs.readdirSync(outDir).filter(f => f.startsWith('wowgpt-'));
   if (built.length !== 1) throw new Error(`bun build.js --host left ${built.length} binaries in ${outDir}, expected 1`);
   return path.join(outDir, built[0]);
 }
@@ -156,7 +156,7 @@ function resolveSource(target, ctx) {
       `"${ref}" is not a commit in ${repo}${ref === DEFAULT_REF ? ' (run git fetch origin first)' : ''}${isDir(ref) ? ` (to build the folder, write it as ./${ref})` : ''}`,
     );
   const sha = found.out.trim();
-  const tmp = fs.mkdtempSync(path.join(ctx.tmpRoot || os.tmpdir(), 'claude-wow-deploy-'));
+  const tmp = fs.mkdtempSync(path.join(ctx.tmpRoot || os.tmpdir(), 'wowgpt-deploy-'));
   const dir = path.join(tmp, 'src');
   const cleanup = () => {
     run('git', ['-C', repo, 'worktree', 'remove', '--force', dir]);
@@ -236,14 +236,14 @@ function runSetup(l, ctx) {
   for (const client of clients) ctx.out(`setup   : ${client}`);
   const r = ctx.run(REL.currentBinary(l), ['setup']);
   if (r.out.trim()) ctx.out(r.out.replace(/\s+$/, ''));
-  if (!r.ok) ctx.err(`claude-wow dev: setup failed; the release is switched, fix what setup said and run: ${REL.currentBinary(l)} setup`);
+  if (!r.ok) ctx.err(`wowgpt dev: setup failed; the release is switched, fix what setup said and run: ${REL.currentBinary(l)} setup`);
   for (const line of gameLines(r.out)) ctx.out(`in game : ${line}`);
   return r.ok;
 }
 
 function afterSwitch(l, ctx, flip) {
   if (!flip.changed) ctx.out(`current : ${flip.name} was already current`);
-  else ctx.out(`current : ${flip.name}${flip.previous ? ` (previous ${flip.previous}; claude-wow dev rollback goes back)` : ''}`);
+  else ctx.out(`current : ${flip.name}${flip.previous ? ` (previous ${flip.previous}; wowgpt dev rollback goes back)` : ''}`);
   if (!serviceRunsCurrent(l, ctx)) {
     ctx.out(`service : ${serviceDefinition(ctx)} does not run ${REL.currentBinary(l)}, so nothing was restarted and setup was not run.`);
     ctx.out(`          To run the service from this release, run: ${REL.currentBinary(l)} service install`);
@@ -251,8 +251,8 @@ function afterSwitch(l, ctx, flip) {
   }
   const r = restartService(ctx);
   if (!r.ok) {
-    ctx.err(`claude-wow dev: the service did not restart: ${tail(r.out, 5) || (r.error && r.error.message) || 'status ' + r.status}`);
-    ctx.err(`claude-wow dev: current points at ${flip.name}; restart it with: claude-wow service restart`);
+    ctx.err(`wowgpt dev: the service did not restart: ${tail(r.out, 5) || (r.error && r.error.message) || 'status ' + r.status}`);
+    ctx.err(`wowgpt dev: current points at ${flip.name}; restart it with: wowgpt service restart`);
     return 1;
   }
   ctx.out(`service : restarted on ${flip.name}`);
@@ -301,7 +301,7 @@ function lockFor(l, ctx, command) {
 function reportPrune(ctx, result) {
   if (result.pruned.length) ctx.out(`pruned  : ${result.pruned.join(', ')}`);
   if (result.prunedStaging.length) ctx.out(`pruned  : unfinished ${result.prunedStaging.join(', ')}`);
-  if (result.pruneError) ctx.err(`claude-wow dev: old releases were not pruned (${result.pruneError}); the deploy itself is done`);
+  if (result.pruneError) ctx.err(`wowgpt dev: old releases were not pruned (${result.pruneError}); the deploy itself is done`);
 }
 
 const SIGNAL_EXIT_CODES = { SIGINT: 130, SIGTERM: 143 };
@@ -326,7 +326,7 @@ function cleanupOnSignal(ctx, cleanup, whatCleanupDid) {
     sig,
     () => {
       cleanup();
-      ctx.err(`claude-wow dev: stopped by ${sig}; ${whatCleanupDid}`);
+      ctx.err(`wowgpt dev: stopped by ${sig}; ${whatCleanupDid}`);
       exit(SIGNAL_EXIT_CODES[sig]);
     },
   ]);
@@ -365,7 +365,7 @@ async function deploy(opts, ctx) {
     if (REL.hasRelease(l, source.name)) {
       ctx.out(`release : ${source.name} is already built`);
     } else {
-      outDir = fs.mkdtempSync(path.join(ctx.tmpRoot || os.tmpdir(), 'claude-wow-build-'));
+      outDir = fs.mkdtempSync(path.join(ctx.tmpRoot || os.tmpdir(), 'wowgpt-build-'));
       ctx.out(`build   : bun build.js --host in ${source.dir}`);
       binaryFile = ctx.build(source.dir, outDir);
     }
@@ -453,7 +453,7 @@ async function main(argv, overrides = {}) {
   const ctx = defaultContext(overrides);
   const opts = parseArgs(argv);
   if (opts.error) {
-    ctx.err(`claude-wow dev: ${opts.error}\n`);
+    ctx.err(`wowgpt dev: ${opts.error}\n`);
     ctx.out(HELP);
     return 2;
   }
@@ -462,7 +462,7 @@ async function main(argv, overrides = {}) {
     return 0;
   }
   if (!SUPPORTED_PLATFORMS.includes(ctx.platform)) {
-    ctx.err(`claude-wow dev: ${opts.cmd} runs on macOS and Linux only`);
+    ctx.err(`wowgpt dev: ${opts.cmd} runs on macOS and Linux only`);
     return 2;
   }
   try {
@@ -470,7 +470,7 @@ async function main(argv, overrides = {}) {
     if (opts.cmd === 'rollback') return await rollback(opts, ctx);
     return await deploy(opts, ctx);
   } catch (e) {
-    ctx.err(`claude-wow dev ${opts.cmd}: ${e.message}`);
+    ctx.err(`wowgpt dev ${opts.cmd}: ${e.message}`);
     return 1;
   }
 }

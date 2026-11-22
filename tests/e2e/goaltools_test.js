@@ -43,7 +43,13 @@ function callServer(server, tool, args) {
 
 test('an in-game ask run gets the wowgoals server for that run only; its calls write through the bridge with the same checks; coding runs and config.json never get it', async () => {
   const stale = { file: '' };
+  const oldHome = { dir: '' };
   const beforeLaunch = async sb => {
+    // A home from before the rename to WoWGPT, kept by setup: still secret.
+    oldHome.dir = path.join(sb.user, '.claude-wow');
+    fs.mkdirSync(oldHome.dir, { recursive: true });
+    fs.writeFileSync(path.join(oldHome.dir, 'config.json'), '{}');
+    fs.writeFileSync(path.join(oldHome.dir, 'live.token'), 'old-token');
     stale.file = path.join(sb.home, 'tmp', 'mcp', 'mcp-1-stale.json');
     fs.mkdirSync(path.dirname(stale.file), { recursive: true });
     fs.writeFileSync(stale.file, '{}');
@@ -93,6 +99,10 @@ test('an in-game ask run gets the wowgoals server for that run only; its calls w
       'Bash',
       ...GM.FILE_SEARCH_TOOLS,
       ...[...new Set([h.sb.home, fs.realpathSync(h.sb.home)])].map(dir => P.absolutePathRule('Read', path.join(dir, '**'))),
+      ...[...new Set([oldHome.dir, fs.realpathSync(oldHome.dir)])].flatMap(dir => [
+        P.absolutePathRule('Read', path.join(dir, '**')),
+        P.absolutePathRule('Read', path.join(dir, 'live.token')),
+      ]),
     ])
       assert.ok(denied.includes(rule), `${rule} is denied to an ask run that holds a grant`);
     assert.ok(allowed.includes('Bash(node:*)'), 'the config allows node, so the Bash deny is what holds');
@@ -100,7 +110,7 @@ test('an in-game ask run gets the wowgoals server for that run only; its calls w
     assert.notEqual(previous.env[GM.TOKEN_ENV], server.env[GM.TOKEN_ENV], 'every run gets its own grant');
     const replay = await callServer(server, 'order_issue', { text: 'skin 20' });
     assert.equal(replay.isError, true);
-    assert.match(replay.content[0].text, /claude-wow bridge closed/);
+    assert.match(replay.content[0].text, /wowgpt bridge closed/);
     await h.bridge.waitForLine(/refused an in-game run connection without a valid run grant/);
     assert.equal(JSON.parse(fs.readFileSync(ordersFile, 'utf8')).orders.current.text, 'skin 10', "an ended run's grant writes nothing");
 
@@ -160,7 +170,7 @@ test(
       const ordersFile = path.join(h.sb.home, 'goals', CHARACTER, 'goals.json');
       assert.ok(!fs.existsSync(ordersFile), 'the replay wrote nothing');
 
-      h.client.slash('/claude cancel');
+      h.client.slash('/wowgpt cancel');
       const term = await h.client.waitFor(() => termCalls(h).find(c => c.phase === 'term'), {
         timeoutMs: 30000,
         label: 'the call the run made after the cancel',
@@ -178,7 +188,7 @@ test('a tool an ask run is denied never becomes a Need roll and is never saved',
   await withGame({ plugin: 'ask' }, async h => {
     await h.client.say('hello');
     await h.bridge.waitForLine(/game context updated: Character: Testchar/);
-    const rollOpen = () => h.client.luaValue('ClaudeWoWRoll.Current() and "open" or "none"') === 'open';
+    const rollOpen = () => h.client.luaValue('WoWGPTRoll.Current() and "open" or "none"') === 'open';
     const grep = await h.client.say('[[use-tool Grep]]');
     assert.deepEqual(grep.denied || [], [], 'a denied Grep is not offered');
     assert.equal(rollOpen(), false);

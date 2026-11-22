@@ -38,7 +38,7 @@ const WINDOWS_SYSTEM_ENV = [
 
 const FAKE_AGENT = path.join(REPO, 'dev', 'fake-claude.js');
 
-const LIVE_PLIST = 'io.claudewow.bridge.plist';
+const LIVE_PLIST = 'io.wowgpt.bridge.plist';
 
 function liveCheckouts(home) {
   try {
@@ -52,9 +52,9 @@ function liveCheckouts(home) {
 
 function forbiddenRoots(home = os.homedir(), platform = process.platform) {
   const roots = [
-    path.join(home, '.claude-wow'),
+    path.join(home, '.wowgpt'),
     path.join(home, 'Library', 'LaunchAgents'),
-    path.join(home, 'Library', 'Logs', 'claude-wow'),
+    path.join(home, 'Library', 'Logs', 'wowgpt'),
     path.join(home, '.claude'),
     '/Applications/World of Warcraft',
     ...liveCheckouts(home),
@@ -109,7 +109,7 @@ function clientLayout(dir, flavor) {
     addons,
     screenshots: path.join(client, 'Screenshots'),
     savedDir: path.join(client, 'WTF', 'Account', ACCOUNT, 'SavedVariables'),
-    saved: path.join(client, 'WTF', 'Account', ACCOUNT, 'SavedVariables', 'ClaudeWoW.lua'),
+    saved: path.join(client, 'WTF', 'Account', ACCOUNT, 'SavedVariables', 'WoWGPT.lua'),
   };
 }
 
@@ -175,8 +175,8 @@ function copyAddon(L) {
 }
 
 function copyAddonTo(addons) {
-  const src = path.join(REPO, 'addon', 'ClaudeWoW');
-  const dest = path.join(addons, 'ClaudeWoW');
+  const src = path.join(REPO, 'addon', 'WoWGPT');
+  const dest = path.join(addons, 'WoWGPT');
   fs.mkdirSync(dest, { recursive: true });
   const names = P.addonFiles(src);
   const folders = names.map(f => f.split('/')[0]);
@@ -184,7 +184,7 @@ function copyAddonTo(addons) {
   const build = P.addonBuild(names.map(name => ({ name, data: fs.readFileSync(path.join(src, name)) })));
   for (const f of names) {
     fs.mkdirSync(path.dirname(path.join(dest, f)), { recursive: true });
-    if (f === 'ClaudeWoW.toc') fs.writeFileSync(path.join(dest, f), P.tocWithBuild(fs.readFileSync(path.join(src, f), 'utf8'), build));
+    if (f === 'WoWGPT.toc') fs.writeFileSync(path.join(dest, f), P.tocWithBuild(fs.readFileSync(path.join(src, f), 'utf8'), build));
     else fs.copyFileSync(path.join(src, f), path.join(dest, f));
   }
 }
@@ -220,9 +220,9 @@ function envFor(L, extra = {}) {
     env,
     homeEnv(L.user),
     {
-      CLAUDE_WOW_HOME: L.home,
-      CLAUDE_WOW_FAKE_STATE: L.agentState,
-      CLAUDE_WOW_SANDBOX: L.dir,
+      WOWGPT_HOME: L.home,
+      WOWGPT_FAKE_STATE: L.agentState,
+      WOWGPT_SANDBOX: L.dir,
     },
     extra,
   );

@@ -9,10 +9,10 @@ const { makeRoot, gameRunner } = require('./helpers');
 
 const ROOT = makeRoot('plugindir');
 const withGame = gameRunner(ROOT);
-const PLUGIN_DIR = path.join(REPO, 'assets', 'plugins', 'claude-wow');
-const BAD_VALUE_NOTE = 'plugins.ask.claudePlugin must be true or false; "yes" is ignored, so ask runs do not load the claude-wow Claude Code plugin.';
+const PLUGIN_DIR = path.join(REPO, 'assets', 'plugins', 'wowgpt');
+const BAD_VALUE_NOTE = 'plugins.ask.claudePlugin must be true or false; "yes" is ignored, so ask runs do not load the wowgpt Claude Code plugin.';
 const EXTRA_ARGS_NOTE =
-  'agents.claude.extraArgs has --plugin-dir, so every chat Claude run loads that plugin, coding chats too; move it to plugins.ask.claudePlugin: true, which loads the claude-wow plugin into ask runs only.';
+  'agents.claude.extraArgs has --plugin-dir, so every chat Claude run loads that plugin, coding chats too; move it to plugins.ask.claudePlugin: true, which loads the wowgpt plugin into ask runs only.';
 
 const askFolder = name => path.join(ROOT, `ask-${name}`);
 const pluginsConfig = (dflt, claudePlugin = true, name = dflt) => ({ plugins: { default: dflt, ask: { cwd: askFolder(name), claudePlugin } } });
@@ -82,7 +82,7 @@ test('a coding run gets neither the plugin nor foreground subagents, and a backg
     const call = h.agentCalls().find(c => c.directives['background-agent']);
     assert.ok(call, 'the run reached the agent');
     assert.ok(!fs.realpathSync(call.cwd).startsWith(fs.realpathSync(ROOT) + path.sep + 'ask-'), 'the run is a coding run, not an ask run');
-    assert.ok(!call.argv.includes('--plugin-dir'), 'a coding run never gets the claude-wow plugin');
+    assert.ok(!call.argv.includes('--plugin-dir'), 'a coding run never gets the wowgpt plugin');
     assert.equal(call.disableBackgroundTasks, null, 'a coding run keeps background tasks');
   });
 });
