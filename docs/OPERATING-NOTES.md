@@ -43,7 +43,7 @@ outbox), tells the player once in the game chat, and the bridge, on the first re
 that carries it, switches to the pixel capture, logs `TRANSPORT FALLBACK: ...` with
 the reason and what the fallback needs, writes `transportFallback` to `state.json`
 (the next start goes straight to pixels; the banner says why), and names the reason
-in its slot files, where `/claude diag` shows it (`transport: pixel (bridge: pixel
+in its slot files, where `/wowgpt diag` shows it (`transport: pixel (bridge: pixel
 transport, fallen back to since ... because ...)`). The first report takes the slow road:
 a bridge waiting for screenshots is not watching the screen, so it arrives through the
 reload fallback, about two minutes after the first message. An explicit `capture.mode`
@@ -52,7 +52,7 @@ every start (and falls back again, that run, if the addon still cannot shoot).
 
 ## Signal files: the game only sees what existed at launch
 
-**Evidence (WoW Forever 1.60.1, macOS, 2026-09-29).** `/claude diag` in game said
+**Evidence (WoW Forever 1.60.1, macOS, 2026-09-29).** `/wowgpt diag` in game said
 `sound channel: usable (self-test: passed)`, `sound checks: 469, valid hits: 9`,
 `presence: head at 1965, beats seen: 0`, and `Bridge: connected (seen 24s ago)` just
 after a reply. On disk the bridge had written presence files up to 1981, one every
@@ -71,9 +71,9 @@ as missing after the bridge deleted it. The addon tests this itself at every log
 and uses the beats only if it passes. If it fails, the light uses the slow windows
 (stale at 12 minutes, down at 22), and nothing else breaks. To check after an update:
 
-1. Run `claude-wow setup` (or `npm run slots`), restart the bridge, then quit WoW
+1. Run `wowgpt setup` (or `npm run slots`), restart the bridge, then quit WoW
    fully and start it again.
-2. Log in, wait a minute, and run `/claude diag`.
+2. Log in, wait a minute, and run `/wowgpt diag`.
 3. Look for `presence self-test: passed` and a rising `beats seen`. The line
    `late-created file: unseen` confirms the launch-time index; `seen` means files
    made mid-session can be seen after all, which is worth reporting.
@@ -117,8 +117,8 @@ which is the safe path.
 **A reply while the window is closed.** The window is open or closed; there is no
 floating bar. The minimap button carries the status: a small light at its lower right
 (green, yellow, red, grey, like the window's) and a pulse while a reply is unread.
-A player who hid the button with `/claude config minimap off` gets one chat line per
-reply instead (`<agent> replied. Type /claude to open the window.`), out of combat and
+A player who hid the button with `/wowgpt config minimap off` gets one chat line per
+reply instead (`<agent> replied. Type /wowgpt to open the window.`), out of combat and
 only with whisper tabs off. An install that was minimized when it last ran comes back
 closed, once (`miniBarV2`).
 
@@ -151,8 +151,8 @@ without one; a model with no listed rate shows tokens only), keeps it per chat
 in `state.json` (`sessionUsage`) and ships it on the reply record; the addon's
 footer shows the context as a bar and the status tooltip shows the cost, labeled
 "Estimated API cost" (the API-list-price equivalent, a comparison, since a
-subscription is not billed per token), `/claude config context` and `diag`
-report it, and past `/claude config context <n>` (300k by default: a coding chat
+subscription is not billed per token), `/wowgpt config context` and `diag`
+report it, and past `/wowgpt config context <n>` (300k by default: a coding chat
 can start near 90k before its first tool call, so 100k warned on turn 1) the chat says so once, with a **New chat**
 button. Codex, Grok, agy and Hermes report nothing the bridge can trust, so those
 chats show turns and elapsed time only.

@@ -4,6 +4,21 @@ All notable changes to this project are recorded here. The format follows [Keep 
 
 ## [Unreleased]
 
+### Renamed to WoWGPT
+
+The project is now WoWGPT: the addon, the command, the home folder, the service and the Claude Code channel all have the new name. Your chats, settings and agent sessions come across. What you do:
+
+- [ ] Update the bridge (`wowgpt update`, an installed `claude-wow` binary updates itself, the installer again, or `git pull`), then run `wowgpt setup` (or `claude-wow setup`). Setup:
+  - copies `~/.claude-wow` to `~/.wowgpt` (its releases, locks, `tmp/` and the live socket stay behind) and the `ask` data folder (`Application Support/claude-wow` on macOS, `~/.local/share/claude-wow` on Linux, `%LOCALAPPDATA%\claude-wow` on Windows) to the `wowgpt` name. It copies, never moves: when the new install works, you can delete the old folders yourself. Setup says so. A chat whose agent session started in the old `ask` folder keeps that folder, so it still resumes.
+  - installs the `WoWGPT` addon and removes the `ClaudeWoW` addon and its `ClaudeWoW_S###` slot folders. The saved data is copied, with its globals renamed (`ClaudeWoWDB`, `ClaudeWoWWidgetDB`, `ClaudeWoWMapDB`, `ClaudeWoWCharDB` become `WoWGPT*`), from the account file and from every character's file under `WTF/Account/<account>/<realm>/<character>/SavedVariables/`. The old files are kept.
+- [ ] Fully quit and restart the game: the client finds a new addon folder only at launch.
+- [ ] Run `wowgpt service install` once if you use the background service. It writes `io.wowgpt.bridge` (systemd: `wowgpt-bridge`; Windows: `WoWGPT bridge.vbs`) and removes `io.claudewow.bridge`, `claude-wow-bridge` and `Claude WoW bridge.vbs`, so two bridges never start at login.
+- [ ] Bind the workspace key again (Key Bindings, AddOns, "WoWGPT: open or close the workspace"). The binding has a new name, and the game does not carry the old one over.
+- [ ] Live sessions: start Claude Code with `claude --dangerously-load-development-channels server:wowgpt` (was `server:claude-wow`). In your Claude Code allow rules, `mcp__claude-wow__*` becomes `mcp__wowgpt__*` (for example `mcp__wowgpt__wow_reply`). The MCP server in `.mcp.json` is `wowgpt`, and the plugin folder is `assets/plugins/wowgpt`.
+- [ ] Rename your environment variables to `WOWGPT_*` when you like (`WOWGPT_HOME`, `WOWGPT_PROJECT`, ...). The old `CLAUDE_WOW_*` names still work when the new one is not set.
+
+Kept so nothing breaks: `/wowgpt` is the main command, and `/claude` and the hidden `/claude-wow` still work. Links written before the rename (`addon:claudewow:...`) still click. The npm package is `wowgpt` with a `claude-wow` bin alias, the installer turns an old `claude-wow` command into a link to `wowgpt`, and this release also ships every binary as `claude-wow-<os>-<arch>` (in `SHA256SUMS` too) and prints a `claude-wow <version>` line on `--version`, so an installed `claude-wow` binary can update itself to WoWGPT. The GitHub repository and the Homebrew tap keep their names for now.
+
 ### Security
 
 - A message from the game can no longer raise what the agent may do for good. Another addon can forge these messages, so the bridge now caps them.

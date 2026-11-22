@@ -1,5 +1,5 @@
 # Homebrew formula for the WoWGPT bridge and its `wowgpt` command.
-# Lives in the tap rdimascio/homebrew-wowgpt as Formula/wowgpt.rb:
+# Lives in the tap rdimascio/homebrew-claude-wow as Formula/wowgpt.rb:
 #
 #   brew tap rdimascio/claude-wow
 #   brew install wowgpt         # the release binary: nothing else, no Node.js

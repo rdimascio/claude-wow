@@ -2,14 +2,14 @@
 
 This is the text for the CurseForge (and Wago) project page. It is not part of the addon zip: `.pkgmeta` leaves `docs/` out.
 
-**Name: Azeroth Companion.** The listing must not be branded as Claude and must not use Anthropic's logo. The toc `## Title:` is `Azeroth Companion` too, so the AddOns screen and the listing agree.
+**Name: WoWGPT.** The listing must not be branded as Claude and must not use Anthropic's logo. The toc `## Title:` is `WoWGPT` too, so the AddOns screen and the listing agree.
 
 ## Fields
 
 | Field | Value |
 |---|---|
-| Name | Azeroth Companion |
-| Summary (one line) | Chat with Claude Code and other AI coding agents from inside the game. Needs the free claude-wow companion program. |
+| Name | WoWGPT |
+| Summary (one line) | Chat with Claude Code and other AI coding agents from inside the game. Needs the free wowgpt companion program. |
 | Game versions | World of Warcraft Classic (Classic Era, 1.15.x) and World of Warcraft: Forever (1.60.x). The toc says `## Interface: 11509, 16001`. |
 | Main category | Chat & Communication |
 | Other categories | Development Tools, Map & Minimap |
@@ -21,9 +21,9 @@ Check the category names against the CurseForge form when you create the project
 
 ## Description
 
-> **This addon needs a companion program.** It does nothing on its own. You also need the free **claude-wow** bridge, which runs on the same computer as the game, and an AI agent you have logged in to, such as Claude Code. Get the bridge from the claude-wow project on GitHub (rdimascio/claude-wow); its README has a one-line installer for macOS, Linux and Windows, and a Homebrew formula.
+> **This addon needs a companion program.** It does nothing on its own. You also need the free **wowgpt** bridge, which runs on the same computer as the game, and an AI agent you have logged in to, such as Claude Code. Get the bridge from the wowgpt project on GitHub (rdimascio/claude-wow); its README has a one-line installer for macOS, Linux and Windows, and a Homebrew formula.
 
-**Azeroth Companion** lets you talk to an AI coding agent from inside World of Warcraft. Send a task, go back to questing, and get a whisper in game when the answer is ready. No alt-tab.
+**WoWGPT** lets you talk to an AI coding agent from inside World of Warcraft. Send a task, go back to questing, and get a whisper in game when the answer is ready. No alt-tab.
 
 **What it does**
 
@@ -42,10 +42,10 @@ Addons cannot use the network or read files while the game runs. The addon sends
 **Install**
 
 1. Install this addon.
-2. Install the claude-wow bridge (see the companion note above).
-3. Run `claude-wow setup`. It finds the game and creates the helper addons (`ClaudeWoW_Runtime` and 200 `ClaudeWoW_S###` slot addons). If you play Classic Era and also have Forever installed, run `claude-wow setup --wow "<path to World of Warcraft>/_classic_era_"`. If the bridge already runs in the background, run `claude-wow service restart` after setup.
+2. Install the wowgpt bridge (see the companion note above).
+3. Run `wowgpt setup`. It finds the game and creates the helper addons (`WoWGPT_Runtime` and 200 `WoWGPT_S###` slot addons). If you play Classic Era and also have Forever installed, run `wowgpt setup --wow "<path to World of Warcraft>/_classic_era_"`. If the bridge already runs in the background, run `wowgpt service restart` after setup.
 4. Fully quit the game and start it again once. A `/reload` does not add new addon folders.
-5. Leave the *Azeroth Companion slot* addons enabled, start the bridge with `claude-wow`, and type `/claude hello` in game. The default agent is Claude Code; if you use only another agent, type `/claude --agent <id> hello`, where `<id>` is `codex`, `grok`, `agy` or `hermes`.
+5. Leave the *WoWGPT slot* addons enabled, start the bridge with `wowgpt`, and type `/wowgpt hello` in game. The default agent is Claude Code; if you use only another agent, type `/wowgpt --agent <id> hello`, where `<id>` is `codex`, `grok`, `agy` or `hermes`.
 
 **Known limits**
 

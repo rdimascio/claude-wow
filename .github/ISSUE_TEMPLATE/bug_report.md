@@ -21,16 +21,16 @@ assignees: ''
 - Display mode (windowed / borderless / exclusive fullscreen):
 - Node.js version (`node -v`):
 - Agent and its version (`claude --version`, `codex --version` or `grok --version`):
-- claude-wow version or commit:
+- wowgpt version or commit:
 
 **Diagnostics**
 
-Output of `/claude-wow diag` in game:
+Output of `/wowgpt diag` in game:
 
 ```
 ```
 
-Last lines of `~/.claude-wow/bridge.log`:
+Last lines of `~/.wowgpt/bridge.log`:
 
 ```
 ```
