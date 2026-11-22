@@ -6,7 +6,7 @@
 #
 #   $env:WOWGPT_WOW = "D:\Games\World of Warcraft\_classic_beta_"   # the client folder (found automatically in the usual places)
 #   $env:WOWGPT_PROJECT = "C:\code\my-game"                          # the default folder the agents work in
-#   $env:WOWGPT_SERVICE = "yes"  (or "no")                           # start at login without asking (or never ask)
+#   $env:WOWGPT_SERVICE = "yes"  (or "no")                           # start at login without asking (or never ask; an existing service is otherwise reinstalled)
 #   $env:WOWGPT_SOURCE = "1"     no prebuilt binary: clone the repo and run it with Node.js 22.2+
 #   $env:WOWGPT_RELEASE = "..."  which release's binary (default latest, then the newest release of any kind; a named release never falls back)
 #   $env:WOWGPT_DIR = "..."      where it goes, default $env:LOCALAPPDATA\Programs\wowgpt
@@ -26,9 +26,12 @@
 #      checks for Node.js 22.2+, clones the repo with git (or downloads the zip;
 #      nothing to npm-install) and writes a wowgpt.cmd that runs it with node
 #   2. puts that folder on your user PATH (no admin rights)
-#   3. runs the game-side setup (addon, config.json, slot pool); config, state
-#      and logs live in ~\.wowgpt (WOWGPT_HOME), outside the code
-#   4. offers to start the bridge at login (a launcher in your Startup folder)
+#   3. runs the game-side setup (addon, config.json, slot pool, and the
+#      launcher in your Startup folder that starts the bridge at login); config,
+#      state and logs live in ~\.wowgpt (WOWGPT_HOME), outside the code. An
+#      existing launcher (under any of the project's names) is reinstalled
+#      without asking, which starts the bridge again on the new version; a
+#      fresh install asks, and Enter means yes
 # An install by the project's old name (Programs\wow-ai, the wow-ai command,
 # the "WoW AI bridge" launcher) is carried over: its config and sessions are
 # copied to ~\.wowgpt, its launcher is removed, and setup migrates the
@@ -67,11 +70,20 @@ function Fail($what, $fix) {
   if ($fix) { Write-Host "  -> $fix" -ForegroundColor Yellow }
   exit 1
 }
-function Ask($q) {
-  if ($env:WOWGPT_SERVICE -eq 'yes') { return $true }
-  if ($env:WOWGPT_SERVICE -eq 'no' -or -not [Environment]::UserInteractive) { return $false }
-  $a = Read-Host $q
-  return $a -match '^(y|yes)$'
+# The Startup-folder launcher under this name and the project's old ones
+# (bridge/service.js dirs() and OLD_SERVICES).
+$ServiceLaunchers = @('WoWGPT bridge.vbs', 'Claude WoW bridge.vbs', 'WoW AI bridge.vbs')
+# What setup does about the service: -NoService and -Service (or WOWGPT_SERVICE)
+# as given; an existing launcher is reinstalled without asking; a fresh
+# install asks, and Enter means yes.
+function Select-ServiceFlag([bool]$service, [bool]$noService, [string]$choice, [string[]]$definitions, [bool]$interactive, [scriptblock]$ask) {
+  if ($noService -or $choice -eq 'no') { return '--no-service' }
+  if ($service -or $choice -eq 'yes') { return '--service' }
+  if (@($definitions | Where-Object { Test-Path -LiteralPath $_ }).Count) { return '--service' }
+  if (-not $interactive) { return '--no-service' }
+  $answer = & $ask 'Run the bridge in the background and start it at login? [Y/n]'
+  if ("$answer" -match '^\s*(y|yes)?\s*$') { return '--service' }
+  return '--no-service'
 }
 # "v22.2.0" -> is it at least $MinNode?
 function Test-NodeVersion([string]$v) {
@@ -187,7 +199,7 @@ function Get-Source {
   Write-Host "wowgpt command: $cmdShim (runs $Dir with node)"
 }
 
-Step '1/4 The bridge'
+Step '1/3 The bridge'
 switch (Select-BridgeRoute ([bool]$FromSource) $Release $env:PROCESSOR_ARCHITECTURE { Get-Binary }) {
   'source' { Get-Source }
   'no-binary-for-platform' { Fail "no wowgpt binary exists for $env:PROCESSOR_ARCHITECTURE Windows, in release $Release or any other; a pinned release never falls back to the source" "Run this again with -FromSource (or `$env:WOWGPT_SOURCE = `"1`") to run $Ref with Node.js." }
@@ -195,13 +207,18 @@ switch (Select-BridgeRoute ([bool]$FromSource) $Release $env:PROCESSOR_ARCHITECT
 }
 
 # ---- 2. The command on the PATH ---------------------------------------------
-Step '2/4 The wowgpt command'
+Step '2/3 The wowgpt command'
 $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
 if (-not (($userPath -split ';') -contains $binDir)) {
   [Environment]::SetEnvironmentVariable('Path', (@($userPath, $binDir) -ne '' -join ';'), 'User')
   Write-Host "added $binDir to your user PATH; open a new terminal for the wowgpt command"
 } else { Write-Host "$binDir is on your user PATH" }
 if (-not (($env:Path -split ';') -contains $binDir)) { $env:Path = "$env:Path;$binDir" }
+
+$startupDir = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Startup'
+$hadService = @($ServiceLaunchers | Where-Object { Test-Path -LiteralPath (Join-Path $startupDir $_) }).Count -gt 0
+$serviceFlag = Select-ServiceFlag ([bool]$Service) ([bool]$NoService) $env:WOWGPT_SERVICE @($ServiceLaunchers | ForEach-Object { Join-Path $startupDir $_ }) ([Environment]::UserInteractive) { param($q) Read-Host $q }
+if ($hadService -and $serviceFlag -eq '--service') { Write-Host 'a background service is installed; setup reinstalls it so it runs this version' }
 
 # An install under the old name: its config and the agents' sessions move to the
 # home folder (once; setup then rewrites the addon paths inside), its Startup
@@ -228,8 +245,8 @@ foreach ($old in @($OldDir, $OldClaudeWowDir)) {
 }
 
 # ---- 3. Game-side setup -----------------------------------------------------
-Step '3/4 Game-side setup (addon, config, slot pool)'
-$setupArgs = @()
+Step '3/3 Game-side setup (addon, config, slot pool, background service)'
+$setupArgs = @($serviceFlag)
 if ($Wow) { $setupArgs += @('--wow', $Wow) }
 if ($Project) { $setupArgs += @('--project', $Project) }
 & $Cmd setup @setupArgs
@@ -237,20 +254,6 @@ if ($LASTEXITCODE -ne 0) {
   Fail 'the game-side setup did not finish (see above)' 'The wowgpt command is installed. Fix what setup reported (usually: the client folder), then run:  wowgpt setup --wow "D:\path\to\World of Warcraft\_classic_beta_"'
 }
 
-# ---- 4. Start at login ------------------------------------------------------
-Step '4/4 Background service'
-$installService = $false
-if ($NoService -or $env:WOWGPT_SERVICE -eq 'no') { Write-Host 'skipped (install later with: wowgpt service install)' }
-elseif ($Service -or (Ask 'Run the bridge in the background and start it at login? [y/N]')) {
-  & $Cmd service install
-  if ($LASTEXITCODE -ne 0) { Fail 'the service did not install (see above)' 'Everything else is in place; start the bridge by hand with: wowgpt' }
-  $installService = $true
-} else { Write-Host 'skipped (install later with: wowgpt service install; or start the bridge by hand with: wowgpt)' }
-
-Write-Host "`nInstalled. The wowgpt command works from any folder. Next:" -ForegroundColor Green
-Write-Host '  1. Fully quit and relaunch World of Warcraft (it only discovers new addon folders at launch).'
-Write-Host '  2. Enable "WoWGPT" at the character-select AddOns screen.'
-if ($installService) { Write-Host '  3. Check the bridge:  wowgpt service status     (logs: wowgpt service logs)' }
-else { Write-Host '  3. Start the bridge:  wowgpt        (or: wowgpt service install, to keep it running in the background)' }
-Write-Host '  4. In game:  /wowgpt'
-Write-Host "`nUpdate later by running this installer again. Folder: $Dir"
+if ($hadService -and $serviceFlag -eq '--no-service') { Write-Host 'The update stopped the background bridge; start it again with:  wowgpt service start' }
+Write-Host "`nInstalled. The Next steps above are what is left; open a new terminal for the wowgpt command." -ForegroundColor Green
+Write-Host "Update later by running this installer again (it replaces the program and restarts the service). Folder: $Dir"
