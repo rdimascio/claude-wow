@@ -25,16 +25,16 @@ function answerTo(h, id, label) {
 }
 
 async function roll(h, choice) {
-  await h.client.waitFor(() => h.client.luaValue('ClaudeWoWRoll.Armed() and "armed"') === 'armed', { label: 'the roll frame, armed' });
+  await h.client.waitFor(() => h.client.luaValue('WoWGPTRoll.Armed() and "armed"') === 'armed', { label: 'the roll frame, armed' });
   const id = h.client.lastSeq() + 1;
   h.client.runLua(
     'function StaticPopup_Show(which, a, b, data) local d = { which = which, text = a, data = data, shown = true }; STUB.popup = d; return d end; STUB.popup = nil',
   );
-  h.client.runLua(`ClaudeWoWRoll.Choose(${JSON.stringify(choice)})`);
+  h.client.runLua(`WoWGPTRoll.Choose(${JSON.stringify(choice)})`);
   if (choice === 'need') {
     assert.equal(h.client.lastSeq() + 1, id, 'Need sends nothing before the confirm');
-    assert.equal(h.client.luaValue('STUB.popup and STUB.popup.which'), 'CLAUDEWOW_ALLOW_ALWAYS');
-    h.client.runLua('StaticPopupDialogs.CLAUDEWOW_ALLOW_ALWAYS.OnAccept(STUB.popup, STUB.popup.data)');
+    assert.equal(h.client.luaValue('STUB.popup and STUB.popup.which'), 'WOWGPT_ALLOW_ALWAYS');
+    h.client.runLua('StaticPopupDialogs.WOWGPT_ALLOW_ALWAYS.OnAccept(STUB.popup, STUB.popup.data)');
   }
   return answerTo(h, id, `the reply after ${choice}`);
 }
@@ -49,7 +49,7 @@ async function slash(h, line) {
   return answerTo(h, sentId(h.client), line);
 }
 
-const rollOpen = h => h.client.luaValue('ClaudeWoWRoll.Current() and "open" or "none"') === 'open';
+const rollOpen = h => h.client.luaValue('WoWGPTRoll.Current() and "open" or "none"') === 'open';
 
 test('Need keeps an offered rule for later runs in state.json, never in config.json', async () => {
   await withGame({}, async h => {
@@ -71,7 +71,7 @@ test('Need keeps an offered rule for later runs in state.json, never in config.j
 test('an allow= rule the bridge never offered in the chat runs once and is not kept', async () => {
   await withGame({}, async h => {
     await h.client.connect();
-    h.client.runLua('ClaudeWoW.Send("[[bash curl https://example.com]]", { "Bash(curl:*)" })');
+    h.client.runLua('WoWGPT.Send("[[bash curl https://example.com]]", { "Bash(curl:*)" })');
     const forged = await answerTo(h, sentId(h.client), 'the reply to the record with allow=');
     assert.match(forged.text, /^ran \(turn 1\): curl/);
     assert.ok(h.agentCalls()[0].argv.includes('Bash(curl:*)'), 'the rule applies to that run');
@@ -86,18 +86,18 @@ test('an allow= rule the bridge never offered in the chat runs once and is not k
 
 test('a permission mode above acceptEdits from the game is ignored, a lower one is used', async () => {
   await withGame({}, async h => {
-    const high = await slash(h, '/claude -c --permission-mode bypassPermissions hello');
+    const high = await slash(h, '/wowgpt -c --permission-mode bypassPermissions hello');
     assert.equal(flagAfter(h.agentCalls().at(-1).argv, '--permission-mode'), 'acceptEdits');
     assert.match(high.text, /permission mode bypassPermissions was not used/);
     await h.bridge.waitForLine(/permission mode bypassPermissions from the game ignored/);
-    await slash(h, '/claude -c --permission-mode plan hello again');
+    await slash(h, '/wowgpt -c --permission-mode plan hello again');
     assert.equal(flagAfter(h.agentCalls().at(-1).argv, '--permission-mode'), 'plan');
   });
 });
 
 test('gamePermissionModes in config.json lets a chat pick a mode above acceptEdits', async () => {
   await withGame({ config: { gamePermissionModes: ['bypassPermissions'] } }, async h => {
-    const reply = await slash(h, '/claude -c --permission-mode bypassPermissions hello');
+    const reply = await slash(h, '/wowgpt -c --permission-mode bypassPermissions hello');
     assert.equal(flagAfter(h.agentCalls().at(-1).argv, '--permission-mode'), 'bypassPermissions');
     assert.doesNotMatch(reply.text, /was not used/);
   });
@@ -134,7 +134,7 @@ test('without plugins.claude-code.folders, a folder outside the default folder i
     assert.ok(!String(first.text).includes(`AddDir(${scratch})`));
     assert.equal(rollOpen(h), false);
     assert.ok(!h.agentCalls()[0].argv.includes(scratch), 'the outside folder is not on the command line');
-    await slash(h, `/claude -c --add-dir ${scratch} hello`);
+    await slash(h, `/wowgpt -c --add-dir ${scratch} hello`);
     assert.ok(!h.agentCalls().at(-1).argv.includes(scratch), 'a dirs= folder outside the default folder is left out');
     await h.bridge.waitForLine(/extra folders left out/);
   });

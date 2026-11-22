@@ -80,13 +80,13 @@ end
 
 const COLD = `
 local ns = ...
-local render = ClaudeWoW.Render
-ClaudeWoW.Render = function(...)
+local render = WoWGPT.Render
+WoWGPT.Render = function(...)
 	ns.run.renderKey = nil
 	return render(...)
 end
-local renderList = ClaudeWoW.RenderChatList
-ClaudeWoW.RenderChatList = function(...)
+local renderList = WoWGPT.RenderChatList
+WoWGPT.RenderChatList = function(...)
 	local q = ns.ui.questList
 	if q then
 		for _, r in ipairs(q.rows) do
@@ -117,16 +117,16 @@ mt.__index = function(t, k)
 	local v = orig(t, k)
 	if k == "SetText" then
 		return function(self, ...)
-			if under(self, ClaudeWoWContent) then
+			if under(self, WoWGPTContent) then
 				TEXTS = TEXTS + 1
-			elseif under(self, ClaudeWoWChatListContent) then
+			elseif under(self, WoWGPTChatListContent) then
 				LIST_TEXTS = LIST_TEXTS + 1
 			end
 			return v(self, ...)
 		end
 	elseif k == "GetStringHeight" then
 		return function(self, ...)
-			if under(self, ClaudeWoWContent) then HEIGHTS = HEIGHTS + 1 end
+			if under(self, WoWGPTContent) then HEIGHTS = HEIGHTS + 1 end
 			return v(self, ...)
 		end
 	end
@@ -145,58 +145,58 @@ function boot({ native, cold }) {
   return vm;
 }
 
-const reply = (fields, k = 'ClaudeWoWDB.activeChat') =>
-  `STUB.onLoadAddOn = function() local c for _, ch in ipairs(ClaudeWoWDB.chats) do if ch.id == ${k} then c = ch end end ClaudeWoW_SlotData = { now = time(), cwd = "", replies = { { chat = c.id, id = c.pendingId, ${fields} } } } end; STUB.now = STUB.now + 6; STUB.Tick()`;
+const reply = (fields, k = 'WoWGPTDB.activeChat') =>
+  `STUB.onLoadAddOn = function() local c for _, ch in ipairs(WoWGPTDB.chats) do if ch.id == ${k} then c = ch end end WoWGPT_SlotData = { now = time(), cwd = "", replies = { { chat = c.id, id = c.pendingId, ${fields} } } } end; STUB.now = STUB.now + 6; STUB.Tick()`;
 
 const MARKDOWN = 'Here is the plan.\\n\\n- **first** point\\n- second point with `code`\\n\\n```lua\\nlocal x = 1\\n```\\n\\nTL;DR: do the thing.';
 
 const STEPS = [
-  ['open the window', 'ClaudeWoW.Toggle(true)'],
+  ['open the window', 'WoWGPT.Toggle(true)'],
   [
     'hello slot',
-    'STUB.RunTimers(); STUB.onLoadAddOn = function() ClaudeWoW_SlotData = { now = time(), cwd = "", replies = {} } end; STUB.now = STUB.now + 6; STUB.Tick()',
+    'STUB.RunTimers(); STUB.onLoadAddOn = function() WoWGPT_SlotData = { now = time(), cwd = "", replies = {} } end; STUB.now = STUB.now + 6; STUB.Tick()',
   ],
-  ['render with nothing changed', 'ClaudeWoW.Render()'],
-  ['two more chats', 'ClaudeWoW.NewChat("Second"); ClaudeWoW.NewChat("Third")'],
-  ['back to the first chat', 'ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[1].id)'],
-  ['send', 'ClaudeWoW.Send("first question with **bold** and a list")'],
+  ['render with nothing changed', 'WoWGPT.Render()'],
+  ['two more chats', 'WoWGPT.NewChat("Second"); WoWGPT.NewChat("Third")'],
+  ['back to the first chat', 'WoWGPT.SwitchChat(WoWGPTDB.chats[1].id)'],
+  ['send', 'WoWGPT.Send("first question with **bold** and a list")'],
   ['progress', reply('status = "working", text = "Reading files\\nEditing Transcript.lua", steps = 2')],
-  ['time passes while pending', 'STUB.now = STUB.now + 7; STUB.Tick(); ClaudeWoW.Render()'],
+  ['time passes while pending', 'STUB.now = STUB.now + 7; STUB.Tick(); WoWGPT.Render()'],
   ['reply', reply(`status = "done", text = "${MARKDOWN}", agent = "claude", summary = "do the thing."`)],
-  ['send again', 'ClaudeWoW.Send("second question")'],
+  ['send again', 'WoWGPT.Send("second question")'],
   ['reply without an agent', reply('status = "done", text = "Short answer.\\nSecond line."')],
-  ['the chat moves to codex', 'ClaudeWoWDB.chats[1].agent = "codex"; ClaudeWoW.Render()'],
-  ['a system note', 'ClaudeWoW.SystemNote("A short note")'],
-  ['an event note', 'local ns = ...; ns.Q.AddEvent(ns.ActiveChat(), "Joined the room"); ClaudeWoW.Render()'],
-  ['a long system message', 'ClaudeWoW.SystemNote(string.rep("A long system message that is a card, not a note. ", 4))'],
-  ['a denial with macros', 'ClaudeWoWDB.settings.lootRoll = false; ClaudeWoW.Send("delete the build folder")'],
+  ['the chat moves to codex', 'WoWGPTDB.chats[1].agent = "codex"; WoWGPT.Render()'],
+  ['a system note', 'WoWGPT.SystemNote("A short note")'],
+  ['an event note', 'local ns = ...; ns.Q.AddEvent(ns.ActiveChat(), "Joined the room"); WoWGPT.Render()'],
+  ['a long system message', 'WoWGPT.SystemNote(string.rep("A long system message that is a card, not a note. ", 4))'],
+  ['a denial with macros', 'WoWGPTDB.settings.lootRoll = false; WoWGPT.Send("delete the build folder")'],
   [
     'the denied reply',
     reply(
       'status = "done", text = "I need to run rm.", denied = { "Bash(rm:*)" }, macros = { { name = "Burst", body = "#showtooltip\\n/cast Arcane Power" } }, agent = "claude"',
     ),
   ],
-  ['render the denial again', 'ClaudeWoW.Render()'],
+  ['render the denial again', 'WoWGPT.Render()'],
   [
     'a picker and a context warning',
-    'local ns = ...; local c = ns.ActiveChat(); table.insert(c.history, { role = "system", text = "pick", head = "Pick a session", picker = { { text = "row one" }, { text = "row two" } }, t = time() }); table.insert(c.history, { role = "system", text = "This chat is getting long.", newChat = true, t = time() }); ClaudeWoW.Render()',
+    'local ns = ...; local c = ns.ActiveChat(); table.insert(c.history, { role = "system", text = "pick", head = "Pick a session", picker = { { text = "row one" }, { text = "row two" } }, t = time() }); table.insert(c.history, { role = "system", text = "This chat is getting long.", newChat = true, t = time() }); WoWGPT.Render()',
   ],
-  ['the picker rows change', 'local ns = ...; local c = ns.ActiveChat(); c.history[#c.history - 1].picker[2].text = "row two, renamed"; ClaudeWoW.Render()'],
-  ['continue past the denial', 'ClaudeWoW.Send("skip that step")'],
+  ['the picker rows change', 'local ns = ...; local c = ns.ActiveChat(); c.history[#c.history - 1].picker[2].text = "row two, renamed"; WoWGPT.Render()'],
+  ['continue past the denial', 'WoWGPT.Send("skip that step")'],
   ['its reply', reply('status = "done", text = "Skipped.", agent = "claude"')],
-  ['a narrower window', 'ClaudeWoWScroll:SetWidth(320); ClaudeWoW.Render()'],
-  ['back to the default width', 'ClaudeWoWScroll.width = nil; ClaudeWoW.Render()'],
-  ['switch away and back', 'ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[2].id); ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[1].id)'],
-  ['an empty chat', 'ClaudeWoW.NewChat("Empty")'],
-  ['back again', 'ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[1].id)'],
-  ['a message edited in place', 'ClaudeWoWDB.chats[1].history[1].text = "first question, edited"; ClaudeWoW.Render()'],
+  ['a narrower window', 'WoWGPTScroll:SetWidth(320); WoWGPT.Render()'],
+  ['back to the default width', 'WoWGPTScroll.width = nil; WoWGPT.Render()'],
+  ['switch away and back', 'WoWGPT.SwitchChat(WoWGPTDB.chats[2].id); WoWGPT.SwitchChat(WoWGPTDB.chats[1].id)'],
+  ['an empty chat', 'WoWGPT.NewChat("Empty")'],
+  ['back again', 'WoWGPT.SwitchChat(WoWGPTDB.chats[1].id)'],
+  ['a message edited in place', 'WoWGPTDB.chats[1].history[1].text = "first question, edited"; WoWGPT.Render()'],
   [
     'the history fills up',
-    'local ns = ...; local c = ns.ActiveChat(); for i = 1, 205 do ns.AddHistory(c, i % 2 == 0 and "user" or "assistant", "bulk message " .. i .. string.rep(" more", i % 7)) end; ClaudeWoW.Render()',
+    'local ns = ...; local c = ns.ActiveChat(); for i = 1, 205 do ns.AddHistory(c, i % 2 == 0 and "user" or "assistant", "bulk message " .. i .. string.rep(" more", i % 7)) end; WoWGPT.Render()',
   ],
-  ['one more trims the oldest', 'local ns = ...; ns.AddHistory(ns.ActiveChat(), "user", "one more"); ClaudeWoW.Render()'],
-  ['clear', 'SlashCmdList.CLAUDE("clear"); ClaudeWoW.Render()'],
-  ['delete the chat', 'ClaudeWoW.DeleteChat()'],
+  ['one more trims the oldest', 'local ns = ...; ns.AddHistory(ns.ActiveChat(), "user", "one more"); WoWGPT.Render()'],
+  ['clear', 'SlashCmdList.WOWGPT("clear"); WoWGPT.Render()'],
+  ['delete the chat', 'WoWGPT.DeleteChat()'],
 ];
 
 function firstDiff(a, b) {
@@ -220,41 +220,41 @@ for (const native of [true, false]) {
   test(`render identity (${mode}): after every step the incremental transcript and chat list match a cold render of the same state`, () => {
     const warm = boot({ native, cold: false });
     const cold = boot({ native, cold: true });
-    const list = native ? 'ClaudeWoWChatListContent' : 'ClaudeWoW.UI.listPanel';
+    const list = native ? 'WoWGPTChatListContent' : 'WoWGPT.UI.listPanel';
     for (const [what, lua] of STEPS) {
       warm.run(lua, { ns: true });
       cold.run(lua, { ns: true });
-      sameTree(warm, cold, 'ClaudeWoWContent', what);
+      sameTree(warm, cold, 'WoWGPTContent', what);
       sameTree(warm, cold, list, what);
     }
-    assert.ok(warm.num('#ClaudeWoW.UI.bubbles') >= 200, 'the sequence reached the history cap');
+    assert.ok(warm.num('#WoWGPT.UI.bubbles') >= 200, 'the sequence reached the history cap');
   });
 }
 
 test('a render with nothing changed sets no bubble text and reads no height', () => {
   const vm = boot({ native: true, cold: false });
-  vm.run('ClaudeWoW.Toggle(true)');
+  vm.run('WoWGPT.Toggle(true)');
   vm.run(STEPS[1][1], { ns: true });
-  vm.run('ClaudeWoW.Send("hello"); ' + reply('status = "done", text = "hi there\\nsecond line", agent = "claude"'), { ns: true });
-  vm.run('ClaudeWoW.SystemNote("noted")');
-  vm.run('ClaudeWoW.NewChat("Second"); ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[1].id)');
+  vm.run('WoWGPT.Send("hello"); ' + reply('status = "done", text = "hi there\\nsecond line", agent = "claude"'), { ns: true });
+  vm.run('WoWGPT.SystemNote("noted")');
+  vm.run('WoWGPT.NewChat("Second"); WoWGPT.SwitchChat(WoWGPTDB.chats[1].id)');
   vm.run(COUNT_TEXT);
-  vm.run('ClaudeWoW.Render()');
+  vm.run('WoWGPT.Render()');
   assert.equal(vm.num('TEXTS'), 0, 'no SetText under the transcript');
   assert.equal(vm.num('HEIGHTS'), 0, 'no GetStringHeight under the transcript');
   assert.equal(vm.num('LIST_TEXTS'), 0, 'no SetText under the chat list');
-  vm.run('ClaudeWoW.SystemNote("one more")');
+  vm.run('WoWGPT.SystemNote("one more")');
   assert.ok(vm.num('TEXTS') > 0 && vm.num('TEXTS') <= 2, 'only the new note is laid out: ' + vm.num('TEXTS'));
   assert.ok(vm.num('LIST_TEXTS') <= 4, 'only the row of the chat that changed is filled: ' + vm.num('LIST_TEXTS'));
 });
 
 test('an item link that loads after the first draw replaces its placeholder on the retry render', () => {
   const vm = boot({ native: true, cold: false });
-  vm.run('ClaudeWoW.Toggle(true)');
+  vm.run('WoWGPT.Toggle(true)');
   vm.run(STEPS[1][1], { ns: true });
   vm.run('C_Item.GetItemInfo = function() return nil end');
-  vm.run('ClaudeWoW.Send("what sword"); ' + reply('status = "done", text = "Take {item:2140} now", agent = "claude"'), { ns: true });
-  const body = '(function() local last for _, b in ipairs(ClaudeWoW.UI.bubbles) do if b.shown then last = b end end return last.body:GetText() end)()';
+  vm.run('WoWGPT.Send("what sword"); ' + reply('status = "done", text = "Take {item:2140} now", agent = "claude"'), { ns: true });
+  const body = '(function() local last for _, b in ipairs(WoWGPT.UI.bubbles) do if b.shown then last = b end end return last.body:GetText() end)()';
   const before = vm.evaluate(body);
   assert.ok(before.includes('item 2140'), 'the first draw shows the placeholder: ' + before);
   assert.ok(!before.includes('|Hitem:2140'), 'and no link yet');
@@ -268,25 +268,25 @@ test('an item link that loads after the first draw replaces its placeholder on t
 
 test('a scale change or a show drops the records: the next render lays out every bubble and row again', () => {
   const vm = boot({ native: true, cold: false });
-  vm.run('ClaudeWoW.Toggle(true)');
+  vm.run('WoWGPT.Toggle(true)');
   vm.run(STEPS[1][1], { ns: true });
-  vm.run('ClaudeWoW.Send("hello"); ' + reply('status = "done", text = "hi there", agent = "claude"'), { ns: true });
-  vm.run('ClaudeWoW.NewChat("Second"); ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[1].id)');
+  vm.run('WoWGPT.Send("hello"); ' + reply('status = "done", text = "hi there", agent = "claude"'), { ns: true });
+  vm.run('WoWGPT.NewChat("Second"); WoWGPT.SwitchChat(WoWGPTDB.chats[1].id)');
   vm.run(COUNT_TEXT);
-  vm.run('ClaudeWoW.Render()');
+  vm.run('WoWGPT.Render()');
   assert.equal(vm.num('TEXTS'), 0, 'nothing changed: no SetText under the transcript');
   for (const event of ['UI_SCALE_CHANGED', 'DISPLAY_SIZE_CHANGED']) {
-    vm.run(`TEXTS, LIST_TEXTS = 0, 0; STUB.FireEvent("${event}"); ClaudeWoW.Render()`);
+    vm.run(`TEXTS, LIST_TEXTS = 0, 0; STUB.FireEvent("${event}"); WoWGPT.Render()`);
     assert.ok(vm.num('TEXTS') >= 2, `${event}: every bubble is laid out again: ` + vm.num('TEXTS'));
     assert.ok(vm.num('LIST_TEXTS') >= 2, `${event}: every list row is filled again: ` + vm.num('LIST_TEXTS'));
-    vm.run('TEXTS, LIST_TEXTS = 0, 0; ClaudeWoW.Render()');
+    vm.run('TEXTS, LIST_TEXTS = 0, 0; WoWGPT.Render()');
     assert.equal(vm.num('TEXTS'), 0, `${event}: then the records hold again`);
   }
-  vm.run('TEXTS, LIST_TEXTS = 0, 0; ClaudeWoW.Toggle(false); ClaudeWoW.Toggle(true)');
+  vm.run('TEXTS, LIST_TEXTS = 0, 0; WoWGPT.Toggle(false); WoWGPT.Toggle(true)');
   assert.ok(vm.num('TEXTS') >= 2, 'a show lays every bubble out again: ' + vm.num('TEXTS'));
   assert.ok(vm.num('LIST_TEXTS') >= 2, 'and fills every list row: ' + vm.num('LIST_TEXTS'));
-  vm.run('TEXTS, LIST_TEXTS = 0, 0; ClaudeWoW.Suspend(true); ClaudeWoW.Suspend(false)');
+  vm.run('TEXTS, LIST_TEXTS = 0, 0; WoWGPT.Suspend(true); WoWGPT.Suspend(false)');
   assert.ok(vm.num('TEXTS') >= 2, 'so does the show after a suspend: ' + vm.num('TEXTS'));
-  vm.run('TEXTS, LIST_TEXTS = 0, 0; ClaudeWoW.Render()');
+  vm.run('TEXTS, LIST_TEXTS = 0, 0; WoWGPT.Render()');
   assert.equal(vm.num('TEXTS'), 0, 'and the records hold again after the show');
 });

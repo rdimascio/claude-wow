@@ -56,16 +56,16 @@ async function install(client) {
   }
   const counts = { made: 0, kept: 0, updated: 0 };
   for (let i = 1; i <= N; i++) {
-    const name = 'ClaudeWoW_S' + String(i).padStart(3, '0');
+    const name = 'WoWGPT_S' + String(i).padStart(3, '0');
     const dir = path.join(addons, name);
     ensure(
       path.join(dir, name + '.toc'),
       [
         '## Interface: ' + iface,
-        '## Title: Azeroth Companion slot ' + String(i).padStart(3, '0'),
-        '## Notes: Reply slot for Azeroth Companion. Load-on-demand; leave it enabled.',
+        '## Title: WoWGPT slot ' + String(i).padStart(3, '0'),
+        '## Notes: Reply slot for WoWGPT. Load-on-demand; leave it enabled.',
         '## LoadOnDemand: 1',
-        '## Dependencies: ClaudeWoW',
+        '## Dependencies: WoWGPT',
         '',
         'Inbox.lua',
         '',
@@ -73,7 +73,7 @@ async function install(client) {
       counts,
       { replaceWhenDifferent: true },
     );
-    ensure(path.join(dir, 'Inbox.lua'), 'ClaudeWoW_SlotData = nil\n', counts);
+    ensure(path.join(dir, 'Inbox.lua'), 'WoWGPT_SlotData = nil\n', counts);
   }
 
   const saved = CLI.legacyStateFor(state, CLI.allClients(cfg), client.key);
@@ -92,7 +92,7 @@ async function install(client) {
   const perms = G.repair(addons);
   if (perms.fixed)
     console.log(
-      `${tag}permissions: ${perms.fixed} of ${perms.checked} file(s) and folder(s) under the ClaudeWoW addon folders set to 0777 to match the game install (Battle.net error 2113)`,
+      `${tag}permissions: ${perms.fixed} of ${perms.checked} file(s) and folder(s) under the WoWGPT addon folders set to 0777 to match the game install (Battle.net error 2113)`,
     );
   for (const f of perms.failed) console.log(`${tag}permissions: could not chmod ${f}`);
   console.log(

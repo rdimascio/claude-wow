@@ -16,7 +16,7 @@ const GM = require('../bridge/goalsmcp');
 
 const ROOT = path.join(__dirname, '..');
 const BRIDGE = path.join(ROOT, 'bridge', 'bridge.js');
-const ADDON = path.join(ROOT, 'addon', 'ClaudeWoW', 'Chat', 'Context.lua');
+const ADDON = path.join(ROOT, 'addon', 'WoWGPT', 'Chat', 'Context.lua');
 
 const BONE_CONTEXT = [
   'Game: World of Warcraft: Forever (client 1.60.1.70124, interface 16001)',
@@ -528,11 +528,11 @@ function fakeInstall(dir, { gameContext = false } = {}) {
   const home = path.join(dir, 'home');
   const client = path.join(dir, 'client');
   const addons = path.join(client, 'Interface', 'AddOns');
-  for (const d of ['sig', 'ack', 'act', 'presence']) fs.mkdirSync(path.join(addons, 'ClaudeWoW_Runtime', d), { recursive: true });
-  fs.mkdirSync(path.join(addons, 'ClaudeWoW'), { recursive: true });
-  fs.writeFileSync(path.join(addons, 'ClaudeWoW', 'ClaudeWoW.toc'), '## Interface: 16001\n');
-  fs.mkdirSync(path.join(addons, 'ClaudeWoW_S001'), { recursive: true });
-  fs.writeFileSync(path.join(addons, 'ClaudeWoW_S001', 'Inbox.lua'), 'ClaudeWoW_SlotData = nil\n');
+  for (const d of ['sig', 'ack', 'act', 'presence']) fs.mkdirSync(path.join(addons, 'WoWGPT_Runtime', d), { recursive: true });
+  fs.mkdirSync(path.join(addons, 'WoWGPT'), { recursive: true });
+  fs.writeFileSync(path.join(addons, 'WoWGPT', 'WoWGPT.toc'), '## Interface: 16001\n');
+  fs.mkdirSync(path.join(addons, 'WoWGPT_S001'), { recursive: true });
+  fs.writeFileSync(path.join(addons, 'WoWGPT_S001', 'Inbox.lua'), 'WoWGPT_SlotData = nil\n');
   fs.mkdirSync(path.join(client, 'Screenshots'), { recursive: true });
   const savedDir = path.join(client, 'WTF', 'Account', 'ACCT', 'SavedVariables');
   fs.mkdirSync(savedDir, { recursive: true });
@@ -557,8 +557,8 @@ function fakeInstall(dir, { gameContext = false } = {}) {
   );
   const cfg = {
     addonDir: addons,
-    savedVariablesFile: path.join(savedDir, 'ClaudeWoW.lua'),
-    inboxFile: path.join(addons, 'ClaudeWoW_Runtime', 'Inbox.lua'),
+    savedVariablesFile: path.join(savedDir, 'WoWGPT.lua'),
+    inboxFile: path.join(addons, 'WoWGPT_Runtime', 'Inbox.lua'),
     slots: 1,
     agent: 'claude',
     agents: { claude: { path: agent, allowedTools: ['WebSearch'] } },
@@ -583,7 +583,7 @@ function writeOutbox(saved, id, ctx, session = 'sess1', chat = 'chat1') {
   const ctxLine = ctx === undefined ? '' : `["ctx"] = "${hex(ctx)}",\n`;
   fs.writeFileSync(
     saved,
-    `ClaudeWoWDB = {\n["outbox"] = {\n["id"] = ${id},\n["session"] = "${session}",\n["chat"] = "${chat}",\n["text"] = "${hex('hi')}",\n["cwd"] = "",\n["plugin"] = "ask",\n${ctxLine}["t"] = 1,\n},\n}\n`,
+    `WoWGPTDB = {\n["outbox"] = {\n["id"] = ${id},\n["session"] = "${session}",\n["chat"] = "${chat}",\n["text"] = "${hex('hi')}",\n["cwd"] = "",\n["plugin"] = "ask",\n${ctxLine}["t"] = 1,\n},\n}\n`,
   );
 }
 
@@ -648,7 +648,7 @@ test(
       const allowOnce = ['mcp__claude-wow__goal_set', 'mcp__wowgoals__goal_set', 'mcp__wowgoals__narrate(x)', 'Glob', 'TodoWrite'].join('\x1F');
       fs.writeFileSync(
         saved,
-        `ClaudeWoWDB = {\n["outbox"] = {\n["id"] = 7,\n["session"] = "sess1",\n["chat"] = "chat1",\n["text"] = "${hex('set my order')}",\n["cwd"] = "",\n["plugin"] = "ask",\n["allow"] = "${hex(allow)}",\n["allowOnce"] = "${hex(allowOnce)}",\n["t"] = 1,\n},\n}\n`,
+        `WoWGPTDB = {\n["outbox"] = {\n["id"] = 7,\n["session"] = "sess1",\n["chat"] = "chat1",\n["text"] = "${hex('set my order')}",\n["cwd"] = "",\n["plugin"] = "ask",\n["allow"] = "${hex(allow)}",\n["allowOnce"] = "${hex(allowOnce)}",\n["t"] = 1,\n},\n}\n`,
       );
       const r = spawnSync(process.execPath, [BRIDGE, '--once'], {
         encoding: 'utf8',
@@ -702,7 +702,7 @@ test(
       assert.deepEqual(config.agents.claude.allowedTools, ['WebSearch'], 'a record never writes config.json');
       const state = JSON.parse(fs.readFileSync(path.join(home, 'state.json'), 'utf8'));
       assert.equal(state.grants, undefined, 'a rule no reply offered is never kept');
-      const lua = fs.readFileSync(path.join(addons, 'ClaudeWoW_S001', 'Inbox.lua'), 'utf8');
+      const lua = fs.readFileSync(path.join(addons, 'WoWGPT_S001', 'Inbox.lua'), 'utf8');
       const deniedLine = (/^\s*denied = \{.*\},$/m.exec(lua) || [''])[0];
       assert.match(deniedLine, /"NotebookEdit"/, lua);
       assert.doesNotMatch(
@@ -726,7 +726,7 @@ function runPluginOnce(dir, { plugin, agent = '' }) {
   const agentLine = agent ? `["agent"] = "${agent}",\n` : '';
   fs.writeFileSync(
     install.saved,
-    `ClaudeWoWDB = {\n["outbox"] = {\n["id"] = 7,\n["session"] = "sess1",\n["chat"] = "chat1",\n["text"] = "${hex('grep the home')}",\n["cwd"] = "",\n["plugin"] = "${plugin}",\n${agentLine}["allow"] = "${hex('Grep')}",\n["t"] = 1,\n},\n}\n`,
+    `WoWGPTDB = {\n["outbox"] = {\n["id"] = 7,\n["session"] = "sess1",\n["chat"] = "chat1",\n["text"] = "${hex('grep the home')}",\n["cwd"] = "",\n["plugin"] = "${plugin}",\n${agentLine}["allow"] = "${hex('Grep')}",\n["t"] = 1,\n},\n}\n`,
   );
   const r = spawnSync(process.execPath, [BRIDGE, '--once'], {
     encoding: 'utf8',
@@ -816,7 +816,7 @@ function luaValue(node) {
   return null;
 }
 
-function slotData(src, globalName = 'ClaudeWoW_SlotData') {
+function slotData(src, globalName = 'WoWGPT_SlotData') {
   const ast = require('luaparse').parse(src, { luaVersion: '5.1' });
   const assign = ast.body.find(n => n.type === 'AssignmentStatement' && n.variables[0].name === globalName);
   assert.ok(assign, `${globalName} assignment present`);
@@ -825,7 +825,7 @@ function slotData(src, globalName = 'ClaudeWoW_SlotData') {
 
 function slotGoals(store) {
   const goalsLua = store.slotLua();
-  return slotData(P.luaTable('ClaudeWoW_SlotData', [], { goalsLua, now: NOW })).goals;
+  return slotData(P.luaTable('WoWGPT_SlotData', [], { goalsLua, now: NOW })).goals;
 }
 
 function writeDoc(r, doc) {
@@ -933,8 +933,8 @@ test('slot field through the real bridge: the slot files carry the current order
     });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     const files = [
-      ['ClaudeWoW_S001', 'ClaudeWoW_SlotData'],
-      ['ClaudeWoW_Runtime', 'ClaudeWoW_Inbox'],
+      ['WoWGPT_S001', 'WoWGPT_SlotData'],
+      ['WoWGPT_Runtime', 'WoWGPT_Inbox'],
     ];
     for (const [folder, globalName] of files) {
       const data = slotData(fs.readFileSync(path.join(addons, folder, 'Inbox.lua'), 'utf8'), globalName);
@@ -973,7 +973,7 @@ test(
       });
       assert.equal(r.status, 0, r.stdout + r.stderr);
       assert.equal(JSON.parse(fs.readFileSync(path.join(home, 'state.json'), 'utf8')).context.text, BONE_CONTEXT, 'the context stays on this machine');
-      const data = slotData(fs.readFileSync(path.join(addons, 'ClaudeWoW_S001', 'Inbox.lua'), 'utf8'), 'ClaudeWoW_SlotData');
+      const data = slotData(fs.readFileSync(path.join(addons, 'WoWGPT_S001', 'Inbox.lua'), 'utf8'), 'WoWGPT_SlotData');
       assert.ok(!data.goals || !data.goals.char, JSON.stringify(data.goals));
       assert.ok(!data.goals || !data.goals.order, 'no order without a character');
       assert.ok(!data.dm || !data.dm.char, JSON.stringify(data.dm));
@@ -1018,7 +1018,7 @@ test(
         assert.equal(r.status, 0, r.stdout + r.stderr);
         return {
           state: JSON.parse(fs.readFileSync(path.join(home, 'state.json'), 'utf8')),
-          slot: slotData(fs.readFileSync(path.join(addons, 'ClaudeWoW_S001', 'Inbox.lua'), 'utf8')),
+          slot: slotData(fs.readFileSync(path.join(addons, 'WoWGPT_S001', 'Inbox.lua'), 'utf8')),
         };
       };
       const HELEN_CONTEXT = BONE_CONTEXT.replace(
@@ -1138,7 +1138,7 @@ test("two clients on two characters: each slot file carries the map of its own c
       timeout: 60000,
     });
     assert.equal(r.status, 0, r.stdout + r.stderr);
-    const mapIn = install => slotData(fs.readFileSync(path.join(install.addons, 'ClaudeWoW_S001', 'Inbox.lua'), 'utf8')).map;
+    const mapIn = install => slotData(fs.readFileSync(path.join(install.addons, 'WoWGPT_S001', 'Inbox.lua'), 'utf8')).map;
     assert.equal(mapIn(a).char, BONE_KEY, r.stdout);
     assert.deepEqual(
       mapIn(a).layers.map(l => l.name),

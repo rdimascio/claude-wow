@@ -85,7 +85,7 @@ test('the CurseForge addon zip leaves out assets and every other top-level folde
   const ignored = new Set(ignoreBlock[1].split('\n').map(l => l.replace(/^  - /, '').trim()));
   for (const f of folders) assert.ok(ignored.has(f), `.pkgmeta ignores ${f}/`);
   const release = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'release.yml'), 'utf8');
-  const guard = /grep -E '\^ClaudeWoW\/\(([a-z|]+)\)\/' files\.txt/.exec(release);
+  const guard = /grep -E '\^WoWGPT\/\(([a-z|]+)\)\/' files\.txt/.exec(release);
   assert.ok(guard, 'release.yml has the folder guard');
   assert.deepEqual(guard[1].split('|').sort(), folders);
 });

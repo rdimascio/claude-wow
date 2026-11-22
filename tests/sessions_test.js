@@ -149,7 +149,7 @@ test('a reference resolves by exact id, exact name, id prefix, then name prefix;
   assert.deepEqual(SS.resolveResume('6624', { own: list }).session.id, A);
   const amb = SS.resolveResume('abcd', { own: list });
   assert.match(amb.error, /^"abcd" matches 2 sessions:\nabcd1111  First abcd  \/srv\/one\nabcd2222  Second abcd  \/srv\/two\nUse more of the id\.$/);
-  assert.match(SS.resolveResume('zzzz', { own: list }).error, /No session matches "zzzz"\. \/claude -r lists the recent ones\./);
+  assert.match(SS.resolveResume('zzzz', { own: list }).error, /No session matches "zzzz"\. \/wowgpt -r lists the recent ones\./);
   let asked = '';
   const found = SS.resolveResume('f024', {
     own: list,

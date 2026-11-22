@@ -6,8 +6,8 @@ const path = require('path');
 const { createVM } = require('./lua/vm');
 const C = require('../bridge/campaign');
 
-const ADDON = path.join(__dirname, '..', 'addon', 'ClaudeWoW');
-const ADDON_FILES = ['Codec.lua', 'Inbox.lua', 'ClaudeWoW.lua', 'Orders.lua', 'DM.lua'];
+const ADDON = path.join(__dirname, '..', 'addon', 'WoWGPT');
+const ADDON_FILES = ['Codec.lua', 'Inbox.lua', 'WoWGPT.lua', 'Orders.lua', 'DM.lua'];
 const CHAR = 'Testchar-TestRealm';
 const CELLS_PER_ROW = 200;
 const STRIP_SECONDS = 40;
@@ -24,25 +24,25 @@ end
 
 const SPIES = `
 STUB.dmSyncs, STUB.printed = 0, {}
-local plainSync = ClaudeWoWDM.Sync
-ClaudeWoWDM.Sync = function(...)
+local plainSync = WoWGPTDM.Sync
+WoWGPTDM.Sync = function(...)
   STUB.dmSyncs = STUB.dmSyncs + 1
   return plainSync(...)
 end
-local plainPrint = ClaudeWoW.Print
-ClaudeWoW.Print = function(msg, tag)
+local plainPrint = WoWGPT.Print
+WoWGPT.Print = function(msg, tag)
   table.insert(STUB.printed, msg)
   return plainPrint(msg, tag)
 end
 `;
 
-const ARMED_SIGNALS = 'STUB.sounds["Interface\\\\AddOns\\\\ClaudeWoW_Runtime\\\\ctl\\\\valid.wav"] = true; STUB.armed = true';
+const ARMED_SIGNALS = 'STUB.sounds["Interface\\\\AddOns\\\\WoWGPT_Runtime\\\\ctl\\\\valid.wav"] = true; STUB.armed = true';
 
 const FAILING_STUB = `
 STUB.failDm = true
 local plainCreateFrame = CreateFrame
 function CreateFrame(kind, name, ...)
-  if name == "ClaudeWoWDMFrame" and STUB.failDm then error("no parchment today") end
+  if name == "WoWGPTDMFrame" and STUB.failDm then error("no parchment today") end
   return plainCreateFrame(kind, name, ...)
 end
 `;
@@ -53,7 +53,7 @@ function newVM({ prelude = '', beforeLogin = '' } = {}) {
   if (prelude) vm.run(prelude);
   vm.loadAddon(ADDON_FILES);
   vm.run(SPIES);
-  vm.run('STUB.FireEvent("ADDON_LOADED", "ClaudeWoW")');
+  vm.run('STUB.FireEvent("ADDON_LOADED", "WoWGPT")');
   if (beforeLogin) vm.run(beforeLogin);
   vm.run('STUB.FireEvent("PLAYER_LOGIN")');
   vm.run('STUB.RunTimers()');
@@ -72,7 +72,7 @@ const BEAT1 = { id: 'b1', title: 'A story begins', lines: ['Someone left a lette
 function nextSlot(vm, dm, repliesLua = '') {
   const field = dm ? `, dm = ${dm}` : '';
   vm.run(
-    `STUB.onLoadAddOn = function(name) ClaudeWoW_SlotData = { now = time(), cwd = "", plugin = "ask", plugins = { "ask" }, replies = { ${repliesLua} }${field} } end`,
+    `STUB.onLoadAddOn = function(name) WoWGPT_SlotData = { now = time(), cwd = "", plugin = "ask", plugins = { "ask" }, replies = { ${repliesLua} }${field} } end`,
   );
 }
 
@@ -81,21 +81,19 @@ function tick(vm, seconds = 6) {
 }
 
 function pending(vm) {
-  vm.run(
-    'PENDING_CHAT, PENDING_ID = nil, nil; for _, c in ipairs(ClaudeWoWDB.chats) do if c.pendingId then PENDING_CHAT, PENDING_ID = c.id, c.pendingId end end',
-  );
+  vm.run('PENDING_CHAT, PENDING_ID = nil, nil; for _, c in ipairs(WoWGPTDB.chats) do if c.pendingId then PENDING_CHAT, PENDING_ID = c.id, c.pendingId end end');
   return { chat: vm.evaluate('PENDING_CHAT'), id: vm.evaluate('PENDING_ID') };
 }
 
 function sendAndRead(vm, dm, text) {
-  vm.run(`ClaudeWoW.Send("${text}")`);
+  vm.run(`WoWGPT.Send("${text}")`);
   const p = pending(vm);
   nextSlot(vm, dm, `{ chat = "${p.chat}", id = ${p.id}, status = "done", text = "ok", agent = "", plugin = "ask" }`);
   tick(vm);
 }
 
 function shown(vm) {
-  return vm.evaluate('ClaudeWoWDMFrame ~= nil and ClaudeWoWDMFrame.shown == true') === 'true';
+  return vm.evaluate('WoWGPTDMFrame ~= nil and WoWGPTDMFrame.shown == true') === 'true';
 }
 
 function printedCount(vm, needle) {
@@ -108,10 +106,10 @@ function printedCount(vm, needle) {
 }
 
 function decodeStrip(vm) {
-  if (vm.evaluate('ClaudeWoWStrip and ClaudeWoWStrip.shown') !== 'true') return null;
+  if (vm.evaluate('WoWGPTStrip and WoWGPTStrip.shown') !== 'true') return null;
   vm.run(`
     local parts = {}
-    for _, t in ipairs(ClaudeWoWStrip.textures) do
+    for _, t in ipairs(WoWGPTStrip.textures) do
       if t.shown and t.color then
         local c, r = math.floor(t.x / 4), math.floor(-t.y / 4)
         local v = (t.color[1] >= 0.5 and 4 or 0) + (t.color[2] >= 0.5 and 2 or 0) + (t.color[3] >= 0.5 and 1 or 0)
@@ -152,7 +150,7 @@ function stripRecords(vm) {
 const dmRecords = vm => stripRecords(vm).filter(r => r.flags.split(';').includes(`kind=${C.MANUAL_KIND}`));
 
 function ack(vm, id) {
-  vm.run(`STUB.sounds["Interface\\\\AddOns\\\\ClaudeWoW_Runtime\\\\ack\\\\${String(id).padStart(3, '0')}.wav"] = false`);
+  vm.run(`STUB.sounds["Interface\\\\AddOns\\\\WoWGPT_Runtime\\\\ack\\\\${String(id).padStart(3, '0')}.wav"] = false`);
 }
 
 const TEXTURE_STUB = `
@@ -206,15 +204,15 @@ test("dm frame: every fallback branch draws; the parchment is the window's own a
     nextSlot(vm, dmLua({ beat: BEAT1 }));
     tick(vm);
     assert.equal(shown(vm), true, `${why}: drawn`);
-    assert.equal(vm.evaluate('ClaudeWoWDM.debug.native.frame'), want.frame, why);
-    assert.equal(vm.evaluate('ClaudeWoWDM.debug.native.plain'), want.plain, why);
-    assert.equal(vm.evaluate('ClaudeWoWDMFrame.template'), want.template, why);
-    assert.equal(vm.evaluate('ClaudeWoWDM.debug.close'), want.close, why);
-    assert.equal(vm.evaluate('ClaudeWoWDM.debug.parchment'), want.parchment, why);
-    assert.equal(vm.evaluate('ClaudeWoWDM.debug.lastError'), null, why);
-    assert.equal(vm.evaluate('ClaudeWoWDM.debug.parchmentSize'), '322x404', `${why}: one size for any art`);
-    assert.equal(vm.num('ClaudeWoWDMFrame.parchmentArea.width'), 322, why);
-    assert.equal(vm.num('ClaudeWoWDMFrame.parchmentArea.height'), 404, why);
+    assert.equal(vm.evaluate('WoWGPTDM.debug.native.frame'), want.frame, why);
+    assert.equal(vm.evaluate('WoWGPTDM.debug.native.plain'), want.plain, why);
+    assert.equal(vm.evaluate('WoWGPTDMFrame.template'), want.template, why);
+    assert.equal(vm.evaluate('WoWGPTDM.debug.close'), want.close, why);
+    assert.equal(vm.evaluate('WoWGPTDM.debug.parchment'), want.parchment, why);
+    assert.equal(vm.evaluate('WoWGPTDM.debug.lastError'), null, why);
+    assert.equal(vm.evaluate('WoWGPTDM.debug.parchmentSize'), '322x404', `${why}: one size for any art`);
+    assert.equal(vm.num('WoWGPTDMFrame.parchmentArea.width'), 322, why);
+    assert.equal(vm.num('WoWGPTDMFrame.parchmentArea.height'), 404, why);
   }
 });
 
@@ -226,7 +224,7 @@ test('dm frame: a new beat in combat waits for the end of combat to open', () =>
   assert.equal(shown(vm), false);
   vm.run('STUB.combat = false; STUB.FireEvent("PLAYER_REGEN_ENABLED")');
   assert.equal(shown(vm), true);
-  vm.run('ClaudeWoWDMFrame:Hide(); STUB.combat = true; SlashCmdList.CLAUDEWOWDM("")');
+  vm.run('WoWGPTDMFrame:Hide(); STUB.combat = true; SlashCmdList.WOWGPTDM("")');
   assert.equal(shown(vm), false, '/dm in combat waits too');
   assert.equal(printedCount(vm, 'shows after combat'), 1, 'and says so');
   vm.run('STUB.combat = false; STUB.FireEvent("PLAYER_REGEN_ENABLED")');
@@ -234,12 +232,12 @@ test('dm frame: a new beat in combat waits for the end of combat to open', () =>
 });
 
 test('/dm next: an old Inbox.lua read at login does not prove the bridge takes /dm next', () => {
-  const stale = newVM({ beforeLogin: `ClaudeWoW_Inbox = { now = time() - 3600, replies = {}, dm = ${dmLua({ manual: true, now: 'time()' })} }` });
-  stale.run('SlashCmdList.CLAUDEWOWDM("next")');
+  const stale = newVM({ beforeLogin: `WoWGPT_Inbox = { now = time() - 3600, replies = {}, dm = ${dmLua({ manual: true, now: 'time()' })} }` });
+  stale.run('SlashCmdList.WOWGPTDM("next")');
   assert.equal(dmRecords(stale).length, 0);
   assert.equal(printedCount(stale, 'cannot take /dm next'), 1);
-  const fresh = newVM({ beforeLogin: `ClaudeWoW_Inbox = { now = time(), replies = {}, dm = ${dmLua({ manual: true })} }` });
-  fresh.run('SlashCmdList.CLAUDEWOWDM("next")');
+  const fresh = newVM({ beforeLogin: `WoWGPT_Inbox = { now = time(), replies = {}, dm = ${dmLua({ manual: true })} }` });
+  fresh.run('SlashCmdList.WOWGPTDM("next")');
   assert.equal(printedCount(fresh, 'Asked the companion app for the next beat'), 1, 'a fresh one does');
 });
 
@@ -252,15 +250,15 @@ function LoggingChat(on) if on ~= nil then LOGGING = on end return LOGGING end
 test('/dm next on the chat log: an ack signal while the ack poll is pending costs one slot load, not two', () => {
   const vm = newVM({ prelude: ARMED_SIGNALS + CHAT_LOG_API });
   const slot = dm =>
-    `STUB.onLoadAddOn = function(name) ClaudeWoW_SlotData = { now = time(), cwd = "", plugin = "ask", plugins = { "ask" }, transport = "screenshot", strip = { on = 255, off = 0 }, chatlog = { line = 200, filler = 4096, key = "0123456789abcdef0123456789abcdef" }, acks = { { session = ClaudeWoWDB.session, id = ClaudeWoWDB.lastSeq } }, replies = {}, dm = ${dm} } end`;
+    `STUB.onLoadAddOn = function(name) WoWGPT_SlotData = { now = time(), cwd = "", plugin = "ask", plugins = { "ask" }, transport = "screenshot", strip = { on = 255, off = 0 }, chatlog = { line = 200, filler = 4096, key = "0123456789abcdef0123456789abcdef" }, acks = { { session = WoWGPTDB.session, id = WoWGPTDB.lastSeq } }, replies = {}, dm = ${dm} } end`;
   vm.run(slot(dmLua({ manual: true })));
   tick(vm);
   tick(vm, 30);
-  assert.equal(vm.evaluate('ClaudeWoW.ChatLog.Mode()'), 'true', 'the chat log transport is on');
+  assert.equal(vm.evaluate('WoWGPT.ChatLog.Mode()'), 'true', 'the chat log transport is on');
   const sentBefore = vm.num('#SENT');
-  vm.run('SlashCmdList.CLAUDEWOWDM("next")');
+  vm.run('SlashCmdList.WOWGPTDM("next")');
   assert.ok(vm.num('#SENT') > sentBefore, 'the record went out on the chat log');
-  const id = vm.num('ClaudeWoWDB.lastSeq');
+  const id = vm.num('WoWGPTDB.lastSeq');
   vm.run(slot(dmLua({ rev: 2, beat: BEAT1 })));
   const loads = vm.num('STUB.loads');
   ack(vm, id);
@@ -271,29 +269,29 @@ test('/dm next on the chat log: an ack signal while the ack poll is pending cost
 
 test('/dm with a campaign waiting for /dm next: the frame shows the begin hint, and a beat replaces the empty state', () => {
   const vm = newVM();
-  vm.run('SlashCmdList.CLAUDEWOWDM("")');
-  assert.equal(vm.evaluate('ClaudeWoWDMFrame.beatTitle.text'), 'The Dungeon Master has no story for you yet.');
+  vm.run('SlashCmdList.WOWGPTDM("")');
+  assert.equal(vm.evaluate('WoWGPTDMFrame.beatTitle.text'), 'The Dungeon Master has no story for you yet.');
   nextSlot(vm, dmLua({ manual: true }));
   tick(vm);
   assert.equal(shown(vm), true, 'the open empty state stays open');
-  assert.equal(vm.evaluate('ClaudeWoWDMFrame.beatTitle.text'), 'The story is ready.');
-  assert.equal(vm.evaluate('ClaudeWoWDMFrame.hint.text'), 'Click Continue, or type /dm next, to begin.');
-  assert.equal(vm.evaluate('ClaudeWoWDMFrame.hint.shown'), 'true');
-  vm.run('SlashCmdList.CLAUDEWOWDM("")');
+  assert.equal(vm.evaluate('WoWGPTDMFrame.beatTitle.text'), 'The story is ready.');
+  assert.equal(vm.evaluate('WoWGPTDMFrame.hint.text'), 'Click Continue, or type /dm next, to begin.');
+  assert.equal(vm.evaluate('WoWGPTDMFrame.hint.shown'), 'true');
+  vm.run('SlashCmdList.WOWGPTDM("")');
   assert.equal(shown(vm), false);
-  vm.run('SlashCmdList.CLAUDEWOWDM("")');
+  vm.run('SlashCmdList.WOWGPTDM("")');
   assert.equal(shown(vm), true);
-  assert.equal(vm.evaluate('ClaudeWoWDMFrame.hint.text'), 'Click Continue, or type /dm next, to begin.');
+  assert.equal(vm.evaluate('WoWGPTDMFrame.hint.text'), 'Click Continue, or type /dm next, to begin.');
   sendAndRead(vm, dmLua({ rev: 2, beat: BEAT1, manual: true }), 'go');
-  assert.equal(vm.evaluate('ClaudeWoWDMFrame.beatTitle.text'), 'A story begins');
-  assert.equal(vm.evaluate('ClaudeWoWDMFrame.hint.text'), 'Click Continue, or type /dm next, when you are ready to go on.');
+  assert.equal(vm.evaluate('WoWGPTDMFrame.beatTitle.text'), 'A story begins');
+  assert.equal(vm.evaluate('WoWGPTDMFrame.hint.text'), 'Click Continue, or type /dm next, when you are ready to go on.');
 });
 
 test('dm frame: a drawing error never stops the slot read, is said once, and the same data draws once it can', () => {
   const vm = newVM({ prelude: FAILING_STUB });
   nextSlot(vm, null);
   tick(vm);
-  vm.run('ClaudeWoW.Send("first")');
+  vm.run('WoWGPT.Send("first")');
   let p = pending(vm);
   nextSlot(vm, dmLua({ beat: BEAT1 }), `{ chat = "${p.chat}", id = ${p.id}, status = "done", text = "the reply", agent = "", plugin = "ask" }`);
   tick(vm);
@@ -311,16 +309,16 @@ test('/dm next: one record with the character key, acked, then one slot load bri
   tick(vm);
   assert.equal(shown(vm), false, 'nothing has fired yet');
   const loads = vm.num('STUB.loads');
-  const chats = vm.num('#ClaudeWoWDB.chats');
-  vm.run('SlashCmdList.CLAUDEWOWDM("next")');
+  const chats = vm.num('#WoWGPTDB.chats');
+  vm.run('SlashCmdList.WOWGPTDM("next")');
   const recs = dmRecords(vm);
   assert.equal(recs.length, 1);
   assert.equal(recs[0].name, CHAR, 'the record names its character');
   assert.equal(recs[0].text, C.MANUAL_TEXT);
   assert.equal(recs[0].chat, '');
-  assert.equal(vm.num('#ClaudeWoWDB.chats'), chats, 'no chat is made');
+  assert.equal(vm.num('#WoWGPTDB.chats'), chats, 'no chat is made');
   assert.equal(printedCount(vm, 'Asked the companion app for the next beat'), 1);
-  vm.run('SlashCmdList.CLAUDEWOWDM("next")');
+  vm.run('SlashCmdList.WOWGPTDM("next")');
   assert.equal(dmRecords(vm).length, 1, 'one in flight at a time');
   assert.equal(printedCount(vm, 'still on its way'), 1);
   nextSlot(vm, dmLua({ rev: 2, beat: BEAT1, manual: true }));
@@ -330,10 +328,10 @@ test('/dm next: one record with the character key, acked, then one slot load bri
   tick(vm, 1);
   assert.equal(vm.num('STUB.loads'), loads + 1, 'exactly one slot load answers the ack');
   assert.equal(shown(vm), true);
-  assert.equal(vm.evaluate('ClaudeWoWDMFrame.beatTitle.text'), 'A story begins');
-  assert.equal(vm.evaluate('ClaudeWoWDMFrame.hint.shown'), 'true', 'the next beat waits for /dm next too');
+  assert.equal(vm.evaluate('WoWGPTDMFrame.beatTitle.text'), 'A story begins');
+  assert.equal(vm.evaluate('WoWGPTDMFrame.hint.shown'), 'true', 'the next beat waits for /dm next too');
   assert.equal(dmRecords(vm).length, 0, 'the record left the strip');
-  vm.run('SlashCmdList.CLAUDEWOWDM("next")');
+  vm.run('SlashCmdList.WOWGPTDM("next")');
   assert.equal(dmRecords(vm).length, 0, 'a second press right after is held back');
   assert.equal(printedCount(vm, 'still on its way'), 2);
   for (let i = 0; i < 20; i++) tick(vm, 9);
@@ -344,22 +342,22 @@ test('/dm next: refused without the bridge capability, when nothing waits for it
   const old = newVM();
   nextSlot(old, null);
   tick(old);
-  old.run('ClaudeWoWDM.Sync({ char = "' + CHAR + '", manual = true, now = time() })');
-  old.run('SlashCmdList.CLAUDEWOWDM("next")');
+  old.run('WoWGPTDM.Sync({ char = "' + CHAR + '", manual = true, now = time() })');
+  old.run('SlashCmdList.WOWGPTDM("next")');
   assert.equal(dmRecords(old).length, 0, 'an old bridge would run the record as an empty prompt');
   assert.equal(printedCount(old, 'cannot take /dm next'), 1);
   const auto = newVM();
   nextSlot(auto, dmLua({ beat: BEAT1 }));
   tick(auto);
-  auto.run('SlashCmdList.CLAUDEWOWDM("next")');
+  auto.run('SlashCmdList.WOWGPTDM("next")');
   assert.equal(dmRecords(auto).length, 0);
   assert.equal(printedCount(auto, 'starts on its own'), 1);
   const none = newVM();
   nextSlot(none, dmLua({}));
   tick(none);
-  none.run('SlashCmdList.CLAUDEWOWDM("next")');
+  none.run('SlashCmdList.WOWGPTDM("next")');
   assert.equal(dmRecords(none).length, 0);
-  none.run('SlashCmdList.CLAUDEWOWDM("dance")');
+  none.run('SlashCmdList.WOWGPTDM("dance")');
   assert.equal(printedCount(none, '/dm next goes on to the next beat'), 1);
 });
 
@@ -367,13 +365,13 @@ test('/dm next: a record the bridge never acks is dropped after its tries, witho
   const vm = newVM();
   nextSlot(vm, dmLua({ manual: true }));
   tick(vm);
-  vm.run('ClaudeWoW.BridgeState = function() return "ok", 0, 0, 0, "" end');
-  vm.run('SlashCmdList.CLAUDEWOWDM("next")');
+  vm.run('WoWGPT.BridgeState = function() return "ok", 0, 0, 0, "" end');
+  vm.run('SlashCmdList.WOWGPTDM("next")');
   assert.equal(dmRecords(vm).length, 1);
   for (let i = 0; i <= STRIP_TRIES; i++) tick(vm, STRIP_SECONDS + 1);
   assert.equal(dmRecords(vm).length, 0, 'gone from the strip');
-  assert.equal(vm.evaluate('ClaudeWoW.IsConnected()'), 'true', 'no pixelFailed for a control record');
-  vm.run('SlashCmdList.CLAUDEWOWDM("next")');
+  assert.equal(vm.evaluate('WoWGPT.IsConnected()'), 'true', 'no pixelFailed for a control record');
+  vm.run('SlashCmdList.WOWGPTDM("next")');
   assert.equal(dmRecords(vm).length, 1, 'the player can try again');
 });
 
@@ -394,40 +392,40 @@ test('dm frame: a Continue button waits with a manual beat, sends /dm next, and 
   const vm = newVM({ prelude: ARMED_SIGNALS + '\n' + ENABLE_STUB });
   nextSlot(vm, dmLua({ manual: true }));
   tick(vm);
-  vm.run('SlashCmdList.CLAUDEWOWDM("")');
-  assert.equal(vm.evaluate('ClaudeWoWDMFrame.continue.template'), 'UIPanelButtonTemplate');
-  assert.equal(vm.evaluate('ClaudeWoWDMFrame.continue.text'), 'Continue');
-  assert.equal(vm.evaluate('ClaudeWoWDMFrame.continue.point'), 'BOTTOMRIGHT');
-  assert.equal(vm.evaluate('ClaudeWoWDMFrame.continue.shown'), 'true');
-  assert.equal(vm.evaluate('ClaudeWoWDMFrame.continue.disabled'), 'false');
-  vm.run('local b = ClaudeWoWDMFrame.continue; b.scripts.OnClick(b)');
+  vm.run('SlashCmdList.WOWGPTDM("")');
+  assert.equal(vm.evaluate('WoWGPTDMFrame.continue.template'), 'UIPanelButtonTemplate');
+  assert.equal(vm.evaluate('WoWGPTDMFrame.continue.text'), 'Continue');
+  assert.equal(vm.evaluate('WoWGPTDMFrame.continue.point'), 'BOTTOMRIGHT');
+  assert.equal(vm.evaluate('WoWGPTDMFrame.continue.shown'), 'true');
+  assert.equal(vm.evaluate('WoWGPTDMFrame.continue.disabled'), 'false');
+  vm.run('local b = WoWGPTDMFrame.continue; b.scripts.OnClick(b)');
   const recs = dmRecords(vm);
   assert.equal(recs.length, 1, 'Continue is /dm next');
   assert.equal(recs[0].name, CHAR);
   assert.equal(printedCount(vm, 'Asked the companion app for the next beat'), 1);
-  assert.equal(vm.evaluate('ClaudeWoWDMFrame.continue.disabled'), 'true');
-  vm.run('local b = ClaudeWoWDMFrame.continue; b.scripts.OnClick(b)');
+  assert.equal(vm.evaluate('WoWGPTDMFrame.continue.disabled'), 'true');
+  vm.run('local b = WoWGPTDMFrame.continue; b.scripts.OnClick(b)');
   assert.equal(printedCount(vm, 'still on its way'), 0, 'a held button sends nothing and says nothing');
   nextSlot(vm, dmLua({ rev: 2, beat: BEAT1, manual: true }));
   ack(vm, recs[0].id);
   tick(vm, 0.5);
   tick(vm, 1);
-  assert.equal(vm.evaluate('ClaudeWoWDMFrame.beatTitle.text'), 'A story begins');
-  assert.equal(vm.evaluate('ClaudeWoWDMFrame.continue.disabled'), 'false', 'the ack frees it');
-  assert.equal(vm.evaluate('ClaudeWoWDMFrame.continue.shown'), 'true', 'the next beat waits too');
+  assert.equal(vm.evaluate('WoWGPTDMFrame.beatTitle.text'), 'A story begins');
+  assert.equal(vm.evaluate('WoWGPTDMFrame.continue.disabled'), 'false', 'the ack frees it');
+  assert.equal(vm.evaluate('WoWGPTDMFrame.continue.shown'), 'true', 'the next beat waits too');
 
   const held = newVM({ prelude: ENABLE_STUB });
   nextSlot(held, dmLua({ manual: true }));
   tick(held);
-  held.run('SlashCmdList.CLAUDEWOWDM(""); local b = ClaudeWoWDMFrame.continue; b.scripts.OnClick(b)');
-  assert.equal(held.evaluate('ClaudeWoWDMFrame.continue.disabled'), 'true');
+  held.run('SlashCmdList.WOWGPTDM(""); local b = WoWGPTDMFrame.continue; b.scripts.OnClick(b)');
+  assert.equal(held.evaluate('WoWGPTDMFrame.continue.disabled'), 'true');
   held.run('STUB.now = STUB.now + 5; STUB.RunTimers()');
-  assert.equal(held.evaluate('ClaudeWoWDMFrame.continue.disabled'), 'false', '5 seconds free it without an ack');
+  assert.equal(held.evaluate('WoWGPTDMFrame.continue.disabled'), 'false', '5 seconds free it without an ack');
 
   const auto = newVM();
   nextSlot(auto, dmLua({ beat: BEAT1 }));
   tick(auto);
-  assert.equal(auto.evaluate('ClaudeWoWDMFrame.continue.shown'), 'false', 'a beat that fires on its own has no Continue');
+  assert.equal(auto.evaluate('WoWGPTDMFrame.continue.shown'), 'false', 'a beat that fires on its own has no Continue');
 });
 
 test('dm frame: the module sends nothing to chat and no addon file calls SendChatMessage', () => {
@@ -456,7 +454,7 @@ test('dm frame: the module sends nothing to chat and no addon file calls SendCha
   const before = vm.num('#STUB.chatSent');
   nextSlot(vm, dmLua({ manual: true, beat: BEAT1 }));
   tick(vm);
-  vm.run('SlashCmdList.CLAUDEWOWDM(""); SlashCmdList.CLAUDEWOWDM(""); SlashCmdList.CLAUDEWOWDM("next")');
+  vm.run('SlashCmdList.WOWGPTDM(""); SlashCmdList.WOWGPTDM(""); SlashCmdList.WOWGPTDM("next")');
   assert.equal(vm.num('#STUB.chatSent'), before);
-  assert.equal(vm.evaluate('ClaudeWoWDB.dm'), null, 'no saved variables of its own');
+  assert.equal(vm.evaluate('WoWGPTDB.dm'), null, 'no saved variables of its own');
 });

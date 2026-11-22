@@ -47,11 +47,11 @@ test('bodies over 255 bytes, empty ones and extra macros get no button; code-run
 
 test('slot files carry macros on the reply record', () => {
   const macros = P.extractMacros('```wowmacro A "q"\n/cast X\n```\n```wowmacro B icon=7\n/run y()\n```').macros;
-  const src = P.luaTable('ClaudeWoW_SlotData', [{ chat: 'c', id: 3, status: 'done', text: 't', macros }], { now: 1 });
+  const src = P.luaTable('WoWGPT_SlotData', [{ chat: 'c', id: 3, status: 'done', text: 't', macros }], { now: 1 });
   const got = runLua(
     src,
     `(function(r) local a, b = r.macros[1], r.macros[2]
-    return table.concat({ #r.macros, a.name, a.body, tostring(a.icon), tostring(a.char), b.icon, tostring(b.risky) }, "|") end)(ClaudeWoW_SlotData.replies[1])`,
+    return table.concat({ #r.macros, a.name, a.body, tostring(a.icon), tostring(a.char), b.icon, tostring(b.risky) }, "|") end)(WoWGPT_SlotData.replies[1])`,
   );
   assert.equal(got, '2|A q|/cast X|nil|false|7|true');
 });
@@ -101,7 +101,7 @@ function InCombatLockdown() return STUB.combat or false end
 function newVM() {
   const vm = createVM();
   vm.run(MACRO_STUB);
-  vm.loadAddon(['Codec.lua', 'Inbox.lua', 'ClaudeWoW.lua']);
+  vm.loadAddon(['Codec.lua', 'Inbox.lua', 'WoWGPT.lua']);
   vm.login();
   return vm;
 }
@@ -109,12 +109,12 @@ function newVM() {
 // A reply carrying `macrosLua` lands through the reload path (Inbox.lua).
 function deliver(vm, macrosLua) {
   vm.run(`
-    local c = ClaudeWoWDB.chats[1]
+    local c = WoWGPTDB.chats[1]
     c.pendingId = 5
-    ClaudeWoW_Inbox = { replies = { { chat = c.id, id = 5, status = "done", text = "Here you go.", macros = ${macrosLua} } } }
+    WoWGPT_Inbox = { replies = { { chat = c.id, id = 5, status = "done", text = "Here you go.", macros = ${macrosLua} } } }
     STUB.FireEvent("PLAYER_LOGIN")
-    ClaudeWoW.Toggle(true)
-    ClaudeWoW.Render()`);
+    WoWGPT.Toggle(true)
+    WoWGPT.Render()`);
 }
 
 // The shown macro buttons, as "label" strings, and a way to click the n-th.
@@ -146,13 +146,13 @@ test('replacing a different macro asks first, and undo brings the old one back',
   vm.run('CreateMacro("Charge", 99, "/cast Old", false); STUB.calls = {}');
   deliver(vm, '{ { name = "Charge", body = "/cast New", char = false } }');
   click(vm);
-  assert.equal(vm.evaluate('STUB.popup.which'), 'CLAUDEWOW_MACRO');
+  assert.equal(vm.evaluate('STUB.popup.which'), 'WOWGPT_MACRO');
   assert.equal(vm.evaluate('select(3, GetMacroInfo(1))'), '/cast Old', 'nothing changed before OK');
   accept(vm);
   assert.equal(vm.evaluate('select(3, GetMacroInfo(1))'), '/cast New');
   assert.equal(vm.evaluate('select(2, GetMacroInfo(1))'), '99', "the player's icon is kept when the agent set none");
   assert.equal(vm.evaluate('STUB.picked'), '1');
-  vm.run('SlashCmdList.CLAUDE("config macro undo")');
+  vm.run('SlashCmdList.WOWGPT("config macro undo")');
   assert.equal(vm.evaluate('select(3, GetMacroInfo(1))'), '/cast Old');
 });
 
@@ -161,7 +161,7 @@ test('undo removes a macro the button created', () => {
   deliver(vm, '{ { name = "New", body = "/sit", char = false } }');
   click(vm);
   assert.equal(vm.evaluate('(GetNumMacros())'), '1');
-  vm.run('SlashCmdList.CLAUDE("config macro undo")');
+  vm.run('SlashCmdList.WOWGPT("config macro undo")');
   assert.equal(vm.evaluate('(GetNumMacros())'), '0');
 });
 
@@ -170,7 +170,7 @@ test('macros that run code ask first even when new', () => {
   deliver(vm, '{ { name = "Runner", body = "/run print(1)", char = false, risky = true } }');
   assert.match(buttons(vm)[0], /^Create Macro: Runner .*runs code/);
   click(vm);
-  assert.equal(vm.evaluate('STUB.popup.which'), 'CLAUDEWOW_MACRO');
+  assert.equal(vm.evaluate('STUB.popup.which'), 'WOWGPT_MACRO');
   assert.equal(vm.evaluate('(GetNumMacros())'), '0');
   accept(vm);
   assert.equal(vm.evaluate('(GetNumMacros())'), '1');

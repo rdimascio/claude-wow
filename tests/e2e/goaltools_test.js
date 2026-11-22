@@ -160,7 +160,7 @@ test(
       const ordersFile = path.join(h.sb.home, 'goals', CHARACTER, 'goals.json');
       assert.ok(!fs.existsSync(ordersFile), 'the replay wrote nothing');
 
-      h.client.slash('/claude cancel');
+      h.client.slash('/wowgpt cancel');
       const term = await h.client.waitFor(() => termCalls(h).find(c => c.phase === 'term'), {
         timeoutMs: 30000,
         label: 'the call the run made after the cancel',
@@ -178,7 +178,7 @@ test('a tool an ask run is denied never becomes a Need roll and is never saved',
   await withGame({ plugin: 'ask' }, async h => {
     await h.client.say('hello');
     await h.bridge.waitForLine(/game context updated: Character: Testchar/);
-    const rollOpen = () => h.client.luaValue('ClaudeWoWRoll.Current() and "open" or "none"') === 'open';
+    const rollOpen = () => h.client.luaValue('WoWGPTRoll.Current() and "open" or "none"') === 'open';
     const grep = await h.client.say('[[use-tool Grep]]');
     assert.deepEqual(grep.denied || [], [], 'a denied Grep is not offered');
     assert.equal(rollOpen(), false);

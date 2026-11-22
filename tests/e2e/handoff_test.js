@@ -42,11 +42,11 @@ function seed(sb) {
   });
 }
 
-test('/claude -r all turns a handoff list into one chat per session, and the first message there resumes that session', async () => {
+test('/wowgpt -r all turns a handoff list into one chat per session, and the first message there resumes that session', async () => {
   await withGame({ beforeLaunch: seed }, async h => {
     await h.client.connect();
     const before = h.client.db().chats.length;
-    h.client.slash('/claude -r all');
+    h.client.slash('/wowgpt -r all');
     await h.client.waitFor(() => h.client.db().chats.length === before + 2, { label: 'two handoff chats' });
     const chats = h.client.db().chats.slice(before);
     const pins = chats.find(c => c.resumeId === A);
@@ -58,7 +58,7 @@ test('/claude -r all turns a handoff list into one chat per session, and the fir
     assert.ok(pins.history.some(m => /Last answer: PR 12 is open, CI pending\./.test(m.text)));
     h.client.slash(`/claude-wow chat ${h.client.db().chats.findIndex(c => c.id === pins.id) + 1}`);
     await h.client.waitFor(() => h.client.activeChat().id === pins.id, { label: 'switch to the pins chat' });
-    h.client.slash('/claude -c where were we');
+    h.client.slash('/wowgpt -c where were we');
     const id = sentId(h.client);
     await h.client.waitFor(
       () => {
@@ -73,7 +73,7 @@ test('/claude -r all turns a handoff list into one chat per session, and the fir
   });
 });
 
-test('/claude -r all leaves a handed-off session closed while its process still runs', { skip: process.platform === 'win32' }, async () => {
+test('/wowgpt -r all leaves a handed-off session closed while its process still runs', { skip: process.platform === 'win32' }, async () => {
   const { execFileSync } = require('child_process');
   const procStart = execFileSync('ps', ['-o', 'lstart=', '-p', String(process.pid)], {
     encoding: 'utf8',
@@ -88,7 +88,7 @@ test('/claude -r all leaves a handed-off session closed while its process still 
   await withGame({ beforeLaunch: seedRunning }, async h => {
     await h.client.connect();
     const before = h.client.db().chats.length;
-    h.client.slash('/claude -r all');
+    h.client.slash('/wowgpt -r all');
     await h.client.waitFor(() => h.client.db().chats.length === before + 1, { label: 'one handoff chat' });
     const chats = h.client.db().chats.slice(before);
     assert.equal(chats[0].resumeId, A);

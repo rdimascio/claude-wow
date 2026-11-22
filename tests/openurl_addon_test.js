@@ -4,25 +4,25 @@ const assert = require('node:assert/strict');
 const { createVM } = require('./lua/vm');
 const OU = require('../bridge/openurl');
 
-const ADDON_FILES = ['Codec.lua', 'Inbox.lua', 'ClaudeWoW.lua'];
+const ADDON_FILES = ['Codec.lua', 'Inbox.lua', 'WoWGPT.lua'];
 const CELLS_PER_ROW = 200;
 const STRIP_SECONDS = 40;
 const PR = 'https://github.com/o/r/pull/7';
 
 const SPIES = `
 STUB.codecFrames = {}
-local plainEncode = ClaudeWoW_Codec.Encode
-ClaudeWoW_Codec.Encode = function(id, payload, ...)
+local plainEncode = WoWGPT_Codec.Encode
+WoWGPT_Codec.Encode = function(id, payload, ...)
   table.insert(STUB.codecFrames, { kind = "strip", payload = payload })
   return plainEncode(id, payload, ...)
 end
-local plainLogLines = ClaudeWoW_Codec.LogLines
-ClaudeWoW_Codec.LogLines = function(id, payload, ...)
+local plainLogLines = WoWGPT_Codec.LogLines
+WoWGPT_Codec.LogLines = function(id, payload, ...)
   table.insert(STUB.codecFrames, { kind = "log", payload = payload })
   return plainLogLines(id, payload, ...)
 end
 STUB.copied = {}
-ClaudeWoW.ShowCopy = function(text) table.insert(STUB.copied, text) end
+WoWGPT.ShowCopy = function(text) table.insert(STUB.copied, text) end
 STUB.ctrl, STUB.shift = false, false
 function IsControlKeyDown() return STUB.ctrl end
 function IsShiftKeyDown() return STUB.shift end
@@ -33,7 +33,7 @@ function newVM({ beforeLogin = '', prelude = '' } = {}) {
   if (prelude) vm.run(prelude);
   vm.loadAddon(ADDON_FILES);
   vm.run(SPIES);
-  vm.run('STUB.FireEvent("ADDON_LOADED", "ClaudeWoW")');
+  vm.run('STUB.FireEvent("ADDON_LOADED", "WoWGPT")');
   if (beforeLogin) vm.run(beforeLogin);
   vm.run('STUB.FireEvent("PLAYER_LOGIN")');
   vm.run('STUB.RunTimers()');
@@ -44,12 +44,12 @@ const q = s => JSON.stringify(s);
 
 function nextSlot(vm, { openUrl = true, replies = '', acks = '', extra = '' } = {}) {
   vm.run(
-    `STUB.onLoadAddOn = function(name) STUB.slotLoads = (STUB.slotLoads or 0) + 1; ClaudeWoW_SlotData = { now = time(), cwd = "", plugin = "ask", plugins = { "ask" }, replies = { ${replies} }, acks = { ${acks} }${openUrl ? ', openUrl = true' : ''}${extra} } end`,
+    `STUB.onLoadAddOn = function(name) STUB.slotLoads = (STUB.slotLoads or 0) + 1; WoWGPT_SlotData = { now = time(), cwd = "", plugin = "ask", plugins = { "ask" }, replies = { ${replies} }, acks = { ${acks} }${openUrl ? ', openUrl = true' : ''}${extra} } end`,
   );
 }
 
 function ackResult(vm, id, open, why) {
-  return `{ session = ${q(vm.evaluate('ClaudeWoWDB.session'))}, id = ${id}, open = ${q(open)}${why ? `, why = ${q(why)}` : ''} }`;
+  return `{ session = ${q(vm.evaluate('WoWGPTDB.session'))}, id = ${id}, open = ${q(open)}${why ? `, why = ${q(why)}` : ''} }`;
 }
 
 function tick(vm, seconds = 6) {
@@ -57,16 +57,14 @@ function tick(vm, seconds = 6) {
 }
 
 function pending(vm) {
-  vm.run(
-    'PENDING_CHAT, PENDING_ID = nil, nil; for _, c in ipairs(ClaudeWoWDB.chats) do if c.pendingId then PENDING_CHAT, PENDING_ID = c.id, c.pendingId end end',
-  );
+  vm.run('PENDING_CHAT, PENDING_ID = nil, nil; for _, c in ipairs(WoWGPTDB.chats) do if c.pendingId then PENDING_CHAT, PENDING_ID = c.id, c.pendingId end end');
   return { chat: vm.evaluate('PENDING_CHAT'), id: vm.evaluate('PENDING_ID') };
 }
 
 function askAndReply(vm, ask, reply, { openUrl = true } = {}) {
   nextSlot(vm, { openUrl });
   tick(vm);
-  vm.run(`ClaudeWoW.Send(${q(ask)})`);
+  vm.run(`WoWGPT.Send(${q(ask)})`);
   const p = pending(vm);
   nextSlot(vm, { openUrl, replies: `{ chat = "${p.chat}", id = ${p.id}, status = "done", text = ${q(reply)}, agent = "", plugin = "ask" }` });
   tick(vm);
@@ -75,10 +73,10 @@ function askAndReply(vm, ask, reply, { openUrl = true } = {}) {
 }
 
 function decodeStrip(vm) {
-  if (vm.evaluate('ClaudeWoWStrip and ClaudeWoWStrip.shown') !== 'true') return null;
+  if (vm.evaluate('WoWGPTStrip and WoWGPTStrip.shown') !== 'true') return null;
   vm.run(`
     local parts = {}
-    for _, t in ipairs(ClaudeWoWStrip.textures) do
+    for _, t in ipairs(WoWGPTStrip.textures) do
       if t.shown and t.color then
         local c, r = math.floor(t.x / 4), math.floor(-t.y / 4)
         local v = (t.color[1] >= 0.5 and 4 or 0) + (t.color[2] >= 0.5 and 2 or 0) + (t.color[3] >= 0.5 and 1 or 0)
@@ -124,7 +122,7 @@ function outboundUrls(vm) {
 }
 
 function click(vm, url, button = 'LeftButton') {
-  vm.run(`STUB.ClickLink(${q(`|cff71d5ff|Haddon:claudewow:url:${url}|h[link]|h|r`)}, ${q(button)})`);
+  vm.run(`STUB.ClickLink(${q(`|cff71d5ff|Haddon:wowgpt:url:${url}|h[link]|h|r`)}, ${q(button)})`);
 }
 
 function copied(vm) {
@@ -141,10 +139,10 @@ function toasts(vm, text = 'Opening in your browser') {
 }
 
 function ack(vm, id) {
-  vm.run(`STUB.sounds["Interface\\\\AddOns\\\\ClaudeWoW_Runtime\\\\ack\\\\${String(id).padStart(3, '0')}.wav"] = false`);
+  vm.run(`STUB.sounds["Interface\\\\AddOns\\\\WoWGPT_Runtime\\\\ack\\\\${String(id).padStart(3, '0')}.wav"] = false`);
 }
 
-const ARMED = 'STUB.sounds["Interface\\\\AddOns\\\\ClaudeWoW_Runtime\\\\ctl\\\\valid.wav"] = true; STUB.armed = true';
+const ARMED = 'STUB.sounds["Interface\\\\AddOns\\\\WoWGPT_Runtime\\\\ctl\\\\valid.wav"] = true; STUB.armed = true';
 
 test('a left click on a link from a reply asks the bridge to open it, once, and says so', () => {
   const vm = newVM();
@@ -225,13 +223,11 @@ test('right, ctrl and shift clicks open the copy box and send nothing', () => {
 test('a bubble click passes the mouse button through: right click copies', () => {
   const vm = newVM();
   askAndReply(vm, 'which PR?', `It is ${PR}.`);
-  vm.run(
-    `ClaudeWoW.Toggle(true); ClaudeWoW.Render(); STUB.bubble = (function() for _, b in ipairs(ClaudeWoW.UI.bubbles) do if b.shown then return b end end end)()`,
-  );
-  vm.run(`STUB.bubble.scripts.OnHyperlinkClick(STUB.bubble, ${q('addon:claudewow:url:' + PR)}, "[PR #7]", "RightButton")`);
+  vm.run(`WoWGPT.Toggle(true); WoWGPT.Render(); STUB.bubble = (function() for _, b in ipairs(WoWGPT.UI.bubbles) do if b.shown then return b end end end)()`);
+  vm.run(`STUB.bubble.scripts.OnHyperlinkClick(STUB.bubble, ${q('addon:wowgpt:url:' + PR)}, "[PR #7]", "RightButton")`);
   assert.deepEqual(copied(vm), [PR]);
   assert.equal(outboundUrls(vm), 0);
-  vm.run(`STUB.bubble.scripts.OnHyperlinkClick(STUB.bubble, ${q('addon:claudewow:url:' + PR)}, "[PR #7]", "LeftButton")`);
+  vm.run(`STUB.bubble.scripts.OnHyperlinkClick(STUB.bubble, ${q('addon:wowgpt:url:' + PR)}, "[PR #7]", "LeftButton")`);
   assert.equal(outboundUrls(vm), 1);
 });
 
@@ -251,16 +247,16 @@ test('without the capability, the copy box stays: an older bridge, a later slot 
 
   const reload = newVM();
   askAndReply(reload, 'which PR?', `It is ${PR}.`);
-  reload.run('ClaudeWoWDB.settings.mode = "reload"');
+  reload.run('WoWGPTDB.settings.mode = "reload"');
   click(reload, PR);
   assert.deepEqual(copied(reload), [PR], 'reload mode has no strip to carry it');
   assert.equal(outboundUrls(reload), 0);
 
   const down = newVM();
   askAndReply(down, 'which PR?', `It is ${PR}.`);
-  down.run('STUB.onLoadAddOn = function() ClaudeWoW_SlotData = nil end');
+  down.run('STUB.onLoadAddOn = function() WoWGPT_SlotData = nil end');
   tick(down, 30 * 60);
-  assert.equal(down.evaluate('ClaudeWoW.BridgeState()'), 'down');
+  assert.equal(down.evaluate('WoWGPT.BridgeState()'), 'down');
   click(down, PR);
   assert.deepEqual(copied(down), [PR], 'a bridge that is down');
   assert.equal(outboundUrls(down), 0);
@@ -288,7 +284,7 @@ test('a hostile link is refused before the reply check, even when a reply holds 
   ];
   const vm = newVM();
   askAndReply(vm, 'list them', hostile.join('\n'));
-  for (const url of hostile) assert.equal(vm.evaluate(`ClaudeWoW.OpenUrl(${q(url)})`), 'refused', JSON.stringify(url).slice(0, 60));
+  for (const url of hostile) assert.equal(vm.evaluate(`WoWGPT.OpenUrl(${q(url)})`), 'refused', JSON.stringify(url).slice(0, 60));
   click(vm, long);
   assert.deepEqual(copied(vm), [long], 'a reply link over 2048 characters goes to the copy box');
   assert.equal(outboundUrls(vm), 0);
@@ -296,7 +292,7 @@ test('a hostile link is refused before the reply check, even when a reply holds 
 
 test('an ack file arms one slot read for the result', () => {
   const vm = newVM({ beforeLogin: ARMED });
-  vm.run('ClaudeWoW.PresenceWorks = function() return true end');
+  vm.run('WoWGPT.PresenceWorks = function() return true end');
   askAndReply(vm, 'which PR?', `It is ${PR}.`);
   click(vm, PR);
   const [rec] = urlRecords(vm);
@@ -328,7 +324,7 @@ function loadsPerSecond(vm, seconds, onSecond = () => {}) {
 
 test('without presence signals the result is polled at 4, 12 and 25 s, one slot each, three in all', () => {
   const vm = newVM();
-  vm.run('ClaudeWoW.PresenceWorks = function() return false end');
+  vm.run('WoWGPT.PresenceWorks = function() return false end');
   askAndReply(vm, 'which PR?', `It is ${PR}.`);
   tick(vm, 120);
   click(vm, PR);
@@ -342,7 +338,7 @@ test('without presence signals the result is polled at 4, 12 and 25 s, one slot 
 
 test('one click costs at most four slot reads: the ack read and the three timed ones', () => {
   const vm = newVM({ beforeLogin: ARMED });
-  vm.run('ClaudeWoW.PresenceWorks = function() return true end');
+  vm.run('WoWGPT.PresenceWorks = function() return true end');
   askAndReply(vm, 'which PR?', `It is ${PR}.`);
   tick(vm, 120);
   click(vm, PR);
@@ -384,13 +380,13 @@ test('on the chat log transport a url record is written once, never retried by s
   const chatlog = `, transport = "screenshot", chatlog = { line = 200, filler = 400, key = "${KEY}" }`;
   nextSlot(vm, { extra: chatlog });
   tick(vm);
-  ack(vm, vm.num('ClaudeWoWDB.lastSeq'));
+  ack(vm, vm.num('WoWGPTDB.lastSeq'));
   tick(vm, 2);
-  vm.run(`ClaudeWoWDB.chats[1].history = { { role = "assistant", t = 1, text = ${q('see ' + PR)} } }`);
+  vm.run(`WoWGPTDB.chats[1].history = { { role = "assistant", t = 1, text = ${q('see ' + PR)} } }`);
   const shotsBefore = vm.num('STUB.screenshots');
   const sentBefore = vm.num('#SENT');
   click(vm, PR);
-  const id = vm.num('ClaudeWoWDB.lastSeq');
+  const id = vm.num('WoWGPTDB.lastSeq');
   const frameLines = () => {
     vm.run(`RESULT = 0; for i = ${sentBefore + 1}, #SENT do if SENT[i]:find("^CWX1 ${KEY} ${id} ") then RESULT = RESULT + 1 end end`);
     return vm.num('RESULT');
@@ -399,7 +395,7 @@ test('on the chat log transport a url record is written once, never retried by s
   assert.ok(written > 0, 'the record went out on the chat log');
   const step = () => {
     tick(vm, 1);
-    for (let i = 0; i < 3; i++) vm.run('local f = ClaudeWoWStrip; if f and f.shown and f.scripts.OnUpdate then f.scripts.OnUpdate(f, 0.016) end');
+    for (let i = 0; i < 3; i++) vm.run('local f = WoWGPTStrip; if f and f.shown and f.scripts.OnUpdate then f.scripts.OnUpdate(f, 0.016) end');
   };
   for (let t = 0; t < 39; t++) step();
   assert.equal(frameLines(), written, 'never written again');
@@ -428,7 +424,7 @@ function framesSince(vm, from) {
 const carriesUrl = (frame, id) => frame.records.some(r => r.id === id && r.flags.split(';').includes(`kind=${OU.KIND}`));
 
 function drive(vm, n = 3) {
-  for (let i = 0; i < n; i++) vm.run('local f = ClaudeWoWStrip; if f and f.shown and f.scripts.OnUpdate then f.scripts.OnUpdate(f, 0.016) end');
+  for (let i = 0; i < n; i++) vm.run('local f = WoWGPTStrip; if f and f.shown and f.scripts.OnUpdate then f.scripts.OnUpdate(f, 0.016) end');
 }
 
 function screenshotVM() {
@@ -437,9 +433,9 @@ function screenshotVM() {
   tick(vm);
   drive(vm);
   vm.run('STUB.FireEvent("SCREENSHOT_SUCCEEDED")');
-  ack(vm, vm.num('ClaudeWoWDB.lastSeq'));
+  ack(vm, vm.num('WoWGPTDB.lastSeq'));
   tick(vm, 2);
-  vm.run(`ClaudeWoWDB.chats[1].history = { { role = "assistant", t = 1, text = ${q('see ' + PR)} } }`);
+  vm.run(`WoWGPTDB.chats[1].history = { { role = "assistant", t = 1, text = ${q('see ' + PR)} } }`);
   return vm;
 }
 
@@ -450,12 +446,12 @@ test('screenshot transport: a url record rides in one shot only; a later message
     drive(vm);
     vm.run('if STUB.screenshots > (STUB.lastShots or 0) then STUB.lastShots = STUB.screenshots; STUB.FireEvent("SCREENSHOT_SUCCEEDED") end');
   };
-  vm.run('STUB.lastShots = STUB.screenshots; ClaudeWoW.Send("hello there")');
-  const message = vm.num('ClaudeWoWDB.lastSeq');
+  vm.run('STUB.lastShots = STUB.screenshots; WoWGPT.Send("hello there")');
+  const message = vm.num('WoWGPTDB.lastSeq');
   settle();
   tick(vm, 20);
   click(vm, PR);
-  const id = vm.num('ClaudeWoWDB.lastSeq');
+  const id = vm.num('WoWGPTDB.lastSeq');
   settle();
   for (let t = 0; t < 30; t++) {
     tick(vm, 1);
@@ -468,8 +464,8 @@ test('screenshot transport: a url record rides in one shot only; a later message
 
 test('screenshot transport: a strip redrawn before its shot fires still shoots the url record', () => {
   const vm = screenshotVM();
-  vm.run('ClaudeWoW.Send("hello there")');
-  const message = vm.num('ClaudeWoWDB.lastSeq');
+  vm.run('WoWGPT.Send("hello there")');
+  const message = vm.num('WoWGPTDB.lastSeq');
   drive(vm);
   vm.run('STUB.FireEvent("SCREENSHOT_SUCCEEDED")');
   const shotsBefore = vm.num('STUB.screenshots');
@@ -490,12 +486,12 @@ test('screenshot transport: only a shot the game reported failed is taken again 
   const vm = screenshotVM();
   const from = vm.num('#STUB.codecFrames');
   click(vm, PR);
-  const id = vm.num('ClaudeWoWDB.lastSeq');
+  const id = vm.num('WoWGPTDB.lastSeq');
   drive(vm);
   vm.run('STUB.FireEvent("SCREENSHOT_FAILED")');
   drive(vm);
   vm.run('STUB.FireEvent("SCREENSHOT_SUCCEEDED")');
-  vm.run('ClaudeWoW.Send("hello there")');
+  vm.run('WoWGPT.Send("hello there")');
   drive(vm);
   vm.run('STUB.FireEvent("SCREENSHOT_SUCCEEDED")');
   const frames = framesSince(vm, from);
@@ -509,30 +505,30 @@ test('screenshot transport: only a shot the game reported failed is taken again 
 test('a transport change while a url record waits does not draw, shoot or log it again', () => {
   const shot = screenshotVM();
   click(shot, PR);
-  const id = shot.num('ClaudeWoWDB.lastSeq');
+  const id = shot.num('WoWGPTDB.lastSeq');
   drive(shot);
   shot.run('STUB.FireEvent("SCREENSHOT_SUCCEEDED")');
   const from = shot.num('#STUB.codecFrames');
   const shotsBefore = shot.num('STUB.screenshots');
   nextSlot(shot, { extra: ', transport = "pixel"' });
-  shot.run('ClaudeWoW.Connect(true)');
+  shot.run('WoWGPT.Connect(true)');
   tick(shot, 6);
   drive(shot);
-  assert.equal(shot.evaluate('ClaudeWoWDB.settings.transport'), 'pixel');
+  assert.equal(shot.evaluate('WoWGPTDB.settings.transport'), 'pixel');
   assert.equal(framesSince(shot, from).filter(f => carriesUrl(f, id)).length, 0, 'not drawn again on the pixel strip');
   assert.equal(shot.num('STUB.screenshots'), shotsBefore);
 
   const logged = newVM({ prelude: CLIENT_LOG_API, beforeLogin: ARMED });
   nextSlot(logged, { extra: `, transport = "screenshot", chatlog = { line = 200, filler = 400, key = "${KEY}" }` });
   tick(logged);
-  ack(logged, logged.num('ClaudeWoWDB.lastSeq'));
+  ack(logged, logged.num('WoWGPTDB.lastSeq'));
   tick(logged, 2);
-  logged.run(`ClaudeWoWDB.chats[1].history = { { role = "assistant", t = 1, text = ${q('see ' + PR)} } }`);
+  logged.run(`WoWGPTDB.chats[1].history = { { role = "assistant", t = 1, text = ${q('see ' + PR)} } }`);
   click(logged, PR);
-  const logId = logged.num('ClaudeWoWDB.lastSeq');
+  const logId = logged.num('WoWGPTDB.lastSeq');
   const logFrom = logged.num('#STUB.codecFrames');
   nextSlot(logged, { extra: `, transport = "screenshot", chatlog = { line = 200, filler = 400, key = "${'f'.repeat(32)}" }` });
-  logged.run('ClaudeWoW.Connect(true)');
+  logged.run('WoWGPT.Connect(true)');
   tick(logged, 6);
   drive(logged);
   assert.equal(framesSince(logged, logFrom).filter(f => carriesUrl(f, logId)).length, 0, 'not logged or shot again under the new key');
@@ -542,13 +538,13 @@ test('chat log transport: a message sent while a url record waits, and its scree
   const vm = newVM({ prelude: CLIENT_LOG_API, beforeLogin: ARMED });
   nextSlot(vm, { extra: `, transport = "screenshot", chatlog = { line = 200, filler = 400, key = "${KEY}" }` });
   tick(vm);
-  ack(vm, vm.num('ClaudeWoWDB.lastSeq'));
+  ack(vm, vm.num('WoWGPTDB.lastSeq'));
   tick(vm, 2);
-  vm.run(`ClaudeWoWDB.chats[1].history = { { role = "assistant", t = 1, text = ${q('see ' + PR)} } }`);
+  vm.run(`WoWGPTDB.chats[1].history = { { role = "assistant", t = 1, text = ${q('see ' + PR)} } }`);
   const from = vm.num('#STUB.codecFrames');
   click(vm, PR);
-  const id = vm.num('ClaudeWoWDB.lastSeq');
-  vm.run('ClaudeWoW.Send("hello there")');
+  const id = vm.num('WoWGPTDB.lastSeq');
+  vm.run('WoWGPT.Send("hello there")');
   for (let t = 0; t < 39; t++) {
     tick(vm, 1);
     drive(vm);
@@ -570,13 +566,13 @@ test('chat log transport: a message sent while a url record waits, and its scree
 });
 
 test('the capability from Inbox.lua counts only when the file is fresh', () => {
-  const seeded = vm => vm.run(`ClaudeWoWDB.chats[1].history = { { role = "assistant", t = 1, text = ${q('see ' + PR)} } }`);
-  const fresh = newVM({ beforeLogin: 'ClaudeWoW_Inbox = { now = time(), openUrl = true, replies = {} }' });
+  const seeded = vm => vm.run(`WoWGPTDB.chats[1].history = { { role = "assistant", t = 1, text = ${q('see ' + PR)} } }`);
+  const fresh = newVM({ beforeLogin: 'WoWGPT_Inbox = { now = time(), openUrl = true, replies = {} }' });
   seeded(fresh);
   click(fresh, PR);
   assert.equal(outboundUrls(fresh), 1);
   assert.deepEqual(copied(fresh), []);
-  const stale = newVM({ beforeLogin: 'ClaudeWoW_Inbox = { now = time() - 3600, openUrl = true, replies = {} }' });
+  const stale = newVM({ beforeLogin: 'WoWGPT_Inbox = { now = time() - 3600, openUrl = true, replies = {} }' });
   seeded(stale);
   click(stale, PR);
   assert.equal(outboundUrls(stale), 0);

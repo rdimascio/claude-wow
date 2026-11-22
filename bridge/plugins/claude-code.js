@@ -1,6 +1,6 @@
 'use strict';
 // The coding plugin: what the bridge did before there were plugins. A chat is
-// an agent session in a folder, resolved against the bridge's folder (/claude-wow
+// an agent session in a folder, resolved against the bridge's folder (/wowgpt
 // cd, --project, defaultCwd); the folder must exist, and a session belongs to
 // the folder that made it, so a chat that changes folder starts a new one.
 // Everything else (which agent, the game context, map and macros, transcripts)
@@ -45,7 +45,7 @@ const plugin = {
     const allowed = PJ.allowedFolders(options, core.defaultCwd);
     if (!PJ.folderAllowed(cwd, allowed)) {
       core.log(`${core.tag(job)} cwd is not in plugins.claude-code.folders: ${cwd}`);
-      core.fail(job, 'That folder is not in plugins.claude-code.folders, so a game chat cannot use it.\nUse /claude cd alone for the default.');
+      core.fail(job, 'That folder is not in plugins.claude-code.folders, so a game chat cannot use it.\nUse /wowgpt cd alone for the default.');
       return;
     }
     if (!fs.existsSync(cwd)) {
@@ -56,7 +56,7 @@ const plugin = {
         `Folder does not exist: ${cwd}\n` +
           `Paths are relative to ${core.defaultCwd}.` +
           (sibs.length ? `\nFolders there: ${sibs.join(', ')}` : '') +
-          `\nUse /claude cd <folder> to pick one, or /claude cd alone for the default.`,
+          `\nUse /wowgpt cd <folder> to pick one, or /wowgpt cd alone for the default.`,
       );
       return;
     }

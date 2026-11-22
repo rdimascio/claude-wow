@@ -399,7 +399,7 @@ test('the ack carries the open result for the addon: ok, or refused with a short
   acks = P.noteAck(acks, { session: 's', id: 5 }, 1000, { open: 'ok' });
   acks = P.noteAck(acks, { session: 's', id: 6 }, 1000);
   acks = P.noteAck(acks, { session: 's', id: 4 }, 2000);
-  const lua = P.luaTable('ClaudeWoW_SlotData', [], { acks, now: 2000 });
+  const lua = P.luaTable('WoWGPT_SlotData', [], { acks, now: 2000 });
   assert.match(lua, /\{ session = "s", id = 4, open = "refused", why = "rate limit: x{68}" \}/, 'a repeated ack keeps its result: ' + lua);
   assert.match(lua, /\{ session = "s", id = 5, open = "ok" \}/);
   assert.match(lua, /\{ session = "s", id = 6 \}/);
@@ -407,7 +407,7 @@ test('the ack carries the open result for the addon: ok, or refused with a short
 });
 
 test('the slot file offers the capability only when the bridge can open links', () => {
-  const on = P.luaTable('ClaudeWoW_SlotData', [], { openUrl: true });
+  const on = P.luaTable('WoWGPT_SlotData', [], { openUrl: true });
   assert.match(on, /\n\topenUrl = true,\n/);
-  for (const v of [false, undefined, 'true', 1]) assert.doesNotMatch(P.luaTable('ClaudeWoW_SlotData', [], { openUrl: v }), /openUrl/);
+  for (const v of [false, undefined, 'true', 1]) assert.doesNotMatch(P.luaTable('WoWGPT_SlotData', [], { openUrl: v }), /openUrl/);
 });

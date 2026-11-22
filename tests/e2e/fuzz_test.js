@@ -84,7 +84,7 @@ test(`seeded fuzz: random messages, directives, reloads, restarts and combat eac
           restarts.push([from, Date.now() + PERIODIC_SWEEP_ONLY_MS]);
         }
         await h.client.connect();
-        if (p.newChat) h.client.runLua(`ClaudeWoW.NewChat("Fuzz ${p.nonce}")`);
+        if (p.newChat) h.client.runLua(`WoWGPT.NewChat("Fuzz ${p.nonce}")`);
         const id = h.client.lastSeq() + 1;
         h.client.send(p.body);
         sent.push({ id, chat: h.client.activeChat().id, plan: p });

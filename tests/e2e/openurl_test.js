@@ -25,7 +25,7 @@ function launches(file) {
 
 const SPY = `
 E2E_COPIED, E2E_TOASTS = {}, {}
-ClaudeWoW.ShowCopy = function(text) table.insert(E2E_COPIED, text) end
+WoWGPT.ShowCopy = function(text) table.insert(E2E_COPIED, text) end
 local plainAdd = UIErrorsFrame.AddMessage
 UIErrorsFrame.AddMessage = function(self, text, ...)
   table.insert(E2E_TOASTS, text)
@@ -37,7 +37,7 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
 const escape = s => s.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
 
 function lastSeq(h) {
-  return Number(h.client.luaValue('ClaudeWoWDB.lastSeq'));
+  return Number(h.client.luaValue('WoWGPTDB.lastSeq'));
 }
 
 function lastToast(h) {
@@ -48,7 +48,7 @@ async function clickUntilSent(h, url) {
   const until = Date.now() + SEND_TIMEOUT_MS;
   for (;;) {
     const before = lastSeq(h);
-    h.client.clickLink(`|Haddon:claudewow:url:${url}|h[link]|h`);
+    h.client.clickLink(`|Haddon:wowgpt:url:${url}|h[link]|h`);
     const id = lastSeq(h);
     if (id > before) return id;
     const toast = lastToast(h);
@@ -60,7 +60,7 @@ async function clickUntilSent(h, url) {
 }
 
 function openLine(h, id, rest) {
-  return new RegExp(`#${id}@${escape(h.client.luaValue('ClaudeWoWDB.session'))}\\b.* ${rest}`);
+  return new RegExp(`#${id}@${escape(h.client.luaValue('WoWGPTDB.session'))}\\b.* ${rest}`);
 }
 
 const refused = (h, id, url) => openLine(h, id, escape(`open link refused (not a link from a reply in this chat): ${JSON.stringify(url)}`));
@@ -84,7 +84,7 @@ test('a click on a reply link reaches the bridge, which opens exactly that link 
     assert.doesNotMatch(h.bridge.output.slice(mark), /runs claude/);
     assert.equal(h.client.luaValue('#E2E_COPIED'), '0', 'an opened link shows no copy box');
 
-    h.client.runLua(`local c = ClaudeWoWDB.chats[1]; table.insert(c.history, { role = "assistant", t = time(), text = "see ${PLANTED}" })`);
+    h.client.runLua(`local c = WoWGPTDB.chats[1]; table.insert(c.history, { role = "assistant", t = time(), text = "see ${PLANTED}" })`);
     const refusedMark = h.bridge.output.length;
     const planted = await clickUntilSent(h, PLANTED);
     await h.bridge.waitForLine(refused(h, planted, PLANTED), { from: refusedMark, timeoutMs: 45000 });
@@ -99,13 +99,13 @@ test('a click on a reply link reaches the bridge, which opens exactly that link 
     await h.bridge.waitForLine(refused(h, again, PLANTED), { from: echoMark, timeoutMs: 45000 });
     assert.equal(launches(opened).length, 1, 'a link a plugin reply echoed is not an agent link');
 
-    h.client.runLua('ClaudeWoW.NewChat()');
+    h.client.runLua('WoWGPT.NewChat()');
     await h.client.say('[[reply nothing to link here]]');
-    const chatB = h.client.luaValue('ClaudeWoWDB.activeChat');
-    assert.notEqual(chatB, h.client.luaValue('ClaudeWoWDB.chats[1].id'));
+    const chatB = h.client.luaValue('WoWGPTDB.activeChat');
+    assert.notEqual(chatB, h.client.luaValue('WoWGPTDB.chats[1].id'));
     const forgedMark = h.bridge.output.length;
     const beforeForge = lastSeq(h);
-    h.client.runLua(`ClaudeWoW.Send(${JSON.stringify(PR)}, nil, { kind = "url", verbatim = true })`);
+    h.client.runLua(`WoWGPT.Send(${JSON.stringify(PR)}, nil, { kind = "url", verbatim = true })`);
     const forged = lastSeq(h);
     assert.ok(forged > beforeForge, 'the forged record went out');
     await h.bridge.waitForLine(refused(h, forged, PR), { from: forgedMark, timeoutMs: 45000 });

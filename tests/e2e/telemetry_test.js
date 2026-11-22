@@ -62,8 +62,8 @@ const anyChatWaiting = h => (h.client.db().chats || []).some(chat => chat.pendin
 
 const ISSUED_IDS_LUA = `(function()
   local ids = {}
-  for _, c in ipairs(ClaudeWoWDB.chats or {}) do if c.pendingId then ids[#ids + 1] = c.pendingId end end
-  for _, data in ipairs({ ClaudeWoW_SlotData or false, ClaudeWoW_Inbox or false }) do
+  for _, c in ipairs(WoWGPTDB.chats or {}) do if c.pendingId then ids[#ids + 1] = c.pendingId end end
+  for _, data in ipairs({ WoWGPT_SlotData or false, WoWGPT_Inbox or false }) do
     if type(data) == "table" and type(data.replies) == "table" then
       for _, r in pairs(data.replies) do if type(r) == "table" and tonumber(r.id) then ids[#ids + 1] = r.id end end
     end
@@ -97,7 +97,7 @@ async function settleAddonRecords(h, tracker) {
 }
 
 function quietClient(h) {
-  h.client.runLua('ClaudeWoWDB.stream = ClaudeWoWDB.stream or {}; ClaudeWoWDB.stream.follow = false');
+  h.client.runLua('WoWGPTDB.stream = WoWGPTDB.stream or {}; WoWGPTDB.stream.follow = false');
 }
 
 function assertSpends(h, { session, before, kind, messageId, issuedFrom, issuedTo, logFrom }) {
@@ -124,7 +124,7 @@ function gsRecord(session, seq) {
 function stripCells(client, payload) {
   return client
     .luaValue(
-      `(function() local c = ClaudeWoW_Codec.Encode(0, ${luaQuote(payload)}, 1); local t = {}; for i = 1, #c do t[i] = c[i] end; return table.concat(t, ",") end)()`,
+      `(function() local c = WoWGPT_Codec.Encode(0, ${luaQuote(payload)}, 1); local t = {}; for i = 1, #c do t[i] = c[i] end; return table.concat(t, ",") end)()`,
     )
     .split(',')
     .map(Number);
@@ -164,7 +164,7 @@ async function sendRecords(h, session, seqs, frameNo) {
 
 test('300 gs records whose seqs overlap the message ids spend no ack or sig file, leave lastId alone, and a message sent between them is answered', async () => {
   await withGame({}, async h => {
-    h.client.runLua('ClaudeWoWTelemetry.Take = function() return nil end');
+    h.client.runLua('WoWGPTTelemetry.Take = function() return nil end');
     quietClient(h);
     const first = await h.client.say('before the telemetry');
     assert.match(first.text, /before the telemetry/);
@@ -173,7 +173,7 @@ test('300 gs records whose seqs overlap the message ids spend no ack or sig file
     const issuedFrom = h.client.lastSeq() + 1;
     const logFrom = h.bridge.output.length;
     await settleAddonRecords(h, tracker);
-    h.client.runLua('ClaudeWoW.Connect()');
+    h.client.runLua('WoWGPT.Connect()');
     const session = h.client.db().session;
     const ackBefore = spentSlots(h.sb, 'ack');
     const sigBefore = spentSlots(h.sb, 'sig');
@@ -232,7 +232,7 @@ test('300 gs records whose seqs overlap the message ids spend no ack or sig file
       `\\{ character = "${CHARACTER}", session = "${session}", seq = ${RECORDS}, hashes = \\{ money = "${String(RECORDS).padStart(8, '0')}" \\} \\}`,
     );
     await h.client.say('publish the slots');
-    await h.client.waitFor(() => published.test(fs.readFileSync(path.join(h.sb.addons, 'ClaudeWoW_S001', 'Inbox.lua'), 'utf8')), {
+    await h.client.waitFor(() => published.test(fs.readFileSync(path.join(h.sb.addons, 'WoWGPT_S001', 'Inbox.lua'), 'utf8')), {
       timeoutMs: 45000,
       label: 'the slot files to publish the gs hashes',
     });

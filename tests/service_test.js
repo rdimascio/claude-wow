@@ -358,8 +358,8 @@ test('status names every client in config.json with its installed build and whic
   const dir = scratch('status-clients');
   const forever = path.join(dir, '_classic_beta_');
   const era = path.join(dir, '_classic_era_');
-  fs.mkdirSync(path.join(era, 'Interface', 'AddOns', 'ClaudeWoW'), { recursive: true });
-  fs.writeFileSync(path.join(era, 'Interface', 'AddOns', 'ClaudeWoW', 'ClaudeWoW.toc'), '## Version: 1.2.3\n## X-Build: abcdefabcdef\n');
+  fs.mkdirSync(path.join(era, 'Interface', 'AddOns', 'WoWGPT'), { recursive: true });
+  fs.writeFileSync(path.join(era, 'Interface', 'AddOns', 'WoWGPT', 'WoWGPT.toc'), '## Version: 1.2.3\n## X-Build: abcdefabcdef\n');
   fs.writeFileSync(path.join(dir, 'config.json'), JSON.stringify({ clients: [{ dir: forever }, { dir: era }] }));
   fs.writeFileSync(path.join(dir, 'state.json'), JSON.stringify({ clients: { [CLI.keyOf(era)]: { heard: Date.now() - 60000 } } }));
   const lines = [];

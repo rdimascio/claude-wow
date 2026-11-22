@@ -50,15 +50,15 @@ function newVM(prelude = '') {
   return vm;
 }
 
-const B = 'ClaudeWoWMinimapButton';
+const B = 'WoWGPTMinimapButton';
 const offset = vm => [Math.round(Number(vm.evaluate(`${B}.x`))), Math.round(Number(vm.evaluate(`${B}.y`)))];
 const dragTo = (vm, x, y) =>
   vm.run(`local b = ${B}; b.scripts.OnDragStart(b); STUB.cursor = { ${x}, ${y} }; b.scripts.OnUpdate(b, 0.02); b.scripts.OnDragStop(b)`);
 
 const MAINLINE = 'WOW_PROJECT_MAINLINE = 1; WOW_PROJECT_ID = 1';
 const CLASSIC = 'WOW_PROJECT_MAINLINE = 1; WOW_PROJECT_ID = 2';
-const SPARK = 'Interface\\AddOns\\ClaudeWoW\\MinimapIcon';
-const PORTRAIT = 'Interface\\AddOns\\ClaudeWoW\\Portrait';
+const SPARK = 'Interface\\AddOns\\WoWGPT\\MinimapIcon';
+const PORTRAIT = 'Interface\\AddOns\\WoWGPT\\Portrait';
 const texCoord = vm => vm.evaluate(`table.concat(${B}.icon.stubTexCoord, ",")`);
 const anchor = (vm, t) => vm.evaluate(`${B}.${t}.point .. " " .. ${B}.${t}.x .. "," .. ${B}.${t}.y`);
 const size = (vm, t) => vm.evaluate(`${B}.${t}.width .. "x" .. ${B}.${t}.height`);
@@ -70,7 +70,7 @@ test('minimap button: a 31 px LibDBIcon button on the Minimap with the Claude sp
   assert.equal(vm.evaluate(`${B}.width .. "x" .. ${B}.height`), '31x31');
   assert.equal(vm.evaluate(`${B}.strata .. " " .. ${B}.frameLevel`), 'MEDIUM 8');
   assert.equal(vm.evaluate(`${B}.shown`), 'true', 'on by default');
-  assert.equal(vm.evaluate('ClaudeWoWDB.settings.minimap'), 'true');
+  assert.equal(vm.evaluate('WoWGPTDB.settings.minimap'), 'true');
   assert.equal(vm.evaluate(`${B}.icon:GetTexture()`), SPARK);
   assert.equal(vm.evaluate(`${B}.icon.stubMask`), null, 'the spark has its own transparent edge: no mask');
   assert.equal(texCoord(vm), '0.05,0.95,0.05,0.95', 'the LibDBIcon 5% inset at rest');
@@ -180,15 +180,15 @@ test('minimap icon: MinimapIcon.tga is the 64x64 32-bit spark that dev/make-mini
 
 test('minimap button: left-click opens and closes the window, right-click opens the Options page', () => {
   const vm = newVM();
-  assert.equal(vm.evaluate('ClaudeWoWFrame.shown'), 'false', 'closed at a first login');
+  assert.equal(vm.evaluate('WoWGPTFrame.shown'), 'false', 'closed at a first login');
   vm.run(`${B}.scripts.OnClick(${B}, "LeftButton")`);
-  assert.equal(vm.evaluate('ClaudeWoWFrame.shown'), 'true');
+  assert.equal(vm.evaluate('WoWGPTFrame.shown'), 'true');
   vm.run(`${B}.scripts.OnClick(${B}, "LeftButton")`);
-  assert.equal(vm.evaluate('ClaudeWoWFrame.shown'), 'false');
+  assert.equal(vm.evaluate('WoWGPTFrame.shown'), 'false');
   assert.equal(vm.evaluate('#STUB.opened'), '0');
   vm.run(`${B}.scripts.OnClick(${B}, "RightButton")`);
   assert.equal(vm.evaluate('table.concat(STUB.opened, ",")'), '41', 'the top-level Options category');
-  assert.equal(vm.evaluate('ClaudeWoWFrame.shown'), 'false', 'a right-click does not toggle the window');
+  assert.equal(vm.evaluate('WoWGPTFrame.shown'), 'false', 'a right-click does not toggle the window');
 });
 
 test('minimap button: a drag follows the cursor around the edge and saves the angle account-wide', () => {
@@ -202,67 +202,67 @@ test('minimap button: a drag follows the cursor around the edge and saves the an
   vm.run(`local b = ${B}; b.scripts.OnDragStop(b)`);
   assert.equal(vm.evaluate(`${B}.scripts.OnUpdate`), null, 'stops tracking on release');
   assert.equal(vm.evaluate(`${B}.stubHighlightLocked`), 'false');
-  assert.equal(vm.evaluate('math.floor(ClaudeWoWDB.settings.minimapAngle + 0.5)'), '90');
+  assert.equal(vm.evaluate('math.floor(WoWGPTDB.settings.minimapAngle + 0.5)'), '90');
   assert.deepEqual(offset(vm), [0, 75], 'stays on top of the round minimap, 5 px outside its edge');
   vm.run('Minimap.scale = 2');
   dragTo(vm, (cx - 100) * 2, cy * 2);
-  assert.equal(vm.evaluate('math.floor(ClaudeWoWDB.settings.minimapAngle + 0.5)'), '180', 'the cursor is in screen pixels, scaled to the minimap');
+  assert.equal(vm.evaluate('math.floor(WoWGPTDB.settings.minimapAngle + 0.5)'), '180', 'the cursor is in screen pixels, scaled to the minimap');
   assert.deepEqual(offset(vm), [-75, 0]);
 });
 
 test('minimap button: a saved angle is placed at login, and a square minimap puts it on the square edge', () => {
-  const round = newVM('ClaudeWoWDB = { settings = { minimapAngle = 30 } }');
+  const round = newVM('WoWGPTDB = { settings = { minimapAngle = 30 } }');
   assert.deepEqual(offset(round), [65, 38]);
-  const square = newVM('ClaudeWoWDB = { settings = { minimapAngle = 30 } }; function GetMinimapShape() return "SQUARE" end');
+  const square = newVM('WoWGPTDB = { settings = { minimapAngle = 30 } }; function GetMinimapShape() return "SQUARE" end');
   assert.deepEqual(offset(square), [75, 48], 'clamped to the corner box instead of the circle');
-  const corner = newVM('ClaudeWoWDB = { settings = { minimapAngle = 30 } }; function GetMinimapShape() return "CORNER-BOTTOMLEFT" end');
+  const corner = newVM('WoWGPTDB = { settings = { minimapAngle = 30 } }; function GetMinimapShape() return "CORNER-BOTTOMLEFT" end');
   assert.deepEqual(offset(corner), [75, 48], 'the round corner of CORNER-BOTTOMLEFT is the lower left, so the upper right is square');
-  const lowerLeft = newVM('ClaudeWoWDB = { settings = { minimapAngle = 210 } }; function GetMinimapShape() return "CORNER-BOTTOMLEFT" end');
+  const lowerLeft = newVM('WoWGPTDB = { settings = { minimapAngle = 210 } }; function GetMinimapShape() return "CORNER-BOTTOMLEFT" end');
   assert.deepEqual(offset(lowerLeft), [-65, -37], 'and its lower left stays round');
-  const upperLeft = newVM('ClaudeWoWDB = { settings = { minimapAngle = 150 } }; function GetMinimapShape() return "CORNER-BOTTOMLEFT" end');
+  const upperLeft = newVM('WoWGPTDB = { settings = { minimapAngle = 150 } }; function GetMinimapShape() return "CORNER-BOTTOMLEFT" end');
   assert.deepEqual(offset(upperLeft), [-75, 48], 'while its upper left is square');
-  const unknown = newVM('ClaudeWoWDB = { settings = { minimapAngle = 30 } }; function GetMinimapShape() return "STAR" end');
+  const unknown = newVM('WoWGPTDB = { settings = { minimapAngle = 30 } }; function GetMinimapShape() return "STAR" end');
   assert.deepEqual(offset(unknown), [65, 38], 'an unknown shape is round');
 });
 
-test('minimap button: /claude config minimap and the Options checkbox hide and show the same button', () => {
+test('minimap button: /wowgpt config minimap and the Options checkbox hide and show the same button', () => {
   const vm = newVM();
-  vm.run('FIRST = ClaudeWoWMinimapButton');
-  vm.run('SlashCmdList.CLAUDE("config minimap off")');
-  assert.equal(vm.evaluate('ClaudeWoWDB.settings.minimap'), 'false');
+  vm.run('FIRST = WoWGPTMinimapButton');
+  vm.run('SlashCmdList.WOWGPT("config minimap off")');
+  assert.equal(vm.evaluate('WoWGPTDB.settings.minimap'), 'false');
   assert.equal(vm.evaluate(`${B}.shown`), 'false');
   assert.equal(vm.evaluate(`${B} == FIRST`), 'true', 'hidden, not destroyed');
-  vm.run('SlashCmdList.CLAUDE("config minimap on")');
+  vm.run('SlashCmdList.WOWGPT("config minimap on")');
   assert.equal(vm.evaluate(`${B}.shown`), 'true');
-  const option = '(function() for _, o in ipairs(ClaudeWoWHelp.Options()) do if o.key == "minimap" then return o end end end)()';
+  const option = '(function() for _, o in ipairs(WoWGPTHelp.Options()) do if o.key == "minimap" then return o end end end)()';
   assert.equal(vm.evaluate(`${option}.label`), 'Minimap button');
-  vm.run(`ClaudeWoWHelp.SetOption(${option}, false)`);
+  vm.run(`WoWGPTHelp.SetOption(${option}, false)`);
   assert.equal(vm.evaluate(`${B}.shown`), 'false');
-  assert.equal(vm.evaluate(`ClaudeWoWHelp.OptionValue(${option})`), 'false');
-  vm.run(`ClaudeWoWHelp.SetOption(${option}, true)`);
+  assert.equal(vm.evaluate(`WoWGPTHelp.OptionValue(${option})`), 'false');
+  vm.run(`WoWGPTHelp.SetOption(${option}, true)`);
   assert.equal(vm.evaluate(`${B}.shown`), 'true');
-  assert.equal(vm.evaluate('ClaudeWoWDB.settings.minimap'), 'true');
+  assert.equal(vm.evaluate('WoWGPTDB.settings.minimap'), 'true');
 });
 
 test('minimap button: a player who turned it off logs in with it hidden', () => {
-  const vm = newVM('ClaudeWoWDB = { settings = { minimap = false } }');
+  const vm = newVM('WoWGPTDB = { settings = { minimap = false } }');
   assert.equal(vm.evaluate(`${B}.shown`), 'false');
-  assert.equal(vm.evaluate('ClaudeWoWDB.settings.minimap'), 'false', 'the saved choice is kept');
+  assert.equal(vm.evaluate('WoWGPTDB.settings.minimap'), 'false', 'the saved choice is kept');
 });
 
 test('minimap button: the tooltip names the addon, says the status in words, the API cost and the green click hints', () => {
   const vm = newVM(TIP_SPY);
   vm.run(`${B}.scripts.OnEnter(${B})`);
-  assert.equal(vm.evaluate('GameTooltip.owner == ClaudeWoWMinimapButton'), 'true');
+  assert.equal(vm.evaluate('GameTooltip.owner == WoWGPTMinimapButton'), 'true');
   assert.deepEqual(vm.evaluate('table.concat(TIP, "|")').split('|'), [
-    'title=Azeroth Companion',
+    'title=WoWGPT',
     'Connecting... @1.0,1.0,1.0',
     ' ',
     'Left-click: open or close @0.1,1.0,0.1',
     'Right-click: options @0.1,1.0,0.1',
   ]);
-  vm.run('ClaudeWoW.IsConnected = function() return true end');
-  vm.run('for _, c in ipairs(ClaudeWoWDB.chats) do if c.id == ClaudeWoWDB.activeChat then c.cost = 1.5 end end');
+  vm.run('WoWGPT.IsConnected = function() return true end');
+  vm.run('for _, c in ipairs(WoWGPTDB.chats) do if c.id == WoWGPTDB.activeChat then c.cost = 1.5 end end');
   vm.run(`${B}.scripts.OnEnter(${B})`);
   const tip = vm.evaluate('table.concat(TIP, "|")').split('|');
   assert.equal(tip[1], 'Ready @1.0,1.0,1.0');
@@ -270,7 +270,7 @@ test('minimap button: the tooltip names the addon, says the status in words, the
   assert.ok(tip.includes('This chat=$1.50'));
   assert.ok(tip.includes('All chats=$1.50'));
   assert.equal(tip.at(-1), 'Right-click: options @0.1,1.0,0.1');
-  vm.run('for _, c in ipairs(ClaudeWoWDB.chats) do if c.id == ClaudeWoWDB.activeChat then c.pendingId = 7 end end');
+  vm.run('for _, c in ipairs(WoWGPTDB.chats) do if c.id == WoWGPTDB.activeChat then c.pendingId = 7 end end');
   vm.run(`${B}.scripts.OnEnter(${B})`);
   assert.equal(vm.evaluate('TIP[2]'), 'Working... @1.0,1.0,1.0', 'plain words, no color codes');
   vm.run(`TIP = {}; local b = ${B}; b.scripts.OnDragStart(b); b.scripts.OnEnter(b)`);
@@ -292,11 +292,11 @@ test('minimap button: an 8 px status light at the lower right, above the gold ri
   assert.equal(vm.evaluate(`${B}.dot.layer`), 'OVERLAY', 'the same layer as the ring, on a higher sublevel');
   assert.equal(vm.evaluate(`${B}.dot:GetTexture()`), STATE_ICONS.unknown, 'not seen yet: grey');
   for (const state of ['ok', 'stale', 'down', 'unknown']) {
-    vm.run(`ClaudeWoW.BridgeState = function() return "${state}", 0, 0, 0, "tip ${state}" end; ClaudeWoW.UpdateDot()`);
+    vm.run(`WoWGPT.BridgeState = function() return "${state}", 0, 0, 0, "tip ${state}" end; WoWGPT.UpdateDot()`);
     assert.equal(vm.evaluate(`${B}.dot:GetTexture()`), STATE_ICONS[state], state);
-    assert.equal(vm.evaluate(`${B}.dot:GetTexture() == ClaudeWoW.UI.dot:GetTexture()`), 'true', 'the same light as the window');
+    assert.equal(vm.evaluate(`${B}.dot:GetTexture() == WoWGPT.UI.dot:GetTexture()`), 'true', 'the same light as the window');
   }
-  vm.run('SlashCmdList.CLAUDE("config minimap off")');
+  vm.run('SlashCmdList.WOWGPT("config minimap off")');
   assert.equal(vm.evaluate(`${B}.shown`), 'false', 'the light goes with the hidden button');
 });
 
@@ -310,7 +310,7 @@ test('minimap button: it pulses while a reply is unread and the window is closed
   assert.equal(pulsing(), 'false');
   assert.equal(glow(), 'false');
 
-  vm.run('ClaudeWoWDB.chats[1].unread = 1; ClaudeWoW.Notify(ClaudeWoWDB.chats[1], "done", "claude", nil, "assistant")');
+  vm.run('WoWGPTDB.chats[1].unread = 1; WoWGPT.Notify(WoWGPTDB.chats[1], "done", "claude", nil, "assistant")');
   assert.equal(signal(), 'reply');
   assert.equal(pulsing(), 'true', 'an unread reply with the window closed pulses');
   assert.equal(glow(), 'true');
@@ -318,14 +318,14 @@ test('minimap button: it pulses while a reply is unread and the window is closed
   assert.ok(vm.evaluate('table.concat(TIP, "|")').includes('1 new reply @1.0,0.8,0.0'), 'the tooltip counts it');
 
   vm.run(`${B}.scripts.OnClick(${B}, "LeftButton")`);
-  assert.equal(vm.evaluate('ClaudeWoWFrame.shown'), 'true');
+  assert.equal(vm.evaluate('WoWGPTFrame.shown'), 'true');
   assert.equal(signal(), 'idle');
   assert.equal(pulsing(), 'false', 'opening the window stops it');
   assert.equal(glow(), 'false');
 
-  vm.run('ClaudeWoWDB.chats[1].pendingId = 7; ClaudeWoW.Render()');
+  vm.run('WoWGPTDB.chats[1].pendingId = 7; WoWGPT.Render()');
   assert.equal(signal(), 'idle', 'nothing while the window is open');
-  vm.run('ClaudeWoW.Toggle(false)');
+  vm.run('WoWGPT.Toggle(false)');
   assert.equal(signal(), 'working', 'an agent at work with the window closed');
   assert.equal(pulsing(), 'false', 'a steady glow, not a pulse');
   assert.equal(glow(), 'true');
@@ -333,16 +333,16 @@ test('minimap button: it pulses while a reply is unread and the window is closed
   vm.run(`${B}.scripts.OnEnter(${B})`);
   assert.ok(vm.evaluate('table.concat(TIP, "|")').includes('1 working @1.0,0.8,0.0'));
 
-  vm.run('ClaudeWoWDB.chats[1].unread = 2; ClaudeWoW.Render()');
+  vm.run('WoWGPTDB.chats[1].unread = 2; WoWGPT.Render()');
   assert.equal(signal(), 'reply', 'a reply wins over work');
   assert.equal(pulsing(), 'true');
-  vm.run('SlashCmdList.CLAUDE("")');
-  assert.equal(pulsing(), 'false', '/claude opens the window and stops it too');
+  vm.run('SlashCmdList.WOWGPT("")');
+  assert.equal(pulsing(), 'false', '/wowgpt opens the window and stops it too');
 });
 
 test('minimap button: no Minimap frame, no button and no error', () => {
   const vm = newVM('Minimap = nil');
   assert.equal(vm.evaluate(B), null);
-  vm.run('SlashCmdList.CLAUDE("config minimap off")');
-  assert.equal(vm.evaluate('ClaudeWoWDB.settings.minimap'), 'false');
+  vm.run('SlashCmdList.WOWGPT("config minimap off")');
+  assert.equal(vm.evaluate('WoWGPTDB.settings.minimap'), 'false');
 });

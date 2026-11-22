@@ -348,7 +348,7 @@ main() {
   else
     say "  3. Check the bridge:  claude-wow service status     (logs: claude-wow service logs)"
   fi
-  say "  4. In game:  /claude"
+  say "  4. In game:  /wowgpt"
   say ""
   if [ "$CMD" = "$BIN_DIR/claude-wow" ] && [ -z "$SOURCE" ] && [ ! -f "$DIR/setup.js" ]; then
     say "Update later by running this installer again (it replaces the binary; then: claude-wow service restart)."

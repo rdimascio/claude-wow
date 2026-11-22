@@ -279,15 +279,15 @@ test('the slot field gs carries each recent character with its session, seq and 
     const job = gsJob('abc123', 42, { money: '100', zone: '1421' });
     t.submit(job);
     const hashes = TL.parseRecord(job.text).sections;
-    const body = P.luaTable('ClaudeWoW_SlotData', [], { gsLua: t.luaGs() });
+    const body = P.luaTable('WoWGPT_SlotData', [], { gsLua: t.luaGs() });
     const get = expr => luaEval(body, expr);
-    assert.equal(get('ClaudeWoW_SlotData.gs.v'), '1');
-    assert.equal(get('#ClaudeWoW_SlotData.gs.chars'), String(TL.GS_CHARACTERS_MAX));
-    assert.equal(get('ClaudeWoW_SlotData.gs.watch.items[1]'), '2589');
-    assert.equal(get('ClaudeWoW_SlotData.gs.watch.factions[1]'), '530');
+    assert.equal(get('WoWGPT_SlotData.gs.v'), '1');
+    assert.equal(get('#WoWGPT_SlotData.gs.chars'), String(TL.GS_CHARACTERS_MAX));
+    assert.equal(get('WoWGPT_SlotData.gs.watch.items[1]'), '2589');
+    assert.equal(get('WoWGPT_SlotData.gs.watch.factions[1]'), '530');
     const fresh = TL.createTelemetry({ dir, watch: () => TL.watchFrom(null), now: () => 1 });
-    const again = P.luaTable('ClaudeWoW_SlotData', [], { gsLua: fresh.luaGs() });
-    const find = `(function() for _, e in ipairs(ClaudeWoW_SlotData.gs.chars) do if e.character == "${CHARACTER}" then return e end end end)()`;
+    const again = P.luaTable('WoWGPT_SlotData', [], { gsLua: fresh.luaGs() });
+    const find = `(function() for _, e in ipairs(WoWGPT_SlotData.gs.chars) do if e.character == "${CHARACTER}" then return e end end end)()`;
     assert.equal(luaEval(again, `${find}.session`), 'abc123', 'a restarted bridge reads the snapshots back for the slot files');
     assert.equal(luaEval(again, `${find}.seq`), '42');
     assert.equal(luaEval(again, `${find}.hashes.money`), hashes.money.hash);
@@ -417,10 +417,10 @@ test('only keys the addon could send are listed as refused, the newest kept; a 3
     assert.equal(t.submit(gsJob('s1', 99, { money: '1' }, huge)).status, 'no-character');
     const logged = lines.find(l => /characters, cut/.test(l));
     assert.ok(logged && logged.length < 400, 'logged once, cut short');
-    const body = P.luaTable('ClaudeWoW_SlotData', [], { gsLua: t.luaGs() });
-    assert.equal(luaEval(body, '#ClaudeWoW_SlotData.gs.refused'), '20');
-    assert.equal(luaEval(body, 'ClaudeWoW_SlotData.gs.refused[20]'), 'Bone24-For·ever', 'the newest is kept');
-    assert.equal(luaEval(body, 'ClaudeWoW_SlotData.gs.refused[1]'), 'Bone5-For·ever', 'the oldest went first');
+    const body = P.luaTable('WoWGPT_SlotData', [], { gsLua: t.luaGs() });
+    assert.equal(luaEval(body, '#WoWGPT_SlotData.gs.refused'), '20');
+    assert.equal(luaEval(body, 'WoWGPT_SlotData.gs.refused[20]'), 'Bone24-For·ever', 'the newest is kept');
+    assert.equal(luaEval(body, 'WoWGPT_SlotData.gs.refused[1]'), 'Bone5-For·ever', 'the oldest went first');
     assert.ok(!body.includes('ББББББББ'), 'the 3 KB key is not in the slot file');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });

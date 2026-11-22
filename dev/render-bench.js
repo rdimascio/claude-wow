@@ -31,10 +31,10 @@ end
 `;
 
 const COUNTERS = `
-local mt = getmetatable(ClaudeWoWContent)
+local mt = getmetatable(WoWGPTContent)
 local orig = mt.__index
 BENCH = { render = 0, bubbleText = 0, listText = 0, stringHeight = 0, fills = 0 }
-local transcript, list = ClaudeWoWContent, ClaudeWoWChatListContent
+local transcript, list = WoWGPTContent, WoWGPTChatListContent
 local function under(o, root)
 	local seen = 0
 	while o and seen < 64 do
@@ -64,8 +64,8 @@ mt.__index = function(t, k)
 	return v
 end
 local ns = ...
-local render = ClaudeWoW.Render
-ClaudeWoW.Render = function(...)
+local render = WoWGPT.Render
+WoWGPT.Render = function(...)
 	BENCH.render = BENCH.render + 1
 	return render(...)
 end
@@ -76,7 +76,7 @@ ns.Q.PoiState = function(...)
 end
 `;
 
-const slot = (vm, body) => vm.run(`STUB.onLoadAddOn = function() ClaudeWoW_SlotData = ${body} end`);
+const slot = (vm, body) => vm.run(`STUB.onLoadAddOn = function() WoWGPT_SlotData = ${body} end`);
 const tick = (vm, seconds = 2) => vm.run(`STUB.now = STUB.now + ${seconds}; STUB.Tick()`);
 const luaString = s => '"' + s.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n') + '"';
 
@@ -89,16 +89,16 @@ function boot({ native = true } = {}) {
 }
 
 function script(vm) {
-  vm.run('ClaudeWoW.Toggle(true)');
+  vm.run('WoWGPT.Toggle(true)');
   vm.run('STUB.RunTimers()');
   slot(vm, '{ now = time(), cwd = "", replies = {} }');
   tick(vm, 6);
-  if (vm.evaluate('ClaudeWoW.IsConnected()') !== 'true') throw new Error('not connected after the hello slot');
-  for (let i = 2; i <= CHATS; i++) vm.run(`ClaudeWoW.NewChat("Chat ${i}")`);
-  const chatId = vm.evaluate('ClaudeWoWDB.activeChat');
+  if (vm.evaluate('WoWGPT.IsConnected()') !== 'true') throw new Error('not connected after the hello slot');
+  for (let i = 2; i <= CHATS; i++) vm.run(`WoWGPT.NewChat("Chat ${i}")`);
+  const chatId = vm.evaluate('WoWGPTDB.activeChat');
   for (let i = 1; i <= ROUNDS; i++) {
-    vm.run(`ClaudeWoW.Send(${luaString('message ' + i + ': please look at the ' + 'thing '.repeat(i))})`);
-    const id = vm.num('(ClaudeWoW.ActiveChat and ClaudeWoW.ActiveChat() or ClaudeWoWDB.chats[#ClaudeWoWDB.chats]).pendingId');
+    vm.run(`WoWGPT.Send(${luaString('message ' + i + ': please look at the ' + 'thing '.repeat(i))})`);
+    const id = vm.num('(WoWGPT.ActiveChat and WoWGPT.ActiveChat() or WoWGPTDB.chats[#WoWGPTDB.chats]).pendingId');
     if (!(id >= 1)) throw new Error('message ' + i + ' did not go out');
     const text = luaString(REPLY_LINES.join('\n').replace('done', 'done ' + i));
     slot(
@@ -106,13 +106,13 @@ function script(vm) {
       `{ now = time(), cwd = "", replies = { { chat = "${chatId}", id = ${id}, status = "done", text = ${text}, agent = "claude", summary = "done ${i}." } } }`,
     );
     tick(vm, 6);
-    if (vm.evaluate(`(function() for _, c in ipairs(ClaudeWoWDB.chats) do if c.id == "${chatId}" then return tostring(c.pendingId) end end end)()`) !== 'nil') {
+    if (vm.evaluate(`(function() for _, c in ipairs(WoWGPTDB.chats) do if c.id == "${chatId}" then return tostring(c.pendingId) end end end)()`) !== 'nil') {
       throw new Error('reply ' + i + ' was not applied');
     }
   }
   slot(vm, '{ now = time(), cwd = "", replies = {} }');
   for (let i = 0; i < TICKS; i++) tick(vm);
-  for (let i = 0; i < SWITCHES; i++) vm.run(`ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[${(i % CHATS) + 1}].id)`);
+  for (let i = 0; i < SWITCHES; i++) vm.run(`WoWGPT.SwitchChat(WoWGPTDB.chats[${(i % CHATS) + 1}].id)`);
   return chatId;
 }
 
@@ -120,7 +120,7 @@ function counted() {
   const vm = boot();
   vm.run(COUNTERS, { ns: true });
   const chatId = script(vm);
-  const history = vm.num(`(function() for _, c in ipairs(ClaudeWoWDB.chats) do if c.id == "${chatId}" then return #c.history end end end)()`);
+  const history = vm.num(`(function() for _, c in ipairs(WoWGPTDB.chats) do if c.id == "${chatId}" then return #c.history end end end)()`);
   const read = k => vm.num('BENCH.' + k);
   return {
     history,
@@ -150,8 +150,8 @@ function main() {
   const ms = timed(runs);
   const rows = [
     ['`Render` calls', counts.render],
-    ['bubble `SetText` calls (under `ClaudeWoWContent`)', counts.bubbleText],
-    ['chat-list `SetText` calls (under `ClaudeWoWChatListContent`)', counts.listText],
+    ['bubble `SetText` calls (under `WoWGPTContent`)', counts.bubbleText],
+    ['chat-list `SetText` calls (under `WoWGPTChatListContent`)', counts.listText],
     ['`GetStringHeight` calls', counts.stringHeight],
     ['chat-list rows laid out (`Q.FillRow` past its cache, one `Q.PoiState` each)', counts.fills],
     [`wall time, median of ${runs} runs`, ms.toFixed(0) + ' ms'],

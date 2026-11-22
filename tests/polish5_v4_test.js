@@ -37,62 +37,62 @@ function newVM({ dock = false } = {}) {
   const vm = createVM();
   vm.run(PRELUDE);
   if (dock) vm.run('STUB.ChatDock()');
-  vm.loadAddon(['Codec.lua', 'Inbox.lua', 'ClaudeWoW.lua', 'LootRoll.lua']);
-  vm.run('STUB.told = {}; local print0 = ClaudeWoW.Print; ClaudeWoW.Print = function(m) table.insert(STUB.told, m); return print0(m) end');
+  vm.loadAddon(['Codec.lua', 'Inbox.lua', 'WoWGPT.lua', 'LootRoll.lua']);
+  vm.run('STUB.told = {}; local print0 = WoWGPT.Print; WoWGPT.Print = function(m) table.insert(STUB.told, m); return print0(m) end');
   vm.run(
-    'STUB.said = {}; local say0 = ClaudeWoW.SayAboutDenial; ClaudeWoW.SayAboutDenial = function(chatId, text) table.insert(STUB.said, { chat = chatId, text = text }); return say0(chatId, text) end',
+    'STUB.said = {}; local say0 = WoWGPT.SayAboutDenial; WoWGPT.SayAboutDenial = function(chatId, text) table.insert(STUB.said, { chat = chatId, text = text }); return say0(chatId, text) end',
   );
-  if (dock) vm.run('ClaudeWoWDB = { settings = { whisperV3 = true, whisper = true, whisperChoice = "on" } }');
+  if (dock) vm.run('WoWGPTDB = { settings = { whisperV3 = true, whisper = true, whisperChoice = "on" } }');
   vm.login();
   vm.run('STUB.RunTimers()');
-  vm.run(`STUB.onLoadAddOn = function(name) ClaudeWoW_SlotData = { now = time(), cwd = "", ${dock ? 'agent = "claude", ' : ''}replies = {} } end`);
+  vm.run(`STUB.onLoadAddOn = function(name) WoWGPT_SlotData = { now = time(), cwd = "", ${dock ? 'agent = "claude", ' : ''}replies = {} } end`);
   vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
-  assert.equal(vm.evaluate('ClaudeWoW.IsConnected()'), 'true');
+  assert.equal(vm.evaluate('WoWGPT.IsConnected()'), 'true');
   return vm;
 }
 
 function deliverDenial(vm, rules, chatIndex = 1, text = 'I need permission') {
-  vm.run('ClaudeWoW.Send("clean the build folder")');
-  const chatId = vm.evaluate(`ClaudeWoWDB.chats[${chatIndex}].id`);
-  const id = vm.num(`ClaudeWoWDB.chats[${chatIndex}].pendingId`);
+  vm.run('WoWGPT.Send("clean the build folder")');
+  const chatId = vm.evaluate(`WoWGPTDB.chats[${chatIndex}].id`);
+  const id = vm.num(`WoWGPTDB.chats[${chatIndex}].pendingId`);
   const luaRules = rules.map(r => JSON.stringify(r)).join(', ');
   vm.run(
-    `STUB.onLoadAddOn = function(name) ClaudeWoW_SlotData = { now = time(), cwd = "", replies = { { chat = "${chatId}", id = ${id}, status = "done", text = ${JSON.stringify(text)}, agent = "claude", denied = { ${luaRules} } } } } end`,
+    `STUB.onLoadAddOn = function(name) WoWGPT_SlotData = { now = time(), cwd = "", replies = { { chat = "${chatId}", id = ${id}, status = "done", text = ${JSON.stringify(text)}, agent = "claude", denied = { ${luaRules} } } } } end`,
   );
   vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
-  assert.equal(vm.evaluate(`ClaudeWoWDB.chats[${chatIndex}].pendingId`), null);
+  assert.equal(vm.evaluate(`WoWGPTDB.chats[${chatIndex}].pendingId`), null);
   return { chatId, id };
 }
 
-const shown = vm => vm.evaluate('ClaudeWoWRollFrame ~= nil and ClaudeWoWRollFrame.shown') === 'true';
+const shown = vm => vm.evaluate('WoWGPTRollFrame ~= nil and WoWGPTRollFrame.shown') === 'true';
 const told = (vm, line) => {
   vm.run(`STUB.found = 0; for _, m in ipairs(STUB.told) do if m == ${JSON.stringify(line)} then STUB.found = STUB.found + 1 end end`);
   return vm.num('STUB.found');
 };
 const wait = (vm, seconds) => vm.run(`STUB.now = STUB.now + ${seconds}; STUB.Tick(); STUB.RunFrames(${seconds})`);
-const click = (vm, name) => vm.run(`ClaudeWoWRollFrame.${name}.scripts.OnClick(ClaudeWoWRollFrame.${name})`);
-const arm = vm => vm.run('STUB.now = STUB.now + 0.5; ClaudeWoWRoll.Update()');
-const grantedOnce = vm => vm.evaluate('ClaudeWoWDB.outbox and ClaudeWoWDB.outbox.allowOnce') !== null;
-const timeLeft = vm => vm.num('ClaudeWoWRoll.Current().expiresAt - GetTime()');
-const POPUP = 'StaticPopupDialogs.CLAUDEWOW_ALLOW_ALWAYS';
+const click = (vm, name) => vm.run(`WoWGPTRollFrame.${name}.scripts.OnClick(WoWGPTRollFrame.${name})`);
+const arm = vm => vm.run('STUB.now = STUB.now + 0.5; WoWGPTRoll.Update()');
+const grantedOnce = vm => vm.evaluate('WoWGPTDB.outbox and WoWGPTDB.outbox.allowOnce') !== null;
+const timeLeft = vm => vm.num('WoWGPTRoll.Current().expiresAt - GetTime()');
+const POPUP = 'StaticPopupDialogs.WOWGPT_ALLOW_ALWAYS';
 const cancel = vm => vm.run(`local d = STUB.popup; ${POPUP}.OnCancel(d, d.data, "clicked"); d.shown = false; ${POPUP}.OnHide(d)`);
 const accept = vm => vm.run(`local d = STUB.popup; ${POPUP}.OnAccept(d, d.data); d.shown = false; ${POPUP}.OnHide(d)`);
 
 test('R.Blocked: combat or any of GroupLootFrame1..4 shown; the container and bonus roll frames alone never block', () => {
   const vm = newVM();
-  assert.equal(vm.evaluate('ClaudeWoWRoll.Blocked()'), null);
+  assert.equal(vm.evaluate('WoWGPTRoll.Blocked()'), null);
   vm.run('STUB.combat = true');
-  assert.equal(vm.evaluate('ClaudeWoWRoll.Blocked()'), 'combat');
+  assert.equal(vm.evaluate('WoWGPTRoll.Blocked()'), 'combat');
   vm.run('STUB.combat = false');
   for (let i = 1; i <= 4; i++) {
     vm.run(`GroupLootFrame${i}:Show()`);
-    assert.equal(vm.evaluate('ClaudeWoWRoll.Blocked()'), 'loot', `GroupLootFrame${i}`);
+    assert.equal(vm.evaluate('WoWGPTRoll.Blocked()'), 'loot', `GroupLootFrame${i}`);
     vm.run(`GroupLootFrame${i}:Hide()`);
   }
   vm.run('GroupLootContainer:Show(); BonusRollFrame:Show(); NUM_GROUP_LOOT_FRAMES = 0');
-  assert.equal(vm.evaluate('ClaudeWoWRoll.Blocked()'), null);
+  assert.equal(vm.evaluate('WoWGPTRoll.Blocked()'), null);
   vm.run('GroupLootFrame4:Show()');
-  assert.equal(vm.evaluate('ClaudeWoWRoll.Blocked()'), 'loot', 'NUM_GROUP_LOOT_FRAMES is not read');
+  assert.equal(vm.evaluate('WoWGPTRoll.Blocked()'), 'loot', 'NUM_GROUP_LOOT_FRAMES is not read');
 });
 
 test('a denial that arrives in combat waits, says so once, and shows with a full timer 1 s after combat ends', () => {
@@ -100,20 +100,20 @@ test('a denial that arrives in combat waits, says so once, and shows with a full
   vm.run('STUB.combat = true');
   deliverDenial(vm, ['Bash(rm:*)']);
   assert.equal(shown(vm), false);
-  assert.equal(vm.evaluate('ClaudeWoWRoll.Held()'), 'true');
-  assert.equal(vm.num('ClaudeWoWRoll.Waiting()'), 1);
+  assert.equal(vm.evaluate('WoWGPTRoll.Held()'), 'true');
+  assert.equal(vm.num('WoWGPTRoll.Waiting()'), 1);
   assert.equal(told(vm, COMBAT_LINE), 1);
-  const seq = vm.num('ClaudeWoWDB.lastSeq');
+  const seq = vm.num('WoWGPTDB.lastSeq');
   wait(vm, 120);
-  assert.equal(vm.num('ClaudeWoWDB.lastSeq'), seq, 'no timer runs while it waits');
-  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history].text'), 'I need permission');
+  assert.equal(vm.num('WoWGPTDB.lastSeq'), seq, 'no timer runs while it waits');
+  assert.equal(vm.evaluate('WoWGPTDB.chats[1].history[#WoWGPTDB.chats[1].history].text'), 'I need permission');
   vm.run('STUB.combat = false; STUB.FireEvent("PLAYER_REGEN_ENABLED")');
   assert.equal(shown(vm), false, 'not at the moment combat ends');
   wait(vm, 0.5);
   assert.equal(shown(vm), false, 'not 0.5 s later');
   wait(vm, 0.5);
   assert.equal(shown(vm), true, '1 s later');
-  assert.equal(vm.evaluate('ClaudeWoWRoll.Held()'), 'false');
+  assert.equal(vm.evaluate('WoWGPTRoll.Held()'), 'false');
   assert.equal(timeLeft(vm), 60);
   assert.equal(told(vm, COMBAT_LINE), 1);
 });
@@ -155,13 +155,13 @@ test('a group loot roll that opens while the request shows hides it; it comes ba
   vm.run('GroupLootFrame2:Show()');
   vm.run('STUB.RunFrames(0.05)');
   assert.equal(shown(vm), false);
-  assert.equal(vm.evaluate('ClaudeWoWRoll.Current()'), null);
-  assert.equal(vm.evaluate('ClaudeWoWRoll.Parked()'), null, 'the hold does not use the confirm slot');
-  assert.equal(vm.num('ClaudeWoWRoll.Waiting()'), 1);
+  assert.equal(vm.evaluate('WoWGPTRoll.Current()'), null);
+  assert.equal(vm.evaluate('WoWGPTRoll.Parked()'), null, 'the hold does not use the confirm slot');
+  assert.equal(vm.num('WoWGPTRoll.Waiting()'), 1);
   assert.equal(told(vm, LOOT_LINE), 1);
-  const seq = vm.num('ClaudeWoWDB.lastSeq');
+  const seq = vm.num('WoWGPTDB.lastSeq');
   wait(vm, 90);
-  assert.equal(vm.num('ClaudeWoWDB.lastSeq'), seq, 'the hidden timer does not pass it');
+  assert.equal(vm.num('WoWGPTDB.lastSeq'), seq, 'the hidden timer does not pass it');
   vm.run('GroupLootFrame2:Hide()');
   wait(vm, 0);
   wait(vm, 0.5);
@@ -192,13 +192,13 @@ test('a Need confirm cancelled while blocked puts the request back in the queue,
   deliverDenial(vm, ['Bash(git:*)']);
   arm(vm);
   click(vm, 'NeedButton');
-  assert.equal(vm.evaluate('STUB.popup.which'), 'CLAUDEWOW_ALLOW_ALWAYS');
-  assert.ok(vm.evaluate('ClaudeWoWRoll.Parked()') !== null);
+  assert.equal(vm.evaluate('STUB.popup.which'), 'WOWGPT_ALLOW_ALWAYS');
+  assert.ok(vm.evaluate('WoWGPTRoll.Parked()') !== null);
   vm.run('STUB.combat = true');
   cancel(vm);
   assert.equal(shown(vm), false);
-  assert.equal(vm.evaluate('ClaudeWoWRoll.Parked()'), null);
-  assert.equal(vm.num('ClaudeWoWRoll.Waiting()'), 1);
+  assert.equal(vm.evaluate('WoWGPTRoll.Parked()'), null);
+  assert.equal(vm.num('WoWGPTRoll.Waiting()'), 1);
   assert.equal(told(vm, COMBAT_LINE), 1);
   vm.run('STUB.combat = false');
   wait(vm, 0);
@@ -212,29 +212,29 @@ test('a confirm left open when a hold starts: Cancel puts its request at the hea
   const first = deliverDenial(vm, ['Bash(git:*)']);
   arm(vm);
   click(vm, 'NeedButton');
-  assert.equal(vm.evaluate('STUB.popup.which'), 'CLAUDEWOW_ALLOW_ALWAYS');
-  vm.run('STUB.combat = true; ClaudeWoW.NewChat("second")');
+  assert.equal(vm.evaluate('STUB.popup.which'), 'WOWGPT_ALLOW_ALWAYS');
+  vm.run('STUB.combat = true; WoWGPT.NewChat("second")');
   deliverDenial(vm, ['WebFetch'], 2);
-  vm.run('ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[1].id)');
-  assert.equal(vm.num('ClaudeWoWRoll.Waiting()'), 1);
+  vm.run('WoWGPT.SwitchChat(WoWGPTDB.chats[1].id)');
+  assert.equal(vm.num('WoWGPTRoll.Waiting()'), 1);
   cancel(vm);
-  assert.equal(vm.evaluate('ClaudeWoWRoll.Held()'), 'true');
-  assert.equal(vm.num('ClaudeWoWRoll.Waiting()'), 2);
+  assert.equal(vm.evaluate('WoWGPTRoll.Held()'), 'true');
+  assert.equal(vm.num('WoWGPTRoll.Waiting()'), 2);
   assert.equal(told(vm, COMBAT_LINE), 1);
   vm.run('STUB.combat = false');
   wait(vm, 0);
   wait(vm, 1);
-  assert.equal(vm.evaluate('ClaudeWoWRoll.Current().chatId'), first.chatId);
+  assert.equal(vm.evaluate('WoWGPTRoll.Current().chatId'), first.chatId);
 });
 
 test('a confirm for a queued request, cancelled inside the 1 s wait, does not show anything early or repeat the line', () => {
   const vm = newVM();
   const first = deliverDenial(vm, ['Bash(git:*)']);
-  vm.run('ClaudeWoW.NewChat("second")');
+  vm.run('WoWGPT.NewChat("second")');
   const second = deliverDenial(vm, ['WebFetch'], 2);
   arm(vm);
-  vm.run(`STUB.popup = nil; STUB.ClickLink("|Haddon:claudewow:roll:${second.chatId}:${second.id}:need|h[Need]|h")`);
-  assert.equal(vm.evaluate('STUB.popup.which'), 'CLAUDEWOW_ALLOW_ALWAYS');
+  vm.run(`STUB.popup = nil; STUB.ClickLink("|Haddon:wowgpt:roll:${second.chatId}:${second.id}:need|h[Need]|h")`);
+  assert.equal(vm.evaluate('STUB.popup.which'), 'WOWGPT_ALLOW_ALWAYS');
   vm.run('STUB.combat = true; STUB.RunFrames(0.05)');
   assert.equal(shown(vm), false);
   assert.equal(told(vm, COMBAT_LINE), 1);
@@ -245,7 +245,7 @@ test('a confirm for a queued request, cancelled inside the 1 s wait, does not sh
   assert.equal(shown(vm), false, 'not inside the 1 s wait');
   assert.equal(told(vm, COMBAT_LINE), 1, 'one line for the whole hold');
   wait(vm, 0.5);
-  assert.equal(vm.evaluate('ClaudeWoWRoll.Current().chatId'), first.chatId);
+  assert.equal(vm.evaluate('WoWGPTRoll.Current().chatId'), first.chatId);
 });
 
 test('a Need confirm accepted in combat grants nothing, says the hold line, and asks again after combat', () => {
@@ -253,24 +253,24 @@ test('a Need confirm accepted in combat grants nothing, says the hold line, and 
   const first = deliverDenial(vm, ['Bash(git:*)']);
   arm(vm);
   click(vm, 'NeedButton');
-  const seq = vm.num('ClaudeWoWDB.lastSeq');
+  const seq = vm.num('WoWGPTDB.lastSeq');
   vm.run('STUB.combat = true');
   accept(vm);
-  assert.equal(vm.num('ClaudeWoWDB.lastSeq'), seq, 'nothing is sent');
-  assert.equal(vm.evaluate('ClaudeWoWDB.outbox and ClaudeWoWDB.outbox.allow'), null);
-  assert.equal(vm.evaluate('ClaudeWoWRoll.Parked()'), null);
-  assert.equal(vm.num('ClaudeWoWRoll.Waiting()'), 1);
+  assert.equal(vm.num('WoWGPTDB.lastSeq'), seq, 'nothing is sent');
+  assert.equal(vm.evaluate('WoWGPTDB.outbox and WoWGPTDB.outbox.allow'), null);
+  assert.equal(vm.evaluate('WoWGPTRoll.Parked()'), null);
+  assert.equal(vm.num('WoWGPTRoll.Waiting()'), 1);
   assert.equal(told(vm, COMBAT_LINE), 1);
-  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history].denied[1]'), 'Bash(git:*)', 'the denial stays open');
+  assert.equal(vm.evaluate('WoWGPTDB.chats[1].history[#WoWGPTDB.chats[1].history].denied[1]'), 'Bash(git:*)', 'the denial stays open');
   vm.run('STUB.combat = false');
   wait(vm, 0);
   wait(vm, 1);
-  assert.equal(vm.evaluate('ClaudeWoWRoll.Current().chatId'), first.chatId);
+  assert.equal(vm.evaluate('WoWGPTRoll.Current().chatId'), first.chatId);
   arm(vm);
   vm.run('STUB.popup = nil');
   click(vm, 'NeedButton');
   accept(vm);
-  assert.ok(vm.evaluate('ClaudeWoWDB.outbox.allow') !== null, 'after combat the confirm grants');
+  assert.ok(vm.evaluate('WoWGPTDB.outbox.allow') !== null, 'after combat the confirm grants');
 });
 
 test('a Need confirm accepted while a loot roll is open grants nothing', () => {
@@ -278,26 +278,26 @@ test('a Need confirm accepted while a loot roll is open grants nothing', () => {
   deliverDenial(vm, ['Bash(git:*)']);
   arm(vm);
   click(vm, 'NeedButton');
-  const seq = vm.num('ClaudeWoWDB.lastSeq');
+  const seq = vm.num('WoWGPTDB.lastSeq');
   vm.run('GroupLootFrame3:Show()');
   accept(vm);
-  assert.equal(vm.num('ClaudeWoWDB.lastSeq'), seq);
+  assert.equal(vm.num('WoWGPTDB.lastSeq'), seq);
   assert.equal(told(vm, LOOT_LINE), 1);
 });
 
 test('a link Greed 0.2 s after the request shows grants nothing', () => {
   const vm = newVM();
   const { chatId, id } = deliverDenial(vm, ['Bash(git:*)']);
-  const seq = vm.num('ClaudeWoWDB.lastSeq');
+  const seq = vm.num('WoWGPTDB.lastSeq');
   vm.run('STUB.now = STUB.now + 0.2');
-  vm.run(`STUB.ClickLink("|Haddon:claudewow:roll:${chatId}:${id}:greed|h[Greed]|h")`);
-  vm.run(`STUB.popup = nil; STUB.ClickLink("|Haddon:claudewow:roll:${chatId}:${id}:need|h[Need]|h")`);
-  assert.equal(vm.num('ClaudeWoWDB.lastSeq'), seq);
+  vm.run(`STUB.ClickLink("|Haddon:wowgpt:roll:${chatId}:${id}:greed|h[Greed]|h")`);
+  vm.run(`STUB.popup = nil; STUB.ClickLink("|Haddon:wowgpt:roll:${chatId}:${id}:need|h[Need]|h")`);
+  assert.equal(vm.num('WoWGPTDB.lastSeq'), seq);
   assert.equal(grantedOnce(vm), false);
   assert.equal(vm.evaluate('STUB.popup'), null);
   assert.equal(shown(vm), true);
   vm.run('STUB.now = STUB.now + 0.3');
-  vm.run(`STUB.ClickLink("|Haddon:claudewow:roll:${chatId}:${id}:greed|h[Greed]|h")`);
+  vm.run(`STUB.ClickLink("|Haddon:wowgpt:roll:${chatId}:${id}:greed|h[Greed]|h")`);
   assert.equal(grantedOnce(vm), true, 'armed, the link grants');
 });
 
@@ -305,32 +305,32 @@ test('a link Greed or Need during a combat hold grants nothing and says the hold
   const vm = newVM();
   vm.run('STUB.combat = true');
   const { chatId, id } = deliverDenial(vm, ['Bash(git:*)']);
-  const seq = vm.num('ClaudeWoWDB.lastSeq');
-  vm.run(`STUB.ClickLink("|Haddon:claudewow:roll:${chatId}:${id}:greed|h[Greed]|h")`);
-  vm.run(`STUB.popup = nil; STUB.ClickLink("|Haddon:claudewow:roll:${chatId}:${id}:need|h[Need]|h")`);
-  assert.equal(vm.num('ClaudeWoWDB.lastSeq'), seq);
+  const seq = vm.num('WoWGPTDB.lastSeq');
+  vm.run(`STUB.ClickLink("|Haddon:wowgpt:roll:${chatId}:${id}:greed|h[Greed]|h")`);
+  vm.run(`STUB.popup = nil; STUB.ClickLink("|Haddon:wowgpt:roll:${chatId}:${id}:need|h[Need]|h")`);
+  assert.equal(vm.num('WoWGPTDB.lastSeq'), seq);
   assert.equal(grantedOnce(vm), false);
   assert.equal(vm.evaluate('STUB.popup'), null);
   assert.equal(told(vm, COMBAT_LINE), 3, 'the hold line, then once per refused link');
-  assert.equal(vm.num('ClaudeWoWRoll.Waiting()'), 1);
+  assert.equal(vm.num('WoWGPTRoll.Waiting()'), 1);
   vm.run('STUB.combat = false');
   wait(vm, 0);
   wait(vm, 0.5);
-  vm.run(`STUB.ClickLink("|Haddon:claudewow:roll:${chatId}:${id}:greed|h[Greed]|h")`);
+  vm.run(`STUB.ClickLink("|Haddon:wowgpt:roll:${chatId}:${id}:greed|h[Greed]|h")`);
   assert.equal(grantedOnce(vm), false, 'not inside the 1 s wait either');
-  vm.run(`STUB.ClickLink("|Haddon:claudewow:roll:${chatId}:${id}:pass|h[Pass]|h")`);
-  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history].text'), 'Passed on: Bash(git:*)', 'Pass still works');
+  vm.run(`STUB.ClickLink("|Haddon:wowgpt:roll:${chatId}:${id}:pass|h[Pass]|h")`);
+  assert.equal(vm.evaluate('WoWGPTDB.chats[1].history[#WoWGPTDB.chats[1].history].text'), 'Passed on: Bash(git:*)', 'Pass still works');
 });
 
 test('a link Greed or Need with the roll off, in combat, grants nothing and says it is not allowed now, not that it waits', () => {
   const vm = newVM();
-  vm.run('SlashCmdList.CLAUDE("config roll off")');
+  vm.run('SlashCmdList.WOWGPT("config roll off")');
   const { chatId, id } = deliverDenial(vm, ['Bash(git:*)']);
   vm.run('STUB.now = STUB.now + 1; STUB.combat = true; STUB.popup = nil');
-  const seq = vm.num('ClaudeWoWDB.lastSeq');
-  vm.run(`STUB.ClickLink("|Haddon:claudewow:roll:${chatId}:${id}:greed|h[Greed]|h")`);
-  vm.run(`STUB.ClickLink("|Haddon:claudewow:roll:${chatId}:${id}:need|h[Need]|h")`);
-  assert.equal(vm.num('ClaudeWoWDB.lastSeq'), seq);
+  const seq = vm.num('WoWGPTDB.lastSeq');
+  vm.run(`STUB.ClickLink("|Haddon:wowgpt:roll:${chatId}:${id}:greed|h[Greed]|h")`);
+  vm.run(`STUB.ClickLink("|Haddon:wowgpt:roll:${chatId}:${id}:need|h[Need]|h")`);
+  assert.equal(vm.num('WoWGPTDB.lastSeq'), seq);
   assert.equal(vm.evaluate('STUB.popup'), null, 'no confirm opens');
   assert.equal(told(vm, NOT_NOW_LINE), 2);
   assert.equal(told(vm, COMBAT_LINE), 0, 'nothing is queued, so it never says it waits');
@@ -343,22 +343,22 @@ const allowButton = vm => {
 
 test('the transcript Allow & retry button in combat: the confirm cannot grant, and a live chat grants nothing', () => {
   const vm = newVM();
-  vm.run('SlashCmdList.CLAUDE("config roll off")');
+  vm.run('SlashCmdList.WOWGPT("config roll off")');
   deliverDenial(vm, ['Bash(git:*)']);
   allowButton(vm);
-  const seq = vm.num('ClaudeWoWDB.lastSeq');
+  const seq = vm.num('WoWGPTDB.lastSeq');
   vm.run('STUB.now = STUB.now + 1; STUB.combat = true; STUB.popup = nil; BTN.scripts.OnClick(BTN)');
   assert.equal(vm.evaluate('STUB.popup'), null, 'a confirm that cannot grant never opens');
-  assert.equal(vm.num('ClaudeWoWDB.lastSeq'), seq);
+  assert.equal(vm.num('WoWGPTDB.lastSeq'), seq);
   assert.equal(told(vm, NOT_NOW_LINE), 1);
 
   const live = newVM();
-  live.run('SlashCmdList.CLAUDE("config roll off"); ClaudeWoWDB.chats[1].liveTarget = "abc123"');
+  live.run('SlashCmdList.WOWGPT("config roll off"); WoWGPTDB.chats[1].liveTarget = "abc123"');
   deliverDenial(live, ['Bash(git:*)']);
   allowButton(live);
-  const before = live.num('ClaudeWoWDB.lastSeq');
+  const before = live.num('WoWGPTDB.lastSeq');
   live.run('STUB.now = STUB.now + 1; STUB.combat = true; BTN.scripts.OnClick(BTN)');
-  assert.equal(live.num('ClaudeWoWDB.lastSeq'), before, 'a live chat sends nothing in combat');
+  assert.equal(live.num('WoWGPTDB.lastSeq'), before, 'a live chat sends nothing in combat');
   assert.equal(grantedOnce(live), false);
   assert.equal(told(live, NOT_NOW_LINE), 1);
   live.run('STUB.combat = false; STUB.FireEvent("PLAYER_REGEN_ENABLED"); STUB.now = STUB.now + 1; BTN.scripts.OnClick(BTN)');
@@ -368,13 +368,13 @@ test('the transcript Allow & retry button in combat: the confirm cannot grant, a
 test('a queued request: its [Greed] link 0.2 s after the reply arrived grants nothing and says click again', () => {
   const vm = newVM();
   deliverDenial(vm, ['Bash(rm:*)']);
-  vm.run('ClaudeWoW.NewChat("second")');
+  vm.run('WoWGPT.NewChat("second")');
   const second = deliverDenial(vm, ['WebFetch'], 2);
-  assert.equal(vm.num('ClaudeWoWRoll.Waiting()'), 1);
-  const seq = vm.num('ClaudeWoWDB.lastSeq');
-  const link = `|Haddon:claudewow:roll:${second.chatId}:${second.id}:greed|h[Greed]|h`;
+  assert.equal(vm.num('WoWGPTRoll.Waiting()'), 1);
+  const seq = vm.num('WoWGPTDB.lastSeq');
+  const link = `|Haddon:wowgpt:roll:${second.chatId}:${second.id}:greed|h[Greed]|h`;
   vm.run(`STUB.now = STUB.now + 0.2; STUB.ClickLink("${link}")`);
-  assert.equal(vm.num('ClaudeWoWDB.lastSeq'), seq);
+  assert.equal(vm.num('WoWGPTDB.lastSeq'), seq);
   assert.equal(grantedOnce(vm), false);
   assert.equal(told(vm, TOO_SOON_LINE), 1);
   vm.run(`STUB.now = STUB.now + 0.3; STUB.ClickLink("${link}")`);
@@ -383,12 +383,12 @@ test('a queued request: its [Greed] link 0.2 s after the reply arrived grants no
 
 test('the live chat reply button 0.2 s after the reply arrived grants nothing', () => {
   const vm = newVM();
-  vm.run('SlashCmdList.CLAUDE("config roll off"); ClaudeWoWDB.chats[1].liveTarget = "abc123"');
+  vm.run('SlashCmdList.WOWGPT("config roll off"); WoWGPTDB.chats[1].liveTarget = "abc123"');
   deliverDenial(vm, ['Bash(git:*)']);
   allowButton(vm);
-  const seq = vm.num('ClaudeWoWDB.lastSeq');
+  const seq = vm.num('WoWGPTDB.lastSeq');
   vm.run('STUB.now = STUB.now + 0.2; BTN.scripts.OnClick(BTN)');
-  assert.equal(vm.num('ClaudeWoWDB.lastSeq'), seq);
+  assert.equal(vm.num('WoWGPTDB.lastSeq'), seq);
   assert.equal(grantedOnce(vm), false);
   assert.equal(told(vm, TOO_SOON_LINE), 1);
   vm.run('STUB.now = STUB.now + 0.3; BTN.scripts.OnClick(BTN)');
@@ -397,18 +397,18 @@ test('the live chat reply button 0.2 s after the reply arrived grants nothing', 
 
 test('the reply button 0.2 s after the reply arrived opens no confirm; 0.5 s after, the confirm opens and grants', () => {
   const vm = newVM();
-  vm.run('SlashCmdList.CLAUDE("config roll off")');
+  vm.run('SlashCmdList.WOWGPT("config roll off")');
   deliverDenial(vm, ['Bash(git:*)']);
   allowButton(vm);
-  const seq = vm.num('ClaudeWoWDB.lastSeq');
+  const seq = vm.num('WoWGPTDB.lastSeq');
   vm.run('STUB.popup = nil; STUB.now = STUB.now + 0.2; BTN.scripts.OnClick(BTN)');
   assert.equal(vm.evaluate('STUB.popup'), null);
-  assert.equal(vm.num('ClaudeWoWDB.lastSeq'), seq);
+  assert.equal(vm.num('WoWGPTDB.lastSeq'), seq);
   assert.equal(told(vm, TOO_SOON_LINE), 1);
   vm.run('STUB.now = STUB.now + 0.3; BTN.scripts.OnClick(BTN)');
-  assert.equal(vm.evaluate('STUB.popup.which'), 'CLAUDEWOW_ALLOW_ALWAYS');
+  assert.equal(vm.evaluate('STUB.popup.which'), 'WOWGPT_ALLOW_ALWAYS');
   accept(vm);
-  assert.ok(vm.evaluate('ClaudeWoWDB.outbox.allow') !== null);
+  assert.ok(vm.evaluate('WoWGPTDB.outbox.allow') !== null);
 });
 
 for (const [label, block, clear] of [
@@ -422,20 +422,20 @@ for (const [label, block, clear] of [
     const first = deliverDenial(vm, ['Bash(git:*)']);
     arm(vm);
     click(vm, 'NeedButton');
-    assert.equal(vm.evaluate('STUB.popup.which'), 'CLAUDEWOW_ALLOW_ALWAYS');
-    const seq = vm.num('ClaudeWoWDB.lastSeq');
+    assert.equal(vm.evaluate('STUB.popup.which'), 'WOWGPT_ALLOW_ALWAYS');
+    const seq = vm.num('WoWGPTDB.lastSeq');
     vm.run(block);
     vm.run(clear);
     vm.run('STUB.now = STUB.now + 0.3');
     accept(vm);
-    assert.equal(vm.num('ClaudeWoWDB.lastSeq'), seq, 'nothing is sent');
-    assert.equal(vm.evaluate('ClaudeWoWDB.outbox and ClaudeWoWDB.outbox.allow'), null);
+    assert.equal(vm.num('WoWGPTDB.lastSeq'), seq, 'nothing is sent');
+    assert.equal(vm.evaluate('WoWGPTDB.outbox and WoWGPTDB.outbox.allow'), null);
     assert.equal(told(vm, TOO_SOON_LINE), 1);
-    assert.equal(vm.evaluate('ClaudeWoWRoll.Current() and ClaudeWoWRoll.Current().chatId'), first.chatId, 'the roll is offered again');
-    vm.run('STUB.now = STUB.now + 1; ClaudeWoWRoll.Update(); STUB.popup = nil');
+    assert.equal(vm.evaluate('WoWGPTRoll.Current() and WoWGPTRoll.Current().chatId'), first.chatId, 'the roll is offered again');
+    vm.run('STUB.now = STUB.now + 1; WoWGPTRoll.Update(); STUB.popup = nil');
     click(vm, 'NeedButton');
     accept(vm);
-    assert.ok(vm.evaluate('ClaudeWoWDB.outbox.allow') !== null, 'after the wait it grants');
+    assert.ok(vm.evaluate('WoWGPTDB.outbox.allow') !== null, 'after the wait it grants');
   });
 }
 
@@ -456,13 +456,13 @@ test('an armed roll clicked 0.3 s after combat ended says click again and grants
 test('a queued request shown later: its link Greed 0.2 s after the roll shows grants nothing, though the reply is older', () => {
   const vm = newVM();
   deliverDenial(vm, ['Bash(rm:*)']);
-  vm.run('ClaudeWoW.NewChat("second")');
+  vm.run('WoWGPT.NewChat("second")');
   const second = deliverDenial(vm, ['WebFetch'], 2);
   arm(vm);
   vm.run('STUB.now = STUB.now + 2');
   click(vm, 'PassButton');
-  assert.equal(vm.evaluate('ClaudeWoWRoll.Current().chatId'), second.chatId);
-  vm.run(`STUB.now = STUB.now + 0.2; STUB.ClickLink("|Haddon:claudewow:roll:${second.chatId}:${second.id}:greed|h[Greed]|h")`);
+  assert.equal(vm.evaluate('WoWGPTRoll.Current().chatId'), second.chatId);
+  vm.run(`STUB.now = STUB.now + 0.2; STUB.ClickLink("|Haddon:wowgpt:roll:${second.chatId}:${second.id}:greed|h[Greed]|h")`);
   assert.equal(grantedOnce(vm), false);
   assert.equal(told(vm, TOO_SOON_LINE), 1);
 });
@@ -470,16 +470,16 @@ test('a queued request shown later: its link Greed 0.2 s after the roll shows gr
 test('a confirm opened from a link for a queued request keeps the blocker watched, so Always Allow 0.3 s after a loot frame closes grants nothing', () => {
   const vm = newVM();
   deliverDenial(vm, ['Bash(rm:*)']);
-  vm.run('ClaudeWoW.NewChat("second")');
+  vm.run('WoWGPT.NewChat("second")');
   const second = deliverDenial(vm, ['WebFetch'], 2);
-  vm.run(`STUB.now = STUB.now + 1; STUB.popup = nil; STUB.ClickLink("|Haddon:claudewow:roll:${second.chatId}:${second.id}:need|h[Need]|h")`);
-  assert.equal(vm.evaluate('STUB.popup.which'), 'CLAUDEWOW_ALLOW_ALWAYS');
-  assert.equal(vm.evaluate('ClaudeWoWRoll.Parked()'), null, 'nothing is parked; only the confirm is open');
-  const seq = vm.num('ClaudeWoWDB.lastSeq');
+  vm.run(`STUB.now = STUB.now + 1; STUB.popup = nil; STUB.ClickLink("|Haddon:wowgpt:roll:${second.chatId}:${second.id}:need|h[Need]|h")`);
+  assert.equal(vm.evaluate('STUB.popup.which'), 'WOWGPT_ALLOW_ALWAYS');
+  assert.equal(vm.evaluate('WoWGPTRoll.Parked()'), null, 'nothing is parked; only the confirm is open');
+  const seq = vm.num('WoWGPTDB.lastSeq');
   vm.run('STUB.Tick(); GroupLootFrame4:Show(); STUB.Tick(); GroupLootFrame4:Hide(); STUB.now = STUB.now + 0.3');
   accept(vm);
-  assert.equal(vm.num('ClaudeWoWDB.lastSeq'), seq);
-  assert.equal(vm.evaluate('ClaudeWoWDB.outbox and ClaudeWoWDB.outbox.allow'), null);
+  assert.equal(vm.num('WoWGPTDB.lastSeq'), seq);
+  assert.equal(vm.evaluate('WoWGPTDB.outbox and WoWGPTDB.outbox.allow'), null);
   assert.equal(told(vm, TOO_SOON_LINE), 1);
 });
 
@@ -488,9 +488,9 @@ test('a link Greed after the 1 s settle but before the next tick releases the ho
   vm.run('STUB.combat = true');
   const { chatId, id } = deliverDenial(vm, ['Bash(git:*)']);
   vm.run('STUB.Tick(); STUB.combat = false; STUB.now = STUB.now + 0.9; STUB.Tick(); STUB.now = STUB.now + 1.1');
-  assert.equal(vm.evaluate('ClaudeWoWRoll.Held()'), 'true');
-  assert.equal(vm.evaluate('ClaudeWoWRoll.Settling()'), 'false');
-  vm.run(`STUB.ClickLink("|Haddon:claudewow:roll:${chatId}:${id}:greed|h[Greed]|h")`);
+  assert.equal(vm.evaluate('WoWGPTRoll.Held()'), 'true');
+  assert.equal(vm.evaluate('WoWGPTRoll.Settling()'), 'false');
+  vm.run(`STUB.ClickLink("|Haddon:wowgpt:roll:${chatId}:${id}:greed|h[Greed]|h")`);
   assert.equal(grantedOnce(vm), false);
   assert.equal(told(vm, COMBAT_LINE), 2, 'the hold line, then once for the refused link');
 });
@@ -503,7 +503,7 @@ test('a reply with an uncached item link: [Greed] clicked 0.2 s after the deferr
   assert.doesNotMatch(lines(), /needs permission/, 'the roll line waits for the item');
   for (let i = 0; i < 3; i++) vm.run('STUB.now = STUB.now + 0.5; STUB.RunTimers()');
   assert.match(lines(), /needs permission/, 'the roll line is written about 1.5 s later');
-  const link = `|Haddon:claudewow:roll:${chatId}:${id}:greed|h[Greed]|h`;
+  const link = `|Haddon:wowgpt:roll:${chatId}:${id}:greed|h[Greed]|h`;
   vm.run(`STUB.now = STUB.now + 0.2; STUB.ClickLink("${link}")`);
   assert.equal(grantedOnce(vm), false);
   assert.match(lines(), /Click again in a moment\./, 'the refusal goes to the chat tab');
@@ -513,27 +513,27 @@ test('a reply with an uncached item link: [Greed] clicked 0.2 s after the deferr
 
 test('two mirrored denials in one chat: the second has its own 0.5 s', () => {
   const vm = newVM();
-  vm.run('SlashCmdList.CLAUDE("config roll off"); SlashCmdList.CLAUDE("")');
-  const chatId = vm.evaluate('ClaudeWoWDB.chats[1].id');
-  vm.run(`ClaudeWoW.ApplyMirror({ { chat = "${chatId}", seq = 1, role = "assistant", text = "first", denied = { "Bash(git:*)" } } })`);
+  vm.run('SlashCmdList.WOWGPT("config roll off"); SlashCmdList.WOWGPT("")');
+  const chatId = vm.evaluate('WoWGPTDB.chats[1].id');
+  vm.run(`WoWGPT.ApplyMirror({ { chat = "${chatId}", seq = 1, role = "assistant", text = "first", denied = { "Bash(git:*)" } } })`);
   vm.run('STUB.now = STUB.now + 2');
-  vm.run(`ClaudeWoW.ApplyMirror({ { chat = "${chatId}", seq = 2, role = "assistant", text = "second", denied = { "Bash(rm:*)" } } })`);
+  vm.run(`WoWGPT.ApplyMirror({ { chat = "${chatId}", seq = 2, role = "assistant", text = "second", denied = { "Bash(rm:*)" } } })`);
   allowButton(vm);
   assert.equal(vm.evaluate('BTN.rules[1]'), 'Bash(rm:*)');
   vm.run('STUB.now = STUB.now + 0.2; STUB.popup = nil; BTN.scripts.OnClick(BTN)');
   assert.equal(vm.evaluate('STUB.popup'), null, 'no confirm 0.2 s after the second mirrored denial');
   assert.equal(told(vm, TOO_SOON_LINE), 1);
   vm.run('STUB.now = STUB.now + 0.3; BTN.scripts.OnClick(BTN)');
-  assert.equal(vm.evaluate('STUB.popup.which'), 'CLAUDEWOW_ALLOW_ALWAYS');
+  assert.equal(vm.evaluate('STUB.popup.which'), 'WOWGPT_ALLOW_ALWAYS');
 });
 
 test('a denial restored from before a reload is stamped when the roll shows, so the first click 10 s later grants', () => {
   const vm = newVM();
   vm.run(
-    'table.insert(ClaudeWoWDB.chats[1].history, { role = "assistant", id = 77, text = "restored", denied = { "Bash(git:*)" }, t = time() }); ClaudeWoW.Render()',
+    'table.insert(WoWGPTDB.chats[1].history, { role = "assistant", id = 77, text = "restored", denied = { "Bash(git:*)" }, t = time() }); WoWGPT.Render()',
   );
   assert.equal(shown(vm), true);
-  vm.run('STUB.now = STUB.now + 10; ClaudeWoWRoll.Update()');
+  vm.run('STUB.now = STUB.now + 10; WoWGPTRoll.Update()');
   click(vm, 'GreedButton');
   assert.equal(grantedOnce(vm), true, 'the first click grants');
   assert.equal(told(vm, TOO_SOON_LINE), 0);
@@ -541,13 +541,13 @@ test('a denial restored from before a reload is stamped when the roll shows, so 
 
 test('a restored denial drawn in the window with the roll off: the first click 10 s later opens the confirm', () => {
   const vm = newVM();
-  vm.run('SlashCmdList.CLAUDE("config roll off"); SlashCmdList.CLAUDE("")');
+  vm.run('SlashCmdList.WOWGPT("config roll off"); SlashCmdList.WOWGPT("")');
   vm.run(
-    'table.insert(ClaudeWoWDB.chats[1].history, { role = "assistant", id = 77, text = "restored", denied = { "Bash(git:*)" }, t = time() }); ClaudeWoW.Render()',
+    'table.insert(WoWGPTDB.chats[1].history, { role = "assistant", id = 77, text = "restored", denied = { "Bash(git:*)" }, t = time() }); WoWGPT.Render()',
   );
   allowButton(vm);
   vm.run('STUB.now = STUB.now + 10; STUB.popup = nil; BTN.scripts.OnClick(BTN)');
-  assert.equal(vm.evaluate('STUB.popup.which'), 'CLAUDEWOW_ALLOW_ALWAYS');
+  assert.equal(vm.evaluate('STUB.popup.which'), 'WOWGPT_ALLOW_ALWAYS');
   assert.equal(told(vm, TOO_SOON_LINE), 0);
 });
 
@@ -556,11 +556,11 @@ test('a loot frame that closes between two watch samples: the 1 s counts from th
   deliverDenial(vm, ['Bash(git:*)']);
   arm(vm);
   click(vm, 'NeedButton');
-  const seq = vm.num('ClaudeWoWDB.lastSeq');
+  const seq = vm.num('WoWGPTDB.lastSeq');
   vm.run('GroupLootFrame1:Show(); STUB.Tick(); STUB.now = STUB.now + 0.2; GroupLootFrame1:Hide(); STUB.now = STUB.now + 0.05; STUB.Tick()');
   vm.run('STUB.now = STUB.now + 0.8');
   accept(vm);
-  assert.equal(vm.num('ClaudeWoWDB.lastSeq'), seq, '1.05 s after the last blocked sample but 0.8 s after the first clear one: nothing');
+  assert.equal(vm.num('WoWGPTDB.lastSeq'), seq, '1.05 s after the last blocked sample but 0.8 s after the first clear one: nothing');
   assert.equal(told(vm, TOO_SOON_LINE), 1);
 });
 
@@ -568,10 +568,10 @@ test('a Greed click that lands after the timer ran out, before the next update, 
   const vm = newVM();
   deliverDenial(vm, ['Bash(git:*)']);
   arm(vm);
-  vm.run('STUB.now = ClaudeWoWRoll.Current().expiresAt + 0.01');
+  vm.run('STUB.now = WoWGPTRoll.Current().expiresAt + 0.01');
   click(vm, 'GreedButton');
   assert.equal(grantedOnce(vm), false);
-  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history].text'), 'Passed on: Bash(git:*) (the roll timed out)');
+  assert.equal(vm.evaluate('WoWGPTDB.chats[1].history[#WoWGPTDB.chats[1].history].text'), 'Passed on: Bash(git:*) (the roll timed out)');
   assert.equal(shown(vm), false);
 });
 
@@ -592,14 +592,14 @@ test('an armed click right after combat starts, before the next update, grants n
     const vm = newVM();
     deliverDenial(vm, ['Bash(git:*)']);
     arm(vm);
-    const seq = vm.num('ClaudeWoWDB.lastSeq');
+    const seq = vm.num('WoWGPTDB.lastSeq');
     vm.run('STUB.combat = true; STUB.popup = nil');
     click(vm, button);
-    assert.equal(vm.num('ClaudeWoWDB.lastSeq'), seq, button);
+    assert.equal(vm.num('WoWGPTDB.lastSeq'), seq, button);
     assert.equal(grantedOnce(vm), false, button);
     assert.equal(vm.evaluate('STUB.popup'), null, button);
     assert.equal(shown(vm), false, button);
-    assert.equal(vm.num('ClaudeWoWRoll.Waiting()'), 1, button);
+    assert.equal(vm.num('WoWGPTRoll.Waiting()'), 1, button);
     assert.equal(told(vm, COMBAT_LINE), 1, button);
   }
 });
@@ -608,16 +608,16 @@ test('a link Greed on the shown request right after combat starts grants nothing
   const vm = newVM();
   const { chatId, id } = deliverDenial(vm, ['Bash(git:*)']);
   arm(vm);
-  const seq = vm.num('ClaudeWoWDB.lastSeq');
+  const seq = vm.num('WoWGPTDB.lastSeq');
   vm.run('STUB.combat = true');
-  vm.run(`STUB.ClickLink("|Haddon:claudewow:roll:${chatId}:${id}:greed|h[Greed]|h")`);
-  assert.equal(vm.num('ClaudeWoWDB.lastSeq'), seq);
+  vm.run(`STUB.ClickLink("|Haddon:wowgpt:roll:${chatId}:${id}:greed|h[Greed]|h")`);
+  assert.equal(vm.num('WoWGPTDB.lastSeq'), seq);
   assert.equal(shown(vm), false);
-  assert.equal(vm.num('ClaudeWoWRoll.Waiting()'), 1);
+  assert.equal(vm.num('WoWGPTRoll.Waiting()'), 1);
   assert.equal(told(vm, COMBAT_LINE), 1);
 });
 
-test('the hold line goes through ClaudeWoW.SayAboutDenial for the held chat', () => {
+test('the hold line goes through WoWGPT.SayAboutDenial for the held chat', () => {
   const vm = newVM();
   vm.run('STUB.combat = true');
   const { chatId } = deliverDenial(vm, ['Bash(git:*)']);
@@ -629,9 +629,9 @@ test('the hold line goes through ClaudeWoW.SayAboutDenial for the held chat', ()
 test('a GroupLootFrame that is shown but not visible (its parent hidden) does not block', () => {
   const vm = newVM();
   vm.run('GroupLootFrame2:Show(); GroupLootFrame2.IsVisible = function() return false end');
-  assert.equal(vm.evaluate('ClaudeWoWRoll.Blocked()'), null);
+  assert.equal(vm.evaluate('WoWGPTRoll.Blocked()'), null);
   vm.run('GroupLootFrame2.IsVisible = function() return true end');
-  assert.equal(vm.evaluate('ClaudeWoWRoll.Blocked()'), 'loot');
+  assert.equal(vm.evaluate('WoWGPTRoll.Blocked()'), 'loot');
 });
 
 test('the hold ticker is cancelled on release and on CloseAll', () => {
@@ -647,7 +647,7 @@ test('the hold ticker is cancelled on release and on CloseAll', () => {
   assert.equal(vm.num('#STUB.tickers'), base, 'released');
   vm.run('STUB.combat = true; STUB.RunFrames(0.05)');
   assert.equal(vm.num('#STUB.tickers'), base + 1);
-  vm.run('ClaudeWoWRoll.CloseAll()');
+  vm.run('WoWGPTRoll.CloseAll()');
   assert.equal(vm.num('#STUB.tickers'), base, 'closed');
 });
 
@@ -655,75 +655,75 @@ test('staggered requests keep their order through holds, and each shows with its
   const vm = newVM();
   vm.run('STUB.combat = true');
   const first = deliverDenial(vm, ['Bash(rm:*)']);
-  vm.run('ClaudeWoW.NewChat("second")');
+  vm.run('WoWGPT.NewChat("second")');
   const second = deliverDenial(vm, ['WebFetch'], 2);
-  assert.equal(vm.num('ClaudeWoWRoll.Waiting()'), 2);
+  assert.equal(vm.num('WoWGPTRoll.Waiting()'), 2);
   assert.equal(told(vm, COMBAT_LINE), 1);
   vm.run('STUB.combat = false');
   wait(vm, 0);
   wait(vm, 1);
-  assert.equal(vm.evaluate('ClaudeWoWRoll.Current().chatId'), first.chatId);
-  assert.equal(vm.num('ClaudeWoWRoll.Waiting()'), 1);
+  assert.equal(vm.evaluate('WoWGPTRoll.Current().chatId'), first.chatId);
+  assert.equal(vm.num('WoWGPTRoll.Waiting()'), 1);
   vm.run('STUB.combat = true');
   vm.run('STUB.RunFrames(0.05)');
   assert.equal(shown(vm), false);
-  assert.equal(vm.num('ClaudeWoWRoll.Waiting()'), 2);
+  assert.equal(vm.num('WoWGPTRoll.Waiting()'), 2);
   assert.equal(told(vm, COMBAT_LINE), 2, 'a new hold says it again');
   vm.run('STUB.combat = false');
   wait(vm, 0);
   wait(vm, 1);
-  assert.equal(vm.evaluate('ClaudeWoWRoll.Current().chatId'), first.chatId, 'the hidden one comes back first');
+  assert.equal(vm.evaluate('WoWGPTRoll.Current().chatId'), first.chatId, 'the hidden one comes back first');
   arm(vm);
   click(vm, 'PassButton');
-  assert.equal(vm.evaluate('ClaudeWoWRoll.Current().chatId'), second.chatId);
+  assert.equal(vm.evaluate('WoWGPTRoll.Current().chatId'), second.chatId);
   assert.equal(timeLeft(vm), 60);
 });
 
 test('a click in the first 0.5 s after the request shows grants nothing; the buttons start disabled', () => {
   const vm = newVM();
   deliverDenial(vm, ['Bash(rm:*)']);
-  assert.equal(vm.evaluate('ClaudeWoWRollFrame.Header.text'), 'Azeroth Companion asks');
+  assert.equal(vm.evaluate('WoWGPTRollFrame.Header.text'), 'WoWGPT asks');
   for (const name of ['GreedButton', 'NeedButton', 'PassButton']) {
-    assert.equal(vm.evaluate(`ClaudeWoWRollFrame.${name}:IsEnabled()`), 'false', name);
+    assert.equal(vm.evaluate(`WoWGPTRollFrame.${name}:IsEnabled()`), 'false', name);
   }
-  const seq = vm.num('ClaudeWoWDB.lastSeq');
+  const seq = vm.num('WoWGPTDB.lastSeq');
   vm.run('STUB.popup = nil');
   for (const name of ['GreedButton', 'NeedButton', 'PassButton']) click(vm, name);
   vm.run('STUB.now = STUB.now + 0.4');
   for (const name of ['GreedButton', 'NeedButton', 'PassButton']) click(vm, name);
-  assert.equal(vm.num('ClaudeWoWDB.lastSeq'), seq);
+  assert.equal(vm.num('WoWGPTDB.lastSeq'), seq);
   assert.equal(grantedOnce(vm), false);
   assert.equal(vm.evaluate('STUB.popup'), null);
   assert.equal(shown(vm), true);
-  vm.run('STUB.now = STUB.now + 0.1; ClaudeWoWRoll.Update()');
+  vm.run('STUB.now = STUB.now + 0.1; WoWGPTRoll.Update()');
   for (const name of ['GreedButton', 'NeedButton', 'PassButton']) {
-    assert.equal(vm.evaluate(`ClaudeWoWRollFrame.${name}:IsEnabled()`), 'true', name);
+    assert.equal(vm.evaluate(`WoWGPTRollFrame.${name}:IsEnabled()`), 'true', name);
   }
   click(vm, 'GreedButton');
   assert.equal(grantedOnce(vm), true);
 });
 
 for (const [label, change, field, value] of [
-  ['agent', 'ClaudeWoWDB.chats[1].agent = "grok"', 'target', 'grok'],
-  ['plugin', 'ClaudeWoWDB.chats[1].plugin = "ask"', 'plugin', 'ask'],
+  ['agent', 'WoWGPTDB.chats[1].agent = "grok"', 'target', 'grok'],
+  ['plugin', 'WoWGPTDB.chats[1].plugin = "ask"', 'plugin', 'ask'],
 ]) {
   test(`${label} drift during a hold: Greed rebuilds the request for the new ${label} and grants nothing`, () => {
     const vm = newVM();
-    vm.run('ClaudeWoWDB.chats[1].agent = "claude"; ClaudeWoWDB.chats[1].plugin = "claude-code"');
+    vm.run('WoWGPTDB.chats[1].agent = "claude"; WoWGPTDB.chats[1].plugin = "claude-code"');
     vm.run('STUB.combat = true');
     deliverDenial(vm, ['Bash(git:*)']);
     vm.run(change);
     vm.run('STUB.combat = false');
     vm.run('STUB.Tick(); STUB.now = STUB.now + 1; STUB.Tick()');
     assert.equal(shown(vm), true);
-    assert.equal(vm.evaluate(`ClaudeWoWRoll.Current().${field}`), field === 'target' ? 'claude' : 'claude-code', 'the held offer shows before any update');
-    const seq = vm.num('ClaudeWoWDB.lastSeq');
+    assert.equal(vm.evaluate(`WoWGPTRoll.Current().${field}`), field === 'target' ? 'claude' : 'claude-code', 'the held offer shows before any update');
+    const seq = vm.num('WoWGPTDB.lastSeq');
     vm.run('STUB.now = STUB.now + 0.5');
     click(vm, 'GreedButton');
-    assert.equal(vm.num('ClaudeWoWDB.lastSeq'), seq, 'nothing is sent');
+    assert.equal(vm.num('WoWGPTDB.lastSeq'), seq, 'nothing is sent');
     assert.equal(grantedOnce(vm), false);
     assert.equal(shown(vm), true, 'the rebuilt request shows');
-    assert.equal(vm.evaluate(`ClaudeWoWRoll.Current().${field}`), value);
+    assert.equal(vm.evaluate(`WoWGPTRoll.Current().${field}`), value);
     assert.equal(timeLeft(vm), 60);
     click(vm, 'GreedButton');
     assert.equal(grantedOnce(vm), false, 'the rebuilt request has its own 0.5 s');
@@ -735,33 +735,33 @@ for (const [label, change, field, value] of [
 
 test('drift while the request shows: the frame rebuilds on its next update, and Need on a drifted offer opens no confirm', () => {
   const vm = newVM();
-  vm.run('ClaudeWoWDB.chats[1].agent = "claude"');
+  vm.run('WoWGPTDB.chats[1].agent = "claude"');
   deliverDenial(vm, ['Bash(git:*)']);
   arm(vm);
-  vm.run('ClaudeWoWDB.chats[1].agent = "grok"; STUB.popup = nil');
+  vm.run('WoWGPTDB.chats[1].agent = "grok"; STUB.popup = nil');
   click(vm, 'NeedButton');
   assert.equal(vm.evaluate('STUB.popup'), null);
-  assert.equal(vm.evaluate('ClaudeWoWRoll.Current().target'), 'grok');
-  vm.run('ClaudeWoWDB.chats[1].agent = "claude"; ClaudeWoWRoll.Update()');
-  assert.equal(vm.evaluate('ClaudeWoWRoll.Current().target'), 'claude', 'the update rebuilds it too');
+  assert.equal(vm.evaluate('WoWGPTRoll.Current().target'), 'grok');
+  vm.run('WoWGPTDB.chats[1].agent = "claude"; WoWGPTRoll.Update()');
+  assert.equal(vm.evaluate('WoWGPTRoll.Current().target'), 'claude', 'the update rebuilds it too');
 });
 
 test('changed rules under the same reply: Greed grants nothing and the request shows the new rules', () => {
   const vm = newVM();
   deliverDenial(vm, ['Bash(git:*)']);
   arm(vm);
-  vm.run('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history].denied = { "Bash(rm:*)" }');
+  vm.run('WoWGPTDB.chats[1].history[#WoWGPTDB.chats[1].history].denied = { "Bash(rm:*)" }');
   click(vm, 'GreedButton');
   assert.equal(grantedOnce(vm), false);
-  assert.equal(vm.evaluate('ClaudeWoWRoll.Current().rules[1]'), 'Bash(rm:*)');
-  assert.equal(vm.evaluate('ClaudeWoWRollFrame.Name.text'), 'Scroll of rm');
+  assert.equal(vm.evaluate('WoWGPTRoll.Current().rules[1]'), 'Bash(rm:*)');
+  assert.equal(vm.evaluate('WoWGPTRollFrame.Name.text'), 'Scroll of rm');
 });
 
 test('a newer reply under the same chat: Greed on the old request grants nothing', () => {
   const vm = newVM();
   deliverDenial(vm, ['Bash(git:*)']);
   arm(vm);
-  vm.run('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history].id = 999');
+  vm.run('WoWGPTDB.chats[1].history[#WoWGPTDB.chats[1].history].id = 999');
   click(vm, 'GreedButton');
   assert.equal(grantedOnce(vm), false);
 });
@@ -770,17 +770,17 @@ test('a Need timeout still passes, never allows', () => {
   const vm = newVM();
   deliverDenial(vm, ['Bash(git:*)']);
   wait(vm, 61);
-  assert.equal(vm.evaluate('ClaudeWoWDB.chats[1].history[#ClaudeWoWDB.chats[1].history].text'), 'Passed on: Bash(git:*) (the roll timed out)');
+  assert.equal(vm.evaluate('WoWGPTDB.chats[1].history[#WoWGPTDB.chats[1].history].text'), 'Passed on: Bash(git:*) (the roll timed out)');
   assert.equal(grantedOnce(vm), false);
-  assert.equal(vm.evaluate('ClaudeWoWDB.outbox and ClaudeWoWDB.outbox.allow'), null);
+  assert.equal(vm.evaluate('WoWGPTDB.outbox and WoWGPTDB.outbox.allow'), null);
 });
 
 test('turning the roll off ends a hold', () => {
   const vm = newVM();
   vm.run('STUB.combat = true');
   deliverDenial(vm, ['Bash(git:*)']);
-  vm.run('ClaudeWoWRoll.CloseAll()');
-  assert.equal(vm.evaluate('ClaudeWoWRoll.Held()'), 'false');
+  vm.run('WoWGPTRoll.CloseAll()');
+  assert.equal(vm.evaluate('WoWGPTRoll.Held()'), 'false');
   vm.run('STUB.combat = false');
   wait(vm, 1);
   wait(vm, 1);
@@ -863,7 +863,7 @@ test('E2: the roast overlay still drops the note, under the new and the old mark
 
 test('E2: the addon copy of the version verdict matches the companion app words', () => {
   const vm = newVM();
-  vm.run('STUB.v, STUB.t = ClaudeWoW.Version.Verdict({ version = "0.0.1", protoMin = 1, protoMax = 99 })');
+  vm.run('STUB.v, STUB.t = WoWGPT.Version.Verdict({ version = "0.0.1", protoMin = 1, protoMax = 99 })');
   assert.equal(vm.evaluate('STUB.v'), 'bridge-older');
   assert.match(vm.evaluate('STUB.t'), /^The companion app \(0\.0\.1\) is older than this addon .* update the companion app when you can\.$/);
 });

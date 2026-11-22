@@ -233,7 +233,7 @@ function offReason(s) {
   const failed = failedRows(s, OFF_ROWS[s && s.agent]);
   if (!failed.length) return '';
   const name = agentName(s.agent);
-  return `${name} ${s.version} failed ${failed.join(' and ')} in claude-wow agents check, so it may still load an MCP server a chat turns off. The bridge does not run a chat that turns a server off: use /claude mcp default, or update ${name} and run claude-wow agents check again.`;
+  return `${name} ${s.version} failed ${failed.join(' and ')} in claude-wow agents check, so it may still load an MCP server a chat turns off. The bridge does not run a chat that turns a server off: use /wowgpt mcp default, or update ${name} and run claude-wow agents check again.`;
 }
 
 function secretReason(s) {

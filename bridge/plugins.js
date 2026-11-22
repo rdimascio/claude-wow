@@ -45,7 +45,7 @@ function normalizePlugin(raw) {
   };
 }
 
-// "@ask what drops the sword" / "/claude fix the build" -> { name: "ask", text: "what drops the sword" }.
+// "@ask what drops the sword" / "/wowgpt fix the build" -> { name: "ask", text: "what drops the sword" }.
 // Only the first word counts, it must be a bare name, and something must follow
 // it: "@ask" alone, "@" or "/" are text.
 const ADDRESS_RE = /^[@/]([a-z][a-z0-9-]*)\s+(?=\S)/i;

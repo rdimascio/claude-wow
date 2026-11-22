@@ -14,13 +14,13 @@ test(
   async () => {
     await withGame({}, async h => {
       await h.client.say('permissions');
-      const addon = path.join(h.sb.addons, 'ClaudeWoW_Runtime');
+      const addon = path.join(h.sb.addons, 'WoWGPT_Runtime');
       const presence = fs.readdirSync(path.join(addon, 'presence', 'b')).filter(n => n.endsWith('.wav'));
-      assert.ok(fs.existsSync(path.join(addon, 'Inbox.lua')) && fs.existsSync(path.join(addon, 'ClaudeWoW_Runtime.toc')));
+      assert.ok(fs.existsSync(path.join(addon, 'Inbox.lua')) && fs.existsSync(path.join(addon, 'WoWGPT_Runtime.toc')));
       assert.equal(presence.length, 2000, 'the presence rings are armed');
       const slotInboxes = fs
         .readdirSync(h.sb.addons)
-        .filter(n => /^ClaudeWoW_S\d{3}$/.test(n))
+        .filter(n => /^WoWGPT_S\d{3}$/.test(n))
         .map(n => path.join(h.sb.addons, n, 'Inbox.lua'));
       assert.ok(
         slotInboxes.some(f => /echo/.test(fs.readFileSync(f, 'utf8'))),

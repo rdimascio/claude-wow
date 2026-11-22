@@ -80,7 +80,7 @@ function cleanup() {
         fs.copyFileSync(path.join(S, 'bridge-stdout.txt'), path.join(EVIDENCE, 'bridge-stdout.txt'));
       } catch {}
       try {
-        fs.copyFileSync(path.join(ADDONS, 'ClaudeWoW_S001', 'Inbox.lua'), path.join(EVIDENCE, 'slot-S001-Inbox.lua'));
+        fs.copyFileSync(path.join(ADDONS, 'WoWGPT_S001', 'Inbox.lua'), path.join(EVIDENCE, 'slot-S001-Inbox.lua'));
       } catch {}
     } catch (e) {
       console.error(`evidence: ${e.message}`);
@@ -112,16 +112,16 @@ if (spawnSync('tmux', ['-V']).status !== 0) abort('tmux is not installed');
 
 const ADDONS = path.join(S, 'wow', 'Interface', 'AddOns');
 const PROJ = path.join(S, 'proj');
-const SAVED = path.join(S, 'wow', 'WTF', 'ClaudeWoW.lua');
-fs.mkdirSync(path.join(ADDONS, 'ClaudeWoW'), { recursive: true });
+const SAVED = path.join(S, 'wow', 'WTF', 'WoWGPT.lua');
+fs.mkdirSync(path.join(ADDONS, 'WoWGPT'), { recursive: true });
 fs.mkdirSync(path.dirname(SAVED), { recursive: true });
 fs.mkdirSync(path.join(PROJ, '.claude'), { recursive: true });
 fs.mkdirSync(SANDBOX_HOME, { recursive: true });
-fs.writeFileSync(path.join(ADDONS, 'ClaudeWoW', 'ClaudeWoW.toc'), '## Interface: 16001\n');
+fs.writeFileSync(path.join(ADDONS, 'WoWGPT', 'WoWGPT.toc'), '## Interface: 16001\n');
 
 const cfg = JSON.parse(fs.readFileSync(path.join(SRC, 'config.example.json'), 'utf8'));
 cfg.addonDir = ADDONS;
-cfg.inboxFile = path.join(ADDONS, 'ClaudeWoW_Runtime', 'Inbox.lua');
+cfg.inboxFile = path.join(ADDONS, 'WoWGPT_Runtime', 'Inbox.lua');
 cfg.savedVariablesFile = SAVED;
 cfg.defaultCwd = PROJ;
 cfg.capture = { ...cfg.capture, enabled: false, screenshotDir: path.join(S, 'wow', 'Screenshots') };
@@ -159,9 +159,9 @@ console.log(
 );
 
 function readSlot() {
-  const src = fs.readFileSync(path.join(ADDONS, 'ClaudeWoW_S001', 'Inbox.lua'), 'utf8');
+  const src = fs.readFileSync(path.join(ADDONS, 'WoWGPT_S001', 'Inbox.lua'), 'utf8');
   const ast = luaparse.parse(src, { luaVersion: '5.1' });
-  const assign = ast.body.find(n => n.type === 'AssignmentStatement' && n.variables[0].name === 'ClaudeWoW_SlotData');
+  const assign = ast.body.find(n => n.type === 'AssignmentStatement' && n.variables[0].name === 'WoWGPT_SlotData');
   const val = v =>
     v.type === 'StringLiteral'
       ? JSON.parse(v.raw.replace(/\\\n/g, '\\n'))
@@ -199,7 +199,7 @@ function send(id, text, once) {
     `["ctx"] = "${hex('Character: Thrall, level 12 Orc Shaman\nZone: Durotar (Razor Hill) 52.1, 43.0')}"`,
   ];
   if (once) fields.push(`["allowOnce"] = "${hex(once)}"`);
-  fs.writeFileSync(SAVED, `ClaudeWoWDB = {\n\t["outbox"] = {\n\t\t${fields.join(',\n\t\t')},\n\t},\n}\n`);
+  fs.writeFileSync(SAVED, `WoWGPTDB = {\n\t["outbox"] = {\n\t\t${fields.join(',\n\t\t')},\n\t},\n}\n`);
   console.log(`\n>>> injected #${id}${once ? ` (allowOnce ${once})` : ''}: ${JSON.stringify(text)}`);
 }
 

@@ -425,7 +425,7 @@ test(
     try {
       const home = path.join(dir, 'home');
       const addons = path.join(dir, 'client', 'Interface', 'AddOns');
-      for (const d of ['sig', 'ack', 'act', 'presence']) fs.mkdirSync(path.join(addons, 'ClaudeWoW_Runtime', d), { recursive: true });
+      for (const d of ['sig', 'ack', 'act', 'presence']) fs.mkdirSync(path.join(addons, 'WoWGPT_Runtime', d), { recursive: true });
       fs.mkdirSync(home, { recursive: true });
       const agent = path.join(dir, 'fake-claude.js');
       const result = {
@@ -443,8 +443,8 @@ test(
         path.join(home, 'config.json'),
         JSON.stringify({
           addonDir: addons,
-          savedVariablesFile: path.join(dir, 'ClaudeWoW.lua'),
-          inboxFile: path.join(addons, 'ClaudeWoW_Runtime', 'Inbox.lua'),
+          savedVariablesFile: path.join(dir, 'WoWGPT.lua'),
+          inboxFile: path.join(addons, 'WoWGPT_Runtime', 'Inbox.lua'),
           defaultCwd: dir,
           slots: 1,
           agent: 'claude',

@@ -202,7 +202,7 @@ test('a C2 fail gives the slot field { claude: { off: false, reason } } and refu
   assert.equal(field.claude.version, '1.0.0');
   assert.match(
     field.claude.reason,
-    /^Claude Code 1\.0\.0 failed C2 in claude-wow agents check, .*use \/claude mcp default, or update Claude Code and run claude-wow agents check again\.$/,
+    /^Claude Code 1\.0\.0 failed C2 in claude-wow agents check, .*use \/wowgpt mcp default, or update Claude Code and run claude-wow agents check again\.$/,
   );
   assert.equal(AC.refusal(failed, { off: true }), field.claude.reason);
   assert.equal(AC.refusal(failed, { off: false, secrets: true }), '', 'a run that turns nothing off is not refused');
@@ -235,7 +235,7 @@ test('Codex: an X2a fail refuses a run that turns a server off, an X2b fail refu
 });
 
 test('the slot file carries the contract field for the addon, and an empty one when nothing is known', () => {
-  const lua = P.luaTable('ClaudeWoW_SlotData', [], {
+  const lua = P.luaTable('WoWGPT_SlotData', [], {
     contract: {
       claude: { version: '2.1.290', checked: true, off: false, reason: 'say "no"' },
       codex: { version: '', checked: false, off: true, reason: '', sources: ['codex', 'nope', 'config'] },

@@ -675,16 +675,16 @@ function createLive(overrides = {}) {
       'Restart it in its terminal with:',
       info.restart,
     ];
-    if (info.id) lines.push('Or pick it in /claude -r and click resume headless to continue it here without the terminal.');
+    if (info.id) lines.push('Or pick it in /wowgpt -r and click resume headless to continue it here without the terminal.');
     return lines.join('\n');
   }
 
   function noSessionText(target) {
     if (target)
-      return `The running Claude Code session "${target}" is not connected. /claude -r lists the ones that are, and /claude -r <id> resumes a session headless when its terminal is closed.`;
+      return `The running Claude Code session "${target}" is not connected. /wowgpt -r lists the ones that are, and /wowgpt -r <id> resumes a session headless when its terminal is closed.`;
     const n = deaf().length;
     const note = n
-      ? `\n${n} running session${n === 1 ? ' was' : 's were'} started without the channel; /claude -r shows how to restart ${n === 1 ? 'it' : 'them'}.`
+      ? `\n${n} running session${n === 1 ? ' was' : 's were'} started without the channel; /wowgpt -r shows how to restart ${n === 1 ? 'it' : 'them'}.`
       : '';
     return `No live Claude Code session is connected. Start one with:\n${core.liveStartCommand}\n(see docs/LIVE-SESSION.md)${note}`;
   }

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 'use strict';
-// Claude WoW bridge: the half of ClaudeWoW that lives outside the game.
+// Claude WoW bridge: the half of WoWGPT that lives outside the game.
 //
 //   OUT  the addon calls Screenshot() with its pixel strip up and we decode
 //        the file from the game's Screenshots folder -> one or more
@@ -17,7 +17,7 @@
 //        streaming progress. Each chat is its own agent session; up to
 //        maxParallel run at once.
 //   IN   we write the latest reply/status of every chat into every
-//        ClaudeWoW_S### slot addon (the game loads a fresh one from a timer),
+//        WoWGPT_S### slot addon (the game loads a fresh one from a timer),
 //        flip a signal .wav per message, and also write Inbox.lua for the
 //        reload path.
 //
@@ -31,7 +31,7 @@
 //
 // Like the agent CLIs themselves, the bridge works in the folder it was started
 // from: `cd my-project && claude-wow` makes my-project the default for every chat
-// that hasn't chosen its own with /claude-wow cd. Started from inside this repo (npm
+// that hasn't chosen its own with /wowgpt cd. Started from inside this repo (npm
 // start), it falls back to defaultCwd in config.json.
 
 const fs = require('fs');
@@ -147,7 +147,7 @@ if (argv.includes('--help') || argv.includes('-h')) {
       'Runs the Claude WoW bridge. Chats without a folder of their own work in <dir>,\n' +
       `or in the folder you started it from, or in defaultCwd from ${CONFIG_FILE}.\n` +
       '--image attaches a screenshot to an --inject run the way vision does in game.\n' +
-      `Agents: ${A.agentIds().join(', ')} (the default is "agent" in ${CONFIG_FILE}; chats pick with /claude --agent).\n` +
+      `Agents: ${A.agentIds().join(', ')} (the default is "agent" in ${CONFIG_FILE}; chats pick with /wowgpt --agent).\n` +
       `Plugins: ${registry.ids().join(', ')} (the default is plugins.default in config.json).`,
   );
   process.exit(0);
@@ -170,7 +170,7 @@ const pluginIdx = argv.indexOf('--plugin');
 const injectPlugin = pluginIdx >= 0 ? argv[pluginIdx + 1] : '';
 const exitWhenIdle = once || inject !== null;
 
-// The agent chats use unless they pick their own (/claude-wow agent, "agent=" flag).
+// The agent chats use unless they pick their own (/wowgpt --agent, "agent=" flag).
 const DEFAULT_AGENT = A.normalizeAgent(cfg.agent || A.DEFAULT_AGENT);
 if (!DEFAULT_AGENT) {
   console.error(`"agent": "${cfg.agent}" in ${CONFIG_FILE} is not one of ${A.agentIds().join(', ')}.`);
@@ -300,7 +300,7 @@ if (!chosen.transport) {
 let TRANSPORT = chosen.transport;
 let TRANSPORT_SOURCE = chosen.source; // 'config' | 'default' | 'fallback'
 const CHAT_LOG = CL.options(cap.chatLog);
-// Vision: a chat that turned it on (/claude-wow vision on, flag "v") gets the rest
+// Vision: a chat that turned it on (/wowgpt config vision on, flag "v") gets the rest
 // of the screenshot, strip cropped off and scaled to vision.maxWidth, attached
 // to its run as an image. Screenshot transport only: the pixel capture never
 // sees more than the strip. vision.keep caps the PNGs kept in bridge/tmp.
@@ -976,7 +976,7 @@ function awardAchievements(job, status) {
 // this client, or SCREENSHOT_FAILED on every try): its record says so with a
 // "shot=" flag, on the strip or in the reload outbox. Switch to the pixel
 // capture now, remember why (state.json; the next start goes straight to it),
-// say so plainly here and in the slot files (the addon's /claude-wow diag
+// say so plainly here and in the slot files (the addon's /wowgpt diag
 // shows the note), and start the capture. A player is never left without a
 // transport just because the default one cannot work on their client.
 function fallbackToPixel(reason, job) {
@@ -1021,11 +1021,11 @@ function fallbackToPixel(reason, job) {
 }
 
 function addonInstalled(client) {
-  return fs.existsSync(path.join(client.addonDir, 'ClaudeWoW', 'ClaudeWoW.toc'));
+  return fs.existsSync(path.join(client.addonDir, 'WoWGPT', 'WoWGPT.toc'));
 }
 
 function slotsInstalled(client) {
-  return fs.existsSync(path.join(client.addonDir, 'ClaudeWoW_S001', 'Inbox.lua'));
+  return fs.existsSync(path.join(client.addonDir, 'WoWGPT_S001', 'Inbox.lua'));
 }
 
 // The game will load *some* unused slot next, so every slot gets the full picture.
@@ -1035,7 +1035,7 @@ function slotsInstalled(client) {
 function publishClient(r, records, shared) {
   const c = r.client;
   const batch = publishRetry.begin(c.key);
-  const inboxError = batch.write(c.inboxFile, slotFile('ClaudeWoW_Inbox', records, shared, c));
+  const inboxError = batch.write(c.inboxFile, slotFile('WoWGPT_Inbox', records, shared, c));
   if (inboxError && !batch.locked()) {
     batch.end();
     if (!r.warnedNoAddon) {
@@ -1046,8 +1046,8 @@ function publishClient(r, records, shared) {
   }
   const slots = slotsInstalled(c);
   if (slots) {
-    const body = slotFile('ClaudeWoW_SlotData', records, shared, c);
-    for (let i = 1; i <= SLOTS; i++) batch.write(path.join(c.addonDir, 'ClaudeWoW_S' + pad3(i), 'Inbox.lua'), body);
+    const body = slotFile('WoWGPT_SlotData', records, shared, c);
+    for (let i = 1; i <= SLOTS; i++) batch.write(path.join(c.addonDir, 'WoWGPT_S' + pad3(i), 'Inbox.lua'), body);
   }
   batch.end(inLabel(c));
   return slots;
@@ -1864,7 +1864,7 @@ function runJob(job) {
     finish(
       job,
       'error',
-      `${r.error}\nUse /claude config plugin <name> to pick one, or /claude config plugin default for the companion app's default (${DEFAULT_PLUGIN}).`,
+      `${r.error}\nUse /wowgpt config plugin <name> to pick one, or /wowgpt config plugin default for the companion app's default (${DEFAULT_PLUGIN}).`,
     );
     return;
   }
@@ -2535,7 +2535,7 @@ function runAgent(job, opts = {}) {
       job,
       'error',
       `Unknown agent "${job.agent}". The companion app knows: ${A.agentIds().join(', ')}.\n` +
-        `Use /claude -c --agent <name> to pick one, or /claude -c --agent default for the companion app's default (${DEFAULT_AGENT}).`,
+        `Use /wowgpt -c --agent <name> to pick one, or /wowgpt -c --agent default for the companion app's default (${DEFAULT_AGENT}).`,
     );
     return;
   }
@@ -3760,7 +3760,7 @@ function banner() {
   console.log(
     `  home     : ${HOME.dir}  (${HOME.source === 'legacy' ? 'the layout from before CLAUDE_WOW_HOME; run setup to move it to ' + H.defaultDir() : HOME.source}; config, state, transcripts, log)`,
   );
-  console.log(`  folder   : ${DEFAULT_CWD}  (${DEFAULT_CWD_SOURCE}; chats can override with /claude cd)`);
+  console.log(`  folder   : ${DEFAULT_CWD}  (${DEFAULT_CWD_SOURCE}; chats can override with /wowgpt cd)`);
   if (!CLIENTS.length) console.log('  clients  : NONE - config.json names no WoW client; run: node setup.js');
   for (const c of CLIENTS) {
     console.log(`  client   : ${c.label}  ${c.dir}`);
@@ -3777,22 +3777,22 @@ function banner() {
     `  chat log : ${TRANSPORT === 'screenshot' && CHAT_LOG.enabled ? CLIENTS.map(c => c.chatLogFile).join(', ') + ' (capture.chatLog; the first try of each message, with the screenshot as the retry)' : 'off (capture.chatLog in config.json; experimental)'}`,
   );
   console.log(
-    `  vision   : ${TRANSPORT === 'screenshot' ? 'per chat (/claude config vision on, or /claude look <question>); the game view goes out up to ' + vis.maxWidth + 'px wide' : 'needs capture.mode "screenshot" (the pixel capture never sees more than the strip)'}`,
+    `  vision   : ${TRANSPORT === 'screenshot' ? 'per chat (/wowgpt config vision on, or /wowgpt look <question>); the game view goes out up to ' + vis.maxWidth + 'px wide' : 'needs capture.mode "screenshot" (the pixel capture never sees more than the strip)'}`,
   );
   console.log(`  parallel : up to ${MAX_PARALLEL} chats at once`);
   console.log(
     `  plugins  : ${registry
       .all()
       .map(p => p.id + (p.id === DEFAULT_PLUGIN ? ' (default)' : ''))
-      .join(', ')}  (a chat with a folder uses claude-code, one without the default; /claude config plugin overrides)`,
+      .join(', ')}  (a chat with a folder uses claude-code, one without the default; /wowgpt config plugin overrides)`,
   );
   for (const p of registry.all()) if (typeof p.banner === 'function') console.log(`  ${p.id.padEnd(9)}: ${p.banner(core.options(p.id))}`);
-  console.log(`  agent    : ${DEFAULT_AGENT} (default; chats pick their own with /claude --agent)`);
+  console.log(`  agent    : ${DEFAULT_AGENT} (default; chats pick their own with /wowgpt --agent)`);
   for (const id of A.agentIds()) console.log(`  ${id.padEnd(9)}: ${agentLine(id)}`);
   console.log(`  sessions : ${Object.keys(state.sessions).length} saved`);
   const ctx = gameContext();
   console.log(
-    `  context  : ${!CONTEXT_ON ? 'off (gameContext in config.json)' : ctx ? (ctx.split('\n').find(l => /^Character:/i.test(l)) || ctx.split('\n')[0]).slice(0, 100) : 'none yet (the addon sends it with its hello; /claude config context in game)'}`,
+    `  context  : ${!CONTEXT_ON ? 'off (gameContext in config.json)' : ctx ? (ctx.split('\n').find(l => /^Character:/i.test(l)) || ctx.split('\n')[0]).slice(0, 100) : 'none yet (the addon sends it with its hello; /wowgpt config context in game)'}`,
   );
   console.log(
     `  primer   : ${!PRIMER_FILE ? 'off (primerFile in config.json)' : primer() ? primerPath() + ' (' + primer().length + ' chars, in the system prompt while the addon sends a context)' : 'NOT FOUND: ' + primerPath()}`,

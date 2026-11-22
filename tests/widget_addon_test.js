@@ -71,9 +71,9 @@ function STUB.ClickPopup(button)
   return p
 end
 function ACCEPT_WIDGETS()
-  while STUB.popup and STUB.popup.which == "CLAUDEWOW_WIDGET" do
+  while STUB.popup and STUB.popup.which == "WOWGPT_WIDGET" do
     STUB.ClickPopup(1)
-    ClaudeWoWWidgets.PromptNext()
+    WoWGPTWidgets.PromptNext()
   end
 end
 for _, name in ipairs({ "GameTooltipText", "Tooltip_Med", "GameFontHighlightSmall" }) do
@@ -87,8 +87,8 @@ function newVM(savedVariables = '', { widgetsOn = true } = {}) {
   const vm = createVM({ stub: false });
   vm.run(fs.readFileSync(STUB_FILE, 'utf8') + STUB_EXTRAS, { chunk: 'tests/wow_stub.lua' });
   if (savedVariables) vm.run(savedVariables);
-  if (widgetsOn) vm.run('ClaudeWoWWidgetDB = ClaudeWoWWidgetDB or {}; if ClaudeWoWWidgetDB.enabled == nil then ClaudeWoWWidgetDB.enabled = true end');
-  vm.loadAddon(['Codec.lua', 'Inbox.lua', 'ClaudeWoW.lua', 'Map.lua', 'Widgets.lua']);
+  if (widgetsOn) vm.run('WoWGPTWidgetDB = WoWGPTWidgetDB or {}; if WoWGPTWidgetDB.enabled == nil then WoWGPTWidgetDB.enabled = true end');
+  vm.loadAddon(['Codec.lua', 'Inbox.lua', 'WoWGPT.lua', 'Map.lua', 'Widgets.lua']);
   vm.login();
   return vm;
 }
@@ -110,26 +110,22 @@ function widgetSet(widgets, version = 1, epoch = 'e1', accept = true) {
     widgets.map(([name, source]) => ({ op: 'set', name, title: name + ' title', source })),
   );
   set.version = version;
-  return (
-    P.luaTable('ClaudeWoW_SlotData', [], { now: 1, widgets: set }) +
-    '\nClaudeWoWWidgets.Sync(ClaudeWoW_SlotData.widgets)' +
-    (accept ? '\nACCEPT_WIDGETS()' : '')
-  );
+  return P.luaTable('WoWGPT_SlotData', [], { now: 1, widgets: set }) + '\nWoWGPTWidgets.Sync(WoWGPT_SlotData.widgets)' + (accept ? '\nACCEPT_WIDGETS()' : '');
 }
 
 const meterFrame = `(function() for _, f in ipairs(STUB.frames) do if f.events.PLAYER_TARGET_CHANGED and f.scripts.OnEvent then return f end end end)()`;
-const lastSystemNote = '(function() local h = ClaudeWoWDB.chats[1].history; for i = #h, 1, -1 do if h[i].role == "system" then return h[i].text end end end)()';
+const lastSystemNote = '(function() local h = WoWGPTDB.chats[1].history; for i = #h, 1, -1 do if h[i].role == "system" then return h[i].text end end end)()';
 
 test('a runtime error stops the widget and is reported in the chat window', () => {
   const vm = newVM();
   vm.run(widgetSet([['meter', TARGET_METER]]));
   vm.run('WIDGET_TEST_BOOM = true; STUB.FireEvent("PLAYER_TARGET_CHANGED")');
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("meter")'), 'failed');
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("meter")'), 'failed');
   assert.match(vm.evaluate(lastSystemNote), /meter failed and was stopped: .*boom/);
   assert.equal(vm.evaluate('STUB.lastTicker.cancelled'), 'true');
   assert.equal(vm.evaluate(`${meterFrame}`), null);
-  vm.run('WIDGET_TEST_BOOM = false; SlashCmdList.CLAUDE("config ui run meter")');
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("meter")'), 'running');
+  vm.run('WIDGET_TEST_BOOM = false; SlashCmdList.WOWGPT("config ui run meter")');
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("meter")'), 'running');
 });
 
 test('compile errors and blocked calls fail cleanly', () => {
@@ -144,37 +140,37 @@ test('compile errors and blocked calls fail cleanly', () => {
       ['pinger', 'local ui = ...\nlocal f = CreateFrame("Frame")\nf:RegisterUnitEvent("UNIT_PING" .. "_PIN_ADDED", "player")'],
     ]),
   );
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("broken")'), 'failed');
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("sneaky")'), 'failed');
-  assert.match(vm.evaluate('select(2, ClaudeWoWWidgets.Status("sneaky"))'), /CastSpellByName is not allowed/);
-  assert.match(vm.evaluate('select(2, ClaudeWoWWidgets.Status("secure"))'), /secure templates are not allowed/);
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("nosy")'), 'running');
-  assert.match(vm.evaluate('select(2, ClaudeWoWWidgets.Status("logger"))'), /COMBAT_LOG_EVENT_UNFILTERED is not allowed in a widget/);
-  assert.match(vm.evaluate('select(2, ClaudeWoWWidgets.Status("pinger"))'), /UNIT_PING_PIN_ADDED is not allowed in a widget/);
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("broken")'), 'failed');
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("sneaky")'), 'failed');
+  assert.match(vm.evaluate('select(2, WoWGPTWidgets.Status("sneaky"))'), /CastSpellByName is not allowed/);
+  assert.match(vm.evaluate('select(2, WoWGPTWidgets.Status("secure"))'), /secure templates are not allowed/);
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("nosy")'), 'running');
+  assert.match(vm.evaluate('select(2, WoWGPTWidgets.Status("logger"))'), /COMBAT_LOG_EVENT_UNFILTERED is not allowed in a widget/);
+  assert.match(vm.evaluate('select(2, WoWGPTWidgets.Status("pinger"))'), /UNIT_PING_PIN_ADDED is not allowed in a widget/);
   assert.equal(vm.evaluate('#STUB.actionBlocked'), '0', 'the refused registration never reached the client');
 });
 
-test('/claude config ui remove keeps a widget off until the agent sends a new version', () => {
+test('/wowgpt config ui remove keeps a widget off until the agent sends a new version', () => {
   const vm = newVM();
   vm.run(widgetSet([['meter', TARGET_METER]]));
-  vm.run('SlashCmdList.CLAUDE("config ui remove meter")');
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("meter")'), 'removed');
+  vm.run('SlashCmdList.WOWGPT("config ui remove meter")');
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("meter")'), 'removed');
   assert.equal(vm.evaluate('STUB.lastTicker.cancelled'), 'true');
   vm.run(widgetSet([['meter', TARGET_METER]], 2));
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("meter")'), 'removed');
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("meter")'), 'removed');
   vm.run(widgetSet([['meter', TARGET_METER + '\nlocal changed = true']], 3));
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("meter")'), 'running');
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("meter")'), 'running');
   vm.run(widgetSet([], 4));
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("meter")'), null);
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("meter")'), null);
   assert.match(vm.evaluate(lastSystemNote), /meter was removed by the agent/);
 });
 
-test('/claude config ui lists widgets, and free text starting with "ui" is still a message', () => {
+test('/wowgpt config ui lists widgets, and free text starting with "ui" is still a message', () => {
   const vm = newVM();
   vm.run(widgetSet([['meter', TARGET_METER]]));
-  vm.run('STUB.prints = {}; SlashCmdList.CLAUDE("config ui")');
+  vm.run('STUB.prints = {}; SlashCmdList.WOWGPT("config ui")');
   assert.match(vm.evaluate('table.concat(STUB.prints, "\\n")'), /meter {2}meter title {2}\(running, \d+ bytes\)/);
-  vm.run('STUB.prints = {}; ClaudeWoW.Send = function(text) SENT_TEXT = text end; SlashCmdList.CLAUDE("ui for my bags would be nice")');
+  vm.run('STUB.prints = {}; WoWGPT.Send = function(text) SENT_TEXT = text end; SlashCmdList.WOWGPT("ui for my bags would be nice")');
   assert.doesNotMatch(vm.evaluate('table.concat(STUB.prints, "\\n")'), /\[Claude WoW ui\]/);
   assert.equal(vm.evaluate('SENT_TEXT'), 'ui for my bags would be nice');
 });
@@ -184,7 +180,7 @@ function savedWidgets(widgets, approve = true) {
   const approved = approve
     ? widgets.map(([name, source]) => `["${name}"] = { rev = "${P.widgetRevision(source)}", source = ${P.luaStr(source)} }`).join(', ')
     : '';
-  return `ClaudeWoWWidgetDB = { removed = {}, data = {}, approved = { ${approved} }, set = { epoch = "e1", version = 1, items = { ${items.join(', ')} } } }`;
+  return `WoWGPTWidgetDB = { removed = {}, data = {}, approved = { ${approved} }, set = { epoch = "e1", version = 1, items = { ${items.join(', ')} } } }`;
 }
 
 test('a saved widget cannot reach code outside the sandbox', () => {
@@ -213,19 +209,19 @@ test('a saved widget cannot reach code outside the sandbox', () => {
     ]),
   );
   for (const name of ['securecall', 'indirect']) {
-    assert.equal(vm.evaluate(`ClaudeWoWWidgets.Status("${name}")`), 'failed', name);
-    assert.match(vm.evaluate(`select(2, ClaudeWoWWidgets.Status("${name}"))`), /securecall is not allowed in a widget/);
+    assert.equal(vm.evaluate(`WoWGPTWidgets.Status("${name}")`), 'failed', name);
+    assert.match(vm.evaluate(`select(2, WoWGPTWidgets.Status("${name}"))`), /securecall is not allowed in a widget/);
   }
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("editbox")'), 'failed');
-  assert.match(vm.evaluate('select(2, ClaudeWoWWidgets.Status("editbox"))'), /DEFAULT_CHAT_FRAME/);
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("unlisted")'), 'failed');
-  assert.match(vm.evaluate('select(2, ClaudeWoWWidgets.Status("unlisted"))'), /attempt to call a nil value/);
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("namespace")'), 'failed');
-  assert.match(vm.evaluate('select(2, ClaudeWoWWidgets.Status("namespace"))'), /C_Fake.DropThing is not allowed in a widget/);
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("climber")'), 'running', vm.evaluate('select(2, ClaudeWoWWidgets.Status("climber"))'));
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("editbox")'), 'failed');
+  assert.match(vm.evaluate('select(2, WoWGPTWidgets.Status("editbox"))'), /DEFAULT_CHAT_FRAME/);
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("unlisted")'), 'failed');
+  assert.match(vm.evaluate('select(2, WoWGPTWidgets.Status("unlisted"))'), /attempt to call a nil value/);
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("namespace")'), 'failed');
+  assert.match(vm.evaluate('select(2, WoWGPTWidgets.Status("namespace"))'), /C_Fake.DropThing is not allowed in a widget/);
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("climber")'), 'running', vm.evaluate('select(2, WoWGPTWidgets.Status("climber"))'));
   vm.run('STUB.FireEvent("PLAYER_TARGET_CHANGED")');
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.climber.climbed'), 'nil');
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.climber.self'), 'true');
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.data.climber.climbed'), 'nil');
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.data.climber.self'), 'true');
   assert.equal(vm.evaluate('WIDGET_ESCAPED'), null);
   assert.equal(vm.evaluate('CHAT_LINE_SENT'), null);
   assert.equal(vm.evaluate('ABANDONED_SKILL'), null);
@@ -248,7 +244,7 @@ test('a widget gets the display APIs the prompt promises', () => {
     'C_Timer.NewTicker(1, function(handle) ticks = ticks + 1 if ticks >= 2 then handle:Cancel() end ui.db.ticks = ticks end)',
   ].join('\n');
   const vm = newVM(savedWidgets([['panel', source]]));
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("panel")'), 'running', vm.evaluate('select(2, ClaudeWoWWidgets.Status("panel"))'));
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("panel")'), 'running', vm.evaluate('select(2, WoWGPTWidgets.Status("panel"))'));
   const button = '(function() for i = #STUB.frames, 1, -1 do local f = STUB.frames[i] if f.template == "UIPanelButtonTemplate" then return f end end end)()';
   assert.equal(vm.evaluate(`#${button}.children`), '1');
   assert.equal(vm.evaluate(`${button}.name`), null, 'a widget frame never takes a global name');
@@ -261,14 +257,14 @@ test('a widget gets the display APIs the prompt promises', () => {
   assert.equal(vm.evaluate(`GameTooltip.owner == ${button}`), 'true');
   assert.equal(vm.evaluate('GameTooltip.lines[1]'), 'Mark x2 ffabd473 11');
   vm.run('STUB.Tick(); STUB.Tick(); STUB.Tick()');
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.panel.ticks'), '3');
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.data.panel.ticks'), '3');
   assert.equal(vm.evaluate('STUB.lastTicker.cancelled'), 'true');
 });
 
 test('templates outside the display list are refused', () => {
   const vm = newVM(savedWidgets([['chatbox', 'local ui = ...\nCreateFrame("EditBox", nil, nil, "ChatFrameEditBoxTemplate")']]));
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("chatbox")'), 'failed');
-  assert.match(vm.evaluate('select(2, ClaudeWoWWidgets.Status("chatbox"))'), /ChatFrameEditBoxTemplate is not an allowed widget template/);
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("chatbox")'), 'failed');
+  assert.match(vm.evaluate('select(2, WoWGPTWidgets.Status("chatbox"))'), /ChatFrameEditBoxTemplate is not an allowed widget template/);
 });
 
 test('a removed widget stops the event handlers on its container, and a rerun does not stack them', () => {
@@ -287,23 +283,23 @@ test('a removed widget stops the event handlers on its container, and a rerun do
       ['sneak', 'local ui = ...\nui.frame:RegisterEvent("COMBAT" .. "_LOG_EVENT_UNFILTERED")'],
     ]),
   );
-  assert.match(vm.evaluate('select(2, ClaudeWoWWidgets.Status("sneak"))'), /COMBAT_LOG_EVENT_UNFILTERED is not allowed in a widget/);
+  assert.match(vm.evaluate('select(2, WoWGPTWidgets.Status("sneak"))'), /COMBAT_LOG_EVENT_UNFILTERED is not allowed in a widget/);
   assert.equal(vm.evaluate('#STUB.actionBlocked'), '0');
   vm.run('STUB.FireEvent("PLAYER_TARGET_CHANGED")');
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.counter.count'), '1');
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.counter.hooks'), '1');
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.counter.self'), 'true');
-  vm.run('SlashCmdList.CLAUDE("config ui remove counter")');
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("counter")'), 'removed');
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.data.counter.count'), '1');
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.data.counter.hooks'), '1');
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.data.counter.self'), 'true');
+  vm.run('SlashCmdList.WOWGPT("config ui remove counter")');
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("counter")'), 'removed');
   assert.equal(Number(vm.evaluate(listeners)), before, 'the container no longer listens');
   vm.run('STUB.FireEvent("PLAYER_TARGET_CHANGED")');
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.counter.count'), '1');
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.counter.hooks'), '1');
-  vm.run('SlashCmdList.CLAUDE("config ui run counter"); SlashCmdList.CLAUDE("config ui run counter")');
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.data.counter.count'), '1');
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.data.counter.hooks'), '1');
+  vm.run('SlashCmdList.WOWGPT("config ui run counter"); SlashCmdList.WOWGPT("config ui run counter")');
   assert.equal(Number(vm.evaluate(listeners)), before + 1);
   vm.run('STUB.FireEvent("PLAYER_TARGET_CHANGED")');
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.counter.count'), '2');
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.counter.hooks'), '2');
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.data.counter.count'), '2');
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.data.counter.hooks'), '2');
 });
 
 test('a getter or an event payload cannot hand a widget a Blizzard frame inside a table', () => {
@@ -336,13 +332,13 @@ test('a getter or an event payload cannot hand a widget a Blizzard frame inside 
       ['role', 'local ui = ...\nassert(UnitPowerMax("player") == 100)\nUnitSetRole("player", "TANK")'],
     ]),
   );
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("plates")'), 'failed');
-  assert.match(vm.evaluate('select(2, ClaudeWoWWidgets.Status("plates"))'), /attempt to index/);
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("plates")'), 'failed');
+  assert.match(vm.evaluate('select(2, WoWGPTWidgets.Status("plates"))'), /attempt to index/);
   vm.run('STUB.FireEvent("PLAYER_TARGET_CHANGED", { frame = DEFAULT_CHAT_FRAME.editBox, count = 3 })');
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.payload.got'), '3');
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.payload.leaked'), 'false');
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("role")'), 'failed');
-  assert.match(vm.evaluate('select(2, ClaudeWoWWidgets.Status("role"))'), /UnitSetRole/);
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.data.payload.got'), '3');
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.data.payload.leaked'), 'false');
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("role")'), 'failed');
+  assert.match(vm.evaluate('select(2, WoWGPTWidgets.Status("role"))'), /UnitSetRole/);
   assert.equal(vm.evaluate('UNIT_ROLE_SET'), null);
   assert.equal(vm.evaluate('WIDGET_ESCAPED'), null);
   assert.equal(vm.evaluate('CHAT_LINE_SENT'), null);
@@ -386,21 +382,21 @@ test('a widget frame method takes only frames the widget made, so GameTooltip ca
       ],
     ]),
   );
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("tipgrab")'), 'failed');
-  assert.match(vm.evaluate('select(2, ClaudeWoWWidgets.Status("tipgrab"))'), /SetScrollChild needs a frame this widget made/);
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.tipgrab.grabbed'), null);
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("tipgrab")'), 'failed');
+  assert.match(vm.evaluate('select(2, WoWGPTWidgets.Status("tipgrab"))'), /SetScrollChild needs a frame this widget made/);
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.data.tipgrab.grabbed'), null);
   assert.equal(vm.evaluate('GameTooltip.parent == UIParent'), 'true');
-  assert.match(vm.evaluate('select(2, ClaudeWoWWidgets.Status("container"))'), /SetScrollChild needs a frame this widget made/);
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("anchor")'), 'running');
+  assert.match(vm.evaluate('select(2, WoWGPTWidgets.Status("container"))'), /SetScrollChild needs a frame this widget made/);
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("anchor")'), 'running');
   assert.equal(
     vm.evaluate('(function() for _, f in ipairs(STUB.frames) do if rawequal(f.rel, GameTooltip) then return true end end return false end)()'),
     'false',
     'the real GameTooltip reached a widget frame method',
   );
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("scroll")'), 'running', vm.evaluate('select(2, ClaudeWoWWidgets.Status("scroll"))'));
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("scroll")'), 'running', vm.evaluate('select(2, WoWGPTWidgets.Status("scroll"))'));
   vm.run('for _, f in ipairs(STUB.frames) do if f.events.RAID_TARGET_UPDATE then f.children = { GameTooltip }; GameTooltip.parent = f end end');
   vm.run('STUB.FireEvent("RAID_TARGET_UPDATE")');
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.owner.limited'), 'true', 'a reparented GameTooltip came back as a full widget frame');
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.data.owner.limited'), 'true', 'a reparented GameTooltip came back as a full widget frame');
 });
 
 const UNPRINTABLE = 'error(setmetatable({}, { __tostring = function() error("no text") end }))';
@@ -419,14 +415,14 @@ test('an error that cannot be shown as text still stops the widget, and later wi
       ['zombie', zombie],
     ]),
   );
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("first")'), 'failed');
-  assert.equal(vm.evaluate('select(2, ClaudeWoWWidgets.Status("first"))'), 'an error that cannot be shown as text');
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("second")'), 'running');
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.second.ok'), 'true');
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("first")'), 'failed');
+  assert.equal(vm.evaluate('select(2, WoWGPTWidgets.Status("first"))'), 'an error that cannot be shown as text');
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("second")'), 'running');
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.data.second.ok'), 'true');
   vm.run('STUB.FireEvent("PLAYER_TARGET_CHANGED")');
   vm.run('STUB.FireEvent("PLAYER_TARGET_CHANGED")');
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("zombie")'), 'failed');
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.zombie.n'), '1');
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("zombie")'), 'failed');
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.data.zombie.n'), '1');
   assert.match(vm.evaluate(lastSystemNote), /zombie failed and was stopped: an error that cannot be shown as text/);
 });
 
@@ -466,10 +462,10 @@ test('a widget cannot take the keyboard, or the mouse on its full-screen contain
     autofocus: /SetAutoFocus is not allowed/,
   };
   for (const [name, why] of Object.entries(refused)) {
-    assert.equal(vm.evaluate(`ClaudeWoWWidgets.Status("${name}")`), 'failed', name);
-    assert.match(vm.evaluate(`select(2, ClaudeWoWWidgets.Status("${name}"))`), why);
+    assert.equal(vm.evaluate(`WoWGPTWidgets.Status("${name}")`), 'failed', name);
+    assert.match(vm.evaluate(`select(2, WoWGPTWidgets.Status("${name}"))`), why);
   }
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("fine")'), 'running', vm.evaluate('select(2, ClaudeWoWWidgets.Status("fine"))'));
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("fine")'), 'running', vm.evaluate('select(2, WoWGPTWidgets.Status("fine"))'));
   const any = cond =>
     vm.evaluate(`(function() for i = ${before + 1}, #STUB.frames do local f = STUB.frames[i] if ${cond} then return true end end return false end)()`);
   assert.equal(any('f.keyboardEnabled == true'), 'false');
@@ -491,7 +487,7 @@ test('a widget can read unit names and raid marks and use tooltip and game font 
     'a:SetText(GetUnitName("player") .. " " .. GetRaidTargetIndex("target"))',
   ].join('\n');
   const vm = newVM(savedWidgets([['names', source]]));
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("names")'), 'running', vm.evaluate('select(2, ClaudeWoWWidgets.Status("names"))'));
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("names")'), 'running', vm.evaluate('select(2, WoWGPTWidgets.Status("names"))'));
   const strings = '(function() for i = #STUB.frames, 1, -1 do local f = STUB.frames[i] if #f.children == 3 then return f.children end end end)()';
   assert.equal(vm.evaluate(`${strings}[1].text`), 'Testchar 8');
   assert.equal(vm.evaluate(`${strings}[1].font == GameTooltipText`), 'true');
@@ -502,9 +498,9 @@ test('a widget can read unit names and raid marks and use tooltip and game font 
 test('a widget plays no sound: PlaySound and PlaySoundFile are nil', () => {
   const source = ['local ui = ...', 'ui.db.sound = type(PlaySound)', 'ui.db.file = type(PlaySoundFile)'].join('\n');
   const vm = newVM(savedWidgets([['sound', source]]));
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("sound")'), 'running', vm.evaluate('select(2, ClaudeWoWWidgets.Status("sound"))'));
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.sound.sound'), 'nil');
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.sound.file'), 'nil');
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("sound")'), 'running', vm.evaluate('select(2, WoWGPTWidgets.Status("sound"))'));
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.data.sound.sound'), 'nil');
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.data.sound.file'), 'nil');
 });
 
 test('a widget uses any global font object, whatever its name, as a read-only proxy', () => {
@@ -523,11 +519,11 @@ test('a widget uses any global font object, whatever its name, as a read-only pr
   const vm = newVM();
   vm.run(setup);
   vm.run(widgetSet([['fonts', source]]));
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("fonts")'), 'running', vm.evaluate('select(2, ClaudeWoWWidgets.Status("fonts"))'));
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("fonts")'), 'running', vm.evaluate('select(2, WoWGPTWidgets.Status("fonts"))'));
   const strings = `(function() for i = #STUB.frames, 1, -1 do local f = STUB.frames[i] if #f.children == ${fonts.length} then return f.children end end end)()`;
   fonts.forEach((name, i) => assert.equal(vm.evaluate(`${strings}[${i + 1}].font == ${name}`), 'true', name));
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.fonts.notFont'), 'nil');
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.fonts.readOnly'), 'true');
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.data.fonts.notFont'), 'nil');
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.data.fonts.readOnly'), 'true');
   assert.equal(vm.evaluate('rawget(Fancy24Font, "widgetWrote")'), null);
 });
 
@@ -535,20 +531,20 @@ test('a named font string, texture or animation never replaces a global', () => 
   const source = [
     'local ui = ...',
     'local f = CreateFrame("Frame")',
-    'f:CreateFontString("ClaudeWoWWidgets", "OVERLAY")',
-    'f:CreateTexture("ClaudeWoWDB")',
+    'f:CreateFontString("WoWGPTWidgets", "OVERLAY")',
+    'f:CreateTexture("WoWGPTDB")',
     'f:CreateFontString("GameTooltip")',
     'local group = f:CreateAnimationGroup("UIParent")',
     'group:CreateAnimation("Alpha", "SlashCmdList")',
     'ui.db.ok = true',
   ].join('\n');
   const vm = newVM(savedWidgets([['names', source]]));
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("names")'), 'running', vm.evaluate('select(2, ClaudeWoWWidgets.Status("names"))'));
-  assert.equal(vm.evaluate('type(rawget(ClaudeWoWWidgets, "Status"))'), 'function');
-  assert.equal(vm.evaluate('type(ClaudeWoWDB.chats)'), 'table');
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("names")'), 'running', vm.evaluate('select(2, WoWGPTWidgets.Status("names"))'));
+  assert.equal(vm.evaluate('type(rawget(WoWGPTWidgets, "Status"))'), 'function');
+  assert.equal(vm.evaluate('type(WoWGPTDB.chats)'), 'table');
   assert.equal(vm.evaluate('GameTooltip.kind'), 'Frame');
   assert.equal(vm.evaluate('UIParent.kind'), 'Frame');
-  assert.equal(vm.evaluate('type(rawget(SlashCmdList, "CLAUDE"))'), 'function');
+  assert.equal(vm.evaluate('type(rawget(SlashCmdList, "WOWGPT"))'), 'function');
   assert.equal(
     vm.evaluate(
       '(function() for _, f in ipairs(STUB.frames) do if #f.children == 4 then for _, c in ipairs(f.children) do if c.name then return c.name end end return "unnamed" end end end)()',
@@ -566,13 +562,13 @@ test('a widget edit box always lets Escape clear the focus', () => {
     'assert(trap:GetScript("OnEscapePressed") ~= nil)',
   ].join('\n');
   const vm = newVM(savedWidgets([['boxes', source]]));
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("boxes")'), 'running', vm.evaluate('select(2, ClaudeWoWWidgets.Status("boxes"))'));
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("boxes")'), 'running', vm.evaluate('select(2, WoWGPTWidgets.Status("boxes"))'));
   for (const which of ['nil', '"InputBoxTemplate"']) {
     const box = `(function() for i = #STUB.frames, 1, -1 do local f = STUB.frames[i] if f.kind == "EditBox" and f.template == ${which} and f.parent ~= DEFAULT_CHAT_FRAME then return f end end end)()`;
     vm.run(`local b = ${box}; STUB.focus = b; b.scripts.OnEscapePressed(b)`);
     assert.equal(vm.evaluate('STUB.focus'), null, which);
   }
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.boxes.escaped'), 'true');
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.data.boxes.escaped'), 'true');
 });
 
 test('a widget reads a font object, writes plain fields to its frame and makes only display frame types', () => {
@@ -592,18 +588,18 @@ test('a widget reads a font object, writes plain fields to its frame and makes o
       ['movie', 'local ui = ...\nCreateFrame("Movie" .. "Frame")'],
     ]),
   );
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("font")'), 'running', vm.evaluate('select(2, ClaudeWoWWidgets.Status("font"))'));
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.font.size'), '12');
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("font")'), 'running', vm.evaluate('select(2, WoWGPTWidgets.Status("font"))'));
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.data.font.size'), '12');
   const button =
     '(function() for i = #STUB.frames, 1, -1 do if STUB.frames[i].kind == "Button" and STUB.frames[i].tooltipText ~= nil then return STUB.frames[i] end end end)()';
   assert.equal(vm.evaluate(`${button}.tooltipText`), 'hi');
   assert.equal(vm.evaluate(`rawget(${button}, "onClick")`), null);
   assert.equal(vm.evaluate(`rawget(${button}, "Hide")`), null);
-  vm.run('SlashCmdList.CLAUDE("config ui remove font")');
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("font")'), 'removed');
+  vm.run('SlashCmdList.WOWGPT("config ui remove font")');
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("font")'), 'removed');
   assert.equal(vm.evaluate(`${button}.shown`), 'false');
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("movie")'), 'failed');
-  assert.match(vm.evaluate('select(2, ClaudeWoWWidgets.Status("movie"))'), /MovieFrame is not an allowed widget frame type/);
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("movie")'), 'failed');
+  assert.match(vm.evaluate('select(2, WoWGPTWidgets.Status("movie"))'), /MovieFrame is not an allowed widget frame type/);
 });
 
 test('a ticker handle the client returns as userdata still cancels', () => {
@@ -618,8 +614,8 @@ test('a ticker handle the client returns as userdata still cancels', () => {
   );
   vm.run(widgetSet([['tick', 'local ui = ...\nC_Timer.NewTicker(1, function(handle) ui.db.n = (ui.db.n or 0) + 1 handle:Cancel() end)']]));
   vm.run('STUB.Tick()');
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("tick")'), 'running', vm.evaluate('select(2, ClaudeWoWWidgets.Status("tick"))'));
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.tick.n'), '1');
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("tick")'), 'running', vm.evaluate('select(2, WoWGPTWidgets.Status("tick"))'));
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.data.tick.n'), '1');
   assert.equal(vm.evaluate('TICKER_UD_CANCELLED'), 'true');
 });
 
@@ -632,29 +628,29 @@ const AUDIT_EXTRAS = [
   'OddFontObject = CreateFrame("Font", "OddFontObject")',
   'OddFontObject.GetObjectType = function() return "Font" end',
   'NotAFontTable = { GetObjectType = function() return "Frame" end }',
-  'ClaudeWoWAuditFont = CreateFrame("Font", "ClaudeWoWAuditFont")',
-  'ClaudeWoWAuditFont.GetObjectType = function() return "Font" end',
+  'WoWGPTAuditFont = CreateFrame("Font", "WoWGPTAuditFont")',
+  'WoWGPTAuditFont.GetObjectType = function() return "Font" end',
   'Tooltip_Large = CreateFrame("Font", "Tooltip_Large")',
   'Tooltip_Large.GetObjectType = function() return "Font" end',
 ].join('\n');
 
 const auditList = (vm, which) => {
-  const text = vm.evaluate(`table.concat(ClaudeWoWWidgetDB.globals.${which}, "\\n")`);
+  const text = vm.evaluate(`table.concat(WoWGPTWidgetDB.globals.${which}, "\\n")`);
   return text ? text.split('\n') : [];
 };
 
 const byteOrder = list => [...list].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 
-test('/claude dev globals saves the sorted names the widget sandbox admits and refuses, without the bridge', () => {
+test('/wowgpt dev globals saves the sorted names the widget sandbox admits and refuses, without the bridge', () => {
   const vm = newVM();
   vm.run(AUDIT_EXTRAS);
-  vm.run('ClaudeWoW.Send = function(text) AUDIT_SENT = text end');
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.globals'), null);
-  vm.run('SlashCmdList.CLAUDE("dev globals")');
+  vm.run('WoWGPT.Send = function(text) AUDIT_SENT = text end');
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.globals'), null);
+  vm.run('SlashCmdList.WOWGPT("dev globals")');
   assert.equal(vm.evaluate('AUDIT_SENT'), null, 'the dump went to the bridge');
   const admitted = auditList(vm, 'admitted');
   const refusedFunctions = auditList(vm, 'refused');
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.globals.refusedFonts'), null);
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.globals.refusedFonts'), null);
   assert.deepEqual(refusedFunctions, byteOrder(refusedFunctions));
   const refused = refusedFunctions;
   for (const name of [
@@ -672,16 +668,16 @@ test('/claude dev globals saves the sorted names the widget sandbox admits and r
   ])
     assert.ok(admitted.includes(name), `${name} should be admitted`);
   for (const name of ['UnitSetRole', 'GetSecretThing', 'IsAuditReady', 'C_Fake.DropThing']) assert.ok(refused.includes(name), `${name} should be refused`);
-  for (const name of ['DoAuditAction', 'NotAFontTable', 'ClaudeWoWAuditFont', 'PlaySound', 'PlaySoundFile'])
+  for (const name of ['DoAuditAction', 'NotAFontTable', 'WoWGPTAuditFont', 'PlaySound', 'PlaySoundFile'])
     assert.ok(!admitted.includes(name) && !refused.includes(name), `${name} is outside the audited patterns`);
   assert.deepEqual(admitted, byteOrder(admitted));
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.globals.admittedCount'), String(admitted.length));
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.globals.refusedCount'), String(refused.length));
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.globals.total'), String(admitted.length + refused.length));
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.globals.truncated'), 'false');
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.globals.version'), '1.60.1');
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.globals.build'), '69913');
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.globals.interface'), '16001');
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.globals.admittedCount'), String(admitted.length));
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.globals.refusedCount'), String(refused.length));
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.globals.total'), String(admitted.length + refused.length));
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.globals.truncated'), 'false');
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.globals.version'), '1.60.1');
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.globals.build'), '69913');
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.globals.interface'), '16001');
   const total = admitted.length + refused.length;
   assert.match(
     vm.evaluate(lastSystemNote),
@@ -689,15 +685,15 @@ test('/claude dev globals saves the sorted names the widget sandbox admits and r
       `Saved ${total} of ${total} global names \\(${admitted.length} a widget can use, ${refused.length} it cannot\\) for client 1\\.60\\.1 \\(69913\\)`,
     ),
   );
-  vm.run('SlashCmdList.CLAUDE("dev globals clear")');
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.globals'), null);
+  vm.run('SlashCmdList.WOWGPT("dev globals clear")');
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.globals'), null);
   assert.match(vm.evaluate(lastSystemNote), /Dropped the saved global names/);
 });
 
 test('every name the globals dump admits resolves in a widget, and every name it refuses does not', () => {
   const vm = newVM();
   vm.run(AUDIT_EXTRAS);
-  vm.run('SlashCmdList.CLAUDE("dev globals")');
+  vm.run('SlashCmdList.WOWGPT("dev globals")');
   const admitted = auditList(vm, 'admitted');
   const refused = auditList(vm, 'refused');
   assert.ok(admitted.length > 20 && refused.length >= 5);
@@ -723,33 +719,33 @@ test('every name the globals dump admits resolves in a widget, and every name it
     'ui.db.checked = #admitted + #refused',
   ].join('\n');
   vm.run(
-    `ClaudeWoWWidgetDB.set = { epoch = "audit", version = 1, items = { { name = "audit", title = "audit", rev = "r1", source = ${P.luaStr(source)} } } }; ClaudeWoWWidgetDB.approved = { audit = { rev = "r1", source = ${P.luaStr(source)} } }; ClaudeWoWWidgets.Apply(false)`,
+    `WoWGPTWidgetDB.set = { epoch = "audit", version = 1, items = { { name = "audit", title = "audit", rev = "r1", source = ${P.luaStr(source)} } } }; WoWGPTWidgetDB.approved = { audit = { rev = "r1", source = ${P.luaStr(source)} } }; WoWGPTWidgets.Apply(false)`,
   );
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("audit")'), 'running', vm.evaluate('select(2, ClaudeWoWWidgets.Status("audit"))'));
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.audit.checked'), String(admitted.length + refused.length));
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.audit.wrong'), '');
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("audit")'), 'running', vm.evaluate('select(2, WoWGPTWidgets.Status("audit"))'));
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.data.audit.checked'), String(admitted.length + refused.length));
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.data.audit.wrong'), '');
 });
 
 test('the globals dump keeps at most GLOBALS_MAX names, admitted ones first', () => {
   const vm = newVM();
-  vm.run('for i = 1, ClaudeWoWWidgets.GLOBALS_MAX + 50 do _G["GetAuditFiller" .. i] = function() end end');
-  vm.run('SlashCmdList.CLAUDE("dev globals")');
-  const max = Number(vm.evaluate('ClaudeWoWWidgets.GLOBALS_MAX'));
-  const admittedCount = Number(vm.evaluate('ClaudeWoWWidgetDB.globals.admittedCount'));
+  vm.run('for i = 1, WoWGPTWidgets.GLOBALS_MAX + 50 do _G["GetAuditFiller" .. i] = function() end end');
+  vm.run('SlashCmdList.WOWGPT("dev globals")');
+  const max = Number(vm.evaluate('WoWGPTWidgets.GLOBALS_MAX'));
+  const admittedCount = Number(vm.evaluate('WoWGPTWidgetDB.globals.admittedCount'));
   assert.ok(admittedCount > 0);
-  assert.equal(vm.evaluate('#ClaudeWoWWidgetDB.globals.admitted'), String(admittedCount));
-  assert.equal(vm.evaluate('#ClaudeWoWWidgetDB.globals.admitted + #ClaudeWoWWidgetDB.globals.refused'), String(max));
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.globals.saved'), String(max));
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.globals.truncated'), 'true');
-  assert.ok(Number(vm.evaluate('ClaudeWoWWidgetDB.globals.total')) > max);
+  assert.equal(vm.evaluate('#WoWGPTWidgetDB.globals.admitted'), String(admittedCount));
+  assert.equal(vm.evaluate('#WoWGPTWidgetDB.globals.admitted + #WoWGPTWidgetDB.globals.refused'), String(max));
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.globals.saved'), String(max));
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.globals.truncated'), 'true');
+  assert.ok(Number(vm.evaluate('WoWGPTWidgetDB.globals.total')) > max);
   assert.match(vm.evaluate(lastSystemNote), new RegExp(`Saved ${max} of \\d+ global names`));
 });
 
-test('/claude dev globals with an unknown word saves nothing and says how to use it', () => {
+test('/wowgpt dev globals with an unknown word saves nothing and says how to use it', () => {
   const vm = newVM();
-  vm.run('SlashCmdList.CLAUDE("dev globals now")');
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.globals'), null);
-  assert.match(vm.evaluate(lastSystemNote), /Usage: \/claude dev globals/);
+  vm.run('SlashCmdList.WOWGPT("dev globals now")');
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.globals'), null);
+  assert.match(vm.evaluate(lastSystemNote), /Usage: \/wowgpt dev globals/);
 });
 
 test('a widget from the agent waits for the player: one popup at a time, Show runs it and remembers that revision', () => {
@@ -765,26 +761,26 @@ test('a widget from the agent waits for the player: one popup at a time, Show ru
       false,
     ),
   );
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("meter")'), 'waiting');
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("clock")'), 'waiting');
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("meter")'), 'waiting');
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("clock")'), 'waiting');
   assert.equal(vm.evaluate(meterFrame), null, 'nothing of the widget runs before the player says yes');
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.clock'), null);
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.data.clock'), null);
   assert.equal(vm.evaluate('#STUB.popups'), '1', 'one popup at a time');
-  assert.equal(vm.evaluate('STUB.popup.which'), 'CLAUDEWOW_WIDGET');
+  assert.equal(vm.evaluate('STUB.popup.which'), 'WOWGPT_WIDGET');
   assert.equal(vm.evaluate('STUB.popup.text'), 'meter title');
-  assert.equal(vm.evaluate('StaticPopupDialogs.CLAUDEWOW_WIDGET.text'), "Show the agent's '%s' widget?");
-  assert.equal(vm.evaluate('StaticPopupDialogs.CLAUDEWOW_WIDGET.button1'), 'Show');
-  assert.equal(vm.evaluate('StaticPopupDialogs.CLAUDEWOW_WIDGET.button2'), 'Not Now');
-  vm.run('ClaudeWoWWidgets.PromptNext()');
+  assert.equal(vm.evaluate('StaticPopupDialogs.WOWGPT_WIDGET.text'), "Show the agent's '%s' widget?");
+  assert.equal(vm.evaluate('StaticPopupDialogs.WOWGPT_WIDGET.button1'), 'Show');
+  assert.equal(vm.evaluate('StaticPopupDialogs.WOWGPT_WIDGET.button2'), 'Not Now');
+  vm.run('WoWGPTWidgets.PromptNext()');
   assert.equal(vm.evaluate('#STUB.popups'), '1', 'no second popup while one is open');
   vm.run('STUB.ClickPopup(1)');
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("meter")'), 'running');
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.approved.meter.rev'), vm.evaluate('ClaudeWoWWidgetDB.set.items[1].rev'));
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("meter")'), 'running');
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.approved.meter.rev'), vm.evaluate('WoWGPTWidgetDB.set.items[1].rev'));
   vm.run('STUB.RunTimers()');
   assert.equal(vm.evaluate('STUB.popup.text'), 'clock title', 'the next one is asked after the first closes');
   vm.run('STUB.ClickPopup(1)');
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("clock")'), 'running');
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.clock.ran'), 'true');
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("clock")'), 'running');
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.data.clock.ran'), 'true');
   vm.run(
     widgetSet(
       [
@@ -808,29 +804,29 @@ test('a widget from the agent waits for the player: one popup at a time, Show ru
       false,
     ),
   );
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("meter")'), 'waiting', 'a new revision is asked again');
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("meter")'), 'waiting', 'a new revision is asked again');
   assert.equal(vm.evaluate('STUB.popup.text'), 'meter title');
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("clock")'), 'running');
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("clock")'), 'running');
 });
 
 test('Not Now keeps the widget hidden until a new revision, and Escape only puts the question off', () => {
   const vm = newVM();
   vm.run(widgetSet([['meter', TARGET_METER]], 1, 'e1', false));
   vm.run('STUB.ClickPopup(2); STUB.RunTimers()');
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("meter")'), 'removed');
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.removed.meter'), vm.evaluate('ClaudeWoWWidgetDB.set.items[1].rev'));
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.approved.meter'), null);
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("meter")'), 'removed');
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.removed.meter'), vm.evaluate('WoWGPTWidgetDB.set.items[1].rev'));
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.approved.meter'), null);
   assert.equal(vm.evaluate('STUB.popup'), null);
   assert.equal(vm.evaluate(meterFrame), null);
   vm.run(widgetSet([['meter', TARGET_METER + '\nlocal v2 = true']], 2, 'e1', false));
   assert.equal(vm.evaluate('STUB.popup.text'), 'meter title', 'a new revision asks again');
   vm.run('STUB.ClickPopup("escape"); STUB.RunTimers()');
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("meter")'), 'waiting', 'Escape is not an answer');
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.removed.meter'), null);
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("meter")'), 'waiting', 'Escape is not an answer');
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.removed.meter'), null);
   assert.equal(vm.evaluate('STUB.popup'), null, 'and it does not ask again at once');
-  vm.run('SlashCmdList.CLAUDE("config ui run meter")');
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("meter")'), 'running', '/claude config ui run says yes');
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.approved.meter.rev'), vm.evaluate('ClaudeWoWWidgetDB.set.items[1].rev'));
+  vm.run('SlashCmdList.WOWGPT("config ui run meter")');
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("meter")'), 'running', '/wowgpt config ui run says yes');
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.approved.meter.rev'), vm.evaluate('WoWGPTWidgetDB.set.items[1].rev'));
 });
 
 test('a stale answer does nothing: the agent sent a new revision, or the widget was removed, after the popup opened', () => {
@@ -838,83 +834,83 @@ test('a stale answer does nothing: the agent sent a new revision, or the widget 
   vm.run(widgetSet([['meter', TARGET_METER]], 1, 'e1', false));
   vm.run('OLD_POPUP = STUB.popup');
   vm.run(widgetSet([['meter', TARGET_METER + '\nlocal v2 = true']], 2, 'e1', false));
-  vm.run('StaticPopupDialogs.CLAUDEWOW_WIDGET.OnAccept(OLD_POPUP.dialog, OLD_POPUP.data)');
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("meter")'), 'waiting');
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.approved.meter'), null);
+  vm.run('StaticPopupDialogs.WOWGPT_WIDGET.OnAccept(OLD_POPUP.dialog, OLD_POPUP.data)');
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("meter")'), 'waiting');
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.approved.meter'), null);
   assert.equal(vm.evaluate(meterFrame), null);
-  vm.run('StaticPopupDialogs.CLAUDEWOW_WIDGET.OnCancel(OLD_POPUP.dialog, OLD_POPUP.data, "clicked")');
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.removed.meter'), null, 'a stale Not Now does not hide the new revision');
+  vm.run('StaticPopupDialogs.WOWGPT_WIDGET.OnCancel(OLD_POPUP.dialog, OLD_POPUP.data, "clicked")');
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.removed.meter'), null, 'a stale Not Now does not hide the new revision');
   vm.run(
-    'NOW_DATA = { name = "meter", rev = ClaudeWoWWidgetDB.set.items[1].rev, source = ClaudeWoWWidgetDB.set.items[1].source }; SlashCmdList.CLAUDE("config ui remove meter")',
+    'NOW_DATA = { name = "meter", rev = WoWGPTWidgetDB.set.items[1].rev, source = WoWGPTWidgetDB.set.items[1].source }; SlashCmdList.WOWGPT("config ui remove meter")',
   );
-  vm.run('StaticPopupDialogs.CLAUDEWOW_WIDGET.OnAccept({}, NOW_DATA)');
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("meter")'), 'removed', 'a removed widget is not started by a late Show');
+  vm.run('StaticPopupDialogs.WOWGPT_WIDGET.OnAccept({}, NOW_DATA)');
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("meter")'), 'removed', 'a removed widget is not started by a late Show');
   vm.run(widgetSet([], 3, 'e1', false));
-  vm.run('StaticPopupDialogs.CLAUDEWOW_WIDGET.OnAccept({}, NOW_DATA)');
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.approved.meter'), null, 'nor one the agent took away');
+  vm.run('StaticPopupDialogs.WOWGPT_WIDGET.OnAccept({}, NOW_DATA)');
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.approved.meter'), null, 'nor one the agent took away');
 });
 
 test('the popup system refusing keeps the widget queued, and a cancel it makes is not a Not Now', () => {
   const vm = newVM();
   vm.run('STUB.popupBusy = true');
   vm.run(widgetSet([['meter', TARGET_METER]], 1, 'e1', false));
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("meter")'), 'waiting');
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.asking'), null);
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("meter")'), 'waiting');
+  assert.equal(vm.evaluate('WoWGPTWidgets.asking'), null);
   vm.run(
-    'StaticPopupDialogs.CLAUDEWOW_WIDGET.OnCancel(nil, { name = "meter", rev = ClaudeWoWWidgetDB.set.items[1].rev, source = ClaudeWoWWidgetDB.set.items[1].source })',
+    'StaticPopupDialogs.WOWGPT_WIDGET.OnCancel(nil, { name = "meter", rev = WoWGPTWidgetDB.set.items[1].rev, source = WoWGPTWidgetDB.set.items[1].source })',
   );
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.removed.meter'), null);
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.removed.meter'), null);
   vm.run(
-    'StaticPopupDialogs.CLAUDEWOW_WIDGET.OnCancel({}, { name = "meter", rev = ClaudeWoWWidgetDB.set.items[1].rev, source = ClaudeWoWWidgetDB.set.items[1].source }, "override")',
+    'StaticPopupDialogs.WOWGPT_WIDGET.OnCancel({}, { name = "meter", rev = WoWGPTWidgetDB.set.items[1].rev, source = WoWGPTWidgetDB.set.items[1].source }, "override")',
   );
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.removed.meter'), null);
-  vm.run('STUB.popupBusy = false; ClaudeWoWWidgets.Apply(false)');
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.removed.meter'), null);
+  vm.run('STUB.popupBusy = false; WoWGPTWidgets.Apply(false)');
   assert.equal(vm.evaluate('STUB.popup.text'), 'meter title', 'the next pass asks');
 });
 
 test('W.Start refuses a revision the player has not approved, on the sync path and at login', () => {
   const vm = newVM();
   vm.run(widgetSet([['meter', TARGET_METER]], 1, 'e1', false));
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Start(ClaudeWoWWidgetDB.set.items[1], true)'), 'false');
+  assert.equal(vm.evaluate('WoWGPTWidgets.Start(WoWGPTWidgetDB.set.items[1], true)'), 'false');
   assert.equal(vm.evaluate(meterFrame), null);
   const login = newVM(savedWidgets([['meter', TARGET_METER]], false));
-  assert.equal(login.evaluate('ClaudeWoWWidgets.Status("meter")'), 'waiting', 'a saved widget without approval does not run at login');
+  assert.equal(login.evaluate('WoWGPTWidgets.Status("meter")'), 'waiting', 'a saved widget without approval does not run at login');
   assert.equal(login.evaluate(meterFrame), null);
   assert.equal(login.evaluate('STUB.popup.text'), 'meter');
   const approved = newVM(savedWidgets([['meter', TARGET_METER]]));
-  assert.equal(approved.evaluate('ClaudeWoWWidgets.Status("meter")'), 'running', 'an approved revision runs at login without asking');
+  assert.equal(approved.evaluate('WoWGPTWidgets.Status("meter")'), 'running', 'an approved revision runs at login without asking');
   assert.equal(approved.evaluate('STUB.popup'), null);
 });
 
 test('a widget title goes into the popup through Display, without UI escapes', () => {
   const vm = newVM(
-    'ClaudeWoWWidgetDB = { set = { epoch = "e1", version = 1, items = { { name = "meter", title = "|cffff0000Red|r meter", rev = "r1", source = "local ui = ..." } } } }',
+    'WoWGPTWidgetDB = { set = { epoch = "e1", version = 1, items = { { name = "meter", title = "|cffff0000Red|r meter", rev = "r1", source = "local ui = ..." } } } }',
   );
   assert.equal(vm.evaluate('STUB.popup.text'), '¦cffff0000Red¦r meter');
 });
 
 const rawSet = (version, source, rev = 'r1') =>
-  `ClaudeWoWWidgets.Sync({ epoch = "e1", version = ${version}, items = { { name = "meter", title = "meter title", rev = "${rev}", source = ${P.luaStr(source)} } } })`;
+  `WoWGPTWidgets.Sync({ epoch = "e1", version = ${version}, items = { { name = "meter", title = "meter title", rev = "${rev}", source = ${P.luaStr(source)} } } })`;
 
 test('approval binds to the code: the same rev with a different source waits, stops the old code and asks again', () => {
   const vm = newVM();
   vm.run(rawSet(1, TARGET_METER));
   vm.run('ACCEPT_WIDGETS()');
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("meter")'), 'running');
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("meter")'), 'running');
   vm.run(rawSet(2, TARGET_METER + '\nui.db.swapped = true'));
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("meter")'), 'waiting');
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.meter and ClaudeWoWWidgetDB.data.meter.swapped'), null, 'the new code did not run');
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("meter")'), 'waiting');
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.data.meter and WoWGPTWidgetDB.data.meter.swapped'), null, 'the new code did not run');
   assert.equal(vm.evaluate(meterFrame), null, 'the old frame stopped with it');
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.approved.meter'), null);
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.approved.meter'), null);
   assert.equal(vm.evaluate('STUB.popup.text'), 'meter title');
   vm.run('STUB.ClickPopup(1)');
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.meter and ClaudeWoWWidgetDB.data.meter.swapped'), 'true');
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.data.meter and WoWGPTWidgetDB.data.meter.swapped'), 'true');
 
   const login = newVM(
-    `ClaudeWoWWidgetDB = { approved = { meter = { rev = "r1", source = ${P.luaStr(TARGET_METER)} } }, set = { epoch = "e1", version = 1, items = { { name = "meter", title = "meter", rev = "r1", source = ${P.luaStr(TARGET_METER + '\nui.db.swapped = true')} } } } }`,
+    `WoWGPTWidgetDB = { approved = { meter = { rev = "r1", source = ${P.luaStr(TARGET_METER)} } }, set = { epoch = "e1", version = 1, items = { { name = "meter", title = "meter", rev = "r1", source = ${P.luaStr(TARGET_METER + '\nui.db.swapped = true')} } } } }`,
   );
-  assert.equal(login.evaluate('ClaudeWoWWidgets.Status("meter")'), 'waiting', 'at login too');
-  assert.equal(login.evaluate('ClaudeWoWWidgetDB.data.meter and ClaudeWoWWidgetDB.data.meter.swapped'), null);
+  assert.equal(login.evaluate('WoWGPTWidgets.Status("meter")'), 'waiting', 'at login too');
+  assert.equal(login.evaluate('WoWGPTWidgetDB.data.meter and WoWGPTWidgetDB.data.meter.swapped'), null);
   assert.equal(login.evaluate(meterFrame), null);
 });
 
@@ -923,9 +919,9 @@ test('a popup for older code does nothing when clicked', () => {
   vm.run(rawSet(1, TARGET_METER));
   vm.run('OLD_POPUP = STUB.popup');
   vm.run(rawSet(2, TARGET_METER + '\nui.db.swapped = true'));
-  vm.run('StaticPopupDialogs.CLAUDEWOW_WIDGET.OnAccept(OLD_POPUP.dialog, OLD_POPUP.data)');
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("meter")'), 'waiting');
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.data.meter and ClaudeWoWWidgetDB.data.meter.swapped'), null);
+  vm.run('StaticPopupDialogs.WOWGPT_WIDGET.OnAccept(OLD_POPUP.dialog, OLD_POPUP.data)');
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("meter")'), 'waiting');
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.data.meter and WoWGPTWidgetDB.data.meter.swapped'), null);
 });
 
 test('when no popup frame is free, the question is retried on a timer until one is', () => {
@@ -934,7 +930,7 @@ test('when no popup frame is free, the question is retried on a timer until one 
   vm.run(widgetSet([['meter', TARGET_METER]], 1, 'e1', false));
   assert.equal(vm.evaluate('STUB.popup'), null);
   assert.equal(vm.evaluate('#STUB.timers'), '1', 'one retry is armed');
-  vm.run('ClaudeWoWWidgets.PromptNext()');
+  vm.run('WoWGPTWidgets.PromptNext()');
   assert.equal(vm.evaluate('#STUB.timers'), '1', 'never two at once');
   vm.run('STUB.RunTimers()');
   assert.equal(vm.evaluate('STUB.popup'), null);
@@ -943,45 +939,45 @@ test('when no popup frame is free, the question is retried on a timer until one 
   assert.equal(vm.evaluate('STUB.popup.text'), 'meter title');
   assert.equal(vm.evaluate('#STUB.timers'), '0');
   vm.run('STUB.ClickPopup(1)');
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("meter")'), 'running');
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("meter")'), 'running');
 });
 
 test('widgets are off by default: a new set runs nothing and asks nothing, says how to turn them on, and run and Show refuse', () => {
   const vm = newVM('', { widgetsOn: false });
   vm.run(widgetSet([['meter', TARGET_METER]], 1, 'e1', false));
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.enabled'), 'false');
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.enabled'), 'false');
   assert.equal(vm.evaluate('STUB.popup'), null, 'no popup while widgets are off');
   assert.equal(vm.evaluate(meterFrame), null);
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("meter")'), 'off');
-  assert.match(vm.evaluate(lastSystemNote), /the agent sent 1 widget\(s\); none runs\. Widgets are off\. \/claude config ui widgets on/);
-  vm.run('SlashCmdList.CLAUDE("config ui run meter")');
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("meter")'), 'off');
+  assert.match(vm.evaluate(lastSystemNote), /the agent sent 1 widget\(s\); none runs\. Widgets are off\. \/wowgpt config ui widgets on/);
+  vm.run('SlashCmdList.WOWGPT("config ui run meter")');
   assert.equal(vm.evaluate(meterFrame), null, 'run does not start it');
-  const item = 'ClaudeWoWWidgetDB.set.items[1]';
-  assert.equal(vm.evaluate(`ClaudeWoWWidgets.Show({ name = "meter", rev = ${item}.rev, source = ${item}.source })`), 'false');
-  vm.run(`ClaudeWoWWidgetDB.approved.meter = { rev = ${item}.rev, source = ${item}.source }`);
-  assert.equal(vm.evaluate(`ClaudeWoWWidgets.Start(${item}, true)`), 'false', 'Start refuses even an approved revision');
+  const item = 'WoWGPTWidgetDB.set.items[1]';
+  assert.equal(vm.evaluate(`WoWGPTWidgets.Show({ name = "meter", rev = ${item}.rev, source = ${item}.source })`), 'false');
+  vm.run(`WoWGPTWidgetDB.approved.meter = { rev = ${item}.rev, source = ${item}.source }`);
+  assert.equal(vm.evaluate(`WoWGPTWidgets.Start(${item}, true)`), 'false', 'Start refuses even an approved revision');
   assert.equal(vm.evaluate(meterFrame), null);
 });
 
 test('config ui widgets on asks for each widget as before, and off stops the running ones and keeps them off', () => {
   const vm = newVM('', { widgetsOn: false });
   vm.run(widgetSet([['meter', TARGET_METER]], 1, 'e1', false));
-  vm.run('SlashCmdList.CLAUDE("config ui widgets on")');
-  assert.equal(vm.evaluate('ClaudeWoWWidgetDB.enabled'), 'true');
+  vm.run('SlashCmdList.WOWGPT("config ui widgets on")');
+  assert.equal(vm.evaluate('WoWGPTWidgetDB.enabled'), 'true');
   assert.equal(vm.evaluate('STUB.popup.text'), 'meter title', 'turning them on still asks first');
   vm.run('ACCEPT_WIDGETS()');
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("meter")'), 'running');
-  vm.run('SlashCmdList.CLAUDE("config ui widgets off")');
-  assert.equal(vm.evaluate('ClaudeWoWWidgets.Status("meter")'), 'off');
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("meter")'), 'running');
+  vm.run('SlashCmdList.WOWGPT("config ui widgets off")');
+  assert.equal(vm.evaluate('WoWGPTWidgets.Status("meter")'), 'off');
   assert.equal(vm.evaluate(meterFrame), null, 'the running widget stopped');
   assert.equal(vm.evaluate('STUB.lastTicker.cancelled'), 'true');
 });
 
 test('a player who approved a widget before widgets became opt-in keeps them on; one who never did starts with them off', () => {
   const before = newVM(savedWidgets([['meter', TARGET_METER]]), { widgetsOn: false });
-  assert.equal(before.evaluate('ClaudeWoWWidgetDB.enabled'), 'true');
-  assert.equal(before.evaluate('ClaudeWoWWidgets.Status("meter")'), 'running');
+  assert.equal(before.evaluate('WoWGPTWidgetDB.enabled'), 'true');
+  assert.equal(before.evaluate('WoWGPTWidgets.Status("meter")'), 'running');
   const never = newVM(savedWidgets([['meter', TARGET_METER]], false), { widgetsOn: false });
-  assert.equal(never.evaluate('ClaudeWoWWidgetDB.enabled'), 'false');
+  assert.equal(never.evaluate('WoWGPTWidgetDB.enabled'), 'false');
   assert.equal(never.evaluate('STUB.popup'), null);
 });

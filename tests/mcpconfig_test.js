@@ -355,7 +355,7 @@ test('per chat: mcp= carries overrides (+id, -id, -* for all off), a bad id is d
   assert.deepEqual(P.parseFlags('mcp=+notion,-claude_ai_Slack,notion,-bad id,+a.b,-notion').mcp, { allOff: false, on: ['notion'], off: ['claude_ai_Slack'] });
   assert.equal(P.parseFlags(`mcp=${Array.from({ length: 20 }, (_, i) => `-s${i}`).join(',')}`).mcp.off.length, 17, 'all off plus 16 changes');
   assert.equal(P.parseFlags(`mcp=-*,${Array.from({ length: 20 }, (_, i) => `+s${i}`).join(',')}`).mcp.on.length, 16);
-  const outbox = `ClaudeWoWDB = {\n["outbox"] = {\n["id"] = 3,\n["session"] = "s",\n["chat"] = "c",\n["text"] = "${hex('hi')}",\n["cwd"] = "",\n["opts"] = "${hex('mcp=-github')}",\n["t"] = 1,\n},\n}\n`;
+  const outbox = `WoWGPTDB = {\n["outbox"] = {\n["id"] = 3,\n["session"] = "s",\n["chat"] = "c",\n["text"] = "${hex('hi')}",\n["cwd"] = "",\n["opts"] = "${hex('mcp=-github')}",\n["t"] = 1,\n},\n}\n`;
   assert.deepEqual(P.parseOutbox(outbox).mcp, { allOff: false, on: [], off: ['github'] }, 'reload mode carries it too');
 
   const mcp = parsed(SAMPLE).mcp;

@@ -10,8 +10,8 @@ const S = require('../bridge/service');
 const Checks = require('../dev/doctor/checks');
 
 const ROOT = path.join(__dirname, '..');
-const ADDON = path.join(ROOT, 'addon', 'ClaudeWoW');
-const TOC_VERSION = /^##\s*Version:\s*(\S+)/m.exec(fs.readFileSync(path.join(ADDON, 'ClaudeWoW.toc'), 'utf8'))[1];
+const ADDON = path.join(ROOT, 'addon', 'WoWGPT');
+const TOC_VERSION = /^##\s*Version:\s*(\S+)/m.exec(fs.readFileSync(path.join(ADDON, 'WoWGPT.toc'), 'utf8'))[1];
 const PACKAGE_VERSION = require('../package.json').version;
 
 const LOAD_COUNTER_STUB = `
@@ -27,8 +27,8 @@ function newVM({ prelude = '', beforeLogin = '' } = {}) {
   const vm = createVM();
   vm.run(LOAD_COUNTER_STUB);
   if (prelude) vm.run(prelude);
-  vm.loadAddon(['Codec.lua', 'Inbox.lua', 'ClaudeWoW.lua']);
-  vm.run('STUB.FireEvent("ADDON_LOADED", "ClaudeWoW")');
+  vm.loadAddon(['Codec.lua', 'Inbox.lua', 'WoWGPT.lua']);
+  vm.run('STUB.FireEvent("ADDON_LOADED", "WoWGPT")');
   if (beforeLogin) vm.run(beforeLogin);
   vm.run('STUB.FireEvent("PLAYER_LOGIN")');
   return vm;
@@ -39,21 +39,21 @@ const luaBridge = b => (b ? `, bridge = { version = "${b.version}", protoMin = $
 function helloPoll(vm, bridge, nowLua = 'time()', extra = '') {
   vm.run('STUB.RunTimers()');
   const before = vm.num('STUB.loads');
-  vm.run(`STUB.onLoadAddOn = function(name) ClaudeWoW_SlotData = { now = ${nowLua}, cwd = "", replies = {}${luaBridge(bridge)}${extra} } end`);
+  vm.run(`STUB.onLoadAddOn = function(name) WoWGPT_SlotData = { now = ${nowLua}, cwd = "", replies = {}${luaBridge(bridge)}${extra} } end`);
   vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
   assert.ok(vm.num('STUB.loads') > before, 'the hello poll read a slot');
 }
 
 function slotPoll(vm, bridge, nowLua = 'time()', extra = '') {
   const before = vm.num('STUB.loads');
-  vm.run(`STUB.onLoadAddOn = function(name) ClaudeWoW_SlotData = { now = ${nowLua}, cwd = "", replies = {}${luaBridge(bridge)}${extra} } end`);
+  vm.run(`STUB.onLoadAddOn = function(name) WoWGPT_SlotData = { now = ${nowLua}, cwd = "", replies = {}${luaBridge(bridge)}${extra} } end`);
   vm.run('STUB.now = STUB.now + 601; STUB.Tick()');
   assert.equal(vm.num('STUB.loads'), before + 1, 'the idle poll read one slot');
 }
 
 function told(vm, needle) {
   vm.run(
-    `STUB.found = 0; for _, c in ipairs(ClaudeWoWDB.chats) do for _, m in ipairs(c.history) do if m.role == "system" and m.text:find(${JSON.stringify(needle)}, 1, true) then STUB.found = STUB.found + 1 end end end`,
+    `STUB.found = 0; for _, c in ipairs(WoWGPTDB.chats) do for _, m in ipairs(c.history) do if m.role == "system" and m.text:find(${JSON.stringify(needle)}, 1, true) then STUB.found = STUB.found + 1 end end end`,
   );
   return vm.num('STUB.found');
 }
@@ -61,11 +61,11 @@ function told(vm, needle) {
 const bridgeAt = (version, protoMin = P.PROTO_MIN, protoMax = P.PROTO_MAX) => ({ version, protoMin, protoMax });
 
 test('a reload-mode message carries ver= and proto= in its outbox, so the bridge judges a session that never says hello', () => {
-  const vm = newVM({ beforeLogin: `ClaudeWoW.Version.PROTO = ${P.PROTO + 1}` });
-  vm.run('SlashCmdList.CLAUDE("config mode reload")');
-  vm.run('ClaudeWoW.Send("via reload")');
-  const out = name => vm.evaluate(`ClaudeWoWDB.outbox.${name}`);
-  const saved = `ClaudeWoWDB = { ["outbox"] = { ["id"] = ${out('id')}, ["session"] = "${out('session')}", ["chat"] = "${out('chat')}", ["text"] = "${out('text')}", ["opts"] = "${out('opts')}" } }`;
+  const vm = newVM({ beforeLogin: `WoWGPT.Version.PROTO = ${P.PROTO + 1}` });
+  vm.run('SlashCmdList.WOWGPT("config mode reload")');
+  vm.run('WoWGPT.Send("via reload")');
+  const out = name => vm.evaluate(`WoWGPTDB.outbox.${name}`);
+  const saved = `WoWGPTDB = { ["outbox"] = { ["id"] = ${out('id')}, ["session"] = "${out('session')}", ["chat"] = "${out('chat')}", ["text"] = "${out('text')}", ["opts"] = "${out('opts')}" } }`;
   const job = P.parseOutbox(saved);
   assert.equal(job.addonVersion, TOC_VERSION);
   assert.equal(job.addonProto, P.PROTO + 1);
@@ -112,14 +112,14 @@ test('the addon says the same words as the bridge for every verdict', () => {
   ];
   const vm = newVM();
   for (const [b, verdict] of cases) {
-    vm.run(`STUB.v, STUB.t = ClaudeWoW.Version.Verdict({ version = "${b.version}", protoMin = ${b.protoMin}, protoMax = ${b.protoMax} })`);
+    vm.run(`STUB.v, STUB.t = WoWGPT.Version.Verdict({ version = "${b.version}", protoMin = ${b.protoMin}, protoMax = ${b.protoMax} })`);
     const js = P.versionVerdict({ version: TOC_VERSION, proto: P.PROTO }, b);
     assert.equal(js.verdict, verdict);
     assert.equal(vm.evaluate('STUB.v'), js.verdict, b.version);
     assert.equal(vm.evaluate('STUB.t'), js.text, b.version);
   }
-  vm.run('ClaudeWoW.Version.PROTO = 5');
-  vm.run('STUB.v, STUB.t = ClaudeWoW.Version.Verdict({ version = "1.0.0", protoMin = 1, protoMax = 4 })');
+  vm.run('WoWGPT.Version.PROTO = 5');
+  vm.run('STUB.v, STUB.t = WoWGPT.Version.Verdict({ version = "1.0.0", protoMin = 1, protoMax = 4 })');
   const js = P.versionVerdict({ version: TOC_VERSION, proto: 5 }, bridgeAt('1.0.0', 1, 4));
   assert.equal(vm.evaluate('STUB.v'), 'update-bridge');
   assert.equal(vm.evaluate('STUB.t'), js.text);
@@ -205,14 +205,14 @@ const BUILD_A = 'aaaaaaaaaaaa';
 const BUILD_B = 'bbbbbbbbbbbb';
 const luaDisk = (version, build = '') => `, addonDisk = { version = "${version}", build = "${build}" }`;
 const loadedAs = (version, build) => ({
-  prelude: `STUB.addonMeta = { ClaudeWoW = { Version = ${version === null ? 'nil' : `"${version}"`}${build ? `, ["X-Build"] = "${build}"` : ''} } }`,
+  prelude: `STUB.addonMeta = { WoWGPT = { Version = ${version === null ? 'nil' : `"${version}"`}${build ? `, ["X-Build"] = "${build}"` : ''} } }`,
 });
 
 test('the build hash covers every shipped file but the toc, in any order', () => {
   const files = [
     { name: 'B.lua', data: Buffer.from('b') },
     { name: 'A.lua', data: Buffer.from('a') },
-    { name: 'ClaudeWoW.toc', data: Buffer.from('x') },
+    { name: 'WoWGPT.toc', data: Buffer.from('x') },
   ];
   const build = P.addonBuild(files);
   assert.match(build, P.BUILD_RE);
@@ -252,11 +252,11 @@ test('addonDiskInfo counts the Lua files the toc lists and fingerprints their na
   assert.notEqual(P.addonDiskInfo(toc.replace('C.lua\n', '')).fileHash, info.fileHash, 'one file fewer is another fingerprint');
   assert.notEqual(P.addonDiskInfo('## Version: 1.2.3\nB.lua\nCore\\A.lua\nC.lua\n').fileHash, info.fileHash, 'another order is another fingerprint');
   assert.match(
-    P.luaTable('ClaudeWoW_SlotData', [], { now: 1000, addonDisk: { version: '1.2.3', build: BUILD_A, files: 3, fileHash: info.fileHash } }),
+    P.luaTable('WoWGPT_SlotData', [], { now: 1000, addonDisk: { version: '1.2.3', build: BUILD_A, files: 3, fileHash: info.fileHash } }),
     new RegExp(`\\taddonDisk = \\{ version = "1\\.2\\.3", build = "aaaaaaaaaaaa", files = 3, fileHash = "${info.fileHash}" \\},`),
   );
   assert.match(
-    P.luaTable('ClaudeWoW_SlotData', [], { now: 1000, addonDisk: { version: '1.2.3', build: BUILD_A, files: 3, fileHash: 'nothex' } }),
+    P.luaTable('WoWGPT_SlotData', [], { now: 1000, addonDisk: { version: '1.2.3', build: BUILD_A, files: 3, fileHash: 'nothex' } }),
     /\taddonDisk = \{ version = "1\.2\.3", build = "aaaaaaaaaaaa" \},/,
     'a malformed fingerprint is left out',
   );
@@ -264,11 +264,11 @@ test('addonDiskInfo counts the Lua files the toc lists and fingerprints their na
 
 test('slot files carry the addon toc on disk, and none without a version', () => {
   assert.match(
-    P.luaTable('ClaudeWoW_SlotData', [], { now: 1000, addonDisk: { version: '1.2.3', build: BUILD_A } }),
+    P.luaTable('WoWGPT_SlotData', [], { now: 1000, addonDisk: { version: '1.2.3', build: BUILD_A } }),
     /\taddonDisk = \{ version = "1\.2\.3", build = "aaaaaaaaaaaa" \},/,
   );
-  assert.doesNotMatch(P.luaTable('ClaudeWoW_SlotData', [], { now: 1000, addonDisk: { version: '', build: '' } }), /addonDisk/);
-  assert.doesNotMatch(P.luaTable('ClaudeWoW_SlotData', [], { now: 1000, addonDisk: null }), /addonDisk/);
+  assert.doesNotMatch(P.luaTable('WoWGPT_SlotData', [], { now: 1000, addonDisk: { version: '', build: '' } }), /addonDisk/);
+  assert.doesNotMatch(P.luaTable('WoWGPT_SlotData', [], { now: 1000, addonDisk: null }), /addonDisk/);
 });
 
 test('a field written after this load but more than 5 minutes ago (a dark bridge) is skipped', () => {
@@ -276,35 +276,35 @@ test('a field written after this load but more than 5 minutes ago (a dark bridge
   helloPoll(vm, null, 'time()', luaDisk('1.2.3', BUILD_A));
   vm.run('STUB.now = STUB.now + 1200');
   slotPoll(vm, null, 'time() - 900', luaDisk('1.2.3', BUILD_B));
-  assert.equal(vm.evaluate('ClaudeWoW.Version.Notice()'), null);
+  assert.equal(vm.evaluate('WoWGPT.Version.Notice()'), null);
   slotPoll(vm, null, 'time()', luaDisk('1.2.3', BUILD_B));
-  assert.equal(vm.evaluate('ClaudeWoW.Version.Notice()'), 'Addon update ready · 1.2.3 build bbbbbbbbbbbb', 'a fresh one is read');
+  assert.equal(vm.evaluate('WoWGPT.Version.Notice()'), 'Addon update ready · 1.2.3 build bbbbbbbbbbbb', 'a fresh one is read');
 });
 
 test('new addon files show as an update bar with a Reload button, not as a message in the chat', () => {
   const vm = newVM(loadedAs('1.2.3', BUILD_A));
-  vm.run('ClaudeWoW.Toggle(true)');
+  vm.run('WoWGPT.Toggle(true)');
   helloPoll(vm, null, 'time()', luaDisk('1.2.3', BUILD_A));
-  assert.equal(vm.evaluate('ClaudeWoWNoticeBar:IsShown()'), 'false', 'the build that is loaded shows no bar');
+  assert.equal(vm.evaluate('WoWGPTNoticeBar:IsShown()'), 'false', 'the build that is loaded shows no bar');
   slotPoll(vm, null, 'time()', luaDisk('1.2.4', BUILD_B));
   assert.equal(told(vm, 'New addon files'), 0, 'the transcript gets no system message');
-  assert.equal(vm.evaluate('ClaudeWoWNoticeBar:IsShown()'), 'true');
-  assert.equal(vm.evaluate('ClaudeWoWNoticeBar.text:GetText()'), 'Addon update ready · 1.2.4');
+  assert.equal(vm.evaluate('WoWGPTNoticeBar:IsShown()'), 'true');
+  assert.equal(vm.evaluate('WoWGPTNoticeBar.text:GetText()'), 'Addon update ready · 1.2.4');
   slotPoll(vm, null, 'time()', luaDisk('1.2.3', BUILD_B));
   assert.equal(
-    vm.evaluate('ClaudeWoWNoticeBar.text:GetText()'),
+    vm.evaluate('WoWGPTNoticeBar.text:GetText()'),
     'Addon update ready · 1.2.3 build bbbbbbbbbbbb',
     'a new build of the loaded version names the build',
   );
   slotPoll(vm, null, 'time()', luaDisk('1.2.3', BUILD_A));
-  assert.equal(vm.evaluate('ClaudeWoWNoticeBar:IsShown()'), 'false', 'the loaded build back on disk clears the bar');
+  assert.equal(vm.evaluate('WoWGPTNoticeBar:IsShown()'), 'false', 'the loaded build back on disk clears the bar');
   slotPoll(vm, null, 'time()', luaDisk('1.2.4', BUILD_B));
-  assert.equal(vm.evaluate('ClaudeWoWNoticeBar:IsShown()'), 'true', 'and a later update shows it again');
-  vm.run('ClaudeWoWNoticeReload.scripts.OnClick(ClaudeWoWNoticeReload)');
+  assert.equal(vm.evaluate('WoWGPTNoticeBar:IsShown()'), 'true', 'and a later update shows it again');
+  vm.run('WoWGPTNoticeReload.scripts.OnClick(WoWGPTNoticeReload)');
   assert.equal(vm.evaluate('STUB.reloaded'), 'true', 'the button reloads the UI from the click');
 });
 
-const REAL_TOC = fs.readFileSync(path.join(ADDON, 'ClaudeWoW.toc'), 'utf8');
+const REAL_TOC = fs.readFileSync(path.join(ADDON, 'WoWGPT.toc'), 'utf8');
 const luaDiskFiles = (version, build, info) =>
   `, addonDisk = { version = "${version}", build = "${build}", files = ${info.files}, fileHash = "${info.fileHash}" }`;
 const prints = vm => vm.evaluate('table.concat(STUB.prints, "\\n")');
@@ -314,7 +314,7 @@ function fullVM({ prelude = '' } = {}) {
   vm.run(LOAD_COUNTER_STUB);
   if (prelude) vm.run(prelude);
   vm.loadAddon();
-  vm.run('STUB.FireEvent("ADDON_LOADED", "ClaudeWoW")');
+  vm.run('STUB.FireEvent("ADDON_LOADED", "WoWGPT")');
   vm.run('STUB.FireEvent("PLAYER_LOGIN")');
   return vm;
 }
@@ -324,88 +324,85 @@ const RESTART_TEXT = 'Fully quit and restart the game to load the new addon file
 
 test('a new build with the file list the addon loaded asks for /reload; a new file list asks for a full restart on Forever and hides the Reload button', () => {
   const vm = fullVM(loadedAs('1.2.3', BUILD_A));
-  vm.run('ClaudeWoW.Toggle(true)');
+  vm.run('WoWGPT.Toggle(true)');
   const onDisk = P.addonDiskInfo(REAL_TOC);
   helloPoll(vm, null, 'time()', luaDiskFiles('1.2.3', BUILD_A, onDisk));
-  assert.equal(vm.evaluate('ClaudeWoWNoticeBar:IsShown()'), 'false', 'the loaded build and file list show no bar');
+  assert.equal(vm.evaluate('WoWGPTNoticeBar:IsShown()'), 'false', 'the loaded build and file list show no bar');
   vm.run('STUB.prints = {}');
   slotPoll(vm, null, 'time()', luaDiskFiles('1.2.4', BUILD_B, onDisk));
   assert.ok(prints(vm).includes('New addon files are installed (1.2.4, build bbbbbbbbbbbb). Type /reload to load them.'), 'the same file list: /reload');
-  assert.equal(vm.evaluate('ClaudeWoWNoticeBar.text:GetText()'), 'Addon update ready · 1.2.4');
-  assert.equal(vm.evaluate('ClaudeWoWNoticeReload:IsShown()'), 'true');
+  assert.equal(vm.evaluate('WoWGPTNoticeBar.text:GetText()'), 'Addon update ready · 1.2.4');
+  assert.equal(vm.evaluate('WoWGPTNoticeReload:IsShown()'), 'true');
   const grown = P.addonDiskInfo(REAL_TOC + 'Core\\State.lua\n');
   assert.equal(grown.files, onDisk.files + 1);
   assert.notEqual(grown.fileHash, onDisk.fileHash);
   vm.run('STUB.prints = {}');
   slotPoll(vm, null, 'time()', luaDiskFiles('1.2.5', BUILD_B, grown));
   assert.ok(prints(vm).includes('New addon files are installed (1.2.5, build bbbbbbbbbbbb). ' + RESTART_TEXT), 'a new file list: restart');
-  assert.equal(vm.evaluate('ClaudeWoWNoticeBar.text:GetText()'), 'Addon update ready · 1.2.5 · ' + RESTART_TEXT);
-  assert.equal(vm.evaluate('ClaudeWoWNoticeReload:IsShown()'), 'false', 'a reload would load nothing, so the button goes');
+  assert.equal(vm.evaluate('WoWGPTNoticeBar.text:GetText()'), 'Addon update ready · 1.2.5 · ' + RESTART_TEXT);
+  assert.equal(vm.evaluate('WoWGPTNoticeReload:IsShown()'), 'false', 'a reload would load nothing, so the button goes');
   assert.equal(told(vm, 'New addon files'), 0, 'the transcript gets no system message either way');
   vm.run('STUB.prints = {}');
   slotPoll(vm, null, 'time()', luaDisk('1.2.6', BUILD_B));
   assert.ok(prints(vm).includes('(1.2.6, build bbbbbbbbbbbb). Type /reload to load them.'), 'a bridge without the fingerprint keeps the /reload text');
-  assert.equal(vm.evaluate('ClaudeWoWNoticeReload:IsShown()'), 'true');
+  assert.equal(vm.evaluate('WoWGPTNoticeReload:IsShown()'), 'true');
   slotPoll(vm, null, 'time()', luaDiskFiles('1.2.3', BUILD_A, onDisk));
-  assert.equal(vm.evaluate('ClaudeWoWNoticeBar:IsShown()'), 'false', 'the loaded build back on disk clears the bar');
+  assert.equal(vm.evaluate('WoWGPTNoticeBar:IsShown()'), 'false', 'the loaded build back on disk clears the bar');
   vm.run('STUB.prints = {}');
   slotPoll(vm, null, 'time()', luaDiskFiles('1.2.3', BUILD_A, grown));
   assert.ok(
     prints(vm).includes('New addon files are installed (1.2.3, build aaaaaaaaaaaa). ' + RESTART_TEXT),
     'a toc-only change with the loaded version and build still asks for a restart',
   );
-  assert.equal(vm.evaluate('ClaudeWoWNoticeBar.text:GetText()'), 'Addon update ready · 1.2.3 build aaaaaaaaaaaa · ' + RESTART_TEXT);
-  assert.equal(vm.evaluate('ClaudeWoWNoticeReload:IsShown()'), 'false');
+  assert.equal(vm.evaluate('WoWGPTNoticeBar.text:GetText()'), 'Addon update ready · 1.2.3 build aaaaaaaaaaaa · ' + RESTART_TEXT);
+  assert.equal(vm.evaluate('WoWGPTNoticeReload:IsShown()'), 'false');
   slotPoll(vm, null, 'time()', luaDiskFiles('1.2.3', BUILD_A, onDisk));
-  assert.equal(vm.evaluate('ClaudeWoWNoticeBar:IsShown()'), 'false', 'the loaded file list back on disk clears it');
+  assert.equal(vm.evaluate('WoWGPTNoticeBar:IsShown()'), 'false', 'the loaded file list back on disk clears it');
 });
 
 test('on Classic Era a new file list keeps the /reload text and the Reload button, because /reload reads the toc again there', () => {
   const vm = fullVM(loadedAs('1.2.3', BUILD_A));
   vm.run(ERA_BUILD_INFO);
-  vm.run('ClaudeWoW.Toggle(true)');
+  vm.run('WoWGPT.Toggle(true)');
   const onDisk = P.addonDiskInfo(REAL_TOC);
   const grown = P.addonDiskInfo(REAL_TOC + 'Core\\State.lua\n');
   helloPoll(vm, null, 'time()', luaDiskFiles('1.2.3', BUILD_A, onDisk));
-  assert.equal(vm.evaluate('ClaudeWoWNoticeBar:IsShown()'), 'false');
+  assert.equal(vm.evaluate('WoWGPTNoticeBar:IsShown()'), 'false');
   vm.run('STUB.prints = {}');
   slotPoll(vm, null, 'time()', luaDiskFiles('1.2.5', BUILD_B, grown));
   assert.ok(prints(vm).includes('New addon files are installed (1.2.5, build bbbbbbbbbbbb). Type /reload to load them.'), 'a new file list on Era: /reload');
   assert.ok(!prints(vm).includes(RESTART_TEXT));
-  assert.equal(vm.evaluate('ClaudeWoWNoticeBar.text:GetText()'), 'Addon update ready · 1.2.5');
-  assert.equal(vm.evaluate('ClaudeWoWNoticeReload:IsShown()'), 'true', 'the button stays on Era');
+  assert.equal(vm.evaluate('WoWGPTNoticeBar.text:GetText()'), 'Addon update ready · 1.2.5');
+  assert.equal(vm.evaluate('WoWGPTNoticeReload:IsShown()'), 'true', 'the button stays on Era');
   vm.run('STUB.prints = {}');
   slotPoll(vm, null, 'time()', luaDiskFiles('1.2.3', BUILD_A, grown));
   assert.ok(prints(vm).includes('New addon files are installed (1.2.3, build aaaaaaaaaaaa). Type /reload to load them.'), 'a toc-only change on Era: /reload');
-  assert.equal(vm.evaluate('ClaudeWoWNoticeBar.text:GetText()'), 'Addon update ready · 1.2.3 build aaaaaaaaaaaa');
-  assert.equal(vm.evaluate('ClaudeWoWNoticeReload:IsShown()'), 'true');
+  assert.equal(vm.evaluate('WoWGPTNoticeBar.text:GetText()'), 'Addon update ready · 1.2.3 build aaaaaaaaaaaa');
+  assert.equal(vm.evaluate('WoWGPTNoticeReload:IsShown()'), 'true');
   slotPoll(vm, null, 'time()', luaDiskFiles('1.2.3', BUILD_A, onDisk));
-  assert.equal(vm.evaluate('ClaudeWoWNoticeBar:IsShown()'), 'false');
+  assert.equal(vm.evaluate('WoWGPTNoticeBar:IsShown()'), 'false');
 });
 
-test('ClaudeWoW.lua loaded without the namespace prints one line that says how to load the new files and defines nothing', () => {
+test('WoWGPT.lua loaded without the namespace prints one line that says how to load the new files and defines nothing', () => {
   const vm = createVM();
-  const src = fs.readFileSync(path.join(ADDON, 'ClaudeWoW.lua'), 'utf8');
+  const src = fs.readFileSync(path.join(ADDON, 'WoWGPT.lua'), 'utf8');
   assert.ok(!src.includes(']==]'));
   vm.run('SRC = [==[' + src + ']==]');
-  vm.run('local f = assert((loadstring or load)(SRC, "@addon/ClaudeWoW.lua")); f("ClaudeWoW", {})');
-  assert.equal(
-    prints(vm),
-    '|cff66ccff[Azeroth Companion]|r New addon files are not loaded yet. Type /reload; if that does not help, fully quit and restart the game.',
-  );
+  vm.run('local f = assert((loadstring or load)(SRC, "@addon/WoWGPT.lua")); f("WoWGPT", {})');
+  assert.equal(prints(vm), '|cff66ccff[WoWGPT]|r New addon files are not loaded yet. Type /reload; if that does not help, fully quit and restart the game.');
   assert.equal(vm.num('#STUB.prints'), 1);
-  assert.equal(vm.evaluate('ClaudeWoW'), null);
+  assert.equal(vm.evaluate('WoWGPT'), null);
   const quiet = createVM();
   quiet.run('SRC = [==[' + fs.readFileSync(path.join(ADDON, 'Core', 'Log.lua'), 'utf8') + ']==]');
-  quiet.run('local f = assert((loadstring or load)(SRC, "@addon/Core/Log.lua")); f("ClaudeWoW", {})');
+  quiet.run('local f = assert((loadstring or load)(SRC, "@addon/Core/Log.lua")); f("WoWGPT", {})');
   assert.equal(quiet.num('#STUB.prints'), 0, 'every other file keeps the silent guard');
 });
 
 test('a runtime folder installed after launch asks for a full restart, once', () => {
-  const vm = newVM({ prelude: 'STUB.addonMissing = { ClaudeWoW_Runtime = true }' });
+  const vm = newVM({ prelude: 'STUB.addonMissing = { WoWGPT_Runtime = true }' });
   helloPoll(vm, null, 'time()', luaDisk(TOC_VERSION));
   slotPoll(vm, null, 'time()', luaDisk(TOC_VERSION));
-  assert.equal(told(vm, 'The ClaudeWoW_Runtime addon was installed after the game started. Fully quit and restart the game'), 1);
+  assert.equal(told(vm, 'The WoWGPT_Runtime addon was installed after the game started. Fully quit and restart the game'), 1);
   const present = newVM();
   helloPoll(present, null, 'time()', luaDisk(TOC_VERSION));
   assert.equal(told(present, 'restart the game'), 0);
@@ -422,10 +419,10 @@ const luaClients = rows =>
     .join(', ')} }`;
 const ERA = { name: '_classic_era_', version: '1.2.3', build: BUILD_A, heard: 'time() - 120', here: true, last: true };
 const FOREVER = { name: '_classic_beta_', version: '1.2.2', build: BUILD_B, heard: 0 };
-const clientsStatus = vm => vm.evaluate('ClaudeWoW.Version.ClientsStatus()');
+const clientsStatus = vm => vm.evaluate('WoWGPT.Version.ClientsStatus()');
 
 test('the bridge writes one clients row per client, marks this one and the last speaker, and drops a malformed build', () => {
-  const lua = P.luaTable('ClaudeWoW_SlotData', [], {
+  const lua = P.luaTable('WoWGPT_SlotData', [], {
     now: 1000,
     clients: [
       { name: '_classic_era_', version: '1.2.3', build: BUILD_A, heard: 900.7, here: true, last: true },
@@ -436,8 +433,8 @@ test('the bridge writes one clients row per client, marks this one and the last 
     lua,
     /\tclients = \{ \{ name = "_classic_era_", version = "1\.2\.3", build = "aaaaaaaaaaaa", heard = 900, here = true, last = true \}, \{ name = "_classic_beta_", version = "", build = "", heard = 0 \} \},/,
   );
-  assert.match(P.luaTable('ClaudeWoW_SlotData', [], { now: 1000, clients: [] }), /\tclients = \{  \},/, 'a bridge with no client still sends the field');
-  assert.doesNotMatch(P.luaTable('ClaudeWoW_SlotData', [], { now: 1000 }), /clients =/);
+  assert.match(P.luaTable('WoWGPT_SlotData', [], { now: 1000, clients: [] }), /\tclients = \{  \},/, 'a bridge with no client still sends the field');
+  assert.doesNotMatch(P.luaTable('WoWGPT_SlotData', [], { now: 1000 }), /clients =/);
 });
 
 test('diag shows every client with its build, which one this is and which spoke last, from a slot read', () => {
@@ -449,7 +446,7 @@ test('diag shows every client with its build, which one this is and which spoke 
     'clients: _classic_era_ (this client): 1.2.3 build aaaaaaaaaaaa, heard 2m00s ago, spoke last; _classic_beta_: 1.2.2 build bbbbbbbbbbbb, not heard yet',
   );
   vm.run('SlashCmdList.CLAUDEWOW("diag")');
-  assert.equal(told(vm, 'clients: _classic_era_ (this client): 1.2.3 build aaaaaaaaaaaa'), 1, 'the line is part of /claude diag');
+  assert.equal(told(vm, 'clients: _classic_era_ (this client): 1.2.3 build aaaaaaaaaaaa'), 1, 'the line is part of /wowgpt diag');
   slotPoll(vm, null, 'time()', luaClients([]));
   assert.equal(clientsStatus(vm), "clients: none in the bridge's config.json", 'an explicit empty list replaces the old one');
 });

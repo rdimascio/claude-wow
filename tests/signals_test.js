@@ -12,7 +12,7 @@ const CLI = require('../bridge/clients');
 function scratch(name) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), `claude-wow-signals-${name}-`));
   const addons = path.join(dir, 'Interface', 'AddOns');
-  fs.mkdirSync(path.join(addons, 'ClaudeWoW'), { recursive: true });
+  fs.mkdirSync(path.join(addons, 'WoWGPT'), { recursive: true });
   return { dir, addons };
 }
 
@@ -112,15 +112,15 @@ function installWorld(name, { state = {}, config = {} } = {}) {
   const { dir, addons } = scratch(name);
   const home = path.join(dir, 'home');
   fs.mkdirSync(home, { recursive: true });
-  fs.writeFileSync(path.join(addons, 'ClaudeWoW', 'ClaudeWoW.toc'), '## Interface: 16001\n');
-  fs.writeFileSync(path.join(addons, 'ClaudeWoW', 'ClaudeWoW.lua'), 'ClaudeWoW = {}\n');
+  fs.writeFileSync(path.join(addons, 'WoWGPT', 'WoWGPT.toc'), '## Interface: 16001\n');
+  fs.writeFileSync(path.join(addons, 'WoWGPT', 'WoWGPT.lua'), 'WoWGPT = {}\n');
   fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify({ addonDir: addons, slots: 3, actMax: 2, presenceMax: 5, ...config }));
   fs.writeFileSync(path.join(home, 'state.json'), JSON.stringify(state));
   return { dir, addons, home };
 }
 
 function writeLegacySignals(addons) {
-  const legacy = rel => path.join(addons, 'ClaudeWoW', ...rel.split('/'));
+  const legacy = rel => path.join(addons, 'WoWGPT', ...rel.split('/'));
   for (const rel of ['ack/001.wav', 'sig/002.wav', 'act/001/01.wav', 'ctl/valid.wav', 'presence/a/0003.wav', 'presence/b/0001.wav']) {
     fs.mkdirSync(path.dirname(legacy(rel)), { recursive: true });
     fs.writeFileSync(legacy(rel), 'RIFF');
@@ -136,7 +136,7 @@ test('prepareRuntime without removeLegacy (the bridge start) builds the runtime 
   assert.equal(r.legacyRemoved, 0);
   assert.deepEqual(r.presence.state, { ring: 'b', at: 1, switches: 0, probe: '' });
   assert.deepEqual(presentRange(addons, 'b', 1, 3), [false, true, true]);
-  assert.ok(fs.existsSync(path.join(addons, 'ClaudeWoW', 'ack', '001.wav')), 'a running game may still read the old files');
+  assert.ok(fs.existsSync(path.join(addons, 'WoWGPT', 'ack', '001.wav')), 'a running game may still read the old files');
   assert.equal(SIG.needsMigration(addons), false, 'done once: the runtime folder has its valid.wav');
   assert.equal(SIG.removeLegacySignalFolders(addons), 5);
   assert.deepEqual(SIG.legacySignalFolders(addons), []);
@@ -153,7 +153,7 @@ test('the strip flags carry the self-test and the probe token; the slot file nam
   assert.equal(bad.presenceTest, undefined);
   assert.equal(bad.lateCreate, undefined);
   assert.equal(bad.probe, undefined);
-  const lua = P.luaTable('ClaudeWoW_SlotData', [], { presence: { scheme: SIG.SCHEME, ring: 'b', at: 12, n: 2000, probe: 'abcd' } });
+  const lua = P.luaTable('WoWGPT_SlotData', [], { presence: { scheme: SIG.SCHEME, ring: 'b', at: 12, n: 2000, probe: 'abcd' } });
   assert.match(lua, /\tsignals = "armed",/);
   assert.match(lua, /\tpresence = \{ ring = "b", at = 12, n = 2000, probe = "abcd" \},/);
   assert.doesNotMatch(P.luaTable('X', [], {}), /presence =/);
@@ -166,8 +166,8 @@ test("install-slots arms each client from its own ring: the old top-level ring i
   const dirs = ['_classic_beta_', '_classic_era_'].map(f => path.join(dir, f));
   const addonsOf = d => path.join(d, 'Interface', 'AddOns');
   for (const d of dirs) {
-    fs.mkdirSync(path.join(addonsOf(d), 'ClaudeWoW'), { recursive: true });
-    fs.writeFileSync(path.join(addonsOf(d), 'ClaudeWoW', 'ClaudeWoW.toc'), '## Interface: 16001\n');
+    fs.mkdirSync(path.join(addonsOf(d), 'WoWGPT'), { recursive: true });
+    fs.writeFileSync(path.join(addonsOf(d), 'WoWGPT', 'WoWGPT.toc'), '## Interface: 16001\n');
   }
   fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify({ clients: dirs.map(d => ({ dir: d })), slots: 3, actMax: 2, presenceMax: 5 }));
   fs.writeFileSync(

@@ -114,7 +114,7 @@ test("after a permission roll times out, the session's answer reaches an idle ad
   const config = { plugins: { default: 'claude-code', live: { pickupMs: 0, permissionTimeoutMs: PERMISSION_TIMEOUT_MS } } };
   await withGame({ client: { speed: SPEED }, speed: SPEED, config }, async h => {
     await h.client.connect();
-    h.client.runLua('ClaudeWoWDB.settings.lootRoll = false');
+    h.client.runLua('WoWGPTDB.settings.lootRoll = false');
     const session = await connectLiveSession(h);
     try {
       const chatId = `${h.client.db().session}:${h.client.activeChat().id}`;

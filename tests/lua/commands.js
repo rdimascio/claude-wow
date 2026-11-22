@@ -72,7 +72,7 @@ const luaList = list => '{' + list.map(s => JSON.stringify(s)).join(', ') + '}';
 
 const DUMP_LUA = `
 local ns = ...
-local Cli, ClaudeWoW = ns.Cli, ns.ClaudeWoW
+local Cli, WoWGPT = ns.Cli, ns.WoWGPT
 local REST = ${luaList(REST)}
 local CONFIG_REST = ${luaList(CONFIG_REST)}
 
@@ -138,8 +138,8 @@ local configAccepts = {}
 for _, rest in ipairs(CONFIG_REST) do configAccepts[rest] = Cli.IsConfig(rest) == true end
 
 COMMANDS_DUMP = Enc({
-	help = ClaudeWoW.HELP,
-	rollHelp = ClaudeWoW.ROLL_HELP,
+	help = WoWGPT.HELP,
+	rollHelp = WoWGPT.ROLL_HELP,
 	commandVerbs = Cli.CommandVerbs(),
 	claudeVerbs = Bools(Cli.CLAUDE_VERBS),
 	configKeys = Cli.CONFIG_KEYS,

@@ -27,7 +27,7 @@ process.on('exit', () => process.stderr.write('FSCALLS ' + calls + '\\n'));
 function freshInstallCalls(sb, preload, slots) {
   SB.writeConfig(sb, { slots });
   for (const name of fs.readdirSync(sb.addons)) {
-    if (/^ClaudeWoW_(S\d{3}|Runtime)$/.test(name)) fs.rmSync(path.join(sb.addons, name), { recursive: true, force: true });
+    if (/^WoWGPT_(S\d{3}|Runtime)$/.test(name)) fs.rmSync(path.join(sb.addons, name), { recursive: true, force: true });
   }
   const flag = typeof Bun !== 'undefined' ? '--preload' : '--require';
   const r = spawnSync(process.execPath, [flag, preload, SCRIPT], { env: sb.env, encoding: 'utf8' });

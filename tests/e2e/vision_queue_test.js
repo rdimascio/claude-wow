@@ -17,21 +17,21 @@ test('a vision message waiting in the queue keeps its screenshot when newer scre
     const first = sentId(h.client);
     await h.client.waitFor(() => inflightIds(h).includes(first), { label: 'the first run in flight' });
 
-    h.client.runLua('ClaudeWoW.NewChat("Two")');
-    h.client.runLua('ClaudeWoW.Send("look two", nil, { vision = true })');
+    h.client.runLua('WoWGPT.NewChat("Two")');
+    h.client.runLua('WoWGPT.Send("look two", nil, { vision = true })');
     const second = sentId(h.client);
     await h.bridge.waitForLine(new RegExp(`#${second}@\\S+ queued \\(1 running\\)`));
-    h.client.runLua('ClaudeWoW.NewChat("Three")');
-    h.client.runLua('ClaudeWoW.Send("look three", nil, { vision = true })');
+    h.client.runLua('WoWGPT.NewChat("Three")');
+    h.client.runLua('WoWGPT.Send("look three", nil, { vision = true })');
     const third = sentId(h.client);
     await h.bridge.waitForLine(new RegExp(`#${third}@\\S+ queued \\(1 running\\)`));
-    h.client.runLua('ClaudeWoW.NewChat("Four")');
-    h.client.runLua('ClaudeWoW.Send("look four", nil, { vision = true })');
+    h.client.runLua('WoWGPT.NewChat("Four")');
+    h.client.runLua('WoWGPT.Send("look four", nil, { vision = true })');
     const fourth = sentId(h.client);
     await h.bridge.waitForLine(new RegExp(`#${fourth}@\\S+ queued \\(1 running\\)`));
 
-    h.client.runLua(`ClaudeWoW.SwitchChat(${JSON.stringify(firstChat)})`);
-    h.client.slash('/claude cancel');
+    h.client.runLua(`WoWGPT.SwitchChat(${JSON.stringify(firstChat)})`);
+    h.client.slash('/wowgpt cancel');
     const run = await h.client.waitFor(() => h.agentCalls().find(c => c.prompt.includes('look two')), { label: 'the queued vision message to run' });
     assert.equal(run.images, 1, 'the queued message runs with its screenshot');
     assert.doesNotMatch(h.bridge.output, /vision: \S+ is gone/);
@@ -47,7 +47,7 @@ test('vision messages that share one screenshot each keep their own copy when th
     await h.client.waitFor(() => inflightIds(h).includes(first), { label: 'the first run in flight' });
 
     h.client.runLua(
-      'ClaudeWoW.NewChat("Two"); ClaudeWoW.Send("look two", nil, { vision = true }); ClaudeWoW.NewChat("Three"); ClaudeWoW.Send("look three", nil, { vision = true })',
+      'WoWGPT.NewChat("Two"); WoWGPT.Send("look two", nil, { vision = true }); WoWGPT.NewChat("Three"); WoWGPT.Send("look three", nil, { vision = true })',
     );
     const [second, third] = ['Two', 'Three'].map(name =>
       sentId(
@@ -58,8 +58,8 @@ test('vision messages that share one screenshot each keep their own copy when th
     await h.bridge.waitForLine(new RegExp(`vision: \\S+ -> \\d+x\\d+ png, \\d+ KB, for #${second}, #${third}`));
     await h.bridge.waitForLine(new RegExp(`#${third}@\\S+ queued \\(1 running\\)`));
 
-    h.client.runLua(`ClaudeWoW.SwitchChat(${JSON.stringify(firstChat)})`);
-    h.client.slash('/claude cancel');
+    h.client.runLua(`WoWGPT.SwitchChat(${JSON.stringify(firstChat)})`);
+    h.client.slash('/wowgpt cancel');
     const runs = await h.client.waitFor(
       () => {
         const calls = ['look two', 'look three'].map(text => h.agentCalls().find(c => c.prompt.includes(text)));

@@ -243,5 +243,5 @@ Write-Host '  1. Fully quit and relaunch World of Warcraft (it only discovers ne
 Write-Host '  2. Enable "Claude WoW" at the character-select AddOns screen.'
 if ($installService) { Write-Host '  3. Check the bridge:  claude-wow service status     (logs: claude-wow service logs)' }
 else { Write-Host '  3. Start the bridge:  claude-wow        (or: claude-wow service install, to keep it running in the background)' }
-Write-Host '  4. In game:  /claude'
+Write-Host '  4. In game:  /wowgpt'
 Write-Host "`nUpdate later by running this installer again. Folder: $Dir"

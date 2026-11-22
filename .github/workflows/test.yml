@@ -42,7 +42,7 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           version: v2.6.0
-          args: --check addon/ClaudeWoW
+          args: --check addon/WoWGPT
       - run: npm run lint:lua
       - run: npx oxlint --deny-warnings
       - run: npx oxfmt --check

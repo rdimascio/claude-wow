@@ -13,18 +13,18 @@ function boot({ native = true } = {}) {
   vm.loadAddon();
   vm.login();
   vm.run('NS = ...', { ns: true });
-  vm.run('ClaudeWoW.Toggle(true)');
+  vm.run('WoWGPT.Toggle(true)');
   vm.run(
-    'STUB.RunTimers(); STUB.onLoadAddOn = function() ClaudeWoW_SlotData = { now = time(), cwd = "", replies = {} } end; STUB.now = STUB.now + 6; STUB.Tick()',
+    'STUB.RunTimers(); STUB.onLoadAddOn = function() WoWGPT_SlotData = { now = time(), cwd = "", replies = {} } end; STUB.now = STUB.now + 6; STUB.Tick()',
   );
   return vm;
 }
 
 const reply = fields =>
-  `STUB.onLoadAddOn = function() local c for _, ch in ipairs(ClaudeWoWDB.chats) do if ch.id == ClaudeWoWDB.activeChat then c = ch end end ClaudeWoW_SlotData = { now = time(), cwd = "", replies = { { chat = c.id, id = c.pendingId, ${fields} } } } end; STUB.now = STUB.now + 6; STUB.Tick()`;
+  `STUB.onLoadAddOn = function() local c for _, ch in ipairs(WoWGPTDB.chats) do if ch.id == WoWGPTDB.activeChat then c = ch end end WoWGPT_SlotData = { now = time(), cwd = "", replies = { { chat = c.id, id = c.pendingId, ${fields} } } } end; STUB.now = STUB.now + 6; STUB.Tick()`;
 
-const LAST = '(function() local last for _, b in ipairs(ClaudeWoW.UI.bubbles) do if b.shown then last = b end end return last end)()';
-const history = entries => `local c = ClaudeWoWDB.chats[1]; ClaudeWoW.SwitchChat(c.id); c.history = { ${entries} }; ClaudeWoW.Render()`;
+const LAST = '(function() local last for _, b in ipairs(WoWGPT.UI.bubbles) do if b.shown then last = b end end return last end)()';
+const history = entries => `local c = WoWGPTDB.chats[1]; WoWGPT.SwitchChat(c.id); c.history = { ${entries} }; WoWGPT.Render()`;
 
 const VALID_UTF8 = `function VALID_UTF8(s)
 	local i = 1
@@ -44,22 +44,22 @@ end`;
 test('message line spacing survives the font reset when a bubble is laid out again, and notes and the dark theme get none', () => {
   const vm = boot();
   vm.run(history('{ role = "assistant", t = 2, text = "hello" }'));
-  assert.equal(vm.evaluate('ClaudeWoW.UI.bubbles[1].body.font'), 'GameFontBlackMedium');
-  assert.equal(vm.num('ClaudeWoW.UI.bubbles[1].body.spacing'), 2, 'spacing is set after the font object');
+  assert.equal(vm.evaluate('WoWGPT.UI.bubbles[1].body.font'), 'GameFontBlackMedium');
+  assert.equal(vm.num('WoWGPT.UI.bubbles[1].body.spacing'), 2, 'spacing is set after the font object');
   vm.run(history('{ role = "system", t = 1, text = "A short note" }'));
-  assert.equal(vm.num('ClaudeWoW.UI.bubbles[1].body.spacing'), 0, 'a note keeps its font spacing');
+  assert.equal(vm.num('WoWGPT.UI.bubbles[1].body.spacing'), 0, 'a note keeps its font spacing');
   vm.run(history('{ role = "assistant", t = 3, text = "back to a message" }'));
-  assert.equal(vm.num('ClaudeWoW.UI.bubbles[1].body.spacing'), 2, 'a reused bubble gets its spacing back');
+  assert.equal(vm.num('WoWGPT.UI.bubbles[1].body.spacing'), 2, 'a reused bubble gets its spacing back');
 
   const dark = boot({ native: false });
   dark.run(history('{ role = "assistant", t = 2, text = "hello" }'));
-  assert.equal(dark.num('ClaudeWoW.UI.bubbles[1].body.spacing'), 0, 'the dark theme keeps the font spacing');
+  assert.equal(dark.num('WoWGPT.UI.bubbles[1].body.spacing'), 0, 'the dark theme keeps the font spacing');
 });
 
 test('the parchment and the dark theme both keep the old bubble padding', () => {
   const geometry = vm => {
     vm.run(history('{ role = "assistant", t = 2, text = "hello" }'));
-    const b = 'ClaudeWoW.UI.bubbles[1]';
+    const b = 'WoWGPT.UI.bubbles[1]';
     return {
       whoX: vm.num(`${b}.who.x`),
       whoY: vm.num(`${b}.who.y`),
@@ -82,7 +82,7 @@ test('a long step is cut without splitting a multibyte character in the working 
   assert.equal(cut('string.rep("a", 88) .. "\\194\\166b"', 90), 'true,93', 'keeps a whole character that fits');
   assert.equal(cut('"short"', 90), 'true,5');
 
-  vm.run('ClaudeWoW.Send("go")');
+  vm.run('WoWGPT.Send("go")');
   const step = 'a'.repeat(89) + '|' + 'b'.repeat(40);
   vm.run(reply(`status = "working", text = "${step}", steps = 1`));
   assert.equal(vm.evaluate(`tostring(VALID_UTF8(${LAST}.body:GetText()))`), 'true', 'the live line is whole characters');
@@ -90,7 +90,7 @@ test('a long step is cut without splitting a multibyte character in the working 
 
   const whisper = 'a'.repeat(119) + '|' + 'b'.repeat(40);
   vm.run(reply(`status = "working", text = "${whisper}", steps = 1`));
-  vm.run('local c for _, ch in ipairs(ClaudeWoWDB.chats) do if ch.id == ClaudeWoWDB.activeChat then c = ch end end PROGRESS = NS.Whisper.ProgressText(c)');
+  vm.run('local c for _, ch in ipairs(WoWGPTDB.chats) do if ch.id == WoWGPTDB.activeChat then c = ch end end PROGRESS = NS.Whisper.ProgressText(c)');
   const line = vm.evaluate('PROGRESS');
   assert.equal(vm.evaluate('tostring(VALID_UTF8(PROGRESS))'), 'true', 'the whisper line is whole characters');
   assert.ok(line.includes('a...'), line);
@@ -98,7 +98,7 @@ test('a long step is cut without splitting a multibyte character in the working 
 
 test('steps that arrive while the mouse already rests on the working message open the step tooltip above it', () => {
   const vm = boot();
-  vm.run('ClaudeWoW.Send("go")');
+  vm.run('WoWGPT.Send("go")');
   vm.run(`local b = ${LAST}; STUB.mouseOver = b; b.scripts.OnEnter(b)`);
   assert.equal(vm.evaluate(`GameTooltip.owner == ${LAST}`), 'false', 'no tooltip before the first step');
   vm.run(reply('status = "working", text = "Step 1", steps = 1'));
@@ -111,10 +111,10 @@ test('steps that arrive while the mouse already rests on the working message ope
 
 test('a click on the working message opens the copy box with every step', () => {
   const vm = boot();
-  vm.run('ClaudeWoW.Send("go")');
+  vm.run('WoWGPT.Send("go")');
   vm.run(reply('status = "working", text = "Step 1\\nStep 2\\nStep 3", steps = 3'));
   vm.run(`local b = ${LAST}; b.scripts.OnMouseUp(b, "LeftButton"); STUB.RunTimers()`);
-  const copy = vm.evaluate('ClaudeWoWCopyBox and ClaudeWoWCopyBox.text');
+  const copy = vm.evaluate('WoWGPTCopyBox and WoWGPTCopyBox.text');
   assert.ok(copy, 'the copy box opened');
   for (const s of ['Step 1', 'Step 2', 'Step 3']) assert.ok(copy.includes(s), `${s} is in the copy box: ${copy}`);
   assert.ok(copy.startsWith('Working '), copy);

@@ -36,7 +36,7 @@ function replyTo(h, id) {
 }
 
 function chatById(client, chatId) {
-  return client.json(`(function() for _, c in ipairs(ClaudeWoWDB.chats) do if c.id == ${luaQuote(chatId)} then return c end end end)()`);
+  return client.json(`(function() for _, c in ipairs(WoWGPTDB.chats) do if c.id == ${luaQuote(chatId)} then return c end end end)()`);
 }
 
 function sentId(client, chat = client.activeChat()) {
@@ -84,7 +84,7 @@ const TWO_CLIENTS = { extraClients: [ERA], tocInterface: P.TOC_INTERFACE };
 function slotBodies(addons) {
   return fs
     .readdirSync(addons)
-    .filter(n => /^ClaudeWoW_S\d{3}$/.test(n))
+    .filter(n => /^WoWGPT_S\d{3}$/.test(n))
     .map(n => fs.readFileSync(path.join(addons, n, 'Inbox.lua'), 'utf8'));
 }
 
@@ -102,7 +102,7 @@ async function withEra(h, fn, opts = {}) {
 }
 
 async function askFromA(h, era, text) {
-  era.slash('/claude config context on');
+  era.slash('/wowgpt config context on');
   await era.say(`warm up before ${text}`);
   await h.client.say(`@ask ${text}`);
   const out = h.bridge.output;

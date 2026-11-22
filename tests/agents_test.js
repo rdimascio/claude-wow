@@ -969,7 +969,7 @@ test('the other agents report no context size: their streams carry none the brid
   assert.equal(A.hermesParser().finish({ stdout: 'ok', stderr: '', code: 0 }).usage, undefined);
 });
 
-test('per-chat settings from /claude flags: each agent gets the ones it has, in its own spelling, and the rest are named as ignored', () => {
+test('per-chat settings from /wowgpt flags: each agent gets the ones it has, in its own spelling, and the rest are named as ignored', () => {
   const chosen = { model: 'opus', effort: 'high', permissionMode: 'plan', addDirs: ['/srv/extra', '-x'] };
   const argsFor = id => {
     const cfg = A.withChatSettings({ permissionMode: 'acceptEdits', model: 'from-config' }, id, chosen);

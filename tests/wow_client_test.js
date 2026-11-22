@@ -24,7 +24,7 @@ function launched(opts = {}) {
 }
 
 function withAddonFile(sb, name, body, fn) {
-  const file = path.join(sb.addons, 'ClaudeWoW', name);
+  const file = path.join(sb.addons, 'WoWGPT', name);
   const before = fs.existsSync(file) ? fs.readFileSync(file) : null;
   fs.writeFileSync(file, body);
   try {
@@ -105,38 +105,38 @@ test('a frame step that throws makes assertHealthy fail', async () => {
 
 test('an addon file created after launch is not read, even after /reload, while a launch-time file reads its new contents', () => {
   const { sb, client } = launched();
-  const probe = '(function() local ok, why = DEV.RunAddonFile("ClaudeWoW", "Late.lua"); return tostring(ok) .. ":" .. tostring(why) end)()';
+  const probe = '(function() local ok, why = DEV.RunAddonFile("WoWGPT", "Late.lua"); return tostring(ok) .. ":" .. tostring(why) end)()';
   withAddonFile(sb, 'Late.lua', 'LATE_LOADED = true', () => {
     assert.equal(client.luaValue(probe), 'false:MISSING_FILE Late.lua');
     assert.equal(client.luaValue('LATE_LOADED'), null);
-    assert.equal(client.luaValue('HOST_read("Interface/AddOns/ClaudeWoW/Late.lua")'), null);
+    assert.equal(client.luaValue('HOST_read("Interface/AddOns/WoWGPT/Late.lua")'), null);
     client.reload();
     assert.equal(client.luaValue(probe), 'false:MISSING_FILE Late.lua');
   });
   withAddonFile(sb, 'Codec.lua', 'CHANGED_AFTER_LAUNCH = 1', () => {
-    assert.equal(client.luaValue('HOST_read("Interface/AddOns/ClaudeWoW/Codec.lua")'), 'CHANGED_AFTER_LAUNCH = 1');
+    assert.equal(client.luaValue('HOST_read("Interface/AddOns/WoWGPT/Codec.lua")'), 'CHANGED_AFTER_LAUNCH = 1');
   });
 });
 
 test('with the live file index a file created after launch is read', () => {
   const { sb, client } = launched({ fileIndex: 'live' });
   withAddonFile(sb, 'Late.lua', 'LATE_LOADED = true', () => {
-    client.runLua('DEV.RunAddonFile("ClaudeWoW", "Late.lua")');
+    client.runLua('DEV.RunAddonFile("WoWGPT", "Late.lua")');
     assert.equal(client.luaValue('LATE_LOADED'), 'true');
   });
 });
 
-test('a disabled ClaudeWoW does not load and its SavedVariables are left alone', () => {
+test('a disabled WoWGPT does not load and its SavedVariables are left alone', () => {
   const sb = sandbox();
-  const saved = 'ClaudeWoWDB = { kept = true }\r\n';
+  const saved = 'WoWGPTDB = { kept = true }\r\n';
   withSaved(sb, saved, () => {
-    const client = new WowClient(sb, { disabled: ['ClaudeWoW'] }).launch();
-    assert.equal(client.luaValue('ClaudeWoW'), null);
-    assert.equal(client.luaValue('ClaudeWoWDB'), null);
-    assert.equal(client.luaValue('IsAddOnLoaded("ClaudeWoW")'), 'false');
-    assert.equal(client.luaValue('IsAddOnLoaded("ClaudeWoW_Runtime")'), 'false', 'the runtime needs ClaudeWoW, so the game refuses it');
-    assert.equal(client.luaValue('select(2, LoadAddOn("ClaudeWoW_Runtime"))'), 'DEP_DISABLED');
-    assert.equal(client.luaValue('select(2, LoadAddOn("ClaudeWoW_S001"))'), 'DEP_DISABLED');
+    const client = new WowClient(sb, { disabled: ['WoWGPT'] }).launch();
+    assert.equal(client.luaValue('WoWGPT'), null);
+    assert.equal(client.luaValue('WoWGPTDB'), null);
+    assert.equal(client.luaValue('IsAddOnLoaded("WoWGPT")'), 'false');
+    assert.equal(client.luaValue('IsAddOnLoaded("WoWGPT_Runtime")'), 'false', 'the runtime needs WoWGPT, so the game refuses it');
+    assert.equal(client.luaValue('select(2, LoadAddOn("WoWGPT_Runtime"))'), 'DEP_DISABLED');
+    assert.equal(client.luaValue('select(2, LoadAddOn("WoWGPT_S001"))'), 'DEP_DISABLED');
     client.reload();
     client.quit();
     assert.equal(fs.readFileSync(sb.saved, 'utf8'), saved);
@@ -173,29 +173,29 @@ test('LoadAddOn loads required dependencies first and stops on a missing or fail
     assert.equal(client.luaValue('select(2, LoadAddOn("DevNeedsMissing"))'), 'DEP_MISSING');
     assert.equal(client.luaValue('select(2, LoadAddOn("DevNeedsStale"))'), 'DEP_INTERFACE_VERSION');
     assert.equal(client.luaValue('DEV_BAD'), null);
-    assert.equal(client.luaValue('IsAddOnLoaded("ClaudeWoW_Runtime")'), 'true', 'the runtime loads when ClaudeWoW does');
+    assert.equal(client.luaValue('IsAddOnLoaded("WoWGPT_Runtime")'), 'true', 'the runtime loads when WoWGPT does');
   } finally {
     for (const dir of made) fs.rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test('ClaudeWoW whose TOC lists no matching interface loads only with out-of-date addons allowed', () => {
+test('WoWGPT whose TOC lists no matching interface loads only with out-of-date addons allowed', () => {
   const sb = sandbox();
   const stale = new WowClient(sb, { interface: 16002 }).launch();
-  assert.equal(stale.luaValue('IsAddOnLoaded("ClaudeWoW")'), 'false');
-  assert.equal(stale.luaValue('ClaudeWoW'), null);
+  assert.equal(stale.luaValue('IsAddOnLoaded("WoWGPT")'), 'false');
+  assert.equal(stale.luaValue('WoWGPT'), null);
   const allowed = new WowClient(sb, { interface: 16002, loadOutOfDate: true }).launch();
-  assert.equal(allowed.luaValue('IsAddOnLoaded("ClaudeWoW")'), 'true');
-  assert.notEqual(allowed.luaValue('ClaudeWoW'), null);
+  assert.equal(allowed.luaValue('IsAddOnLoaded("WoWGPT")'), 'true');
+  assert.notEqual(allowed.luaValue('WoWGPT'), null);
 });
 
-test('a ClaudeWoW whose TOC lists a missing file fails the launch and names the file', () => {
+test('a WoWGPT whose TOC lists a missing file fails the launch and names the file', () => {
   const sb = sandbox();
-  const file = path.join(sb.addons, 'ClaudeWoW', 'Widgets.lua');
+  const file = path.join(sb.addons, 'WoWGPT', 'Widgets.lua');
   const before = fs.readFileSync(file);
   fs.rmSync(file);
   try {
-    assert.throws(() => new WowClient(sb).launch(), /ClaudeWoW did not load: MISSING_FILE Widgets\.lua/);
+    assert.throws(() => new WowClient(sb).launch(), /WoWGPT did not load: MISSING_FILE Widgets\.lua/);
   } finally {
     fs.writeFileSync(file, before);
   }

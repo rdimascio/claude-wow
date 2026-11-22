@@ -9,8 +9,8 @@ const ROOT = makeRoot('startup-versions');
 const withGame = gameRunner(ROOT);
 
 test('a reload-mode session that never says hello is judged from its outbox and refused across a protocol mismatch', async () => {
-  await withGame({ client: { afterAddonLoad: `ClaudeWoW.Version.PROTO = ${P.PROTO + 1}; ClaudeWoW.SayHello = function() end` } }, async h => {
-    h.client.slash('/claude config mode reload');
+  await withGame({ client: { afterAddonLoad: `WoWGPT.Version.PROTO = ${P.PROTO + 1}; WoWGPT.SayHello = function() end` } }, async h => {
+    h.client.slash('/wowgpt config mode reload');
     h.client.send('through the outbox');
     await h.bridge.waitForLine(/refused: The companion app/, { timeoutMs: 30000 });
     const rec = await h.client.waitFor(() => Object.values(h.state().addons || {})[0], { timeoutMs: 10000, label: 'the versions saved in state.json' });

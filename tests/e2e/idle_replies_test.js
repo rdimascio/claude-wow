@@ -35,7 +35,7 @@ test("after a SavedVariables wipe, a reply kept for the old addon session is dro
     const oldToken = h.client.db().session;
     const chat = h.client.activeChat().id;
     const id = 50;
-    h.client.runLua(`ClaudeWoWDB.lastSeq = ${id - 1}`);
+    h.client.runLua(`WoWGPTDB.lastSeq = ${id - 1}`);
     h.client.send('old session question');
     await h.client.waitFor(() => replyTo(h, id), { label: 'the old session reply' });
     assert.ok(
@@ -55,9 +55,9 @@ test("after a SavedVariables wipe, a reply kept for the old addon session is dro
     await h.bridge.waitForLine(new RegExp(`addon session ${newToken}: dropped \\d+ repl(y|ies) kept for another addon session`));
     assert.ok(!Object.keys(h.state().replies || {}).some(k => k.startsWith(`${oldToken}:`)), 'gone from state.json too');
     await h.client.waitFor(() => (h.client.db().chats || []).some(c => c.id === chat), { label: 'the old chat restored with its id' });
-    h.client.runLua(`ClaudeWoW.SwitchChat(${JSON.stringify(chat)})`);
+    h.client.runLua(`WoWGPT.SwitchChat(${JSON.stringify(chat)})`);
     assert.ok(h.client.lastSeq() < id - 1, 'ids restarted after the wipe');
-    h.client.runLua(`ClaudeWoWDB.lastSeq = ${id - 1}`);
+    h.client.runLua(`WoWGPTDB.lastSeq = ${id - 1}`);
     const lockFile = switchingLock(h);
     h.client.send('new session question');
     assert.equal(h.client.activeChat().pendingId, id, 'the new message has the old chat and id');

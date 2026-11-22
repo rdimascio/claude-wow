@@ -73,8 +73,8 @@ class ClaudeWow < Formula
   end
 
   test do
-    assert_match "install", shell_output("#{bin}/claude-wow service help")
-    assert_match "claude-wow [--project", shell_output("#{bin}/claude-wow --help")
-    assert_match "claude-wow ", shell_output("#{bin}/claude-wow --version")
+    assert_match "install", shell_output("#{bin}/wowgpt service help")
+    assert_match "claude-wow [--project", shell_output("#{bin}/wowgpt --help")
+    assert_match "claude-wow ", shell_output("#{bin}/wowgpt --version")
   end
 end

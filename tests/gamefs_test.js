@@ -48,7 +48,7 @@ function assertUntouched(victim) {
 test('atomicWrite never writes or chmods through a link planted at the old fixed temp name', posixOnly, () => {
   const dir = scratch('planted-tmp');
   const victim = victimIn(dir);
-  const folder = path.join(dir, 'ClaudeWoW_S001');
+  const folder = path.join(dir, 'WoWGPT_S001');
   fs.mkdirSync(folder);
   const file = path.join(folder, 'Inbox.lua');
   fs.symlinkSync(victim, file + '.tmp');
@@ -97,7 +97,7 @@ test('a write into a folder that is a link is refused and leaves the linked fold
   const dir = scratch('linked-folder');
   const home = path.join(dir, 'home');
   fs.mkdirSync(home, { mode: 0o700 });
-  const folder = path.join(dir, 'ClaudeWoW_S001');
+  const folder = path.join(dir, 'WoWGPT_S001');
   fs.symlinkSync(home, folder);
   assert.throws(() => G.atomicWrite(path.join(folder, 'Inbox.lua'), 'payload'), { code: 'EUNSAFE' });
   assert.throws(() => G.writeFile(path.join(folder, 'Inbox.lua'), 'payload'), { code: 'EUNSAFE' });
@@ -112,28 +112,28 @@ test('a link anywhere between the AddOns folder and the target is refused, and a
   fs.mkdirSync(path.join(home, 'sig'), { recursive: true, mode: 0o700 });
   const addons = path.join(dir, 'game', 'Interface', 'AddOns');
   fs.mkdirSync(addons, { recursive: true });
-  fs.symlinkSync(home, path.join(addons, 'ClaudeWoW_Runtime'));
-  const target = path.join(addons, 'ClaudeWoW_Runtime', 'sig', '001.wav');
-  assert.throws(() => G.atomicWrite(target, 'payload'), { code: 'EUNSAFE', message: /ClaudeWoW_Runtime is a link/ });
+  fs.symlinkSync(home, path.join(addons, 'WoWGPT_Runtime'));
+  const target = path.join(addons, 'WoWGPT_Runtime', 'sig', '001.wav');
+  assert.throws(() => G.atomicWrite(target, 'payload'), { code: 'EUNSAFE', message: /WoWGPT_Runtime is a link/ });
   assert.throws(() => G.writeFile(target, 'payload'), { code: 'EUNSAFE' });
   assert.throws(() => G.ensureFile(target, 'payload'), { code: 'EUNSAFE' });
-  assert.throws(() => G.mkdir(path.join(addons, 'ClaudeWoW_Runtime', 'sig', 'new')), { code: 'EUNSAFE' });
+  assert.throws(() => G.mkdir(path.join(addons, 'WoWGPT_Runtime', 'sig', 'new')), { code: 'EUNSAFE' });
   assert.deepEqual(fs.readdirSync(path.join(home, 'sig')), []);
   assert.equal(modeOf(path.join(home, 'sig')), 0o700);
   const realAddons = path.join(dir, 'real-addons');
-  fs.mkdirSync(path.join(realAddons, 'ClaudeWoW_Runtime', 'sig'), { recursive: true });
+  fs.mkdirSync(path.join(realAddons, 'WoWGPT_Runtime', 'sig'), { recursive: true });
   const linkedAddons = path.join(dir, 'game2', 'Interface', 'AddOns');
   fs.mkdirSync(path.dirname(linkedAddons), { recursive: true });
   fs.symlinkSync(realAddons, linkedAddons);
-  assert.equal(G.writeFile(path.join(linkedAddons, 'ClaudeWoW_Runtime', 'sig', '001.wav'), 'payload'), true);
-  G.mkdir(path.join(linkedAddons, 'ClaudeWoW_S001'));
-  assert.ok(fs.statSync(path.join(realAddons, 'ClaudeWoW_S001')).isDirectory());
+  assert.equal(G.writeFile(path.join(linkedAddons, 'WoWGPT_Runtime', 'sig', '001.wav'), 'payload'), true);
+  G.mkdir(path.join(linkedAddons, 'WoWGPT_S001'));
+  assert.ok(fs.statSync(path.join(realAddons, 'WoWGPT_S001')).isDirectory());
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
 test('on Windows, which has no uid, a write under AddOns skips the folder walk and lands', () => {
   const dir = scratch('win32-walk');
-  const sig = path.join(dir, 'game', 'Interface', 'AddOns', 'ClaudeWoW_Runtime', 'sig');
+  const sig = path.join(dir, 'game', 'Interface', 'AddOns', 'WoWGPT_Runtime', 'sig');
   fs.mkdirSync(sig, { recursive: true });
   const platform = Object.getOwnPropertyDescriptor(process, 'platform');
   const getuid = Object.getOwnPropertyDescriptor(process, 'getuid');
@@ -155,7 +155,7 @@ test('on Windows, which has no uid, a write under AddOns skips the folder walk a
 test('a folder under AddOns that belongs to another account is refused before anything is written', posixOnly, t => {
   const dir = scratch('foreign-parent');
   const addons = path.join(dir, 'game', 'Interface', 'AddOns');
-  const sig = path.join(addons, 'ClaudeWoW_Runtime', 'sig');
+  const sig = path.join(addons, 'WoWGPT_Runtime', 'sig');
   fs.mkdirSync(sig, { recursive: true });
   const me = process.getuid();
   t.mock.method(process, 'getuid', () => me + 1);
@@ -173,7 +173,7 @@ test('a folder swapped for a link between the checks and the write is caught aft
   const outside = path.join(dir, 'outside');
   fs.mkdirSync(path.join(outside, 'sig'), { recursive: true });
   const addons = path.join(dir, 'game', 'Interface', 'AddOns');
-  const runtime = path.join(addons, 'ClaudeWoW_Runtime');
+  const runtime = path.join(addons, 'WoWGPT_Runtime');
   fs.mkdirSync(path.join(runtime, 'sig'), { recursive: true });
   const target = path.join(runtime, 'sig', '001.wav');
   const realOpen = fs.openSync;
@@ -194,7 +194,7 @@ test('the publish note gives the refusal reason for an unsafe folder and the set
   const dir = scratch('publish-note');
   const home = path.join(dir, 'home');
   fs.mkdirSync(home);
-  const linked = path.join(dir, 'ClaudeWoW_Runtime');
+  const linked = path.join(dir, 'WoWGPT_Runtime');
   fs.symlinkSync(home, linked);
   const failure = target => {
     try {
@@ -217,7 +217,7 @@ test('the publish note gives the refusal reason for an unsafe folder and the set
 test('repair does not chmod a link swapped in after the walk checked the entry', posixOnly, t => {
   const addons = scratch('repair-swap');
   const victim = victimIn(addons);
-  const folder = path.join(addons, 'ClaudeWoW_S001');
+  const folder = path.join(addons, 'WoWGPT_S001');
   fs.mkdirSync(folder, { mode: 0o755 });
   const inbox = path.join(folder, 'Inbox.lua');
   fs.writeFileSync(inbox, 'x', { mode: 0o644 });
@@ -242,15 +242,15 @@ test('repair does not chmod a link swapped in after the walk checked the entry',
   fs.rmSync(addons, { recursive: true, force: true });
 });
 
-test('repair sets every file and folder under the ClaudeWoW addon folders to 0777 and nothing else', posixOnly, () => {
+test('repair sets every file and folder under the WoWGPT addon folders to 0777 and nothing else', posixOnly, () => {
   const addons = scratch('repair');
-  const presence = path.join(addons, 'ClaudeWoW_Runtime', 'presence');
+  const presence = path.join(addons, 'WoWGPT_Runtime', 'presence');
   fs.mkdirSync(presence, { recursive: true, mode: 0o755 });
   fs.writeFileSync(path.join(presence, '0007.wav'), 'RIFF', { mode: 0o644 });
-  fs.mkdirSync(path.join(addons, 'ClaudeWoW'), { mode: 0o755 });
-  fs.mkdirSync(path.join(addons, 'ClaudeWoW_Runtimes'), { mode: 0o755 });
-  fs.mkdirSync(path.join(addons, 'ClaudeWoW_S001'), { mode: 0o755 });
-  fs.writeFileSync(path.join(addons, 'ClaudeWoW_S001', 'Inbox.lua'), 'x', { mode: 0o644 });
+  fs.mkdirSync(path.join(addons, 'WoWGPT'), { mode: 0o755 });
+  fs.mkdirSync(path.join(addons, 'WoWGPT_Runtimes'), { mode: 0o755 });
+  fs.mkdirSync(path.join(addons, 'WoWGPT_S001'), { mode: 0o755 });
+  fs.writeFileSync(path.join(addons, 'WoWGPT_S001', 'Inbox.lua'), 'x', { mode: 0o644 });
   fs.mkdirSync(path.join(addons, 'SomeOtherAddon'), { mode: 0o755 });
   fs.writeFileSync(path.join(addons, 'SomeOtherAddon', 'a.lua'), 'x', { mode: 0o644 });
   const first = G.repair(addons);
@@ -258,16 +258,16 @@ test('repair sets every file and folder under the ClaudeWoW addon folders to 077
   assert.ok(first.fixed >= 5);
   assert.deepEqual(first.failed, []);
   for (const f of [
-    path.join(addons, 'ClaudeWoW'),
-    path.join(addons, 'ClaudeWoW_Runtime'),
+    path.join(addons, 'WoWGPT'),
+    path.join(addons, 'WoWGPT_Runtime'),
     presence,
     path.join(presence, '0007.wav'),
-    path.join(addons, 'ClaudeWoW_S001'),
-    path.join(addons, 'ClaudeWoW_S001', 'Inbox.lua'),
+    path.join(addons, 'WoWGPT_S001'),
+    path.join(addons, 'WoWGPT_S001', 'Inbox.lua'),
   ]) {
     assert.equal(modeOf(f), 0o777, f);
   }
-  assert.equal(modeOf(path.join(addons, 'ClaudeWoW_Runtimes')), 0o755, 'only the exact runtime folder name counts');
+  assert.equal(modeOf(path.join(addons, 'WoWGPT_Runtimes')), 0o755, 'only the exact runtime folder name counts');
   assert.equal(modeOf(path.join(addons, 'SomeOtherAddon', 'a.lua')), 0o644, 'another addon is not touched');
   const again = G.repair(addons);
   assert.equal(again.fixed, 0);
@@ -277,7 +277,7 @@ test('repair sets every file and folder under the ClaudeWoW addon folders to 077
 
 test('repair fixes a file its owner cannot read and never chmods a hard link to a file outside the addon folders', posixOnly, () => {
   const addons = scratch('repair-links');
-  const slot = path.join(addons, 'ClaudeWoW_S001');
+  const slot = path.join(addons, 'WoWGPT_S001');
   fs.mkdirSync(slot, { mode: 0o777 });
   fs.chmodSync(slot, 0o777);
   const unreadable = path.join(slot, 'Inbox.lua');

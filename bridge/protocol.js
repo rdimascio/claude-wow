@@ -11,12 +11,12 @@ const MC = require('./mcpconfig');
 
 // The addon's name, as the game sees it: its folder under Interface/AddOns, its
 // .toc, its SavedVariables file (<ADDON>.lua) and the prefix of its globals.
-// The names it had before (wow-claude, then wow-ai) are what setup.js migrates
-// from and what an older config.json may still name.
-const ADDON = 'ClaudeWoW';
+// The names it had before (wow-claude, then wow-ai, then claude-wow) are what
+// setup.js migrates from and what an older config.json may still name.
+const ADDON = 'WoWGPT';
 const RUNTIME_ADDON = ADDON + '_Runtime';
 const SHIPPED_INBOX_PATH = new RegExp('(^|[\\\\/])' + ADDON + '[\\\\/]Inbox\\.lua$');
-const OLD_ADDONS = ['WoWAI', 'WoWClaude']; // newest first
+const OLD_ADDONS = ['ClaudeWoW', 'WoWAI', 'WoWClaude']; // newest first
 const OLD_ADDON_PATH = new RegExp('(^|[\\\\/])(' + OLD_ADDONS.join('|') + ')([\\\\/]|$)');
 const OLD_SAVED_FILE = new RegExp('(' + OLD_ADDONS.join('|') + ')\\.lua$');
 const TOC_INTERFACE = '11509, 16001';
@@ -689,7 +689,7 @@ function withoutRules(rules, banned) {
 // text goes in the message, at the end. Claude and Grok take the stable part as
 // a system prompt; for Codex and the others agents.js puts it at the top of the
 // prompt on a new session. An empty context (a bridge used for unrelated
-// projects, or `/claude-wow context off`) leaves only the reply-format rule and
+// projects, or `/wowgpt config context off`) leaves only the reply-format rule and
 // the plugin's lines, and a message with nothing attached is exactly the text.
 const SUMMARY_MARKER = 'TL;DR:';
 const REPLY_FORMAT = [
@@ -967,7 +967,7 @@ function denialNotes(agentName, fresh, again) {
   }
   if (folders.length) {
     notes.push(
-      `${who} was blocked outside this chat's folders:\n  ${folders.map(e => `${e.what} (folder ${e.folder})`).join('\n  ')}\nAn allowlist rule cannot open a folder. Allow it from this chat to add the folder (like /claude --add-dir) and let it continue.`,
+      `${who} was blocked outside this chat's folders:\n  ${folders.map(e => `${e.what} (folder ${e.folder})`).join('\n  ')}\nAn allowlist rule cannot open a folder. Allow it from this chat to add the folder (like /wowgpt --add-dir) and let it continue.`,
     );
   }
   const seen = new Set();
@@ -1118,7 +1118,7 @@ function chooseTransport(capture, state) {
 // a strip record, or "shot" in the reload outbox). Remember why in state.json,
 // so the next start goes straight to the pixel transport, and hand back the
 // note that goes into the log and, through the slot files, into the addon's
-// /claude-wow diag. Returns null when the bridge is already on pixels for that
+// /wowgpt diag. Returns null when the bridge is already on pixels for that
 // reason (nothing to do); the caller switches transports on a non-null result.
 const FALLBACK_REASONS = {
   missing: 'the game client has no Screenshot() function',
@@ -1254,7 +1254,7 @@ function luaTable(globalName, records, opts = {}) {
     }
   }
   // Why a bridge is on the pixel transport when nobody asked for it (transportFallback);
-  // the addon shows it in /claude-wow diag.
+  // the addon shows it in /wowgpt diag.
   if (opts.transportNote) lines.splice(lines.length - 1, 0, `\ttransportNote = ${luaStr(opts.transportNote)},`);
   const efforts = luaEfforts(opts.efforts, opts.effortLock);
   if (efforts.length) lines.splice(lines.length - 1, 0, ...efforts);
@@ -1875,8 +1875,8 @@ const WIDGET_DENIED_PATTERNS = [
 
 const WIDGET_HINT = [
   'When the player asks for a small UI element (a DPS meter, a timer bar for their buffs, a tracker), hand it over as a live widget: the addon loads it at once, without /reload, and keeps it across logins. End the reply with a fenced block whose language tag is wowui followed by the widget name (letters, digits, _ . -, at most 32) and optionally title="<shown title>"; the block holds the widget\'s Lua 5.1 source. Or append {"op":"set","name":"<name>","title":"<title>","source":"<lua>"} as one JSON line to the file named by the CLAUDE_WOW_UI_FILE environment variable.',
-  `The source runs once as a function body: "local ui = ..." gives ui.name, ui.frame (a container frame: parent your frames to it, or pass no parent), ui.db (a table saved between sessions, e.g. for a position), and ui.print(text). Only display APIs exist in a widget: CreateFrame (frames get no global name; templates only ${WIDGET_TEMPLATES.join(', ')}), events, OnUpdate, C_Timer, Unit* functions, read-only getters such as GetTime and GetSpellCooldown, the Get/Is functions of C_ namespaces such as C_UnitAuras, GameTooltip, every font object such as GameFontNormal, GameTooltipText and Tooltip_Med (read-only), copies of RAID_CLASS_COLORS and Enum, and the Lua math, string and table libraries; UNIT_COMBAT gives damage and heals on a unit. UIParent is ui.frame, and Blizzard frames and every other global are nil. A widget never takes the keyboard (no EnableKeyboard, SetFocus or SetPropagateKeyboardInput(false)), and ui.frame covers the screen so it never takes the mouse: call EnableMouse on a child frame. The combat log (COMBAT_LOG_EVENT_UNFILTERED, CombatLogGetCurrentEventInfo) is for the Blizzard UI only in this client: registering it shows the player a blocked-action error, so a widget that names it is refused. Widgets are display-only: no sounds (PlaySound and PlaySoundFile are nil), no casting, targeting, movement, items, chat or addon messages, macros, bindings, CVars, loadstring/setfenv/debug/securecall, and no ClaudeWoW* globals; a widget that names any of these is refused. At most ${WIDGET_LIMITS.sourceBytes} bytes.`,
-  'The same name replaces the widget. To remove one, write a wowui block with the name followed by the word remove and an empty body, or append {"op":"remove","name":"<name>"}. Explain outside the block what it shows; the player lists and removes widgets with /claude config ui.',
+  `The source runs once as a function body: "local ui = ..." gives ui.name, ui.frame (a container frame: parent your frames to it, or pass no parent), ui.db (a table saved between sessions, e.g. for a position), and ui.print(text). Only display APIs exist in a widget: CreateFrame (frames get no global name; templates only ${WIDGET_TEMPLATES.join(', ')}), events, OnUpdate, C_Timer, Unit* functions, read-only getters such as GetTime and GetSpellCooldown, the Get/Is functions of C_ namespaces such as C_UnitAuras, GameTooltip, every font object such as GameFontNormal, GameTooltipText and Tooltip_Med (read-only), copies of RAID_CLASS_COLORS and Enum, and the Lua math, string and table libraries; UNIT_COMBAT gives damage and heals on a unit. UIParent is ui.frame, and Blizzard frames and every other global are nil. A widget never takes the keyboard (no EnableKeyboard, SetFocus or SetPropagateKeyboardInput(false)), and ui.frame covers the screen so it never takes the mouse: call EnableMouse on a child frame. The combat log (COMBAT_LOG_EVENT_UNFILTERED, CombatLogGetCurrentEventInfo) is for the Blizzard UI only in this client: registering it shows the player a blocked-action error, so a widget that names it is refused. Widgets are display-only: no sounds (PlaySound and PlaySoundFile are nil), no casting, targeting, movement, items, chat or addon messages, macros, bindings, CVars, loadstring/setfenv/debug/securecall, and no WoWGPT* globals; a widget that names any of these is refused. At most ${WIDGET_LIMITS.sourceBytes} bytes.`,
+  'The same name replaces the widget. To remove one, write a wowui block with the name followed by the word remove and an empty body, or append {"op":"remove","name":"<name>"}. Explain outside the block what it shows; the player lists and removes widgets with /wowgpt config ui.',
 ];
 
 function widgetRevision(source) {

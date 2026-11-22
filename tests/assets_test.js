@@ -16,13 +16,13 @@ const ROOT = path.join(__dirname, '..');
 test('every asset exists in the checkout, the addon folder is covered in full, and from a checkout the paths are the checkout', () => {
   for (const rel of AS.FILES) assert.ok(fs.statSync(path.join(ROOT, rel)).isFile(), rel);
   const addon = fs
-    .readdirSync(path.join(ROOT, 'addon', 'ClaudeWoW'), { recursive: true })
+    .readdirSync(path.join(ROOT, 'addon', 'WoWGPT'), { recursive: true })
     .map(f => String(f).replace(/\\/g, '/'))
-    .filter(f => fs.statSync(path.join(ROOT, 'addon', 'ClaudeWoW', f)).isFile())
+    .filter(f => fs.statSync(path.join(ROOT, 'addon', 'WoWGPT', f)).isFile())
     .sort();
   assert.deepEqual(
-    AS.FILES.filter(f => f.startsWith('addon/ClaudeWoW/'))
-      .map(f => f.slice('addon/ClaudeWoW/'.length))
+    AS.FILES.filter(f => f.startsWith('addon/WoWGPT/'))
+      .map(f => f.slice('addon/WoWGPT/'.length))
       .sort(),
     addon,
     'a new addon file must be embedded too',
@@ -31,7 +31,7 @@ test('every asset exists in the checkout, the addon folder is covered in full, a
   assert.equal(AS.isEmbedded(), false);
   assert.equal(AS.root(), ROOT);
   assert.equal(AS.file('bridge/capture_mac.py'), path.join(ROOT, 'bridge', 'capture_mac.py'));
-  assert.equal(AS.dir('addon/ClaudeWoW'), path.join(ROOT, 'addon', 'ClaudeWoW'));
+  assert.equal(AS.dir('addon/WoWGPT'), path.join(ROOT, 'addon', 'WoWGPT'));
 });
 
 test('build/entry.js embeds exactly assets.FILES, under the same names', () => {
@@ -65,10 +65,10 @@ test('with an embedded table, files are written out once, rewritten when they di
     const py = path.join(home, AS.DIR_NAME, 'bridge', 'capture_mac.py');
     assert.equal(fs.readFileSync(py, 'utf8'), fs.readFileSync(path.join(ROOT, 'bridge', 'capture_mac.py'), 'utf8'));
     fs.writeFileSync(py, '# edited\n');
-    fs.unlinkSync(path.join(home, AS.DIR_NAME, 'addon', 'ClaudeWoW', 'Map.lua'));
+    fs.unlinkSync(path.join(home, AS.DIR_NAME, 'addon', 'WoWGPT', 'Map.lua'));
     assert.deepEqual(
       AS.extract(path.join(home, AS.DIR_NAME), table).sort(),
-      ['addon/ClaudeWoW/Map.lua', 'bridge/capture_mac.py'],
+      ['addon/WoWGPT/Map.lua', 'bridge/capture_mac.py'],
       'only what changed or went missing',
     );
     assert.equal(fs.readFileSync(py, 'utf8'), fs.readFileSync(path.join(ROOT, 'bridge', 'capture_mac.py'), 'utf8'));
@@ -79,12 +79,12 @@ test('with an embedded table, files are written out once, rewritten when they di
     assert.equal(AS.root(home2), path.join(home2, AS.DIR_NAME));
     assert.equal(AS.file('docs/WOW-ADDON-PRIMER.md', home2), path.join(home2, AS.DIR_NAME, 'docs', 'WOW-ADDON-PRIMER.md'));
     assert.ok(fs.existsSync(AS.file('bridge/capture.ps1', home2)));
-    assert.ok(fs.existsSync(path.join(AS.dir('addon/ClaudeWoW', home2), 'ClaudeWoW.toc')));
+    assert.ok(fs.existsSync(path.join(AS.dir('addon/WoWGPT', home2), 'WoWGPT.toc')));
     const written = fs
-      .readdirSync(AS.dir('addon/ClaudeWoW', home2), { recursive: true })
-      .filter(f => fs.statSync(path.join(AS.dir('addon/ClaudeWoW', home2), String(f))).isFile());
-    assert.equal(written.length, AS.FILES.filter(rel => rel.startsWith('addon/ClaudeWoW/')).length);
-    assert.ok(fs.existsSync(path.join(AS.dir('addon/ClaudeWoW', home2), 'Core', 'Namespace.lua')), 'the Core subfolder is written out');
+      .readdirSync(AS.dir('addon/WoWGPT', home2), { recursive: true })
+      .filter(f => fs.statSync(path.join(AS.dir('addon/WoWGPT', home2), String(f))).isFile());
+    assert.equal(written.length, AS.FILES.filter(rel => rel.startsWith('addon/WoWGPT/')).length);
+    assert.ok(fs.existsSync(path.join(AS.dir('addon/WoWGPT', home2), 'Core', 'Namespace.lua')), 'the Core subfolder is written out');
   } finally {
     AS.unembed();
     fs.rmSync(tmp, { recursive: true, force: true });

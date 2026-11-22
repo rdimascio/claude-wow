@@ -1,6 +1,6 @@
-// Runs the real Map.lua (with ClaudeWoW.lua) in a Lua VM: syncing layers from the
+// Runs the real Map.lua (with WoWGPT.lua) in a Lua VM: syncing layers from the
 // bridge, drawing pins on the world map (zone and continent), the navigator's
-// distance/bearing and arrival, herb/ore nodes filtered by skill, and /claude-wow map.
+// distance/bearing and arrival, herb/ore nodes filtered by skill, and /wowgpt map.
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -48,7 +48,7 @@ function Methods.SetFrameLevel(self, l) self.level = l end
   vm.run(stub, { chunk: 'tests/wow_stub.lua' });
   vm.run(MAP_STUB);
   if (before) vm.run(before);
-  vm.loadAddon(['Codec.lua', 'Inbox.lua', 'ClaudeWoW.lua', 'Map.lua', 'Orders.lua']);
+  vm.loadAddon(['Codec.lua', 'Inbox.lua', 'WoWGPT.lua', 'Map.lua', 'Orders.lua']);
   vm.login();
   return vm;
 }
@@ -75,135 +75,135 @@ const LAYER = `{ epoch = "e1", version = 1, char = "Testchar-TestRealm", layers 
 
 test('pins land where the points are, on the zone map and on the continent', () => {
   const vm = newVM();
-  vm.run(`ClaudeWoWMap.Sync(${LAYER})`);
-  vm.run('ClaudeWoWMap.Refresh()');
+  vm.run(`WoWGPTMap.Sync(${LAYER})`);
+  vm.run('WoWGPTMap.Refresh()');
   let pins = shownPins(vm);
   assert.deepEqual(pins, ['500,280,1,Copper loop', '600,350,2,Copper loop', '550,490,3,Copper loop']);
-  vm.run('STUB.shownMap = 1415; ClaudeWoWMap.Refresh()');
+  vm.run('STUB.shownMap = 1415; WoWGPTMap.Refresh()');
   pins = shownPins(vm);
   // 1432 (50,40) -> 1415 (0.55, 0.44) on a 1000x700 canvas.
   assert.equal(pins[0], '550,308,1,Copper loop');
-  vm.run('STUB.shownMap = 947; ClaudeWoWMap.Refresh()'); // no rect: nothing drawn
+  vm.run('STUB.shownMap = 947; WoWGPTMap.Refresh()'); // no rect: nothing drawn
   assert.deepEqual(shownPins(vm), []);
 });
 
-const clickStart = vm => vm.run('local b = ClaudeWoWNavigator.start; b.scripts.OnClick(b)');
+const clickStart = vm => vm.run('local b = WoWGPTNavigator.start; b.scripts.OnClick(b)');
 
 test('showing a node layer does not count as starting a route: the next route is still offered with Start', () => {
   const vm = newVM();
   const NODES = `{ epoch = "e1", version = 1, char = "Testchar-TestRealm", layers = { { name = "herbs", title = "Herbs", ordered = false, points = {
     { 1432, 40, 40, "Peacebloom", "herb" } } } } }`;
-  vm.run(`ClaudeWoWMap.Sync(${NODES})`);
-  vm.run('ClaudeWoWMap.ShowLayer("herbs")');
-  vm.run(`ClaudeWoWMap.Sync(${LAYER.replace('version = 1', 'version = 2')})`);
-  assert.equal(vm.evaluate('ClaudeWoWMapDB.nav'), null, 'the route did not start on its own');
-  assert.equal(vm.evaluate('ClaudeWoWMap.Offered()'), 'mining');
-  assert.equal(vm.evaluate('ClaudeWoWNavigator.start.shown'), 'true');
+  vm.run(`WoWGPTMap.Sync(${NODES})`);
+  vm.run('WoWGPTMap.ShowLayer("herbs")');
+  vm.run(`WoWGPTMap.Sync(${LAYER.replace('version = 1', 'version = 2')})`);
+  assert.equal(vm.evaluate('WoWGPTMapDB.nav'), null, 'the route did not start on its own');
+  assert.equal(vm.evaluate('WoWGPTMap.Offered()'), 'mining');
+  assert.equal(vm.evaluate('WoWGPTNavigator.start.shown'), 'true');
 });
 
 test('the first route of a session asks before it starts; later routes start on their own', () => {
   const vm = newVM();
-  vm.run(`ClaudeWoWMap.Sync(${LAYER})`);
-  assert.equal(vm.evaluate('ClaudeWoWMapDB.nav'), null, 'not started');
-  assert.equal(vm.evaluate('ClaudeWoWMap.Offered()'), 'mining');
-  assert.equal(vm.evaluate('ClaudeWoWNavigator.shown'), 'true');
-  assert.equal(vm.evaluate('ClaudeWoWNavigator.title.text'), 'New route: Copper loop');
-  assert.equal(vm.evaluate('ClaudeWoWNavigator.text.text'), '3 points. Start it?');
-  assert.equal(vm.evaluate('ClaudeWoWNavigator.start.text'), 'Start');
-  assert.equal(vm.evaluate('ClaudeWoWNavigator.start.shown'), 'true');
-  vm.run('STUB.now = STUB.now + 5; ClaudeWoWMap.UpdateNavigator()');
-  assert.equal(vm.evaluate('ClaudeWoWMapDB.nav'), null, 'it waits for the player');
+  vm.run(`WoWGPTMap.Sync(${LAYER})`);
+  assert.equal(vm.evaluate('WoWGPTMapDB.nav'), null, 'not started');
+  assert.equal(vm.evaluate('WoWGPTMap.Offered()'), 'mining');
+  assert.equal(vm.evaluate('WoWGPTNavigator.shown'), 'true');
+  assert.equal(vm.evaluate('WoWGPTNavigator.title.text'), 'New route: Copper loop');
+  assert.equal(vm.evaluate('WoWGPTNavigator.text.text'), '3 points. Start it?');
+  assert.equal(vm.evaluate('WoWGPTNavigator.start.text'), 'Start');
+  assert.equal(vm.evaluate('WoWGPTNavigator.start.shown'), 'true');
+  vm.run('STUB.now = STUB.now + 5; WoWGPTMap.UpdateNavigator()');
+  assert.equal(vm.evaluate('WoWGPTMapDB.nav'), null, 'it waits for the player');
   clickStart(vm);
-  assert.equal(vm.evaluate('ClaudeWoWMapDB.nav.layer'), 'mining');
-  assert.equal(vm.evaluate('ClaudeWoWNavigator.start.shown'), 'false');
-  vm.run('SlashCmdList.CLAUDEWOWMAP("stop")');
-  vm.run(`ClaudeWoWMap.Sync(${LAYER.replace('version = 1', 'version = 2').replace('"Copper loop"', '"Tin loop"')})`);
-  assert.equal(vm.evaluate('ClaudeWoWMapDB.nav.layer'), 'mining', 'the next route of the session starts at once');
+  assert.equal(vm.evaluate('WoWGPTMapDB.nav.layer'), 'mining');
+  assert.equal(vm.evaluate('WoWGPTNavigator.start.shown'), 'false');
+  vm.run('SlashCmdList.WOWGPTMAP("stop")');
+  vm.run(`WoWGPTMap.Sync(${LAYER.replace('version = 1', 'version = 2').replace('"Copper loop"', '"Tin loop"')})`);
+  assert.equal(vm.evaluate('WoWGPTMapDB.nav.layer'), 'mining', 'the next route of the session starts at once');
 
   const dismissed = newVM();
-  dismissed.run(`ClaudeWoWMap.Sync(${LAYER})`);
-  dismissed.run('local b = ClaudeWoWNavigator.close; b.scripts.OnClick(b)');
-  assert.equal(dismissed.evaluate('ClaudeWoWNavigator.shown'), 'false');
-  assert.equal(dismissed.evaluate('ClaudeWoWMap.Offered()'), null);
-  assert.equal(dismissed.evaluate('ClaudeWoWMapDB.nav'), null);
+  dismissed.run(`WoWGPTMap.Sync(${LAYER})`);
+  dismissed.run('local b = WoWGPTNavigator.close; b.scripts.OnClick(b)');
+  assert.equal(dismissed.evaluate('WoWGPTNavigator.shown'), 'false');
+  assert.equal(dismissed.evaluate('WoWGPTMap.Offered()'), null);
+  assert.equal(dismissed.evaluate('WoWGPTMapDB.nav'), null);
 });
 
 test('the navigator has a close button and a right-click menu with Skip Stop and Stop Route', () => {
   const vm = newVM();
-  vm.run(`ClaudeWoWMap.Sync(${LAYER})`);
+  vm.run(`WoWGPTMap.Sync(${LAYER})`);
   clickStart(vm);
-  assert.equal(vm.evaluate('ClaudeWoWNavigator.close.template'), 'UIPanelCloseButton');
+  assert.equal(vm.evaluate('WoWGPTNavigator.close.template'), 'UIPanelCloseButton');
   vm.run(`MENU = {}
     MenuUtil = { CreateContextMenu = function(anchor, build)
       local root = { CreateTitle = function(self, t) MENU.title = t end, CreateButton = function(self, label, fn) table.insert(MENU, { label = label, fn = fn }) end }
       build(anchor, root)
     end }`);
-  vm.run('ClaudeWoWNavigator.scripts.OnMouseUp(ClaudeWoWNavigator, "RightButton")');
+  vm.run('WoWGPTNavigator.scripts.OnMouseUp(WoWGPTNavigator, "RightButton")');
   assert.equal(vm.evaluate('MENU[1].label'), 'Skip Stop');
   assert.equal(vm.evaluate('MENU[2].label'), 'Stop Route');
-  assert.equal(vm.evaluate('ClaudeWoWMapDB.nav.index'), '1', 'opening the menu does not skip');
+  assert.equal(vm.evaluate('WoWGPTMapDB.nav.index'), '1', 'opening the menu does not skip');
   vm.run('MENU[1].fn()');
-  assert.equal(vm.evaluate('ClaudeWoWMapDB.nav.index'), '2');
+  assert.equal(vm.evaluate('WoWGPTMapDB.nav.index'), '2');
   vm.run('MENU[2].fn()');
-  assert.equal(vm.evaluate('ClaudeWoWMapDB.nav'), null);
-  assert.equal(vm.evaluate('ClaudeWoWNavigator.shown'), 'false');
-  vm.run('SlashCmdList.CLAUDEWOWMAP("nav mining 1")');
-  vm.run('local b = ClaudeWoWNavigator.close; b.scripts.OnClick(b)');
-  assert.equal(vm.evaluate('ClaudeWoWMapDB.nav'), null, 'the close button stops the route');
+  assert.equal(vm.evaluate('WoWGPTMapDB.nav'), null);
+  assert.equal(vm.evaluate('WoWGPTNavigator.shown'), 'false');
+  vm.run('SlashCmdList.WOWGPTMAP("nav mining 1")');
+  vm.run('local b = WoWGPTNavigator.close; b.scripts.OnClick(b)');
+  assert.equal(vm.evaluate('WoWGPTMapDB.nav'), null, 'the close button stops the route');
 });
 
 test('map prints are sentence case and count points in words', () => {
   const vm = newVM();
   const printed = () => vm.evaluate('table.concat(STUB.prints, "\\n")') || '';
-  vm.run('SlashCmdList.CLAUDEWOWMAP("")');
-  assert.match(printed(), /No layers yet\. Ask the agent for a route, for example: \/claude route me through copper veins in Loch Modan/);
-  vm.run(`ClaudeWoWMap.Sync(${LAYER.replace(/\{ 1432, 60, 50[^}]*\}, \{ 1432, 55, 70[^}]*\} /, '')})`);
-  vm.run('STUB.prints = {}; SlashCmdList.CLAUDEWOWMAP("")');
+  vm.run('SlashCmdList.WOWGPTMAP("")');
+  assert.match(printed(), /No layers yet\. Ask the agent for a route, for example: \/wowgpt route me through copper veins in Loch Modan/);
+  vm.run(`WoWGPTMap.Sync(${LAYER.replace(/\{ 1432, 60, 50[^}]*\}, \{ 1432, 55, 70[^}]*\} /, '')})`);
+  vm.run('STUB.prints = {}; SlashCmdList.WOWGPTMAP("")');
   assert.match(printed(), /Copper loop \(1 point\)/);
   assert.doesNotMatch(printed(), /point\(s\)/);
   assert.match(printed(), /Nodes: ore off, herb off, filter skill\./);
   assert.match(printed(), /Commands: /);
-  vm.run('STUB.prints = {}; SlashCmdList.CLAUDEWOWMAP("ore on"); SlashCmdList.CLAUDEWOWMAP("show nothing")');
+  vm.run('STUB.prints = {}; SlashCmdList.WOWGPTMAP("ore on"); SlashCmdList.WOWGPTMAP("show nothing")');
   assert.match(printed(), /Ore nodes are shown on the world map\./);
   assert.match(printed(), /No layer named nothing\./);
 });
 
 test('navigator shows yards and bearing, and advances on arrival', () => {
   const vm = newVM();
-  vm.run(`ClaudeWoWMap.Sync(${LAYER})`);
+  vm.run(`WoWGPTMap.Sync(${LAYER})`);
   clickStart(vm);
   // Player at Loch Modan 50,50 -> continent (0.55, 0.45); stop 1 (50,40) is 150 yd due north.
-  vm.run('STUB.posX, STUB.posY = 0.5, 0.5; ClaudeWoWMap.UpdateNavigator()');
-  assert.match(vm.evaluate('ClaudeWoWNavigator.text.text'), /^150 yd/);
-  assert.ok(Math.abs(vm.num('ClaudeWoWNavigator.arrow.rotation')) < 1e-9, 'north is straight up');
-  vm.run('STUB.facing = math.pi / 2; ClaudeWoWMap.UpdateNavigator()'); // facing west: target is to the right
-  assert.ok(Math.abs(vm.num('ClaudeWoWNavigator.arrow.rotation') + Math.PI / 2) < 1e-9);
+  vm.run('STUB.posX, STUB.posY = 0.5, 0.5; WoWGPTMap.UpdateNavigator()');
+  assert.match(vm.evaluate('WoWGPTNavigator.text.text'), /^150 yd/);
+  assert.ok(Math.abs(vm.num('WoWGPTNavigator.arrow.rotation')) < 1e-9, 'north is straight up');
+  vm.run('STUB.facing = math.pi / 2; WoWGPTMap.UpdateNavigator()'); // facing west: target is to the right
+  assert.ok(Math.abs(vm.num('WoWGPTNavigator.arrow.rotation') + Math.PI / 2) < 1e-9);
   // Walk onto stop 1: it advances to stop 2 (60,50: 100 yd east and 150 yd south).
-  vm.run('STUB.facing = 0; STUB.posX, STUB.posY = 0.5, 0.4; ClaudeWoWMap.UpdateNavigator()');
-  assert.equal(vm.evaluate('ClaudeWoWMapDB.nav.index'), '2');
-  vm.run('ClaudeWoWMap.UpdateNavigator()');
-  assert.match(vm.evaluate('ClaudeWoWNavigator.text.text'), /^180 yd/);
+  vm.run('STUB.facing = 0; STUB.posX, STUB.posY = 0.5, 0.4; WoWGPTMap.UpdateNavigator()');
+  assert.equal(vm.evaluate('WoWGPTMapDB.nav.index'), '2');
+  vm.run('WoWGPTMap.UpdateNavigator()');
+  assert.match(vm.evaluate('WoWGPTNavigator.text.text'), /^180 yd/);
   // South-east: a clockwise turn between a quarter and a half.
-  assert.ok(Math.abs(vm.num('ClaudeWoWNavigator.arrow.rotation') - Math.atan2(-100, -150)) < 1e-9);
+  assert.ok(Math.abs(vm.num('WoWGPTNavigator.arrow.rotation') - Math.atan2(-100, -150)) < 1e-9);
   // Due east from the same spot's latitude: exactly a clockwise quarter turn.
-  vm.run('STUB.posX, STUB.posY = 0.5, 0.5; ClaudeWoWMap.UpdateNavigator()');
-  assert.match(vm.evaluate('ClaudeWoWNavigator.text.text'), /^100 yd/);
-  assert.ok(Math.abs(vm.num('ClaudeWoWNavigator.arrow.rotation') + Math.PI / 2) < 1e-9, 'east is a clockwise quarter turn');
+  vm.run('STUB.posX, STUB.posY = 0.5, 0.5; WoWGPTMap.UpdateNavigator()');
+  assert.match(vm.evaluate('WoWGPTNavigator.text.text'), /^100 yd/);
+  assert.ok(Math.abs(vm.num('WoWGPTNavigator.arrow.rotation') + Math.PI / 2) < 1e-9, 'east is a clockwise quarter turn');
   // Loop: after the last stop it wraps to the first.
-  vm.run('ClaudeWoWMap.Step(1); ClaudeWoWMap.Step(1)');
-  assert.equal(vm.evaluate('ClaudeWoWMapDB.nav.index'), '1');
+  vm.run('WoWGPTMap.Step(1); WoWGPTMap.Step(1)');
+  assert.equal(vm.evaluate('WoWGPTMapDB.nav.index'), '1');
   // Elsewhere with no position: says so instead of pointing.
-  vm.run('STUB.playerMap = 999; ClaudeWoWMap.UpdateNavigator()');
-  assert.equal(vm.evaluate('ClaudeWoWNavigator.text.text'), 'no position here');
+  vm.run('STUB.playerMap = 999; WoWGPTMap.UpdateNavigator()');
+  assert.equal(vm.evaluate('WoWGPTNavigator.text.text'), 'no position here');
 });
 
 test('herb/ore nodes toggle and follow the gathering skill', () => {
   const vm = newVM();
-  vm.run(`ClaudeWoWNodes = { kinds = { { "Copper Vein", "mining", 1 }, { "Tin Vein", "mining", 65 }, { "Peacebloom", "herbalism", 1 } },
+  vm.run(`WoWGPTNodes = { kinds = { { "Copper Vein", "mining", 1 }, { "Tin Vein", "mining", 65 }, { "Peacebloom", "herbalism", 1 } },
     maps = { [1432] = { [1] = "100200300400", [2] = "500500", [3] = "999999" } } }`);
-  vm.run('ClaudeWoWMap.Refresh()');
+  vm.run('WoWGPTMap.Refresh()');
   assert.equal(shownPins(vm).length, 0, 'off by default');
-  vm.run('SlashCmdList.CLAUDEWOWMAP("ore on")');
+  vm.run('SlashCmdList.WOWGPTMAP("ore on")');
   // No Mining skill line in the stub: every ore shows, flagged as not learned.
   assert.deepEqual(
     shownPins(vm).map(p => p.split(',').slice(0, 2).join(',') + ',' + p.split(',')[3]),
@@ -215,59 +215,59 @@ test('herb/ore nodes toggle and follow the gathering skill', () => {
     if i == 1 then return { name = "Professions", isHeader = true, rank = 0, maxRank = 0, skillID = 0, parentSkillLineID = 0 } end
     if i == 3 then return { name = "Bergbau", isHeader = false, rank = 50, maxRank = 75, skillID = 2572, parentSkillLineID = 186 } end
     return { name = "Bergbau", isHeader = false, rank = 50, maxRank = 75, skillID = 186, parentSkillLineID = 0 } end }
-    ClaudeWoWMap.Refresh()`);
+    WoWGPTMap.Refresh()`);
   assert.equal(shownPins(vm).length, 2);
-  vm.run('SlashCmdList.CLAUDEWOWMAP("filter all")');
+  vm.run('SlashCmdList.WOWGPTMAP("filter all")');
   assert.equal(shownPins(vm).length, 3);
-  vm.run('SlashCmdList.CLAUDEWOWMAP("herb on")');
+  vm.run('SlashCmdList.WOWGPTMAP("herb on")');
   assert.equal(shownPins(vm).length, 4);
-  vm.run('SlashCmdList.CLAUDEWOWMAP("ore off"); SlashCmdList.CLAUDEWOWMAP("herb off")');
+  vm.run('SlashCmdList.WOWGPTMAP("ore off"); SlashCmdList.WOWGPTMAP("herb off")');
   assert.equal(shownPins(vm).length, 0);
   // The game context reads professions from the same API.
-  assert.match(vm.evaluate('ClaudeWoW.GameContext()'), /Professions: Bergbau 50\/75(\n|$)/);
+  assert.match(vm.evaluate('WoWGPT.GameContext()'), /Professions: Bergbau 50\/75(\n|$)/);
 });
 
 test('/aimap hide, show, nav and stop', () => {
   const vm = newVM();
-  vm.run(`ClaudeWoWMap.Sync(${LAYER})`);
-  vm.run('SlashCmdList.CLAUDEWOWMAP("hide mining")');
+  vm.run(`WoWGPTMap.Sync(${LAYER})`);
+  vm.run('SlashCmdList.WOWGPTMAP("hide mining")');
   assert.equal(shownPins(vm).length, 0);
-  vm.run('SlashCmdList.CLAUDEWOWMAP("show mining")');
+  vm.run('SlashCmdList.WOWGPTMAP("show mining")');
   assert.equal(shownPins(vm).length, 3);
-  vm.run('SlashCmdList.CLAUDEWOWMAP("nav mining 3")');
-  assert.equal(vm.evaluate('ClaudeWoWMapDB.nav.index'), '3');
-  vm.run('SlashCmdList.CLAUDEWOWMAP("stop")');
-  assert.equal(vm.evaluate('ClaudeWoWMapDB.nav'), null);
-  assert.equal(vm.evaluate('ClaudeWoWNavigator.shown'), 'false');
-  vm.run('SlashCmdList.CLAUDEWOWMAP("")'); // status never errors
+  vm.run('SlashCmdList.WOWGPTMAP("nav mining 3")');
+  assert.equal(vm.evaluate('WoWGPTMapDB.nav.index'), '3');
+  vm.run('SlashCmdList.WOWGPTMAP("stop")');
+  assert.equal(vm.evaluate('WoWGPTMapDB.nav'), null);
+  assert.equal(vm.evaluate('WoWGPTNavigator.shown'), 'false');
+  vm.run('SlashCmdList.WOWGPTMAP("")'); // status never errors
 });
 
 test('a route from the agent is a link in its chat tab that opens the map at the first stop, and waits for the end of combat', () => {
   const vm = newVM('STUB.ChatDock(); function OpenWorldMap(id) STUB.openedMap = id; WorldMapFrame:Show() end; WorldMapFrame.shown = false');
   vm.run(
-    'ClaudeWoWDB.settings.whisper = true; ClaudeWoWDB.settings.whisperChoice = "on"; ClaudeWoWDB.chats[1].agent = "claude"; table.insert(ClaudeWoWDB.chats[1].history, { role = "user", text = "earlier", t = time() }); ClaudeWoW.BridgeState = function() return "ok" end',
+    'WoWGPTDB.settings.whisper = true; WoWGPTDB.settings.whisperChoice = "on"; WoWGPTDB.chats[1].agent = "claude"; table.insert(WoWGPTDB.chats[1].history, { role = "user", text = "earlier", t = time() }); WoWGPT.BridgeState = function() return "ok" end',
   );
-  vm.run(`ClaudeWoWMap.Sync(${LAYER})`);
+  vm.run(`WoWGPTMap.Sync(${LAYER})`);
   const lines = vm.evaluate('STUB.Lines(ChatFrame11)') || '';
-  assert.match(lines, /Copper loop: 3 points, route\. \|Haddon:claudewow:map:mining\|h\|cffffd100\[show route\]/, 'said in the chat tab with a link: ' + lines);
+  assert.match(lines, /Copper loop: 3 points, route\. \|Haddon:wowgpt:map:mining\|h\|cffffd100\[show route\]/, 'said in the chat tab with a link: ' + lines);
   assert.ok(!vm.evaluate('table.concat(STUB.prints, "\\n")').includes('Copper loop'), 'not in General');
-  vm.run('SlashCmdList.CLAUDEWOWMAP("hide mining"); SlashCmdList.CLAUDEWOWMAP("stop")');
-  vm.run('STUB.combat = true; STUB.ClickLink("|Haddon:claudewow:map:mining|h[show route]|h")');
+  vm.run('SlashCmdList.WOWGPTMAP("hide mining"); SlashCmdList.WOWGPTMAP("stop")');
+  vm.run('STUB.combat = true; STUB.ClickLink("|Haddon:wowgpt:map:mining|h[show route]|h")');
   assert.equal(vm.evaluate('STUB.openedMap'), null, 'no map opened in combat');
   assert.match(vm.evaluate('STUB.Lines(ChatFrame11)'), /Copper loop is on the map; it opens after combat, or press M\./);
-  vm.run('STUB.combat = false; STUB.ClickLink("|Haddon:claudewow:map:mining|h[show route]|h")');
+  vm.run('STUB.combat = false; STUB.ClickLink("|Haddon:wowgpt:map:mining|h[show route]|h")');
   assert.equal(vm.num('STUB.openedMap'), 1432, "the map opens on the route's first stop");
-  assert.equal(vm.evaluate('ClaudeWoWMapDB.hidden.mining'), null, 'the layer is shown again');
-  assert.equal(vm.evaluate('ClaudeWoWMapDB.nav.layer'), 'mining', 'and the navigator follows it');
+  assert.equal(vm.evaluate('WoWGPTMapDB.hidden.mining'), null, 'the layer is shown again');
+  assert.equal(vm.evaluate('WoWGPTMapDB.nav.layer'), 'mining', 'and the navigator follows it');
 });
 
 test('a map for another character is never applied; a map with no character (game context off) is', () => {
   const vm = newVM();
-  vm.run(`ClaudeWoWMap.Sync(${LAYER.replace('Testchar-TestRealm', 'Bone-TestRealm')})`);
-  assert.equal(vm.evaluate('ClaudeWoWMapDB.map'), null, "another character's route is dropped");
-  vm.run(`ClaudeWoWMap.Sync(${LAYER})`);
-  assert.equal(vm.evaluate('#ClaudeWoWMapDB.map.layers'), '1', 'the own map is applied');
+  vm.run(`WoWGPTMap.Sync(${LAYER.replace('Testchar-TestRealm', 'Bone-TestRealm')})`);
+  assert.equal(vm.evaluate('WoWGPTMapDB.map'), null, "another character's route is dropped");
+  vm.run(`WoWGPTMap.Sync(${LAYER})`);
+  assert.equal(vm.evaluate('#WoWGPTMapDB.map.layers'), '1', 'the own map is applied');
   const other = newVM();
-  other.run(`ClaudeWoWMap.Sync(${LAYER.replace('char = "Testchar-TestRealm", ', '')})`);
-  assert.equal(other.evaluate('#ClaudeWoWMapDB.map.layers'), '1', 'a map the bridge could not tag is applied');
+  other.run(`WoWGPTMap.Sync(${LAYER.replace('char = "Testchar-TestRealm", ', '')})`);
+  assert.equal(other.evaluate('#WoWGPTMapDB.map.layers'), '1', 'a map the bridge could not tag is applied');
 });

@@ -30,7 +30,7 @@ test('a chat on another client attached to an agent session that is running wait
       h.client.send(`[[hold ${LONG_RUN_RELEASE}]] keep going`);
       await h.client.waitFor(() => h.agentCalls().find(c => c.prompt.includes('keep going')), { label: 'the long run to start' });
 
-      era.slash(`/claude -r ${session.slice(0, 8)} and from here`);
+      era.slash(`/wowgpt -r ${session.slice(0, 8)} and from here`);
       const attached = era.activeChat();
       const id = sentId(era, attached);
       assert.ok(

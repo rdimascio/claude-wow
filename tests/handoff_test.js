@@ -196,7 +196,7 @@ test('withHandoff puts the handed-off sessions first, keeps what the bridge know
 });
 
 test('the slot carries handoff and recap on a session row', () => {
-  const lua = P.luaTable('ClaudeWoW_SlotData', [], {
+  const lua = P.luaTable('WoWGPT_SlotData', [], {
     sessions: [{ id: ID(1), name: 'One', cwd: '/r', agent: 'claude', at: 1, handoff: true, recap: 'Last ask: "x"\nLast answer: y' }],
   });
   assert.match(lua, /handoff = true, recap = "Last ask: \\"x\\"\\nLast answer: y"/);

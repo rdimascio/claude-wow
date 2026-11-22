@@ -15,7 +15,7 @@ test('message ids past the slot count still get acked and answered without marki
       client: { speed: 8 },
       speed: 8,
       beforeLaunch: sb => {
-        fs.writeFileSync(sb.saved, '\r\nClaudeWoWDB = {\r\n["lastSeq"] = 200,\r\n}\r\n');
+        fs.writeFileSync(sb.saved, '\r\nWoWGPTDB = {\r\n["lastSeq"] = 200,\r\n}\r\n');
         SB.spendSignals(sb, ['ack', 'sig'], slots);
       },
     },

@@ -102,14 +102,14 @@ test('a Discord message starts a coding chat that answers in its thread, a follo
   }
 });
 
-test('/claude discord links a game chat to a new thread with a recap, game replies post there, and a Discord message in that thread reaches the same chat', async () => {
+test('/wowgpt discord links a game chat to a new thread with a recap, game replies post there, and a Discord message in that thread reaches the same chat', async () => {
   const fake = await startFakeDiscord({ channelId: CHANNEL });
   try {
     await withGame({ env: { [DH.TOKEN_ENV]: TOKEN }, beforeLaunch: sb => setup(sb, fake) }, async h => {
       await h.client.say('plan the refactor');
-      await h.client.waitFor(() => h.client.luaValue('ClaudeWoW and 1') === '1', { label: 'the addon' });
+      await h.client.waitFor(() => h.client.luaValue('WoWGPT and 1') === '1', { label: 'the addon' });
       const id = h.client.lastSeq() + 1;
-      h.client.slash('/claude discord');
+      h.client.slash('/wowgpt discord');
       const linked = await h.client.waitFor(
         () => {
           const c = h.client.activeChat();

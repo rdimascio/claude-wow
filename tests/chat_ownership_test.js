@@ -92,19 +92,19 @@ test('deleting chats drops a queued vision message with its screenshot and ends 
     await h.client.waitFor(() => inflightIds(h).includes(runningId), { label: 'the run in flight' });
     const run = await h.client.waitFor(() => h.agentCalls().at(-1), { label: 'the agent process to start' });
 
-    h.client.runLua('ClaudeWoW.NewChat("Queued")');
+    h.client.runLua('WoWGPT.NewChat("Queued")');
     const queuedChat = h.client.activeChat().id;
     const queuedId = h.client.lastSeq() + 1;
-    h.client.runLua('ClaudeWoW.Send("look at this", nil, { vision = true })');
+    h.client.runLua('WoWGPT.Send("look at this", nil, { vision = true })');
     await h.bridge.waitForLine(new RegExp(`#${queuedId}@\\S+ queued \\(1 running\\)`));
     assert.equal(visionFiles(tmp).length, 1, 'the queued message holds its screenshot');
 
-    h.client.runLua(`ClaudeWoW.DeleteChat(${JSON.stringify(queuedChat)})`);
+    h.client.runLua(`WoWGPT.DeleteChat(${JSON.stringify(queuedChat)})`);
     await h.bridge.waitForLine(new RegExp(`#${queuedId}@\\S+ dropped: its chat was deleted before it started`));
     await h.client.waitFor(() => !(h.state().queued || []).some(j => j.id === queuedId), { label: 'the queue entry gone from state.json' });
     assert.deepEqual(visionFiles(tmp), [], 'the dropped message took its screenshot with it');
 
-    h.client.runLua(`ClaudeWoW.DeleteChat(${JSON.stringify(runningChat)})`);
+    h.client.runLua(`WoWGPT.DeleteChat(${JSON.stringify(runningChat)})`);
     await h.bridge.waitForLine(new RegExp(`#${runningId}@\\S+ its chat was deleted; ending it and everything it started`));
     await h.client.waitFor(() => !isAlive(run.pid), { timeoutMs: 15000, label: "the deleted chat's agent process to end" });
     await h.bridge.waitForLine(new RegExp(`#${runningId}@\\S+ error`));
@@ -130,7 +130,7 @@ test('a late live answer for a deleted chat is dropped and stays out of the chat
       await h.bridge.waitForLine(new RegExp(`#${liveId}@\\S+ "${SESSION_NAME}" showed no sign of it`));
       await h.client.waitFor(() => !h.client.activeChat().pendingId, { label: 'the chat free again' });
 
-      h.client.runLua(`ClaudeWoW.DeleteChat(${JSON.stringify(chat)})`);
+      h.client.runLua(`WoWGPT.DeleteChat(${JSON.stringify(chat)})`);
       await h.bridge.waitForLine(new RegExp(`forgot chat ${chat}`));
       await h.client.say('@claude-code a fresh start');
 

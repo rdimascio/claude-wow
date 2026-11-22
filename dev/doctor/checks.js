@@ -657,14 +657,14 @@ function checkInterface(ctx) {
 }
 
 function interfaceOf(ctx, addonDir) {
-  const main = tocInterface(ctx.sys.readText(path.join(addonDir, 'ClaudeWoW', 'ClaudeWoW.toc')));
-  const slot = tocInterface(ctx.sys.readText(path.join(addonDir, 'ClaudeWoW_S001', 'ClaudeWoW_S001.toc')));
+  const main = tocInterface(ctx.sys.readText(path.join(addonDir, 'WoWGPT', 'WoWGPT.toc')));
+  const slot = tocInterface(ctx.sys.readText(path.join(addonDir, 'WoWGPT_S001', 'WoWGPT_S001.toc')));
   const client = clientBuild(ctx, addonDir);
   const issues = [];
   if (!main)
     issues.push(
       fail(
-        'ClaudeWoW.toc is missing or has no ## Interface line.',
+        'WoWGPT.toc is missing or has no ## Interface line.',
         'WoW does not load an addon without a readable toc.',
         'Run "claude-wow setup" to reinstall the addon.',
       ),
@@ -672,7 +672,7 @@ function interfaceOf(ctx, addonDir) {
   if (!slot)
     issues.push(
       warn(
-        'ClaudeWoW_S001.toc is missing or has no ## Interface line.',
+        'WoWGPT_S001.toc is missing or has no ## Interface line.',
         'Replies land in the slot addons; a missing slot 001 means the slots are not installed.',
         'Run "npm run slots" or "claude-wow setup".',
       ),
@@ -689,7 +689,7 @@ function interfaceOf(ctx, addonDir) {
   if (main && runtime && !runtime.some(v => main.includes(v))) {
     issues.push(
       warn(
-        `ClaudeWoW.toc says ${main.join(',')}, ${RUNTIME_ADDON}.toc says ${runtime.join(',')}.`,
+        `WoWGPT.toc says ${main.join(',')}, ${RUNTIME_ADDON}.toc says ${runtime.join(',')}.`,
         'An out-of-date runtime toc keeps the reload path from loading.',
         'Run "npm run slots" so it matches tocInterface.',
       ),
@@ -698,7 +698,7 @@ function interfaceOf(ctx, addonDir) {
   if (main && slot && !slot.some(v => main.includes(v))) {
     issues.push(
       warn(
-        `ClaudeWoW.toc says ${main.join(',')}, slot 001 says ${slot.join(',')}.`,
+        `WoWGPT.toc says ${main.join(',')}, slot 001 says ${slot.join(',')}.`,
         'Slots with another interface show as out of date, and WoW may refuse to load them.',
         'Run "npm run slots" so the slots match tocInterface.',
       ),
@@ -707,13 +707,13 @@ function interfaceOf(ctx, addonDir) {
   if (main && client && client.interface && !main.includes(client.interface)) {
     issues.push(
       warn(
-        `The client is ${client.version || ''} (interface ${client.interface}), ClaudeWoW.toc says ${main.join(',')}.`,
+        `The client is ${client.version || ''} (interface ${client.interface}), WoWGPT.toc says ${main.join(',')}.`,
         'An out-of-date toc makes WoW mark the addon out of date and skip it unless "load out of date addons" is on.',
         `Set tocInterface to ${client.interface} in config.json and run "claude-wow setup".`,
       ),
     );
   }
-  const summary = `ClaudeWoW.toc ${main ? main.join(',') : 'missing'}, S001 ${slot ? slot.join(',') : 'missing'}, client ${client ? `${client.interface} (${client.version || client.source})` : 'unknown'}`;
+  const summary = `WoWGPT.toc ${main ? main.join(',') : 'missing'}, S001 ${slot ? slot.join(',') : 'missing'}, client ${client ? `${client.interface} (${client.version || client.source})` : 'unknown'}`;
   return { summary, issues };
 }
 
@@ -747,7 +747,7 @@ function permissionsOf(ctx, addonDir) {
     const rel = locked.slice(0, 3).map(f => path.relative(addonDir, f));
     issues.push(
       warn(
-        `${locked.length} of ${checked} file(s) and folder(s) under the ClaudeWoW addon folders are not world-writable: ${rel.join(', ')}${locked.length > 3 ? ', ...' : ''}.`,
+        `${locked.length} of ${checked} file(s) and folder(s) under the WoWGPT addon folders are not world-writable: ${rel.join(', ')}${locked.length > 3 ? ', ...' : ''}.`,
         'Blizzard installs every game file as 0777; Battle.net error 2113 (permissions check failure) blocks updates and marks the game not playable when one is not.',
         'Run "claude-wow setup" (or "npm run slots"), which sets them to 0777, and restart the bridge on this version so new files are written 0777.',
       ),
@@ -822,7 +822,7 @@ function checkDisk(ctx) {
         warn(
           `The agent session for ${s.chat} is ${formatBytes(s.bytes)} (${s.file}).`,
           'Every --resume reloads the whole session, so turns get slower and cost more.',
-          `Start a new chat in game for ${s.chat} with /claude.`,
+          `Start a new chat in game for ${s.chat} with /wowgpt.`,
         ),
       );
     }

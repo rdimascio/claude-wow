@@ -159,15 +159,15 @@ local function Enc(v)
 	return "{" .. table.concat(parts, ",") .. "}"
 end
 
-STATE_DUMP = Enc({ account = ClaudeWoWDB, character = ClaudeWoWCharDB })
+STATE_DUMP = Enc({ account = WoWGPTDB, character = WoWGPTCharDB })
 `;
 
 function loadShape(shape) {
   const vm = createVM();
   vm.run(DETERMINISTIC_RANDOM);
   vm.loadAddon();
-  vm.run(`ClaudeWoWDB = ${shape.saved === null ? 'nil' : shape.saved}; ClaudeWoWCharDB = ${shape.own || 'nil'}`);
-  vm.run('STUB.FireEvent("ADDON_LOADED", "ClaudeWoW")');
+  vm.run(`WoWGPTDB = ${shape.saved === null ? 'nil' : shape.saved}; WoWGPTCharDB = ${shape.own || 'nil'}`);
+  vm.run('STUB.FireEvent("ADDON_LOADED", "WoWGPT")');
   return vm;
 }
 

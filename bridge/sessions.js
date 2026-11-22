@@ -366,7 +366,7 @@ function resolveResume(ref, { own = [], find = () => [] } = {}) {
   const exact = hits.filter(h => h.id === ref);
   if (exact.length === 1) hits = exact;
   if (hits.length === 1) return { session: hits[0] };
-  if (!hits.length) return { error: `No session matches "${ref}". /claude -r lists the recent ones.` };
+  if (!hits.length) return { error: `No session matches "${ref}". /wowgpt -r lists the recent ones.` };
   return { error: `"${ref}" matches ${hits.length} sessions:\n${hits.slice(0, 8).map(describe).join('\n')}\nUse more of the id.` };
 }
 

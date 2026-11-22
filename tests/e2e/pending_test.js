@@ -40,11 +40,11 @@ test('the slot files name the run limit and the running message with its start t
   await withGame({ config: { timeoutMs: 3600000, maxParallel: 1 } }, async h => {
     await h.client.connect();
     const token = h.client.db().session;
-    const slot = () => fs.readFileSync(path.join(h.sb.addons, 'ClaudeWoW_S001', 'Inbox.lua'), 'utf8');
+    const slot = () => fs.readFileSync(path.join(h.sb.addons, 'WoWGPT_S001', 'Inbox.lua'), 'utf8');
     h.client.send('a long one [[hang]]');
     const id = h.client.activeChat().pendingId;
     await h.client.waitFor(() => Object.keys(h.state().inflight || {}).length === 1, { label: 'the run in flight' });
-    h.client.runLua('ClaudeWoW.NewChat("Two")');
+    h.client.runLua('WoWGPT.NewChat("Two")');
     h.client.send('waits its turn [[hang]]');
     const second = h.client.activeChat().pendingId;
     await h.bridge.waitForLine(new RegExp(`#${second}@\\S+ queued \\(1 running\\)`));
@@ -57,10 +57,10 @@ test('the slot files name the run limit and the running message with its start t
     );
     assert.ok(Math.abs(Number(listed[1]) - Date.now() / 1000) < 60, 'since is the run start, in epoch seconds');
     assert.match(slot(), /\trunLimit = 3600,/);
-    h.client.slash('/claude cancel');
+    h.client.slash('/wowgpt cancel');
     await h.bridge.waitForLine(new RegExp(`#${second}@\\S+ cancelled from the game before it started`));
-    h.client.runLua('ClaudeWoW.SwitchChat(ClaudeWoWDB.chats[1].id)');
-    h.client.slash('/claude cancel');
+    h.client.runLua('WoWGPT.SwitchChat(WoWGPTDB.chats[1].id)');
+    h.client.slash('/wowgpt cancel');
     await h.client.waitFor(() => /\talive = \{  \},/.test(slot()), { label: 'an empty list once nothing is held' });
   });
 });

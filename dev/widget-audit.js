@@ -6,7 +6,7 @@ const luaparse = require('luaparse');
 const H = require('../bridge/home');
 const CLI = require('../bridge/clients');
 
-const TABLE_NAME = 'ClaudeWoWWidgetDB';
+const TABLE_NAME = 'WoWGPTWidgetDB';
 const SHOWN_DEFAULT = 60;
 
 const WRITER_VERBS = new Set([
@@ -262,8 +262,8 @@ function parseArgs(argv) {
 }
 
 const USAGE = [
-  'usage: npm run audit:widgets -- [ClaudeWoW.lua ...] [--all] [--json]',
-  'Reads the names /claude dev globals saved in the account SavedVariables file and lists',
+  'usage: npm run audit:widgets -- [WoWGPT.lua ...] [--all] [--json]',
+  'Reads the names /wowgpt dev globals saved in the account SavedVariables file and lists',
   'admitted names that look like writers, and refused names that look like display getters.',
   'With no file it reads every client in the bridge config.json.',
 ].join('\n');
@@ -297,7 +297,7 @@ function main(argv = process.argv.slice(2), { out = console.log, err = console.e
       continue;
     }
     if (!dump) {
-      err(`${file}: no saved global names. Type /claude dev globals in game, then /reload.`);
+      err(`${file}: no saved global names. Type /wowgpt dev globals in game, then /reload.`);
       continue;
     }
     found++;

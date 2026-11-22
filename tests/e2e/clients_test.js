@@ -17,7 +17,7 @@ test('each run gets the game context of the client its message came from, even w
       await h.client.connect();
       await h.bridge.waitForLine(/\(_classic_beta_\) game context updated/, { timeoutMs: 20000 });
       const b = await era.say('and this one');
-      h.client.slash('/claude config context on');
+      h.client.slash('/wowgpt config context on');
       const a = await h.client.say('which game am I in');
       assert.match(h.state().context.text, /1\.60\.1/, "client A reported last, so the shared context is A's");
       const calls = h.agentCalls();
@@ -28,7 +28,7 @@ test('each run gets the game context of the client its message came from, even w
       assert.doesNotMatch(promptOf('and this one'), /1\.60\.1/);
       assert.match(a.text, /which game/);
       assert.match(b.text, /this one/);
-      era.slash('/claude config context off');
+      era.slash('/wowgpt config context off');
       await era.say('no context here');
       const bare = (h.agentCalls().find(c => String(c.prompt || '').includes('no context here')) || {}).prompt || '';
       assert.ok(bare, 'the run started');
@@ -42,7 +42,7 @@ test("a reload-mode message from client B is read from B's SavedVariables and an
     const forever = h.sb.clients[0];
     await withEra(h, async (era, eraDirs) => {
       await era.connect();
-      era.slash('/claude config mode reload');
+      era.slash('/wowgpt config mode reload');
       const id = era.lastSeq() + 1;
       era.send('by reload in era');
       era.reload();

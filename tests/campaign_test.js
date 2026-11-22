@@ -116,7 +116,7 @@ function rig(opts = {}) {
 const beat = (title, narration, trigger) => ({ title, narration, trigger });
 
 function slotTable(lua) {
-  const ast = luaparse.parse(`ClaudeWoW_SlotData = {\n${lua}\n}`, { luaVersion: '5.1' });
+  const ast = luaparse.parse(`WoWGPT_SlotData = {\n${lua}\n}`, { luaVersion: '5.1' });
   return ast.body[0].init[0].fields[0].value;
 }
 

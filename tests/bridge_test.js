@@ -28,7 +28,7 @@ test('parseFlags reads new-session, hello, forget, context, agent and allow list
   assert.equal(P.parseFlags('allow=WebSearch').allowOnce, undefined, 'no allowOnce key at all without the flag');
 });
 
-test('parseFlags reads the per-chat settings and the resume and live targets /claude sends, and drops values that do not fit', () => {
+test('parseFlags reads the per-chat settings and the resume and live targets /wowgpt sends, and drops values that do not fit', () => {
   const hex = s => Buffer.from(s).toString('hex');
   const f = P.parseFlags(
     `agent=claude;model=claude-opus-5[1m];effort=HIGH;pm=PLAN;dirs=${hex('realms\x1F~/notes')};resume=f02436b8-8a5f;live=${hex('wow-ai main')}`,
@@ -145,7 +145,7 @@ test('systemPrompt always asks for the TL;DR block, and adds the game rules and 
   assert.match(s, /A spell found with wow_spell, and not linked in this chat, is named in plain words with its rank, never as a token\./);
   assert.match(s, /Classic web databases describe it, but an item, spell or quest ID still comes only from the sources the link rule below names/);
   assert.doesNotMatch(s, /use the Classic ID|when you are sure of it|tokens are refused/);
-  assert.ok(!s.includes('ClaudeWoWNpcDB') && !s.includes('NPCs seen on this map'), 'no stored NPC data is offered');
+  assert.ok(!s.includes('WoWGPTNpcDB') && !s.includes('NPCs seen on this map'), 'no stored NPC data is offered');
   assert.ok(s.includes('in-game situation') && s.includes('Linked from the game'), 'says what the situation block and the links are');
   assert.ok(
     !s.includes('Testchar') && !s.includes('51.5'),
@@ -214,7 +214,7 @@ test('splitSummary takes the last TL;DR block for the game chat and keeps the wh
   assert.equal(P.splitSummary('a TL;DR: inline\nmore').summary, '');
   assert.equal(P.splitSummary('first TL;DR: x\n\nbody\n\nTL;DR: last one').summary, 'last one');
   // The slot file carries the summary only when there is one.
-  const lua = P.luaTable('ClaudeWoW_SlotData', [
+  const lua = P.luaTable('WoWGPT_SlotData', [
     { chat: 'c', id: 1, status: 'done', text: 'body\nTL;DR: short', summary: 'short' },
     { chat: 'c', id: 2, status: 'done', text: 'plain' },
   ]);
@@ -241,7 +241,7 @@ test('jobsFromStrip handles several records per frame and older formats', () => 
 
 test('parseOutbox decodes the SavedVariables fallback', () => {
   const hex = s => Buffer.from(s, 'utf8').toString('hex');
-  const src = `ClaudeWoWDB = {\n["outbox"] = {\n["id"] = 7,\n["session"] = "abc123",\n["chat"] = "c1",\n["text"] = "${hex('héllo')}",\n["cwd"] = "${hex('realms')}",\n["newSession"] = true,\n},\n["settings"] = {},\n}`;
+  const src = `WoWGPTDB = {\n["outbox"] = {\n["id"] = 7,\n["session"] = "abc123",\n["chat"] = "c1",\n["text"] = "${hex('héllo')}",\n["cwd"] = "${hex('realms')}",\n["newSession"] = true,\n},\n["settings"] = {},\n}`;
   assert.deepEqual(P.parseOutbox(src), { id: 7, session: 'abc123', chat: 'c1', text: 'héllo', cwd: 'realms', newSession: true, via: 'reload' });
   const withAllow = src.replace('["newSession"]', `["allow"] = "${hex('WebSearch\x1fBash(git:*)')}",\n["newSession"]`);
   assert.deepEqual(P.parseOutbox(withAllow).allow, ['WebSearch', 'Bash(git:*)']);
@@ -254,7 +254,7 @@ test('parseOutbox decodes the SavedVariables fallback', () => {
   const withAgent = src.replace('["newSession"]', '["agent"] = "codex",\n["newSession"]');
   assert.equal(P.parseOutbox(withAgent).agent, 'codex');
   assert.equal(P.parseOutbox(src).agent, undefined);
-  assert.equal(P.parseOutbox('ClaudeWoWDB = {}'), null);
+  assert.equal(P.parseOutbox('WoWGPTDB = {}'), null);
   assert.equal(P.parseOutbox('["outbox"] = { ["text"] = "" }'), null);
 });
 
@@ -449,11 +449,11 @@ test('slot files name the outbound transport the bridge listens on, screenshot u
   assert.equal(P.transportName('Screenshot'), 'screenshot');
   assert.equal(P.transportName('bogus'), '', 'an unknown mode is refused, not silently defaulted');
   assert.deepEqual(P.TRANSPORTS, ['pixel', 'screenshot']);
-  const plain = P.luaTable('ClaudeWoW_SlotData', []);
+  const plain = P.luaTable('WoWGPT_SlotData', []);
   assert.ok(plain.includes('\ttransport = "screenshot",'), plain);
-  const pixel = P.luaTable('ClaudeWoW_SlotData', [], { transport: 'pixel' });
+  const pixel = P.luaTable('WoWGPT_SlotData', [], { transport: 'pixel' });
   assert.ok(pixel.includes('\ttransport = "pixel",'), pixel);
-  assert.ok(P.luaTable('ClaudeWoW_Inbox', [], { transport: 'nope' }).includes('\ttransport = "screenshot",'), 'garbage falls back to the default in the file');
+  assert.ok(P.luaTable('WoWGPT_Inbox', [], { transport: 'nope' }).includes('\ttransport = "screenshot",'), 'garbage falls back to the default in the file');
 });
 
 test('screenshot mode ships its strip levels; pixel mode never does', () => {
@@ -463,18 +463,18 @@ test('screenshot mode ships its strip levels; pixel mode never does', () => {
   for (const bad of [{ off: 50, on: 55 }, { off: -1, on: 60 }, { off: 0, on: 300 }, { off: 'a', on: 60 }, { on: 4 }, 'x']) {
     assert.deepEqual(P.screenshotLevels(bad), { off: 0, on: 60, threshold: 31 }, JSON.stringify(bad));
   }
-  const shot = P.luaTable('ClaudeWoW_SlotData', [], { transport: 'screenshot', levels: { off: 0, on: 60 } });
+  const shot = P.luaTable('WoWGPT_SlotData', [], { transport: 'screenshot', levels: { off: 0, on: 60 } });
   assert.ok(shot.includes('\tstrip = { on = 60, off = 0, codec = 2 },'), shot);
   assert.ok(
-    P.luaTable('ClaudeWoW_SlotData', [], { transport: 'screenshot' }).includes('\tstrip = { on = 60, off = 0, codec = 2 },'),
+    P.luaTable('WoWGPT_SlotData', [], { transport: 'screenshot' }).includes('\tstrip = { on = 60, off = 0, codec = 2 },'),
     'default levels and the dense codec when none are given',
   );
   assert.ok(
-    P.luaTable('ClaudeWoW_SlotData', [], { transport: 'screenshot', codec: 1 }).includes('\tstrip = { on = 60, off = 0, codec = 1 },'),
+    P.luaTable('WoWGPT_SlotData', [], { transport: 'screenshot', codec: 1 }).includes('\tstrip = { on = 60, off = 0, codec = 1 },'),
     'capture.screenshotCodec 1 asks for the 4 px strip',
   );
   assert.ok(
-    !P.luaTable('ClaudeWoW_SlotData', [], { transport: 'pixel', levels: { off: 0, on: 60 }, codec: 2 }).includes('strip ='),
+    !P.luaTable('WoWGPT_SlotData', [], { transport: 'pixel', levels: { off: 0, on: 60 }, codec: 2 }).includes('strip ='),
     'pixel mode draws full primaries, codec 1, whatever the config says',
   );
   // The codec: 1 or 2, anything else the default; the dense levels as the addon computes them.
@@ -563,7 +563,7 @@ test('context growth: noteUsage counts turns per session, keeps the last known s
   ]);
   // The slot file: ctx / turns / window on a record that has them, nothing on one that does not.
   const lua = P.luaTable(
-    'ClaudeWoW_SlotData',
+    'WoWGPT_SlotData',
     [
       { chat: 'a', id: 1, status: 'done', text: 'hi', ctx: 106863, turns: 8, window: 200000, since: 1700000000, cost: 2.41 },
       { chat: 'b', id: 2, status: 'done', text: 'hi', turns: 2 },

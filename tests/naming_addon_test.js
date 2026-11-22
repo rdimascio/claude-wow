@@ -5,8 +5,8 @@ const fs = require('fs');
 const path = require('path');
 const { createVM, ADDON_DIR: ADDON } = require('./lua/vm');
 
-const ADDON_FILES = ['Codec.lua', 'Inbox.lua', 'ClaudeWoW.lua', 'Map.lua', 'Stream.lua', 'Orders.lua', 'DM.lua'];
-const PRODUCT = 'Azeroth Companion';
+const ADDON_FILES = ['Codec.lua', 'Inbox.lua', 'WoWGPT.lua', 'Map.lua', 'Stream.lua', 'Orders.lua', 'DM.lua'];
+const PRODUCT = 'WoWGPT';
 
 const NATIVE_MENU = `
   local function MenuNode()
@@ -74,47 +74,47 @@ function newVM({ native = false } = {}) {
 }
 
 function connect(vm, extra = '') {
-  vm.run(`STUB.onLoadAddOn = function() ClaudeWoW_SlotData = { now = time(), cwd = "", replies = {} ${extra} } end`);
+  vm.run(`STUB.onLoadAddOn = function() WoWGPT_SlotData = { now = time(), cwd = "", replies = {} ${extra} } end`);
   vm.run('STUB.now = STUB.now + 6; STUB.Tick()');
 }
 
 const prints = vm => vm.evaluate('table.concat(STUB.prints, "\\n")') || '';
-const chats = vm => vm.num('(function() local n = 0 for _, c in ipairs(ClaudeWoWDB.chats) do if not c.quiet then n = n + 1 end end return n end)()');
+const chats = vm => vm.num('(function() local n = 0 for _, c in ipairs(WoWGPTDB.chats) do if not c.quiet then n = n + 1 end end return n end)()');
 const lastText = vm =>
   vm.evaluate(
-    '(function() local c = ClaudeWoWDB.chats[#ClaudeWoWDB.chats]; if c.quiet then c = ClaudeWoWDB.chats[#ClaudeWoWDB.chats - 1] end return c.history[#c.history].text end)()',
+    '(function() local c = WoWGPTDB.chats[#WoWGPTDB.chats]; if c.quiet then c = WoWGPTDB.chats[#WoWGPTDB.chats - 1] end return c.history[#c.history].text end)()',
   );
 
 const fallbackLabels = vm =>
   JSON.parse(
     vm.evaluate(
-      '(function() local t = {} for _, r in ipairs(ClaudeWoWChatMenu.rows) do if r.shown then t[#t + 1] = string.format("%q", r.label.text or "") end end return "[" .. table.concat(t, ",") .. "]" end)()',
+      '(function() local t = {} for _, r in ipairs(WoWGPTChatMenu.rows) do if r.shown then t[#t + 1] = string.format("%q", r.label.text or "") end end return "[" .. table.concat(t, ",") .. "]" end)()',
     ),
   );
 
-test('one product name: every chat prefix in every module, the key binding and the leak line say Azeroth Companion', () => {
+test('one product name: every chat prefix in every module, the key binding and the leak line say WoWGPT', () => {
   for (const f of fs.readdirSync(ADDON).filter(n => n.endsWith('.lua'))) {
     const src = fs.readFileSync(path.join(ADDON, f), 'utf8');
     assert.doesNotMatch(src, /\[Claude WoW/, `${f} has no "[Claude WoW" prefix`);
     for (const m of src.matchAll(/\|cff66ccff\[([^\]"]*)\]\|r /g)) assert.equal(m[1], PRODUCT, `${f}: ${m[0]}`);
   }
   const vm = newVM();
-  assert.equal(vm.evaluate('BINDING_NAME_CLAUDEWOW_WORKSPACE'), `${PRODUCT}: open or close the workspace`);
-  assert.equal(vm.evaluate('ClaudeWoW.PREFIX'), `|cff66ccff[${PRODUCT}]|r `);
-  vm.run('STUB.prints = {}; ClaudeWoWStream.SlashCommand("nonsense"); SlashCmdList.CLAUDEWOWDM("bogus")');
-  assert.match(prints(vm), /\[Azeroth Companion\]\|r Unknown scene/);
-  assert.match(prints(vm), /\[Azeroth Companion\]\|r \/dm shows or hides/);
+  assert.equal(vm.evaluate('BINDING_NAME_WOWGPT_WORKSPACE'), `${PRODUCT}: open or close the workspace`);
+  assert.equal(vm.evaluate('WoWGPT.PREFIX'), `|cff66ccff[${PRODUCT}]|r `);
+  vm.run('STUB.prints = {}; WoWGPTStream.SlashCommand("nonsense"); SlashCmdList.WOWGPTDM("bogus")');
+  assert.match(prints(vm), /\[WoWGPT\]\|r Unknown scene/);
+  assert.match(prints(vm), /\[WoWGPT\]\|r \/dm shows or hides/);
   assert.doesNotMatch(prints(vm), /Claude WoW/);
 });
 
-test('/claude dm, map and stream run the module commands, and only their own subcommands: anything else is a message', () => {
+test('/wowgpt dm, map and stream run the module commands, and only their own subcommands: anything else is a message', () => {
   const vm = newVM();
   connect(vm);
   vm.run('CALLS = {}');
-  vm.run('local dm, map, stream = ClaudeWoWDM.Command, ClaudeWoWMap.Command, ClaudeWoWStream.SlashCommand');
-  vm.run('ClaudeWoWDM.Command = function(rest) table.insert(CALLS, "dm:" .. rest) end');
-  vm.run('ClaudeWoWMap.Command = function(rest) table.insert(CALLS, "map:" .. rest) end');
-  vm.run('ClaudeWoWStream.SlashCommand = function(rest) table.insert(CALLS, "stream:" .. rest) end');
+  vm.run('local dm, map, stream = WoWGPTDM.Command, WoWGPTMap.Command, WoWGPTStream.SlashCommand');
+  vm.run('WoWGPTDM.Command = function(rest) table.insert(CALLS, "dm:" .. rest) end');
+  vm.run('WoWGPTMap.Command = function(rest) table.insert(CALLS, "map:" .. rest) end');
+  vm.run('WoWGPTStream.SlashCommand = function(rest) table.insert(CALLS, "stream:" .. rest) end');
   const before = chats(vm);
   for (const cmd of [
     'dm',
@@ -132,7 +132,7 @@ test('/claude dm, map and stream run the module commands, and only their own sub
     'stream pane left',
     'stream follow off',
   ])
-    vm.run(`SlashCmdList.CLAUDE(${JSON.stringify(cmd)})`);
+    vm.run(`SlashCmdList.WOWGPT(${JSON.stringify(cmd)})`);
   assert.equal(
     vm.evaluate('table.concat(CALLS, "|")'),
     'dm:|dm:next|map:|map:ore on|map:herb|map:filter skill|map:show route1|map:nav route1 3|map:stop|stream:|stream:brb|stream:quest Kill ten boars|stream:pane left|stream:follow off',
@@ -140,76 +140,74 @@ test('/claude dm, map and stream run the module commands, and only their own sub
   assert.equal(chats(vm), before, 'no command made a chat');
   for (const msg of ['dm me a funny story', 'map out a leveling path', 'stream ideas for tonight', 'map ore everywhere please', 'stream pane up']) {
     const n = chats(vm);
-    vm.run(`SlashCmdList.CLAUDE(${JSON.stringify(msg)})`);
+    vm.run(`SlashCmdList.WOWGPT(${JSON.stringify(msg)})`);
     assert.equal(chats(vm), n + 1, `"${msg}" is a message for a new chat`);
     assert.equal(lastText(vm), msg);
-    vm.run('SlashCmdList.CLAUDE("cancel")');
+    vm.run('SlashCmdList.WOWGPT("cancel")');
   }
   assert.equal(vm.evaluate('table.concat(CALLS, "|")').split('|').length, 14, 'no message reached a module');
-  assert.equal(vm.evaluate('SLASH_CLAUDEWOWDM1'), '/dm');
-  assert.equal(vm.evaluate('SLASH_CLAUDEWOWMAP1'), '/aimap');
-  assert.equal(vm.evaluate('SLASH_CLAUDEWOWSTREAM1'), '/stream');
+  assert.equal(vm.evaluate('SLASH_WOWGPTDM1'), '/dm');
+  assert.equal(vm.evaluate('SLASH_WOWGPTMAP1'), '/aimap');
+  assert.equal(vm.evaluate('SLASH_WOWGPTSTREAM1'), '/stream');
   assert.equal(vm.evaluate('SLASH_CLAUDEWOW1'), '/claude-wow');
 });
 
-test('/claude stream accepts every scene the stream module knows', () => {
+test('/wowgpt stream accepts every scene the stream module knows', () => {
   const src = fs.readFileSync(path.join(ADDON, 'Stream.lua'), 'utf8');
   const scenes = [...src.match(/local SCENES = \{([^}]*)\}/)[1].matchAll(/(\w+) =/g)].map(m => m[1]);
   assert.ok(scenes.length >= 5, scenes.join(','));
   const vm = newVM();
-  vm.run('CALLS = {}; ClaudeWoWStream.SlashCommand = function(rest) table.insert(CALLS, rest) end');
-  for (const scene of scenes) vm.run(`SlashCmdList.CLAUDE("stream ${scene}")`);
+  vm.run('CALLS = {}; WoWGPTStream.SlashCommand = function(rest) table.insert(CALLS, rest) end');
+  for (const scene of scenes) vm.run(`SlashCmdList.WOWGPT("stream ${scene}")`);
   assert.equal(vm.evaluate('table.concat(CALLS, "|")'), scenes.join('|'));
 });
 
 test('Delete and Clear confirm with alert dialogs whose buttons say what they do, and a stale confirm touches nothing', () => {
   const vm = newVM();
   connect(vm);
-  vm.run('ClaudeWoW.NewChat(); ClaudeWoW.NewChat()');
-  assert.equal(vm.evaluate('StaticPopupDialogs.CLAUDEWOW_DELETE.button1'), 'Delete');
-  assert.equal(vm.evaluate('StaticPopupDialogs.CLAUDEWOW_DELETE.showAlert'), 'true');
-  assert.equal(vm.evaluate('StaticPopupDialogs.CLAUDEWOW_CLEAR.button1'), 'Clear');
-  assert.equal(vm.evaluate('StaticPopupDialogs.CLAUDEWOW_CLEAR.showAlert'), 'true');
-  assert.equal(vm.evaluate('StaticPopupDialogs.CLAUDEWOW_CLEAR.button2'), vm.evaluate('CANCEL'));
+  vm.run('WoWGPT.NewChat(); WoWGPT.NewChat()');
+  assert.equal(vm.evaluate('StaticPopupDialogs.WOWGPT_DELETE.button1'), 'Delete');
+  assert.equal(vm.evaluate('StaticPopupDialogs.WOWGPT_DELETE.showAlert'), 'true');
+  assert.equal(vm.evaluate('StaticPopupDialogs.WOWGPT_CLEAR.button1'), 'Clear');
+  assert.equal(vm.evaluate('StaticPopupDialogs.WOWGPT_CLEAR.showAlert'), 'true');
+  assert.equal(vm.evaluate('StaticPopupDialogs.WOWGPT_CLEAR.button2'), vm.evaluate('CANCEL'));
 
-  const first = vm.evaluate('ClaudeWoWDB.chats[1].id');
-  vm.run(`ClaudeWoW.ConfirmDelete("${first}")`);
+  const first = vm.evaluate('WoWGPTDB.chats[1].id');
+  vm.run(`WoWGPT.ConfirmDelete("${first}")`);
   vm.run('STALE = STUB.popup.data');
-  vm.run(`ClaudeWoW.DeleteChat("${first}")`);
+  vm.run(`WoWGPT.DeleteChat("${first}")`);
   const n = chats(vm);
-  const active = vm.evaluate('ClaudeWoWDB.activeChat');
-  vm.run('StaticPopupDialogs.CLAUDEWOW_DELETE.OnAccept({}, STALE)');
+  const active = vm.evaluate('WoWGPTDB.activeChat');
+  vm.run('StaticPopupDialogs.WOWGPT_DELETE.OnAccept({}, STALE)');
   assert.equal(chats(vm), n, 'a delete confirm for a chat that is gone deletes no other chat');
-  assert.equal(vm.evaluate('ClaudeWoWDB.activeChat'), active);
+  assert.equal(vm.evaluate('WoWGPTDB.activeChat'), active);
 
-  vm.run('table.insert(ClaudeWoWDB.chats[1].history, { role = "user", text = "keep me" })');
-  const id = vm.evaluate('ClaudeWoWDB.chats[1].id');
-  vm.run(`ClaudeWoW.SwitchChat("${id}"); ClaudeWoW.ConfirmClear("${id}")`);
-  assert.equal(vm.evaluate('STUB.popup.which'), 'CLAUDEWOW_CLEAR');
+  vm.run('table.insert(WoWGPTDB.chats[1].history, { role = "user", text = "keep me" })');
+  const id = vm.evaluate('WoWGPTDB.chats[1].id');
+  vm.run(`WoWGPT.SwitchChat("${id}"); WoWGPT.ConfirmClear("${id}")`);
+  assert.equal(vm.evaluate('STUB.popup.which'), 'WOWGPT_CLEAR');
   vm.run('STALE = STUB.popup.data');
-  vm.run(`ClaudeWoW.DeleteChat("${id}")`);
-  vm.run(
-    'local before = #ClaudeWoWDB.chats[1].history; StaticPopupDialogs.CLAUDEWOW_CLEAR.OnAccept({}, STALE); AFTER = #ClaudeWoWDB.chats[1].history - before',
-  );
+  vm.run(`WoWGPT.DeleteChat("${id}")`);
+  vm.run('local before = #WoWGPTDB.chats[1].history; StaticPopupDialogs.WOWGPT_CLEAR.OnAccept({}, STALE); AFTER = #WoWGPTDB.chats[1].history - before');
   assert.equal(vm.num('AFTER'), 0, 'a clear confirm for a chat that is gone clears no other chat');
 });
 
 test('the macro dialog button says Create Macro or Update Macro', () => {
   const vm = newVM();
-  vm.run('ClaudeWoW.MacroPrompt({ name = "Fresh", body = "/sit" })');
-  assert.equal(vm.evaluate('StaticPopupDialogs.CLAUDEWOW_MACRO.button1'), 'Create Macro');
+  vm.run('WoWGPT.MacroPrompt({ name = "Fresh", body = "/sit" })');
+  assert.equal(vm.evaluate('StaticPopupDialogs.WOWGPT_MACRO.button1'), 'Create Macro');
   vm.run('GetMacroInfo = function(i) if i == 1 then return "Old", 134400, "/stand" end end');
-  vm.run('ClaudeWoW.MacroPrompt({ name = "Old", body = "/sit" })');
-  assert.equal(vm.evaluate('StaticPopupDialogs.CLAUDEWOW_MACRO.button1'), 'Update Macro');
-  assert.match(vm.evaluate('ClaudeWoW.MacroLabel({ name = "Old", body = "/sit" })'), /^Update Macro: Old/);
+  vm.run('WoWGPT.MacroPrompt({ name = "Old", body = "/sit" })');
+  assert.equal(vm.evaluate('StaticPopupDialogs.WOWGPT_MACRO.button1'), 'Update Macro');
+  assert.match(vm.evaluate('WoWGPT.MacroLabel({ name = "Old", body = "/sit" })'), /^Update Macro: Old/);
 });
 
 test('the chat menu: Agent is a radio list of the bridge agents, Plugin is gone, and the native and fallback menus have the same items', () => {
   const vm = newVM();
   connect(vm, ', agent = "claude", agents = { "claude", "codex", "bad name|cff" }');
-  const id = vm.evaluate('ClaudeWoWDB.activeChat');
-  vm.run('ClaudeWoW.UI.native = true');
-  vm.run(`ClaudeWoW.ShowChatMenu("${id}", UIParent)`);
+  const id = vm.evaluate('WoWGPTDB.activeChat');
+  vm.run('WoWGPT.UI.native = true');
+  vm.run(`WoWGPT.ShowChatMenu("${id}", UIParent)`);
   const native = JSON.parse(
     vm.evaluate(
       '(function() local t = {} for _, s in ipairs(STUB.MenuLabels(STUB.menu)) do t[#t + 1] = string.format("%q", s) end return "[" .. table.concat(t, ",") .. "]" end)()',
@@ -219,43 +217,43 @@ test('the chat menu: Agent is a radio list of the bridge agents, Plugin is gone,
   assert.equal(vm.evaluate('STUB.FindItem(STUB.menu, "Codex").radio'), 'true');
   assert.equal(vm.evaluate('STUB.FindItem(STUB.menu, "Default (Claude)").get()'), 'true', 'a chat with no agent of its own is on the default');
   vm.run('STUB.FindItem(STUB.menu, "Codex").fn()');
-  assert.equal(vm.evaluate(`(function() for _, c in ipairs(ClaudeWoWDB.chats) do if c.id == "${id}" then return c.agent end end end)()`), 'codex');
+  assert.equal(vm.evaluate(`(function() for _, c in ipairs(WoWGPTDB.chats) do if c.id == "${id}" then return c.agent end end end)()`), 'codex');
   assert.equal(vm.evaluate('STUB.FindItem(STUB.menu, "Codex").get()'), 'true');
 
-  vm.run('ClaudeWoW.UI.native = false');
-  vm.run(`ClaudeWoW.ShowChatMenu("${id}", UIParent)`);
-  assert.equal(vm.evaluate('ClaudeWoWChatMenu.shown'), 'true');
+  vm.run('WoWGPT.UI.native = false');
+  vm.run(`WoWGPT.ShowChatMenu("${id}", UIParent)`);
+  assert.equal(vm.evaluate('WoWGPTChatMenu.shown'), 'true');
   assert.deepEqual(fallbackLabels(vm), native, 'the fallback lists the same items');
-  vm.run('for _, r in ipairs(ClaudeWoWChatMenu.rows) do if r.shown and r.label.text == "Claude" then r.scripts.OnClick(r) end end');
-  assert.equal(vm.evaluate(`(function() for _, c in ipairs(ClaudeWoWDB.chats) do if c.id == "${id}" then return c.agent end end end)()`), 'claude');
-  assert.equal(vm.evaluate('ClaudeWoWChatMenu.shown'), 'false', 'a pick closes the fallback');
+  vm.run('for _, r in ipairs(WoWGPTChatMenu.rows) do if r.shown and r.label.text == "Claude" then r.scripts.OnClick(r) end end');
+  assert.equal(vm.evaluate(`(function() for _, c in ipairs(WoWGPTDB.chats) do if c.id == "${id}" then return c.agent end end end)()`), 'claude');
+  assert.equal(vm.evaluate('WoWGPTChatMenu.shown'), 'false', 'a pick closes the fallback');
 });
 
 test('with no agent list from the bridge, the chat menu offers the Agent... prompt', () => {
   const vm = newVM();
-  const id = vm.evaluate('ClaudeWoWDB.activeChat');
-  vm.run('ClaudeWoW.UI.native = true');
-  vm.run(`ClaudeWoW.ShowChatMenu("${id}", UIParent)`);
+  const id = vm.evaluate('WoWGPTDB.activeChat');
+  vm.run('WoWGPT.UI.native = true');
+  vm.run(`WoWGPT.ShowChatMenu("${id}", UIParent)`);
   vm.run('STUB.FindItem(STUB.menu, "Agent...").fn()');
-  assert.equal(vm.evaluate('STUB.popup.which'), 'CLAUDEWOW_AGENT');
+  assert.equal(vm.evaluate('STUB.popup.which'), 'WOWGPT_AGENT');
 });
 
 test('the gear fallback opens a menu with the same items instead of toggling previews', () => {
   const vm = newVM({ native: true });
-  assert.equal(vm.evaluate('ClaudeWoWChatSettings ~= nil'), 'true');
-  vm.run('ClaudeWoWChatSettings.scripts.OnClick(ClaudeWoWChatSettings)');
+  assert.equal(vm.evaluate('WoWGPTChatSettings ~= nil'), 'true');
+  vm.run('WoWGPTChatSettings.scripts.OnClick(WoWGPTChatSettings)');
   const native = JSON.parse(
     vm.evaluate(
       '(function() local t = {} for _, s in ipairs(STUB.MenuLabels(STUB.menu)) do t[#t + 1] = string.format("%q", s) end return "[" .. table.concat(t, ",") .. "]" end)()',
     ),
   );
   vm.run('MenuUtil = nil');
-  const before = vm.evaluate('ClaudeWoWDB.settings.chatPreviews');
-  vm.run('ClaudeWoWChatSettings.scripts.OnClick(ClaudeWoWChatSettings)');
-  assert.equal(vm.evaluate('ClaudeWoWDB.settings.chatPreviews'), before, 'nothing toggles on open');
-  assert.equal(vm.evaluate('ClaudeWoWChatMenu.shown'), 'true');
+  const before = vm.evaluate('WoWGPTDB.settings.chatPreviews');
+  vm.run('WoWGPTChatSettings.scripts.OnClick(WoWGPTChatSettings)');
+  assert.equal(vm.evaluate('WoWGPTDB.settings.chatPreviews'), before, 'nothing toggles on open');
+  assert.equal(vm.evaluate('WoWGPTChatMenu.shown'), 'true');
   assert.deepEqual(fallbackLabels(vm), native);
   assert.ok(native.includes('Show message previews') && native.includes('Commands and tips'), native.join('|'));
-  vm.run('for _, r in ipairs(ClaudeWoWChatMenu.rows) do if r.shown and r.label.text == "Show message previews" then r.scripts.OnClick(r) end end');
-  assert.notEqual(vm.evaluate('ClaudeWoWDB.settings.chatPreviews'), before, 'the previews row toggles them');
+  vm.run('for _, r in ipairs(WoWGPTChatMenu.rows) do if r.shown and r.label.text == "Show message previews" then r.scripts.OnClick(r) end end');
+  assert.notEqual(vm.evaluate('WoWGPTDB.settings.chatPreviews'), before, 'the previews row toggles them');
 });

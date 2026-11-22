@@ -52,7 +52,7 @@ test('a live reply that lands after a cancel leaves the agent run that took over
       h.client.send('@live are you there');
       await h.bridge.waitForLine(new RegExp(`#${liveId}@\\S+ sent to "${SESSION_NAME}" as chat_id`));
       await h.client.waitFor(() => session.received.some(m => m.type === 'message'), { label: 'the message at the live session' });
-      h.client.slash('/claude cancel');
+      h.client.slash('/wowgpt cancel');
       await h.bridge.waitForLine(new RegExp(`cancel for #${liveId}: nothing is running for that message`));
       await h.client.waitFor(() => !h.client.activeChat().pendingId, { label: 'the chat free again' });
 
@@ -65,7 +65,7 @@ test('a live reply that lands after a cancel leaves the agent run that took over
       await h.bridge.waitForLine(new RegExp(`#${liveId}@\\S+ done`));
       assert.deepEqual(inflightIds(h), [runId], 'the finished live job leaves the agent run in state.json inflight');
 
-      h.client.slash('/claude cancel');
+      h.client.slash('/wowgpt cancel');
       await h.bridge.waitForLine(new RegExp(`#${runId}@\\S+ cancelled from the game; ending it`));
       await h.client.waitFor(() => !isAlive(run.pid), { timeoutMs: 15000, label: 'the agent process to end' });
     } finally {
@@ -86,7 +86,7 @@ test('a late live answer for a deleted chat stays out of the chat that reuses it
       await h.bridge.waitForLine(new RegExp(`#${liveId}@\\S+ "${SESSION_NAME}" showed no sign of it`));
       await h.client.waitFor(() => !h.client.activeChat().pendingId, { label: 'the chat free again' });
 
-      h.client.runLua(`ClaudeWoW.DeleteChat(${JSON.stringify(chat)})`);
+      h.client.runLua(`WoWGPT.DeleteChat(${JSON.stringify(chat)})`);
       await h.bridge.waitForLine(new RegExp(`forgot chat ${chat}`));
       assert.equal(h.client.activeChat().id, chat, 'the last chat keeps its id');
       await h.client.say('@claude-code a fresh start');

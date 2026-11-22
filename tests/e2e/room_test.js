@@ -78,7 +78,7 @@ test('an agent-room message in a followed channel reaches the game as its own ch
         };
         room.send(snapshot);
         await h.bridge.waitForLine(/room: connected to agent-room, following 1 channel\(s\) of wow-ai/, { timeoutMs: 15000 });
-        const fired = () => h.client.luaValue('ClaudeWoW.Presence.News().fired');
+        const fired = () => h.client.luaValue('WoWGPT.Presence.News().fired');
         const before = Number(fired());
         room.send({
           type: 'message',
@@ -117,7 +117,7 @@ test('an agent-room message in a followed channel reaches the game as its own ch
           ],
           'agent-room re-sends a turn after it ends; the same message id is kept once',
         );
-        h.client.runLua(`ClaudeWoW.DeleteChat(${JSON.stringify(chatId)})`);
+        h.client.runLua(`WoWGPT.DeleteChat(${JSON.stringify(chatId)})`);
         await h.bridge.waitForLine(new RegExp(`forgot chat ${chatId}`), { timeoutMs: 15000 });
         assert.equal(h.transcripts().chats[chatId], undefined);
         room.send({

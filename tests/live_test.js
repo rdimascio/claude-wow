@@ -586,7 +586,7 @@ test('channel.js started by a process without the channel flag answers MCP with 
   }
 });
 
-test('the /claude -r picker never lists a -p/--print process, even one that connected', async () => {
+test('the /wowgpt -r picker never lists a -p/--print process, even one that connected', async () => {
   const r = await rig({ connect: false, commandLine: () => PRINT_JOB, options: { waitMs: 0 } });
   try {
     r.ch.connect();
@@ -602,7 +602,7 @@ test('the /claude -r picker never lists a -p/--print process, even one that conn
   }
 });
 
-test('/claude -r targets one running session: by its Claude Code session id or prefix, its title or its name; another target is told it is not connected', async () => {
+test('/wowgpt -r targets one running session: by its Claude Code session id or prefix, its title or its name; another target is told it is not connected', async () => {
   const claudeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cw-claude-'));
   const id = '6624f327-7126-423e-a653-d7cf7a4e492b';
   fs.mkdirSync(path.join(claudeDir, 'sessions'));
@@ -636,7 +636,7 @@ test('/claude -r targets one running session: by its Claude Code session id or p
         assert.ok(fail, target);
         assert.equal(
           fail.text,
-          `The running Claude Code session "${target}" is not connected. /claude -r lists the ones that are, and /claude -r <id> resumes a session headless when its terminal is closed.`,
+          `The running Claude Code session "${target}" is not connected. /wowgpt -r lists the ones that are, and /wowgpt -r <id> resumes a session headless when its terminal is closed.`,
         );
         assert.equal(sent(), before);
       }
@@ -1165,7 +1165,7 @@ test('a session started without the channel is connected but never offered as li
           'The Claude Code session "wow-ai-90" is running, but it was not started with the claude-wow channel, so it cannot hear the game.',
           'Restart it in its terminal with:',
           `cd /work/proj && claude --resume ${SESSION_A} --dangerously-load-development-channels server:claude-wow`,
-          'Or pick it in /claude -r and click resume headless to continue it here without the terminal.',
+          'Or pick it in /wowgpt -r and click resume headless to continue it here without the terminal.',
         ].join('\n'),
       );
     }
@@ -1173,7 +1173,7 @@ test('a session started without the channel is connected but never offered as li
     await r.live.handle(plain, r.core);
     assert.match(
       r.calls.fail.find(f => f.job === plain).text,
-      /^No live Claude Code session is connected\. Start one with:\n[\s\S]*\n1 running session was started without the channel; \/claude -r shows how to restart it\.$/,
+      /^No live Claude Code session is connected\. Start one with:\n[\s\S]*\n1 running session was started without the channel; \/wowgpt -r shows how to restart it\.$/,
     );
     assert.equal(r.out.lines.filter(l => l.method === 'notifications/claude/channel').length, 0, 'nothing is sent into a session that cannot hear it');
   } finally {

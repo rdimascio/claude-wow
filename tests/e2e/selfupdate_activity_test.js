@@ -26,7 +26,7 @@ function gsRecord(session, seq) {
 function writeGsShot(h, payload, n) {
   const cells = h.client
     .luaValue(
-      `(function() local c = ClaudeWoW_Codec.Encode(0, ${luaQuote(payload)}, 1); local t = {}; for i = 1, #c do t[i] = c[i] end; return table.concat(t, ",") end)()`,
+      `(function() local c = WoWGPT_Codec.Encode(0, ${luaQuote(payload)}, 1); local t = {}; for i = 1, #c do t[i] = c[i] end; return table.concat(t, ",") end)()`,
     )
     .split(',')
     .map(Number);
@@ -126,7 +126,7 @@ test(
         session.send({ method: 'notifications/initialized' });
         session.send({ id: 2, method: 'tools/list' });
         await h.bridge.waitForLine(/session "late-e2e" connected.*, listening/, { timeoutMs: 30000 });
-        h.client.slash('/claude config plugin live');
+        h.client.slash('/wowgpt config plugin live');
         h.client.send('are you there');
         const note = await h.client.waitFor(() => session.lines.find(m => m.method === 'notifications/claude/channel'), {
           timeoutMs: 30000,

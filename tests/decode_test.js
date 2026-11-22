@@ -20,7 +20,7 @@ function encodeWithLua(id, payload, codec = 1) {
   const vm = createVM({ stub: false });
   vm.loadFile('Codec.lua');
   vm.run(
-    `local cells = ClaudeWoW_Codec.Encode(${id}, ${lit}, ${codec})\n` +
+    `local cells = WoWGPT_Codec.Encode(${id}, ${lit}, ${codec})\n` +
       `local t = {}\nfor i = 1, #cells do t[i] = string.format("%d", cells[i]) end\n` +
       `RESULT = table.concat(t, ",")\n`,
   );

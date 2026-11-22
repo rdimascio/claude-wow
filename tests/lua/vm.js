@@ -3,12 +3,12 @@ const fs = require('fs');
 const path = require('path');
 const { lua, lauxlib, lualib, to_luastring, to_jsstring } = require('fengari');
 
-const ADDON_NAME = 'ClaudeWoW';
+const ADDON_NAME = 'WoWGPT';
 const ADDON_DIR = path.join(__dirname, '..', '..', 'addon', ADDON_NAME);
 const STUB_FILE = path.join(__dirname, '..', 'wow_stub.lua');
-const CORE_FILE = 'ClaudeWoW.lua';
+const CORE_FILE = 'WoWGPT.lua';
 const BOOT_FILE = 'Boot.lua';
-const LOGIN = 'STUB.FireEvent("ADDON_LOADED", "ClaudeWoW"); STUB.FireEvent("PLAYER_LOGIN")';
+const LOGIN = 'STUB.FireEvent("ADDON_LOADED", "WoWGPT"); STUB.FireEvent("PLAYER_LOGIN")';
 
 function tocFiles(dir = ADDON_DIR, name = ADDON_NAME) {
   return fs
@@ -25,7 +25,7 @@ function tocFilesUpTo(last, files = tocFiles()) {
   return files.slice(0, at + 1);
 }
 
-const isShared = (f, files = tocFiles()) => f.includes('/') && files.indexOf(f) < files.indexOf('ClaudeWoW.lua');
+const isShared = (f, files = tocFiles()) => f.includes('/') && files.indexOf(f) < files.indexOf('WoWGPT.lua');
 
 const coreFiles = () => tocFiles().filter(f => f.startsWith('Core/'));
 

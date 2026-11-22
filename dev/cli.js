@@ -10,16 +10,16 @@ const SIG = require('../bridge/signals');
 
 const HELP = `
   type a message          send it from the active chat
-  /claude ...             run an addon slash command (/claude help lists them)
+  /wowgpt ...             run an addon slash command (/wowgpt help lists them)
   :reload                 /reload the UI (SavedVariables are written, slots freed)
   :quit-game / :launch    log out of the game (saves), then start it again
   :crash-game             kill the game without saving
   :bridge stop|start|restart|crash
   :hide / :show           Alt+Z: hide or show the UI (the strip cannot be seen)
   :key                    press a key (runs an armed reload)
-  :diag                   /claude diag, printed here
+  :diag                   /wowgpt diag, printed here
   :state                  the bridge's state.json
-  :db                     the addon's ClaudeWoWDB summary
+  :db                     the addon's WoWGPTDB summary
   :log [n]                the last n bridge log lines (default 20)
   :files                  signal files on disk (ack, sig) and screenshots waiting
   :help                   this list

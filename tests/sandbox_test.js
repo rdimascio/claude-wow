@@ -48,14 +48,14 @@ test('install-slots rewrites slot .toc files when tocInterface changes', () => {
   const { spawnSync } = require('child_process');
   const sb = SB.create('iface', { root: ROOT, slots: 8 });
   try {
-    const toc = path.join(sb.addons, 'ClaudeWoW_S007', 'ClaudeWoW_S007.toc');
+    const toc = path.join(sb.addons, 'WoWGPT_S007', 'WoWGPT_S007.toc');
     assert.match(fs.readFileSync(toc, 'utf8'), /## Interface: 16001/);
     SB.writeConfig(sb, { tocInterface: '16002' });
     const r = spawnSync(process.execPath, [path.join(SB.REPO, 'bridge', 'install-slots.js')], { env: sb.env, encoding: 'utf8' });
     assert.equal(r.status, 0, r.stderr);
     assert.match(r.stdout, /updated: 9/, 'the 8 slot tocs and the runtime toc');
     assert.match(fs.readFileSync(toc, 'utf8'), /## Interface: 16002/);
-    assert.match(fs.readFileSync(path.join(sb.addons, 'ClaudeWoW_Runtime', 'ClaudeWoW_Runtime.toc'), 'utf8'), /## Interface: 16002/);
+    assert.match(fs.readFileSync(path.join(sb.addons, 'WoWGPT_Runtime', 'WoWGPT_Runtime.toc'), 'utf8'), /## Interface: 16002/);
   } finally {
     fs.rmSync(ROOT, { recursive: true, force: true });
   }
@@ -110,14 +110,14 @@ test('a plain reopen of a --real-agent sandbox goes back to the fake agent; a cu
 test('reopening a sandbox refreshes the shipped addon and slots but keeps SavedVariables, transcripts, config and project', () => {
   const sb = SB.create('refresh', { root: ROOT });
   try {
-    const lua = path.join(sb.addons, 'ClaudeWoW', 'ClaudeWoW.lua');
-    const leftover = path.join(sb.addons, 'ClaudeWoW', 'Removed.lua');
-    const slotToc = path.join(sb.addons, 'ClaudeWoW_S007', 'ClaudeWoW_S007.toc');
-    const shipped = fs.readFileSync(path.join(SB.REPO, 'addon', 'ClaudeWoW', 'ClaudeWoW.lua'), 'utf8');
+    const lua = path.join(sb.addons, 'WoWGPT', 'WoWGPT.lua');
+    const leftover = path.join(sb.addons, 'WoWGPT', 'Removed.lua');
+    const slotToc = path.join(sb.addons, 'WoWGPT_S007', 'WoWGPT_S007.toc');
+    const shipped = fs.readFileSync(path.join(SB.REPO, 'addon', 'WoWGPT', 'WoWGPT.lua'), 'utf8');
     fs.writeFileSync(lua, '-- STALE');
     fs.writeFileSync(leftover, '-- gone from the repo');
     fs.writeFileSync(slotToc, 'stale toc');
-    fs.writeFileSync(sb.saved, 'ClaudeWoWDB = { kept = true }\n');
+    fs.writeFileSync(sb.saved, 'WoWGPTDB = { kept = true }\n');
     fs.writeFileSync(sb.transcripts, '{"kept":true}\n');
     fs.writeFileSync(path.join(sb.project, 'notes.txt'), 'kept');
     SB.writeConfig(sb, { slots: 60 });
@@ -128,11 +128,11 @@ test('reopening a sandbox refreshes the shipped addon and slots but keeps SavedV
     assert.equal(fs.readFileSync(slotToc, 'utf8'), 'stale toc');
 
     const reopened = SB.open('refresh', { root: ROOT });
-    assert.ok(fs.readFileSync(lua, 'utf8') === shipped, 'the shipped ClaudeWoW.lua is copied again');
+    assert.ok(fs.readFileSync(lua, 'utf8') === shipped, 'the shipped WoWGPT.lua is copied again');
     assert.ok(!fs.existsSync(leftover), 'a file no longer shipped is removed');
     assert.match(fs.readFileSync(slotToc, 'utf8'), /## Interface: 16001/);
     assert.match(reopened.installed, /slots: 60/);
-    assert.equal(fs.readFileSync(sb.saved, 'utf8'), 'ClaudeWoWDB = { kept = true }\n');
+    assert.equal(fs.readFileSync(sb.saved, 'utf8'), 'WoWGPTDB = { kept = true }\n');
     assert.equal(fs.readFileSync(sb.transcripts, 'utf8'), '{"kept":true}\n');
     assert.equal(fs.readFileSync(path.join(sb.project, 'notes.txt'), 'utf8'), 'kept');
     assert.equal(reopened.cfg.slots, 60);

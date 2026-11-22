@@ -121,10 +121,10 @@ test('the real addon reads a loot window the player opened, sends it as a gs sec
       },
       { timeoutMs: 60000, label: 'the first gs record' },
     );
-    await h.client.waitFor(
-      () => h.client.luaValue('ClaudeWoWTelemetry.Observing()') === 'true' && h.client.luaValue('ClaudeWoWObserved.LootKeyed()') === 'true',
-      { timeoutMs: 60000, label: 'the bridge to offer observed sections and the gather list from the synced data' },
-    );
+    await h.client.waitFor(() => h.client.luaValue('WoWGPTTelemetry.Observing()') === 'true' && h.client.luaValue('WoWGPTObserved.LootKeyed()') === 'true', {
+      timeoutMs: 60000,
+      label: 'the bridge to offer observed sections and the gather list from the synced data',
+    });
     h.client.runLua(LOOT_STUB);
     h.client.runLua('STUB.FireEvent("LOOT_READY"); STUB.FireEvent("LOOT_CLOSED")');
     const lines = await h.client.waitFor(
@@ -148,7 +148,7 @@ test(
   { skip: process.platform === 'win32' },
   async () => {
     await withGame({ beforeLaunch: syncData }, async h => {
-      h.client.runLua('ClaudeWoWDB.stream = ClaudeWoWDB.stream or {}; ClaudeWoWDB.stream.follow = false');
+      h.client.runLua('WoWGPTDB.stream = WoWGPTDB.stream or {}; WoWGPTDB.stream.follow = false');
       await h.client.say('hello');
       await h.bridge.waitForLine(/game context updated: Character: Testchar/);
       const session = fakeSession(h.sb);
@@ -160,7 +160,7 @@ test(
         const listed = await h.client.waitFor(() => session.replies.get(2), { timeoutMs: 10000, label: 'tools/list' });
         assert.ok(listed.result.tools.some(t => t.name === OT.TOOL.route));
         h.client.runLua(
-          'DEV_SLOT_LOADS = 0; local load = C_AddOns.LoadAddOn; C_AddOns.LoadAddOn = function(name) if tostring(name):match("^ClaudeWoW_S") then DEV_SLOT_LOADS = DEV_SLOT_LOADS + 1 end return load(name) end',
+          'DEV_SLOT_LOADS = 0; local load = C_AddOns.LoadAddOn; C_AddOns.LoadAddOn = function(name) if tostring(name):match("^WoWGPT_S") then DEV_SLOT_LOADS = DEV_SLOT_LOADS + 1 end return load(name) end',
         );
         await untilNoSlotLoads(h);
         h.client.runLua('DEV_SLOT_LOADS = 0');
@@ -168,18 +168,18 @@ test(
         const drawn = await h.client.waitFor(() => session.replies.get(3), { timeoutMs: 15000, label: 'route_draw' });
         assert.equal(drawn.result.isError, false, drawn.result.content[0].text);
         assert.equal(h.state().mapHeldForGame, true, 'the bridge holds the route for the game');
-        const inbox = fs.readFileSync(path.join(h.sb.addons, 'ClaudeWoW_S001', 'Inbox.lua'), 'utf8');
+        const inbox = fs.readFileSync(path.join(h.sb.addons, 'WoWGPT_S001', 'Inbox.lua'), 'utf8');
         assert.match(inbox, /name = "claude-route", title = "Fixture Vale route, model estimate"/);
         assert.match(inbox, /\{ 9002, 40, 50, "Stop 1 of 2, model estimate", "poi" \}/);
         await new Promise(r => setTimeout(r, 4000));
         assert.equal(h.client.luaValue('DEV_SLOT_LOADS'), '0', 'no slot was loaded for the route');
-        assert.equal(h.client.luaValue('ClaudeWoWMapDB.map and #ClaudeWoWMapDB.map.layers or 0'), '0', 'the route is not in the game yet');
+        assert.equal(h.client.luaValue('WoWGPTMapDB.map and #WoWGPTMapDB.map.layers or 0'), '0', 'the route is not in the game yet');
         await h.client.say('show me the way');
-        await h.client.waitFor(
-          () => h.client.luaValue('ClaudeWoWMapDB.map and ClaudeWoWMapDB.map.layers[1] and ClaudeWoWMapDB.map.layers[1].name') === 'claude-route',
-          { timeoutMs: 30000, label: 'the route in the game map' },
-        );
-        assert.equal(h.client.luaValue('#ClaudeWoWMapDB.map.layers[1].points'), '2');
+        await h.client.waitFor(() => h.client.luaValue('WoWGPTMapDB.map and WoWGPTMapDB.map.layers[1] and WoWGPTMapDB.map.layers[1].name') === 'claude-route', {
+          timeoutMs: 30000,
+          label: 'the route in the game map',
+        });
+        assert.equal(h.client.luaValue('#WoWGPTMapDB.map.layers[1].points'), '2');
         assert.equal(h.state().mapHeldForGame, false, 'the published reply releases the hold');
         assert.equal(h.agentCalls().length, 2, 'route_draw ran no agent');
       } finally {

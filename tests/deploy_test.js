@@ -54,7 +54,7 @@ function harness(
     runsCurrent = true,
     platform = 'darwin',
     probe,
-    setupOut = 'addon    : 18 file(s)\nDone. Next:\n  1. Fully quit and relaunch World of Warcraft (it only discovers new addon folders at launch).\n  4. In game:  /claude',
+    setupOut = 'addon    : 18 file(s)\nDone. Next:\n  1. Fully quit and relaunch World of Warcraft (it only discovers new addon folders at launch).\n  4. In game:  /wowgpt',
     failRestart = false,
     loaded = true,
   } = {},
