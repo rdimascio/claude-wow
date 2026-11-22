@@ -166,8 +166,87 @@ function migrateOldHome(env = process.env, home = os.homedir()) {
   return { from: old, copied };
 }
 
+// The files whose settings name folders, and so move with the home.
+const REBASED_FILES = Object.freeze(['config.json', 'state.json']);
+// state.json's record of the folder each agent session started in. An agent
+// resumes a session only from that folder, so it keeps the old path: the next
+// message sees another folder and starts a new session (the coding plugin's
+// freshSession), as an ask chat does for its old scratch folder.
+const SESSION_FOLDER_KEYS = Object.freeze(['sessionCwd']);
+// The chats' own text: a path the user typed is not a setting.
+const NOT_SETTINGS = Object.freeze(['transcripts.json']);
+
+function underDir(value, dir) {
+  return typeof value === 'string' && (value === dir || value.startsWith(dir + path.sep));
+}
+
+// Every string under oldDir moved to newDir, top-level SESSION_FOLDER_KEYS
+// left as they are. Returns the new value and whether anything changed.
+function rebaseValue(value, oldDir, newDir, top = true) {
+  if (underDir(value, oldDir)) return { value: newDir + value.slice(oldDir.length), changed: true };
+  if (!value || typeof value !== 'object') return { value, changed: false };
+  let changed = false;
+  const out = Array.isArray(value) ? [] : {};
+  for (const [k, v] of Object.entries(value)) {
+    const keep = top && !Array.isArray(value) && SESSION_FOLDER_KEYS.includes(k);
+    const r = keep ? { value: v, changed: false } : rebaseValue(v, oldDir, newDir, false);
+    out[k] = r.value;
+    changed = changed || r.changed;
+  }
+  return { value: changed ? out : value, changed };
+}
+
+function readJson(file) {
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    return undefined;
+  }
+}
+
+// After the old home is copied: paths in config.json and state.json that
+// point into the old home point into the new one. Returns the files changed.
+function rebaseOldHome(dir, oldDir) {
+  const changed = [];
+  for (const name of REBASED_FILES) {
+    const file = path.join(dir, name);
+    const json = readJson(file);
+    if (json === undefined) continue;
+    const r = rebaseValue(json, oldDir, dir);
+    if (!r.changed) continue;
+    fs.writeFileSync(file, JSON.stringify(r.value, null, 2) + '\n');
+    changed.push(name);
+  }
+  return changed;
+}
+
+// The settings files in the new home that still name a path in the old one;
+// the old home can go only when there are none.
+function oldHomeReferences(dir, oldDir) {
+  let names = [];
+  try {
+    names = fs.readdirSync(dir).filter(n => n.endsWith('.json') && !NOT_SETTINGS.includes(n));
+  } catch {}
+  return names.sort().filter(name => {
+    const file = path.join(dir, name);
+    const json = readJson(file);
+    if (json === undefined) {
+      try {
+        return fs.readFileSync(file, 'utf8').includes(JSON.stringify(oldDir).slice(1, -1));
+      } catch {
+        return false;
+      }
+    }
+    return rebaseValue(json, oldDir, dir).changed;
+  });
+}
+
 module.exports = {
   LEGACY_DIR,
+  REBASED_FILES,
+  SESSION_FOLDER_KEYS,
+  rebaseOldHome,
+  oldHomeReferences,
   FILES,
   DIR_NAME,
   OLD_DIR_NAMES,
