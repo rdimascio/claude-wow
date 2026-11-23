@@ -54,7 +54,7 @@ function existingConfig(dir, client, patch = {}) {
 function fakeBin(dir, names) {
   const bin = path.join(dir, `bin-${names.join('-') || 'none'}`);
   fs.mkdirSync(bin, { recursive: true });
-  for (const n of names) fs.writeFileSync(path.join(bin, POSIX ? n : `${n}.exe`), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  for (const n of names) fs.writeFileSync(path.join(bin, POSIX ? n : `${n}.exe`), '#!/bin/sh\necho "fake 1.0.0"\nexit 0\n', { mode: 0o755 });
   return bin;
 }
 
@@ -65,7 +65,15 @@ function runSetup(dir, args, { state = 'closed', env = {}, cwd } = {}) {
   const log = path.join(dir, 'os.log');
   fs.writeFileSync(log, '');
   const user = path.join(dir, 'user');
-  const full = SB.isolatedEnv(user, { WOWGPT_HOME: path.join(dir, 'home'), WOWGPT_FAKE_CLIENT_STATE: state, WOWGPT_FAKE_SERVICE_LOG: log, ...env });
+  // PATH holds only a fake Claude unless a test names its own, so no run sees
+  // the agents of the machine the tests run on.
+  const full = SB.isolatedEnv(user, {
+    WOWGPT_HOME: path.join(dir, 'home'),
+    WOWGPT_FAKE_CLIENT_STATE: state,
+    WOWGPT_FAKE_SERVICE_LOG: log,
+    PATH: fakeBin(dir, ['claude']),
+    ...env,
+  });
   const r = spawnSync(process.execPath, [PRELOAD, FAKE_OS, SETUP, ...named], { encoding: 'utf8', env: full, cwd: cwd || dir, timeout: 120000 });
   const out = (r.stdout || '') + (r.stderr || '');
   assert.deepEqual(
@@ -191,7 +199,7 @@ test('setup reinstalls a service left by an old name without asking, installs on
   const user = path.join(dir, 'user');
   const env = SB.isolatedEnv(user);
   const [oldService] = SVC.oldDirs(process.platform, env, user);
-  const agentPath = { PATH: [fakeBin(dir, ['claude']), process.env.PATH].join(path.delimiter) };
+  const agentPath = { PATH: fakeBin(dir, ['claude']) };
 
   const fresh = runSetup(dir, [], { env: agentPath });
   assert.equal(fresh.status, 0, fresh.out);
@@ -234,7 +242,7 @@ test('the last lines name npm start only for node setup.js in a git checkout; ot
   assert.equal(startLine(runSetup(dir, ['--no-service'])), 'npm start');
 
   const withCommand = runSetup(dir, ['--no-service'], {
-    env: { WOWGPT_FROM_COMMAND: '1', PATH: [fakeBin(dir, ['wowgpt']), process.env.PATH].join(path.delimiter) },
+    env: { WOWGPT_FROM_COMMAND: '1', PATH: [fakeBin(dir, ['wowgpt']), fakeBin(dir, ['claude'])].join(path.delimiter) },
   });
   assert.equal(startLine(withCommand), 'wowgpt');
 
