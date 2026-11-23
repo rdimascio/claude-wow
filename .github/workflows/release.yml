@@ -5,7 +5,6 @@ on:
     tags: ['v*']
   pull_request:
     paths:
-      - '.pkgmeta'
       - '.github/workflows/release.yml'
       - 'addon/**'
       - 'package.json'
@@ -58,36 +57,18 @@ jobs:
             echo "tag $GITHUB_REF_NAME"
             test "$GITHUB_REF_NAME" = "v$pkg"
           fi
-      - name: a tag push has a non-empty CHANGELOG section for its version and a CurseForge project ID
+      - name: a tag push has a non-empty CHANGELOG section for its version
         if: github.event_name == 'push' && github.ref_type == 'tag'
-        env:
-          HAS_CF_API_TOKEN: ${{ secrets.CF_API_TOKEN != '' }}
-          HAS_WAGO_API_TOKEN: ${{ secrets.WAGO_API_TOKEN != '' }}
         run: |
           pkg=$(node -p "require('./package.json').version")
-          status=0
           if ! sed -n 's/^## \[\([^]]*\)\].*/\1/p' CHANGELOG.md | grep -Fxq "$pkg"; then
             echo "::error file=CHANGELOG.md::CHANGELOG.md has no '## [$pkg]' heading. Rename [Unreleased] to [$pkg] - <date>, add the compare links, and tag again."
-            status=1
-          elif ! awk -v heading="## [$pkg]" 'index($0, heading) == 1 { found = 1; next } found && /^## \[/ { exit } found { print }' CHANGELOG.md | grep -q '[^[:space:]]'; then
+            exit 1
+          fi
+          if ! awk -v heading="## [$pkg]" 'index($0, heading) == 1 { found = 1; next } found && /^## \[/ { exit } found { print }' CHANGELOG.md | grep -q '[^[:space:]]'; then
             echo "::error file=CHANGELOG.md::The '## [$pkg]' section of CHANGELOG.md is empty, so the GitHub release would have no notes. Move the [Unreleased] entries under it and tag again."
-            status=1
+            exit 1
           fi
-          if ! grep -Eq '^## X-Curse-Project-ID: *[0-9]+' addon/WoWGPT/WoWGPT.toc; then
-            echo "::error file=addon/WoWGPT/WoWGPT.toc::WoWGPT.toc has no '## X-Curse-Project-ID: <id>' line, so the packager would skip CurseForge and the run would still pass. Add the project ID and tag again."
-            status=1
-          fi
-          if [ "$HAS_CF_API_TOKEN" != true ]; then
-            echo "::error::The CF_API_TOKEN secret is not set, so the packager would skip CurseForge. Add it in the repository settings and tag again."
-            status=1
-          fi
-          if ! grep -Eq '^## X-Wago-ID: *[A-Za-z0-9]+' addon/WoWGPT/WoWGPT.toc; then
-            echo "::warning file=addon/WoWGPT/WoWGPT.toc::WoWGPT.toc has no '## X-Wago-ID' line; this release does not go to Wago."
-          elif [ "$HAS_WAGO_API_TOKEN" != true ]; then
-            echo "::error::WoWGPT.toc has a '## X-Wago-ID' line but the WAGO_API_TOKEN secret is not set, so the packager would skip Wago. Add it in the repository settings and tag again."
-            status=1
-          fi
-          exit "$status"
 
   addon:
     needs: version
@@ -97,11 +78,12 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          fetch-depth: 0
           persist-credentials: false
-      - uses: BigWigsMods/packager@e50a250f8705041e40f2fa1ddcb280a686d65aa0 # v2
-        with:
-          args: -d
+      - name: zip the addon folder
+        run: |
+          version=$(node -p "require('./package.json').version")
+          mkdir -p .release
+          (cd addon && zip -r -X -q "../.release/WoWGPT-$version.zip" WoWGPT)
       - name: the zip holds only the WoWGPT folder, with its toc
         run: |
           zip=$(ls .release/*.zip)
@@ -197,40 +179,3 @@ jobs:
           prerelease_flag=
           case "$version" in *-*) prerelease_flag=--prerelease ;; esac
           gh release create "$GITHUB_REF_NAME" --verify-tag --repo "$GITHUB_REPOSITORY" --title "WoWGPT $version" --notes-file release-notes.md $prerelease_flag addon-zip/*.zip dist/*
-
-  addon-stores:
-    needs: github-release
-    if: github.event_name == 'push' && github.ref_type == 'tag'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          name: addon-zip
-          path: ${{ runner.temp }}/released-zip
-      - uses: BigWigsMods/packager@e50a250f8705041e40f2fa1ddcb280a686d65aa0 # v2
-        with:
-          args: -d
-      - name: a fresh package of this tag has the same files, byte for byte, as the zip on the GitHub release
-        run: |
-          compare="$RUNNER_TEMP/compare"
-          mkdir -p "$compare/released" "$compare/rebuilt"
-          unzip -q "$RUNNER_TEMP"/released-zip/*.zip -d "$compare/released"
-          unzip -q .release/*.zip -d "$compare/rebuilt"
-          diff -r "$compare/released" "$compare/rebuilt"
-      - name: upload to CurseForge and Wago
-        uses: BigWigsMods/packager@e50a250f8705041e40f2fa1ddcb280a686d65aa0 # v2
-        env:
-          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
-          WAGO_API_TOKEN: ${{ secrets.WAGO_API_TOKEN }}
-      - name: the uploaded zip has the same files, byte for byte, as the zip on the GitHub release
-        run: |
-          compare="$RUNNER_TEMP/compare"
-          mkdir -p "$compare/uploaded"
-          unzip -q .release/*.zip -d "$compare/uploaded"
-          diff -r "$compare/released" "$compare/uploaded"

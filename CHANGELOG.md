@@ -59,6 +59,7 @@ Kept so nothing breaks: `/wowgpt` is the main command, and `/claude` and the hid
 - The private job dispatcher for coding chats is gone, with its settings under `plugins.claude-code`, its per-run MCP server and its `/runs` and `/stop` commands. A coding chat is always a full agent session. Its old settings in `config.json` are ignored.
 - The addon no longer adds game slash commands or Tab completion for skills sent by the bridge.
 - The internal planning notes (`docs/plans`) and the release migration guide are no longer in the repository. `claude-wow dev deploy` now prints the one command that points the service at a release.
+- The release no longer uploads the addon to CurseForge or Wago, and `.pkgmeta` and the store listing draft are gone. `wowgpt setup` installs the addon. The GitHub release still has the addon zip, made from `addon/WoWGPT` alone.
 
 ### Fixed
 

@@ -40,7 +40,7 @@ GitHub redirects the old URLs, so these keep working until they change:
 - `install.sh` and `install.ps1`: `REPO_URL` / `$Repo` defaults and the one-liner URLs in their headers
 - `homebrew/Formula/wowgpt.rb`: `homepage`, the release `url`s, the `head` URL, the `brew tap` line; the tap repo `homebrew-claude-wow` becomes `homebrew-wowgpt`
 - `homebrew/README.md`
-- `README.md`, `CONTRIBUTING.md`, `docs/INSTALL.md`, `docs/INSTALL-LINUX.md`, `docs/INSTALL-WINDOWS.md`, `docs/listing.md`: the one-liners, `git clone` and `cd claude-wow`
+- `README.md`, `CONTRIBUTING.md`, `docs/INSTALL.md`, `docs/INSTALL-LINUX.md`, `docs/INSTALL-WINDOWS.md`: the one-liners, `git clone` and `cd claude-wow`
 - `tests/install_test.js` and `tests/release_gate_test.js`: the URLs they expect
 
 ---
