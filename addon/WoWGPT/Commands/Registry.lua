@@ -161,8 +161,8 @@ Add({ verb = "mini", args = 0, verbs = true, run = Hide })
 Add({ verb = "min", args = 0, verbs = true, run = Hide })
 Add({ verb = "help", args = 0, verbs = true, help = { "/wowgpt help", "Open this page." }, run = function() WoWGPT.ShowHelp() end })
 Add({ verb = "new", args = true, run = function(_, rest) WoWGPT.NewChat(rest) end })
-Add({ verb = "chat", args = ChatArgument, run = Chats })
-Add({ verb = "chats", args = ChatArgument, run = Chats })
+Add({ verb = "chat", args = ChatArgument, verbs = true, run = Chats })
+Add({ verb = "chats", args = ChatArgument, verbs = true, run = Chats })
 Add({
 	verb = "rename",
 	args = true,
@@ -420,6 +420,7 @@ Add({
 Add({
 	verb = "mode",
 	args = { [""] = true, pixel = true, reload = true },
+	verbs = true,
 	config = { help = "pixel|reload: the transport", dev = true },
 	run = function(c, rest)
 		local s = ns.db.settings

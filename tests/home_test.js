@@ -199,3 +199,40 @@ test('guardedDirs: the home in use and every old home still on disk, each by its
   }
   fs.rmSync(home, { recursive: true, force: true });
 });
+
+test('rebaseOldHome: paths into the old home in config.json and state.json move to the new one; where a session started is kept', () => {
+  const home = scratch('rebase');
+  const old = path.join(home, '.claude-wow');
+  const dir = path.join(home, '.wowgpt');
+  fs.mkdirSync(dir, { recursive: true });
+  const project = path.join(old, 'projects', 'game');
+  fs.writeFileSync(
+    path.join(dir, 'config.json'),
+    JSON.stringify({ defaultCwd: project, plugins: { ask: { cwd: path.join(old, 'ask') } }, clients: [{ dir: '/wow' }], other: old + '-not-it' }),
+  );
+  const state = {
+    sessions: { 'chat1:claude-code': 'sess-1' },
+    sessionCwd: { 'chat1:claude-code': project },
+    chatSettings: { chat1: { cwd: project, addDirs: [path.join(old, 'extra')] } },
+  };
+  fs.writeFileSync(path.join(dir, 'state.json'), JSON.stringify(state));
+  fs.writeFileSync(path.join(dir, 'transcripts.json'), JSON.stringify({ chats: { chat1: { text: `look in ${old}` } } }));
+  fs.writeFileSync(path.join(dir, 'claude-mcp.json'), JSON.stringify({ command: path.join(old, 'current', 'claude-wow') }));
+
+  assert.deepEqual(H.oldHomeReferences(dir, old), ['claude-mcp.json', 'config.json', 'state.json']);
+  assert.deepEqual(H.rebaseOldHome(dir, old), ['config.json', 'state.json']);
+  const cfg = JSON.parse(fs.readFileSync(path.join(dir, 'config.json'), 'utf8'));
+  assert.equal(cfg.defaultCwd, path.join(dir, 'projects', 'game'));
+  assert.equal(cfg.plugins.ask.cwd, path.join(dir, 'ask'));
+  assert.deepEqual(cfg.clients, [{ dir: '/wow' }]);
+  assert.equal(cfg.other, old + '-not-it', 'a sibling folder whose name starts the same is not moved');
+  const after = JSON.parse(fs.readFileSync(path.join(dir, 'state.json'), 'utf8'));
+  assert.deepEqual(after.sessionCwd, state.sessionCwd, 'the folder a session started in is kept, so that chat starts a new session');
+  assert.deepEqual(after.sessions, state.sessions);
+  assert.deepEqual(after.chatSettings.chat1, { cwd: path.join(dir, 'projects', 'game'), addDirs: [path.join(dir, 'extra')] });
+  assert.deepEqual(H.rebaseOldHome(dir, old), [], 'a second run changes nothing');
+  assert.deepEqual(H.oldHomeReferences(dir, old), ['claude-mcp.json'], 'the chat text and sessionCwd do not count; another settings file does');
+  fs.unlinkSync(path.join(dir, 'claude-mcp.json'));
+  assert.deepEqual(H.oldHomeReferences(dir, old), []);
+  fs.rmSync(home, { recursive: true, force: true });
+});

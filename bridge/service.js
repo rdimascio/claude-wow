@@ -49,6 +49,7 @@ const LAUNCHD_LOG_KEEP = 1;
 const PRIVATE_FILE_MODE = 0o600;
 const PRIVATE_DIR_MODE = 0o700;
 const COMMANDS = ['install', 'uninstall', 'start', 'stop', 'restart', 'status', 'logs'];
+const NOT_RUNNING = 3; // status's exit code: installed or not, no bridge runs
 
 // Where the service keeps its files, per platform. All per-user, none need sudo.
 function dirs(platform = process.platform, env = process.env, home = os.homedir()) {
@@ -103,6 +104,12 @@ function oldDirs(platform = process.platform, env = process.env, home = os.homed
       run: path.join(env.XDG_STATE_HOME || path.join(home, '.local', 'state'), old.folder),
     };
   });
+}
+
+// The service definitions on disk, under this name and every old one: an
+// upgrade reinstalls the service whenever there is one.
+function installedDefinitions(platform = process.platform, env = process.env, home = os.homedir()) {
+  return [dirs(platform, env, home), ...oldDirs(platform, env, home)].map(d => d.definition).filter(f => fs.existsSync(f));
 }
 
 // removeOld for every old name; true when any was there.
@@ -599,10 +606,12 @@ const linux = {
     fs.mkdirSync(d.logs, { recursive: true });
     secureServiceLogs(d, { platform: 'linux' });
     removeAllOld(this, 'linux');
+    const wasActive = this.sys(['is-active', UNIT]).ok;
     fs.writeFileSync(d.definition, definition('linux', d));
     this.sys(['daemon-reload']);
     const r = this.sys(['enable', '--now', UNIT]);
     if (!r.ok) throw new Error(`systemctl could not enable ${UNIT}: ${r.out.trim()}`);
+    if (wasActive) this.restart();
   },
   uninstall(d) {
     const old = removeAllOld(this, 'linux');
@@ -744,7 +753,7 @@ const win = {
     fs.mkdirSync(d.run, { recursive: true });
     removeAllOld(this, 'win32');
     fs.writeFileSync(d.definition, definition('win32', d));
-    this.start(d);
+    this.restart(d);
   },
   uninstall(d) {
     const old = removeAllOld(this, 'win32');
@@ -844,7 +853,7 @@ function status(d, platform = process.platform, out = console.log, stateFile = H
     out('  last lines:');
     for (const l of tail) out('    ' + l);
   }
-  return supervisorAlive || (probe.pid && alive(probe.pid)) ? 0 : 3;
+  return supervisorAlive || (probe.pid && alive(probe.pid)) ? 0 : NOT_RUNNING;
 }
 
 function follow(file, out) {
@@ -883,7 +892,7 @@ function logs(d, opts, out = console.log) {
   return 0;
 }
 
-function main(argv, { platform = process.platform, out = console.log, err = console.error } = {}) {
+function main(argv, { platform = process.platform, out = console.log, err = console.error, b = backend(platform) } = {}) {
   const { cmd, opts, error } = parseArgs(argv);
   if (error) {
     err(`wowgpt service: ${error}\n`);
@@ -895,7 +904,6 @@ function main(argv, { platform = process.platform, out = console.log, err = cons
     return 0;
   }
   const d = dirs(platform);
-  const b = backend(platform);
   try {
     switch (cmd) {
       case 'install': {
@@ -920,7 +928,7 @@ function main(argv, { platform = process.platform, out = console.log, err = cons
         }
         out('re-run "wowgpt service install" after installing a new agent CLI or a new Node, so the service sees the new PATH.');
         out('');
-        return status(d, platform, out);
+        return status(d, platform, out, undefined, undefined, b);
       }
       case 'uninstall': {
         const had = b.uninstall(d);
@@ -930,7 +938,7 @@ function main(argv, { platform = process.platform, out = console.log, err = cons
       case 'start':
         b.start(d);
         out('started');
-        return status(d, platform, out);
+        return status(d, platform, out, undefined, undefined, b);
       case 'stop':
         b.stop(d);
         out('stopped (it starts again at the next login; "wowgpt service uninstall" to remove it)');
@@ -938,9 +946,9 @@ function main(argv, { platform = process.platform, out = console.log, err = cons
       case 'restart':
         b.restart(d);
         out('restarted');
-        return status(d, platform, out);
+        return status(d, platform, out, undefined, undefined, b);
       case 'status':
-        return status(d, platform, out);
+        return status(d, platform, out, undefined, undefined, b);
       case 'logs':
         return logs(d, opts, out);
       default:
@@ -960,11 +968,13 @@ module.exports = {
   OLD_SERVICES,
   OLD_UNIT,
   COMMANDS,
+  NOT_RUNNING,
   LOG_MAX_BYTES,
   LOG_KEEP,
   HELP,
   dirs,
   oldDirs,
+  installedDefinitions,
   removeAllOld,
   backend,
   serviceLogFile,

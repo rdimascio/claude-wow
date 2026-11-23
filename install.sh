@@ -10,7 +10,8 @@
 #   --wow <folder>      the WoW client folder (setup looks in the usual places without it)
 #   --project <folder>  the default folder the agents work in
 #   --service           install the background service without asking
-#   --no-service        don't install or ask
+#   --no-service        don't install or ask (an existing service is otherwise
+#                       reinstalled without asking, so it runs the new version)
 #   --from-source       no prebuilt binary: clone the repo and run it with Node.js 22.2+ (or WOWGPT_SOURCE=1)
 #   --release <tag>     which release's binary (default latest, then the newest release of any kind; or WOWGPT_RELEASE); a named release never falls back
 #   --dir <folder>      where the source goes, from source (default ~/.wowgpt/app; or WOWGPT_DIR)
@@ -27,9 +28,11 @@
 #      checks for Node.js 22.2+, clones the repo into ~/.wowgpt/app with git
 #      (or downloads the tarball; nothing to npm-install) and writes a
 #      `wowgpt` shim in ~/.local/bin that runs it with node
-#   2. runs the game-side setup (addon, config.json, slot pool); config, state
-#      and logs live in ~/.wowgpt (WOWGPT_HOME), outside the code
-#   3. offers to install the background service
+#   2. runs the game-side setup (addon, config.json, slot pool, background
+#      service); config, state and logs live in ~/.wowgpt (WOWGPT_HOME),
+#      outside the code. An existing service (under any of the project's
+#      names) is reinstalled without asking; a fresh install asks, and Enter
+#      means yes. The PATH question also takes Enter as yes.
 # An install by the project's old name (~/.wow-ai, the wow-ai command, the
 # io.wowai.bridge service) is carried over: its config and sessions are copied
 # to ~/.wowgpt, its service and command are removed, and setup migrates
@@ -52,8 +55,13 @@ MIN_NODE=22.2
 WOW=${WOWGPT_WOW:-${CLAUDE_WOW_WOW:-}}
 PROJECT=${WOWGPT_PROJECT:-${CLAUDE_WOW_PROJECT:-}}
 SERVICE=ask
+# The background service under this name and the project's old ones
+# (bridge/service.js LABEL, OLD_LABEL, UNIT, OLD_UNIT).
+LAUNCHD_LABELS="io.wowgpt.bridge io.claudewow.bridge io.wowai.bridge"
+SYSTEMD_UNITS="wowgpt-bridge claude-wow-bridge wow-ai-bridge"
 SOURCE=${WOWGPT_SOURCE:-${CLAUDE_WOW_SOURCE:-}}
 CMD=                 # the wowgpt command once it is in place: the binary, or the shim that runs the source with node
+RUN=wowgpt           # how the final lines name the command: wowgpt, or its full path while it is not on the PATH
 
 say()  { printf '%s\n' "$*"; }
 step() { printf '\n==> %s\n' "$*"; }
@@ -125,6 +133,45 @@ ask() {
     read -r answer < /dev/tty || answer=
   fi
   case "$answer" in y|Y|yes|YES|Yes) return 0 ;; *) return 1 ;; esac
+}
+
+# The same for a question whose default is yes: Enter alone is yes. With no
+# terminal to ask on, nothing is answered and the answer is no.
+ask_yes() {
+  ( : < /dev/tty ) 2>/dev/null || return 1
+  printf '%s' "$1" > /dev/tty
+  answer=
+  read -r answer < /dev/tty || answer=
+  case "$answer" in ''|y|Y|yes|YES|Yes) return 0 ;; *) return 1 ;; esac
+}
+
+# A service definition for this bridge under any of its names.
+service_defined() {
+  for label in $LAUNCHD_LABELS; do
+    [ -f "$HOME/Library/LaunchAgents/$label.plist" ] && return 0
+  done
+  for unit in $SYSTEMD_UNITS; do
+    [ -f "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/$unit.service" ] && return 0
+  done
+  return 1
+}
+
+# What setup does about the service: --no-service and --service as given; an
+# existing service is reinstalled without asking; a fresh install asks.
+service_flag() {
+  case "$SERVICE" in
+    no) echo --no-service ;;
+    yes) echo --service ;;
+    *)
+      if service_defined; then
+        echo --service
+      elif ask_yes "Run the bridge in the background and start it at login? [Y/n] "; then
+        echo --service
+      else
+        echo --no-service
+      fi
+      ;;
+  esac
 }
 
 rc_file() {
@@ -284,11 +331,12 @@ on_path() {
       [ "${rc##*/}" = config.fish ] && line="fish_add_path $BIN_DIR"
       if [ -f "$rc" ] && grep -Fq "$BIN_DIR" "$rc" 2>/dev/null; then
         say "$BIN_DIR is already in $rc; open a new terminal for the wowgpt command"
-      elif ask "$BIN_DIR is not on your PATH. Add it to $rc? [y/N] "; then
+      elif ask_yes "$BIN_DIR is not on your PATH. Add it to $rc? [Y/n] "; then
         printf '\n# wowgpt\n%s\n' "$line" >> "$rc"
         say "added to $rc; open a new terminal for the wowgpt command"
       else
-        say "to use the wowgpt command, add this to $rc:  $line"
+        RUN=$BIN_DIR/wowgpt
+        say "to use the wowgpt command from any folder, add this to $rc:  $line"
       fi
       ;;
   esac
@@ -307,14 +355,14 @@ main() {
       --no-service) SERVICE=no ;;
       --node-ok) node_ok "${2:-}" && { echo ok; exit 0; } || { echo "too old: need $MIN_NODE"; exit 1; } ;;
       --binary-asset) binary_asset; exit 0 ;;
-      -h|--help) sed -n '2,36p' "$0" 2>/dev/null || say "see the header of install.sh"; exit 0 ;;
+      -h|--help) sed -n '2,39p' "$0" 2>/dev/null || say "see the header of install.sh"; exit 0 ;;
       *) fail "unknown option $1" "Options: --wow <folder> --project <folder> --service --no-service --from-source --release <tag> --dir <folder> --ref <ref>" ;;
     esac
     shift
   done
   [ "$(id -u 2>/dev/null || echo 1000)" -ne 0 ] || fail "do not run this as root" "Run it as the user who plays the game; nothing here needs sudo."
 
-  step "1/3 The bridge"
+  step "1/2 The bridge"
   if [ -n "$SOURCE" ]; then
     get_source
   elif [ "$RELEASE" != latest ] && [ -z "$(binary_asset)" ]; then
@@ -326,11 +374,13 @@ main() {
     get_source
   fi
   on_path
+  SERVICE_FLAG=$(service_flag)
+  [ "$SERVICE" = ask ] && [ "$SERVICE_FLAG" = --service ] && service_defined && say "a background service is installed; setup reinstalls it so it runs this version"
   migrate_old_install
   link_old_command
 
-  step "2/3 Game-side setup (addon, config, slot pool)"
-  set --
+  step "2/2 Game-side setup (addon, config, slot pool, background service)"
+  set -- "$SERVICE_FLAG"
   [ -n "$WOW" ] && set -- "$@" --wow "$WOW"
   [ -n "$PROJECT" ] && set -- "$@" --project "$PROJECT"
   if [ ! -f "$HOME_DIR/config.json" ]; then
@@ -345,27 +395,12 @@ main() {
       "The wowgpt command is installed. Fix what setup reported (usually: pass the client folder), then run:  wowgpt setup --wow \"<World of Warcraft/_classic_beta_>\""
   fi
 
-  step "3/3 Background service"
-  if [ "$SERVICE" = no ]; then
-    say "skipped (install later with: wowgpt service install)"
-  elif [ "$SERVICE" = yes ] || ask "Run the bridge in the background and start it at login? [y/N] "; then
-    "$CMD" service install || fail "the service did not install (see above)" "Everything else is in place; start the bridge by hand with: wowgpt"
-  else
-    say "skipped (install later with: wowgpt service install; or start the bridge by hand with: wowgpt)"
+  printf '\nInstalled. The Next steps above are what is left.\n'
+  if [ "$RUN" != wowgpt ]; then
+    say "The wowgpt command is $RUN (its folder is not on your PATH)."
   fi
-
-  printf '\nInstalled. The wowgpt command works from any folder. Next:\n'
-  say "  1. Fully quit and relaunch World of Warcraft (it only discovers new addon folders at launch)."
-  say "  2. Enable \"WoWGPT\" at the character-select AddOns screen."
-  if [ "$SERVICE" = no ]; then
-    say "  3. Start the bridge:  wowgpt        (or: wowgpt service install, to keep it running in the background)"
-  else
-    say "  3. Check the bridge:  wowgpt service status     (logs: wowgpt service logs)"
-  fi
-  say "  4. In game:  /wowgpt"
-  say ""
   if [ "$CMD" = "$BIN_DIR/wowgpt" ] && [ -z "$SOURCE" ] && [ ! -f "$DIR/setup.js" ]; then
-    say "Update later by running this installer again (it replaces the binary; then: wowgpt service restart)."
+    say "Update later by running this installer again (it replaces the binary and restarts the service)."
   else
     say "Update later by running this installer again. Code: $DIR"
   fi

@@ -45,7 +45,7 @@ if (argv[0] === '--version' || argv[0] === '-v') {
   process.argv.splice(2, 1);
   require('../setup').main();
 } else if (argv[0] === 'setup') {
-  const r = spawnSync(...R.scriptCommand('setup', argv.slice(1)), { stdio: 'inherit' });
+  const r = spawnSync(...R.scriptCommand('setup', argv.slice(1)), { stdio: 'inherit', env: { ...process.env, WOWGPT_FROM_COMMAND: '1' } });
   process.exitCode = r.status === null ? 1 : r.status;
 } else if (argv[0] === 'bridge') {
   process.argv.splice(2, 1); // bridge.js reads its flags from process.argv
@@ -96,11 +96,11 @@ if (argv[0] === '--version' || argv[0] === '-v') {
         process.exitCode = 1;
       },
     );
+} else if (argv.includes('--help') || argv.includes('-h')) {
+  console.log(
+    'wowgpt [--project <dir>]  the bridge in this terminal, restarted after a crash (Ctrl+C stops it)\nwowgpt setup [...]   game-side install (setup.js)\nwowgpt service <cmd> background service (install, uninstall, start, stop, restart, status, logs)\nwowgpt update [--check]  install the latest release binary now (the bridge also checks once a day)\nwowgpt dev <cmd>    releases for a developer machine (deploy [ref|worktree], rollback, status)\nwowgpt bridge [...]  the bridge alone in this process, without the restarts\nwowgpt channel      the live-session channel server Claude Code starts (docs/LIVE-SESSION.md)\nwowgpt data sync    fetch client tables from wago.tools into the home folder (--flavor forever or classic_era)\nwowgpt data-mcp     the read-only wowdata MCP server the bridge gives ask runs\nwowgpt goals-mcp    the per-run wowgoals MCP server the bridge gives ask runs\nwowgpt agents check [--agent claude|codex]  probe the MCP behaviors the bridge relies on in the installed Claude Code and Codex, and write agent-contract.json\nwowgpt contract-mcp  the stdio MCP fixture server agents check runs\nwowgpt local-agent  the local agent: a chat answered by an OpenAI-compatible server such as llama-server\nwowgpt handoff [folder] [--stop]  hand the Claude Code sessions running in a repository to the game (/wowgpt -r all)\nwowgpt events [--follow] [--min N]  game events from the telemetry, one JSON line each\nwowgpt report [--day [YYYY-MM-DD]]  a day of game events, orders and goal progress, from the goals folder\n',
+  );
 } else {
-  if (argv.includes('--help') || argv.includes('-h'))
-    console.log(
-      'wowgpt setup [...]   game-side install (setup.js)\nwowgpt service <cmd> background service (install, uninstall, start, stop, restart, status, logs)\nwowgpt update [--check]  install the latest release binary now (the bridge also checks once a day)\nwowgpt dev <cmd>    releases for a developer machine (deploy [ref|worktree], rollback, status)\nwowgpt bridge [...]  the bridge alone in this process, without the restarts\nwowgpt channel      the live-session channel server Claude Code starts (docs/LIVE-SESSION.md)\nwowgpt data sync    fetch client tables from wago.tools into the home folder (--flavor forever or classic_era)\nwowgpt data-mcp     the read-only wowdata MCP server the bridge gives ask runs\nwowgpt goals-mcp    the per-run wowgoals MCP server the bridge gives ask runs\nwowgpt agents check [--agent claude|codex]  probe the MCP behaviors the bridge relies on in the installed Claude Code and Codex, and write agent-contract.json\nwowgpt contract-mcp  the stdio MCP fixture server agents check runs\nwowgpt local-agent  the local agent: a chat answered by an OpenAI-compatible server such as llama-server\nwowgpt handoff [folder] [--stop]  hand the Claude Code sessions running in a repository to the game (/wowgpt -r all)\nwowgpt events [--follow] [--min N]  game events from the telemetry, one JSON line each\nwowgpt report [--day [YYYY-MM-DD]]  a day of game events, orders and goal progress, from the goals folder\n',
-    );
   supervise();
 }
 

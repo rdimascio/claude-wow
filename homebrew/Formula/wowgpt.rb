@@ -4,8 +4,7 @@
 #   brew tap rdimascio/claude-wow
 #   brew install wowgpt         # the release binary: nothing else, no Node.js
 #   brew install --HEAD wowgpt  # the checkout instead, run with Homebrew's node
-#   wowgpt setup                # the game-side install (addon, config, slot pool)
-#   wowgpt service install      # optional: run it in the background, start at login
+#   wowgpt setup                # the game-side install (addon, config, slot pool, background service)
 #
 # The stable install is one self-contained binary per architecture from the
 # project's GitHub release (build.js: the bridge, setup and the service
@@ -63,12 +62,11 @@ class Wowgpt < Formula
       Homebrew installed the bridge and the wowgpt command only. The addon has
       to go into the game folder, which Homebrew cannot do:
 
-        wowgpt setup              # finds the client, installs the addon, writes the config
-        wowgpt service install    # optional: run in the background, start at login
+        wowgpt setup    # finds the client, installs the addon and the background service
 
       Your config, the agents' sessions and the logs live in ~/.wowgpt
       (or $WOWGPT_HOME), outside this keg, so `brew upgrade` keeps them.
-      After an upgrade, `wowgpt service restart` picks up the new code.
+      After an upgrade, `wowgpt setup` reinstalls the service on the new code.
     EOS
   end
 

@@ -716,6 +716,17 @@ test('Linux: anything else the bridge cannot read about its own processes means 
   assert.equal(await CL.clientRunning(LINUX_FOLDER, { platform: 'linux', uid: null, fs: procFs({ 1: BASH }) }), null, 'no user id');
 });
 
+test('the process that asks is never the game, even when its own command line names the client folder (setup --wow <folder>/)', async () => {
+  const folder = '/Applications/World of Warcraft/_classic_era_';
+  const setupLine = `/usr/local/bin/node /x/setup.js --wow ${folder}/`;
+  const mac = self => CL.clientRunning(folder, { platform: 'darwin', fs: noRealpath, self, listProcesses: () => `  1 /sbin/launchd\n 4242 ${setupLine}\n` });
+  assert.equal(await mac(4242), false, 'its own row is skipped');
+  assert.equal(await mac(7), true, 'the same row from another process counts');
+  const setup = { exe: '/usr/bin/node', cwd: '/home/p', cmdline: ['node', 'setup.js', '--wow', LINUX_FOLDER] };
+  assert.equal(await linuxRunning({ 1: BASH, 4242: setup }, { self: 4242 }), false, 'Linux: its own /proc entry is skipped');
+  assert.equal(await linuxRunning({ 1: BASH, 4242: setup }, { self: 7 }), true);
+});
+
 test('macOS: an empty process list or a similar folder', async () => {
   const folder = '/Applications/World of Warcraft/_classic_era_';
   const ps = text => CL.clientRunning(folder, { platform: 'darwin', fs: noRealpath, listProcesses: () => text });

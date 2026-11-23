@@ -500,6 +500,50 @@ test('systemd install makes the state folder and the service logs private', { sk
   assert.equal(modeOf(S.serviceLogFile(d) + '.3'), S.PRIVATE_FILE_MODE);
 });
 
+test('systemd install restarts a unit that was already running, so an upgrade runs the new binary; a stopped unit is only enabled', () => {
+  const dir = scratch('linuxreinstall');
+  const d = { logs: path.join(dir, 'state'), run: path.join(dir, 'state'), definition: path.join(dir, 'systemd', 'user', `${S.UNIT}.service`) };
+  for (const active of [true, false]) {
+    const calls = [];
+    const b = Object.assign(Object.create(S.backend('linux')), {
+      exec: (cmd, args) => {
+        calls.push(args.slice(1).join(' '));
+        return { ok: args[1] !== 'is-active' || active, status: 0, out: '' };
+      },
+      removeOld: () => false,
+    });
+    b.install(d);
+    const enabled = calls.indexOf(`enable --now ${S.UNIT}`);
+    assert.ok(enabled > calls.indexOf(`is-active ${S.UNIT}`), calls.join(', '));
+    assert.equal(calls.indexOf(`restart ${S.UNIT}`) > enabled, active, `${active ? 'running' : 'stopped'}: ${calls.join(', ')}`);
+  }
+});
+
+test('Windows install over a running bridge stops it and starts the new one', () => {
+  const record = { pid: 4242, bridgePid: 4243, started: STARTED, mode: 'service' };
+  const d = winDirs('win-reinstall', record);
+  const { b, state } = fakeWindows({ alivePids: [4242], processes: { 4242: SUPERVISOR } });
+  b.removeOld = () => false;
+  b.install(d);
+  assert.equal(state.kills.length, 1, 'the old supervisor is stopped');
+  assert.equal(state.launches.length, 1, 'and the bridge started again');
+  assert.ok(fs.existsSync(d.definition));
+});
+
+test('installedDefinitions finds the service under its name or any old name, and nothing on a clean machine', () => {
+  for (const platform of ['darwin', 'linux', 'win32']) {
+    const dir = scratch(`defs-${platform}`);
+    const env = { LOCALAPPDATA: path.join(dir, 'Local'), APPDATA: path.join(dir, 'Roaming') };
+    assert.deepEqual(S.installedDefinitions(platform, env, dir), [], platform);
+    for (const d of [S.dirs(platform, env, dir), ...S.oldDirs(platform, env, dir)]) {
+      fs.mkdirSync(path.dirname(d.definition), { recursive: true });
+      fs.writeFileSync(d.definition, 'x');
+      assert.deepEqual(S.installedDefinitions(platform, env, dir), [d.definition], `${platform}: ${d.definition}`);
+      fs.unlinkSync(d.definition);
+    }
+  }
+});
+
 test('install fails loudly when launchd will not load the agent, even if the legacy load exits 0', () => {
   const dir = scratch('macinstallfail');
   const d = { logs: path.join(dir, 'logs'), run: path.join(dir, 'run'), definition: path.join(dir, 'LaunchAgents', `${S.LABEL}.plist`) };
@@ -789,4 +833,20 @@ test('removeAllOld removes the claude-wow and the wow-ai launcher, and install a
   b.install(d);
   b.uninstall(d);
   assert.deepEqual(asked, ['io.claudewow.bridge', 'io.wowai.bridge', 'io.claudewow.bridge', 'io.wowai.bridge']);
+});
+
+test('wowgpt --help prints the commands and exits 0 without starting the supervisor or the bridge', () => {
+  const { spawnSync } = require('child_process');
+  const SB = require('../dev/sandbox');
+  const dir = scratch('help');
+  const user = path.join(dir, 'user');
+  const env = SB.isolatedEnv(user, { WOWGPT_HOME: path.join(dir, 'home') });
+  for (const flag of ['--help', '-h']) {
+    const r = spawnSync(process.execPath, [path.join(__dirname, '..', 'bridge', 'supervisor.js'), flag], { encoding: 'utf8', env, timeout: 30000 });
+    assert.equal(r.status, 0, flag + ': ' + r.stdout + r.stderr);
+    assert.match(r.stdout, /^wowgpt setup \[\.\.\.\] {3}game-side install/m);
+    assert.match(r.stdout, /^wowgpt \[--project/m, 'the line the Homebrew formula test reads');
+    assert.doesNotMatch(r.stdout + r.stderr, /bridge exited|config\.json/, `${flag}: no bridge started`);
+  }
+  assert.ok(!fs.existsSync(S.pidFile(S.dirs(process.platform, env, user))), 'no supervisor pid file');
 });

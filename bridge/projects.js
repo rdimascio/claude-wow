@@ -220,6 +220,15 @@ function allowedFolders(options, defaultCwd, home = os.homedir()) {
   return [base, ...configured].map(f => realFolder(path.resolve(base, expandHome(f.trim(), home))));
 }
 
+const folderKey = p => (process.platform === 'win32' ? p.toLowerCase() : p);
+
+// The user's home folder and the root of a disk hold everything the user has,
+// so neither is ever taken as a project folder the agents may edit.
+function tooWide(dir, home = os.homedir()) {
+  const here = folderKey(realFolder(path.resolve(dir)));
+  return here === folderKey(realFolder(path.resolve(home))) || here === folderKey(path.parse(here).root);
+}
+
 function folderAllowed(cwd, allowed) {
   if (!allowed) return true;
   const here = realFolder(path.resolve(cwd));
@@ -228,6 +237,7 @@ function folderAllowed(cwd, allowed) {
 
 module.exports = {
   allowedFolders,
+  tooWide,
   foldersListed,
   folderAllowed,
   realFolder,

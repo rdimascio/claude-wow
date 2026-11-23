@@ -5,14 +5,43 @@ Every route ends in the same place: the code on your machine, a `wowgpt` command
 Before any of them you need:
 
 - **World of Warcraft: Forever** or **World of Warcraft Classic** (Classic Era), run at least once with the account you play on (setup reads the account folder). Setup finds every client in `_classic_beta_`, `_forever_` and `_classic_era_` and installs into all of them; one bridge serves them all.
-- **Nothing else, on route 1 or 2**: the bridge ships as one self-contained binary for macOS (arm64, x64), Linux (x64) and Windows (x64), with its runtime inside. Route 3, and route 1 where there is no binary for your machine, run the checkout and need **Node.js 22.2 or newer** (`node -v`: [nodejs.org](https://nodejs.org), `brew install node`, `winget install OpenJS.NodeJS.LTS`) or [Bun](https://bun.sh).
+- **Nothing else, on route 1 or 3**: the bridge ships as one self-contained binary for macOS (arm64, x64), Linux (x64) and Windows (x64), with its runtime inside. Route 2 (npm), route 4 (a clone), and route 3 where there is no binary for your machine, run the code with **Node.js 22.2 or newer** (`node -v`: [nodejs.org](https://nodejs.org), `brew install node`, `winget install OpenJS.NodeJS.LTS`) or [Bun](https://bun.sh).
 - **At least one agent CLI**, installed and logged in: `claude`, `codex`, `grok`, `agy` or `hermes` (see [AGENTS.md](AGENTS.md)). One is enough; the bridge lists what it found.
 
 The addon can also come from the addon zip on the GitHub release. Every route below still needs the bridge and `wowgpt setup`, and setup writes the addon that ships with the bridge into `Interface/AddOns/WoWGPT` either way. The README's [Install](../README.md#install) section is the short version for players.
 
 Platform notes that are not about installing (which display mode, screen-capture permissions, Wine and X11) stay in [INSTALL-WINDOWS.md](INSTALL-WINDOWS.md) and [INSTALL-LINUX.md](INSTALL-LINUX.md), and in the README's macOS section.
 
-## Route 1: the one-line installer (recommended)
+## The short way
+
+```sh
+brew install rdimascio/claude-wow/wowgpt     # macOS; or, anywhere with Node.js 22.2+: npm i -g wowgpt
+wowgpt setup
+```
+
+Then fully quit and relaunch World of Warcraft and type `/wowgpt` in game. Nothing else is done by hand: setup finds the game, stops with "Quit World of Warcraft, then run setup again" while a client runs, installs the addon, picks the agent you have installed (and says "not ready: install one agent" when there is none), asks whether to share your game state, and installs the background service (Enter means yes; an existing service is reinstalled without asking). The agents get a project folder of their own, `~/wowgpt`; your home folder is never a project. `wowgpt setup --project <folder>` picks another one, and `/wowgpt cd` picks one per chat.
+
+## Route 1: Homebrew (macOS)
+
+```sh
+brew install rdimascio/claude-wow/wowgpt
+wowgpt setup
+```
+
+Until the first stable release fills in the formula's checksums, only `--HEAD` works (`brew install --HEAD rdimascio/claude-wow/wowgpt`): it installs the checkout and runs it with Homebrew's node. After that release, the command above installs the binary.
+
+Homebrew installs the bridge and the `wowgpt` command: the self-contained binary for your Mac from the tagged release, or the checkout with `--HEAD`. It cannot put an addon into the game folder or read your WoW account, so `wowgpt setup` is a separate, required step. The keg holds only code: your config, the agents' sessions, transcripts and logs live in `~/.wowgpt` (`WOWGPT_HOME`, see [CONFIGURATION.md](CONFIGURATION.md#where-the-bridge-keeps-its-files)), so `brew upgrade` keeps them; `wowgpt setup` afterwards reinstalls the service, which restarts the bridge on the new code. The formula is in [`homebrew/`](../homebrew/README.md).
+
+## Route 2: npm (macOS, Linux, Windows)
+
+```sh
+npm i -g wowgpt
+wowgpt setup
+```
+
+This needs Node.js 22.2 or newer. npm puts the `wowgpt` command on your PATH; setup does the rest, as on route 1. The package is published with the first stable release; until then, use route 1 with `--HEAD`, route 3 or route 4.
+
+## Route 3: the one-line installer
 
 macOS and Linux:
 
@@ -28,7 +57,7 @@ irm https://raw.githubusercontent.com/rdimascio/claude-wow/main/install.ps1 | ie
 
 (Until a release with binaries exists, the installer finds no binary to download and installs from source, which needs Node.js 22.2 or newer.)
 
-The script downloads the `wowgpt` binary for your machine from the project's GitHub releases into `~/.local/bin` (Windows: `%LocalAppData%\Programs\wowgpt\bin`, put on your user PATH), checks it against the release's `SHA256SUMS`, runs it once, runs the game-side setup (config, state and logs go to `~/.wowgpt`), and asks whether to run the bridge in the background from now on. Nothing else is installed: the binary is the bridge, setup and the service commands with their runtime inside. Where there is no binary for your machine (another platform, or no release yet), or with `--from-source` (`$env:WOWGPT_SOURCE = "1"` on Windows), it installs from source instead: checks for Node.js 22.2+, downloads the code (git if you have it, otherwise the archive) into `~/.wowgpt/app` (Windows: `%LocalAppData%\Programs\wowgpt`) and writes a `wowgpt` shim that runs it with node. An install under the project's old name (`~/.wow-ai`, the `wow-ai` command and service) is carried over; see [Coming from wow-ai](#coming-from-wow-ai). It never asks for sudo or administrator rights, it is safe to run again (that is how you update), and if something is missing it stops and says what to do.
+The script downloads the `wowgpt` binary for your machine from the project's GitHub releases into `~/.local/bin` (Windows: `%LocalAppData%\Programs\wowgpt\bin`, put on your user PATH), checks it against the release's `SHA256SUMS`, runs it once, and runs `wowgpt setup` (config, state and logs go to `~/.wowgpt`), which installs the background service: an existing service, under this name or an old one, is reinstalled without asking, so an update restarts the bridge on the new binary; a fresh install asks, and Enter means yes. When `~/.local/bin` is not on your PATH it offers to add it (Enter means yes) and otherwise prints the command's full path. Nothing else is installed: the binary is the bridge, setup and the service commands with their runtime inside. Where there is no binary for your machine (another platform, or no release yet), or with `--from-source` (`$env:WOWGPT_SOURCE = "1"` on Windows), it installs from source instead: checks for Node.js 22.2+, downloads the code (git if you have it, otherwise the archive) into `~/.wowgpt/app` (Windows: `%LocalAppData%\Programs\wowgpt`) and writes a `wowgpt` shim that runs it with node. An install under the project's old name (`~/.wow-ai`, the `wow-ai` command and service) is carried over; see [Coming from wow-ai](#coming-from-wow-ai). It never asks for sudo or administrator rights, it is safe to run again (that is how you update), and if something is missing it stops and says what to do.
 
 Options go after `sh -s --` (macOS/Linux) or in the environment before `iex` (Windows):
 
@@ -36,7 +65,7 @@ Options go after `sh -s --` (macOS/Linux) or in the environment before `iex` (Wi
 |---|---|---|
 | Client folder, if setup cannot find it | `--wow "/Applications/World of Warcraft/_classic_beta_"` | `$env:WOWGPT_WOW = "D:\Games\World of Warcraft\_classic_beta_"` |
 | Default project folder for the agents | `--project ~/code/my-game` | `$env:WOWGPT_PROJECT = "C:\code\my-game"` |
-| Background service without asking / never | `--service` / `--no-service` | `$env:WOWGPT_SERVICE = "yes"` / `"no"` |
+| Background service without asking / never (an existing one is otherwise reinstalled) | `--service` / `--no-service` | `$env:WOWGPT_SERVICE = "yes"` / `"no"` |
 | The source with Node instead of the binary | `--from-source` | `$env:WOWGPT_SOURCE = "1"` |
 | Which release's binary | `--release <tag>` | `$env:WOWGPT_RELEASE = "<tag>"` |
 | Where the source goes (from source) | `--dir <folder>` | `$env:WOWGPT_DIR = "<folder>"` |
@@ -51,20 +80,7 @@ curl -fsSL https://raw.githubusercontent.com/rdimascio/claude-wow/main/install.s
 
 When it finishes: fully quit and relaunch WoW, enable *WoWGPT* on the AddOns screen, and type `/wowgpt hello` in game.
 
-## Route 2: Homebrew (macOS)
-
-```sh
-brew tap rdimascio/claude-wow
-brew install --HEAD wowgpt      # the checkout, run with Homebrew's node
-wowgpt setup                    # the game side: addon, config, slot pool
-wowgpt service install          # optional: background service
-```
-
-Until the first stable release fills in the formula's checksums, only `--HEAD` works: it installs the checkout and runs it with Homebrew's node. After that release, `brew install wowgpt` installs the binary.
-
-Homebrew installs the bridge and the `wowgpt` command: the self-contained binary for your Mac from the tagged release, or the checkout with `--HEAD`. It cannot put an addon into the game folder or read your WoW account, so `wowgpt setup` is a separate, required step. The keg holds only code: your config, the agents' sessions, transcripts and logs live in `~/.wowgpt` (`WOWGPT_HOME`, see [CONFIGURATION.md](CONFIGURATION.md#where-the-bridge-keeps-its-files)), so `brew upgrade` keeps them; `wowgpt service restart` afterwards picks up the new code. The formula is in [`homebrew/`](../homebrew/README.md).
-
-## Route 3: by hand (git)
+## Route 4: by hand (git)
 
 ```sh
 git clone https://github.com/rdimascio/claude-wow
@@ -77,7 +93,7 @@ This route needs Node.js 22.2+ or Bun (`bun setup.js`, `bun bridge/supervisor.js
 
 ## What setup does
 
-`wowgpt setup` (the same as `node setup.js`) finds the client (or takes `--wow`), copies the addon into `Interface/AddOns/WoWGPT`, writes `config.json` in `~/.wowgpt` (or `WOWGPT_HOME`) with the paths and the default project folder, reports which agent CLIs it found, and creates the 200 reply-slot addons plus about 16,400 tiny signal files. That count is normal: the client only sees addon files that existed at launch, so every signal file exists up front and the bridge signals by deleting one. Re-running it keeps your config and the slot pool; `--project <folder>` on a re-run corrects the default folder. On the first run it asks one question: share your game state with the agent? The answer is no unless you type yes, and without a terminal it is no. `--share-game-state yes|no` answers it, and on a re-run changes it (see [Privacy](../README.md#privacy-what-leaves-your-machine)). The addon loads in WoW Forever (`_classic_beta_`) and in Classic Era (`_classic_era_`). Setup puts every client it finds into `clients` in `config.json` and installs the same build into each, with one `addon` line per client that names the build; `--wow <client folder>` adds one more client (or updates its entry) instead. The bridge then answers whichever client you play, in that client only. Setup prints a `restart:` line for each client that is running while it arms new signal files: fully quit and relaunch that one. It uses the same process check as the chat log clean (macOS, Windows and Linux; see [ARCHITECTURE.md](ARCHITECTURE.md)). When it cannot tell whether a client runs (for example in WSL or a container), it asks you to relaunch every client. To leave a client out, set `"enabled": false` on its entry ([CONFIGURATION.md](CONFIGURATION.md#clients)). After an update, run setup once and restart the bridge; there is nothing to switch.
+`wowgpt setup` (the same as `node setup.js`) finds the client (or takes `--wow`), copies the addon into `Interface/AddOns/WoWGPT`, writes `config.json` in `~/.wowgpt` (or `WOWGPT_HOME`) with the paths and the default project folder, reports which agent CLIs it found (when the default agent is not installed and exactly one other is, that one becomes the default), and creates the 200 reply-slot addons plus about 16,400 tiny signal files. That count is normal: the client only sees addon files that existed at launch, so every signal file exists up front and the bridge signals by deleting one. Re-running it keeps your config and the slot pool; `--project <folder>` on a re-run corrects the default folder. A new config's default folder is `~/wowgpt` (made for it), never the folder setup runs in; `--project` refuses your home folder and a disk root, and setup warns when an existing config names one. Setup stops before it changes anything in the game folder while a configured client runs; when it cannot tell, it warns and goes on. At the end it installs the background service: `--service` and `--no-service` decide, an existing service (under this name or an old one) is reinstalled without asking so it runs this version, and otherwise a terminal is asked (Enter means yes). The last lines say what is left to do, with the `wowgpt` command's full path when it is not on your PATH. On the first run it asks one question: share your game state with the agent? The answer is no unless you type yes, and without a terminal it is no. `--share-game-state yes|no` answers it, and on a re-run changes it (see [Privacy](../README.md#privacy-what-leaves-your-machine)). The addon loads in WoW Forever (`_classic_beta_`) and in Classic Era (`_classic_era_`). Setup puts every client it finds into `clients` in `config.json` and installs the same build into each, with one `addon` line per client that names the build; `--wow <client folder>` adds one more client (or updates its entry) instead. The bridge then answers whichever client you play, in that client only. Setup prints a `restart:` line for each client that is running while it arms new signal files: fully quit and relaunch that one. It uses the same process check as the chat log clean (macOS, Windows and Linux; see [ARCHITECTURE.md](ARCHITECTURE.md)). When it cannot tell whether a client runs (for example in WSL or a container), it asks you to relaunch every client. To leave a client out, set `"enabled": false` on its entry ([CONFIGURATION.md](CONFIGURATION.md#clients)). After an update, run setup once and restart the bridge; there is nothing to switch.
 
 Then **fully quit and relaunch each World of Warcraft client you play** (a `/reload` is not enough) and enable *WoWGPT* on the character-select AddOns screen. The 200 *WoWGPT slot* entries stay enabled; leave them alone.
 
@@ -98,7 +114,7 @@ The bridge reads the client build the game reports and uses only the data of tha
 Two ways, not both at once (two bridges fight over the slot files):
 
 - **In a terminal:** `wowgpt` from the project folder you want the agents to work in (that folder becomes the default for chats), or `npm start` inside the repo. Leave the window open; Ctrl+C stops it; it restarts itself after a crash.
-- **As a background service:** `wowgpt service install`. It starts now and at every login, comes back after a crash, and needs no window. `wowgpt service status` says whether it is running, with its pid, uptime and the last log lines; `wowgpt service logs` (or `logs -f`) shows the log; `stop`, `start`, `restart` do what they say; `uninstall` removes it.
+- **As a background service:** setup installs it, or `wowgpt service install`. It starts now and at every login, comes back after a crash, and needs no window. `wowgpt service status` says whether it is running, with its pid, uptime and the last log lines; `wowgpt service logs` (or `logs -f`) shows the log; `stop`, `start`, `restart` do what they say; `uninstall` removes it.
 
 Under the service the bridge's default project folder is `defaultCwd` from `~/.wowgpt/config.json` (`wowgpt setup --project <folder>` sets it); chats still pick their own with `/wowgpt cd`.
 
@@ -123,10 +139,11 @@ Things worth knowing:
 
 ## Updating
 
-- Route 1, the binary: it updates itself. Once a day the bridge checks the latest GitHub release; when it is newer, it downloads the binary for your machine and the release's `SHA256SUMS`, checks the hash, runs the new file once (`--version`), and renames it over the old one. The bridge then restarts on it by itself, but only when no message is running, queued or held for a deploy, no deploy is switching releases, and the game is closed or no message or reply has passed for `autoUpdateIdleSeconds` (10 minutes). `wowgpt update` does the same at once (`--check` only says whether a newer release is out). It never installs an older or equal version. `"autoUpdate": false` in `config.json` turns off the daily check ([CONFIGURATION.md](CONFIGURATION.md#updates)). Run `wowgpt setup` after an update that changes the addon (the changelog says so), then `/reload` in game (the addon asks for it when the files on disk are newer than the ones it loaded), or relaunch the game when the addon asks for a full restart (a new addon folder). A new binary writes its own capture scripts and addon out under `~/.wowgpt/assets` the first time it runs. Running the one-line installer again still works too.
-- Route 1 from source (`--from-source`): run the installer again. It pulls the source and re-runs setup. Then `wowgpt service restart`. A bridge that runs from source never updates itself.
-- Route 2: `brew upgrade wowgpt` (`--fetch-HEAD` for a `--HEAD` install), then `wowgpt service restart` (your config and sessions are in `~/.wowgpt`, untouched; `wowgpt setup` again only if the addon changed, which the changelog says). The bridge never replaces a binary that Homebrew installed; when a newer release is out, its daily check logs `brew upgrade wowgpt`.
-- Route 3: `git pull && node setup.js`, then restart the bridge.
+- Route 3, the binary: it updates itself. Once a day the bridge checks the latest GitHub release; when it is newer, it downloads the binary for your machine and the release's `SHA256SUMS`, checks the hash, runs the new file once (`--version`), and renames it over the old one. The bridge then restarts on it by itself, but only when no message is running, queued or held for a deploy, no deploy is switching releases, and the game is closed or no message or reply has passed for `autoUpdateIdleSeconds` (10 minutes). `wowgpt update` does the same at once (`--check` only says whether a newer release is out). It never installs an older or equal version. `"autoUpdate": false` in `config.json` turns off the daily check ([CONFIGURATION.md](CONFIGURATION.md#updates)). Run `wowgpt setup` after an update that changes the addon (the changelog says so), then `/reload` in game (the addon asks for it when the files on disk are newer than the ones it loaded), or relaunch the game when the addon asks for a full restart (a new addon folder). A new binary writes its own capture scripts and addon out under `~/.wowgpt/assets` the first time it runs. Running the one-line installer again still works too.
+- Route 3 from source (`--from-source`): run the installer again. It pulls the source and re-runs setup, which reinstalls the service. A bridge that runs from source never updates itself.
+- Route 1: `brew upgrade wowgpt` (`--fetch-HEAD` for a `--HEAD` install), then `wowgpt setup`: it reinstalls the service, so the bridge restarts on the new code (your config and sessions are in `~/.wowgpt`, untouched). The bridge never replaces a binary that Homebrew installed; when a newer release is out, its daily check logs `brew upgrade wowgpt`.
+- Route 2: `npm i -g wowgpt`, then `wowgpt setup`, as for route 1.
+- Route 4: `git pull && node setup.js`, then restart the bridge.
 - A developer machine whose service should not run the checkout you edit: build releases with `wowgpt dev deploy` and run the service from `~/.wowgpt/current/wowgpt` (`~/.wowgpt/current/wowgpt service install` once, from your normal terminal, when no chat is running; then `~/.wowgpt/current/wowgpt setup`).
 
 ## Uninstalling
@@ -135,16 +152,16 @@ Things worth knowing:
 wowgpt service uninstall        # if you installed the service
 ```
 
-Then delete the code (the `wowgpt` binary in `~/.local/bin`, Windows `%LocalAppData%\Programs\wowgpt`; `~/.wowgpt/app` for a from-source install; the Homebrew keg via `brew uninstall wowgpt`; or your clone), the home folder `~/.wowgpt` (config, sessions, transcripts, logs, and the binary's extracted `assets`; with a from-source route 1 the code is inside it too, so one `rm -rf ~/.wowgpt` does both), and the `wowgpt` shim in `~/.local/bin` (route 1 from source) or `npm unlink -g wowgpt` (route 3). In the game folder, delete `Interface/AddOns/WoWGPT` and the `WoWGPT_S001` … `WoWGPT_S200` folders next to it. Your chats' saved data is in `WTF/Account/<account>/SavedVariables/WoWGPT.lua`; the service's logs are in the folder listed above.
+Then delete the code (the `wowgpt` binary in `~/.local/bin`, Windows `%LocalAppData%\Programs\wowgpt`; `~/.wowgpt/app` for a from-source install; the Homebrew keg via `brew uninstall wowgpt`; or your clone), the home folder `~/.wowgpt` (config, sessions, transcripts, logs, and the binary's extracted `assets`; with a from-source route 3 the code is inside it too, so one `rm -rf ~/.wowgpt` does both), and the `wowgpt` shim in `~/.local/bin` (route 3 from source), `npm uninstall -g wowgpt` (route 2) or `npm unlink -g wowgpt` (route 4). In the game folder, delete `Interface/AddOns/WoWGPT` and the `WoWGPT_S001` … `WoWGPT_S200` folders next to it. Your chats' saved data is in `WTF/Account/<account>/SavedVariables/WoWGPT.lua`; the service's logs are in the folder listed above.
 
 ## Coming from claude-wow
 
 The project was called claude-wow until it became WoWGPT. To move an install:
 
 1. Update the bridge: the installer again, `brew upgrade` once the tap has the `wowgpt` formula, `git pull`, or `claude-wow update` (an installed `claude-wow` binary updates itself to WoWGPT).
-2. Run `wowgpt setup` (an old `claude-wow` command still works; the installer turns it into a link to `wowgpt`). Setup copies `~/.claude-wow` to `~/.wowgpt` and the `ask` data folder to its `wowgpt` name, copies the addon's saved data (the account file and each character's file) to `WoWGPT.lua` with the globals renamed, and removes the `ClaudeWoW` addon and its slot folders. The old folders and files are kept; delete `~/.claude-wow` once the new install works.
+2. Run `wowgpt setup` (an old `claude-wow` command still works; the installer turns it into a link to `wowgpt`). Setup copies `~/.claude-wow` to `~/.wowgpt` and the `ask` data folder to its `wowgpt` name, points the paths in `config.json` and `state.json` that named `~/.claude-wow` at `~/.wowgpt` (a chat whose agent session started in the old folder starts a new session), copies the addon's saved data (the account file and each character's file) to `WoWGPT.lua` with the globals renamed, and removes the `ClaudeWoW` addon and its slot folders. The old folders and files are kept; setup says when nothing in `~/.wowgpt` names `~/.claude-wow` any more, and you can delete it then.
 3. Fully quit and restart the game.
-4. With the background service: `wowgpt service install` once. It removes the `io.claudewow.bridge` service (Linux `claude-wow-bridge`, Windows *Claude WoW bridge.vbs*).
+4. Setup reinstalls the background service on its own: it removes the `io.claudewow.bridge` service (Linux `claude-wow-bridge`, Windows *Claude WoW bridge.vbs*) and starts `io.wowgpt.bridge`.
 5. Bind the workspace key again. For a live session, start Claude Code with `server:wowgpt` and rename `mcp__claude-wow__*` allow rules to `mcp__wowgpt__*`.
 
 `/claude` and `/claude-wow` still work in game; `/wowgpt` is the main command. The `CLAUDE_WOW_*` environment variables still count. The full list is in the CHANGELOG.

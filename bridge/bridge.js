@@ -199,6 +199,8 @@ function insideRepo(dir) {
   const rel = path.relative(REPO, dir);
   return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
 }
+// Started from the user's home folder or a disk root: no project there either.
+const startedInProject = dir => !insideRepo(dir) && !PJ.tooWide(dir);
 const projectIdx = argv.indexOf('--project');
 // WOWGPT_PROJECT names the default folder; the old WOW_AI_PROJECT still counts.
 const PROJECT_ENV = process.env.WOWGPT_PROJECT || process.env.WOW_AI_PROJECT || '';
@@ -207,7 +209,7 @@ const DEFAULT_CWD = path.resolve(
     ? argv[projectIdx + 1]
     : PROJECT_ENV
       ? PROJECT_ENV
-      : !insideRepo(process.cwd())
+      : startedInProject(process.cwd())
         ? process.cwd()
         : cfg.defaultCwd || process.cwd(),
 );
@@ -218,7 +220,7 @@ const DEFAULT_CWD_SOURCE =
       ? process.env.WOWGPT_PROJECT
         ? 'WOWGPT_PROJECT'
         : 'WOW_AI_PROJECT'
-      : !insideRepo(process.cwd())
+      : startedInProject(process.cwd())
         ? 'started here'
         : 'config.json';
 

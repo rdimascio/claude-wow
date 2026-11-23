@@ -335,7 +335,7 @@ Each chat can pick its own project folder with `/wowgpt cd` or **Project...** in
 
 1. `--project <dir>`
 2. `WOWGPT_PROJECT`
-3. The folder the bridge was started from, unless that is inside this repo
+3. The folder the bridge was started from, unless that is inside this repo, the bridge's home folder, your home folder or a disk root
 4. `defaultCwd` in `config.json`
 5. The current folder
 
@@ -488,7 +488,9 @@ When a client reports a build (the `Game:` line of its game context, with its he
 | Flag | Meaning |
 |---|---|
 | `--wow "<client folder>"` | Adds this client to `clients` (or updates its entry), then installs into every client in the list. Without `--wow`, setup adds every client it finds under the usual folders. |
-| `--project "<dir>"` | Written to `defaultCwd`. Defaults to the folder you ran setup from. |
+| `--project "<dir>"` | Written to `defaultCwd`. A new config without it gets `~/wowgpt`, made for it. Your home folder and a disk root are refused. |
+| `--service` / `--no-service` | Install the background service without asking, or leave it alone. Without either, an existing service (under this name or an old one) is reinstalled, and a fresh install asks on a terminal (Enter means yes). |
 | `--account <name>` | Which `WTF\Account\<name>` to use when there are several. With `--wow` it applies to that client only. |
+| `--share-game-state yes\|no` | Answers the privacy question; on a re-run it changes the answer. |
 
 Setup installs the same addon build into every enabled client in `clients` and prints one `addon` line per client with its build. Re-running `setup.js` re-copies the addon (except `Inbox.lua`, which the bridge owns once running), keeps an existing `config.json` (adding the `agents` blocks and fixing paths if it predates them), and only creates slot and signal files that are missing. An install under one of the project's old names (the `WoWAI` addon, or `WoWClaude` before it) is migrated: its saved data is copied to `WoWGPT.lua` with the globals renamed so chats survive (the old file is kept), the old addon and slot folders are removed, and `inboxFile` / `savedVariablesFile` in an old `config.json` are rewritten.

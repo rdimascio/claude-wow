@@ -78,7 +78,7 @@ const INSTALLER_TOOLS_WITHOUT_NODE = [
 ];
 const NON_ROOT_ID = '#!/bin/sh\necho 1000\n';
 
-function fakeReleaseHost(newestTag, { machine } = {}) {
+function fakeReleaseHost(newestTag, { machine, logArgs } = {}) {
   const asset = machine ? 'wowgpt-unsupported' : spawnSync('sh', [SH, '--binary-asset'], { encoding: 'utf8' }).stdout.trim();
   const root = fs.mkdtempSync(path.join(require('os').tmpdir(), 'wowgpt-install-'));
   const fakeBin = path.join(root, 'fake-bin');
@@ -86,7 +86,8 @@ function fakeReleaseHost(newestTag, { machine } = {}) {
   const home = path.join(root, 'home');
   const binDir = path.join(root, 'bin');
   for (const d of [fakeBin, files, home, binDir]) fs.mkdirSync(d, { recursive: true });
-  const binary = '#!/bin/sh\necho "fake wowgpt $*"\n';
+  const argLog = path.join(root, 'args.log');
+  const binary = `#!/bin/sh\necho "fake wowgpt $*"\n${logArgs ? `echo "$*" >> '${argLog}'\n` : ''}`;
   fs.writeFileSync(path.join(files, asset), binary);
   const sum = require('crypto').createHash('sha256').update(binary).digest('hex');
   fs.writeFileSync(path.join(files, 'SHA256SUMS'), `${sum}  ${asset}\n`);
@@ -127,7 +128,7 @@ function fakeReleaseHost(newestTag, { machine } = {}) {
     WOWGPT_BIN: binDir,
     WOWGPT_REPO: 'https://github.com/rdimascio/claude-wow',
   };
-  return { asset, root, binDir, log, env };
+  return { asset, root, binDir, home, log, env, argLog };
 }
 
 const hasAsset = hasSh && spawnSync('sh', [SH, '--binary-asset'], { encoding: 'utf8' }).stdout.trim() !== '';
@@ -258,6 +259,63 @@ test(
   },
 );
 
+test('install.ps1 names the Startup launcher by every name bridge/service.js knows', () => {
+  const SVC = require('../bridge/service');
+  const names = [
+    path.win32.basename(SVC.dirs('win32', { APPDATA: 'C:\\A', LOCALAPPDATA: 'C:\\L' }, 'C:\\U').definition),
+    ...SVC.OLD_SERVICES.map(o => o.launcher),
+  ];
+  const list = /^\$ServiceLaunchers = @\((.*)\)$/m.exec(fs.readFileSync(PS1, 'utf8'))[1];
+  assert.deepEqual(
+    list.split(',').map(s => s.trim().replace(/^'|'$/g, '')),
+    names,
+  );
+});
+
+test(
+  'install.ps1: an existing launcher is reinstalled without asking, a fresh install asks with Enter as yes, and the flags win',
+  { skip: !pwsh && 'no PowerShell here' },
+  () => {
+    const dir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'wowgpt-ps1-'));
+    const old = path.join(dir, 'Claude WoW bridge.vbs');
+    fs.writeFileSync(old, 'x');
+    const missing = path.join(dir, 'WoWGPT bridge.vbs');
+    const script = `
+    $ErrorActionPreference = 'Stop'
+    $ast = [System.Management.Automation.Language.Parser]::ParseFile('${PS1.replace(/'/g, "''")}', [ref]$null, [ref]$null)
+    $fn = $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Select-ServiceFlag' }, $true) | Select-Object -First 1
+    if (-not $fn) { Write-Output 'FAIL no Select-ServiceFlag'; exit 1 }
+    . ([scriptblock]::Create($fn.Extent.Text))
+    $global:asked = 0
+    function Expect($want, $got) { if ($want -ne $got) { Write-Output "FAIL want $want got $got"; exit 1 } }
+    $never = { $global:asked += 100; 'n' }
+    $defs = @('${missing.replace(/'/g, "''")}', '${old.replace(/'/g, "''")}')
+    $none = @('${missing.replace(/'/g, "''")}')
+    Expect '--service' (Select-ServiceFlag $false $false '' $defs $true $never)
+    Expect '--service' (Select-ServiceFlag $false $false '' $defs $false $never)
+    Expect '--no-service' (Select-ServiceFlag $false $true '' $defs $true $never)
+    Expect '--no-service' (Select-ServiceFlag $false $false 'no' $defs $true $never)
+    Expect '--service' (Select-ServiceFlag $true $false '' $none $true $never)
+    Expect '--no-service' (Select-ServiceFlag $false $false '' $none $false $never)
+    Expect 0 $global:asked
+    Expect '--service' (Select-ServiceFlag $false $false '' $none $true { $global:asked++; '' })
+    Expect '--service' (Select-ServiceFlag $false $false '' $none $true { $global:asked++; 'Y' })
+    Expect '--no-service' (Select-ServiceFlag $false $false '' $none $true { $global:asked++; 'n' })
+    Expect 3 $global:asked
+    Write-Output OK`;
+    try {
+      const r = spawnSync(pwsh, ['-NoProfile', '-NonInteractive', '-Command', script], { encoding: 'utf8', windowsHide: true });
+      assert.equal(r.status, 0, r.stdout + r.stderr);
+      assert.match(r.stdout, /OK/);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+    const src = fs.readFileSync(PS1, 'utf8');
+    assert.match(src, /^\$setupArgs = @\(\$serviceFlag\)$/m, 'setup gets the choice');
+    assert.doesNotMatch(src, /& \$Cmd service install/, 'setup installs the service, not the installer');
+  },
+);
+
 test('install.ps1 parses, and its Node gate matches the shell one', { skip: !pwsh && 'no PowerShell here' }, () => {
   const script = `
     $errs = $null
@@ -321,6 +379,73 @@ test(
       assert.equal(fs.realpathSync(path.join(h.binDir, 'claude-wow')), fs.realpathSync(path.join(h.binDir, 'wowgpt')));
       assert.match(r.stdout, /claude-wow now runs wowgpt/);
       assert.equal(fs.readFileSync(path.join(h.binDir, 'unrelated'), 'utf8'), 'other\n');
+    } finally {
+      fs.rmSync(h.root, { recursive: true, force: true });
+    }
+  },
+);
+
+test('install.sh names the background service by every name bridge/service.js knows', () => {
+  const SVC = require('../bridge/service');
+  const sh = fs.readFileSync(SH, 'utf8');
+  assert.equal(/^LAUNCHD_LABELS="(.*)"$/m.exec(sh)[1], [SVC.LABEL, ...SVC.OLD_LABEL].join(' '));
+  assert.equal(/^SYSTEMD_UNITS="(.*)"$/m.exec(sh)[1], [SVC.UNIT, ...SVC.OLD_UNIT].join(' '));
+});
+
+test(
+  'install.sh: an existing service under any name is reinstalled without asking, a fresh install with nobody to ask gets none, and the flags win',
+  { skip: !hasAsset && 'no prebuilt binary for this platform' },
+  () => {
+    const cases = [
+      { definition: 'Library/LaunchAgents/io.claudewow.bridge.plist', args: [], want: '--service', reinstall: true },
+      { definition: '.config/systemd/user/wow-ai-bridge.service', args: [], want: '--service', reinstall: true },
+      { definition: 'Library/LaunchAgents/io.wowgpt.bridge.plist', args: ['--no-service'], want: '--no-service' },
+      { definition: '', args: [], want: '--no-service' },
+      { definition: '', args: ['--service'], want: '--service' },
+    ];
+    for (const c of cases) {
+      const h = fakeReleaseHost('v0.5.0-beta.1', { logArgs: true });
+      try {
+        if (c.definition) {
+          fs.mkdirSync(path.dirname(path.join(h.home, c.definition)), { recursive: true });
+          fs.writeFileSync(path.join(h.home, c.definition), 'x');
+        }
+        const r = spawnSync('/bin/sh', [SH, ...c.args], { encoding: 'utf8', env: h.env });
+        assert.equal(r.status, 0, r.stdout + r.stderr);
+        const setup = fs
+          .readFileSync(h.argLog, 'utf8')
+          .split('\n')
+          .find(l => l.startsWith('setup '));
+        assert.equal(setup.split(' ')[1], c.want, `${c.definition || 'no service'} ${c.args.join(' ')}: ${setup}`);
+        assert.equal(/setup reinstalls it so it runs this version/.test(r.stdout), !!c.reinstall);
+        assert.doesNotMatch(r.stdout, /works from any folder/);
+      } finally {
+        fs.rmSync(h.root, { recursive: true, force: true });
+      }
+    }
+  },
+);
+
+test(
+  'install.sh: with its folder not on the PATH and nobody to ask, the last lines give the full path of the command',
+  { skip: !hasAsset && 'no prebuilt binary for this platform' },
+  () => {
+    const h = fakeReleaseHost('v0.5.0-beta.1');
+    try {
+      const env = {
+        ...h.env,
+        PATH: h.env.PATH.split(':')
+          .filter(d => d !== h.binDir)
+          .join(':'),
+      };
+      const r = spawnSync('/bin/sh', [SH, '--no-service'], { encoding: 'utf8', env });
+      assert.equal(r.status, 0, r.stdout + r.stderr);
+      assert.match(
+        r.stdout,
+        new RegExp(`^The wowgpt command is ${h.binDir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/wowgpt \\(its folder is not on your PATH\\)\\.$`, 'm'),
+      );
+      const onPath = spawnSync('/bin/sh', [SH, '--no-service'], { encoding: 'utf8', env: h.env });
+      assert.doesNotMatch(onPath.stdout, /The wowgpt command is \//);
     } finally {
       fs.rmSync(h.root, { recursive: true, force: true });
     }

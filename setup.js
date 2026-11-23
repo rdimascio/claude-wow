@@ -31,6 +31,9 @@ const AS = require('./bridge/assets'); // the addon, the config template and the
 const G = require('./bridge/gamefs');
 const SIG = require('./bridge/signals');
 const CLI = require('./bridge/clients');
+const CP = require('./bridge/clientproc'); // whether a game client is running
+const PJ = require('./bridge/projects');
+const SVC = require('./bridge/service');
 const ASK = require('./bridge/plugins/ask'); // its data folder had the old name
 const ADDON_SRC = AS.dir('addon/' + P.ADDON);
 const EXAMPLE = AS.file('bridge/config.example.json');
@@ -61,6 +64,11 @@ function checkNode() {
 // The default work folder. Validated, because the README's example is a Windows
 // placeholder and path.resolve() would otherwise silently glue it onto the folder
 // setup was run from, producing a path that exists nowhere and only fails in game.
+// The project folder a fresh config gets: a folder of its own, never the
+// folder setup happens to run in.
+const DEFAULT_PROJECT_NAME = 'wowgpt';
+const defaultProject = () => path.join(os.homedir(), DEFAULT_PROJECT_NAME);
+
 function resolveProject(raw) {
   const p = String(raw === true ? '' : raw).trim();
   if (!p) throw new Error('--project needs a folder (e.g. --project ~/code/my-game)');
@@ -72,11 +80,21 @@ function resolveProject(raw) {
   if (!fs.existsSync(abs)) {
     throw new Error(
       `--project "${p}" does not exist (looked in ${abs}). ` +
-        'Pass the folder you want the agents to work in, or leave --project off to use the current folder.',
+        `Pass the folder you want the agents to work in, or leave --project off to use ${defaultProject()}.`,
     );
   }
   if (!fs.statSync(abs).isDirectory()) throw new Error(`--project "${p}" is not a folder (${abs})`);
+  if (PJ.tooWide(abs))
+    throw new Error(
+      `--project "${p}" is your home folder or a disk root, and the agents may edit anything in their project. Pass a folder inside it, e.g. --project ~/code/my-game`,
+    );
   return abs;
+}
+
+function makeDefaultProject() {
+  const dir = defaultProject();
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
 }
 
 // A folder listing, sorted: Node's comes back alphabetical (libuv sorts it),
@@ -361,7 +379,7 @@ function loadConfig() {
     const cfg = example;
     for (const k of CLI.LEGACY_KEYS) delete cfg[k];
     cfg.clients = [];
-    cfg.defaultCwd = args.project ? resolveProject(args.project) : process.cwd();
+    cfg.defaultCwd = args.project ? resolveProject(args.project) : makeDefaultProject();
     applyShare(cfg, chooseShare({ flag: args[SHARE_FLAG], interactive: !!process.stdin.isTTY, ask: askOnTerminal }));
     return { cfg, notes: [], fresh: true };
   }
@@ -534,12 +552,134 @@ function agentReport(cfg) {
   return lines.join('\n');
 }
 
-function main() {
+// Setup copies saved chats and removes old signal folders under the client
+// folder: never while that client runs. When the check cannot tell, setup goes
+// on and says so.
+async function refuseRunningClients(clients) {
+  for (const c of clients) {
+    const state = await CP.clientState(c.dir);
+    if (state.running === true) throw new Error(`${c.label} is running. Quit World of Warcraft, then run setup again.`);
+    if (state.running === null)
+      warn(
+        `could not tell whether ${c.label} is running (${state.why})`,
+        'If it is, quit it and run setup again: setup changes its saved chats and addon files.',
+      );
+  }
+}
+
+// The agents that are a program on this PC. The local agent is part of this
+// one, so it is always "found" and says nothing about what the user installed.
+const isAgentProgram = id => typeof A.AGENTS[id].resolve !== 'function';
+
+function installedAgents(cfg) {
+  return A.agentIds().filter(id => isAgentProgram(id) && A.resolveCommand(id, A.agentConfig(cfg, id)).found);
+}
+
+// The default agent must be one this PC has: with exactly one other installed
+// it becomes the default. Returns false when no agent is installed at all.
+function chooseAgent(cfg, notes) {
+  const wanted = A.normalizeAgent(cfg.agent) || A.DEFAULT_AGENT;
+  const installed = installedAgents(cfg);
+  if (!isAgentProgram(wanted) || installed.includes(wanted)) return true;
+  if (installed.length === 1) {
+    cfg.agent = installed[0];
+    noteOnce(notes, 'agent');
+    console.log(`agent    : ${A.displayName(wanted)} is not installed and ${A.displayName(installed[0])} is, so ${installed[0]} is the default agent now`);
+    return true;
+  }
+  if (installed.length > 1) {
+    warn(`${A.displayName(wanted)}, the default agent, is not installed`, `Set "agent" in config.json to one that is: ${installed.join(', ')}.`);
+    return true;
+  }
+  return false;
+}
+
+const SERVICE_QUESTION = 'Run the bridge in the background and start it at login? [Y/n] ';
+
+// An empty answer takes the default, yes.
+function yesByDefault(raw) {
+  return String(raw || '').trim() === '' || yesNo(raw) === true;
+}
+
+// What to do about the background service. An existing one (under this name or
+// an old one) is reinstalled without asking, so an upgrade runs the new
+// program; only a fresh install asks.
+function serviceFlag(flag) {
+  if (flag === undefined) return undefined;
+  const said = yesNo(flag);
+  if (said === null) throw new Error(`--service takes yes or no, not "${flag}"`);
+  return said;
+}
+
+function chooseService({ said, skip, existing, interactive, ask }) {
+  if (skip || said === false) return 'skip';
+  if (existing.length) return 'reinstall';
+  if (said === true) return 'install';
+  if (!interactive) return 'skip';
+  return yesByDefault(ask(SERVICE_QUESTION)) ? 'install' : 'skip';
+}
+
+function installService(how) {
+  console.log(`service  : ${how === 'reinstall' ? 'reinstalling the background service, so it runs this version' : 'installing the background service'}`);
+  const code = SVC.main(['install'], { b: SVC.backend(process.platform) });
+  const installed = code === 0 || code === SVC.NOT_RUNNING;
+  if (!installed) warn('the background service did not install (see above)', 'Start the bridge by hand instead, or fix the problem and run setup again.');
+  return installed;
+}
+
+function onPath(name) {
+  const exts = process.platform === 'win32' ? ['.exe', '.cmd'] : [''];
+  return String(process.env.PATH || '')
+    .split(path.delimiter)
+    .filter(Boolean)
+    .some(dir => exts.some(ext => fs.existsSync(path.join(dir, name + ext))));
+}
+
+// How the user starts this program: npm start in a git checkout run as
+// node setup.js, else wowgpt, or its full path while it is not on the PATH.
+function startCommand() {
+  const fromCheckout = !R.compiled && process.env.WOWGPT_FROM_COMMAND !== '1' && fs.existsSync(path.join(R.ROOT, '.git'));
+  if (fromCheckout) return 'npm start';
+  if (onPath('wowgpt')) return 'wowgpt';
+  if (R.compiled) return `"${process.execPath}"`;
+  return `"${process.execPath}" "${path.join(R.ROOT, 'bridge', 'supervisor.js')}"`;
+}
+
+const CLAUDE_LOGIN_HINT = 'claude   : run `claude` once in a terminal and log in, or every chat fails with "not logged in"';
+
+function nextSteps({ command, agentReady, service, transport }) {
+  const steps = [
+    'Fully quit and relaunch each World of Warcraft client above that is running (it only discovers new addon folders at launch).',
+    'Enable "WoWGPT" at the character select AddOns screen (the WoWGPT slot ### entries stay enabled).',
+  ];
+  const runner = command === 'npm start' ? 'wowgpt' : command;
+  if (!agentReady) {
+    steps.push(`Install one agent (see the list above), then run setup again:  ${runner} setup`);
+  } else if (service) {
+    steps.push(`The bridge runs in the background. Check it with:  ${runner} service status`);
+  } else {
+    const where =
+      process.platform === 'win32'
+        ? '; bridge\\start-window.cmd opens its own window'
+        : transport === 'screenshot'
+          ? ''
+          : process.platform === 'darwin'
+            ? '; keep the game windowed or borderless, and check the capture with: npm run probe:mac'
+            : '; keep the game borderless/windowed and check the capture with: npm run probe';
+    steps.push(`Start the bridge:  ${command}   (in this terminal${where})`);
+  }
+  steps.push('In game:  /wowgpt');
+  return `\n${agentReady ? 'Done' : 'Not ready yet'}. Next:\n${steps.map((s, i) => `  ${i + 1}. ${s}`).join('\n')}\n`;
+}
+
+async function main() {
   try {
     parseArgs(process.argv);
+    const command = startCommand();
     checkNode();
     // Validate arguments before copying anything, so a bad --project costs nothing.
     if (args.project) args.project = resolveProject(args.project);
+    serviceFlag(args.service);
     // Config, state and transcripts from a checkout that kept them in bridge/ move
     // to the home folder first, so the config written below lands in one place.
     const renamed = H.migrateOldHome();
@@ -554,8 +694,13 @@ function main() {
         `migrate  : ${renamed.from} copied to ${home.dir} (${renamed.copied.length} item(s); ${renamed.from} is kept, and its releases are not copied)`,
       );
     const oldHome = H.oldHomeDir();
-    if (oldHome && oldHome !== home.dir)
-      console.log(`old home : ${oldHome} is no longer used; remove it once this install works (it still holds your old config and tokens)`);
+    if (oldHome && oldHome !== home.dir && home.source === 'default') {
+      const rebased = H.rebaseOldHome(home.dir, oldHome);
+      if (rebased.length) console.log(`migrate  : ${rebased.join(', ')}: paths under ${oldHome} now point to ${home.dir}`);
+      const still = H.oldHomeReferences(home.dir, oldHome);
+      if (still.length) console.log(`old home : ${oldHome} is still named in ${still.join(', ')}; keep it until nothing there names it`);
+      else console.log(`old home : ${oldHome} is no longer used; you can remove it once this install works (it still holds your old config and tokens)`);
+    }
     if (carried.length)
       console.log(
         `migrate  : ${carried.join(', ')} copied from ${H.LEGACY_DIR} to ${home.dir}; the bridge reads them there from now on (the copies in bridge/ are no longer used)`,
@@ -564,6 +709,7 @@ function main() {
     chooseClients(cfg, notes);
     const targets = CLI.clientsOf(cfg);
     if (!targets.length) throw new Error(NO_CLIENT);
+    await refuseRunningClients(targets);
     const several = targets.length > 1;
     for (const listed of targets) {
       const client = refreshClient(cfg, listed, notes);
@@ -583,6 +729,7 @@ function main() {
     }
     const skipped = CLI.allClients(cfg).filter(c => !c.enabled);
     for (const c of skipped) console.log(`client   : ${c.dir} skipped ("enabled": false in config.json)`);
+    const agentReady = chooseAgent(cfg, notes);
     saveConfig(cfg, notes, fresh);
     console.log(
       `privacy  : game state ${sharesGameState(cfg) ? 'is shared with the agent' : 'is not shared with the agent'} (change with --${SHARE_FLAG} yes|no, or gameContext and telemetry.enabled in config.json)`,
@@ -595,9 +742,16 @@ function main() {
         `the default project folder does not exist: ${cfg.defaultCwd}`,
         'Every chat that has not picked its own folder will fail. Fix it with: node setup.js --project "<folder>"',
       );
+    } else if (PJ.tooWide(cfg.defaultCwd)) {
+      warn(
+        `the default project folder is your home folder or a disk root (${cfg.defaultCwd}), so an agent may edit any file there`,
+        `Give the agents a folder of their own: ${command} setup --project ${defaultProject()}`,
+      );
     }
-    console.log(`agent    : ${cfg.agent} by default (per chat with /wowgpt --agent <id> in game, or "agent" in config.json)`);
+    if (agentReady) console.log(`agent    : ${cfg.agent} by default (per chat with /wowgpt --agent <id> in game, or "agent" in config.json)`);
+    else console.log('agent    : not ready: install one agent (the list below), then run setup again');
     console.log(agentReport(cfg));
+    if ((A.normalizeAgent(cfg.agent) || A.DEFAULT_AGENT) === 'claude') console.log(CLAUDE_LOGIN_HINT);
     const transport = transportReport(cfg);
     pythonReport(cfg, transport);
     macCaptureReport(cfg, transport);
@@ -606,25 +760,22 @@ function main() {
     const r = spawnSync(...R.scriptCommand('install-slots'), { stdio: 'inherit' });
     if (r.status !== 0) throw new Error('install-slots.js failed');
     if (movesSignals) warn(SIG.RESTART_NOTE, 'A /reload is not enough: the game only sees files that existed when it started.');
+    const plan = chooseService({
+      said: serviceFlag(args.service),
+      skip: !!args['no-service'],
+      existing: SVC.installedDefinitions(),
+      interactive: !!process.stdin.isTTY,
+      ask: askOnTerminal,
+    });
+    let service = false;
+    if (plan === 'skip') console.log(`service  : not installed (install it later with: ${command === 'npm start' ? 'wowgpt' : command} service install)`);
+    else if (!agentReady) warn('the background service was not installed, because no agent is installed');
+    else service = installService(plan);
     if (warnings.length) {
       console.log(`\n${warnings.length} warning(s) to deal with first:`);
       for (const w of warnings) console.log(`  - ${w}`);
     }
-    console.log(`
-Done. Next:
-  1. Fully quit and relaunch each World of Warcraft client above that is running (it only discovers new addon folders at launch).
-  2. Enable "WoWGPT" at the character select AddOns screen (the WoWGPT slot ### entries stay enabled).
-  3. Start the bridge:  ${R.compiled ? 'wowgpt' : 'npm start'}   (in this terminal${
-    process.platform === 'win32'
-      ? '; bridge\\start-window.cmd opens its own window'
-      : transport === 'screenshot'
-        ? ''
-        : process.platform === 'darwin'
-          ? '; keep the game windowed or borderless, and check the capture with: npm run probe:mac'
-          : '; keep the game borderless/windowed and check the capture with: npm run probe'
-  })
-  4. In game:  /wowgpt
-`);
+    console.log(nextSteps({ command, agentReady, service, transport }));
   } catch (e) {
     console.error('setup failed:', e.message);
     process.exit(1);
@@ -649,6 +800,8 @@ module.exports = {
   applyShare,
   sharesGameState,
   SHARE_QUESTION,
+  SERVICE_QUESTION,
+  chooseService,
   transportReport,
   main,
 };

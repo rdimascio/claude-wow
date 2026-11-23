@@ -14,6 +14,7 @@ const WOW_EXE_BASENAME = /^wow[\w-]*\.exe$/i;
 const WINDOWS_ABSOLUTE = /^[A-Za-z]:[\\/]/;
 const WINDOWS_LONG_PATH_PREFIX = /^\\\\\?\\/;
 const NUMERIC = /^\d+$/;
+const PS_ROW = /^\s*(\d+)\s+(.*)$/;
 const KERNEL_RELEASE_FILE = '/proc/sys/kernel/osrelease';
 const WSL_KERNEL = /microsoft|wsl/i;
 const CONTAINER_MARKERS = ['/.dockerenv', '/run/.containerenv'];
@@ -92,12 +93,19 @@ async function listOutput(run, file, args, timeout) {
   }
 }
 
-async function darwinState(folders, run) {
-  const { out, failed } = await listOutput(run, 'ps', ['-axo', 'command='], PS_TIMEOUT_MS);
+function psCommand(line, self) {
+  const row = PS_ROW.exec(line);
+  if (!row) return line;
+  return Number(row[1]) === self ? '' : row[2];
+}
+
+async function darwinState(folders, run, self) {
+  const { out, failed } = await listOutput(run, 'ps', ['-axo', 'pid=,command='], PS_TIMEOUT_MS);
   if (failed) return failed;
   const lines = out.split('\n').filter(line => line.trim());
   if (!lines.length) return unknown('the process list was empty');
-  return lines.some(line => folders.some(folder => line.includes(folder + '/'))) ? RUNNING : CLOSED;
+  const commands = lines.map(line => psCommand(line, self));
+  return commands.some(line => folders.some(folder => line.includes(folder + '/'))) ? RUNNING : CLOSED;
 }
 
 function decodeBase64(text) {
@@ -218,7 +226,7 @@ async function linuxEnvironment(folders, fsApi) {
   return null;
 }
 
-async function linuxState(folders, fsApi, uid) {
+async function linuxState(folders, fsApi, uid, self) {
   if (!Number.isInteger(uid)) return unknown('no user id');
   const outside = await linuxEnvironment(folders, fsApi);
   if (outside) return outside;
@@ -230,7 +238,7 @@ async function linuxState(folders, fsApi, uid) {
   }
   let state = CLOSED;
   for (const entry of entries) {
-    if (!NUMERIC.test(entry)) continue;
+    if (!NUMERIC.test(entry) || Number(entry) === self) continue;
     try {
       const own = (await fsApi.stat(`/proc/${entry}`)).uid === uid;
       const one = own
@@ -250,15 +258,15 @@ function currentUid() {
   return typeof process.getuid === 'function' ? process.getuid() : undefined;
 }
 
-async function clientState(folder, { platform = process.platform, listProcesses, run, fs: fsApi = fsPromises, uid = currentUid() } = {}) {
+async function clientState(folder, { platform = process.platform, listProcesses, run, fs: fsApi = fsPromises, uid = currentUid(), self = process.pid } = {}) {
   if (!cleanSupported(platform)) return unknown(`no process check on ${platform}`);
   if (!folder || !trimSeparators(folder)) return unknown('no client folder');
   const runner = listProcesses ? async () => listProcesses() : run || runText;
   try {
     const folders = await folderCandidates(folder, fsApi);
-    if (platform === 'darwin') return await darwinState(folders, runner);
+    if (platform === 'darwin') return await darwinState(folders, runner, self);
     if (platform === 'win32') return await windowsState(folders, runner);
-    return await linuxState(folders, fsApi, uid);
+    return await linuxState(folders, fsApi, uid, self);
   } catch (e) {
     return unknown(`the process check failed (${errorCode(e)})`);
   }
