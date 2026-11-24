@@ -278,8 +278,8 @@ function sameFolder(a, b) {
 // "plugin=ask" = the chat is bound to that plugin instead of the bridge's
 // default (see plugins.js; only set when the flag is there, so a record from
 // an addon that predates plugins parses exactly as before).
-const SETTING_RE = /^[A-Za-z0-9._:[\]-]{1,80}$/;
-const RESUME_REF_RE = /^[A-Za-z0-9._-]{1,80}$/;
+const SETTING_RE = /^[A-Za-z0-9._:[\]][A-Za-z0-9._:[\]-]{0,79}$/;
+const RESUME_REF_RE = /^[A-Za-z0-9._][A-Za-z0-9._-]{0,79}$/;
 const ADD_DIRS_MAX = 8;
 const PERMISSION_MODES = ['acceptEdits', 'auto', 'bypassPermissions', 'manual', 'default', 'dontAsk', 'plan'];
 
@@ -307,6 +307,37 @@ const LATE_CREATE_RESULTS = ['seen', 'unseen'];
 
 const MCP_HEALTH = ['connected', 'failed', 'needs-auth', 'pending', 'unknown'];
 
+// A tool rule from a record reaches the agent CLI's argv, so it must read as a
+// rule and never as a command-line option.
+const TOOL_RULE_NAME_RE = /^(?:mcp__[A-Za-z0-9_.-]+|[A-Za-z][A-Za-z0-9_]*)$/;
+const TOOL_RULE_MAX = 400;
+
+function balancedParens(text) {
+  let depth = 0;
+  for (const ch of text) {
+    if (ch === '(') depth++;
+    else if (ch === ')' && --depth < 0) return false;
+  }
+  return depth === 0;
+}
+
+function isToolRule(raw) {
+  const rule = String(raw || '');
+  if (!rule || rule.length > TOOL_RULE_MAX || /[\x00-\x1f\x7f]/.test(rule)) return false;
+  const open = rule.indexOf('(');
+  if (open === -1) return TOOL_RULE_NAME_RE.test(rule);
+  if (!rule.endsWith(')') || !TOOL_RULE_NAME_RE.test(rule.slice(0, open))) return false;
+  return balancedParens(rule.slice(open + 1, -1));
+}
+
+function toolRules(list) {
+  return (Array.isArray(list) ? list : []).map(s => String(s).trim()).filter(isToolRule);
+}
+
+function splitRuleList(text) {
+  return toolRules(String(text).split(','));
+}
+
 function parseFlags(flags) {
   const out = { newSession: false, hello: false, forget: false, context: false, vision: false, allow: [], agent: '' };
   for (const tok of String(flags || '').split(';')) {
@@ -316,22 +347,8 @@ function parseFlags(flags) {
     else if (tok === 'c') out.context = true;
     else if (tok === 't') out.title = true;
     else if (tok === 'v') out.vision = true; // attach the screenshot's game view to the run (screenshot transport only)
-    else if (tok.startsWith('allow='))
-      out.allow.push(
-        ...tok
-          .slice(6)
-          .split(',')
-          .map(s => s.trim())
-          .filter(Boolean),
-      );
-    else if (tok.startsWith('once='))
-      (out.allowOnce = out.allowOnce || []).push(
-        ...tok
-          .slice(5)
-          .split(',')
-          .map(s => s.trim())
-          .filter(Boolean),
-      );
+    else if (tok.startsWith('allow=')) out.allow.push(...splitRuleList(tok.slice(6)));
+    else if (tok.startsWith('once=')) (out.allowOnce = out.allowOnce || []).push(...splitRuleList(tok.slice(5)));
     else if (tok.startsWith('agent=')) out.agent = tok.slice(6).trim().toLowerCase();
     else if (tok.startsWith('cancel=')) {
       const n = Number(tok.slice(7));
@@ -620,9 +637,9 @@ function parseOutbox(src) {
   const plugin = b.match(/\["plugin"\]\s*=\s*"([0-9a-zA-Z_-]*)"/);
   if (plugin && plugin[1]) job.plugin = plugin[1].toLowerCase();
   const allow = b.match(/\["allow"\]\s*=\s*"([0-9a-fA-F]*)"/);
-  if (allow && allow[1]) job.allow = fromHex(allow[1]).split('\x1F').filter(Boolean);
+  if (allow && allow[1]) job.allow = toolRules(fromHex(allow[1]).split('\x1F'));
   const allowOnce = b.match(/\["allowOnce"\]\s*=\s*"([0-9a-fA-F]*)"/);
-  if (allowOnce && allowOnce[1]) job.allowOnce = fromHex(allowOnce[1]).split('\x1F').filter(Boolean);
+  if (allowOnce && allowOnce[1]) job.allowOnce = toolRules(fromHex(allowOnce[1]).split('\x1F'));
   const shot = b.match(/\["shot"\]\s*=\s*"([a-z]*)"/);
   if (shot && FALLBACK_REASONS[shot[1]]) job.shot = shot[1];
   const opts = b.match(/\["opts"\]\s*=\s*"([0-9a-fA-F]*)"/);
@@ -2069,6 +2086,8 @@ module.exports = {
   tocLuaFiles,
   FILE_HASH_RE,
   parseFlags,
+  isToolRule,
+  toolRules,
   PERMISSION_MODES,
   RECORD_PERMISSION_MODES,
   permissionModeName,

@@ -708,8 +708,19 @@ const IMAGE_CAPTION = "[The image above is a screenshot of the player's screen, 
 
 const READ_ONLY_MODES = new Set(['default', 'manual', 'plan']);
 
+// Values from game records reach these argv lists. A value that starts with a
+// dash would be read as a CLI option (a variadic --allowedTools list ends at the
+// first one), so it is left out.
+function argValue(v) {
+  const s = v === undefined || v === null ? '' : String(v);
+  return s.startsWith('-') ? '' : s;
+}
+function argValues(list) {
+  return (Array.isArray(list) ? list : []).map(argValue).filter(Boolean);
+}
+
 function addDirs(cfg) {
-  return (Array.isArray(cfg && cfg.addDirs) ? cfg.addDirs : []).map(String).filter(d => d && !d.startsWith('-'));
+  return argValues(cfg && cfg.addDirs);
 }
 
 const AGENTS = {
@@ -720,18 +731,21 @@ const AGENTS = {
     install: 'https://claude.com/claude-code, then run `claude` once and log in',
     windowsPaths: () => [path.join(os.homedir(), '.local', 'bin', 'claude.exe')],
     posixPaths: () => [path.join(os.homedir(), '.local', 'bin', 'claude')],
-    args({ cfg, resume, system, images, mcpConfig, strictMcpConfig }) {
+    args({ cfg, resume: rawResume, system, images, mcpConfig, strictMcpConfig }) {
+      const resume = argValue(rawResume);
+      const model = argValue(cfg.model);
+      const effort = argValue(cfg.effort);
       const a = ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', cfg.permissionMode || 'acceptEdits'];
       // With an image the prompt is a stream-json user message (see input below).
       if (Array.isArray(images) && images.some(i => i && i.data)) a.push('--input-format', 'stream-json');
-      const rules = Array.isArray(cfg.allowedTools) ? cfg.allowedTools.filter(Boolean) : [];
+      const rules = argValues(cfg.allowedTools);
       if (rules.length) a.push('--allowedTools', ...rules);
-      const denied = Array.isArray(cfg.deniedTools) ? cfg.deniedTools.filter(Boolean) : [];
+      const denied = argValues(cfg.deniedTools);
       if (denied.length) a.push('--disallowedTools', ...denied);
       if (mcpConfig) a.push('--mcp-config', mcpConfig);
       if (strictMcpConfig === true) a.push('--strict-mcp-config');
-      if (cfg.model) a.push('--model', cfg.model);
-      if (cfg.effort) a.push('--effort', cfg.effort);
+      if (model) a.push('--model', model);
+      if (effort) a.push('--effort', effort);
       const capUsd = costCap(cfg.maxCostUsd);
       if (capUsd !== null) a.push('--max-budget-usd', String(capUsd));
       for (const dir of addDirs(cfg)) a.push('--add-dir', dir);
@@ -761,15 +775,18 @@ const AGENTS = {
     posixPaths: () => [],
     envPath: 'CODEX_BIN',
     npmPackage: '@openai/codex',
-    args({ cfg, resume, cwd, images, codexMcpArgs }) {
+    args({ cfg, resume: rawResume, cwd, images, codexMcpArgs }) {
+      const resume = argValue(rawResume);
+      const model = argValue(cfg.model);
+      const effort = argValue(cfg.effort);
       const a = Array.isArray(codexMcpArgs) ? [...codexMcpArgs] : [];
       if (cfg.networkAccess) a.push('-c', 'sandbox_workspace_write.network_access=true');
       a.push('exec', '--json', '--skip-git-repo-check', '-C', cwd);
       const mode = cfg.permissionMode || 'acceptEdits';
       if (mode === 'bypassPermissions') a.push('--dangerously-bypass-approvals-and-sandbox');
       else a.push('--sandbox', READ_ONLY_MODES.has(mode) ? 'read-only' : 'workspace-write');
-      if (cfg.model) a.push('-m', cfg.model);
-      if (cfg.effort) a.push('-c', `model_reasoning_effort=${cfg.effort}`);
+      if (model) a.push('-m', model);
+      if (effort) a.push('-c', `model_reasoning_effort=${effort}`);
       for (const dir of addDirs(cfg)) a.push('--add-dir', dir);
       a.push(...(Array.isArray(cfg.extraArgs) ? cfg.extraArgs : []));
       if (resume) a.push('resume', resume);
@@ -792,7 +809,9 @@ const AGENTS = {
     windowsPaths: () => [path.join(process.env.GROK_HOME || path.join(os.homedir(), '.grok'), 'bin', 'grok.exe')],
     posixPaths: () => [path.join(process.env.GROK_HOME || path.join(os.homedir(), '.grok'), 'bin', 'grok')],
     npmPackage: '@xai-official/grok',
-    args({ cfg, resume, cwd, system, promptFile }) {
+    args({ cfg, resume: rawResume, cwd, system, promptFile }) {
+      const resume = argValue(rawResume);
+      const model = argValue(cfg.model);
       const a = ['--no-auto-update', '--output-format', 'streaming-json', '--cwd', cwd, '--prompt-file', promptFile];
       const mode = cfg.permissionMode || 'acceptEdits';
       if (mode === 'bypassPermissions') {
@@ -801,14 +820,14 @@ const AGENTS = {
         // Headless Grok can't ask, so anything not on the allowlist is denied.
         a.push('--permission-mode', 'dontAsk');
         const rules = mode === 'acceptEdits' ? ['Edit', 'Read', 'Grep'] : [];
-        for (const r of Array.isArray(cfg.allowedTools) ? cfg.allowedTools : []) rules.push(...grokRules(r));
+        for (const r of argValues(cfg.allowedTools)) rules.push(...grokRules(r));
         for (const r of new Set(rules)) a.push('--allow', r);
       }
       // Deny rules win over everything, always-approve included.
       const denied = [];
-      for (const r of Array.isArray(cfg.deniedTools) ? cfg.deniedTools : []) denied.push(...grokRules(r));
+      for (const r of argValues(cfg.deniedTools)) denied.push(...grokRules(r));
       for (const r of new Set(denied)) a.push('--deny', r);
-      if (cfg.model) a.push('-m', cfg.model);
+      if (model) a.push('-m', model);
       if (resume) a.push('-r', resume);
       if (system) a.push('--append-system-prompt', system);
       return a.concat(Array.isArray(cfg.extraArgs) ? cfg.extraArgs : []);
@@ -827,7 +846,9 @@ const AGENTS = {
     install: 'Install Google Antigravity CLI (agy) and run `agy` once to log in.',
     windowsPaths: () => [path.join(process.env.LOCALAPPDATA || '', 'agy', 'bin', 'agy.exe')],
     posixPaths: () => [],
-    args({ cfg, resume, cwd, prompt, system, systemShort, timeoutMs }) {
+    args({ cfg, resume: rawResume, cwd, prompt, system, systemShort, timeoutMs }) {
+      const resume = argValue(rawResume);
+      const model = argValue(cfg.model);
       const text = String(prompt || '');
       const note = '\n[User prompt truncated to fit the agy command line.]';
       const context = contextBlock(resume ? systemShort || '' : system || '').slice(0, 12000);
@@ -848,7 +869,7 @@ const AGENTS = {
       else a.push('--dangerously-skip-permissions', '--disable-slash-commands');
       for (const dir of addDirs(cfg)) a.push('--add-dir', dir);
       if (resume) a.push('--conversation', resume);
-      if (cfg.model) a.push('--model', cfg.model);
+      if (model) a.push('--model', model);
       return a.concat(Array.isArray(cfg.extraArgs) ? cfg.extraArgs : []);
     },
     input: () => ({}),
@@ -863,10 +884,12 @@ const AGENTS = {
     windowsPaths: () => [],
     posixPaths: () => [],
     stream: 'text',
-    args({ cfg, resume, cwd, images }) {
+    args({ cfg, resume: rawResume, cwd, images }) {
+      const resume = argValue(rawResume);
+      const model = argValue(cfg.model);
       const a = ['chat', '--query-file', '-', '-Q', '--in', cwd, '--source', 'tool'];
       if (resume) a.push('--resume', resume);
-      if (cfg.model) a.push('-m', cfg.model);
+      if (model) a.push('-m', model);
       const paths = imagePaths(images);
       if (paths.length && !String(paths[0]).startsWith('-')) a.push('--image', paths[0]);
       // R1: hermes never runs with --yolo from the bridge, even via extraArgs.
@@ -896,8 +919,9 @@ const AGENTS = {
       const script = args.find(a => /\.js$/.test(a));
       return { file, args, found: script ? exists(script) : true };
     },
-    args({ cfg, resume, mcpConfig }) {
-      const a = ['--base-url', String(cfg.baseUrl || LOCAL_DEFAULTS.baseUrl), '--model', String(cfg.model || LOCAL_DEFAULTS.model)];
+    args({ cfg, resume: rawResume, mcpConfig }) {
+      const resume = argValue(rawResume);
+      const a = ['--base-url', String(cfg.baseUrl || LOCAL_DEFAULTS.baseUrl), '--model', argValue(cfg.model) || LOCAL_DEFAULTS.model];
       const timeout = Number(cfg.timeoutMs);
       a.push('--timeout-ms', String(Number.isSafeInteger(timeout) && timeout > 0 ? timeout : LOCAL_DEFAULTS.timeoutMs));
       if (mcpConfig) a.push('--mcp-config', mcpConfig);
