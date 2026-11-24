@@ -229,6 +229,23 @@ function tooWide(dir, home = os.homedir()) {
   return here === folderKey(realFolder(path.resolve(home))) || here === folderKey(path.parse(here).root);
 }
 
+const FALLBACK_PROJECT_NAME = 'wowgpt';
+
+// Why a folder may not be the bridge's default project, or '' when it may.
+function defaultProjectRefusal(dir, { home = os.homedir(), bridgeHome = '' } = {}) {
+  if (tooWide(dir, home)) return 'it is the home folder or a disk root';
+  if (!bridgeHome) return '';
+  const here = folderKey(realFolder(path.resolve(dir)));
+  const own = folderKey(realFolder(path.resolve(bridgeHome)));
+  return isInside(here, own) ? 'it is inside the bridge home folder' : '';
+}
+
+function fallbackProject(home = os.homedir()) {
+  const dir = path.join(home, FALLBACK_PROJECT_NAME);
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
 function folderAllowed(cwd, allowed) {
   if (!allowed) return true;
   const here = realFolder(path.resolve(cwd));
@@ -238,6 +255,8 @@ function folderAllowed(cwd, allowed) {
 module.exports = {
   allowedFolders,
   tooWide,
+  defaultProjectRefusal,
+  fallbackProject,
   foldersListed,
   folderAllowed,
   realFolder,

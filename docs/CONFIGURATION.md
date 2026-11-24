@@ -339,6 +339,8 @@ Each chat can pick its own project folder with `/wowgpt cd` or **Project...** in
 4. `defaultCwd` in `config.json`
 5. The current folder
 
+Whatever the source, the bridge refuses a default folder that is your home folder, a disk root or inside the bridge's home folder (`~/.wowgpt`). It logs the refusal and uses `~/wowgpt` instead, which it creates.
+
 A relative `/wowgpt cd` path is resolved against that default. `~` expands to your home folder. The agents keep sessions per folder, so a chat that changes folder starts a fresh session there; the same happens when a chat changes agent.
 
 ## Where the bridge keeps its files
