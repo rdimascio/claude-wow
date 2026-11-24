@@ -16,6 +16,13 @@ const { API_URL } = require('./repo');
 const DEFAULT_API = API_URL;
 const RECORD_FILE = 'update.json';
 const SUMS_ASSET = 'SHA256SUMS';
+const SIG_ASSET = 'SHA256SUMS.sig';
+// The ed25519 public key whose private half (the RELEASE_SIGNING_KEY secret)
+// signs each release's SHA256SUMS, as base64 SPKI DER. node dev/release-key.js
+// generate prints the value to paste here.
+const RELEASE_PUBLIC_KEY_UNSET = 'UNSET';
+const RELEASE_PUBLIC_KEY = RELEASE_PUBLIC_KEY_UNSET;
+const ED25519_SIGNATURE_BYTES = 64;
 const MINUTE_MS = 60000;
 const HOUR_MS = 60 * MINUTE_MS;
 const DAY_MS = 24 * HOUR_MS;
@@ -42,6 +49,7 @@ const STALE_DOWNLOAD_MS = 6 * HOUR_MS;
 const GAME_CHECK_MAX_AGE_MS = 15000;
 const DOWNLOAD_NAME = /^\..+\.update-(\d+)-[0-9a-f]{8}(\.exe)?$/;
 const SUM_LINE = /^([0-9a-fA-F]{64})\s+\*?(\S.*?)\s*$/;
+const NO_KEY_WHY = 'this build has no release public key, so no release can be verified (RELEASE_PUBLIC_KEY in bridge/selfupdate.js)';
 
 function ownVersion() {
   try {
@@ -297,6 +305,36 @@ function parseSums(text) {
     if (m) sums.set(m[2], m[1].toLowerCase());
   }
   return sums;
+}
+
+function releaseKeyMissing(publicKey = RELEASE_PUBLIC_KEY) {
+  return !publicKey || publicKey === RELEASE_PUBLIC_KEY_UNSET;
+}
+
+function releasePublicKey(publicKey = RELEASE_PUBLIC_KEY) {
+  if (releaseKeyMissing(publicKey)) throw new Error('this build has no release public key (RELEASE_PUBLIC_KEY in bridge/selfupdate.js)');
+  const key = crypto.createPublicKey({ key: Buffer.from(publicKey, 'base64'), format: 'der', type: 'spki' });
+  if (key.asymmetricKeyType !== 'ed25519') throw new Error(`the release public key is ${key.asymmetricKeyType}, not ed25519`);
+  return key;
+}
+
+// Why the signature does not vouch for these SHA256SUMS bytes, or '' when it does.
+function sumsSignatureProblem(sums, signature, publicKey = RELEASE_PUBLIC_KEY) {
+  let key;
+  try {
+    key = releasePublicKey(publicKey);
+  } catch (e) {
+    return e.message;
+  }
+  const sig = Buffer.from(String(signature).trim(), 'base64');
+  if (sig.length !== ED25519_SIGNATURE_BYTES) return `${SIG_ASSET} is not an ed25519 signature`;
+  let ok = false;
+  try {
+    ok = crypto.verify(null, Buffer.from(sums), key, sig);
+  } catch {
+    ok = false;
+  }
+  return ok ? '' : `${SIG_ASSET} does not match ${SUMS_ASSET} under the release public key`;
 }
 
 function rmQuiet(file) {
@@ -564,9 +602,12 @@ async function runUpdate(opts = {}) {
     limits = LIMITS,
     activate,
     alive,
+    publicKey = RELEASE_PUBLIC_KEY,
   } = opts;
   const current = effectiveVersion(version, readRecord(home));
   if (install.kind === 'dev') return { status: 'refused', current, message: `self-update is off: ${install.why}` };
+  if (install.kind !== 'homebrew' && !checkOnly && releaseKeyMissing(publicKey))
+    return { status: 'refused', current, message: `self-update is off: ${NO_KEY_WHY}` };
   const asset = assetName(platform, arch);
   if (!asset && install.kind !== 'homebrew') return { status: 'failed', current, message: `no release binary is built for ${platform} ${arch}` };
   const dir = install.kind === 'releases' ? install.layout.releases : install.kind === 'binary' ? path.dirname(install.binary) : '';
@@ -597,7 +638,13 @@ async function runUpdate(opts = {}) {
   if (!file) return failed(`release ${release.tag} has no ${asset}; nothing was replaced`);
   const sumsFile = release.assets.find(a => a.name === SUMS_ASSET);
   if (!sumsFile) return failed(`release ${release.tag} has no ${SUMS_ASSET}, so ${asset} cannot be verified; nothing was replaced`);
-  const want = parseSums((await get(sumsFile.url, limits.sums)).toString('utf8')).get(asset);
+  const sigFile = release.assets.find(a => a.name === SIG_ASSET);
+  if (!sigFile) return failed(`release ${release.tag} has no ${SIG_ASSET}, so its ${SUMS_ASSET} cannot be trusted; nothing was replaced`);
+  const sums = await get(sumsFile.url, limits.sums);
+  const signature = await get(sigFile.url, limits.sums);
+  const unsigned = sumsSignatureProblem(sums, signature.toString('utf8'), publicKey);
+  if (unsigned) return failed(`${unsigned} (release ${release.tag}); nothing was replaced`);
+  const want = parseSums(sums.toString('utf8')).get(asset);
   if (!want) return failed(`${SUMS_ASSET} of ${release.tag} has no line for ${asset}; nothing was replaced`);
   const tmp = tempPath(dir, asset, platform);
   try {
@@ -757,9 +804,11 @@ function createUpdater(deps) {
     now = Date.now,
     check = checkAndRecord,
     timers = { setTimeout, setInterval },
+    publicKey = RELEASE_PUBLIC_KEY,
   } = deps;
   const idleMs = idleMsFrom(cfg);
-  const autoCheck = cfg.autoUpdate !== false && install.kind !== 'dev';
+  const keyMissing = install.kind !== 'homebrew' && releaseKeyMissing(publicKey);
+  const autoCheck = cfg.autoUpdate !== false && install.kind !== 'dev' && !keyMissing;
   let checking = false;
   let lastCode = '';
 
@@ -785,7 +834,7 @@ function createUpdater(deps) {
     if (!checkDue(readRecord(home), now())) return null;
     checking = true;
     try {
-      const outcome = await check({ home, version, install, api, now });
+      const outcome = await check({ home, version, install, api, now, publicKey });
       log(`self-update: ${outcome.message}`);
       return outcome;
     } catch (e) {
@@ -830,6 +879,7 @@ function createUpdater(deps) {
     const removed = cleanupAside(install);
     if (removed) log(`self-update: removed ${removed} old binary copy(ies) left by the last update`);
     if (install.kind === 'dev') log(`self-update: off (${install.why})`);
+    else if (keyMissing) log(`self-update: off (${NO_KEY_WHY})`);
     else if (cfg.autoUpdate === false) log('self-update: the daily check is off (autoUpdate false in config.json); wowgpt update still works');
     if (autoCheck) {
       const first = timers.setTimeout(checkTick, FIRST_CHECK_DELAY_MS);
@@ -857,7 +907,9 @@ function statusLine(rec) {
 const HELP = `wowgpt update [--check]
 
 Checks the latest GitHub release of wowgpt and, when it is newer, downloads
-the binary for this machine and SHA256SUMS, verifies the checksum, runs it once
+SHA256SUMS and its signature, verifies the signature with the release public
+key this build carries, downloads the binary for this machine, verifies its
+checksum against the signed SHA256SUMS, runs it once
 (--version), and puts it in place of this one. A running bridge started by the
 supervisor (wowgpt, or the service) restarts on it once nothing is running
 and the game is closed or quiet (autoUpdateIdleSeconds, default ${DEFAULT_IDLE_SECONDS}).
@@ -905,6 +957,12 @@ module.exports = {
   DEFAULT_API,
   RECORD_FILE,
   SUMS_ASSET,
+  SIG_ASSET,
+  RELEASE_PUBLIC_KEY,
+  RELEASE_PUBLIC_KEY_UNSET,
+  releaseKeyMissing,
+  releasePublicKey,
+  sumsSignatureProblem,
   LIMITS,
   UPDATE_EXIT_CODE,
   RESTART_TICK_MS,

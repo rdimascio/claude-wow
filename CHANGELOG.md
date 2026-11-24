@@ -23,6 +23,7 @@ Kept so nothing breaks: `/wowgpt` is the main command, and `/claude` and the hid
 
 - A new config no longer takes the folder setup runs in as the agents' project. From your home folder, that let every chat edit any file in it. The default is now `~/wowgpt`, made for it.
 - `--project` refuses your home folder and a disk root. Setup warns when an existing config names one, and keeps it.
+- Self-update trusts a release's `SHA256SUMS` only when `SHA256SUMS.sig` verifies under the ed25519 public key the binary carries. The release workflow signs with the `RELEASE_SIGNING_KEY` secret. No signature or a bad one installs nothing. A build whose `RELEASE_PUBLIC_KEY` is still the placeholder refuses to self-update and schedules no daily check.
 - The installers no longer fall back to running the source of `main` when the binary download fails. With no binary for your machine, no `SHA256SUMS`, no `sha256sum` or `shasum`, or a failed download or check, they stop and install nothing. Before, a missing `SHA256SUMS` or hash tool was only a warning. Only `--from-source` (`WOWGPT_SOURCE=1`) installs from source, and it checks out the release's tag, not `main`.
 - A bridge started from your home folder or a disk root no longer takes that folder as the project. It uses `defaultCwd`.
 

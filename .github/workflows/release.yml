@@ -7,6 +7,7 @@ on:
     paths:
       - '.github/workflows/release.yml'
       - 'addon/**'
+      - 'dev/release-key.js'
       - 'package.json'
   workflow_dispatch:
 
@@ -142,8 +143,37 @@ jobs:
           path: dist/
           if-no-files-found: error
 
+  sign:
+    needs: bridge
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: wowgpt-binaries
+          path: dist
+      - name: sign SHA256SUMS with the release key, and check the signature under the public key the binaries carry
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+        run: |
+          node dev/release-key.js sign dist/SHA256SUMS
+          node dev/release-key.js verify dist/SHA256SUMS
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: sums-signature
+          path: dist/SHA256SUMS.sig
+          if-no-files-found: error
+
   github-release:
-    needs: [version, addon, bridge]
+    needs: [version, addon, bridge, sign]
     if: github.event_name == 'push' && github.ref_type == 'tag'
     runs-on: ubuntu-latest
     permissions:
@@ -160,10 +190,15 @@ jobs:
         with:
           name: addon-zip
           path: addon-zip
-      - name: the downloaded binaries still match SHA256SUMS, and there is one addon zip
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: sums-signature
+          path: dist
+      - name: the downloaded binaries still match SHA256SUMS, its signature still verifies, and there is one addon zip
         run: |
           (cd dist && sha256sum --check --strict SHA256SUMS)
-          test "$(ls dist | wc -l)" -eq 5
+          node dev/release-key.js verify dist/SHA256SUMS
+          test "$(ls dist | wc -l)" -eq 6
           test "$(ls addon-zip/*.zip | wc -l)" -eq 1
       - name: the release notes are the CHANGELOG section for this version
         run: |
@@ -171,7 +206,7 @@ jobs:
           awk -v heading="## [$version]" 'index($0, heading) == 1 { found = 1; next } found && /^## \[/ { exit } found { print }' CHANGELOG.md > release-notes.md
           cat release-notes.md
           grep -q '[^[:space:]]' release-notes.md
-      - name: create the GitHub release with the addon zip, the four binaries and SHA256SUMS
+      - name: create the GitHub release with the addon zip, the four binaries, SHA256SUMS and SHA256SUMS.sig
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

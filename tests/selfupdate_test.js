@@ -16,6 +16,9 @@ const ARCH = 'x64';
 const ASSET = UPD.assetName(PLATFORM, ARCH);
 const OLD = Buffer.from('OLD BINARY');
 const NEW = Buffer.from('NEW BINARY 9.9.9');
+const KEYS = crypto.generateKeyPairSync('ed25519');
+const PUBLIC_KEY = KEYS.publicKey.export({ format: 'der', type: 'spki' }).toString('base64');
+const signed = text => crypto.sign(null, Buffer.from(text), KEYS.privateKey).toString('base64') + '\n';
 
 function tmpDir(label) {
   return fs.mkdtempSync(path.join(os.tmpdir(), `wowgpt-update-${label}-`));
@@ -54,16 +57,20 @@ function releaseServer({
   sums,
   omitAsset = false,
   omitSums = false,
+  omitSig = false,
+  sig,
   chunked = false,
   asset: ASSET = UPD.assetName(PLATFORM, ARCH),
 } = {}) {
   const sumsText = sums !== undefined ? sums : `${sha(body)}  ${ASSET}\n${sha(Buffer.from('other'))}  wowgpt-darwin-arm64\n`;
+  const sigText = sig !== undefined ? sig : signed(sumsText);
   return serve((req, res, server) => {
     const base = `http://127.0.0.1:${server.address().port}`;
     if (req.url === '/repos/x/releases/latest') {
       const assets = [];
       if (!omitAsset) assets.push({ name: ASSET, browser_download_url: `${base}/dl/${ASSET}`, size: body.length });
       if (!omitSums) assets.push({ name: 'SHA256SUMS', browser_download_url: `${base}/dl/SHA256SUMS`, size: sumsText.length });
+      if (!omitSig) assets.push({ name: 'SHA256SUMS.sig', browser_download_url: `${base}/dl/SHA256SUMS.sig`, size: sigText.length });
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ tag_name: tag, assets }));
     } else if (req.url.startsWith('/dl/')) {
@@ -78,6 +85,8 @@ function releaseServer({
       res.end(body);
     } else if (req.url === '/files/SHA256SUMS') {
       res.end(sumsText);
+    } else if (req.url === '/files/SHA256SUMS.sig') {
+      res.end(sigText);
     } else {
       res.writeHead(404);
       res.end();
@@ -105,6 +114,7 @@ function opts(t, srv, extra = {}) {
     platform: PLATFORM,
     arch: ARCH,
     probe: async file => ({ ok: true, version: file === t.binary ? '1.0.0' : '9.9.9' }),
+    publicKey: PUBLIC_KEY,
     ...extra,
   };
 }
@@ -244,6 +254,72 @@ test("a release without this platform's asset, without SHA256SUMS, or without a 
       fs.rmSync(t.dir, { recursive: true, force: true });
     }
   }
+});
+
+test('SHA256SUMS is trusted only with a good ed25519 signature: no signature, another key, edited sums or junk change nothing', async () => {
+  const other = crypto.generateKeyPairSync('ed25519');
+  const sumsText = `${sha(NEW)}  ${ASSET}\n`;
+  for (const [label, cfg, re] of [
+    ['no signature', { omitSig: true }, /has no SHA256SUMS\.sig, so its SHA256SUMS cannot be trusted/],
+    ['another key', { sig: crypto.sign(null, Buffer.from(sumsText), other.privateKey).toString('base64') }, /does not match SHA256SUMS under the release public key/],
+    ['edited sums', { sums: sumsText, sig: signed(`${sha(OLD)}  ${ASSET}\n`) }, /does not match SHA256SUMS under the release public key/],
+    ['junk', { sig: 'not a signature' }, /is not an ed25519 signature/],
+  ]) {
+    const t = setup(`sig-${label.replace(/ /g, '-')}`);
+    const srv = await releaseServer({ sums: sumsText, ...cfg });
+    try {
+      const out = await UPD.checkAndRecord(opts(t, srv));
+      assert.equal(out.status, 'failed', `${label}: ${out.message}`);
+      assert.match(out.message, re, label);
+      assert.match(out.message, /nothing was replaced/, label);
+      assert.deepEqual(srv.downloads().filter(h => h === `/files/${ASSET}`), [], `${label}: the binary was never downloaded`);
+      untouched(t);
+      assert.equal(UPD.readRecord(t.home).ok, false, label);
+    } finally {
+      await srv.close();
+      fs.rmSync(t.dir, { recursive: true, force: true });
+    }
+  }
+});
+
+test('with no release public key in the build, self-update refuses before any download and schedules no check; --check still reports', async () => {
+  const t = setup('nokey');
+  const srv = await releaseServer();
+  try {
+    for (const publicKey of [UPD.RELEASE_PUBLIC_KEY_UNSET, '']) {
+      const out = await UPD.checkAndRecord(opts(t, srv, { publicKey }));
+      assert.equal(out.status, 'refused', out.message);
+      assert.match(out.message, /self-update is off: this build has no release public key/);
+    }
+    assert.deepEqual(srv.hits, [], 'no network call at all');
+    untouched(t);
+    const logs = [];
+    assert.equal(await UPD.main([], { ...opts(t, srv, { publicKey: UPD.RELEASE_PUBLIC_KEY_UNSET }), out: l => logs.push(l), err: l => logs.push(l) }), 3);
+    const check = await UPD.checkAndRecord(opts(t, srv, { publicKey: UPD.RELEASE_PUBLIC_KEY_UNSET, checkOnly: true }));
+    assert.equal(check.status, 'available', check.message);
+    const ft = fakeTimers();
+    const u = UPD.createUpdater({ home: t.home, version: '1.0.0', install: t.install, log: l => logs.push(l), timers: ft.timers, publicKey: UPD.RELEASE_PUBLIC_KEY_UNSET });
+    u.start();
+    assert.equal(u.autoCheck, false);
+    assert.deepEqual(
+      ft.calls.map(c => c.ms),
+      [UPD.RESTART_TICK_MS],
+      'only the restart gate',
+    );
+    assert.ok(logs.some(l => /self-update: off \(this build has no release public key/.test(l)));
+  } finally {
+    await srv.close();
+    fs.rmSync(t.dir, { recursive: true, force: true });
+  }
+});
+
+test('the release public key in the build is the placeholder or an ed25519 key; any other key type is refused', () => {
+  if (UPD.RELEASE_PUBLIC_KEY !== UPD.RELEASE_PUBLIC_KEY_UNSET) assert.equal(UPD.releasePublicKey().asymmetricKeyType, 'ed25519');
+  assert.equal(UPD.releasePublicKey(PUBLIC_KEY).asymmetricKeyType, 'ed25519');
+  const ec = crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' }).publicKey.export({ format: 'der', type: 'spki' }).toString('base64');
+  assert.match(UPD.sumsSignatureProblem('x', signed('x'), ec), /is ec, not ed25519/);
+  assert.equal(UPD.sumsSignatureProblem('x', signed('x'), PUBLIC_KEY), '');
+  assert.match(UPD.sumsSignatureProblem('x', signed('x'), UPD.RELEASE_PUBLIC_KEY_UNSET), /no release public key/);
 });
 
 test('a Homebrew keg is never swapped: it says brew upgrade and downloads nothing', async () => {
@@ -406,6 +482,7 @@ test(
         platform: PLATFORM,
         arch: ARCH,
         probe: async () => ({ ok: true, version: '9.9.9' }),
+        publicKey: PUBLIC_KEY,
       });
       assert.equal(out.status, 'updated', out.message);
       assert.equal(REL.currentName(l), '9.9.9');
@@ -474,7 +551,7 @@ test(
           REL.activate(l, landed);
           return { ok: true, version: '9.9.9' };
         };
-        const out = await UPD.checkAndRecord({ home, version: '1.0.0', api: `${srv.base}/repos/x`, install, platform: PLATFORM, arch: ARCH, probe });
+        const out = await UPD.checkAndRecord({ home, version: '1.0.0', api: `${srv.base}/repos/x`, install, platform: PLATFORM, arch: ARCH, probe, publicKey: PUBLIC_KEY });
         assert.equal(out.status, 'skipped', `${label}: ${out.message}`);
         assert.equal(REL.currentName(l), landed, `${label}: current is left where the other install put it`);
         assert.equal(REL.hasRelease(l, '9.9.9'), false, `${label}: nothing was installed`);
@@ -515,7 +592,7 @@ test('a skip written while the download ran (a rollback meanwhile) is honored un
       UPD.skipVersion(l.base, '9.9.9', 'dev rollback meanwhile');
       return { ok: true, version: '9.9.9' };
     };
-    const out = await UPD.checkAndRecord({ home: l.base, version: '1.0.0', api: `${srv2.base}/repos/x`, install, platform: PLATFORM, arch: ARCH, probe });
+    const out = await UPD.checkAndRecord({ home: l.base, version: '1.0.0', api: `${srv2.base}/repos/x`, install, platform: PLATFORM, arch: ARCH, probe, publicKey: PUBLIC_KEY });
     assert.equal(out.status, 'skipped', out.message);
     assert.equal(REL.currentName(l), '1.0.0');
     assert.equal(REL.hasRelease(l, '9.9.9'), false);
@@ -570,6 +647,7 @@ test('releases layout: a prune error after the switch is reported in the outcome
       platform: PLATFORM,
       arch: ARCH,
       probe: async () => ({ ok: true, version: '9.9.9' }),
+      publicKey: PUBLIC_KEY,
       activate,
     });
     assert.equal(out.status, 'updated', out.message);
@@ -720,6 +798,7 @@ test('autoUpdate false: no daily check is scheduled or run, the restart gate sti
     log: l => logs.push(l),
     version: '1.0.0',
     install: { kind: 'binary', binary: '/x/wowgpt' },
+    publicKey: PUBLIC_KEY,
     check: async () => {
       checks++;
       return { message: 'x' };
@@ -739,6 +818,7 @@ test('autoUpdate false: no daily check is scheduled or run, the restart gate sti
     cfg: {},
     version: '1.0.0',
     install: { kind: 'binary', binary: '/x/wowgpt' },
+    publicKey: PUBLIC_KEY,
     check: async () => {
       checks++;
       return { message: 'checked' };
@@ -795,6 +875,7 @@ test('a failed check keeps the daily timer: it is retried an hour later', async 
       now: () => now,
       log: l => logs.push(l),
       timers: ft.timers,
+      publicKey: PUBLIC_KEY,
     });
     u.start();
     const scheduled = ft.calls.filter(c => c.ms === UPD.CHECK_TICK_MS);
