@@ -334,15 +334,13 @@ test('install.ps1 parses, and its Node gate matches the shell one', { skip: !pws
   assert.ok(!/RunAs|Start-Process .*-Verb/i.test(src), 'never elevates');
 });
 
-test('the installers put the code under the home folder, name the wowgpt command, and carry an old wow-ai install over', () => {
+test('the installers put the code under the home folder, name the wowgpt command, and carry no wow-ai or claude-wow command over', () => {
   const sh = fs.readFileSync(SH, 'utf8');
   assert.match(sh, /^DIR=\$\{WOWGPT_DIR:-\$\{CLAUDE_WOW_DIR:-\$HOME_DIR\/app\}\}$/m, 'code under ~/.wowgpt/app, state in ~/.wowgpt');
   assert.match(sh, /^HOME_DIR=\$\{WOWGPT_HOME:-\$\{CLAUDE_WOW_HOME:-\$HOME\/\.wowgpt\}\}$/m);
   assert.match(sh, /"\$BIN_DIR\/wowgpt"/);
   assert.ok(!/BIN_DIR\/wow-ai" <<EOF/.test(sh), 'no wow-ai shim is written');
-  assert.match(sh, /migrate_old_install\(\)/);
-  assert.match(sh, /for f in config\.json state\.json transcripts\.json/);
-  assert.match(sh, /service uninstall/);
+  assert.doesNotMatch(sh, /migrate_old_install|link_old_command|\.wow-ai|BIN_DIR\/claude-wow/, 'no old-command migration: setup carries the home and service over');
   assert.ok(!/WOW_AI_/.test(sh), 'no WOW_AI_* variable left');
   const ps = fs.readFileSync(PS1, 'utf8');
   assert.match(ps, /'wowgpt\.cmd'/);
@@ -354,16 +352,14 @@ test('the installers put the code under the home folder, name the wowgpt command
   assert.match(ps, /\/releases\?per_page=1"/, 'the newest release, pre-releases included');
   assert.doesNotMatch(ps + sh, /newest pre-release/, 'the fallback takes the newest release of any kind');
   assert.match(ps, /Programs\\wowgpt'/);
-  assert.match(ps, /\$OldDir = Join-Path \$env:LOCALAPPDATA 'Programs\\wow-ai'/);
-  assert.match(ps, /'config\.json', 'state\.json', 'transcripts\.json'/);
+  assert.doesNotMatch(ps, /\$OldDir|\$OldClaudeWowDir|Programs\\wow-ai|Programs\\claude-wow/, 'no old-command migration');
   assert.ok(!/WOW_AI_/.test(ps), 'no WOW_AI_* variable left');
 });
 
 // The rename to WoWGPT: an installer run with only the old CLAUDE_WOW_*
-// variables still finds its folders, and the claude-wow command it wrote
-// before becomes a link to wowgpt.
+// variables still finds its folders.
 test(
-  'install.sh after the rename: CLAUDE_WOW_BIN still counts, and the old claude-wow command now runs wowgpt',
+  'install.sh after the rename: CLAUDE_WOW_BIN still counts, and an old claude-wow command is left alone',
   { skip: !hasAsset && 'no prebuilt binary for this platform' },
   () => {
     const h = fakeReleaseHost('v0.5.0-beta.1');
@@ -375,9 +371,7 @@ test(
       const r = spawnSync('/bin/sh', [SH, '--no-service'], { encoding: 'utf8', env });
       assert.equal(r.status, 0, r.stdout + r.stderr);
       assert.ok(fs.existsSync(path.join(h.binDir, 'wowgpt')), 'the binary went into the folder the old variable names');
-      assert.ok(fs.lstatSync(path.join(h.binDir, 'claude-wow')).isSymbolicLink(), 'the old command is a link now');
-      assert.equal(fs.realpathSync(path.join(h.binDir, 'claude-wow')), fs.realpathSync(path.join(h.binDir, 'wowgpt')));
-      assert.match(r.stdout, /claude-wow now runs wowgpt/);
+      assert.equal(fs.readFileSync(path.join(h.binDir, 'claude-wow'), 'utf8'), '#!/bin/sh\necho "claude-wow 0.5.0"\n', 'no link to wowgpt');
       assert.equal(fs.readFileSync(path.join(h.binDir, 'unrelated'), 'utf8'), 'other\n');
     } finally {
       fs.rmSync(h.root, { recursive: true, force: true });

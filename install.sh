@@ -33,13 +33,9 @@
 #      outside the code. An existing service (under any of the project's
 #      names) is reinstalled without asking; a fresh install asks, and Enter
 #      means yes. The PATH question also takes Enter as yes.
-# An install by the project's old name (~/.wow-ai, the wow-ai command, the
-# io.wowai.bridge service) is carried over: its config and sessions are copied
-# to ~/.wowgpt, its service and command are removed, and setup migrates
-# the addon and your chats in the game folder. A claude-wow install (the name
-# before WoWGPT) is carried over by setup, which copies ~/.claude-wow; its
-# claude-wow command becomes a link to wowgpt, and the CLAUDE_WOW_* variables
-# below still count when the WOWGPT_* one is not set.
+# A claude-wow install (the name before WoWGPT) is carried over by setup,
+# which copies ~/.claude-wow and replaces its service; the CLAUDE_WOW_*
+# variables below still count when the WOWGPT_* one is not set.
 # Never sudo. Any failure stops with a message saying what to do.
 
 set -eu
@@ -50,7 +46,6 @@ RELEASE=${WOWGPT_RELEASE:-${CLAUDE_WOW_RELEASE:-latest}}
 HOME_DIR=${WOWGPT_HOME:-${CLAUDE_WOW_HOME:-$HOME/.wowgpt}}
 DIR=${WOWGPT_DIR:-${CLAUDE_WOW_DIR:-$HOME_DIR/app}}
 BIN_DIR=${WOWGPT_BIN:-${CLAUDE_WOW_BIN:-$HOME/.local/bin}}
-OLD_DIR=$HOME/.wow-ai
 MIN_NODE=22.2
 WOW=${WOWGPT_WOW:-${CLAUDE_WOW_WOW:-}}
 PROJECT=${WOWGPT_PROJECT:-${CLAUDE_WOW_PROJECT:-}}
@@ -290,38 +285,6 @@ get_code() {
   say "installed into $DIR (no git: run this script again to update)"
 }
 
-# An install under the old name: its config and the agents' sessions move to
-# the home folder (once; setup then rewrites the addon paths inside), its
-# background service is removed so it stops starting the old bridge at login,
-# and its command goes. The old code folder is left for you to delete.
-migrate_old_install() {
-  [ -d "$OLD_DIR" ] || return 0
-  if [ -f "$OLD_DIR/bridge/config.json" ] && [ ! -f "$HOME_DIR/config.json" ]; then
-    mkdir -p "$HOME_DIR" || fail "cannot create $HOME_DIR"
-    for f in config.json state.json transcripts.json; do
-      [ -f "$OLD_DIR/bridge/$f" ] && cp "$OLD_DIR/bridge/$f" "$HOME_DIR/$f"
-    done
-    say "carried config.json, state.json and transcripts.json over from $OLD_DIR/bridge to $HOME_DIR"
-    # The old service would keep starting the old bridge; the new one is installed in the last step if wanted.
-    "$CMD" service uninstall >/dev/null 2>&1 || true
-  fi
-  if [ -f "$BIN_DIR/wow-ai" ] && grep -q "$OLD_DIR" "$BIN_DIR/wow-ai" 2>/dev/null; then
-    rm -f "$BIN_DIR/wow-ai"
-    say "removed the old wow-ai command ($BIN_DIR/wow-ai); it is wowgpt from now on"
-  fi
-  say "the old code in $OLD_DIR is no longer used; delete it when you like"
-}
-
-# The claude-wow command this installer wrote before the rename to WoWGPT: a
-# link to wowgpt from now on, so scripts and habits that call it keep working.
-link_old_command() {
-  old=$BIN_DIR/claude-wow
-  [ -f "$old" ] && [ ! -L "$old" ] || return 0
-  grep -q claude-wow "$old" 2>/dev/null || return 0
-  ln -sf "$CMD" "$old" || return 0
-  say "$old now runs wowgpt (claude-wow is its old name)"
-}
-
 on_path() {
   case ":$PATH:" in
     *":$BIN_DIR:"*) ;;
@@ -355,7 +318,7 @@ main() {
       --no-service) SERVICE=no ;;
       --node-ok) node_ok "${2:-}" && { echo ok; exit 0; } || { echo "too old: need $MIN_NODE"; exit 1; } ;;
       --binary-asset) binary_asset; exit 0 ;;
-      -h|--help) sed -n '2,39p' "$0" 2>/dev/null || say "see the header of install.sh"; exit 0 ;;
+      -h|--help) sed -n '/^set -eu$/q;2,$p' "$0" 2>/dev/null || say "see the header of install.sh"; exit 0 ;;
       *) fail "unknown option $1" "Options: --wow <folder> --project <folder> --service --no-service --from-source --release <tag> --dir <folder> --ref <ref>" ;;
     esac
     shift
@@ -376,8 +339,6 @@ main() {
   on_path
   SERVICE_FLAG=$(service_flag)
   [ "$SERVICE" = ask ] && [ "$SERVICE_FLAG" = --service ] && service_defined && say "a background service is installed; setup reinstalls it so it runs this version"
-  migrate_old_install
-  link_old_command
 
   step "2/2 Game-side setup (addon, config, slot pool, background service)"
   set -- "$SERVICE_FLAG"

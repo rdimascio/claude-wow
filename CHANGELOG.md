@@ -8,7 +8,7 @@ All notable changes to this project are recorded here. The format follows [Keep 
 
 The project is now WoWGPT: the addon, the command, the home folder, the service and the Claude Code channel all have the new name. Your chats, settings and agent sessions come across. What you do:
 
-- [ ] Update the bridge (`wowgpt update`, an installed `claude-wow` binary updates itself, the installer again, or `git pull`), then run `wowgpt setup` (or `claude-wow setup`). Setup:
+- [ ] Install `wowgpt` (Homebrew, `npm i -g wowgpt`, the installer, or `git pull`), then run `wowgpt setup`. Setup:
   - copies `~/.claude-wow` to `~/.wowgpt` (its releases, locks, `tmp/` and the live socket stay behind) and the `ask` data folder (`Application Support/claude-wow` on macOS, `~/.local/share/claude-wow` on Linux, `%LOCALAPPDATA%\claude-wow` on Windows) to the `wowgpt` name. It copies, never moves: when the new install works, you can delete the old folders yourself. Setup says so. Old `ask` chats start fresh after the update: their agent session lived in the old folder, so the first message starts a new session in the new one, and the bridge logs one line for it.
   - installs the `WoWGPT` addon and removes the `ClaudeWoW` addon and its `ClaudeWoW_S###` slot folders. The saved data is copied, with its globals renamed (`ClaudeWoWDB`, `ClaudeWoWWidgetDB`, `ClaudeWoWMapDB`, `ClaudeWoWCharDB` become `WoWGPT*`), from the account file and from every character's file under `WTF/Account/<account>/<realm>/<character>/SavedVariables/`. The old files are kept.
 - [ ] Fully quit and restart the game: the client finds a new addon folder only at launch.
@@ -17,7 +17,7 @@ The project is now WoWGPT: the addon, the command, the home folder, the service 
 - [ ] Live sessions: start Claude Code with `claude --dangerously-load-development-channels server:wowgpt` (was `server:claude-wow`). In your Claude Code allow rules, `mcp__claude-wow__*` becomes `mcp__wowgpt__*` (for example `mcp__wowgpt__wow_reply`). The MCP server in `.mcp.json` is `wowgpt`, and the plugin folder is `assets/plugins/wowgpt`.
 - [ ] Rename your environment variables to `WOWGPT_*` when you like (`WOWGPT_HOME`, `WOWGPT_PROJECT`, ...). The old `CLAUDE_WOW_*` names still work when the new one is not set.
 
-Kept so nothing breaks: `/wowgpt` is the main command, and `/claude` and the hidden `/claude-wow` still work. Links written before the rename (`addon:claudewow:...`) still click. The npm package is `wowgpt` with a `claude-wow` bin alias, the installer turns an old `claude-wow` command into a link to `wowgpt`, and this release also ships every binary as `claude-wow-<os>-<arch>` (in `SHA256SUMS` too) and prints a `claude-wow <version>` line on `--version`, so an installed `claude-wow` binary can update itself to WoWGPT. The GitHub repository and the Homebrew tap keep their names for now.
+Kept so nothing breaks: `/wowgpt` is the main command, and `/claude` and the hidden `/claude-wow` still work. Links written before the rename (`addon:claudewow:...`) still click. The npm package and the command are `wowgpt` only: there is no `claude-wow` alias, the release ships only `wowgpt-<os>-<arch>` binaries, and an installed `claude-wow` binary does not update itself to WoWGPT. Remove an old `claude-wow` command yourself. The GitHub repository and the Homebrew tap keep their names for now.
 
 ### Security
 
@@ -59,6 +59,7 @@ Kept so nothing breaks: `/wowgpt` is the main command, and `/claude` and the hid
 - The private job dispatcher for coding chats is gone, with its settings under `plugins.claude-code`, its per-run MCP server and its `/runs` and `/stop` commands. A coding chat is always a full agent session. Its old settings in `config.json` are ignored.
 - The addon no longer adds game slash commands or Tab completion for skills sent by the bridge.
 - The internal planning notes (`docs/plans`) and the release migration guide are no longer in the repository. `claude-wow dev deploy` now prints the one command that points the service at a release.
+- The `claude-wow` compatibility layer for binaries is gone before the first public release: the `claude-wow-<os>-<arch>` release assets, the `claude-wow` npm bin alias, the `claude-wow <version>` line on `--version`, self-update from the old asset names, and the installers' carry-over of a `wow-ai` install and of the old `wow-ai` and `claude-wow` commands. Setup still copies `~/.claude-wow`, the `CLAUDE_WOW_*` variables still count, and `wowgpt service install` still removes the old services. Setup still migrates the old addons' saved data.
 - The release no longer uploads the addon to CurseForge or Wago, and `.pkgmeta` and the store listing draft are gone. `wowgpt setup` installs the addon. The GitHub release still has the addon zip, made from `addon/WoWGPT` alone.
 
 ### Fixed

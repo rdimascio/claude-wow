@@ -24,8 +24,7 @@
     "node": ">=22.2"
   },
   "bin": {
-    "wowgpt": "bridge/supervisor.js",
-    "claude-wow": "bridge/supervisor.js"
+    "wowgpt": "bridge/supervisor.js"
   },
   "files": [
     "bridge/*.js",

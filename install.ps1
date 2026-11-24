@@ -32,10 +32,8 @@
 #      existing launcher (under any of the project's names) is reinstalled
 #      without asking, which starts the bridge again on the new version; a
 #      fresh install asks, and Enter means yes
-# An install by the project's old name (Programs\wow-ai, the wow-ai command,
-# the "WoW AI bridge" launcher) is carried over: its config and sessions are
-# copied to ~\.wowgpt, its launcher is removed, and setup migrates the
-# addon and your chats in the game folder.
+# A claude-wow install (the name before WoWGPT) is carried over by setup,
+# which copies ~\.claude-wow and replaces its launcher.
 # Never asks for administrator rights. Any failure stops with a message saying what to do.
 
 [CmdletBinding()]
@@ -57,8 +55,6 @@ Get-ChildItem Env: | Where-Object { $_.Name -like 'CLAUDE_WOW_*' } | ForEach-Obj
   if (-not (Test-Path "Env:$newName")) { Set-Item "Env:$newName" $_.Value }
 }
 $HomeDir = $(if ($env:WOWGPT_HOME) { $env:WOWGPT_HOME } else { Join-Path $HOME '.wowgpt' })
-$OldDir = Join-Path $env:LOCALAPPDATA 'Programs\wow-ai'
-$OldClaudeWowDir = Join-Path $env:LOCALAPPDATA 'Programs\claude-wow' # before the rename to WoWGPT
 if ($env:WOWGPT_SOURCE -eq '1') { $FromSource = $true }
 
 $ErrorActionPreference = 'Stop'
@@ -219,30 +215,6 @@ $startupDir = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Star
 $hadService = @($ServiceLaunchers | Where-Object { Test-Path -LiteralPath (Join-Path $startupDir $_) }).Count -gt 0
 $serviceFlag = Select-ServiceFlag ([bool]$Service) ([bool]$NoService) $env:WOWGPT_SERVICE @($ServiceLaunchers | ForEach-Object { Join-Path $startupDir $_ }) ([Environment]::UserInteractive) { param($q) Read-Host $q }
 if ($hadService -and $serviceFlag -eq '--service') { Write-Host 'a background service is installed; setup reinstalls it so it runs this version' }
-
-# An install under the old name: its config and the agents' sessions move to the
-# home folder (once; setup then rewrites the addon paths inside), its Startup
-# launcher goes so it stops starting the old bridge at login, and its bin folder
-# leaves the user PATH. The old code folder is left for you to delete.
-if ((Test-Path (Join-Path $OldDir 'bridge\config.json')) -and -not (Test-Path (Join-Path $HomeDir 'config.json'))) {
-  New-Item -ItemType Directory -Force $HomeDir | Out-Null
-  foreach ($f in 'config.json', 'state.json', 'transcripts.json') {
-    if (Test-Path (Join-Path $OldDir "bridge\$f")) { Copy-Item (Join-Path $OldDir "bridge\$f") (Join-Path $HomeDir $f) }
-  }
-  Write-Host "carried config.json, state.json and transcripts.json over from $OldDir\bridge to $HomeDir"
-  & $Cmd service uninstall | Out-Null
-}
-# A claude-wow install: setup copies its home; its bin folder leaves the PATH too.
-foreach ($old in @($OldDir, $OldClaudeWowDir)) {
-  if (-not (Test-Path $old)) { continue }
-  $oldBin = Join-Path $old 'bin'
-  $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-  if (($userPath -split ';') -contains $oldBin) {
-    [Environment]::SetEnvironmentVariable('Path', ((($userPath -split ';') | Where-Object { $_ -ne $oldBin }) -join ';'), 'User')
-    Write-Host "removed $oldBin from your user PATH; the command is wowgpt from now on"
-  }
-  Write-Host "the old code in $old is no longer used; delete it when you like"
-}
 
 # ---- 3. Game-side setup -----------------------------------------------------
 Step '3/3 Game-side setup (addon, config, slot pool, background service)'

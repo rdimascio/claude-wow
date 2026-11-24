@@ -16,10 +16,7 @@
 // sudo). Cross-compiling downloads the target's runtime once (~30 MB each).
 // dist/SHA256SUMS lists the checksums install.sh verifies. Names:
 // wowgpt-<darwin|linux|windows>-<arm64|x64>[.exe], the release assets
-// install.sh, install.ps1 and the Homebrew formula fetch. Each binary is also
-// written as claude-wow-<os>-<arch>[.exe], the name before the rename to
-// WoWGPT: an installed claude-wow binary updates itself only to an asset by
-// that name, and an older `dev deploy` picks up only that name from --host.
+// install.sh, install.ps1 and the Homebrew formula fetch.
 
 const fs = require('fs');
 const os = require('os');
@@ -37,11 +34,10 @@ function hostTarget() {
 }
 
 const ASSET_PREFIX = 'wowgpt';
-const OLD_ASSET_PREFIXES = Object.freeze(['claude-wow']);
 
-function outName(target, prefix = ASSET_PREFIX) {
+function outName(target) {
   const [, os_, arch] = target.split('-');
-  return `${prefix}-${os_}-${arch}${os_ === 'windows' ? '.exe' : ''}`;
+  return `${ASSET_PREFIX}-${os_}-${arch}${os_ === 'windows' ? '.exe' : ''}`;
 }
 
 function findBun() {
@@ -101,11 +97,6 @@ function main(argv) {
     const sum = crypto.createHash('sha256').update(buf).digest('hex');
     sums.push(`${sum}  ${path.basename(file)}`);
     console.log(`  ${path.basename(file).padEnd(28)} ${(buf.length / 1048576).toFixed(1)} MB  ${sum.slice(0, 12)}`);
-    for (const prefix of OLD_ASSET_PREFIXES) {
-      const copy = path.join(out, outName(target, prefix));
-      fs.copyFileSync(file, copy);
-      sums.push(`${sum}  ${path.basename(copy)}`);
-    }
   }
   fs.writeFileSync(path.join(out, 'SHA256SUMS'), sums.join('\n') + '\n');
   // The binary for this machine, if one was built: prove it starts.
@@ -123,4 +114,4 @@ function main(argv) {
 }
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
-module.exports = { TARGETS, hostTarget, outName, ASSET_PREFIX, OLD_ASSET_PREFIXES, main };
+module.exports = { TARGETS, hostTarget, outName, ASSET_PREFIX, main };

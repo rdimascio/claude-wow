@@ -934,57 +934,36 @@ test('wowgpt update: --check only reports, the plain command installs, unknown o
   }
 });
 
-// The rename to WoWGPT: the first WoWGPT release ships every binary under its
-// claude-wow name too, and either side reads the other's --version line.
-test(
-  'self-update from the old asset name: a release with only claude-wow-<os>-<arch> installs, verified against its SHA256SUMS line',
-  { skip: !POSIX },
-  async () => {
-    const old = UPD.assetName(PLATFORM, ARCH, 'claude-wow');
-    assert.equal(old, 'claude-wow-linux-x64');
-    const t = setup('oldasset');
-    const body = Buffer.from('#!/bin/sh\necho "claude-wow 9.9.9 (fake)"\n');
-    const srv = await releaseServer({ body, asset: old });
-    try {
-      const out = await UPD.checkAndRecord(opts(t, srv, { probe: UPD.probeBinary }));
-      assert.equal(out.status, 'updated', out.message);
-      assert.deepEqual(fs.readFileSync(t.binary), body);
-      assert.ok(srv.downloads().includes(`/files/${old}`), 'the old name was downloaded');
-    } finally {
-      await srv.close();
-      fs.rmSync(t.dir, { recursive: true, force: true });
-    }
-  },
-);
-
-test('the new name wins when a release has both, and build.js writes both with one sum each', () => {
-  const B = require('../build');
-  const both = {
-    assets: [
-      { name: 'claude-wow-linux-x64', url: 'o' },
-      { name: 'wowgpt-linux-x64', url: 'n' },
-    ],
-  };
-  assert.deepEqual(UPD.releaseAsset(both, 'linux', 'x64'), { name: 'wowgpt-linux-x64', file: both.assets[1] });
-  assert.equal(UPD.releaseAsset({ assets: [] }, 'linux', 'x64').file, null);
-  assert.deepEqual(B.OLD_ASSET_PREFIXES, ['claude-wow']);
-  assert.equal(B.outName('bun-windows-x64', 'claude-wow'), 'claude-wow-windows-x64.exe');
-  const src = fs.readFileSync(path.join(__dirname, '..', 'build.js'), 'utf8');
-  assert.match(
-    src,
-    /for \(const prefix of OLD_ASSET_PREFIXES\) \{[\s\S]*?fs\.copyFileSync\(file, copy\);\s*sums\.push/,
-    'each old-name copy gets its SHA256SUMS line',
-  );
+test('a release with only the claude-wow asset name installs nothing: releases ship the wowgpt names alone', async () => {
+  const t = setup('oldasset');
+  const srv = await releaseServer({ asset: 'claude-wow-linux-x64' });
+  try {
+    const out = await UPD.checkAndRecord(opts(t, srv));
+    assert.equal(out.status, 'failed', out.message);
+    assert.match(out.message, new RegExp(`has no ${ASSET.replace('.', '\\.')}; nothing was replaced`));
+    assert.deepEqual(srv.downloads(), [], 'nothing was downloaded');
+    untouched(t);
+  } finally {
+    await srv.close();
+    fs.rmSync(t.dir, { recursive: true, force: true });
+  }
 });
 
-test('--version prints a line an installed claude-wow binary accepts, and this one accepts both names', () => {
+test('build.js writes each binary once, under its wowgpt name, with one SHA256SUMS line', () => {
+  assert.equal(B.OLD_ASSET_PREFIXES, undefined);
+  assert.equal(B.outName('bun-windows-x64'), 'wowgpt-windows-x64.exe');
+  const src = fs.readFileSync(path.join(__dirname, '..', 'build.js'), 'utf8');
+  assert.equal(src.match(/sums\.push\(/g).length, 1, 'one sum per built file');
+  assert.doesNotMatch(src, /copyFileSync/, 'no copy under another name');
+});
+
+test('--version prints one wowgpt line, which is the line self-update reads', () => {
   const { spawnSync } = require('child_process');
   const r = spawnSync(process.execPath, [path.join(__dirname, '..', 'bridge', 'supervisor.js'), '--version'], { encoding: 'utf8' });
   const version = require('../package.json').version;
   assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout.trim().split('\n').length, 1, r.stdout);
   assert.ok(r.stdout.startsWith(`wowgpt ${version} `), r.stdout);
-  const oldProbe = /claude-wow (\S+)/;
-  assert.equal(oldProbe.exec(r.stdout)[1], version, 'the probe of a claude-wow binary reads this version');
-  assert.equal(UPD.VERSION_LINE.exec('claude-wow 1.2.3 (bun)')[1], '1.2.3');
   assert.equal(UPD.VERSION_LINE.exec(r.stdout)[1], version);
+  assert.equal(UPD.VERSION_LINE.exec('claude-wow 1.2.3 (bun)'), null, 'a claude-wow binary is not this program');
 });

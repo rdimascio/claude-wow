@@ -35,9 +35,7 @@ const SEMVER =
   /^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 const HOMEBREW_PATH = /\/Cellar\/|\/opt\/homebrew\/|\/\.linuxbrew\//;
 const PROJECT_NAMES = ['wowgpt', 'claude-wow', 'wow-ai'];
-// What --version starts with, newest first: a release from before the rename to
-// WoWGPT prints claude-wow.
-const VERSION_LINE = /^(?:wowgpt|claude-wow) (\S+)/m;
+const VERSION_LINE = /^wowgpt (\S+)/m;
 const SKIP_FILE = 'update-skip.json';
 const STALE_DOWNLOAD_MS = 6 * HOUR_MS;
 const GAME_CHECK_MAX_AGE_MS = 15000;
@@ -90,21 +88,10 @@ function compareSemver(a, b) {
   return Math.sign(x.pre.length - y.pre.length);
 }
 
-function assetName(platform = process.platform, arch = process.arch, prefix = B.ASSET_PREFIX) {
+function assetName(platform = process.platform, arch = process.arch) {
   const osName = platform === 'win32' ? 'windows' : platform;
   const target = `bun-${osName}-${arch}`;
-  return B.TARGETS.includes(target) ? B.outName(target, prefix) : '';
-}
-
-// This machine's asset in a release: the WoWGPT name, else the name from
-// before the rename (a release that ships only that one).
-function releaseAsset(release, platform, arch) {
-  for (const prefix of [B.ASSET_PREFIX, ...B.OLD_ASSET_PREFIXES]) {
-    const name = assetName(platform, arch, prefix);
-    const file = release.assets.find(a => a.name === name);
-    if (file) return { name, file };
-  }
-  return { name: assetName(platform, arch), file: null };
+  return B.TARGETS.includes(target) ? B.outName(target) : '';
 }
 
 function realpathOf(p) {
@@ -579,7 +566,7 @@ async function runUpdate(opts = {}) {
   } = opts;
   const current = effectiveVersion(version, readRecord(home));
   if (install.kind === 'dev') return { status: 'refused', current, message: `self-update is off: ${install.why}` };
-  let asset = assetName(platform, arch);
+  const asset = assetName(platform, arch);
   if (!asset && install.kind !== 'homebrew') return { status: 'failed', current, message: `no release binary is built for ${platform} ${arch}` };
   const dir = install.kind === 'releases' ? install.layout.releases : install.kind === 'binary' ? path.dirname(install.binary) : '';
   if (dir) pruneStaleDownloads(dir, alive ? { alive } : {});
@@ -605,10 +592,8 @@ async function runUpdate(opts = {}) {
       message: `wowgpt ${latest} is out (this is ${current}). Homebrew installed this one, so run: brew upgrade wowgpt`,
     };
   if (checkOnly) return { status: 'available', current, latest, message: `wowgpt ${latest} is out (this is ${current}); run wowgpt update to install it` };
-  const found = releaseAsset(release, platform, arch);
-  const file = found.file;
+  const file = release.assets.find(a => a.name === asset);
   if (!file) return failed(`release ${release.tag} has no ${asset}; nothing was replaced`);
-  asset = found.name;
   const sumsFile = release.assets.find(a => a.name === SUMS_ASSET);
   if (!sumsFile) return failed(`release ${release.tag} has no ${SUMS_ASSET}, so ${asset} cannot be verified; nothing was replaced`);
   const want = parseSums((await get(sumsFile.url, limits.sums)).toString('utf8')).get(asset);
@@ -945,7 +930,6 @@ module.exports = {
   normalizeVersion,
   compareSemver,
   assetName,
-  releaseAsset,
   VERSION_LINE,
   installKind,
   launchPath,

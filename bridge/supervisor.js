@@ -24,8 +24,6 @@ const argv = process.argv.slice(2);
 if (argv[0] === '--version' || argv[0] === '-v') {
   const version = require('../package.json').version;
   console.log(`wowgpt ${version} (${R.describe()})`);
-  // A claude-wow binary updating itself to this one reads only this line.
-  console.log(`claude-wow ${version}`);
 } else if (argv[0] === 'service') {
   process.exitCode = require('./service').main(argv.slice(1));
 } else if (argv[0] === 'dev') {
