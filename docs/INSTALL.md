@@ -28,7 +28,7 @@ brew install rdimascio/wowgpt/wowgpt
 wowgpt setup
 ```
 
-Until the first stable release fills in the formula's checksums, only `--HEAD` works (`brew install --HEAD rdimascio/wowgpt/wowgpt`): it installs the checkout and runs it with Homebrew's node. After that release, the command above installs the binary.
+The command above installs the release binary. `brew install --HEAD rdimascio/wowgpt/wowgpt` installs the checkout instead and runs it with Homebrew's node.
 
 Homebrew installs the bridge and the `wowgpt` command: the self-contained binary for your Mac from the tagged release, or the checkout with `--HEAD`. It cannot put an addon into the game folder or read your WoW account, so `wowgpt setup` is a separate, required step. The keg holds only code: your config, the agents' sessions, transcripts and logs live in `~/.wowgpt` (`WOWGPT_HOME`, see [CONFIGURATION.md](CONFIGURATION.md#where-the-bridge-keeps-its-files)), so `brew upgrade` keeps them; `wowgpt setup` afterwards reinstalls the service, which restarts the bridge on the new code. The formula is in [`homebrew/`](../homebrew/README.md).
 
@@ -39,7 +39,7 @@ npm i -g wowgpt
 wowgpt setup
 ```
 
-This needs Node.js 22.2 or newer. npm puts the `wowgpt` command on your PATH; setup does the rest, as on route 1. The package is published with the first stable release; until then, use route 1 with `--HEAD`, route 3 or route 4.
+This needs Node.js 22.2 or newer. npm puts the `wowgpt` command on your PATH; setup does the rest, as on route 1.
 
 ## Route 3: the one-line installer
 
@@ -55,7 +55,7 @@ Windows, in PowerShell:
 irm https://github.com/rdimascio/wowgpt/releases/latest/download/install.ps1 | iex
 ```
 
-(The scripts are files of the latest release, so these URLs work once the first release is out. Before that, run `sh install.sh --from-source` from a clone, which needs Node.js 22.2 or newer.)
+(The scripts are files of the latest release. From a clone, `sh install.sh --from-source` installs the checkout instead, which needs Node.js 22.2 or newer.)
 
 The script downloads the `wowgpt` binary for your machine from the project's GitHub releases into `~/.local/bin` (Windows: `%LocalAppData%\Programs\wowgpt\bin`, put on your user PATH), checks it against the release's `SHA256SUMS`, runs it once, and runs `wowgpt setup` (config, state and logs go to `~/.wowgpt`), which installs the background service: an existing service, under this name or an old one, is reinstalled without asking, so an update restarts the bridge on the new binary; a fresh install asks, and Enter means yes. When `~/.local/bin` is not on your PATH it offers to add it (Enter means yes) and otherwise prints the command's full path. Nothing else is installed: the binary is the bridge, setup and the service commands with their runtime inside. When there is no binary for your machine, the release has no `SHA256SUMS`, there is no `sha256sum` or `shasum` to check it with, or the download or its check fails, it stops and installs nothing. Only `--from-source` (`$env:WOWGPT_SOURCE = "1"` on Windows) installs from source: it checks for Node.js 22.2+, downloads the release's tagged source (git if you have it, otherwise the archive) into `~/.wowgpt/app` (Windows: `%LocalAppData%\Programs\wowgpt`) and writes a `wowgpt` shim that runs it with node. `--ref <branch|tag>` (`$env:WOWGPT_REF`) picks another version of the source. For an install under the project's old name (`~/.wow-ai`), see [Coming from wow-ai](#coming-from-wow-ai). It never asks for sudo or administrator rights, it is safe to run again (that is how you update), and if something is missing it stops and says what to do.
 

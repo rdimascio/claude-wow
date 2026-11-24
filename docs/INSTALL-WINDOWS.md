@@ -37,7 +37,7 @@ The installer writes `wowgpt.cmd` into `%LocalAppData%\Programs\wowgpt\bin`, whi
 Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 ```
 
-or type `wowgpt.cmd` instead. Don't use `npm install -g .`: that copies the files into npm's global folder, where there is no `config.json`, and the bridge refuses to start.
+or type `wowgpt.cmd` instead. `npm install -g .` also works: it copies the files into npm's global folder, and the config stays in `%UserProfile%\.wowgpt`. Run `wowgpt setup` again after each `npm install -g .`, as after any update.
 
 Like the agent CLIs, `wowgpt` works in the folder you start it from: `cd C:\path\to\realms` then `wowgpt` makes `realms` the default folder for every chat that hasn't chosen its own with `/wowgpt cd`. Only one bridge can run at a time.
 
@@ -65,7 +65,7 @@ If you had installed the command with npm: `npm unlink -g wow-ai`, and `npm link
 
 **PowerShell says "running scripts is disabled on this system".** See the execution-policy note above: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`, or use `wowgpt.cmd`.
 
-**"Cannot read config.json … Run node setup.js".** The command is pointing at a copy of the repo that hasn't been set up (usually `npm install -g .` was used instead of `npm link`, or the folder was moved). Run `wowgpt setup`.
+**"Cannot read …config.json" at start.** Setup has not written `%UserProfile%\.wowgpt\config.json` yet (or `WOWGPT_HOME` points somewhere else). Run `wowgpt setup`.
 
 **The banner says `slots : NOT INSTALLED`.** `setup.js` couldn't write into the AddOns folder, or it wrote somewhere else. Check the `dir` of each entry in `clients` in `~\.wowgpt\config.json`, then run `wowgpt setup` (or `node bridge\install-slots.js`) and relaunch the game.
 

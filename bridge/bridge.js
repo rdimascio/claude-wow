@@ -204,7 +204,7 @@ const startedInProject = dir => !insideRepo(dir) && !PJ.tooWide(dir);
 const projectIdx = argv.indexOf('--project');
 // WOWGPT_PROJECT names the default folder; the old WOW_AI_PROJECT still counts.
 const PROJECT_ENV = process.env.WOWGPT_PROJECT || process.env.WOW_AI_PROJECT || '';
-const DEFAULT_CWD = path.resolve(
+const CHOSEN_CWD = path.resolve(
   projectIdx >= 0 && argv[projectIdx + 1]
     ? argv[projectIdx + 1]
     : PROJECT_ENV
@@ -213,7 +213,7 @@ const DEFAULT_CWD = path.resolve(
         ? process.cwd()
         : cfg.defaultCwd || process.cwd(),
 );
-const DEFAULT_CWD_SOURCE =
+const CHOSEN_SOURCE =
   projectIdx >= 0
     ? '--project'
     : PROJECT_ENV
@@ -223,6 +223,12 @@ const DEFAULT_CWD_SOURCE =
       : startedInProject(process.cwd())
         ? 'started here'
         : 'config.json';
+const DEFAULT_CWD_REFUSAL = PJ.defaultProjectRefusal(CHOSEN_CWD, { bridgeHome: HOME.dir });
+const DEFAULT_CWD = DEFAULT_CWD_REFUSAL ? PJ.fallbackProject() : CHOSEN_CWD;
+if (DEFAULT_CWD_REFUSAL)
+  log(
+    `default folder ${CHOSEN_CWD} (${CHOSEN_SOURCE}) refused: ${DEFAULT_CWD_REFUSAL}; using ${DEFAULT_CWD}. Set defaultCwd in config.json to a project folder.`,
+  );
 
 const CLAUDE_DIR = SS.claudeDir(process.env, cfg.claudeDir);
 const SESSION_LIST_MAX = 20;
@@ -3759,7 +3765,9 @@ function banner() {
   console.log(
     `  home     : ${HOME.dir}  (${HOME.source === 'legacy' ? 'the layout from before WOWGPT_HOME; run setup to move it to ' + H.defaultDir() : HOME.source}; config, state, transcripts, log)`,
   );
-  console.log(`  folder   : ${DEFAULT_CWD}  (${DEFAULT_CWD_SOURCE}; chats can override with /wowgpt cd)`);
+  console.log(
+    `  folder   : ${DEFAULT_CWD}  (${DEFAULT_CWD_REFUSAL ? `fallback, ${CHOSEN_SOURCE} refused` : CHOSEN_SOURCE}; chats can override with /wowgpt cd)`,
+  );
   if (!CLIENTS.length) console.log('  clients  : NONE - config.json names no WoW client; run: node setup.js');
   for (const c of CLIENTS) {
     console.log(`  client   : ${c.label}  ${c.dir}`);

@@ -35,9 +35,9 @@
       "allowedTools": [
         "WebSearch",
         "WebFetch",
-        "Bash(git:*)",
-        "Bash(pip:*)",
-        "Bash(pytest:*)",
+        "Bash(git status:*)",
+        "Bash(git diff:*)",
+        "Bash(git log:*)",
         "Bash(ls:*)",
         "Bash(dir:*)"
       ],
@@ -76,9 +76,9 @@
       "allowedTools": [
         "WebSearch",
         "WebFetch",
-        "Bash(git:*)",
-        "Bash(pip:*)",
-        "Bash(pytest:*)",
+        "Bash(git status:*)",
+        "Bash(git diff:*)",
+        "Bash(git log:*)",
         "Bash(ls:*)",
         "Bash(dir:*)"
       ],

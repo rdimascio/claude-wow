@@ -23,7 +23,7 @@ The project is now WoWGPT: the addon, the command, the home folder, the service 
 - [ ] Live sessions: start Claude Code with `claude --dangerously-load-development-channels server:wowgpt` (was `server:claude-wow`). In your Claude Code allow rules, `mcp__claude-wow__*` becomes `mcp__wowgpt__*` (for example `mcp__wowgpt__wow_reply`). The MCP server in `.mcp.json` is `wowgpt`, and the plugin folder is `assets/plugins/wowgpt`.
 - [ ] Rename your environment variables to `WOWGPT_*` when you like (`WOWGPT_HOME`, `WOWGPT_PROJECT`, ...). The old `CLAUDE_WOW_*` names still work when the new one is not set.
 
-Kept so nothing breaks: `/wowgpt` is the main command, and `/claude` and the hidden `/claude-wow` still work. Links written before the rename (`addon:claudewow:...`) still click. The npm package and the command are `wowgpt` only: there is no `claude-wow` alias, the release ships only `wowgpt-<os>-<arch>` binaries, and an installed `claude-wow` binary does not update itself to WoWGPT. Remove an old `claude-wow` command yourself. The GitHub repository and the Homebrew tap keep their names for now.
+Kept so nothing breaks: `/wowgpt` is the main command, and `/claude` and the hidden `/claude-wow` still work. Links written before the rename (`addon:claudewow:...`) still click. The npm package and the command are `wowgpt` only: there is no `claude-wow` alias, the release ships only `wowgpt-<os>-<arch>` binaries, and an installed `claude-wow` binary does not update itself to WoWGPT. Remove an old `claude-wow` command yourself.
 
 ### Security
 
@@ -41,6 +41,11 @@ Kept so nothing breaks: `/wowgpt` is the main command, and `/claude` and the hid
 - Discord sync stays off without `discord.publicKey`, and the bridge logs why. Before, a missing key fell back to 64 zeros.
 - The home folder (`~/.claude-wow`) is now made `0700` and `config.json` `0600` on macOS and Linux, by setup and at every bridge start. Before, they had the default `0755` and `0644`.
 - On macOS and Linux the bridge and setup refuse to write into the game folder through a linked folder, or a folder owned by another account, anywhere between `Interface/AddOns` and the file. Before, only the file's own folder was checked. After the write the bridge checks the file's folder again and removes a file written through a folder swapped in the meantime. This narrows the race but does not close it: another local account can still rename a folder of ours inside the world-writable `AddOns` folder.
+
+- A message from the game can no longer add command-line options to an agent run. An allowed rule (`allow=`, `once=`) that is not a tool rule is dropped, and a model, effort or resume id that starts with `-` is refused. Before, a rule such as `--dangerously-skip-permissions` or `--add-dir` went to the agent CLI as an option. Every agent's launch also drops such values.
+- The bridge refuses a default project folder that is your home folder, a disk root or inside its own home (`~/.wowgpt`), whatever set it (`--project`, `WOWGPT_PROJECT`, `defaultCwd`). It logs why and uses `~/wowgpt`. Before, only the folder it was started from was checked.
+- A live session's permission request is allowed only when the roll names that request's rule. Before, a roll for any rule allowed whatever request was pending.
+- A new config no longer allows `Bash(pip:*)`, `Bash(git:*)` or `Bash(pytest:*)`, which can run any program (`pip install`, `git -c core.sshCommand=...`, a test file the agent wrote). It allows `git status`, `git diff` and `git log`. A `config.json` you already have keeps its list.
 
 ### Changed
 
@@ -73,6 +78,8 @@ Kept so nothing breaks: `/wowgpt` is the main command, and `/claude` and the hid
 
 ### Fixed
 
+- The release now publishes the npm package (with provenance) and updates the Homebrew tap with the release's checksums. Before, the formula had zero checksums and nothing published the package.
+- The install docs no longer say that Homebrew needs `--HEAD` and that the npm package is not published. `npm install -g .` on Windows works and is documented.
 - Setup's last lines ("Check it with") name `wowgpt`, or `~/.wowgpt/current/wowgpt` for a binary under `~/.wowgpt/releases/`. Before, they named the versioned release folder, which a later deploy or update removes.
 - `wowgpt dev deploy` and `dev rollback` exit 1 when the service does not run `<home>/current/wowgpt` (no service, or an old service definition). Before, they switched the release, restarted nothing, and still exited 0. `autoDeploy` is gone from `config.example.json`: it is a developer setting.
 - Setup stops with "Quit World of Warcraft, then run setup again" while a configured client runs. Before, it copied stale saved chats and removed signal folders under a live client. When it cannot tell, it warns and goes on.

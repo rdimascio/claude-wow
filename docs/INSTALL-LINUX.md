@@ -8,7 +8,7 @@ The addon is the same as on Windows, and the default screenshot transport needs 
 
 - The game under Wine (Lutris, Bottles, a hand-made prefix...), **windowed or borderless**.
 - Only for the deprecated pixel transport: an **X11** session (`echo $XDG_SESSION_TYPE` prints `x11`) and python3. Wayland blocks reading other windows' pixels; the default screenshot transport works there.
-- At least one agent CLI logged in (see [AGENTS.md](AGENTS.md)). Nothing else with the installer on x64: it fetches the `wowgpt` binary, which has its runtime inside. Another architecture, or a checkout run by hand, needs Node.js 22.2+ (or Bun).
+- At least one agent CLI logged in (see [AGENTS.md](AGENTS.md)). Nothing else with the installer on x64: it fetches the `wowgpt` binary, which has its runtime inside. There is no Linux arm64 binary: on arm64 the installer stops, so use `npm i -g wowgpt` or the installer's `--from-source`. Those, and a checkout run by hand, need Node.js 22.2+ (or Bun).
 
 ## Install
 

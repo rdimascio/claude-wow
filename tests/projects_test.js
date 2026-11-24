@@ -137,3 +137,24 @@ test('recent Claude projects are read from the tail of history.jsonl, latest tim
   );
   assert.deepEqual(PJ.recentClaudeProjects(path.join(t.root, 'none')), []);
 });
+
+test('defaultProjectRefusal refuses the home folder, a disk root and the bridge home', () => {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'wowgpt-default-')));
+  const home = path.join(root, 'home');
+  const bridgeHome = path.join(home, '.wowgpt');
+  const project = path.join(home, 'code', 'p');
+  for (const d of [bridgeHome, project]) fs.mkdirSync(d, { recursive: true });
+  try {
+    assert.match(PJ.defaultProjectRefusal(home, { home, bridgeHome }), /home folder or a disk root/);
+    assert.match(PJ.defaultProjectRefusal(path.parse(root).root, { home, bridgeHome }), /home folder or a disk root/);
+    assert.match(PJ.defaultProjectRefusal(bridgeHome, { home, bridgeHome }), /inside the bridge home/);
+    assert.match(PJ.defaultProjectRefusal(path.join(bridgeHome, 'scratch'), { home, bridgeHome }), /inside the bridge home/);
+    assert.equal(PJ.defaultProjectRefusal(project, { home, bridgeHome }), '');
+    assert.equal(PJ.defaultProjectRefusal(path.join(home, '.wowgpt-other'), { home, bridgeHome }), '');
+    const fallback = PJ.fallbackProject(home);
+    assert.equal(fallback, path.join(home, 'wowgpt'));
+    assert.ok(fs.statSync(fallback).isDirectory());
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

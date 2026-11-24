@@ -171,9 +171,11 @@ function permissionPrompt(req, sessionName) {
     .join('\n');
 }
 
-function isVerdictJob(job) {
-  const allow = (Array.isArray(job.allow) && job.allow.length > 0) || (Array.isArray(job.allowOnce) && job.allowOnce.length > 0);
-  if (allow) return { allow: true, forward: false };
+// A roll answers only the request it was opened for: the record must carry the
+// pending request's own rule. A roll for any other rule is a denial.
+function isVerdictJob(job, pendingRule) {
+  const granted = [...(Array.isArray(job.allow) ? job.allow : []), ...(Array.isArray(job.allowOnce) ? job.allowOnce : [])];
+  if (granted.length) return { allow: !!pendingRule && granted.includes(pendingRule), forward: false };
   if (String(job.text || '').trim() === PASS_TEXT) return { allow: false, forward: false };
   return { allow: false, forward: true };
 }

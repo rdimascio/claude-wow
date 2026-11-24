@@ -222,3 +222,80 @@ jobs:
           prerelease_flag=
           case "$version" in *-*) prerelease_flag=--prerelease ;; esac
           gh release create "$GITHUB_REF_NAME" --verify-tag --repo "$GITHUB_REPOSITORY" --title "WoWGPT $version" --notes-file release-notes.md $prerelease_flag addon-zip/*.zip dist/* install.sh install.ps1
+
+  homebrew-tap:
+    needs: [version, github-release]
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: wowgpt-binaries
+          path: dist
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: sums-signature
+          path: dist
+      - name: SHA256SUMS still matches the binaries and its signature still verifies
+        run: |
+          (cd dist && sha256sum --check --strict SHA256SUMS)
+          node dev/release-key.js verify dist/SHA256SUMS
+      - name: fill the formula's version and its two darwin sums from SHA256SUMS
+        run: |
+          node dev/brew-formula.js homebrew/Formula/wowgpt.rb dist/SHA256SUMS "${GITHUB_REF_NAME#v}"
+          grep -n 'version "\|sha256 "' homebrew/Formula/wowgpt.rb
+      - name: push the formula to rdimascio/homebrew-wowgpt
+        env:
+          TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
+        run: |
+          if [ -z "$TAP_TOKEN" ]; then
+            echo "::warning::TAP_TOKEN is not set, so the Homebrew tap was not updated. Add a token that can push to rdimascio/homebrew-wowgpt as the TAP_TOKEN secret and re-run this job."
+            exit 0
+          fi
+          git clone --depth 1 "https://x-access-token:${TAP_TOKEN}@github.com/rdimascio/homebrew-wowgpt.git" tap
+          mkdir -p tap/Formula
+          cp homebrew/Formula/wowgpt.rb tap/Formula/wowgpt.rb
+          git -C tap add Formula/wowgpt.rb
+          if git -C tap diff --cached --quiet; then
+            echo "the tap already has this formula"
+            exit 0
+          fi
+          git -C tap -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m "wowgpt ${GITHUB_REF_NAME#v}"
+          git -C tap push origin HEAD
+
+  npm-publish:
+    needs: [sign, github-release]
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+      - name: publish the package to npm with provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "::warning::NPM_TOKEN is not set, so the package was not published to npm. Add an npm automation token as the NPM_TOKEN secret and re-run this job."
+            exit 0
+          fi
+          node dev/pack-check.js --publish
+          version=${GITHUB_REF_NAME#v}
+          dist_tag=latest
+          case "$version" in *-*) dist_tag=next ;; esac
+          npm publish --provenance --access public --tag "$dist_tag"

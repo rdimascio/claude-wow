@@ -696,7 +696,7 @@ function createLive(overrides = {}) {
     c.accept(job);
     const perm = permissions.get(chatId);
     if (perm) {
-      const verdict = LP.isVerdictJob(job);
+      const verdict = LP.isVerdictJob(job, perm.rule);
       clearPermission(chatId);
       const s = sessions.get(perm.conn);
       const sent = sendTo(s, { type: 'permission', request_id: perm.requestId, behavior: verdict.allow ? 'allow' : 'deny' });
@@ -714,7 +714,7 @@ function createLive(overrides = {}) {
     } else if (expired.has(chatId)) {
       const gone = expired.get(chatId);
       expired.delete(chatId);
-      if (!LP.isVerdictJob(job).forward) {
+      if (!LP.isVerdictJob(job, gone.rule).forward) {
         log(`${c.tag(job)} answer to the expired permission for ${gone.rule} not sent`);
         job.lateOk = true;
         c.fail(job, expiredText(gone));
