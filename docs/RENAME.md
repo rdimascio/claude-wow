@@ -13,14 +13,14 @@ are renamed later, with the release.
 | Slash commands | `/claude` (main), `/claude-wow` (hidden) | `/wowgpt` (main) | both kept |
 | Key binding | `CLAUDEWOW_WORKSPACE` | `WOWGPT_WORKSPACE` | no: bind again |
 | Hyperlinks | `addon:claudewow:` | `addon:wowgpt:` | old links still click |
-| npm package and bin | `claude-wow` | `wowgpt` | `claude-wow` bin alias |
+| npm package and bin | `claude-wow` | `wowgpt` | no (cut before 1.0.0) |
 | Home | `~/.claude-wow` | `~/.wowgpt` | read until setup copies it; agents are denied reads of it while it exists |
 | Env vars | `CLAUDE_WOW_*` | `WOWGPT_*` | read when the new one is unset (`bridge/legacyenv.js`, the installers) |
 | MCP channel server, tools | `claude-wow`, `mcp__claude-wow__*` | `wowgpt`, `mcp__wowgpt__*` | no: restart the session with `server:wowgpt` |
 | Plugin folder | `assets/plugins/claude-wow` | `assets/plugins/wowgpt` | - |
 | `ask` data folder | `<app data>/claude-wow` | `<app data>/wowgpt` | setup copies it; a chat whose session started there starts a new session |
 | Service | `io.claudewow.bridge`, `claude-wow-bridge`, `Claude WoW bridge.vbs` | `io.wowgpt.bridge`, `wowgpt-bridge`, `WoWGPT bridge.vbs` | `service install` and `uninstall` remove every old one (`OLD_SERVICES`) |
-| Release assets, binary | `claude-wow-<os>-<arch>`, `claude-wow` | `wowgpt-<os>-<arch>`, `wowgpt` | for one release, build.js also writes the old asset names, `--version` prints a `claude-wow` line, self-update takes either name, and a release dir may hold `claude-wow` |
+| Release assets, binary | `claude-wow-<os>-<arch>`, `claude-wow` | `wowgpt-<os>-<arch>`, `wowgpt` | a release dir may hold `claude-wow` (`releases.js` `OLD_BINARIES`); the old asset names, the `claude-wow` `--version` line and self-update from them were cut before 1.0.0 |
 | Homebrew formula | `claude-wow.rb`, `ClaudeWow` | `wowgpt.rb`, `Wowgpt` | tap unchanged |
 
 Wire values kept: none embeds the old name except the old link prefixes the addon
@@ -28,20 +28,25 @@ still parses. The slot globals (`WoWGPT_Inbox`, `WoWGPT_SlotData`), the runtime
 folder and the live socket path changed on both sides together, so the addon and
 the bridge of this branch must ship together (setup installs both).
 
-Remove after one release: `build.js` `OLD_ASSET_PREFIXES` and the `claude-wow`
-`--version` line in `bridge/supervisor.js`.
-
 ## Left for the repo rename
 
-GitHub redirects the old URLs, so these keep working until they change:
+GitHub redirects the old URLs, so these keep working until they change. Change `REPO` in
+`bridge/repo.js` first, then run `node --test tests/repo_test.js`: it names every other
+file and line that still says `rdimascio/claude-wow`. On 2026-11-23 they were:
 
-- `bridge/selfupdate.js` `DEFAULT_API` (still `rdimascio/wow-ai`, from the rename before this one)
-- `package.json` `repository.url`
-- `install.sh` and `install.ps1`: `REPO_URL` / `$Repo` defaults and the one-liner URLs in their headers
-- `homebrew/Formula/wowgpt.rb`: `homepage`, the release `url`s, the `head` URL, the `brew tap` line; the tap repo `homebrew-claude-wow` becomes `homebrew-wowgpt`
-- `homebrew/README.md`
-- `README.md`, `CONTRIBUTING.md`, `docs/INSTALL.md`, `docs/INSTALL-LINUX.md`, `docs/INSTALL-WINDOWS.md`, `docs/listing.md`: the one-liners, `git clone` and `cd claude-wow`
-- `tests/install_test.js` and `tests/release_gate_test.js`: the URLs they expect
+- `bridge/repo.js:7` `REPO` (self-update's API URL derives from it)
+- `install.sh:45` `REPO=`, and the one-liner URLs in its header (lines 4 and 8)
+- `install.ps1:49` the `$Repo` default, and the one-liner URL in its header (line 3)
+- `package.json:10` `repository.url`
+- `homebrew/Formula/wowgpt.rb` lines 2, 4, 20, 28, 32 and 37: the tap comment, `homepage`, the release `url`s and the `head` URL; the tap repo `homebrew-claude-wow` becomes `homebrew-wowgpt`
+- `homebrew/README.md` lines 3, 4, 8 and 16
+- `README.md` lines 74, 81, 86, 92, 145 and 146 (the brew tap, the one-liners, `git clone` and `cd claude-wow`)
+- `CONTRIBUTING.md` lines 85 and 86 (`git clone`, `cd claude-wow`)
+- `docs/INSTALL.md` lines 18, 27, 31, 49, 55, 79, 87 and 88; `docs/INSTALL-LINUX.md` lines 16 and 19; `docs/INSTALL-WINDOWS.md` lines 25 and 30; `docs/CONFIGURATION.md` line 321 (`WOWGPT_UPDATE_API` default)
+- `tests/release_gate_test.js:9` (recorded API answers for this repository)
+- `CHANGELOG.md`: add a compare link line; the old ones stay
+
+The tests derive the installer URLs from `REPO`, so they need no change.
 
 ---
 

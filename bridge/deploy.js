@@ -247,7 +247,8 @@ function afterSwitch(l, ctx, flip) {
   if (!serviceRunsCurrent(l, ctx)) {
     ctx.out(`service : ${serviceDefinition(ctx)} does not run ${REL.currentBinary(l)}, so nothing was restarted and setup was not run.`);
     ctx.out(`          To run the service from this release, run: ${REL.currentBinary(l)} service install`);
-    return 0;
+    ctx.err(`wowgpt dev: the release is switched, but the service does not run it, so nothing new is live; run: ${REL.currentBinary(l)} service install`);
+    return 1;
   }
   const r = restartService(ctx);
   if (!r.ok) {

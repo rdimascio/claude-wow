@@ -261,13 +261,14 @@ test(
 );
 
 test(
-  'before the migration the service does not run current: the release is staged and current flipped, but nothing restarts and setup does not run',
+  'a service that does not run current (none, or an old service definition): the release is staged and current flipped, nothing restarts, setup does not run, and the deploy exits 1',
   { skip: NO_SYMLINKS },
   async () => {
     const root = scratch('premigration');
     const repo = makeRepo(root);
     const h = harness(root, { runsCurrent: false, probe: () => ({ idle: false, reason: '1 agent run(s) in flight (#5)' }) });
-    assert.equal(await D.main(['deploy', 'HEAD', '--repo', repo, '--timeout', '5'], h.ctx), 0, h.err.join('\n'));
+    assert.equal(await D.main(['deploy', 'HEAD', '--repo', repo, '--timeout', '5'], h.ctx), 1, 'the deploy did not make anything live');
+    assert.match(h.err.join('\n'), /the service does not run it, so nothing new is live; run: .* service install/);
     assert.ok(REL.currentName(h.l));
     assert.deepEqual(h.events, [], 'no idle wait for a bridge that does not run current, no launchctl, no setup');
     assert.ok(

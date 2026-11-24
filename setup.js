@@ -35,6 +35,7 @@ const CP = require('./bridge/clientproc'); // whether a game client is running
 const PJ = require('./bridge/projects');
 const SVC = require('./bridge/service');
 const ASK = require('./bridge/plugins/ask'); // its data folder had the old name
+const UPD = require('./bridge/selfupdate'); // the stable path of a binary under <home>/releases
 const ADDON_SRC = AS.dir('addon/' + P.ADDON);
 const EXAMPLE = AS.file('bridge/config.example.json');
 let CONFIG = H.resolve().config; // settled in main(), after the legacy layout has been migrated
@@ -637,12 +638,20 @@ function onPath(name) {
 
 // How the user starts this program: npm start in a git checkout run as
 // node setup.js, else wowgpt, or its full path while it is not on the PATH.
-function startCommand() {
-  const fromCheckout = !R.compiled && process.env.WOWGPT_FROM_COMMAND !== '1' && fs.existsSync(path.join(R.ROOT, '.git'));
+// A binary under <home>/releases/<name>/ is named by <home>/current/wowgpt,
+// since a later deploy or update prunes the versioned folder.
+function startCommand({
+  compiled = R.compiled,
+  execPath = process.execPath,
+  fromCommand = process.env.WOWGPT_FROM_COMMAND === '1',
+  root = R.ROOT,
+  isOnPath = onPath,
+} = {}) {
+  const fromCheckout = !compiled && !fromCommand && fs.existsSync(path.join(root, '.git'));
   if (fromCheckout) return 'npm start';
-  if (onPath('wowgpt')) return 'wowgpt';
-  if (R.compiled) return `"${process.execPath}"`;
-  return `"${process.execPath}" "${path.join(R.ROOT, 'bridge', 'supervisor.js')}"`;
+  if (isOnPath('wowgpt')) return 'wowgpt';
+  if (compiled) return `"${UPD.launchPath({ compiled, execPath })}"`;
+  return `"${execPath}" "${path.join(root, 'bridge', 'supervisor.js')}"`;
 }
 
 const CLAUDE_LOGIN_HINT = 'claude   : run `claude` once in a terminal and log in, or every chat fails with "not logged in"';
@@ -803,5 +812,6 @@ module.exports = {
   SERVICE_QUESTION,
   chooseService,
   transportReport,
+  startCommand,
   main,
 };

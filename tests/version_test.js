@@ -14,6 +14,27 @@ const ADDON = path.join(ROOT, 'addon', 'WoWGPT');
 const TOC_VERSION = /^##\s*Version:\s*(\S+)/m.exec(fs.readFileSync(path.join(ADDON, 'WoWGPT.toc'), 'utf8'))[1];
 const PACKAGE_VERSION = require('../package.json').version;
 
+function shippedVersions(root = ROOT) {
+  const read = f => fs.readFileSync(path.join(root, f), 'utf8');
+  return {
+    'package.json': JSON.parse(read('package.json')).version,
+    'package-lock.json': JSON.parse(read('package-lock.json')).version,
+    'package-lock.json packages[""]': JSON.parse(read('package-lock.json')).packages[''].version,
+    'WoWGPT.toc': /^## Version: *(\S+)\s*$/m.exec(read('addon/WoWGPT/WoWGPT.toc'))[1],
+    'Version.SEMVER': /^WoWGPT\.Version = \{.*SEMVER = "([^"]*)"/m.exec(read('addon/WoWGPT/Transport/Slots.lua'))[1],
+    'plugin.json': JSON.parse(read('assets/plugins/wowgpt/.claude-plugin/plugin.json')).version,
+    'homebrew formula': /^ {2}version "([^"]*)"$/m.exec(read('homebrew/Formula/wowgpt.rb'))[1],
+  };
+}
+
+test('package.json, the lockfile, the toc, Version.SEMVER, plugin.json and the Homebrew formula carry one version', () => {
+  const versions = shippedVersions();
+  assert.deepEqual(new Set(Object.values(versions)), new Set([PACKAGE_VERSION]), JSON.stringify(versions, null, 2));
+  const release = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'release.yml'), 'utf8');
+  for (const check of ['test "$pkg" = "$toc"', 'test "$pkg" = "$lua"', 'test "$pkg" = "$plugin"', 'test "$pkg" = "$formula"'])
+    assert.ok(release.includes(check), `release.yml checks ${check}`);
+});
+
 const LOAD_COUNTER_STUB = `
 STUB.loads = 0
 local plainLoad = C_AddOns.LoadAddOn

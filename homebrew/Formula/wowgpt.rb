@@ -22,7 +22,7 @@ class Wowgpt < Formula
   # The first tagged release. Cutting one: tag it, attach the four binaries
   # and SHA256SUMS from `node build.js` (CI builds them too), then put the two
   # darwin sums from SHA256SUMS here. Until then only --HEAD installs.
-  version "0.5.0"
+  version "1.0.0"
   on_macos do
     on_arm do
       url "https://github.com/rdimascio/claude-wow/releases/download/v#{version}/wowgpt-darwin-arm64"

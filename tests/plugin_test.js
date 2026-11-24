@@ -75,16 +75,14 @@ test('the plugin manifest names wowgpt at the bridge version and the plugin hold
   );
 });
 
-test('the CurseForge addon zip leaves out assets and every other top-level folder but addon, and the release guard checks each', () => {
+test('the release addon zip is the addon folder alone, and the release guard checks every other top-level folder', () => {
   const tracked = execFileSync('git', ['ls-files', '-z'], { cwd: ROOT, encoding: 'utf8' }).split('\0');
   const folders = [...new Set(tracked.filter(f => f.includes('/')).map(f => f.split('/')[0]))].filter(f => !f.startsWith('.') && f !== 'addon').sort();
   assert.ok(folders.includes('assets'));
-  const pkgmeta = fs.readFileSync(path.join(ROOT, '.pkgmeta'), 'utf8');
-  const ignoreBlock = /^ignore:\n((?:  - .*\n)+)/m.exec(pkgmeta);
-  assert.ok(ignoreBlock, '.pkgmeta has an ignore list');
-  const ignored = new Set(ignoreBlock[1].split('\n').map(l => l.replace(/^  - /, '').trim()));
-  for (const f of folders) assert.ok(ignored.has(f), `.pkgmeta ignores ${f}/`);
   const release = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'release.yml'), 'utf8');
+  assert.match(release, /\(cd addon && zip -r -X -q "\.\.\/\.release\/WoWGPT-\$version\.zip" WoWGPT\)/, 'the zip is made from addon/WoWGPT only');
+  assert.doesNotMatch(release, /BigWigsMods\/packager|CF_API_TOKEN|WAGO_API_TOKEN/, 'no addon store upload');
+  assert.ok(!fs.existsSync(path.join(ROOT, '.pkgmeta')), 'no packager config');
   const guard = /grep -E '\^WoWGPT\/\(([a-z|]+)\)\/' files\.txt/.exec(release);
   assert.ok(guard, 'release.yml has the folder guard');
   assert.deepEqual(guard[1].split('|').sort(), folders);

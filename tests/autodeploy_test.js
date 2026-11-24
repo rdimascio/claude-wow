@@ -270,3 +270,8 @@ test('start runs a check soon and then every few minutes', async () => {
   assert.equal(await timers[1].fn(), 'started');
   assert.equal(t.spawned.length, 1);
 });
+
+test('autoDeploy is a developer setting: the public example config does not carry it', () => {
+  const example = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'bridge', 'config.example.json'), 'utf8'));
+  assert.equal('autoDeploy' in example, false);
+});
