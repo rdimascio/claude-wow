@@ -2,7 +2,7 @@
 ## Title: WoWGPT
 ## Notes: Talk to Claude Code, Codex, Grok, Antigravity or Hermes from inside the game, one session per chat; ready-made macros and map routes from the agent. Needs the companion bridge (see README).
 ## Author: chelinho139
-## Version: 0.5.0-beta.1
+## Version: 1.0.0
 ## SavedVariables: WoWGPTDB, WoWGPTWidgetDB
 ## SavedVariablesPerCharacter: WoWGPTMapDB, WoWGPTCharDB
 ## OptionalDeps: WoWGPT_Nodes

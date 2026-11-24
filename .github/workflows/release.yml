@@ -7,7 +7,11 @@ on:
     paths:
       - '.github/workflows/release.yml'
       - 'addon/**'
+      - 'assets/plugins/**'
       - 'dev/release-key.js'
+      - 'homebrew/Formula/**'
+      - 'install.sh'
+      - 'install.ps1'
       - 'package.json'
   workflow_dispatch:
 
@@ -46,14 +50,18 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-      - name: package.json, the toc, the addon's Version.SEMVER and the tag name one version
+      - name: package.json, the toc, the addon's Version.SEMVER, plugin.json, the Homebrew formula and the tag name one version
         run: |
           pkg=$(node -p "require('./package.json').version")
           toc=$(sed -n 's/^## Version: *//p' addon/WoWGPT/WoWGPT.toc | tr -d '\r')
           lua=$(sed -n 's/^WoWGPT\.Version = {.*SEMVER = "\([^"]*\)".*/\1/p' addon/WoWGPT/Transport/Slots.lua)
-          echo "package.json $pkg, WoWGPT.toc $toc, Transport/Slots.lua Version.SEMVER $lua"
+          plugin=$(node -p "require('./assets/plugins/wowgpt/.claude-plugin/plugin.json').version")
+          formula=$(sed -n 's/^  version "\([^"]*\)"$/\1/p' homebrew/Formula/wowgpt.rb)
+          echo "package.json $pkg, WoWGPT.toc $toc, Transport/Slots.lua Version.SEMVER $lua, plugin.json $plugin, wowgpt.rb $formula"
           test "$pkg" = "$toc"
           test "$pkg" = "$lua"
+          test "$pkg" = "$plugin"
+          test "$pkg" = "$formula"
           if [ "$GITHUB_REF_TYPE" = tag ]; then
             echo "tag $GITHUB_REF_NAME"
             test "$GITHUB_REF_NAME" = "v$pkg"

@@ -171,7 +171,7 @@ function Q.EndPromptWait(c)
 end
 ns.NoteAcked, ns.MarkAcked = NoteAcked, MarkAcked
 
-WoWGPT.Version = { PROTO = 1, SEMVER = "0.5.0-beta.1", PATTERN = "^%d+%.%d+%.%d+[%w%.%-+]*$" }
+WoWGPT.Version = { PROTO = 1, SEMVER = "1.0.0", PATTERN = "^%d+%.%d+%.%d+[%w%.%-+]*$" }
 
 function WoWGPT.Version.Meta(key)
 	local read = C_AddOns and C_AddOns.GetAddOnMetadata
