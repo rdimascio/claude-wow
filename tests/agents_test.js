@@ -184,7 +184,7 @@ test('the example config allows read-only git and no package installs; Grok gets
   const example = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'bridge', 'config.example.json'), 'utf8'));
   for (const id of ['claude', 'grok']) {
     const rules = example.agents[id].allowedTools;
-    assert.ok(!rules.includes('Bash(git:*)') && !rules.includes('Bash(pip:*)'), `${id}: ${rules.join(', ')}`);
+    assert.ok(!rules.some(r => ['Bash(git:*)', 'Bash(pip:*)'].includes(r) || /pytest/.test(r)), `${id}: ${rules.join(', ')}`);
     assert.ok(
       ['Bash(git status:*)', 'Bash(git diff:*)', 'Bash(git log:*)'].every(r => rules.includes(r)),
       id,

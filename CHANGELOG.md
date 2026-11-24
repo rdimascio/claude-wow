@@ -45,7 +45,7 @@ Kept so nothing breaks: `/wowgpt` is the main command, and `/claude` and the hid
 - A message from the game can no longer add command-line options to an agent run. An allowed rule (`allow=`, `once=`) that is not a tool rule is dropped, and a model, effort or resume id that starts with `-` is refused. Before, a rule such as `--dangerously-skip-permissions` or `--add-dir` went to the agent CLI as an option. Every agent's launch also drops such values.
 - The bridge refuses a default project folder that is your home folder, a disk root or inside its own home (`~/.wowgpt`), whatever set it (`--project`, `WOWGPT_PROJECT`, `defaultCwd`). It logs why and uses `~/wowgpt`. Before, only the folder it was started from was checked.
 - A live session's permission request is allowed only when the roll names that request's rule. Before, a roll for any rule allowed whatever request was pending.
-- A new config no longer allows `Bash(pip:*)` or `Bash(git:*)`, which can run any program (`pip install`, `git -c core.sshCommand=...`). It allows `git status`, `git diff` and `git log`. A `config.json` you already have keeps its list.
+- A new config no longer allows `Bash(pip:*)`, `Bash(git:*)` or `Bash(pytest:*)`, which can run any program (`pip install`, `git -c core.sshCommand=...`, a test file the agent wrote). It allows `git status`, `git diff` and `git log`. A `config.json` you already have keeps its list.
 
 ### Changed
 
