@@ -82,8 +82,8 @@ Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) first. The two transports (pix
 ## Setting up for development
 
 ```powershell
-git clone https://github.com/rdimascio/claude-wow
-cd claude-wow
+git clone https://github.com/rdimascio/wowgpt
+cd wowgpt
 npm install          # dev tooling only: fengari (Lua VM), luaparse, oxlint, oxfmt
 npm run check        # lint, unit suite, e2e suite
 ```

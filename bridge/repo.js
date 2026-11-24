@@ -4,7 +4,7 @@
 // carry the same value; tests/repo_test.js fails on any other repository name
 // in the shipped files.
 
-const REPO = 'rdimascio/claude-wow';
+const REPO = 'rdimascio/wowgpt';
 const REPO_URL = `https://github.com/${REPO}`;
 const API_URL = `https://api.github.com/repos/${REPO}`;
 

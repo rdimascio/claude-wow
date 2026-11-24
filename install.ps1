@@ -1,6 +1,6 @@
 # WoWGPT installer for Windows. One line, in PowerShell:
 #
-#   irm https://github.com/rdimascio/claude-wow/releases/latest/download/install.ps1 | iex
+#   irm https://github.com/rdimascio/wowgpt/releases/latest/download/install.ps1 | iex
 #
 # Options come from the environment, since `iex` takes no parameters:
 #
@@ -46,7 +46,7 @@ param(
   [string]$Release = $(if ((@($env:WOWGPT_RELEASE, $env:CLAUDE_WOW_RELEASE) -ne $null)[0]) { (@($env:WOWGPT_RELEASE, $env:CLAUDE_WOW_RELEASE) -ne $null)[0] } else { 'latest' }),
   [string]$Dir = $(if ((@($env:WOWGPT_DIR, $env:CLAUDE_WOW_DIR) -ne $null)[0]) { (@($env:WOWGPT_DIR, $env:CLAUDE_WOW_DIR) -ne $null)[0] } else { Join-Path $env:LOCALAPPDATA 'Programs\wowgpt' }),
   [string]$Ref = $(if ((@($env:WOWGPT_REF, $env:CLAUDE_WOW_REF) -ne $null)[0]) { (@($env:WOWGPT_REF, $env:CLAUDE_WOW_REF) -ne $null)[0] } else { '' }),
-  [string]$Repo = $(if ((@($env:WOWGPT_REPO, $env:CLAUDE_WOW_REPO) -ne $null)[0]) { (@($env:WOWGPT_REPO, $env:CLAUDE_WOW_REPO) -ne $null)[0] } else { 'https://github.com/rdimascio/claude-wow' })
+  [string]$Repo = $(if ((@($env:WOWGPT_REPO, $env:CLAUDE_WOW_REPO) -ne $null)[0]) { (@($env:WOWGPT_REPO, $env:CLAUDE_WOW_REPO) -ne $null)[0] } else { 'https://github.com/rdimascio/wowgpt' })
 )
 # The CLAUDE_WOW_* variables from before the rename to WoWGPT still count
 # when the WOWGPT_* one is not set.

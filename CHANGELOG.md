@@ -10,6 +10,8 @@ The first public release, and the first under the name WoWGPT. Coming from claud
 
 ### Renamed to WoWGPT
 
+- The GitHub repository is now `rdimascio/wowgpt`, and the Homebrew tap is `rdimascio/wowgpt` (`rdimascio/homebrew-wowgpt`). GitHub redirects the old URLs.
+
 The project is now WoWGPT: the addon, the command, the home folder, the service and the Claude Code channel all have the new name. Your chats, settings and agent sessions come across. What you do:
 
 - [ ] Install `wowgpt` (Homebrew, `npm i -g wowgpt`, the installer, or `git pull`), then run `wowgpt setup`. Setup:
@@ -27,7 +29,7 @@ Kept so nothing breaks: `/wowgpt` is the main command, and `/claude` and the hid
 
 - A new config no longer takes the folder setup runs in as the agents' project. From your home folder, that let every chat edit any file in it. The default is now `~/wowgpt`, made for it.
 - `--project` refuses your home folder and a disk root. Setup warns when an existing config names one, and keeps it.
-- The one-line installers are files of the release: `curl -fsSL https://github.com/rdimascio/claude-wow/releases/latest/download/install.sh | sh` (Windows: `irm .../releases/latest/download/install.ps1 | iex`). Before, they ran `install.sh` from `main`, which no release check covered. The release uploads `install.sh` and `install.ps1` next to the binaries.
+- The one-line installers are files of the release: `curl -fsSL https://github.com/rdimascio/wowgpt/releases/latest/download/install.sh | sh` (Windows: `irm .../releases/latest/download/install.ps1 | iex`). Before, they ran `install.sh` from `main`, which no release check covered. The release uploads `install.sh` and `install.ps1` next to the binaries.
 - Self-update trusts a release's `SHA256SUMS` only when `SHA256SUMS.sig` verifies under the ed25519 public key the binary carries. The release workflow signs with the `RELEASE_SIGNING_KEY` secret. No signature or a bad one installs nothing. A build whose `RELEASE_PUBLIC_KEY` is still the placeholder refuses to self-update and schedules no daily check.
 - The installers no longer fall back to running the source of `main` when the binary download fails. With no binary for your machine, no `SHA256SUMS`, no `sha256sum` or `shasum`, or a failed download or check, they stop and install nothing. Before, a missing `SHA256SUMS` or hash tool was only a warning. Only `--from-source` (`WOWGPT_SOURCE=1`) installs from source, and it checks out the release's tag, not `main`.
 - A bridge started from your home folder or a disk root no longer takes that folder as the project. It uses `defaultCwd`.
@@ -42,7 +44,7 @@ Kept so nothing breaks: `/wowgpt` is the main command, and `/claude` and the hid
 
 ### Changed
 
-- The install is two commands: `brew install rdimascio/claude-wow/wowgpt` or `npm i -g wowgpt`, then `wowgpt setup`. The README and docs/INSTALL.md lead with them. The one-line installer is the third route.
+- The install is two commands: `brew install rdimascio/wowgpt/wowgpt` or `npm i -g wowgpt`, then `wowgpt setup`. The README and docs/INSTALL.md lead with them. The one-line installer is the third route.
 - Setup installs the background service. A service from an earlier install, under this name or an old one, is reinstalled without asking, so an update runs the new version. A fresh install asks, and Enter means yes. `--service` and `--no-service` decide without asking.
 - The installers pass that choice to setup and print no checklist of their own. They reinstall an existing service without asking. On Linux an active unit restarts, and on Windows the bridge starts again after the update.
 - The installer's PATH question takes Enter as yes. When the folder is still not on the PATH, the last lines give the command's full path.
@@ -409,7 +411,7 @@ First public release.
 - `setup.js` installer: finds the client, copies the addon, writes `config.json`, builds the slot pool.
 - Test suite: addon in a Lua VM with a stub client, protocol unit tests, slot-file round trip, codec-to-decoder round trip, and a live inject test.
 
-[Unreleased]: https://github.com/rdimascio/claude-wow/compare/v1.0.0...HEAD
-[1.0.0]: https://github.com/rdimascio/claude-wow/releases/tag/v1.0.0
+[Unreleased]: https://github.com/rdimascio/wowgpt/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/rdimascio/wowgpt/releases/tag/v1.0.0
 [0.4.0]: https://github.com/chelinho139/wow-ai/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/chelinho139/wow-ai/releases/tag/v0.3.0
