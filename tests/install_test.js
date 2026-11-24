@@ -35,13 +35,16 @@ test('install.sh: unknown options and a missing Node (from source) fail loudly w
   assert.equal(bad.status, 1);
   assert.match(bad.stderr, /install failed: unknown option --frobnicate/);
   assert.match(bad.stderr, /-> Options:.*--from-source/);
-  // From source, or with nothing on the PATH to fetch a binary with, Node is required and its absence is the message.
-  for (const args of [['--no-service', '--from-source'], ['--no-service']]) {
-    const noNode = spawnSync('/bin/sh', [SH, ...args], { encoding: 'utf8', env: { PATH: '/nonexistent', HOME: process.env.HOME } });
-    assert.equal(noNode.status, 1, args.join(' '));
-    assert.match(noNode.stderr, /Node\.js is not installed/);
-    assert.match(noNode.stderr, /nodejs\.org/);
-  }
+  // From source, Node is required and its absence is the message.
+  const noNode = spawnSync('/bin/sh', [SH, '--no-service', '--from-source'], { encoding: 'utf8', env: { PATH: '/nonexistent', HOME: process.env.HOME } });
+  assert.equal(noNode.status, 1);
+  assert.match(noNode.stderr, /Node\.js is not installed/);
+  assert.match(noNode.stderr, /nodejs\.org/);
+  // Without --from-source, nothing to fetch a binary with is a failure, never the source route.
+  const noTools = spawnSync('/bin/sh', [SH, '--no-service'], { encoding: 'utf8', env: { PATH: '/nonexistent', HOME: process.env.HOME } });
+  assert.equal(noTools.status, 1);
+  assert.match(noTools.stderr, /install failed: /);
+  assert.doesNotMatch(noTools.stdout + noTools.stderr, /installing from source|Node\.js is not installed/);
 });
 
 test('install.sh: the binary route names the release asset build.js produces for this machine, and verifies it', { skip: !hasSh && 'no sh here' }, () => {
@@ -54,7 +57,8 @@ test('install.sh: the binary route names the release asset build.js produces for
   assert.match(src, /SHA256SUMS/, 'checks the checksum');
   assert.match(src, /mv -f "\$tmp\/\$asset" "\$BIN_DIR\/wowgpt"/, 'replaces the binary by rename, so a running bridge keeps its file');
   assert.match(src, /service help/, 'runs the download once before keeping it');
-  assert.match(src, /get_source/, 'falls back to the source');
+  assert.match(src, /^  if \[ -n "\$SOURCE" \]; then\n    get_source$/m, 'the source route only for --from-source');
+  assert.equal(src.match(/^\s+get_source$/gm).length, 1, 'no other way into the source route');
 });
 
 const INSTALLER_TOOLS_WITHOUT_NODE = [
@@ -78,7 +82,9 @@ const INSTALLER_TOOLS_WITHOUT_NODE = [
 ];
 const NON_ROOT_ID = '#!/bin/sh\necho 1000\n';
 
-function fakeReleaseHost(newestTag, { machine, logArgs } = {}) {
+const { REPO_URL, API_URL } = require('../bridge/repo');
+
+function fakeReleaseHost(newestTag, { machine, logArgs, sums = 'good', hashTools = true, latestTag = null, node = false } = {}) {
   const asset = machine ? 'wowgpt-unsupported' : spawnSync('sh', [SH, '--binary-asset'], { encoding: 'utf8' }).stdout.trim();
   const root = fs.mkdtempSync(path.join(require('os').tmpdir(), 'wowgpt-install-'));
   const fakeBin = path.join(root, 'fake-bin');
@@ -90,9 +96,11 @@ function fakeReleaseHost(newestTag, { machine, logArgs } = {}) {
   const binary = `#!/bin/sh\necho "fake wowgpt $*"\n${logArgs ? `echo "$*" >> '${argLog}'\n` : ''}`;
   fs.writeFileSync(path.join(files, asset), binary);
   const sum = require('crypto').createHash('sha256').update(binary).digest('hex');
-  fs.writeFileSync(path.join(files, 'SHA256SUMS'), `${sum}  ${asset}\n`);
+  const sumOf = { good: sum, bad: '0'.repeat(64) }[sums];
+  if (sumOf) fs.writeFileSync(path.join(files, 'SHA256SUMS'), `${sumOf}  ${asset}\n`);
   if (newestTag)
     fs.writeFileSync(path.join(root, 'releases.json'), `[\n  {\n    "url": "x",\n    "tag_name": "${newestTag}",\n    "prerelease": true\n  }\n]\n`);
+  if (latestTag) fs.writeFileSync(path.join(root, 'latest.json'), `{\n  "url": "x",\n  "tag_name": "${latestTag}",\n  "prerelease": false\n}\n`);
   const log = path.join(root, 'curl.log');
   fs.writeFileSync(
     path.join(fakeBin, 'curl'),
@@ -105,8 +113,9 @@ function fakeReleaseHost(newestTag, { machine, logArgs } = {}) {
       'done',
       `echo "$url" >> '${log}'`,
       'case "$url" in',
-      `  'https://api.github.com/repos/rdimascio/claude-wow/releases?per_page=1') cat '${path.join(root, 'releases.json')}' 2>/dev/null || exit 22 ;;`,
-      `  https://github.com/rdimascio/claude-wow/releases/download/${newestTag || 'none'}/*) cp '${files}'/"\${url##*/}" "$out" || exit 22 ;;`,
+      `  '${API_URL}/releases?per_page=1') cat '${path.join(root, 'releases.json')}' 2>/dev/null || exit 22 ;;`,
+      `  '${API_URL}/releases/latest') cat '${path.join(root, 'latest.json')}' 2>/dev/null || exit 22 ;;`,
+      `  ${REPO_URL}/releases/download/${newestTag || 'none'}/*) cp '${files}'/"\${url##*/}" "$out" || exit 22 ;;`,
       '  *) exit 22 ;;',
       'esac',
       '',
@@ -115,20 +124,30 @@ function fakeReleaseHost(newestTag, { machine, logArgs } = {}) {
   );
   for (const tool of INSTALLER_TOOLS_WITHOUT_NODE) {
     if (tool === 'uname' && machine) continue;
+    if (!hashTools && (tool === 'sha256sum' || tool === 'shasum')) continue;
     const found = spawnSync('/bin/sh', ['-c', `command -v ${tool}`], { encoding: 'utf8' }).stdout.trim();
     if (found.startsWith('/')) fs.symlinkSync(found, path.join(fakeBin, tool));
   }
   fs.writeFileSync(path.join(fakeBin, 'id'), NON_ROOT_ID, { mode: 0o755 });
   if (machine)
     fs.writeFileSync(path.join(fakeBin, 'uname'), `#!/bin/sh\ncase "$1" in -m) echo ${machine.arch} ;; *) echo ${machine.os} ;; esac\n`, { mode: 0o755 });
+  const gitLog = path.join(root, 'git.log');
+  if (node) {
+    fs.writeFileSync(path.join(fakeBin, 'node'), `#!/bin/sh\n[ "$1" = -v ] && { echo v22.2.0; exit 0; }\necho "$*" >> '${argLog}'\n`, { mode: 0o755 });
+    fs.writeFileSync(
+      path.join(fakeBin, 'git'),
+      `#!/bin/sh\necho "$*" >> '${gitLog}'\n[ "$1" = clone ] || exit 0\nfor last; do :; done\nmkdir -p "$last/bridge" && : > "$last/setup.js"\n`,
+      { mode: 0o755 },
+    );
+  }
   const env = {
     PATH: `${fakeBin}:${binDir}`,
     HOME: home,
     SHELL: '/bin/sh',
     WOWGPT_BIN: binDir,
-    WOWGPT_REPO: 'https://github.com/rdimascio/claude-wow',
+    WOWGPT_REPO: REPO_URL,
   };
-  return { asset, root, binDir, home, log, env, argLog };
+  return { asset, root, binDir, home, log, env, argLog, gitLog };
 }
 
 const hasAsset = hasSh && spawnSync('sh', [SH, '--binary-asset'], { encoding: 'utf8' }).stdout.trim() !== '';
@@ -154,16 +173,75 @@ test(
   },
 );
 
-test('install.sh: with no release at all, latest takes the source route', { skip: !hasAsset && 'no prebuilt binary for this platform' }, () => {
+test('install.sh: with no release at all, latest fails with a clear error and never takes the source route', { skip: !hasAsset && 'no prebuilt binary for this platform' }, () => {
   const none = fakeReleaseHost(null);
   try {
     const r = spawnSync('/bin/sh', [SH, '--no-service'], { encoding: 'utf8', env: none.env });
     assert.equal(r.status, 1);
     assert.match(r.stdout, /no binary at .*releases\/latest\/download/);
-    assert.match(r.stdout, /installing from source/);
-    assert.match(r.stderr, /Node\.js is not installed/);
+    assert.match(r.stderr, /install failed: no wowgpt binary could be downloaded from .*\/releases .*nothing was installed/);
+    assert.match(r.stderr, /-> .*--from-source/);
+    assert.doesNotMatch(r.stdout + r.stderr, /installing from source|Node\.js is not installed|cloning/);
+    assert.ok(!fs.existsSync(path.join(none.binDir, 'wowgpt')), 'nothing installed');
   } finally {
     fs.rmSync(none.root, { recursive: true, force: true });
+  }
+});
+
+test(
+  'install.sh: a release without SHA256SUMS, a machine without sha256sum or shasum, or a wrong sum fails and installs nothing',
+  { skip: !hasAsset && 'no prebuilt binary for this platform' },
+  () => {
+    for (const [label, opts, re] of [
+      ['no SHA256SUMS', { sums: 'none' }, /install failed: the release has no SHA256SUMS .*cannot be verified; nothing was installed/],
+      ['no hash tool', { hashTools: false }, /install failed: neither sha256sum nor shasum is here, so the download cannot be verified; nothing was installed/],
+      ['wrong sum', { sums: 'bad' }, /install failed: the downloaded .* does not match the release's SHA256SUMS; nothing was installed/],
+    ]) {
+      const h = fakeReleaseHost('v0.5.0-beta.1', opts);
+      try {
+        const r = spawnSync('/bin/sh', [SH, '--no-service'], { encoding: 'utf8', env: h.env });
+        assert.equal(r.status, 1, `${label}: ${r.stdout}${r.stderr}`);
+        assert.match(r.stderr, re, label);
+        assert.doesNotMatch(r.stdout, /warning:|checksum OK/, label);
+        assert.ok(!fs.existsSync(path.join(h.binDir, 'wowgpt')), `${label}: nothing installed`);
+      } finally {
+        fs.rmSync(h.root, { recursive: true, force: true });
+      }
+    }
+  },
+);
+
+test('install.sh --from-source clones the latest release tag, or the pinned release, never main', { skip: !hasSh && 'no sh here' }, () => {
+  for (const [label, args, env, want] of [
+    ['latest', [], {}, 'v1.0.0'],
+    ['pinned', ['--release', 'v0.4.0'], {}, 'v0.4.0'],
+    ['ref', [], { WOWGPT_REF: 'my-branch' }, 'my-branch'],
+  ]) {
+    const h = fakeReleaseHost('v1.1.0-beta.1', { latestTag: 'v1.0.0', node: true });
+    try {
+      const r = spawnSync('/bin/sh', [SH, '--no-service', '--from-source', ...args], { encoding: 'utf8', env: { ...h.env, ...env } });
+      assert.equal(r.status, 0, `${label}: ${r.stdout}${r.stderr}`);
+      const clone = fs.readFileSync(h.gitLog, 'utf8').trim();
+      assert.ok(clone.startsWith(`clone --quiet --depth 1 --branch ${want} ${REPO_URL} `), `${label}: ${clone}`);
+      assert.doesNotMatch(clone, /--branch main/, label);
+      const lookups = fs.existsSync(h.log) ? fs.readFileSync(h.log, 'utf8') : '';
+      assert.equal(lookups.includes(`${API_URL}/releases/latest`), label === 'latest', `${label}: the latest tag is looked up only when needed`);
+      assert.ok(!lookups.includes('/download/'), `${label}: no binary download`);
+    } finally {
+      fs.rmSync(h.root, { recursive: true, force: true });
+    }
+  }
+});
+
+test('install.sh --from-source with no release tag to find fails instead of taking main', { skip: !hasSh && 'no sh here' }, () => {
+  const h = fakeReleaseHost(null, { node: true });
+  try {
+    const r = spawnSync('/bin/sh', [SH, '--no-service', '--from-source'], { encoding: 'utf8', env: h.env });
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    assert.match(r.stderr, /install failed: could not find the latest release's tag/);
+    assert.ok(!fs.existsSync(h.gitLog), 'nothing cloned');
+  } finally {
+    fs.rmSync(h.root, { recursive: true, force: true });
   }
 });
 
@@ -206,58 +284,95 @@ test('install.sh: a pinned --release that exists installs that release', { skip:
   }
 });
 
-test('install.sh: a pinned --release on a platform with no binary says so and points at --from-source', { skip: !hasSh && 'no sh here' }, () => {
+test('install.sh: a platform with no binary says so and points at --from-source, pinned or latest', { skip: !hasSh && 'no sh here' }, () => {
   const h = fakeReleaseHost('v0.5.0-beta.1', { machine: { os: 'Linux', arch: 'riscv64' } });
   try {
-    const r = spawnSync('/bin/sh', [SH, '--no-service', '--release', 'v0.5.0-beta.1'], { encoding: 'utf8', env: h.env });
-    assert.equal(r.status, 1, r.stdout + r.stderr);
-    assert.match(r.stderr, /install failed: no wowgpt binary exists for Linux riscv64, in release v0\.5\.0-beta\.1 or any other/);
-    assert.match(r.stderr, /-> Run this again with --from-source/);
-    assert.doesNotMatch(r.stderr, /network/);
-    assert.ok(!fs.existsSync(h.log), 'nothing downloaded');
-    const latest = spawnSync('/bin/sh', [SH, '--no-service'], { encoding: 'utf8', env: h.env });
-    assert.equal(latest.status, 1);
-    assert.match(latest.stdout, /no prebuilt binary for Linux riscv64/);
-    assert.match(latest.stdout, /installing from source/, 'latest still takes the source route');
+    for (const args of [['--release', 'v0.5.0-beta.1'], []]) {
+      const r = spawnSync('/bin/sh', [SH, '--no-service', ...args], { encoding: 'utf8', env: h.env });
+      assert.equal(r.status, 1, r.stdout + r.stderr);
+      assert.match(r.stderr, /install failed: no wowgpt binary is built for Linux riscv64; nothing was installed/);
+      assert.match(r.stderr, /-> Run this again with --from-source/);
+      assert.doesNotMatch(r.stderr, /network/);
+      assert.doesNotMatch(r.stdout, /installing from source/);
+      assert.ok(!fs.existsSync(h.log), 'nothing downloaded');
+    }
   } finally {
     fs.rmSync(h.root, { recursive: true, force: true });
   }
 });
 
-test(
-  'install.ps1: only latest falls back to the source; a pinned release fails, with a platform message when no binary exists',
-  { skip: !pwsh && 'no PowerShell here' },
-  () => {
-    const script = `
+function ps1Functions(names) {
+  return `
     $ErrorActionPreference = 'Stop'
     $ast = [System.Management.Automation.Language.Parser]::ParseFile('${PS1.replace(/'/g, "''")}', [ref]$null, [ref]$null)
-    $fn = $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Select-BridgeRoute' }, $true) | Select-Object -First 1
-    if (-not $fn) { Write-Output 'FAIL no Select-BridgeRoute'; exit 1 }
-    . ([scriptblock]::Create($fn.Extent.Text))
+    foreach ($name in @(${names.map(n => `'${n}'`).join(', ')})) {
+      $fn = $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name }, $true) | Select-Object -First 1
+      if (-not $fn) { Write-Output "FAIL no $name"; exit 1 }
+      . ([scriptblock]::Create($fn.Extent.Text))
+    }
+    function Expect($want, $got) { if ($want -ne $got) { Write-Output "FAIL want $want got $got"; exit 1 } }`;
+}
+
+test(
+  'install.ps1: only -FromSource takes the source route; a failed or impossible download fails, latest or pinned',
+  { skip: !pwsh && 'no PowerShell here' },
+  () => {
+    const script = `${ps1Functions(['Select-BridgeRoute'])}
     $global:downloads = 0
-    function Expect($want, $got) { if ($want -ne $got) { Write-Output "FAIL want $want got $got"; exit 1 } }
     Expect 'source' (Select-BridgeRoute $true 'v0.4.0' 'AMD64' { $global:downloads++; $true })
     Expect 'no-binary-for-platform' (Select-BridgeRoute $false 'v0.4.0' 'ARM64' { $global:downloads++; $true })
-    Expect 'source' (Select-BridgeRoute $false 'latest' 'ARM64' { $global:downloads++; $true })
+    Expect 'no-binary-for-platform' (Select-BridgeRoute $false 'latest' 'ARM64' { $global:downloads++; $true })
     Expect 0 $global:downloads
     Expect 'binary' (Select-BridgeRoute $false 'v0.4.0' 'AMD64' { $true })
     Expect 'binary' (Select-BridgeRoute $false 'latest' 'AMD64' { $true })
     Expect 'pinned-download-failed' (Select-BridgeRoute $false 'v0.4.0' 'AMD64' { $false })
-    Expect 'source' (Select-BridgeRoute $false 'latest' 'AMD64' { $false })
+    Expect 'download-failed' (Select-BridgeRoute $false 'latest' 'AMD64' { $false })
     Write-Output OK`;
     const r = spawnSync(pwsh, ['-NoProfile', '-NonInteractive', '-Command', script], { encoding: 'utf8', windowsHide: true });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.match(r.stdout, /OK/);
-    const src = fs.readFileSync(PS1, 'utf8');
-    assert.match(
-      src,
-      /^switch \(Select-BridgeRoute \(\[bool\]\$FromSource\) \$Release \$env:PROCESSOR_ARCHITECTURE \{ Get-Binary \}\) \{$/m,
-      'the installer takes the route the function picks',
-    );
-    assert.match(src, /'no-binary-for-platform' \{ Fail "no wowgpt binary exists for .*-FromSource/);
-    assert.match(src, /'pinned-download-failed' \{ Fail "release \$Release has no wowgpt binary/);
   },
 );
+
+test('install.ps1: a missing SHA256SUMS, a missing hash or a wrong sum is a problem, and the source ref is the release tag', { skip: !pwsh && 'no PowerShell here' }, () => {
+  const sum = 'a'.repeat(64);
+  const script = `${ps1Functions(['Get-SumProblem', 'Select-SourceRef'])}
+    $asset = 'wowgpt-windows-x64.exe'
+    Expect '' (Get-SumProblem "${sum}  $asset\`n" $asset '${sum.toUpperCase()}')
+    if (-not ((Get-SumProblem '' $asset '${sum}') -match 'no SHA256SUMS')) { Write-Output 'FAIL no sums'; exit 1 }
+    if (-not ((Get-SumProblem "${sum}  $asset" $asset '') -match 'could not be hashed')) { Write-Output 'FAIL no hash'; exit 1 }
+    if (-not ((Get-SumProblem "${'b'.repeat(64)}  $asset" $asset '${sum}') -match 'does not match')) { Write-Output 'FAIL wrong sum'; exit 1 }
+    if (-not ((Get-SumProblem "${sum}  other.exe" $asset '${sum}') -match 'does not match')) { Write-Output 'FAIL no line'; exit 1 }
+    $global:lookups = 0
+    Expect 'my-branch' (Select-SourceRef 'my-branch' 'latest' { $global:lookups++; 'v1.0.0' })
+    Expect 'v0.4.0' (Select-SourceRef '' 'v0.4.0' { $global:lookups++; 'v1.0.0' })
+    Expect 0 $global:lookups
+    Expect 'v1.0.0' (Select-SourceRef '' 'latest' { 'v1.0.0' })
+    Expect $null (Select-SourceRef '' 'latest' { $null })
+    Write-Output OK`;
+  const r = spawnSync(pwsh, ['-NoProfile', '-NonInteractive', '-Command', script], { encoding: 'utf8', windowsHide: true });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /OK/);
+});
+
+test('install.ps1 takes the route and the checks the functions pick, and never defaults the source to main', () => {
+  const src = fs.readFileSync(PS1, 'utf8');
+  assert.match(
+    src,
+    /^switch \(Select-BridgeRoute \(\[bool\]\$FromSource\) \$Release \$env:PROCESSOR_ARCHITECTURE \{ Get-Binary \}\) \{$/m,
+    'the installer takes the route the function picks',
+  );
+  assert.match(src, /^ {2}'source' \{ Get-Source \}$/m);
+  assert.match(src, /'no-binary-for-platform' \{ Fail "no wowgpt binary is built for .*-FromSource/);
+  assert.match(src, /'pinned-download-failed' \{ Fail "release \$Release has no wowgpt binary/);
+  assert.match(src, /'download-failed' \{ Fail "no wowgpt binary could be downloaded/);
+  assert.equal(src.match(/Get-Source \}/g).length, 1, 'one way into the source route');
+  assert.match(src, /\$problem = Get-SumProblem \$sums \$asset \$have\n {2}if \(\$problem\) \{ Remove-Item -Force \$tmp; Fail \$problem/, 'a sum problem fails before the binary runs');
+  assert.doesNotMatch(src, /warning: the release has no SHA256SUMS|was not verified/);
+  assert.match(src, /\$script:Ref = Select-SourceRef \$Ref \$Release/);
+  assert.match(src, /\$env:CLAUDE_WOW_REF\) -ne \$null\)\[0\] \} else \{ '' \}\),/, 'no main default');
+  assert.doesNotMatch(src, /'main'/);
+});
 
 test('install.ps1 names the Startup launcher by every name bridge/service.js knows', () => {
   const SVC = require('../bridge/service');

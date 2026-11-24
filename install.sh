@@ -12,10 +12,10 @@
 #   --service           install the background service without asking
 #   --no-service        don't install or ask (an existing service is otherwise
 #                       reinstalled without asking, so it runs the new version)
-#   --from-source       no prebuilt binary: clone the repo and run it with Node.js 22.2+ (or WOWGPT_SOURCE=1)
-#   --release <tag>     which release's binary (default latest, then the newest release of any kind; or WOWGPT_RELEASE); a named release never falls back
+#   --from-source       no prebuilt binary: the release's source, run with Node.js 22.2+ (or WOWGPT_SOURCE=1)
+#   --release <tag>     which release (default latest, then the newest release of any kind; or WOWGPT_RELEASE); a named release never falls back
 #   --dir <folder>      where the source goes, from source (default ~/.wowgpt/app; or WOWGPT_DIR)
-#   --ref <branch|tag>  which version of the source, from source (default main; or WOWGPT_REF)
+#   --ref <branch|tag>  another version of the source, from source (default the release's tag; or WOWGPT_REF)
 #
 # What it does, in order, and it is safe to run again (an existing install is
 # updated, config.json and your chats are kept):
@@ -23,11 +23,13 @@
 #      Linux x64) from the project's GitHub releases into ~/.local/bin, checks
 #      it against the release's SHA256SUMS and runs it once. It is the bridge,
 #      setup and the service commands in one file with its runtime inside:
-#      nothing else to install, no Node.js. Where there is no binary (another
-#      platform, no release yet, --from-source) it installs from source instead:
-#      checks for Node.js 22.2+, clones the repo into ~/.wowgpt/app with git
-#      (or downloads the tarball; nothing to npm-install) and writes a
-#      `wowgpt` shim in ~/.local/bin that runs it with node
+#      nothing else to install, no Node.js. With no binary for this machine,
+#      no SHA256SUMS, no sha256sum or shasum, or a failed download or check,
+#      it stops and installs nothing. Only --from-source installs from source:
+#      it checks for Node.js 22.2+, clones the release's tag into
+#      ~/.wowgpt/app with git (or downloads its tarball; nothing to
+#      npm-install) and writes a `wowgpt` shim in ~/.local/bin that runs it
+#      with node
 #   2. runs the game-side setup (addon, config.json, slot pool, background
 #      service); config, state and logs live in ~/.wowgpt (WOWGPT_HOME),
 #      outside the code. An existing service (under any of the project's
@@ -42,7 +44,7 @@ set -eu
 
 REPO=rdimascio/claude-wow
 REPO_URL=${WOWGPT_REPO:-${CLAUDE_WOW_REPO:-https://github.com/$REPO}}
-REF=${WOWGPT_REF:-${CLAUDE_WOW_REF:-main}}
+REF=${WOWGPT_REF:-${CLAUDE_WOW_REF:-}}
 RELEASE=${WOWGPT_RELEASE:-${CLAUDE_WOW_RELEASE:-latest}}
 HOME_DIR=${WOWGPT_HOME:-${CLAUDE_WOW_HOME:-$HOME/.wowgpt}}
 DIR=${WOWGPT_DIR:-${CLAUDE_WOW_DIR:-$HOME_DIR/app}}
@@ -97,14 +99,30 @@ first_tag_name() {
   sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1
 }
 
-newest_release_tag() {
+# The tag of a release from the GitHub API: latest (the newest stable one) or
+# newest (the newest of any kind, pre-releases included).
+release_tag() {
   case "$REPO_URL" in
-    https://github.com/*) api_url="https://api.github.com/repos/${REPO_URL#https://github.com/}/releases?per_page=1" ;;
+    https://github.com/*) api="https://api.github.com/repos/${REPO_URL#https://github.com/}" ;;
     *) return 1 ;;
   esac
-  newest=$(curl -fsSL -H 'Accept: application/vnd.github+json' "$api_url" 2>/dev/null | first_tag_name)
-  [ -n "$newest" ] || return 1
-  echo "$newest"
+  case "$1" in
+    latest) api_url="$api/releases/latest" ;;
+    *) api_url="$api/releases?per_page=1" ;;
+  esac
+  tag=$(curl -fsSL -H 'Accept: application/vnd.github+json' "$api_url" 2>/dev/null | first_tag_name)
+  [ -n "$tag" ] || return 1
+  echo "$tag"
+}
+
+newest_release_tag() { release_tag newest; }
+
+# Which version of the source to install: --ref, else the pinned release, else
+# the latest release's tag (the newest of any kind when there is no stable one).
+source_ref() {
+  if [ -n "$REF" ]; then echo "$REF"
+  elif [ "$RELEASE" != latest ]; then echo "$RELEASE"
+  else release_tag latest || release_tag newest; fi
 }
 
 sha256_of() {
@@ -178,12 +196,12 @@ rc_file() {
   esac
 }
 
-# The binary route. Returns 1, with a line saying why, whenever the source
-# route should be taken instead; fails outright only for a download that
-# arrived but is wrong (a checksum mismatch, a binary that does not run).
+# The binary route. Returns 1, with a line saying why, when no binary could be
+# downloaded; fails outright for a download that cannot be verified or is
+# wrong (no SHA256SUMS, no hash tool, a checksum mismatch, a binary that does
+# not run).
 get_binary() {
   asset=$(binary_asset)
-  [ -n "$asset" ] || { say "no prebuilt binary for $(uname -s) $(uname -m)"; return 1; }
   command -v curl >/dev/null 2>&1 || { say "curl is not available"; return 1; }
   base=$(release_base)
   tmp=$(mktemp -d 2>/dev/null || mktemp -d -t wowgpt)
@@ -201,20 +219,21 @@ get_binary() {
       return 1
     fi
   fi
-  if curl -fsSL "$base/SHA256SUMS" -o "$tmp/SHA256SUMS" 2>/dev/null; then
-    want=$(grep "[[:space:]]$asset\$" "$tmp/SHA256SUMS" | cut -d' ' -f1)
-    have=$(sha256_of "$tmp/$asset")
-    if [ -z "$have" ]; then
-      say "warning: neither sha256sum nor shasum is here, so the download was not verified"
-    elif [ -z "$want" ] || [ "$want" != "$have" ]; then
-      rm -rf "$tmp"
-      fail "the downloaded $asset does not match the release's SHA256SUMS" "Run this again; if it keeps failing, install from source with --from-source."
-    else
-      say "checksum OK"
-    fi
-  else
-    say "warning: the release has no SHA256SUMS, so the download was not verified"
+  if ! curl -fsSL "$base/SHA256SUMS" -o "$tmp/SHA256SUMS" 2>/dev/null; then
+    rm -rf "$tmp"
+    fail "the release has no SHA256SUMS (or it could not be downloaded), so $asset cannot be verified; nothing was installed" "Check the network and run this again."
   fi
+  want=$(grep "[[:space:]]$asset\$" "$tmp/SHA256SUMS" | cut -d' ' -f1)
+  have=$(sha256_of "$tmp/$asset")
+  if [ -z "$have" ]; then
+    rm -rf "$tmp"
+    fail "neither sha256sum nor shasum is here, so the download cannot be verified; nothing was installed" "Install one (Linux: coreutils; macOS has shasum) and run this again."
+  fi
+  if [ -z "$want" ] || [ "$want" != "$have" ]; then
+    rm -rf "$tmp"
+    fail "the downloaded $asset does not match the release's SHA256SUMS; nothing was installed" "Run this again; if it keeps failing, report it."
+  fi
+  say "checksum OK"
   chmod +x "$tmp/$asset"
   if ! "$tmp/$asset" service help >/dev/null 2>&1; then
     rm -rf "$tmp"
@@ -232,11 +251,12 @@ get_binary() {
 # The source route: Node.js, the code, and a shim that runs it.
 get_source() {
   say "installing from source"
-  command -v node >/dev/null 2>&1 || fail "Node.js is not installed (or not on the PATH), and there is no prebuilt binary to use instead" "$(node_hint)"
+  command -v node >/dev/null 2>&1 || fail "Node.js is not installed (or not on the PATH), and installing from source needs it" "$(node_hint)"
   NODE_BIN=$(command -v node)
   NODE_VER=$(node -v 2>/dev/null || echo unknown)
   node_ok "$NODE_VER" || fail "Node.js $NODE_VER is too old; $MIN_NODE or newer is required" "$(node_hint)"
   say "node $NODE_VER ($NODE_BIN)"
+  REF=$(source_ref) || fail "could not find the latest release's tag, so there is no source version to install" "Check the network, or name the version with --release <tag> (or --ref <branch|tag>)."
   get_code
   [ -f "$DIR/setup.js" ] || fail "$DIR does not contain setup.js after the download" "Remove $DIR and run this again."
   mkdir -p "$BIN_DIR" || fail "cannot create $BIN_DIR" "Pick another folder with WOWGPT_BIN=<folder>."
@@ -253,11 +273,11 @@ EOF
 
 get_code() {
   if [ -d "$DIR/.git" ]; then
-    say "updating the existing install in $DIR"
-    if git -C "$DIR" pull --ff-only --quiet 2>/dev/null; then
-      say "up to date with $REF"
+    say "updating the existing install in $DIR to $REF"
+    if git -C "$DIR" fetch --quiet --depth 1 origin "$REF" 2>/dev/null && git -C "$DIR" checkout --quiet --detach FETCH_HEAD 2>/dev/null; then
+      say "now at $REF"
     else
-      say "warning: could not fast-forward $DIR (local changes or no network); keeping what is there"
+      say "warning: could not check out $REF in $DIR (local changes or no network); keeping what is there"
     fi
     return
   fi
@@ -273,9 +293,9 @@ get_code() {
   command -v curl >/dev/null 2>&1 || fail "neither git nor curl is available" "Install git (macOS: xcode-select --install) and run this again."
   command -v tar >/dev/null 2>&1 || fail "tar is not available" "Install tar from your package manager and run this again."
   tmp=$(mktemp -d 2>/dev/null || mktemp -d -t wowgpt)
-  say "downloading $REPO_URL/archive/refs/heads/$REF.tar.gz"
-  if ! curl -fsSL "$REPO_URL/archive/refs/heads/$REF.tar.gz" | tar -xz -C "$tmp" 2>/dev/null; then
-    curl -fsSL "$REPO_URL/archive/refs/tags/$REF.tar.gz" | tar -xz -C "$tmp" || fail "download failed" "Check the network, or install git and run this again."
+  say "downloading $REPO_URL/archive/refs/tags/$REF.tar.gz"
+  if ! curl -fsSL "$REPO_URL/archive/refs/tags/$REF.tar.gz" | tar -xz -C "$tmp" 2>/dev/null; then
+    curl -fsSL "$REPO_URL/archive/refs/heads/$REF.tar.gz" | tar -xz -C "$tmp" || fail "download failed" "Check the network, or install git and run this again."
   fi
   src=$(find "$tmp" -mindepth 1 -maxdepth 1 -type d | head -n 1)
   [ -f "$src/setup.js" ] || fail "the archive did not contain wowgpt" "Try again with git installed."
@@ -329,13 +349,14 @@ main() {
   step "1/2 The bridge"
   if [ -n "$SOURCE" ]; then
     get_source
-  elif [ "$RELEASE" != latest ] && [ -z "$(binary_asset)" ]; then
-    fail "no wowgpt binary exists for $(uname -s) $(uname -m), in release $RELEASE or any other; a pinned release never falls back to the source" \
-      "Run this again with --from-source to run $REF with Node.js."
+  elif [ -z "$(binary_asset)" ]; then
+    fail "no wowgpt binary is built for $(uname -s) $(uname -m); nothing was installed" \
+      "Run this again with --from-source to run the release's source with Node.js $MIN_NODE+."
   elif ! get_binary; then
     [ "$RELEASE" = latest ] || fail "release $RELEASE has no wowgpt binary for this machine, or it could not be downloaded; a pinned release never falls back to another release or to the source" \
-      "Check that $REPO_URL/releases/tag/$RELEASE exists and has a binary for this machine, and check the network. Or drop --release (WOWGPT_RELEASE) for the newest release, or add --from-source to run $REF with Node.js."
-    get_source
+      "Check that $REPO_URL/releases/tag/$RELEASE exists and has a binary for this machine, and check the network. Or drop --release (WOWGPT_RELEASE) for the newest release, or add --from-source to run its source with Node.js $MIN_NODE+."
+    fail "no wowgpt binary could be downloaded from $REPO_URL/releases (no release for this machine yet, or no network); nothing was installed" \
+      "Check the network and run this again. Or add --from-source to run the release's source with Node.js $MIN_NODE+."
   fi
   on_path
   SERVICE_FLAG=$(service_flag)

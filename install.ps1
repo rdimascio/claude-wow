@@ -7,10 +7,10 @@
 #   $env:WOWGPT_WOW = "D:\Games\World of Warcraft\_classic_beta_"   # the client folder (found automatically in the usual places)
 #   $env:WOWGPT_PROJECT = "C:\code\my-game"                          # the default folder the agents work in
 #   $env:WOWGPT_SERVICE = "yes"  (or "no")                           # start at login without asking (or never ask; an existing service is otherwise reinstalled)
-#   $env:WOWGPT_SOURCE = "1"     no prebuilt binary: clone the repo and run it with Node.js 22.2+
-#   $env:WOWGPT_RELEASE = "..."  which release's binary (default latest, then the newest release of any kind; a named release never falls back)
+#   $env:WOWGPT_SOURCE = "1"     no prebuilt binary: the release's source, run with Node.js 22.2+
+#   $env:WOWGPT_RELEASE = "..."  which release (default latest, then the newest release of any kind; a named release never falls back)
 #   $env:WOWGPT_DIR = "..."      where it goes, default $env:LOCALAPPDATA\Programs\wowgpt
-#   $env:WOWGPT_REF = "..."      which version of the source, from source (default main)
+#   $env:WOWGPT_REF = "..."      another version of the source, from source (default the release's tag)
 #
 # Or download it and run:  .\install.ps1 -Wow "..." -Project "..." -Service [-FromSource]
 #
@@ -20,10 +20,10 @@
 #      releases into %LocalAppData%\Programs\wowgpt\bin, checks it against
 #      the release's SHA256SUMS and runs it once. It is the bridge, setup and
 #      the service commands in one file with its runtime inside: nothing else
-#      to install, no Node.js. Where there is no binary (no release yet, another
-#      architecture, WOWGPT_SOURCE=1) it installs from source instead, unless
-#      WOWGPT_RELEASE names a release, which stops with a message:
-#      checks for Node.js 22.2+, clones the repo with git (or downloads the zip;
+#      to install, no Node.js. With no binary for this machine, no SHA256SUMS,
+#      or a failed download or check, it stops and installs nothing. Only
+#      WOWGPT_SOURCE=1 (-FromSource) installs from source: it checks for
+#      Node.js 22.2+, clones the release's tag with git (or downloads its zip;
 #      nothing to npm-install) and writes a wowgpt.cmd that runs it with node
 #   2. puts that folder on your user PATH (no admin rights)
 #   3. runs the game-side setup (addon, config.json, slot pool, and the
@@ -45,7 +45,7 @@ param(
   [switch]$FromSource,
   [string]$Release = $(if ((@($env:WOWGPT_RELEASE, $env:CLAUDE_WOW_RELEASE) -ne $null)[0]) { (@($env:WOWGPT_RELEASE, $env:CLAUDE_WOW_RELEASE) -ne $null)[0] } else { 'latest' }),
   [string]$Dir = $(if ((@($env:WOWGPT_DIR, $env:CLAUDE_WOW_DIR) -ne $null)[0]) { (@($env:WOWGPT_DIR, $env:CLAUDE_WOW_DIR) -ne $null)[0] } else { Join-Path $env:LOCALAPPDATA 'Programs\wowgpt' }),
-  [string]$Ref = $(if ((@($env:WOWGPT_REF, $env:CLAUDE_WOW_REF) -ne $null)[0]) { (@($env:WOWGPT_REF, $env:CLAUDE_WOW_REF) -ne $null)[0] } else { 'main' }),
+  [string]$Ref = $(if ((@($env:WOWGPT_REF, $env:CLAUDE_WOW_REF) -ne $null)[0]) { (@($env:WOWGPT_REF, $env:CLAUDE_WOW_REF) -ne $null)[0] } else { '' }),
   [string]$Repo = $(if ((@($env:WOWGPT_REPO, $env:CLAUDE_WOW_REPO) -ne $null)[0]) { (@($env:WOWGPT_REPO, $env:CLAUDE_WOW_REPO) -ne $null)[0] } else { 'https://github.com/rdimascio/claude-wow' })
 )
 # The CLAUDE_WOW_* variables from before the rename to WoWGPT still count
@@ -86,13 +86,35 @@ function Test-NodeVersion([string]$v) {
   try { return ([version]($v -replace '^v', '')) -ge $MinNode } catch { return $false }
 }
 
-function Get-NewestReleaseTag {
+# The tag of a release from the GitHub API: latest (the newest stable one) or
+# newest (the newest of any kind, pre-releases included).
+function Get-ReleaseTag([string]$which) {
   if ($Repo -notmatch '^https://github\.com/(.+)$') { return $null }
+  $url = if ($which -eq 'latest') { "https://api.github.com/repos/$($Matches[1])/releases/latest" } else { "https://api.github.com/repos/$($Matches[1])/releases?per_page=1" }
   try {
-    $releases = @(Invoke-RestMethod -UseBasicParsing -Headers @{ Accept = 'application/vnd.github+json' } "https://api.github.com/repos/$($Matches[1])/releases?per_page=1")
+    $releases = @(Invoke-RestMethod -UseBasicParsing -Headers @{ Accept = 'application/vnd.github+json' } $url)
     if ($releases.Count -and $releases[0].tag_name) { return [string]$releases[0].tag_name }
   } catch {}
   return $null
+}
+function Get-NewestReleaseTag { return Get-ReleaseTag 'newest' }
+
+# Which version of the source to install: -Ref (WOWGPT_REF), else the pinned
+# release, else the tag $latestTag finds.
+function Select-SourceRef([string]$ref, [string]$release, [scriptblock]$latestTag) {
+  if ($ref) { return $ref }
+  if ($release -ne 'latest') { return $release }
+  return (& $latestTag)
+}
+
+# Why a download cannot be trusted, or '' when SHA256SUMS lists it with this sum.
+function Get-SumProblem([string]$sums, [string]$asset, [string]$have) {
+  if (-not $sums) { return "the release has no SHA256SUMS (or it could not be downloaded), so $asset cannot be verified; nothing was installed" }
+  if (-not $have) { return "the download could not be hashed, so it cannot be verified; nothing was installed" }
+  $line = ($sums -split "`n") | Where-Object { $_ -match "\s$([regex]::Escape($asset))\s*$" } | Select-Object -First 1
+  $want = if ($line) { ($line -split '\s+')[0].ToLower() } else { '' }
+  if (-not $want -or $want -ne $have.ToLower()) { return "the downloaded $asset does not match the release's SHA256SUMS; nothing was installed" }
+  return ''
 }
 
 $binDir = Join-Path $Dir 'bin'
@@ -103,15 +125,10 @@ $script:Cmd = $null
 
 function Select-BridgeRoute([bool]$sourceWanted, [string]$release, [string]$arch, [scriptblock]$tryBinary) {
   if ($sourceWanted) { return 'source' }
-  $pinned = $release -ne 'latest'
-  if ($arch -ne 'AMD64') {
-    if ($pinned) { return 'no-binary-for-platform' }
-    Write-Host "no prebuilt binary for $arch Windows"
-    return 'source'
-  }
+  if ($arch -ne 'AMD64') { return 'no-binary-for-platform' }
   if (& $tryBinary) { return 'binary' }
-  if ($pinned) { return 'pinned-download-failed' }
-  return 'source'
+  if ($release -ne 'latest') { return 'pinned-download-failed' }
+  return 'download-failed'
 }
 
 # ---- 1. The bridge ----------------------------------------------------------
@@ -130,14 +147,15 @@ function Get-Binary {
     catch { Write-Host "no binary at $base/$asset (no release for it yet, or no network)"; return $false }
   }
   $sums = $null
-  try { $sums = (Invoke-WebRequest -UseBasicParsing "$base/SHA256SUMS").Content } catch {}
-  if ($sums) {
-    $line = ($sums -split "`n") | Where-Object { $_ -match "\s$([regex]::Escape($asset))\s*$" } | Select-Object -First 1
-    $want = if ($line) { ($line -split '\s+')[0].ToLower() } else { '' }
-    $have = (Get-FileHash $tmp -Algorithm SHA256).Hash.ToLower()
-    if (-not $want -or $want -ne $have) { Remove-Item -Force $tmp; Fail "the downloaded $asset does not match the release's SHA256SUMS" 'Run this again; if it keeps failing, install from source with -FromSource (or $env:WOWGPT_SOURCE = "1").' }
-    Write-Host 'checksum OK'
-  } else { Write-Host 'warning: the release has no SHA256SUMS, so the download was not verified' }
+  try {
+    $content = (Invoke-WebRequest -UseBasicParsing "$base/SHA256SUMS").Content
+    $sums = if ($content -is [byte[]]) { [Text.Encoding]::UTF8.GetString($content) } else { [string]$content }
+  } catch {}
+  $have = $null
+  try { $have = (Get-FileHash $tmp -Algorithm SHA256).Hash } catch {}
+  $problem = Get-SumProblem $sums $asset $have
+  if ($problem) { Remove-Item -Force $tmp; Fail $problem 'Check the network and run this again.' }
+  Write-Host 'checksum OK'
   & $tmp service help *> $null
   if ($LASTEXITCODE -ne 0) { Remove-Item -Force $tmp; Fail 'the downloaded binary does not run on this machine' 'Run this again with -FromSource to use Node.js instead.' }
   # Windows will not replace a running executable: stop a bridge that runs the old one first.
@@ -153,15 +171,18 @@ function Get-Binary {
 function Get-Source {
   Write-Host 'installing from source'
   $node = Get-Command node -ErrorAction SilentlyContinue
-  if (-not $node) { Fail 'Node.js is not installed (or not on the PATH), and there is no prebuilt binary to use instead' 'Install it from https://nodejs.org (the LTS installer, keep "Add to PATH" ticked) or with: winget install OpenJS.NodeJS.LTS  - then open a new PowerShell and run this again.' }
+  if (-not $node) { Fail 'Node.js is not installed (or not on the PATH), and installing from source needs it' 'Install it from https://nodejs.org (the LTS installer, keep "Add to PATH" ticked) or with: winget install OpenJS.NodeJS.LTS  - then open a new PowerShell and run this again.' }
   $nodeVer = & node -v
   if (-not (Test-NodeVersion $nodeVer)) { Fail "Node.js $nodeVer is too old; $MinNode or newer is required" 'Install the current LTS from https://nodejs.org, open a new PowerShell, and run this again.' }
   Write-Host "node $nodeVer ($($node.Source))"
+  $script:Ref = Select-SourceRef $Ref $Release { $tag = Get-ReleaseTag 'latest'; if (-not $tag) { $tag = Get-NewestReleaseTag }; $tag }
+  if (-not $script:Ref) { Fail "could not find the latest release's tag, so there is no source version to install" 'Check the network, or name the version with $env:WOWGPT_RELEASE (or $env:WOWGPT_REF).' }
   $git = Get-Command git -ErrorAction SilentlyContinue
   if (Test-Path (Join-Path $Dir '.git')) {
-    Write-Host "updating the existing install in $Dir"
-    & git -C $Dir pull --ff-only --quiet 2>$null
-    if ($LASTEXITCODE -ne 0) { Write-Host "warning: could not fast-forward $Dir (local changes or no network); keeping what is there" -ForegroundColor Yellow } else { Write-Host "up to date with $Ref" }
+    Write-Host "updating the existing install in $Dir to $Ref"
+    & git -C $Dir fetch --quiet --depth 1 origin $Ref 2>$null
+    if ($LASTEXITCODE -eq 0) { & git -C $Dir checkout --quiet --detach FETCH_HEAD 2>$null }
+    if ($LASTEXITCODE -ne 0) { Write-Host "warning: could not check out $Ref in $Dir (local changes or no network); keeping what is there" -ForegroundColor Yellow } else { Write-Host "now at $Ref" }
   } elseif ((Test-Path $Dir) -and -not (Test-Path (Join-Path $Dir 'setup.js')) -and (Get-ChildItem $Dir -Force -Exclude bin | Select-Object -First 1)) {
     Fail "$Dir exists and is not a wowgpt install" 'Pick another folder with $env:WOWGPT_DIR, or move that one aside.'
   } elseif ($git -and -not (Test-Path (Join-Path $Dir 'setup.js'))) {
@@ -175,9 +196,9 @@ function Get-Source {
   } else {
     $zip = Join-Path $env:TEMP 'wowgpt.zip'
     $tmp = Join-Path $env:TEMP "wowgpt-unzip-$PID"
-    Write-Host "downloading $Repo/archive/refs/heads/$Ref.zip"
-    try { Invoke-WebRequest -UseBasicParsing "$Repo/archive/refs/heads/$Ref.zip" -OutFile $zip }
-    catch { try { Invoke-WebRequest -UseBasicParsing "$Repo/archive/refs/tags/$Ref.zip" -OutFile $zip } catch { Fail 'download failed' 'Check the network, or install git (https://git-scm.com) and run this again.' } }
+    Write-Host "downloading $Repo/archive/refs/tags/$Ref.zip"
+    try { Invoke-WebRequest -UseBasicParsing "$Repo/archive/refs/tags/$Ref.zip" -OutFile $zip }
+    catch { try { Invoke-WebRequest -UseBasicParsing "$Repo/archive/refs/heads/$Ref.zip" -OutFile $zip } catch { Fail 'download failed' 'Check the network, or install git (https://git-scm.com) and run this again.' } }
     if (Test-Path $tmp) { Remove-Item -Recurse -Force $tmp }
     Expand-Archive $zip $tmp
     $src = Get-ChildItem $tmp -Directory | Select-Object -First 1
@@ -198,8 +219,9 @@ function Get-Source {
 Step '1/3 The bridge'
 switch (Select-BridgeRoute ([bool]$FromSource) $Release $env:PROCESSOR_ARCHITECTURE { Get-Binary }) {
   'source' { Get-Source }
-  'no-binary-for-platform' { Fail "no wowgpt binary exists for $env:PROCESSOR_ARCHITECTURE Windows, in release $Release or any other; a pinned release never falls back to the source" "Run this again with -FromSource (or `$env:WOWGPT_SOURCE = `"1`") to run $Ref with Node.js." }
-  'pinned-download-failed' { Fail "release $Release has no wowgpt binary for this machine, or it could not be downloaded; a pinned release never falls back to another release or to the source" "Check that $Repo/releases/tag/$Release exists and has wowgpt-windows-x64.exe, and check the network. Or clear `$env:WOWGPT_RELEASE for the newest release, or set `$env:WOWGPT_SOURCE = `"1`" to run $Ref with Node.js." }
+  'no-binary-for-platform' { Fail "no wowgpt binary is built for $env:PROCESSOR_ARCHITECTURE Windows; nothing was installed" "Run this again with -FromSource (or `$env:WOWGPT_SOURCE = `"1`") to run the release's source with Node.js $MinNode+." }
+  'pinned-download-failed' { Fail "release $Release has no wowgpt binary for this machine, or it could not be downloaded; a pinned release never falls back to another release or to the source" "Check that $Repo/releases/tag/$Release exists and has wowgpt-windows-x64.exe, and check the network. Or clear `$env:WOWGPT_RELEASE for the newest release, or set `$env:WOWGPT_SOURCE = `"1`" to run its source with Node.js $MinNode+." }
+  'download-failed' { Fail "no wowgpt binary could be downloaded from $Repo/releases (no release yet, or no network); nothing was installed" "Check the network and run this again. Or set `$env:WOWGPT_SOURCE = `"1`" to run the release's source with Node.js $MinNode+." }
 }
 
 # ---- 2. The command on the PATH ---------------------------------------------
