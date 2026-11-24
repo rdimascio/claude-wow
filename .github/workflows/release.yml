@@ -270,3 +270,32 @@ jobs:
           fi
           git -C tap -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m "wowgpt ${GITHUB_REF_NAME#v}"
           git -C tap push origin HEAD
+
+  npm-publish:
+    needs: [sign, github-release]
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+      - name: publish the package to npm with provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "::warning::NPM_TOKEN is not set, so the package was not published to npm. Add an npm automation token as the NPM_TOKEN secret and re-run this job."
+            exit 0
+          fi
+          node dev/pack-check.js --publish
+          version=${GITHUB_REF_NAME#v}
+          dist_tag=latest
+          case "$version" in *-*) dist_tag=next ;; esac
+          npm publish --provenance --access public --tag "$dist_tag"

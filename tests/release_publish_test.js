@@ -69,3 +69,13 @@ test('release.yml fills the formula and pushes it to the tap only with TAP_TOKEN
   assert.match(tap, /rdimascio\/homebrew-wowgpt\.git/);
   assert.match(tap, /git -C tap push origin HEAD/);
 });
+
+test('release.yml publishes to npm with provenance after the release, only with NPM_TOKEN', () => {
+  const npm = releaseJob('npm-publish');
+  assert.match(npm, /^ {4}needs: \[sign, github-release\]$/m);
+  assert.match(npm, /^ {4}if: github\.event_name == 'push' && github\.ref_type == 'tag'$/m);
+  assert.match(npm, /^ {6}id-token: write$/m);
+  assert.match(npm, /NODE_AUTH_TOKEN: \$\{\{ secrets\.NPM_TOKEN \}\}/);
+  assert.match(npm, /if \[ -z "\$NODE_AUTH_TOKEN" \]; then\n\s+echo "::warning::NPM_TOKEN is not set[^\n]*\n\s+exit 0/);
+  assert.match(npm, /node dev\/pack-check\.js --publish\n[\s\S]*npm publish --provenance --access public/);
+});
