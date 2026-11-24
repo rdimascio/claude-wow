@@ -1,6 +1,6 @@
 # WoWGPT installer for Windows. One line, in PowerShell:
 #
-#   irm https://raw.githubusercontent.com/rdimascio/claude-wow/main/install.ps1 | iex
+#   irm https://github.com/rdimascio/claude-wow/releases/latest/download/install.ps1 | iex
 #
 # Options come from the environment, since `iex` takes no parameters:
 #

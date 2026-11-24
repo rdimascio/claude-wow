@@ -46,16 +46,16 @@ This needs Node.js 22.2 or newer. npm puts the `wowgpt` command on your PATH; se
 macOS and Linux:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/rdimascio/claude-wow/main/install.sh | sh
+curl -fsSL https://github.com/rdimascio/claude-wow/releases/latest/download/install.sh | sh
 ```
 
 Windows, in PowerShell:
 
 ```powershell
-irm https://raw.githubusercontent.com/rdimascio/claude-wow/main/install.ps1 | iex
+irm https://github.com/rdimascio/claude-wow/releases/latest/download/install.ps1 | iex
 ```
 
-(Until a release with binaries exists, the installer stops: add `--from-source` to install the source with Node.js 22.2 or newer.)
+(The scripts are files of the latest release, so these URLs work once the first release is out. Before that, run `sh install.sh --from-source` from a clone, which needs Node.js 22.2 or newer.)
 
 The script downloads the `wowgpt` binary for your machine from the project's GitHub releases into `~/.local/bin` (Windows: `%LocalAppData%\Programs\wowgpt\bin`, put on your user PATH), checks it against the release's `SHA256SUMS`, runs it once, and runs `wowgpt setup` (config, state and logs go to `~/.wowgpt`), which installs the background service: an existing service, under this name or an old one, is reinstalled without asking, so an update restarts the bridge on the new binary; a fresh install asks, and Enter means yes. When `~/.local/bin` is not on your PATH it offers to add it (Enter means yes) and otherwise prints the command's full path. Nothing else is installed: the binary is the bridge, setup and the service commands with their runtime inside. When there is no binary for your machine, the release has no `SHA256SUMS`, there is no `sha256sum` or `shasum` to check it with, or the download or its check fails, it stops and installs nothing. Only `--from-source` (`$env:WOWGPT_SOURCE = "1"` on Windows) installs from source: it checks for Node.js 22.2+, downloads the release's tagged source (git if you have it, otherwise the archive) into `~/.wowgpt/app` (Windows: `%LocalAppData%\Programs\wowgpt`) and writes a `wowgpt` shim that runs it with node. `--ref <branch|tag>` (`$env:WOWGPT_REF`) picks another version of the source. For an install under the project's old name (`~/.wow-ai`), see [Coming from wow-ai](#coming-from-wow-ai). It never asks for sudo or administrator rights, it is safe to run again (that is how you update), and if something is missing it stops and says what to do.
 
@@ -76,7 +76,7 @@ Without a release option the script takes the latest stable release. When that h
 For example:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/rdimascio/claude-wow/main/install.sh | sh -s -- --project ~/code/my-game --service
+curl -fsSL https://github.com/rdimascio/claude-wow/releases/latest/download/install.sh | sh -s -- --project ~/code/my-game --service
 ```
 
 When it finishes: fully quit and relaunch WoW, enable *WoWGPT* on the AddOns screen, and type `/wowgpt hello` in game.

@@ -7,6 +7,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { REPO_URL, API_URL } = require('../bridge/repo');
 
 const SH = path.join(__dirname, '..', 'install.sh');
 const PS1 = path.join(__dirname, '..', 'install.ps1');
@@ -17,7 +18,7 @@ test('install.sh: everything lives in functions and main runs last, so a cut-off
   const src = fs.readFileSync(SH, 'utf8');
   assert.match(src, /\nmain "\$@"\n$/, 'main "$@" is the last line');
   assert.ok(!/\nsudo\b/.test(src) && !/ sudo /.test(src), 'never sudo');
-  assert.match(src, /curl -fsSL https:\/\/raw\.githubusercontent\.com\/rdimascio\/claude-wow\/main\/install\.sh \| sh/, 'documents its own URL');
+  assert.ok(src.includes(`curl -fsSL ${REPO_URL}/releases/latest/download/install.sh | sh`), 'documents its own URL, the release asset');
   assert.match(src, /id -u.*-ne 0/, 'refuses root');
 });
 
@@ -81,8 +82,6 @@ const INSTALLER_TOOLS_WITHOUT_NODE = [
   'ln',
 ];
 const NON_ROOT_ID = '#!/bin/sh\necho 1000\n';
-
-const { REPO_URL, API_URL } = require('../bridge/repo');
 
 function fakeReleaseHost(newestTag, { machine, logArgs, sums = 'good', hashTools = true, latestTag = null, node = false } = {}) {
   const asset = machine ? 'wowgpt-unsupported' : spawnSync('sh', [SH, '--binary-asset'], { encoding: 'utf8' }).stdout.trim();
@@ -445,7 +444,7 @@ test('install.ps1 parses, and its Node gate matches the shell one', { skip: !pws
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.match(r.stdout, /OK/);
   const src = fs.readFileSync(PS1, 'utf8');
-  assert.match(src, /irm https:\/\/raw\.githubusercontent\.com\/rdimascio\/claude-wow\/main\/install\.ps1 \| iex/, 'documents its own URL');
+  assert.ok(src.includes(`irm ${REPO_URL}/releases/latest/download/install.ps1 | iex`), 'documents its own URL, the release asset');
   assert.ok(!/RunAs|Start-Process .*-Verb/i.test(src), 'never elevates');
 });
 
@@ -560,3 +559,16 @@ test(
     }
   },
 );
+
+test('every documented one-liner fetches the installer from the latest release, never from main', () => {
+  const docs = ['README.md', 'docs/INSTALL.md', 'docs/INSTALL-LINUX.md', 'docs/INSTALL-WINDOWS.md', 'install.sh', 'install.ps1'];
+  let seen = 0;
+  for (const doc of docs) {
+    for (const line of fs.readFileSync(path.join(__dirname, '..', doc), 'utf8').split('\n')) {
+      if (!/wowgpt|claude-wow|rdimascio/.test(line) || !/install\.(sh \| sh|ps1 \| iex)/.test(line)) continue;
+      seen++;
+      assert.ok(line.includes(`${REPO_URL}/releases/latest/download/install.`), `${doc}: ${line}`);
+    }
+  }
+  assert.ok(seen >= 8, `found ${seen} one-liners`);
+});

@@ -78,21 +78,21 @@ wowgpt setup
 
 Setup does the rest. It finds the game and stops with "Quit World of Warcraft, then run setup again" while a client runs. It installs the addon, picks the agent you have installed (or says "not ready: install one agent"), asks whether to share your game state, and installs the background service (Enter means yes; a service from an earlier install is reinstalled without asking). The agents get a project folder of their own, `~/wowgpt`; your home folder is never a project.
 
-Until the first stable release, Homebrew needs `--HEAD` (`brew install --HEAD rdimascio/claude-wow/wowgpt`), and the npm package is not published yet. Until then, use the one-line installer:
+Until the first stable release, Homebrew needs `--HEAD` (`brew install --HEAD rdimascio/claude-wow/wowgpt`), the npm package is not published, and the one-line installer below does not exist yet: it is a file of the release. Once a release is out, the one-line installer is the third route:
 
 macOS and Linux:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/rdimascio/claude-wow/main/install.sh | sh
+curl -fsSL https://github.com/rdimascio/claude-wow/releases/latest/download/install.sh | sh
 ```
 
 Windows (PowerShell):
 
 ```powershell
-irm https://raw.githubusercontent.com/rdimascio/claude-wow/main/install.ps1 | iex
+irm https://github.com/rdimascio/claude-wow/releases/latest/download/install.ps1 | iex
 ```
 
-The one-line installers download from the latest stable release (`releases/latest`). While no stable release has a binary, they fall back to the newest release, betas included. A pinned release is used as-is, with no fallback. To pin one release, name it: `sh -s -- --release v0.5.0-beta.1` after the `curl` command on macOS and Linux, or `$env:WOWGPT_RELEASE = "v0.5.0-beta.1"` before the PowerShell command.
+The one-line installer scripts are files of the latest stable release (`releases/latest`), not of `main`, so what runs is the script that shipped with that release, and they download its binary. While no stable release has a binary, they fall back to the newest release, betas included. A pinned release is used as-is, with no fallback. To pin one release, name it: `sh -s -- --release v0.5.0-beta.1` after the `curl` command on macOS and Linux, or `$env:WOWGPT_RELEASE = "v0.5.0-beta.1"` before the PowerShell command.
 
 The installer downloads the `wowgpt` binary for your computer (macOS arm64 and x64, Linux x64, Windows x64), checks it against the release's `SHA256SUMS`, and runs `wowgpt setup` for you. When there is no binary for your computer, or the download or its check fails, it stops and installs nothing. `--from-source` installs the release's source instead, and that needs Node.js 22.2 or newer. It never uses sudo, and you run it again to update.
 

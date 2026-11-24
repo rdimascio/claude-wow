@@ -92,5 +92,5 @@ test('release.yml signs SHA256SUMS on a tag with the secret, checks it against t
   assert.match(release, /^ {4}needs: \[version, addon, bridge, sign\]$/m);
   assert.match(release, /node dev\/release-key\.js verify dist\/SHA256SUMS/);
   assert.match(release, /test "\$\(ls dist \| wc -l\)" -eq 6/, 'four binaries, SHA256SUMS and SHA256SUMS.sig');
-  assert.match(release, /gh release create .* addon-zip\/\*\.zip dist\/\*/);
+  assert.match(release, /gh release create .* addon-zip\/\*\.zip dist\/\* install\.sh install\.ps1$/m, 'the one-line installers are release assets');
 });

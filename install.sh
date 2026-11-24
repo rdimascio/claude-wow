@@ -1,11 +1,11 @@
 #!/bin/sh
 # WoWGPT installer for macOS and Linux. One line:
 #
-#   curl -fsSL https://raw.githubusercontent.com/rdimascio/claude-wow/main/install.sh | sh
+#   curl -fsSL https://github.com/rdimascio/claude-wow/releases/latest/download/install.sh | sh
 #
 # With options (everything after `-s --` goes to the script):
 #
-#   curl -fsSL https://raw.githubusercontent.com/rdimascio/claude-wow/main/install.sh | sh -s -- --wow "/Applications/World of Warcraft/_classic_beta_" --project ~/code/my-game --service
+#   curl -fsSL https://github.com/rdimascio/claude-wow/releases/latest/download/install.sh | sh -s -- --wow "/Applications/World of Warcraft/_classic_beta_" --project ~/code/my-game --service
 #
 #   --wow <folder>      the WoW client folder (setup looks in the usual places without it)
 #   --project <folder>  the default folder the agents work in

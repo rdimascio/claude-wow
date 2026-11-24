@@ -13,7 +13,7 @@ The addon is the same as on Windows, and the default screenshot transport needs 
 ## Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/rdimascio/claude-wow/main/install.sh | sh -s -- --project ~/path/to/the/project
+curl -fsSL https://github.com/rdimascio/claude-wow/releases/latest/download/install.sh | sh -s -- --project ~/path/to/the/project
 ```
 
 Without `--wow`, setup looks in `$WINEPREFIX`, `~/.wine` and `~/Games/battlenet` for `drive_c/Program Files (x86)/World of Warcraft/_classic_beta_`; pass `--wow "<that folder>"` for anything else. By hand: `git clone https://github.com/rdimascio/claude-wow && cd claude-wow && node setup.js --wow "..." --project ...`, then `npm start` (`npm ci` is only needed to run the tests).

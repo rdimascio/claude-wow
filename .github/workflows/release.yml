@@ -206,11 +206,11 @@ jobs:
           awk -v heading="## [$version]" 'index($0, heading) == 1 { found = 1; next } found && /^## \[/ { exit } found { print }' CHANGELOG.md > release-notes.md
           cat release-notes.md
           grep -q '[^[:space:]]' release-notes.md
-      - name: create the GitHub release with the addon zip, the four binaries, SHA256SUMS and SHA256SUMS.sig
+      - name: create the GitHub release with the addon zip, the four binaries, SHA256SUMS, SHA256SUMS.sig and the two installers
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           version=${GITHUB_REF_NAME#v}
           prerelease_flag=
           case "$version" in *-*) prerelease_flag=--prerelease ;; esac
-          gh release create "$GITHUB_REF_NAME" --verify-tag --repo "$GITHUB_REPOSITORY" --title "WoWGPT $version" --notes-file release-notes.md $prerelease_flag addon-zip/*.zip dist/*
+          gh release create "$GITHUB_REF_NAME" --verify-tag --repo "$GITHUB_REPOSITORY" --title "WoWGPT $version" --notes-file release-notes.md $prerelease_flag addon-zip/*.zip dist/* install.sh install.ps1
