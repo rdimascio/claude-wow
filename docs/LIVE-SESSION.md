@@ -135,6 +135,8 @@ When the session needs approval for a tool (a `Bash` command, a `Write`), the pr
 - **Greed** (the first button; only a click answers, never a key): allow this one call. Nothing is saved, so a live chat shows no Need button, and a `[Need]` link from an older line counts as Greed.
 - **Pass** (or letting the roll time out): deny it.
 
+A roll allows the call only when its record names the same rule as the pending request (`Bash(touch:*)`, `Write`). A roll for any other rule denies it.
+
 The terminal dialog stays open at the same time. Whichever answer comes first wins. A prompt with no in-game chat waiting stays in the terminal only. If nobody answers in game, the bridge denies it after `plugins.live.permissionTimeoutMs` (2 minutes). The session's answer after that denial still lands in the chat: the addon starts checking for it when the timeout ends and keeps checking for 5 minutes. A Need, Greed or Pass clicked after the timeout is not sent to the session: the chat says that the request expired and was denied.
 
 Only tool approvals relay. The folder trust dialog and the MCP server consent dialog are terminal-only.

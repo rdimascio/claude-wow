@@ -196,10 +196,12 @@ test('permission rules and verdicts: Need/Greed allow, the Pass text denies, any
   assert.equal(LP.ruleForPermission({ tool_name: 'Bash', input_preview: '{"command":"rm -rf /tmp/x ⋯ 12 code points elided ⋯' }), 'Bash(rm:*)');
   assert.equal(LP.ruleForPermission({ tool_name: 'Bash', input_preview: '' }), 'Bash');
   assert.equal(LP.ruleForPermission({ tool_name: 'Write', input_preview: '{}' }), 'Write');
-  assert.deepEqual(LP.isVerdictJob({ allow: ['Bash(x:*)'], text: 'Those actions are allowed now.' }), { allow: true, forward: false });
-  assert.deepEqual(LP.isVerdictJob({ allow: [], allowOnce: ['Write'], text: 'x' }), { allow: true, forward: false });
-  assert.deepEqual(LP.isVerdictJob({ allow: [], text: ` ${LP.PASS_TEXT} ` }), { allow: false, forward: false });
-  assert.deepEqual(LP.isVerdictJob({ allow: [], text: 'actually, what drops the sword?' }), { allow: false, forward: true });
+  assert.deepEqual(LP.isVerdictJob({ allow: ['Bash(x:*)'], text: 'Those actions are allowed now.' }, 'Bash(x:*)'), { allow: true, forward: false });
+  assert.deepEqual(LP.isVerdictJob({ allow: [], allowOnce: ['Write'], text: 'x' }, 'Write'), { allow: true, forward: false });
+  assert.deepEqual(LP.isVerdictJob({ allow: ['Read'], text: 'x' }, 'Bash(rm:*)'), { allow: false, forward: false }, 'a roll for another rule denies');
+  assert.deepEqual(LP.isVerdictJob({ allow: ['Bash(x:*)'], text: 'x' }), { allow: false, forward: false }, 'no pending rule: no approval');
+  assert.deepEqual(LP.isVerdictJob({ allow: [], text: ` ${LP.PASS_TEXT} ` }, 'Write'), { allow: false, forward: false });
+  assert.deepEqual(LP.isVerdictJob({ allow: [], text: 'actually, what drops the sword?' }, 'Write'), { allow: false, forward: true });
   assert.match(
     LP.permissionPrompt({ tool_name: 'Bash', description: 'Create a file', input_preview: '{"command":"touch x"}' }, 'proj'),
     /^Claude Code \(proj\) wants to use Bash: Create a file\.\n.*touch x.*\nRoll Need or Greed/s,
@@ -772,6 +774,28 @@ test('permission relay: the request becomes a Need/Greed roll in the chat, the r
     await r.live.handle({ id: 8, session: 'tok', chat: 'c1', text: LP.PASS_TEXT, allow: [] }, r.core);
     const deny = await until(() => r.out.lines.find(l => l.method === 'notifications/claude/channel/permission' && l.params.request_id === 'fghij'));
     assert.equal(deny.params.behavior, 'deny');
+  } finally {
+    r.cleanup();
+  }
+});
+
+test('permission relay: a roll for another rule denies the pending request', async () => {
+  const r = await rig();
+  try {
+    await initialize(r.ch, r.out);
+    await r.live.handle({ id: 5, session: 'tok', chat: 'c1', text: 'remove it', allow: [] }, r.core);
+    r.ch.feed(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'notifications/claude/channel/permission_request',
+        params: { request_id: 'kmnop', tool_name: 'Bash', description: 'Remove', input_preview: '{"command":"rm -rf x"}' },
+      }) + '\n',
+    );
+    await until(() => r.calls.reply.length === 1);
+    assert.deepEqual(r.calls.reply[0].denied, ['Bash(rm:*)']);
+    await r.live.handle({ id: 6, session: 'tok', chat: 'c1', text: 'Those actions are allowed now.', allow: ['Read'] }, r.core);
+    const verdict = await until(() => r.out.lines.find(l => l.method === 'notifications/claude/channel/permission'));
+    assert.deepEqual(verdict.params, { request_id: 'kmnop', behavior: 'deny' }, 'a roll for Read does not approve Bash(rm:*)');
   } finally {
     r.cleanup();
   }
