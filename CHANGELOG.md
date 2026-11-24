@@ -67,6 +67,7 @@ Kept so nothing breaks: `/wowgpt` is the main command, and `/claude` and the hid
 
 ### Fixed
 
+- `wowgpt dev deploy` and `dev rollback` exit 1 when the service does not run `<home>/current/wowgpt` (no service, or an old service definition). Before, they switched the release, restarted nothing, and still exited 0. `autoDeploy` is gone from `config.example.json`: it is a developer setting.
 - Setup stops with "Quit World of Warcraft, then run setup again" while a configured client runs. Before, it copied stale saved chats and removed signal folders under a live client. When it cannot tell, it warns and goes on.
 - `wowgpt --help` prints the commands and exits. Before, it then started the bridge.
 - The game-running check skips the process that asks, so `setup --wow <folder>/` never counts itself as the game.
