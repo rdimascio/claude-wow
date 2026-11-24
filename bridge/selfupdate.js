@@ -11,8 +11,9 @@ const H = require('./home');
 const FS = require('./fsutil');
 const B = require('../build');
 const REL = require('./releases');
+const { API_URL } = require('./repo');
 
-const DEFAULT_API = 'https://api.github.com/repos/rdimascio/wow-ai';
+const DEFAULT_API = API_URL;
 const RECORD_FILE = 'update.json';
 const SUMS_ASSET = 'SHA256SUMS';
 const MINUTE_MS = 60000;

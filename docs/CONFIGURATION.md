@@ -318,7 +318,7 @@ The bot token comes from `WOWGPT_DISCORD_BOT_TOKEN`, else from `~/.wowgpt/discor
 |---|---|
 | `WOWGPT_HOME` | Where `config.json`, `state.json`, `transcripts.json`, `bridge.log`, `tmp/`, `mapjobs/`, `uijobs/`, `goals/` and `data/` live. Default `~/.wowgpt`; see [Where the bridge keeps its files](#where-the-bridge-keeps-its-files). |
 | `WOWGPT_PROJECT` | Default working folder, below `--project` and above the start folder in precedence. The old name `WOW_AI_PROJECT` is still read. |
-| `WOWGPT_UPDATE_API` | The GitHub API repository URL the update check reads `releases/latest` from. Default `https://api.github.com/repos/rdimascio/wow-ai`; set it for a fork. |
+| `WOWGPT_UPDATE_API` | The GitHub API repository URL the update check reads `releases/latest` from. Default `https://api.github.com/repos/rdimascio/claude-wow`; set it for a fork. |
 | `WOWGPT_DISCORD_BOT_TOKEN` | The Discord bot token for [Discord sync](#discord-sync), over the token file. The bridge removes it (and the old `CLAUDE_WOW_DISCORD_BOT_TOKEN`) from its environment at start, so agent runs never see it. The background service does not carry shell variables: use the token file there. |
 | `WOWGPT_SUPERVISED` | Set to `1` by the supervisor for the bridge it starts. Only a supervised bridge restarts itself for an update. |
 | `WOWGPT_MAC_BACKEND` | macOS pixel capture: `native`, `screencapture` or `auto` (`capture_mac.py --backend`). The old names `CLAUDE_WOW_MAC_BACKEND` and `WOWAI_MAC_BACKEND` are still read. |

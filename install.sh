@@ -40,7 +40,8 @@
 
 set -eu
 
-REPO_URL=${WOWGPT_REPO:-${CLAUDE_WOW_REPO:-https://github.com/rdimascio/claude-wow}}
+REPO=rdimascio/claude-wow
+REPO_URL=${WOWGPT_REPO:-${CLAUDE_WOW_REPO:-https://github.com/$REPO}}
 REF=${WOWGPT_REF:-${CLAUDE_WOW_REF:-main}}
 RELEASE=${WOWGPT_RELEASE:-${CLAUDE_WOW_RELEASE:-latest}}
 HOME_DIR=${WOWGPT_HOME:-${CLAUDE_WOW_HOME:-$HOME/.wowgpt}}
