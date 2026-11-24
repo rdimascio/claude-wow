@@ -30,15 +30,23 @@ the bridge of this branch must ship together (setup installs both).
 
 ## Left for the repo rename
 
-GitHub redirects the old URLs, so these keep working until they change:
+GitHub redirects the old URLs, so these keep working until they change. Change `REPO` in
+`bridge/repo.js` first, then run `node --test tests/repo_test.js`: it names every other
+file and line that still says `rdimascio/claude-wow`. On 2026-11-23 they were:
 
-- `bridge/selfupdate.js` `DEFAULT_API` (still `rdimascio/wow-ai`, from the rename before this one)
-- `package.json` `repository.url`
-- `install.sh` and `install.ps1`: `REPO_URL` / `$Repo` defaults and the one-liner URLs in their headers
-- `homebrew/Formula/wowgpt.rb`: `homepage`, the release `url`s, the `head` URL, the `brew tap` line; the tap repo `homebrew-claude-wow` becomes `homebrew-wowgpt`
-- `homebrew/README.md`
-- `README.md`, `CONTRIBUTING.md`, `docs/INSTALL.md`, `docs/INSTALL-LINUX.md`, `docs/INSTALL-WINDOWS.md`: the one-liners, `git clone` and `cd claude-wow`
-- `tests/install_test.js` and `tests/release_gate_test.js`: the URLs they expect
+- `bridge/repo.js:7` `REPO` (self-update's API URL derives from it)
+- `install.sh:45` `REPO=`, and the one-liner URLs in its header (lines 4 and 8)
+- `install.ps1:49` the `$Repo` default, and the one-liner URL in its header (line 3)
+- `package.json:10` `repository.url`
+- `homebrew/Formula/wowgpt.rb` lines 2, 4, 20, 28, 32 and 37: the tap comment, `homepage`, the release `url`s and the `head` URL; the tap repo `homebrew-claude-wow` becomes `homebrew-wowgpt`
+- `homebrew/README.md` lines 3, 4, 8 and 16
+- `README.md` lines 74, 81, 86, 92, 145 and 146 (the brew tap, the one-liners, `git clone` and `cd claude-wow`)
+- `CONTRIBUTING.md` lines 85 and 86 (`git clone`, `cd claude-wow`)
+- `docs/INSTALL.md` lines 18, 27, 31, 49, 55, 79, 87 and 88; `docs/INSTALL-LINUX.md` lines 16 and 19; `docs/INSTALL-WINDOWS.md` lines 25 and 30; `docs/CONFIGURATION.md` line 321 (`WOWGPT_UPDATE_API` default)
+- `tests/release_gate_test.js:9` (recorded API answers for this repository)
+- `CHANGELOG.md`: add a compare link line; the old ones stay
+
+The tests derive the installer URLs from `REPO`, so they need no change.
 
 ---
 

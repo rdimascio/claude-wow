@@ -163,29 +163,33 @@ test(
       assert.match(r.stdout, /checksum OK/);
       assert.equal(fs.readFileSync(path.join(h.binDir, 'wowgpt'), 'utf8'), '#!/bin/sh\necho "fake wowgpt $*"\n');
       const urls = fs.readFileSync(h.log, 'utf8').trim().split('\n');
-      assert.equal(urls[0], `https://github.com/rdimascio/claude-wow/releases/latest/download/${h.asset}`);
-      assert.equal(urls[1], 'https://api.github.com/repos/rdimascio/claude-wow/releases?per_page=1');
-      assert.ok(urls.includes('https://github.com/rdimascio/claude-wow/releases/download/v0.5.0-beta.1/SHA256SUMS'));
+      assert.equal(urls[0], `${REPO_URL}/releases/latest/download/${h.asset}`);
+      assert.equal(urls[1], `${API_URL}/releases?per_page=1`);
+      assert.ok(urls.includes(`${REPO_URL}/releases/download/v0.5.0-beta.1/SHA256SUMS`));
     } finally {
       fs.rmSync(h.root, { recursive: true, force: true });
     }
   },
 );
 
-test('install.sh: with no release at all, latest fails with a clear error and never takes the source route', { skip: !hasAsset && 'no prebuilt binary for this platform' }, () => {
-  const none = fakeReleaseHost(null);
-  try {
-    const r = spawnSync('/bin/sh', [SH, '--no-service'], { encoding: 'utf8', env: none.env });
-    assert.equal(r.status, 1);
-    assert.match(r.stdout, /no binary at .*releases\/latest\/download/);
-    assert.match(r.stderr, /install failed: no wowgpt binary could be downloaded from .*\/releases .*nothing was installed/);
-    assert.match(r.stderr, /-> .*--from-source/);
-    assert.doesNotMatch(r.stdout + r.stderr, /installing from source|Node\.js is not installed|cloning/);
-    assert.ok(!fs.existsSync(path.join(none.binDir, 'wowgpt')), 'nothing installed');
-  } finally {
-    fs.rmSync(none.root, { recursive: true, force: true });
-  }
-});
+test(
+  'install.sh: with no release at all, latest fails with a clear error and never takes the source route',
+  { skip: !hasAsset && 'no prebuilt binary for this platform' },
+  () => {
+    const none = fakeReleaseHost(null);
+    try {
+      const r = spawnSync('/bin/sh', [SH, '--no-service'], { encoding: 'utf8', env: none.env });
+      assert.equal(r.status, 1);
+      assert.match(r.stdout, /no binary at .*releases\/latest\/download/);
+      assert.match(r.stderr, /install failed: no wowgpt binary could be downloaded from .*\/releases .*nothing was installed/);
+      assert.match(r.stderr, /-> .*--from-source/);
+      assert.doesNotMatch(r.stdout + r.stderr, /installing from source|Node\.js is not installed|cloning/);
+      assert.ok(!fs.existsSync(path.join(none.binDir, 'wowgpt')), 'nothing installed');
+    } finally {
+      fs.rmSync(none.root, { recursive: true, force: true });
+    }
+  },
+);
 
 test(
   'install.sh: a release without SHA256SUMS, a machine without sha256sum or shasum, or a wrong sum fails and installs nothing',
@@ -276,7 +280,7 @@ test('install.sh: a pinned --release that exists installs that release', { skip:
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.match(r.stdout, /checksum OK/);
     const urls = fs.readFileSync(h.log, 'utf8').trim().split('\n');
-    assert.equal(urls[0], `https://github.com/rdimascio/claude-wow/releases/download/v0.5.0-beta.1/${h.asset}`);
+    assert.equal(urls[0], `${REPO_URL}/releases/download/v0.5.0-beta.1/${h.asset}`);
     assert.ok(!urls.some(u => u.includes('api.github.com')));
   } finally {
     fs.rmSync(h.root, { recursive: true, force: true });
@@ -333,9 +337,12 @@ test(
   },
 );
 
-test('install.ps1: a missing SHA256SUMS, a missing hash or a wrong sum is a problem, and the source ref is the release tag', { skip: !pwsh && 'no PowerShell here' }, () => {
-  const sum = 'a'.repeat(64);
-  const script = `${ps1Functions(['Get-SumProblem', 'Select-SourceRef'])}
+test(
+  'install.ps1: a missing SHA256SUMS, a missing hash or a wrong sum is a problem, and the source ref is the release tag',
+  { skip: !pwsh && 'no PowerShell here' },
+  () => {
+    const sum = 'a'.repeat(64);
+    const script = `${ps1Functions(['Get-SumProblem', 'Select-SourceRef'])}
     $asset = 'wowgpt-windows-x64.exe'
     Expect '' (Get-SumProblem "${sum}  $asset\`n" $asset '${sum.toUpperCase()}')
     if (-not ((Get-SumProblem '' $asset '${sum}') -match 'no SHA256SUMS')) { Write-Output 'FAIL no sums'; exit 1 }
@@ -349,10 +356,11 @@ test('install.ps1: a missing SHA256SUMS, a missing hash or a wrong sum is a prob
     Expect 'v1.0.0' (Select-SourceRef '' 'latest' { 'v1.0.0' })
     Expect $null (Select-SourceRef '' 'latest' { $null })
     Write-Output OK`;
-  const r = spawnSync(pwsh, ['-NoProfile', '-NonInteractive', '-Command', script], { encoding: 'utf8', windowsHide: true });
-  assert.equal(r.status, 0, r.stdout + r.stderr);
-  assert.match(r.stdout, /OK/);
-});
+    const r = spawnSync(pwsh, ['-NoProfile', '-NonInteractive', '-Command', script], { encoding: 'utf8', windowsHide: true });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.match(r.stdout, /OK/);
+  },
+);
 
 test('install.ps1 takes the route and the checks the functions pick, and never defaults the source to main', () => {
   const src = fs.readFileSync(PS1, 'utf8');
@@ -366,7 +374,11 @@ test('install.ps1 takes the route and the checks the functions pick, and never d
   assert.match(src, /'pinned-download-failed' \{ Fail "release \$Release has no wowgpt binary/);
   assert.match(src, /'download-failed' \{ Fail "no wowgpt binary could be downloaded/);
   assert.equal(src.match(/Get-Source \}/g).length, 1, 'one way into the source route');
-  assert.match(src, /\$problem = Get-SumProblem \$sums \$asset \$have\n {2}if \(\$problem\) \{ Remove-Item -Force \$tmp; Fail \$problem/, 'a sum problem fails before the binary runs');
+  assert.match(
+    src,
+    /\$problem = Get-SumProblem \$sums \$asset \$have\n {2}if \(\$problem\) \{ Remove-Item -Force \$tmp; Fail \$problem/,
+    'a sum problem fails before the binary runs',
+  );
   assert.doesNotMatch(src, /warning: the release has no SHA256SUMS|was not verified/);
   assert.match(src, /\$script:Ref = Select-SourceRef \$Ref \$Release/);
   assert.match(src, /\$env:CLAUDE_WOW_REF\) -ne \$null\)\[0\] \} else \{ '' \}\),/, 'no main default');
@@ -454,7 +466,11 @@ test('the installers put the code under the home folder, name the wowgpt command
   assert.match(sh, /^HOME_DIR=\$\{WOWGPT_HOME:-\$\{CLAUDE_WOW_HOME:-\$HOME\/\.wowgpt\}\}$/m);
   assert.match(sh, /"\$BIN_DIR\/wowgpt"/);
   assert.ok(!/BIN_DIR\/wow-ai" <<EOF/.test(sh), 'no wow-ai shim is written');
-  assert.doesNotMatch(sh, /migrate_old_install|link_old_command|\.wow-ai|BIN_DIR\/claude-wow/, 'no old-command migration: setup carries the home and service over');
+  assert.doesNotMatch(
+    sh,
+    /migrate_old_install|link_old_command|\.wow-ai|BIN_DIR\/claude-wow/,
+    'no old-command migration: setup carries the home and service over',
+  );
   assert.ok(!/WOW_AI_/.test(sh), 'no WOW_AI_* variable left');
   const ps = fs.readFileSync(PS1, 'utf8');
   assert.match(ps, /'wowgpt\.cmd'/);
