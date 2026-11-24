@@ -590,28 +590,32 @@ test('node setup.js after the rename: ~/.claude-wow and the old ask data folder 
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test('the start command names <home>/current/wowgpt for a binary under releases/, never the versioned path a later deploy prunes', { skip: process.platform === 'win32' }, () => {
-  const REL = require('../bridge/releases');
-  const home = fs.realpathSync(scratch('start-command'));
-  try {
-    const l = REL.layout(home);
-    const name = '1.0.0-abc123def456';
-    fs.mkdirSync(REL.releaseDir(l, name), { recursive: true });
-    fs.writeFileSync(REL.releaseBinary(l, name), 'bin', { mode: 0o755 });
-    fs.symlinkSync(path.join(REL.RELEASES_DIR, name), l.current);
-    const notOnPath = () => false;
-    const versioned = REL.releaseBinary(l, name);
-    const shown = S.startCommand({ compiled: true, execPath: versioned, isOnPath: notOnPath });
-    assert.equal(shown, `"${REL.currentBinary(l)}"`);
-    assert.ok(!shown.includes(name), shown);
-    assert.equal(S.startCommand({ compiled: true, execPath: versioned, isOnPath: () => true }), 'wowgpt');
-    const plain = path.join(home, 'bin', 'wowgpt');
-    assert.equal(S.startCommand({ compiled: true, execPath: plain, isOnPath: notOnPath }), `"${plain}"`);
-    assert.equal(
-      S.startCommand({ compiled: false, execPath: '/usr/bin/node', fromCommand: true, root: home, isOnPath: notOnPath }),
-      `"/usr/bin/node" "${path.join(home, 'bridge', 'supervisor.js')}"`,
-    );
-  } finally {
-    fs.rmSync(home, { recursive: true, force: true });
-  }
-});
+test(
+  'the start command names <home>/current/wowgpt for a binary under releases/, never the versioned path a later deploy prunes',
+  { skip: process.platform === 'win32' },
+  () => {
+    const REL = require('../bridge/releases');
+    const home = fs.realpathSync(scratch('start-command'));
+    try {
+      const l = REL.layout(home);
+      const name = '1.0.0-abc123def456';
+      fs.mkdirSync(REL.releaseDir(l, name), { recursive: true });
+      fs.writeFileSync(REL.releaseBinary(l, name), 'bin', { mode: 0o755 });
+      fs.symlinkSync(path.join(REL.RELEASES_DIR, name), l.current);
+      const notOnPath = () => false;
+      const versioned = REL.releaseBinary(l, name);
+      const shown = S.startCommand({ compiled: true, execPath: versioned, isOnPath: notOnPath });
+      assert.equal(shown, `"${REL.currentBinary(l)}"`);
+      assert.ok(!shown.includes(name), shown);
+      assert.equal(S.startCommand({ compiled: true, execPath: versioned, isOnPath: () => true }), 'wowgpt');
+      const plain = path.join(home, 'bin', 'wowgpt');
+      assert.equal(S.startCommand({ compiled: true, execPath: plain, isOnPath: notOnPath }), `"${plain}"`);
+      assert.equal(
+        S.startCommand({ compiled: false, execPath: '/usr/bin/node', fromCommand: true, root: home, isOnPath: notOnPath }),
+        `"/usr/bin/node" "${path.join(home, 'bridge', 'supervisor.js')}"`,
+      );
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  },
+);

@@ -261,7 +261,11 @@ test('SHA256SUMS is trusted only with a good ed25519 signature: no signature, an
   const sumsText = `${sha(NEW)}  ${ASSET}\n`;
   for (const [label, cfg, re] of [
     ['no signature', { omitSig: true }, /has no SHA256SUMS\.sig, so its SHA256SUMS cannot be trusted/],
-    ['another key', { sig: crypto.sign(null, Buffer.from(sumsText), other.privateKey).toString('base64') }, /does not match SHA256SUMS under the release public key/],
+    [
+      'another key',
+      { sig: crypto.sign(null, Buffer.from(sumsText), other.privateKey).toString('base64') },
+      /does not match SHA256SUMS under the release public key/,
+    ],
     ['edited sums', { sums: sumsText, sig: signed(`${sha(OLD)}  ${ASSET}\n`) }, /does not match SHA256SUMS under the release public key/],
     ['junk', { sig: 'not a signature' }, /is not an ed25519 signature/],
   ]) {
@@ -272,7 +276,11 @@ test('SHA256SUMS is trusted only with a good ed25519 signature: no signature, an
       assert.equal(out.status, 'failed', `${label}: ${out.message}`);
       assert.match(out.message, re, label);
       assert.match(out.message, /nothing was replaced/, label);
-      assert.deepEqual(srv.downloads().filter(h => h === `/files/${ASSET}`), [], `${label}: the binary was never downloaded`);
+      assert.deepEqual(
+        srv.downloads().filter(h => h === `/files/${ASSET}`),
+        [],
+        `${label}: the binary was never downloaded`,
+      );
       untouched(t);
       assert.equal(UPD.readRecord(t.home).ok, false, label);
     } finally {
@@ -298,7 +306,14 @@ test('with no release public key in the build, self-update refuses before any do
     const check = await UPD.checkAndRecord(opts(t, srv, { publicKey: UPD.RELEASE_PUBLIC_KEY_UNSET, checkOnly: true }));
     assert.equal(check.status, 'available', check.message);
     const ft = fakeTimers();
-    const u = UPD.createUpdater({ home: t.home, version: '1.0.0', install: t.install, log: l => logs.push(l), timers: ft.timers, publicKey: UPD.RELEASE_PUBLIC_KEY_UNSET });
+    const u = UPD.createUpdater({
+      home: t.home,
+      version: '1.0.0',
+      install: t.install,
+      log: l => logs.push(l),
+      timers: ft.timers,
+      publicKey: UPD.RELEASE_PUBLIC_KEY_UNSET,
+    });
     u.start();
     assert.equal(u.autoCheck, false);
     assert.deepEqual(
@@ -551,7 +566,16 @@ test(
           REL.activate(l, landed);
           return { ok: true, version: '9.9.9' };
         };
-        const out = await UPD.checkAndRecord({ home, version: '1.0.0', api: `${srv.base}/repos/x`, install, platform: PLATFORM, arch: ARCH, probe, publicKey: PUBLIC_KEY });
+        const out = await UPD.checkAndRecord({
+          home,
+          version: '1.0.0',
+          api: `${srv.base}/repos/x`,
+          install,
+          platform: PLATFORM,
+          arch: ARCH,
+          probe,
+          publicKey: PUBLIC_KEY,
+        });
         assert.equal(out.status, 'skipped', `${label}: ${out.message}`);
         assert.equal(REL.currentName(l), landed, `${label}: current is left where the other install put it`);
         assert.equal(REL.hasRelease(l, '9.9.9'), false, `${label}: nothing was installed`);
@@ -592,7 +616,16 @@ test('a skip written while the download ran (a rollback meanwhile) is honored un
       UPD.skipVersion(l.base, '9.9.9', 'dev rollback meanwhile');
       return { ok: true, version: '9.9.9' };
     };
-    const out = await UPD.checkAndRecord({ home: l.base, version: '1.0.0', api: `${srv2.base}/repos/x`, install, platform: PLATFORM, arch: ARCH, probe, publicKey: PUBLIC_KEY });
+    const out = await UPD.checkAndRecord({
+      home: l.base,
+      version: '1.0.0',
+      api: `${srv2.base}/repos/x`,
+      install,
+      platform: PLATFORM,
+      arch: ARCH,
+      probe,
+      publicKey: PUBLIC_KEY,
+    });
     assert.equal(out.status, 'skipped', out.message);
     assert.equal(REL.currentName(l), '1.0.0');
     assert.equal(REL.hasRelease(l, '9.9.9'), false);

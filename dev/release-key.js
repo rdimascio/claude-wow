@@ -39,7 +39,8 @@ function generate(argv, { out, home = os.homedir(), root = ROOT }) {
     if (argv[i] === '--out' && argv[i + 1]) keyFile = path.resolve(argv[++i]);
     else throw new Error(USAGE);
   }
-  if (insideCheckout(keyFile, root)) throw new Error(`${keyFile} is inside the checkout ${root}; the private key never goes into the repository. Pick a file outside it with --out.`);
+  if (insideCheckout(keyFile, root))
+    throw new Error(`${keyFile} is inside the checkout ${root}; the private key never goes into the repository. Pick a file outside it with --out.`);
   const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
   const pem = privateKey.export({ format: 'pem', type: 'pkcs8' });
   fs.writeFileSync(keyFile, pem, { mode: 0o600, flag: 'wx' });
