@@ -71,25 +71,25 @@ Setup always writes its own copy of the addon into `Interface/AddOns/WoWGPT`, so
 ### 2. Install the bridge and run setup
 
 ```sh
-brew install rdimascio/claude-wow/wowgpt     # macOS (Homebrew)
+brew install rdimascio/wowgpt/wowgpt     # macOS (Homebrew)
 npm i -g wowgpt                              # or: macOS, Linux or Windows with Node.js 22.2+
 wowgpt setup
 ```
 
 Setup does the rest. It finds the game and stops with "Quit World of Warcraft, then run setup again" while a client runs. It installs the addon, picks the agent you have installed (or says "not ready: install one agent"), asks whether to share your game state, and installs the background service (Enter means yes; a service from an earlier install is reinstalled without asking). The agents get a project folder of their own, `~/wowgpt`; your home folder is never a project.
 
-Until the first stable release, Homebrew needs `--HEAD` (`brew install --HEAD rdimascio/claude-wow/wowgpt`), the npm package is not published, and the one-line installer below does not exist yet: it is a file of the release. Once a release is out, the one-line installer is the third route:
+Until the first stable release, Homebrew needs `--HEAD` (`brew install --HEAD rdimascio/wowgpt/wowgpt`), the npm package is not published, and the one-line installer below does not exist yet: it is a file of the release. Once a release is out, the one-line installer is the third route:
 
 macOS and Linux:
 
 ```sh
-curl -fsSL https://github.com/rdimascio/claude-wow/releases/latest/download/install.sh | sh
+curl -fsSL https://github.com/rdimascio/wowgpt/releases/latest/download/install.sh | sh
 ```
 
 Windows (PowerShell):
 
 ```powershell
-irm https://github.com/rdimascio/claude-wow/releases/latest/download/install.ps1 | iex
+irm https://github.com/rdimascio/wowgpt/releases/latest/download/install.ps1 | iex
 ```
 
 The one-line installer scripts are files of the latest stable release (`releases/latest`), not of `main`, so what runs is the script that shipped with that release, and they download its binary. While no stable release has a binary, they fall back to the newest release, betas included. A pinned release is used as-is, with no fallback. To pin one release, name it: `sh -s -- --release v0.5.0-beta.1` after the `curl` command on macOS and Linux, or `$env:WOWGPT_RELEASE = "v0.5.0-beta.1"` before the PowerShell command.
@@ -142,8 +142,8 @@ In game, type `/wowgpt hello`. This starts a new chat and sends "hello" to your 
 [docs/INSTALL.md](docs/INSTALL.md) has every route in detail: Homebrew, npm, all the installer options (`--project`, `--service`, `--from-source`, `--release`), Homebrew `--HEAD`, the background service on each platform, and uninstalling. To run from a git checkout:
 
 ```sh
-git clone https://github.com/rdimascio/claude-wow
-cd claude-wow
+git clone https://github.com/rdimascio/wowgpt
+cd wowgpt
 node setup.js --wow "<client folder>"
 npm start
 ```

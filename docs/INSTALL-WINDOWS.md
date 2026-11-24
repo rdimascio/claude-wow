@@ -22,12 +22,12 @@ Open a new terminal after installing Node or Git so the `PATH` change is picked 
 ## Install
 
 ```powershell
-irm https://github.com/rdimascio/claude-wow/releases/latest/download/install.ps1 | iex
+irm https://github.com/rdimascio/wowgpt/releases/latest/download/install.ps1 | iex
 ```
 
 Set `$env:WOWGPT_WOW` first if the client is somewhere setup will not look (it tries `Program Files (x86)\World of Warcraft\_classic_beta_` and a few other common places), and `$env:WOWGPT_PROJECT` for the default project folder. The installer downloads the `wowgpt.exe` binary from the project's GitHub release into `%LocalAppData%\Programs\wowgpt\bin` (checked against the release's `SHA256SUMS`; with `$env:WOWGPT_SOURCE = "1"`, or where there is no release yet, it installs the source there instead and runs it with Node.js, which it then checks for), adds that `bin` folder to your user `PATH` (no administrator rights), runs setup, and offers to start the bridge at login. Everything after that, including the service and updating, is in [INSTALL.md](INSTALL.md).
 
-By hand instead (Node.js 22.2+ or Bun): `git clone https://github.com/rdimascio/claude-wow`, `cd claude-wow`, `node setup.js --project "C:\path\to\your\project"`, then `npm start`. `bridge\start-window.cmd` is the double-click version that opens its own window; `bridge\start.ps1` runs it in the current PowerShell.
+By hand instead (Node.js 22.2+ or Bun): `git clone https://github.com/rdimascio/wowgpt`, `cd wowgpt`, `node setup.js --project "C:\path\to\your\project"`, then `npm start`. `bridge\start-window.cmd` is the double-click version that opens its own window; `bridge\start.ps1` runs it in the current PowerShell.
 
 ## The `wowgpt` command on Windows
 

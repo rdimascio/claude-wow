@@ -1,7 +1,7 @@
 # Homebrew formula for the WoWGPT bridge and its `wowgpt` command.
-# Lives in the tap rdimascio/homebrew-claude-wow as Formula/wowgpt.rb:
+# Lives in the tap rdimascio/homebrew-wowgpt as Formula/wowgpt.rb:
 #
-#   brew tap rdimascio/claude-wow
+#   brew tap rdimascio/wowgpt
 #   brew install wowgpt         # the release binary: nothing else, no Node.js
 #   brew install --HEAD wowgpt  # the checkout instead, run with Homebrew's node
 #   wowgpt setup                # the game-side install (addon, config, slot pool, background service)
@@ -17,7 +17,7 @@
 # (assets/), so `brew upgrade` keeps them all. See ../README.md.
 class Wowgpt < Formula
   desc "WoWGPT: chat with local coding agents from inside World of Warcraft (the bridge and CLI)"
-  homepage "https://github.com/rdimascio/claude-wow"
+  homepage "https://github.com/rdimascio/wowgpt"
   license "MIT"
   # The first tagged release. Cutting one: tag it, attach the four binaries
   # and SHA256SUMS from `node build.js` (CI builds them too), then put the two
@@ -25,16 +25,16 @@ class Wowgpt < Formula
   version "1.0.0"
   on_macos do
     on_arm do
-      url "https://github.com/rdimascio/claude-wow/releases/download/v#{version}/wowgpt-darwin-arm64"
+      url "https://github.com/rdimascio/wowgpt/releases/download/v#{version}/wowgpt-darwin-arm64"
       sha256 "0000000000000000000000000000000000000000000000000000000000000000" # wowgpt-darwin-arm64 in SHA256SUMS
     end
     on_intel do
-      url "https://github.com/rdimascio/claude-wow/releases/download/v#{version}/wowgpt-darwin-x64"
+      url "https://github.com/rdimascio/wowgpt/releases/download/v#{version}/wowgpt-darwin-x64"
       sha256 "0000000000000000000000000000000000000000000000000000000000000000" # wowgpt-darwin-x64 in SHA256SUMS
     end
   end
   head do
-    url "https://github.com/rdimascio/claude-wow.git", branch: "main"
+    url "https://github.com/rdimascio/wowgpt.git", branch: "main"
     depends_on "node"
   end
   # python3 is only needed for the pixel-capture transport (capture_mac.py);

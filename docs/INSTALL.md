@@ -15,7 +15,7 @@ Platform notes that are not about installing (which display mode, screen-capture
 ## The short way
 
 ```sh
-brew install rdimascio/claude-wow/wowgpt     # macOS; or, anywhere with Node.js 22.2+: npm i -g wowgpt
+brew install rdimascio/wowgpt/wowgpt     # macOS; or, anywhere with Node.js 22.2+: npm i -g wowgpt
 wowgpt setup
 ```
 
@@ -24,11 +24,11 @@ Then fully quit and relaunch World of Warcraft and type `/wowgpt` in game. Nothi
 ## Route 1: Homebrew (macOS)
 
 ```sh
-brew install rdimascio/claude-wow/wowgpt
+brew install rdimascio/wowgpt/wowgpt
 wowgpt setup
 ```
 
-Until the first stable release fills in the formula's checksums, only `--HEAD` works (`brew install --HEAD rdimascio/claude-wow/wowgpt`): it installs the checkout and runs it with Homebrew's node. After that release, the command above installs the binary.
+Until the first stable release fills in the formula's checksums, only `--HEAD` works (`brew install --HEAD rdimascio/wowgpt/wowgpt`): it installs the checkout and runs it with Homebrew's node. After that release, the command above installs the binary.
 
 Homebrew installs the bridge and the `wowgpt` command: the self-contained binary for your Mac from the tagged release, or the checkout with `--HEAD`. It cannot put an addon into the game folder or read your WoW account, so `wowgpt setup` is a separate, required step. The keg holds only code: your config, the agents' sessions, transcripts and logs live in `~/.wowgpt` (`WOWGPT_HOME`, see [CONFIGURATION.md](CONFIGURATION.md#where-the-bridge-keeps-its-files)), so `brew upgrade` keeps them; `wowgpt setup` afterwards reinstalls the service, which restarts the bridge on the new code. The formula is in [`homebrew/`](../homebrew/README.md).
 
@@ -46,13 +46,13 @@ This needs Node.js 22.2 or newer. npm puts the `wowgpt` command on your PATH; se
 macOS and Linux:
 
 ```sh
-curl -fsSL https://github.com/rdimascio/claude-wow/releases/latest/download/install.sh | sh
+curl -fsSL https://github.com/rdimascio/wowgpt/releases/latest/download/install.sh | sh
 ```
 
 Windows, in PowerShell:
 
 ```powershell
-irm https://github.com/rdimascio/claude-wow/releases/latest/download/install.ps1 | iex
+irm https://github.com/rdimascio/wowgpt/releases/latest/download/install.ps1 | iex
 ```
 
 (The scripts are files of the latest release, so these URLs work once the first release is out. Before that, run `sh install.sh --from-source` from a clone, which needs Node.js 22.2 or newer.)
@@ -76,7 +76,7 @@ Without a release option the script takes the latest stable release. When that h
 For example:
 
 ```sh
-curl -fsSL https://github.com/rdimascio/claude-wow/releases/latest/download/install.sh | sh -s -- --project ~/code/my-game --service
+curl -fsSL https://github.com/rdimascio/wowgpt/releases/latest/download/install.sh | sh -s -- --project ~/code/my-game --service
 ```
 
 When it finishes: fully quit and relaunch WoW, enable *WoWGPT* on the AddOns screen, and type `/wowgpt hello` in game.
@@ -84,8 +84,8 @@ When it finishes: fully quit and relaunch WoW, enable *WoWGPT* on the AddOns scr
 ## Route 4: by hand (git)
 
 ```sh
-git clone https://github.com/rdimascio/claude-wow
-cd claude-wow
+git clone https://github.com/rdimascio/wowgpt
+cd wowgpt
 node setup.js --project ~/code/my-game     # or --wow "<client folder>" if it cannot find the client
 npm start                                  # the bridge, in this terminal
 ```

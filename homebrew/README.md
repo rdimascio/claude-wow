@@ -1,11 +1,11 @@
 # Homebrew tap layout
 
-This folder is the content of the tap repository `rdimascio/homebrew-claude-wow`
-(Homebrew finds `brew tap rdimascio/claude-wow` at `github.com/rdimascio/homebrew-claude-wow`).
+This folder is the content of the tap repository `rdimascio/homebrew-wowgpt`
+(Homebrew finds `brew tap rdimascio/wowgpt` at `github.com/rdimascio/homebrew-wowgpt`).
 To publish it, copy `Formula/` into that repo as-is; nothing else is required.
 
 ```
-homebrew-claude-wow/
+homebrew-wowgpt/
   Formula/
     wowgpt.rb
 ```
@@ -13,7 +13,7 @@ homebrew-claude-wow/
 Then:
 
 ```sh
-brew tap rdimascio/claude-wow
+brew tap rdimascio/wowgpt
 brew install --HEAD wowgpt   # the checkout, run with Homebrew's node
 wowgpt setup                 # game side: addon, config.json, slot pool, background service
 ```

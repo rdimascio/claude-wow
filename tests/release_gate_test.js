@@ -6,7 +6,7 @@ const path = require('path');
 const { checkRelease, githubApi, GateRefused } = require('../dev/release-gate');
 const F = require('./fixtures/release-gate.json');
 
-const REPO = 'rdimascio/claude-wow';
+const REPO = 'rdimascio/wowgpt';
 const PR_HEAD = 'ec3700490a5f2778322885e138454541ae79494c';
 const MAIN_GREEN = '75ef027754cf9941226fe03d723d4367449bff77';
 const MAIN_BEFORE_GATE = '7d86a1f159ad4dd920441bf28f023c20c406603a';
