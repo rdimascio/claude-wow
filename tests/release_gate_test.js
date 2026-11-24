@@ -200,7 +200,7 @@ test('release.yml runs the gate on tags and every publishing job waits for it', 
   assert.equal(check.if, "github.ref_type == 'tag'");
   assert.match(check.run, /^node dev\/release-gate\.js /);
   assert.ok(jobs.version.needs.includes('release-gate'));
-  for (const name of ['version', 'addon', 'bridge', 'sign', 'github-release']) {
+  for (const name of ['version', 'addon', 'bridge', 'sign', 'github-release', 'homebrew-tap']) {
     assert.ok(reaches(jobs, name, 'release-gate'), `${name} must need release-gate`);
   }
 });

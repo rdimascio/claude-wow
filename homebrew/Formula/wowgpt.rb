@@ -19,9 +19,9 @@ class Wowgpt < Formula
   desc "WoWGPT: chat with local coding agents from inside World of Warcraft (the bridge and CLI)"
   homepage "https://github.com/rdimascio/wowgpt"
   license "MIT"
-  # The first tagged release. Cutting one: tag it, attach the four binaries
-  # and SHA256SUMS from `node build.js` (CI builds them too), then put the two
-  # darwin sums from SHA256SUMS here. Until then only --HEAD installs.
+  # The sums here stay zero in the repo. On a tag push the release workflow
+  # (homebrew-tap job) writes the version and the two darwin sums from the
+  # signed SHA256SUMS (dev/brew-formula.js) and pushes this file to the tap.
   version "1.0.0"
   on_macos do
     on_arm do
