@@ -154,6 +154,7 @@ session -> wow_reply tool -> channel.js -> socket -> bridge -> slot files -> add
 - `bridge/channel.js` is a small MCP server written by hand (no npm dependency): `initialize`, `tools/list`, `tools/call`, `ping`, and the channel notifications. It declares `claude/channel` and `claude/channel/permission`.
 - The bridge listens on the socket while it runs (`bridge/plugins/live.js`). When the home path is too long for a Unix socket, the socket goes to `/tmp/wowgpt-<uid>-<hash>.sock`.
 - Only the local bridge can talk to the channel server. The socket is created with mode `0600`, and the channel server refuses a socket that other users can reach. The bridge writes a fresh random token to `<WOWGPT_HOME>/live.token` (mode `0600`) on every start. Both sides prove they hold it (HMAC over a nonce) before any message is accepted; the channel server drops every frame from a peer that has not.
+- On Windows the endpoint is a named pipe, and file modes do not apply to it. Another local user can open the pipe but cannot pass the handshake: `live.token` sits in `%UserProfile%\.wowgpt`, which the profile's ACL keeps readable only by you (and administrators).
 - A chat attached with `/wowgpt -r` goes only to that session. A chat pinned with `/wowgpt config plugin live` sticks to the session it first talked to while that session stays connected; otherwise it goes to the most recently connected session.
 
 ## Goals and orders (Phase 0)

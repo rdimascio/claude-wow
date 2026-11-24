@@ -78,7 +78,7 @@ wowgpt setup
 
 Setup does the rest. It finds the game and stops with "Quit World of Warcraft, then run setup again" while a client runs. It installs the addon, picks the agent you have installed (or says "not ready: install one agent"), asks whether to share your game state, and installs the background service (Enter means yes; a service from an earlier install is reinstalled without asking). The agents get a project folder of their own, `~/wowgpt`; your home folder is never a project.
 
-Until the first stable release, Homebrew needs `--HEAD` (`brew install --HEAD rdimascio/wowgpt/wowgpt`), the npm package is not published, and the one-line installer below does not exist yet: it is a file of the release. Once a release is out, the one-line installer is the third route:
+The one-line installer is the third route. It is a file of the release:
 
 macOS and Linux:
 

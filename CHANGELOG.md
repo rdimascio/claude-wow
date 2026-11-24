@@ -23,7 +23,7 @@ The project is now WoWGPT: the addon, the command, the home folder, the service 
 - [ ] Live sessions: start Claude Code with `claude --dangerously-load-development-channels server:wowgpt` (was `server:claude-wow`). In your Claude Code allow rules, `mcp__claude-wow__*` becomes `mcp__wowgpt__*` (for example `mcp__wowgpt__wow_reply`). The MCP server in `.mcp.json` is `wowgpt`, and the plugin folder is `assets/plugins/wowgpt`.
 - [ ] Rename your environment variables to `WOWGPT_*` when you like (`WOWGPT_HOME`, `WOWGPT_PROJECT`, ...). The old `CLAUDE_WOW_*` names still work when the new one is not set.
 
-Kept so nothing breaks: `/wowgpt` is the main command, and `/claude` and the hidden `/claude-wow` still work. Links written before the rename (`addon:claudewow:...`) still click. The npm package and the command are `wowgpt` only: there is no `claude-wow` alias, the release ships only `wowgpt-<os>-<arch>` binaries, and an installed `claude-wow` binary does not update itself to WoWGPT. Remove an old `claude-wow` command yourself. The GitHub repository and the Homebrew tap keep their names for now.
+Kept so nothing breaks: `/wowgpt` is the main command, and `/claude` and the hidden `/claude-wow` still work. Links written before the rename (`addon:claudewow:...`) still click. The npm package and the command are `wowgpt` only: there is no `claude-wow` alias, the release ships only `wowgpt-<os>-<arch>` binaries, and an installed `claude-wow` binary does not update itself to WoWGPT. Remove an old `claude-wow` command yourself.
 
 ### Security
 
