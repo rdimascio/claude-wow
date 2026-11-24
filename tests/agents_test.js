@@ -180,6 +180,20 @@ test('agy review fixes: hermes stderr errors, yolo spellings, flag-like images, 
   assert.ok(agy[0].length <= 24100, `agy -p argument is ${agy[0].length} chars`);
 });
 
+test('the example config allows read-only git and no package installs; Grok gets globs for multi-word prefixes', () => {
+  const example = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'bridge', 'config.example.json'), 'utf8'));
+  for (const id of ['claude', 'grok']) {
+    const rules = example.agents[id].allowedTools;
+    assert.ok(!rules.includes('Bash(git:*)') && !rules.includes('Bash(pip:*)'), `${id}: ${rules.join(', ')}`);
+    assert.ok(
+      ['Bash(git status:*)', 'Bash(git diff:*)', 'Bash(git log:*)'].every(r => rules.includes(r)),
+      id,
+    );
+  }
+  const args = A.AGENTS.grok.args({ cfg: { allowedTools: ['Bash(git log:*)'] }, resume: '', cwd: 'x', promptFile: 'f' });
+  assert.ok(args.includes('Bash(git log *)') && args.includes('Bash(git log)'), args.join(' '));
+});
+
 test('Grok: streaming-json from a prompt file, dontAsk plus translated allow rules, resume and the system prompt', () => {
   const cfg = { permissionMode: 'acceptEdits', allowedTools: ['WebSearch', 'Bash(git:*)', 'Bash'], model: 'grok-build' };
   const args = A.AGENTS.grok.args({ cfg, resume: 's-1', cwd: 'C:\\p', system: SYS, promptFile: 'C:\\b\\tmp\\prompt-001.txt' });

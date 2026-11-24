@@ -206,7 +206,7 @@ function claudeCost(ev, model) {
 // button): `Bash(git:*)` = any command starting with git, `WebSearch` = a tool.
 // Grok's rules are globs, so `git:*` becomes `git *` plus the bare `git`.
 function grokRules(rule) {
-  const m = /^Bash\(([^\s:()]+):\*\)$/.exec(String(rule || '').trim());
+  const m = /^Bash\(([^\s:()]+(?: [^\s:()]+)*):\*\)$/.exec(String(rule || '').trim());
   if (m) return [`Bash(${m[1]} *)`, `Bash(${m[1]})`];
   return rule ? [String(rule).trim()] : [];
 }
