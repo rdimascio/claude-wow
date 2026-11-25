@@ -27,6 +27,7 @@ Kept so nothing breaks: `/wowgpt` is the main command, and `/claude` and the hid
 
 ### Security
 
+- Releases hold no long-lived publish tokens. npm publishes through trusted publishing (OIDC) with provenance, the Homebrew tap takes a deploy key that can write only to the tap, and the signing, tap and npm jobs run in a `release` environment that needs a maintainer's approval.
 - A new config no longer takes the folder setup runs in as the agents' project. From your home folder, that let every chat edit any file in it. The default is now `~/wowgpt`, made for it.
 - `--project` refuses your home folder and a disk root. Setup warns when an existing config names one, and keeps it.
 - The one-line installers are files of the release: `curl -fsSL https://github.com/rdimascio/wowgpt/releases/latest/download/install.sh | sh` (Windows: `irm .../releases/latest/download/install.ps1 | iex`). Before, they ran `install.sh` from `main`, which no release check covered. The release uploads `install.sh` and `install.ps1` next to the binaries.

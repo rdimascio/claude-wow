@@ -5,7 +5,7 @@ This folder is the content of the tap repository `rdimascio/homebrew-wowgpt`
 You do not copy it by hand. On a tag push, the `homebrew-tap` job of
 `.github/workflows/release.yml` writes the release version and the two darwin
 sums from the signed `SHA256SUMS` into `Formula/wowgpt.rb` and pushes it to the
-tap (the `TAP_TOKEN` secret). The sums in this repository stay zero.
+tap (the `TAP_DEPLOY_KEY` secret of the `release` environment: the private half of a write deploy key on the tap repository). The sums in this repository stay zero.
 
 ```
 homebrew-wowgpt/
