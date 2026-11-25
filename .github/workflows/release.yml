@@ -155,6 +155,7 @@ jobs:
     needs: bridge
     if: github.event_name == 'push' && github.ref_type == 'tag'
     runs-on: ubuntu-latest
+    environment: release
     permissions:
       contents: read
     steps:
@@ -227,6 +228,7 @@ jobs:
     needs: [version, github-release]
     if: github.event_name == 'push' && github.ref_type == 'tag'
     runs-on: ubuntu-latest
+    environment: release
     permissions:
       contents: read
     steps:
@@ -252,15 +254,21 @@ jobs:
         run: |
           node dev/brew-formula.js homebrew/Formula/wowgpt.rb dist/SHA256SUMS "${GITHUB_REF_NAME#v}"
           grep -n 'version "\|sha256 "' homebrew/Formula/wowgpt.rb
-      - name: push the formula to rdimascio/homebrew-wowgpt
+      - name: push the formula to rdimascio/homebrew-wowgpt with the tap's deploy key
         env:
-          TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
+          TAP_DEPLOY_KEY: ${{ secrets.TAP_DEPLOY_KEY }}
+          GITHUB_HOST_KEY: 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl'
         run: |
-          if [ -z "$TAP_TOKEN" ]; then
-            echo "::warning::TAP_TOKEN is not set, so the Homebrew tap was not updated. Add a token that can push to rdimascio/homebrew-wowgpt as the TAP_TOKEN secret and re-run this job."
+          if [ -z "$TAP_DEPLOY_KEY" ]; then
+            echo "::warning::TAP_DEPLOY_KEY is not set, so the Homebrew tap was not updated. Add a write deploy key to rdimascio/homebrew-wowgpt, store its private half as the TAP_DEPLOY_KEY secret of the release environment, and re-run this job."
             exit 0
           fi
-          git clone --depth 1 "https://x-access-token:${TAP_TOKEN}@github.com/rdimascio/homebrew-wowgpt.git" tap
+          ssh_dir=$(mktemp -d)
+          printf '%s\n' "$TAP_DEPLOY_KEY" > "$ssh_dir/key"
+          printf '%s\n' "$GITHUB_HOST_KEY" > "$ssh_dir/known_hosts"
+          chmod 600 "$ssh_dir/key"
+          export GIT_SSH_COMMAND="ssh -i $ssh_dir/key -o IdentitiesOnly=yes -o UserKnownHostsFile=$ssh_dir/known_hosts -o StrictHostKeyChecking=yes"
+          git clone --depth 1 git@github.com:rdimascio/homebrew-wowgpt.git tap
           mkdir -p tap/Formula
           cp homebrew/Formula/wowgpt.rb tap/Formula/wowgpt.rb
           git -C tap add Formula/wowgpt.rb
@@ -275,6 +283,7 @@ jobs:
     needs: [sign, github-release]
     if: github.event_name == 'push' && github.ref_type == 'tag'
     runs-on: ubuntu-latest
+    environment: release
     permissions:
       contents: read
       id-token: write
@@ -284,16 +293,14 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: '22'
+          node-version: '24'
           registry-url: 'https://registry.npmjs.org'
-      - name: publish the package to npm with provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: npm 11.5.1 or newer, which trusted publishing needs
         run: |
-          if [ -z "$NODE_AUTH_TOKEN" ]; then
-            echo "::warning::NPM_TOKEN is not set, so the package was not published to npm. Add an npm automation token as the NPM_TOKEN secret and re-run this job."
-            exit 0
-          fi
+          npm install -g npm@11.6.2
+          npm --version
+      - name: publish the package to npm through trusted publishing (OIDC, no token), with provenance
+        run: |
           node dev/pack-check.js --publish
           version=${GITHUB_REF_NAME#v}
           dist_tag=latest

@@ -58,24 +58,32 @@ test('the brew-formula command rewrites the file and fails without writing on a 
   }
 });
 
-test('release.yml fills the formula and pushes it to the tap only with TAP_TOKEN', () => {
+test('the jobs that hold release credentials run in the protected release environment', () => {
+  for (const job of ['sign', 'homebrew-tap', 'npm-publish']) assert.match(releaseJob(job), /^ {4}environment: release$/m, job);
+});
+
+test('release.yml fills the formula and pushes it to the tap only with the tap deploy key, over pinned ssh', () => {
   const tap = releaseJob('homebrew-tap');
   assert.match(tap, /^ {4}needs: \[version, github-release\]$/m);
   assert.match(tap, /^ {4}if: github\.event_name == 'push' && github\.ref_type == 'tag'$/m);
   assert.match(tap, /node dev\/release-key\.js verify dist\/SHA256SUMS/, 'the sums it copies are the signed ones');
   assert.match(tap, /node dev\/brew-formula\.js homebrew\/Formula\/wowgpt\.rb dist\/SHA256SUMS "\$\{GITHUB_REF_NAME#v\}"/);
-  assert.match(tap, /TAP_TOKEN: \$\{\{ secrets\.TAP_TOKEN \}\}/);
-  assert.match(tap, /if \[ -z "\$TAP_TOKEN" \]; then\n\s+echo "::warning::TAP_TOKEN is not set[^\n]*\n\s+exit 0/);
-  assert.match(tap, /rdimascio\/homebrew-wowgpt\.git/);
+  assert.match(tap, /TAP_DEPLOY_KEY: \$\{\{ secrets\.TAP_DEPLOY_KEY \}\}/);
+  assert.match(tap, /if \[ -z "\$TAP_DEPLOY_KEY" \]; then\n\s+echo "::warning::TAP_DEPLOY_KEY is not set[^\n]*\n\s+exit 0/);
+  assert.match(tap, /StrictHostKeyChecking=yes/);
+  assert.match(tap, /github\.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl/);
+  assert.match(tap, /git@github\.com:rdimascio\/homebrew-wowgpt\.git/);
+  assert.doesNotMatch(tap, /TAP_TOKEN|x-access-token/, 'no account token reaches the tap');
   assert.match(tap, /git -C tap push origin HEAD/);
 });
 
-test('release.yml publishes to npm with provenance after the release, only with NPM_TOKEN', () => {
+test('release.yml publishes to npm through trusted publishing: OIDC, no stored token, npm 11.5.1 or newer', () => {
   const npm = releaseJob('npm-publish');
   assert.match(npm, /^ {4}needs: \[sign, github-release\]$/m);
   assert.match(npm, /^ {4}if: github\.event_name == 'push' && github\.ref_type == 'tag'$/m);
   assert.match(npm, /^ {6}id-token: write$/m);
-  assert.match(npm, /NODE_AUTH_TOKEN: \$\{\{ secrets\.NPM_TOKEN \}\}/);
-  assert.match(npm, /if \[ -z "\$NODE_AUTH_TOKEN" \]; then\n\s+echo "::warning::NPM_TOKEN is not set[^\n]*\n\s+exit 0/);
+  assert.match(npm, /node-version: '24'/);
+  assert.match(npm, /npm install -g npm@11\.6\.2/);
+  assert.doesNotMatch(npm, /NPM_TOKEN|NODE_AUTH_TOKEN/, 'trusted publishing needs no token');
   assert.match(npm, /node dev\/pack-check\.js --publish\n[\s\S]*npm publish --provenance --access public/);
 });
